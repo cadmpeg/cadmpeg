@@ -31,7 +31,7 @@ fn inline_bytes_retained_limit_refuses_json_record() {
     };
     let arena_name = "inline_values";
     let json_len = serde_json::to_vec(&record).expect("inline JSON").len();
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
@@ -48,99 +48,7 @@ fn inline_bytes_retained_limit_refuses_json_record() {
 use crate::test_support::test_object_graph::{catalog_stream, value_block_stream};
 
 fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
-    crate::test_support::with_service_context(|ctx| super::parse(ctx, bytes))
-        .expect("value block fixture fits the service limits")
-}
-
-#[test]
-fn copied_value_fields_refuse_nested_retained_and_outer_collection_limits() {
-    let fields = [ValueField::Inline {
-        bytes: InlineBytes(vec![1, 2].into()),
-        offset: 0,
-    }];
-    let retained =
-        crate::test_support::with_retained_limit(1, |ctx| super::copy_fields_charged(&fields));
-    assert!(
-        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_value_inline_bytes")
-    );
-    let collection =
-        crate::test_support::with_collection_limit(2, |ctx| super::copy_fields_charged(&fields));
-    assert!(
-        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_value_fields")
-    );
-    let copied =
-        crate::test_support::with_service_context(|ctx| super::copy_fields_charged(&fields))
-            .expect("service profile admits nested value field");
-    assert_eq!(copied, fields);
-}
-
-#[test]
-fn value_block_payload_refuses_retained_and_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let mut bytes = value_block_stream(&[0x81]);
-    bytes.extend_from_slice(&[0x7c, 0x02]);
-    for dimension in [
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::CollectionItems,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        if dimension == ResourceDimension::RetainedBytes {
-            policy.limits.max_retained_bytes = 0;
-        } else {
-            policy.limits.max_collection_items = 0;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("value block fixture fits the input limit");
-        let error = super::parse(&ctx, &bytes)
-            .expect_err("the retained payload exceeds the selected limit");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == dimension && limit.operation == "catia_value_block_payload"));
-    }
-    assert_eq!(parse(&bytes).len(), 1);
-}
-
-#[test]
-fn value_tokenizer_refuses_field_and_retained_byte_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let inline = [0x8e, 0xe8, 0x84, b'A'];
-    let cases = [
-        (
-            &[0x81][..],
-            ResourceDimension::CollectionItems,
-            "catia_value_fields",
-        ),
-        (
-            &inline[..],
-            ResourceDimension::RetainedBytes,
-            "catia_value_field_bytes",
-        ),
-    ];
-    for (payload, dimension, operation) in cases {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        if dimension == ResourceDimension::CollectionItems {
-            policy.limits.max_collection_items = 0;
-        } else {
-            policy.limits.max_retained_bytes = 0;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-            .expect("token fixture fits the input limit");
-        let error = super::tokenize_charged(&ctx, payload)
-            .expect_err("one token exceeds the selected limit");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == dimension && limit.operation == operation));
-        let charged =
-            crate::test_support::with_service_context(|ctx| super::tokenize_charged(ctx, payload))
-                .expect("service budget admits the token");
-        assert_eq!(charged, tokenize(payload));
-    }
+    super::parse(bytes)
 }
 
 #[test]

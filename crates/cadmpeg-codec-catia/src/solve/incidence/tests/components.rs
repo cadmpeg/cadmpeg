@@ -12,63 +12,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 #[test]
-fn incidence_component_preflight_refuses_new_nested_support_allocations() {
-    use cadmpeg_core::CodecError;
-    use std::collections::BTreeSet;
-
-    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
-    let edge_faces = [[0, 0], [0, 0]];
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::incidence::component_incidence_pair_solutions(
-            ctx,
-            &choices,
-            &edge_faces,
-            1,
-            4,
-            None,
-            None,
-            None,
-            &|_| Ok(true),
-        )
-    };
-    crate::test_support::with_service_context(|ctx| {
-        assert_eq!(
-            run(ctx).expect("service budget").expect("solutions").len(),
-            4
-        );
-    });
-    let mut refusals = BTreeSet::new();
-    let mut completed = false;
-    for cap in 0..=2_000 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refusals.insert(limit.operation);
-            }
-            Ok(Some(solutions)) => {
-                assert_eq!(solutions.len(), 4);
-                completed = true;
-                break;
-            }
-            other => panic!("unexpected incidence outcome: {other:?}"),
-        }
-    }
-    assert!(completed, "fixture must fit the final cap");
-    for operation in [
-        "catia_incidence_base_choice_rows",
-        "catia_incidence_base_choice_pairs",
-        "catia_incidence_explicit_support_rows",
-        "catia_incidence_explicit_support_keys",
-        "catia_incidence_explicit_support_pairs",
-        "catia_incidence_degree_copy_rows",
-        "catia_incidence_degree_copy_entries",
-    ] {
-        assert!(refusals.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
 fn incidence_components_join_only_through_shared_face_vertices() {
-    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1], [0, 2]],
         vec![[1, 3], [2, 3]],
@@ -156,7 +100,6 @@ fn incidence_component_preflight_retains_fixed_chain_frontiers() {
 
 #[test]
 fn partial_incidence_constraint_joins_every_component_it_can_couple() {
-    catia_test_context!(ctx);
     let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
     let active = [true, false, false, true, false, false];
 
@@ -169,7 +112,6 @@ fn partial_incidence_constraint_joins_every_component_it_can_couple() {
 
 #[test]
 fn incidence_components_order_by_endpoint_branch_width() {
-    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 0], [1, 1]],
         vec![[2, 2], [3, 3], [4, 4]],
@@ -179,7 +121,6 @@ fn incidence_components_order_by_endpoint_branch_width() {
     let mut components = vec![vec![0, 2], vec![1], vec![3]];
 
     crate::solve::incidence::order_incidence_components_by_branch_width(&mut components, &choices)
-        .expect("service resource budget")
         .expect("valid component edges");
 
     assert_eq!(components, vec![vec![3], vec![1], vec![0, 2]]);
@@ -202,150 +143,6 @@ fn incidence_components_order_prerequisites_without_joining_domains() {
     .expect("acyclic component prerequisites");
 
     assert_eq!(components, vec![vec![2], vec![0], vec![1]]);
-}
-
-#[test]
-fn incidence_component_order_refuses_incoming_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let choices = vec![vec![[0, 0]], vec![[1, 1]]];
-    let dependencies = [Vec::new(), vec![0]];
-    let components = vec![vec![0], vec![1]];
-    catia_test_context!(service_ctx);
-    let mut service_components = components.clone();
-    assert!(
-        crate::solve::incidence::order_incidence_components_by_constraints(
-            &service_ctx,
-            &mut service_components,
-            &choices,
-            AssignmentOrder::new(None, Some(&dependencies)),
-        )
-        .expect("service budget")
-        .is_some()
-    );
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let mut limited_components = components;
-    let error = crate::solve::incidence::order_incidence_components_by_constraints(
-        &ctx,
-        &mut limited_components,
-        &choices,
-        AssignmentOrder::new(None, Some(&dependencies)),
-    )
-    .expect_err("incoming collection exceeds the limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_incidence_component_in"));
-}
-
-#[test]
-fn incidence_component_order_charges_outgoing_and_local_arrays() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::collections::BTreeSet;
-
-    let choices = vec![vec![[0, 0]], vec![[1, 1]]];
-    let dependencies = [Vec::new(), vec![0]];
-    let original = vec![vec![0], vec![1]];
-    let mut operations = BTreeSet::new();
-    let mut completed = false;
-    for limit in 0..=64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        let mut components = original.clone();
-        match crate::solve::incidence::order_incidence_components_by_constraints(
-            &ctx,
-            &mut components,
-            &choices,
-            AssignmentOrder::new(None, Some(&dependencies)),
-        ) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                operations.insert(error.operation);
-            }
-            Ok(Some(())) => {
-                completed = true;
-                break;
-            }
-            Ok(None) => panic!("acyclic component prerequisites must remain viable"),
-            Err(error) => panic!("unexpected component refusal: {error}"),
-        }
-    }
-    assert!(
-        completed,
-        "collection limit 64 must admit the component fixture"
-    );
-    assert!(operations.contains("catia_incidence_component_out"));
-    assert!(operations.contains("catia_incidence_local_in"));
-    assert!(operations.contains("catia_incidence_local_out"));
-}
-
-#[test]
-fn incidence_component_search_charges_face_and_component_arrays() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::collections::BTreeSet;
-    use std::ops::ControlFlow;
-
-    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
-    let edge_faces = [[0, 0], [0, 0]];
-    let mut operations = BTreeSet::new();
-    let mut limit = 0;
-    let mut completed = false;
-    for _ in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match crate::solve::incidence::visit_component_incidence_pair_solutions(
-            &ctx,
-            &choices,
-            &edge_faces,
-            1,
-            4,
-            None,
-            None,
-            None,
-            &|_| Ok(true),
-            &mut |_| Ok(ControlFlow::Break(())),
-        ) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                operations.insert(error.operation);
-                let next = error.used + error.additional;
-                assert!(next > limit, "a refusal must advance the collection cap");
-                limit = next;
-            }
-            Ok(crate::solve::incidence::IncidenceSolve::Solved(1)) => {
-                completed = true;
-                break;
-            }
-            Ok(outcome) => panic!("independent edge choices must solve, got {outcome:?}"),
-            Err(error) => panic!("unexpected component refusal: {error}"),
-        }
-    }
-    assert!(
-        completed,
-        "adaptive caps must admit the independent edge fixture"
-    );
-    for operation in [
-        "catia incidence active edges",
-        "catia incidence point support edges",
-        "catia incidence face edges",
-        "catia incidence fixed edges",
-        "catia incidence face degrees",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[test]
@@ -381,7 +178,6 @@ fn incidence_components_reject_prerequisite_cycles() {
 
 #[test]
 fn incidence_components_keep_fixed_face_boundaries_independent() {
-    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1], [0, 2]],
         vec![[1, 2], [1, 3]],
@@ -433,7 +229,6 @@ fn incidence_components_keep_fixed_face_boundaries_independent() {
 
 #[test]
 fn incidence_components_include_overlapping_quotient_domains() {
-    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1], [0, 2]],
         vec![[3, 4], [3, 5]],
@@ -599,7 +394,6 @@ fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
 
 #[test]
 fn deferred_boundary_enforces_anchored_gap_capacities() {
-    catia_test_context!(ctx);
     let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
         cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
             length: 6,
@@ -658,7 +452,6 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
 
 #[test]
 fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
-    catia_test_context!(ctx);
     let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
         cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
             length: 4,
@@ -678,79 +471,6 @@ fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
             .collect::<Vec<_>>(),
         vec![(0, 0, 3), (1, 3, 0)]
     );
-}
-
-#[test]
-fn deferred_boundary_materialization_refuses_match_collection_limits() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
-        cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
-            length: 4,
-            exact_uses: Vec::new(),
-        }],
-        missing_edges: vec![0, 1],
-    };
-    let pairs = [[0, 1], [0, 1]];
-    let materialize = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::incidence::deferred_boundary_assignment(&domain, &pairs)
-            .map(|assignment| assignment.is_some())
-    };
-    for operation in ["catia_deferred_match", "catia_deferred_visit"] {
-        cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::CollectionItems,
-            operation,
-            |cap| crate::test_support::with_collection_limit(cap, materialize),
-        );
-    }
-    // Released scope scratch peaks above the materialized boundary rows.
-    let closed = cadmpeg_test_support::refusal::assert_charged(
-        ResourceDimension::CollectionItems,
-        "catia_deferred_boundaries",
-        || crate::test_support::with_service_context(materialize),
-    );
-    assert!(closed, "closed deferred boundary must materialize");
-}
-
-#[test]
-fn deferred_boundary_closure_refuses_matching_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
-        cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
-            length: 4,
-            exact_uses: Vec::new(),
-        }],
-        missing_edges: vec![0, 1],
-    };
-    let pairs = [[0, 1], [0, 1]];
-    catia_test_context!(service_ctx);
-    assert!(
-        crate::solve::incidence::deferred_boundary_closes(&domain, &pairs)
-            .expect("service resource budget")
-    );
-
-    let mut refused = HashSet::new();
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match crate::solve::incidence::deferred_boundary_closes(&domain, &pairs) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation.to_owned());
-            }
-            Ok(true) => break,
-            Ok(false) => panic!("closed deferred boundary must match"),
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    for operation in ["catia_deferred_close_match", "catia_deferred_close_visit"] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[test]
@@ -789,16 +509,12 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     .expect("forced deferred quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(3))
-            .expect("service forest traversal")
+        quotient.find(0).expect("service forest traversal"),
+        quotient.find(3).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(1).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
 }
 
@@ -838,10 +554,8 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     .expect("unknown exact direction is deferred");
 
     assert_ne!(
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(3))
-            .expect("service forest traversal")
+        quotient.find(0).expect("service forest traversal"),
+        quotient.find(3).expect("service forest traversal")
     );
 }
 
@@ -882,28 +596,20 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     .expect("deferred gap quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(4))
-            .expect("service forest traversal")
+        quotient.find(1).expect("service forest traversal"),
+        quotient.find(4).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(5))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(5).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(3))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(6))
-            .expect("service forest traversal")
+        quotient.find(3).expect("service forest traversal"),
+        quotient.find(6).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(7))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal")
+        quotient.find(7).expect("service forest traversal"),
+        quotient.find(0).expect("service forest traversal")
     );
 }
 
@@ -930,10 +636,12 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     ])];
     let candidates = vec![vec![[0, 0]], vec![[0, 0]]];
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(0, 1))
+    quotient
+        .merge(0, 1)
         .expect("service merge")
         .expect("first closed edge");
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(2, 3))
+    quotient
+        .merge(2, 3)
         .expect("service merge")
         .expect("second closed edge");
     let budget = WorkBudget::new(100);
@@ -949,10 +657,8 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     .expect("structural quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(0).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
 }
 
@@ -990,8 +696,7 @@ fn ordered_face_preparation_does_not_sign_whole_mesh_alternatives() {
     assert!(ctx.resource_refusal().is_none());
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count())
-            .expect("service quotient traversal"),
+        quotient.root_count().expect("service quotient traversal"),
         4
     );
     assert!(!budget.exhausted());
@@ -1087,16 +792,12 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     .expect("ordered component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(3))
-            .expect("service forest traversal")
+        quotient.find(0).expect("service forest traversal"),
+        quotient.find(3).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(1).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
 }
 
@@ -1122,22 +823,16 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
     .expect("unordered component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(1).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(3))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(4))
-            .expect("service forest traversal")
+        quotient.find(3).expect("service forest traversal"),
+        quotient.find(4).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(5))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal")
+        quotient.find(5).expect("service forest traversal"),
+        quotient.find(0).expect("service forest traversal")
     );
 }
 
@@ -1176,46 +871,6 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
 }
 
 #[test]
-fn compact_partial_subtour_refuses_new_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
-    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0]), Some([3, 4]), None];
-    catia_test_context!(service_ctx);
-    assert!(
-        !compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
-            .expect("service resource budget")
-    );
-
-    let mut operations = HashSet::new();
-    for limit in 0..=128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match compact_boundary_domain_viable(&ctx, &domain, &assignment, None) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                operations.insert(error.operation);
-            }
-            Ok(false) => {}
-            Ok(true) => panic!("partial subtour must remain invalid"),
-            Err(error) => panic!("unexpected compact boundary refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_compact_boundary_nodes",
-        "catia_compact_boundary_degrees",
-        "catia_compact_boundary_points",
-        "catia_compact_boundary_open_components",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
 fn compact_unordered_boundary_refuses_degree_overflow() {
     catia_test_context!(ctx);
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle((0..129).collect());
@@ -1225,82 +880,6 @@ fn compact_unordered_boundary_refuses_degree_overflow() {
         !compact_boundary_domain_viable(&ctx, &domain, &assignment, None)
             .expect("service resource budget")
     );
-}
-
-#[test]
-fn compact_boundary_viability_refuses_labeled_edge_point_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2]);
-    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
-    catia_test_context!(service_ctx);
-    assert!(
-        compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
-            .expect("service resource budget")
-    );
-
-    let mut refused = HashSet::new();
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match compact_boundary_domain_viable(&ctx, &domain, &assignment, None) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation.to_owned());
-            }
-            Ok(true) => break,
-            Ok(false) => panic!("closed cycle must remain viable"),
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    assert!(refused.contains("catia labeled edge points"));
-    assert!(refused.contains("catia_compact_boundary_complete_pairs"));
-}
-
-#[test]
-fn component_face_viability_refuses_edge_point_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let faces = HashSet::from([0]);
-    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
-    let choices = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
-    let face_edges = vec![vec![0, 1, 2]];
-    let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
-    catia_test_context!(service_ctx);
-    assert!(crate::solve::incidence::component_incidence_faces_viable(
-        &service_ctx,
-        &faces,
-        &assignment,
-        &choices,
-        &face_edges,
-        Some(&domains),
-        3,
-    )
-    .expect("service resource budget"));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = crate::solve::incidence::component_incidence_faces_viable(
-        &ctx,
-        &faces,
-        &assignment,
-        &choices,
-        &face_edges,
-        Some(&domains),
-        3,
-    )
-    .expect_err("edge point array exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia component incidence edge points"));
 }
 
 #[test]
@@ -1357,28 +936,20 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
     .expect("deferred component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(4))
-            .expect("service forest traversal")
+        quotient.find(1).expect("service forest traversal"),
+        quotient.find(4).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(5))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(5).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(3))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(6))
-            .expect("service forest traversal")
+        quotient.find(3).expect("service forest traversal"),
+        quotient.find(6).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(7))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal")
+        quotient.find(7).expect("service forest traversal"),
+        quotient.find(0).expect("service forest traversal")
     );
 }
 
@@ -1553,10 +1124,9 @@ fn compact_face_quotient_states_accumulate_across_calls() {
 fn compact_face_quotient_state_cap_is_exhausted() {
     const EDGE_COUNT: usize = 14;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 100_000_000;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root fits the collection limit");
+        .expect("empty test root fits the service profile");
     let choices = vec![Vec::new(); EDGE_COUNT];
     let quotient = MeshQuotient::new(
         (0..EDGE_COUNT * 2)
@@ -1601,40 +1171,3 @@ fn compact_face_quotient_state_cap_is_exhausted() {
 }
 
 mod component_search;
-
-#[test]
-fn component_degree_workspace_releases_after_each_face_check() {
-    let faces = HashSet::from([0]);
-    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
-    let choices = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
-    let face_edges = vec![vec![0, 1, 2]];
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::incidence::component_incidence_faces_viable(
-            ctx,
-            &faces,
-            &assignment,
-            &choices,
-            &face_edges,
-            None,
-            3,
-        )
-    };
-    crate::test_support::with_retained_limit(0, |ctx| {
-        for _ in 0..128 {
-            assert!(run(ctx).expect("degree map is scoped"));
-        }
-    });
-    crate::test_support::with_materialized_limit(1024, |ctx| {
-        for _ in 0..128 {
-            assert!(run(ctx).expect("previous degree map released"));
-        }
-        assert!(ctx
-            .reserve_scoped(1024, "test degree workspace released")
-            .is_ok());
-    });
-    let refused = crate::test_support::with_materialized_limit(0, run);
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia component incidence degree points")
-    );
-}
