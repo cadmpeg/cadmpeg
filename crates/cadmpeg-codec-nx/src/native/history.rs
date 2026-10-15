@@ -273,130 +273,6 @@ pub(crate) fn active_feature_closure(
         .collect())
 }
 
-/// Resolve the active feature closure while accounting for decode scratch and
-/// the returned identities. The CADIR evaluator uses the context-free form.
-pub(crate) fn active_feature_closure_for_decode(
-    ir: &CadIr,
-    bodies: &[BodyId],
-) -> Result<BTreeMap<FeatureId, usize>, ActiveFeatureClosureRejection> {
-    let mut features = BTreeMap::new();
-    for (index, feature) in ir.model.features.iter().enumerate() {
-        if features.contains_key(&feature.id) {
-            return Err(ActiveFeatureClosureRejection::DuplicateFeatureIdentity {
-                feature: feature.id.clone(),
-            });
-        }
-        features.insert(&feature.id, (index, feature));
-    }
-    let mut active_bodies = BTreeSet::new();
-    for body in bodies {
-        active_bodies.insert(body);
-    }
-    let mut active_features = BTreeMap::new();
-    for (id, &resolved) in &features {
-        if resolved
-            .1
-            .evaluation
-            .outputs()
-            .iter()
-            .any(|body| active_bodies.contains(body))
-        {
-            active_features.insert(*id, resolved);
-        }
-    }
-    let has_neutral_body_writer = active_features.values().any(|(_, feature)| {
-        !matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        )
-    });
-    let has_native_body_witness = active_features.values().any(|(_, feature)| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        ) && feature.evaluation.outputs().len() == active_bodies.len()
-            && feature
-                .evaluation
-                .outputs()
-                .iter()
-                .all(|body| active_bodies.contains(body))
-            && feature
-                .source_properties
-                .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
-    });
-    let has_retained_history_input = active_features.values().any(|(_, feature)| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        ) && feature
-            .source_properties
-            .keys()
-            .any(|key| key.as_str().starts_with("segment_body_binding."))
-    });
-    if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
-        return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
-    }
-    if !has_neutral_body_writer && has_native_body_witness {
-        for (id, &resolved) in &features {
-            let feature = resolved.1;
-            if feature.native_ref.is_some()
-                && feature.source_tag.is_some()
-                && feature
-                    .source_properties
-                    .get(NATIVE_PRIMARY_BODY_OBJECT_INDEX)
-                    .is_some_and(|reference| !reference.is_empty())
-                && !active_features.contains_key(id)
-            {
-                active_features.insert(*id, resolved);
-            }
-        }
-    }
-    if active_features.is_empty() {
-        return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
-    }
-    let mut pending = Vec::new();
-    for &resolved in active_features.values() {
-        pending.push(resolved);
-    }
-    while let Some((_, feature)) = pending.pop() {
-        for dependency in &feature.dependencies {
-            let Some((&dependency_id, &(index, dependency_feature))) =
-                features.get_key_value(dependency)
-            else {
-                return Err(ActiveFeatureClosureRejection::MissingDependency {
-                    feature: feature.id.clone(),
-                    dependency: dependency.clone(),
-                });
-            };
-            if dependency_feature.ordinal >= feature.ordinal {
-                return Err(ActiveFeatureClosureRejection::DependencyNotEarlier {
-                    feature: feature.id.clone(),
-                    feature_ordinal: feature.ordinal,
-                    dependency: dependency.clone(),
-                    dependency_ordinal: dependency_feature.ordinal,
-                });
-            }
-            if !active_features.contains_key(dependency_id) {
-                active_features.insert(dependency_id, (index, dependency_feature));
-                pending.push((index, dependency_feature));
-            }
-        }
-    }
-    if let Some((_, feature)) = active_features
-        .values()
-        .find(|(_, feature)| feature.suppressed == Some(true))
-    {
-        return Err(ActiveFeatureClosureRejection::ExplicitlySuppressed {
-            feature: feature.id.clone(),
-        });
-    }
-    let mut result = BTreeMap::new();
-    for (id, (index, _)) in active_features {
-        result.insert(id.clone(), index);
-    }
-    Ok(result)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -425,11 +301,7 @@ mod tests {
             ordinal,
             name: Some(id.into()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                dependencies,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
             source_properties: cadmpeg_core::text::named_entries(id, source_properties)
                 .expect("the fixture states named properties"),
             source_tag: native.then(|| "NX_OPERATION".to_string()),
@@ -441,11 +313,7 @@ mod tests {
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    outputs,
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
             ),
             native_ref: native.then(|| format!("native:{id}")),
         }
@@ -504,11 +372,12 @@ mod tests {
         );
 
         let mut missing = writer();
-        missing.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![FeatureId::mint("synthetic:test:id#missing").expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
+        missing.dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+                "synthetic:test:id#missing",
+            )
+            .expect("identity grammar")])
+            .unwrap();
         let (ir, body) = closure_ir(vec![missing]);
         assert_eq!(
             active_feature_closure(&ir, &[body]),
@@ -520,11 +389,12 @@ mod tests {
 
         let mut out_of_order = writer();
         out_of_order.ordinal = 1;
-        out_of_order.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
-            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .unwrap();
+        out_of_order.dependencies =
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+                "synthetic:test:id#dependency",
+            )
+            .expect("identity grammar")])
+            .unwrap();
         let dependency = history_feature(
             "synthetic:test:id#dependency",
             2,
@@ -734,19 +604,14 @@ mod tests {
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved {
-                            bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                                vec![body.clone()],
-                                &cadmpeg_test_support::service_decode_context(),
-                            )
+                            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                                body.clone()
+                            ])
                             .expect("distinct bodies"),
                             native: "test".into(),
                         },
                     }),
-                    cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![body.clone()],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .unwrap(),
+                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
                 ),
                 native_ref: None,
             },
@@ -829,19 +694,12 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                            vec![body.clone()],
-                            &cadmpeg_test_support::service_decode_context(),
-                        )
-                        .expect("distinct bodies"),
+                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
+                            .expect("distinct bodies"),
                         native: "test".into(),
                     },
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![body.clone()],
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .unwrap(),
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
             ),
             native_ref: None,
         }]);

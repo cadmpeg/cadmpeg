@@ -4186,7 +4186,6 @@ pub(super) fn emit_carrier_records(
 
 /// Emit reachable pcurve carriers with their wrapper and fit-tolerance tails.
 pub(super) fn emit_pcurves(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     carriers: &mut Carriers,
@@ -4214,7 +4213,7 @@ pub(super) fn emit_pcurves(
                 let fit_tolerance = match (r.chunk(3), r.chunk(4)) {
                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                         nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
-                            .and_then(|scope| nurbs::pcurve::pcurve_fit_tolerance(ctx, scope))
+                            .and_then(nurbs::pcurve::pcurve_fit_tolerance)
                     }
                     _ => None,
                 };
@@ -4226,7 +4225,6 @@ pub(super) fn emit_pcurves(
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 let fit_tolerance = fit_tolerance
-                    .transpose()?
                     .map(|value| {
                         cadmpeg_ir::geometry::FitTolerance::try_new(value)
                             .map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
@@ -4609,7 +4607,6 @@ pub(super) fn emit_edges(
 /// Emit reachable coedges with pcurve links, tolerant parameters, and any
 /// embedded use-curve carrier.
 pub(super) fn emit_coedges(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     decode_inputs: CoedgeDecodeInputs<'_>,
@@ -4697,12 +4694,8 @@ pub(super) fn emit_coedges(
                         parameter_range.unwrap_or(*range),
                     ) {
                         Ok(parameter_range) => {
-                            match nurbs::core::curve_cache_resolving_refs(
-                                ctx,
-                                &r.tokens,
-                                token_table,
-                            ) {
-                                Some(Ok(mut curve)) => {
+                            match nurbs::core::curve_cache_resolving_refs(&r.tokens, token_table) {
+                                Some(mut curve) => {
                                     if *curve_reversed {
                                         curve.reverse_parameterization();
                                     }
@@ -4721,7 +4714,6 @@ pub(super) fn emit_coedges(
                                         parameter_range,
                                     })
                                 }
-                                Some(Err(error)) => return Err(error),
                                 None => None,
                             }
                         }

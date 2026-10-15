@@ -120,7 +120,6 @@ mod tests {
 
     fn surface(u_knots: Vec<f64>, x_coordinates: &[f64]) -> NurbsSurface {
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, u_knots, false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -132,7 +131,6 @@ mod tests {
             ),
             false,
         )
-        .expect("fixture storage")
         .expect("valid surface")
     }
 

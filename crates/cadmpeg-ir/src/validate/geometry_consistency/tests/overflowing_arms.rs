@@ -14,14 +14,12 @@ fn a_support_side_whose_nurbs_pcurve_overflows_misses_its_contract_by_nan() {
     // coordinate.
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(f64::MAX, 0.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let ir = mapped_surface_curve_with_pcurve(pcurve, [2.0, 3.0]);
@@ -419,7 +417,6 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
             id: first.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 crate::geometry::nurbs::NurbsSurface::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     crate::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 3.0, ramp_end, ramp_end],
@@ -438,7 +435,6 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                     ),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,

@@ -77,19 +77,6 @@ fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
     matches.next().is_none().then_some(first)
 }
 
-fn insert_feature_dependency(
-    ctx: &DecodeContext<'_>,
-    dependencies: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
-    dependency: &cadmpeg_ir::features::FeatureId,
-) -> Result<(), CodecError> {
-    if dependencies.contains(dependency) {
-        return Ok(());
-    }
-    let id = (dependency).clone();
-    dependencies.insert(ctx, id, "f3d feature dependency")?;
-    Ok(())
-}
-
 /// Design record slices projected together into the neutral construction
 /// history: the parameter, owner, and scope tables plus the construction
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
@@ -708,13 +695,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     }
                     chamfer.map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Combine) => project_combine(ctx, scope, native_scope)?
+                Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
                         parameters: BTreeMap::new(),
                     })),
                 Some(DesignFeatureFamily::Draft) => project_draft(
-                    ctx,
                     scope,
                     scopes,
                     construction_groups,
@@ -727,7 +713,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     parameters: BTreeMap::new(),
                 })),
                 Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
-                    ctx,
                     scope,
                     construction_groups,
                     face_operands,
@@ -826,7 +811,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 )?
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::SurfaceTrim) => {
-                    project_surface_trim(ctx, scope, construction_groups, body_recipe_operands)?
+                    project_surface_trim(scope, construction_groups, body_recipe_operands)?
                         .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
@@ -843,7 +828,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Hole) => project_hole(scope, &parameters, face_operands)?
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Split) => {
-                    project_split(ctx, scope, construction_groups, face_operands)?.unwrap_or_else(|| {
+                    project_split(scope, construction_groups, face_operands)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
@@ -851,38 +836,38 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     })
                 }
                 Some(DesignFeatureFamily::CircularPattern) => {
-                    project_circular_pattern(ctx, scope, construction_groups, face_operands)?
+                    project_circular_pattern(scope, construction_groups, face_operands)?
                         .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Pattern {
                             seeds: Vec::new(),
                             pattern: PatternKind::UNRESOLVED_CIRCULAR,
                         }))
                 }
                 Some(DesignFeatureFamily::RectangularPattern) => {
-                    project_rectangular_pattern_scalars(ctx, scope, construction_groups, face_operands)?
+                    project_rectangular_pattern_scalars(scope, construction_groups, face_operands)?
                         .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Pattern {
                             seeds: Vec::new(),
                             pattern: PatternKind::UNRESOLVED_LINEAR,
                         }))
                 }
                 Some(DesignFeatureFamily::Mirror) => {
-                    project_mirror(ctx, scope, construction_groups, face_operands, scopes)?
+                    project_mirror(scope, construction_groups, face_operands, scopes)?
                         .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Pattern {
                             seeds: Vec::new(),
                             pattern: PatternKind::UNRESOLVED_MIRROR,
                         }))
                 }
                 Some(DesignFeatureFamily::OffsetFaces) => {
-                    project_offset_faces(ctx, scope, &parameters, face_operands, construction_groups)?
+                    project_offset_faces(scope, &parameters, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
                     .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Shell) => {
-                    project_shell(ctx, scope, face_operands, construction_groups)?
+                    project_shell(scope, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Thicken) => {
-                    project_thicken(ctx, scope, face_operands, construction_groups)?
+                    project_thicken(scope, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Coil) => {
@@ -936,7 +921,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         || native_scope_definition(scope, &parameters),
                         |(construction, nominal_size)| {
                             let face = project_thread_face_selection(
-                                ctx,
                                 scope,
                                 &construction.face_group_record_indices,
                                 construction_groups,
@@ -1031,7 +1015,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane {
                         scope.work_plane_transform().map_or_else(
                             || native_scope_definition(scope, &parameters),
-                            |transform| project_work_plane(ctx, scope, transform.into()),
+                            |transform| project_work_plane(scope, transform.into()),
                         )?
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkAxis {
                         scope
@@ -1068,7 +1052,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             |(construction, position)| Ok(FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                                 position,
                                 construction: project_work_point_construction(
-                                    ctx,
                                     scope,
                                     construction,
                                     &parameters,
@@ -1101,7 +1084,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace {
                         project_split_face(
-                            ctx,
                             scope,
                             scopes,
                             construction_groups,
@@ -1118,7 +1100,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         crate::records::feature::scope::DesignFeatureKind::DeleteFace
                             | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                     ) {
-                        project_delete_face(ctx, scope, construction_groups, face_operands)?
+                        project_delete_face(scope, construction_groups, face_operands)?
                             .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
@@ -1126,11 +1108,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies {
                         if let Some(operation) = scope.copy_paste_bodies_operation() {
                             let selection = design_body_selection(
-                                ctx,
                                 scope,
                                 operation.bodies().iter().map(|body| u64::from(body.copied.value)),
                                 body_bindings,
-                            )?;
+                            );
                             let bodies = match selection {
                                 cadmpeg_ir::features::BodySelection::Resolved { bodies, native } => {
                                     for body in bodies.as_slice() {
@@ -1164,8 +1145,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFeature {
                         if let Some(construction) = scope.base_feature_construction() {
                             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-                                bodies: design_body_selection(ctx, scope,
-                                    construction.body_entity_suffixes(), body_bindings)?,
+                                bodies: design_body_selection(scope,
+                                    construction.body_entity_suffixes(), body_bindings),
                             })
                         } else {
                             FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1206,7 +1187,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     definition,
-                    cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                    cadmpeg_ir::features::DistinctMembers::try_from(outputs)
                         .map_err(cadmpeg_core::CodecError::from)?,
                 ),
                 native_ref: Some(scope.id.clone()),
@@ -1244,7 +1225,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             continue;
         };
         if predecessor != &feature.id {
-            insert_feature_dependency(ctx, &mut feature.dependencies, predecessor)?;
+            feature.dependencies.insert(predecessor.clone());
         }
     }
     for feature in &mut features {
@@ -1258,7 +1239,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             _ => None,
         }) {
             if dependency != &feature.id {
-                insert_feature_dependency(ctx, &mut feature.dependencies, dependency)?;
+                feature.dependencies.insert(dependency.clone());
             }
         }
     }
@@ -1267,7 +1248,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         let dependencies = &mut feature.dependencies;
         let mut add_dependency = |dependency: &cadmpeg_ir::features::FeatureId| {
             if dependency != feature_id {
-                insert_feature_dependency(ctx, dependencies, dependency)?;
+                dependencies.insert(dependency.clone());
             }
             Ok::<_, CodecError>(())
         };
@@ -1375,7 +1356,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 continue;
             };
             if dependency != &feature.id {
-                insert_feature_dependency(ctx, &mut feature.dependencies, dependency)?;
+                feature.dependencies.insert(dependency.clone());
             }
         }
     }
@@ -1573,9 +1554,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 continue;
             }
             let dependency = candidate.clone();
-            parameter
-                .dependencies
-                .insert(ctx, dependency, "f3d parameter dependency")?;
+            parameter.dependencies.insert(dependency);
         }
     }
     normalize_parameter_ordinals(&mut parameters, &parameter_owners);
@@ -1587,7 +1566,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             for dependency in &parameter.dependencies {
                 if let Some(Some(owner)) = parameter_owners.get(dependency) {
                     if owner != &feature.id {
-                        insert_feature_dependency(ctx, &mut feature.dependencies, owner)?;
+                        feature.dependencies.insert(owner.clone());
                     }
                 }
             }
@@ -1762,7 +1741,6 @@ pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option
 }
 
 fn project_work_point_construction(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     construction: &crate::records::feature::work_geometry::DesignWorkPointConstruction,
     parameters: &[(u32, &DesignParameter)],
@@ -1796,8 +1774,7 @@ fn project_work_point_construction(
                 &prefix, edge_slot,
             )?],
             operand.id.clone(),
-            ctx,
-        )? {
+        ) {
             Ok(selection) => selection,
             Err(_) => EdgeSelection::Native(operand.id.clone()),
         }))
@@ -1884,7 +1861,6 @@ fn project_work_point_construction(
 }
 
 fn project_work_plane(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     transform: [[f64; 4]; 4],
 ) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
@@ -1939,7 +1915,7 @@ fn project_work_plane(
         }));
     };
     let Ok(points) =
-        cadmpeg_ir::features::ThreePointSelection::new(Box::new([first, second, third]), ctx)?
+        cadmpeg_ir::features::ThreePointSelection::try_from(Box::new([first, second, third]))
     else {
         return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
@@ -1951,15 +1927,12 @@ fn project_work_plane(
 }
 
 pub(super) fn project_combine(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     native_scope: &str,
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
-    let Some(operation) = scope.combine_operation() else {
-        return Ok(None);
-    };
+    let operation = scope.combine_operation()?;
     let selection = |record_index| {
         format!(
             "{}{}{}",
@@ -1976,26 +1949,14 @@ pub(super) fn project_combine(
         for tool in operation.tools.iter() {
             selected.push(selection(tool.record_index));
         }
-        let members = cadmpeg_ir::features::NativeSelections::new(
-            selected,
-            ctx,
-            "f3d Combine tool uniqueness",
-        )?;
-        let Ok(members) = members else {
-            return Ok(None);
-        };
-        BodySelection::NativeSet(members)
+        BodySelection::NativeSet(cadmpeg_ir::features::NativeSelections::try_from(selected).ok()?)
     };
-    let Ok(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)? else {
-        return Ok(None);
-    };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::Combine {
-            operands,
-            op: operation.operation,
-            keep_tools: operation.keep_tools,
-        },
-    )))
+    let operands = cadmpeg_ir::features::CombineOperands::new(target, tools).ok()?;
+    Some(FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
+        op: operation.operation,
+        keep_tools: operation.keep_tools,
+    }))
 }
 
 fn scope_properties(
@@ -2078,7 +2039,6 @@ fn project_fillet_arm(
 
     if parameters.is_empty() {
         if let Some(definition) = project_full_round_fillet(
-            ctx,
             scope,
             inputs.construction_groups,
             inputs.face_operands,
@@ -2277,7 +2237,6 @@ fn resolved_fillet_assignments<'a>(
 }
 
 fn project_thread_face_selection(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     face_group_record_indices: &[u32],
     groups: &[DesignConstructionOperandGroup],
@@ -2321,7 +2280,6 @@ fn project_thread_face_selection(
             faces: group_faces,
             ..
         }) = resolved_historical_face_group(
-            ctx,
             scope,
             scope.previous_history_state_id(),
             group,
@@ -2350,7 +2308,7 @@ fn project_thread_face_selection(
 
     let historical_native = native.clone();
     Ok(
-        cadmpeg_ir::features::FaceSelection::historical(state, faces, historical_native, ctx)?
+        cadmpeg_ir::features::FaceSelection::historical(state, faces, historical_native)
             .unwrap_or(FaceSelection::Native(native)),
     )
 }
@@ -2362,7 +2320,6 @@ fn project_thread_face_selection(
 /// side-face sets. A role-`0x4` group with any other shape remains available to
 /// the regular feature projectors.
 fn project_full_round_fillet(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -2415,7 +2372,7 @@ fn project_full_round_fillet(
     if operand.resolved_face_slots.is_empty() {
         return Ok(None);
     }
-    let center_faces = project_face_selection(ctx, scope, group, face_operands, histories)?;
+    let center_faces = project_face_selection(scope, group, face_operands, histories)?;
     if matches!(center_faces, cadmpeg_ir::features::FaceSelection::Native(_)) {
         return Ok(None);
     }
@@ -2426,8 +2383,7 @@ fn project_full_round_fillet(
                     center_faces,
                     cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic,
                     cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic,
-                    ctx,
-                )?
+                )
                 .ok()
             )),
         },
@@ -2435,11 +2391,10 @@ fn project_full_round_fillet(
 }
 
 fn design_body_selection(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     entity_suffixes: impl ExactSizeIterator<Item = u64>,
     body_bindings: &[DesignBodyBinding],
-) -> Result<cadmpeg_ir::features::BodySelection, CodecError> {
+) -> cadmpeg_ir::features::BodySelection {
     use cadmpeg_ir::features::BodySelection;
 
     let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -2453,34 +2408,27 @@ fn design_body_selection(
             })
             .filter_map(|binding| binding.body.as_ref());
         let Some(body) = matches.next() else {
-            return Ok(BodySelection::Native(scope.id.clone()));
+            return BodySelection::Native(scope.id.clone());
         };
         if matches.any(|candidate| candidate != body) {
-            return Ok(BodySelection::Native(scope.id.clone()));
+            return BodySelection::Native(scope.id.clone());
         }
         let body = (body).clone();
         bodies.push(body);
     }
     if bodies.len() == expected_count {
-        match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
-            Ok(bodies) => {
-                return Ok(BodySelection::Resolved {
-                    bodies,
-                    native: scope.id.clone(),
-                })
-            }
-            Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {}
-            Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
-                return Err(limit.into())
-            }
+        if let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(bodies) {
+            return BodySelection::Resolved {
+                bodies,
+                native: scope.id.clone(),
+            };
         }
     }
-    Ok(BodySelection::Native(scope.id.clone()))
+    BodySelection::Native(scope.id.clone())
 }
 
 /// Bind each Sketch history node to geometry in exactly one neutral sketch arena.
 pub(crate) fn bind_sketch_feature_geometry(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     placements: &[DesignSketchPlacement],
@@ -2606,8 +2554,7 @@ pub(crate) fn bind_sketch_feature_geometry(
                         *profile = match ProfileRef::spatial_sketch_selection(
                             sketch_id,
                             vec![selection],
-                            ctx,
-                        )? {
+                        ) {
                             Ok(profile) => profile,
                             Err(_) => {
                                 ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
@@ -2622,14 +2569,13 @@ pub(crate) fn bind_sketch_feature_geometry(
                     for profile_index in 0..profile_count {
                         profiles.push(profile_index);
                     }
-                    *profile = match ProfileRef::spatial_sketch_profiles(
-                        spatial.id.clone(),
-                        profiles,
-                        ctx,
-                    )? {
-                        Ok(profile) => profile,
-                        Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())),
-                    };
+                    *profile =
+                        match ProfileRef::spatial_sketch_profiles(spatial.id.clone(), profiles) {
+                            Ok(profile) => profile,
+                            Err(_) => {
+                                ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
+                            }
+                        };
                 }
                 Ok(())
             })();
@@ -2698,7 +2644,7 @@ pub(crate) fn bind_sketch_feature_geometry(
         let mut add_dependency = |dependency: Option<&cadmpeg_ir::features::FeatureId>| {
             if let Some(dependency) = dependency {
                 if dependency != &feature.id {
-                    insert_feature_dependency(ctx, &mut feature.dependencies, dependency)?;
+                    feature.dependencies.insert(dependency.clone());
                 }
             }
             Ok::<(), CodecError>(())
@@ -2957,7 +2903,6 @@ const fn draft_outward(angle: f64) -> bool {
 }
 
 fn project_draft(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -3017,7 +2962,6 @@ fn project_draft(
                 return Ok(Some(FeatureDefinition::Operation(
                     FeatureOperation::Draft {
                         faces: project_draft_face_selection(
-                            ctx,
                             scope,
                             faces,
                             face_operands,
@@ -3045,7 +2989,6 @@ fn project_draft(
                 )));
             }
             let neutral_plane = selected_historical_face_selection(
-                ctx,
                 scope,
                 neutral_plane,
                 entity_selection_operands,
@@ -3053,7 +2996,7 @@ fn project_draft(
             )?;
             let neutral_plane = or_none!(neutral_plane);
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
-                faces: project_draft_face_selection(ctx, scope, faces, face_operands, histories)?,
+                faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                     plane: neutral_plane,
                     pull: None,
@@ -3066,10 +3009,9 @@ fn project_draft(
         }
         [neutral_plane] if member_of_scope(neutral_plane) => {
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
-                faces: project_draft_face_selection(ctx, scope, faces, face_operands, histories)?,
+                faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                     plane: project_draft_face_selection(
-                        ctx,
                         scope,
                         neutral_plane,
                         face_operands,
@@ -3105,10 +3047,9 @@ fn project_draft(
                 Vector3::new(transform[0][2], transform[1][2], transform[2][2],)
             ));
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
-                faces: project_draft_face_selection(ctx, scope, faces, face_operands, histories)?,
+                faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
                 anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
                     tool: project_draft_face_selection(
-                        ctx,
                         scope,
                         parting_tool,
                         face_operands,
@@ -3130,7 +3071,6 @@ fn project_draft(
 }
 
 fn selected_historical_face_selection(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
@@ -3174,15 +3114,13 @@ fn selected_historical_face_selection(
             &prefix, face_slot,
         )?],
         group.id.clone(),
-        ctx,
-    )? {
+    ) {
         Ok(selection) => selection,
         Err(_) => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
     }))
 }
 
 fn project_face_selection(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     face_operands: &[DesignFaceOperand],
@@ -3200,17 +3138,12 @@ fn project_face_selection(
             .map_or(&[][..], |transition| {
                 transition.topology.faces.updated.as_slice()
             });
-        if let Some(selection) = resolved_historical_face_group(
-            ctx,
-            scope,
-            Some(previous_state_id),
-            group,
-            face_operands,
-        )? {
+        if let Some(selection) =
+            resolved_historical_face_group(scope, Some(previous_state_id), group, face_operands)?
+        {
             Some(selection)
         } else {
             resolved_historical_split_face_target_group_with_updated_faces(
-                ctx,
                 scope,
                 Some(previous_state_id),
                 group,
@@ -3233,13 +3166,12 @@ fn project_face_selection(
 }
 
 fn project_draft_face_selection(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
-    let selection = project_face_selection(ctx, scope, group, face_operands, histories)?;
+    let selection = project_face_selection(scope, group, face_operands, histories)?;
     if matches!(&selection, cadmpeg_ir::features::FaceSelection::Native(_)) {
         Ok(
             crate::design::face_resolve::resolved_explicit_bounded_face_group(
@@ -3343,7 +3275,6 @@ fn selected_work_planes<'a>(
 }
 
 fn resolved_split_face_path(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
@@ -3392,8 +3323,7 @@ fn resolved_split_face_path(
         crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
         edges,
         group.id.clone(),
-        ctx,
-    )?
+    )
     .ok())
 }
 
@@ -3415,7 +3345,6 @@ fn single_operand_group<'a>(
 }
 
 pub(super) fn project_offset_faces(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     operands: &[DesignFaceOperand],
@@ -3451,7 +3380,7 @@ pub(super) fn project_offset_faces(
         (Some(distance), None) | (None, Some(distance)) => distance,
         _ => return Ok(None),
     };
-    let faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
+    let faces = if let Some(faces) = direct_face_selection(scope, operands)? {
         faces
     } else {
         let group = or_none!(single_operand_group(
@@ -3470,7 +3399,6 @@ pub(super) fn project_offset_faces(
 }
 
 pub(super) fn project_thicken(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
@@ -3485,7 +3413,7 @@ pub(super) fn project_thicken(
     else {
         return Ok(None);
     };
-    let faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
+    let faces = if let Some(faces) = direct_face_selection(scope, operands)? {
         faces
     } else {
         let mut candidates = groups.iter().filter(|group| {
@@ -3519,7 +3447,6 @@ pub(super) fn project_thicken(
 }
 
 pub(super) fn project_shell(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
@@ -3541,7 +3468,7 @@ pub(super) fn project_shell(
     };
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
         .map(|group| BodySelection::Native(group.id.clone()));
-    let removed_faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
+    let removed_faces = if let Some(faces) = direct_face_selection(scope, operands)? {
         faces
     } else if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
         FaceSelection::Native(group.id.clone())
@@ -3916,7 +3843,7 @@ fn project_edge_flange(
     let edges = if selections.len() == 1 {
         or_none!(selections.into_iter().next())
     } else {
-        merge_edge_selections(ctx, scope, &selections)?
+        merge_edge_selections(scope, &selections)
     };
 
     Ok(Some(FeatureDefinition::Operation(
@@ -4258,7 +4185,7 @@ fn project_ruled_surface(
         )?;
         selections.push(selection);
     }
-    let edges = merge_edge_selections(ctx, scope, &selections)?;
+    let edges = merge_edge_selections(scope, &selections);
     let support_native = scope.id.clone();
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::RuledSurface {
@@ -4276,14 +4203,12 @@ fn project_ruled_surface(
 }
 
 fn merge_edge_selections(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     selections: &[cadmpeg_ir::features::EdgeSelection],
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
 
     let native = || EdgeSelection::Native(scope.id.clone());
-    {}
     if selections.iter().all(|selection| {
         matches!(
             selection,
@@ -4294,21 +4219,20 @@ fn merge_edge_selections(
         for selection in selections {
             let (EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. }) = selection
             else {
-                return Ok(native());
+                return native();
             };
             for edge in edges {
-                {}
                 if resolved.contains(edge) {
-                    return Ok(native());
+                    return native();
                 }
                 let edge = (edge).clone();
                 resolved.push(edge);
             }
         }
-        return Ok(EdgeSelection::Resolved {
+        return EdgeSelection::Resolved {
             edges: resolved,
             native: scope.id.clone(),
-        });
+        };
     }
     if let Some(EdgeSelection::Historical { state, .. }) = selections.first() {
         if selections.iter().all(|selection| {
@@ -4319,30 +4243,26 @@ fn merge_edge_selections(
             let mut resolved = Vec::new();
             for selection in selections {
                 let EdgeSelection::Historical { edges, .. } = selection else {
-                    return Ok(native());
+                    return native();
                 };
                 for edge in edges {
-                    {}
                     if resolved.contains(edge) {
-                        return Ok(native());
+                        return native();
                     }
                     let edge = (edge).clone();
                     resolved.push(edge);
                 }
             }
             let selected_native = scope.id.clone();
-            return match cadmpeg_ir::features::EdgeSelection::historical(
+            return cadmpeg_ir::features::EdgeSelection::historical(
                 state,
                 resolved,
                 selected_native,
-                ctx,
-            )? {
-                Ok(selection) => Ok(selection),
-                Err(_) => Ok(native()),
-            };
+            )
+            .unwrap_or_else(|_| native());
         }
     }
-    Ok(native())
+    native()
 }
 
 fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::AxisAngle> {
@@ -4412,7 +4332,6 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
 }
 
 pub(crate) fn direct_face_selection(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
@@ -4458,8 +4377,7 @@ pub(crate) fn direct_face_selection(
                 crate::design::identity::feature_input_topology_id(&feature_id, previous_state_id)?,
                 resolved,
                 scope.id.clone(),
-                ctx,
-            )? {
+            ) {
                 Ok(selection) => selection,
                 Err(_) => FaceSelection::Native(scope.id.clone()),
             }
@@ -4484,8 +4402,7 @@ pub(crate) fn direct_face_selection(
                 faces,
                 unresolved,
                 scope.id.clone(),
-                ctx,
-            )? {
+            ) {
                 Ok(selection) => selection,
                 Err(_) => FaceSelection::Native(scope.id.clone()),
             }
@@ -5612,15 +5529,10 @@ pub(super) fn project_fixed_loft(
         }
         let mut sections = Vec::new();
         for group in &profile_groups {
-            let edge_profile = resolved_loft_edge_profile_group(
-                ctx,
-                scope,
-                group,
-                edge_operands,
-                face_boundaries,
-            )?;
+            let edge_profile =
+                resolved_loft_edge_profile_group(scope, group, edge_operands, face_boundaries)?;
             let face_profile = if edge_profile.is_none() {
-                resolved_profile_face_group(ctx, scope, group, face_operands)?
+                resolved_profile_face_group(scope, group, face_operands)?
             } else {
                 None
             };
@@ -5847,11 +5759,7 @@ fn resolved_surface_patch_path(
                     }
                 }
             }
-            let members = cadmpeg_ir::features::SelectionMembers::new(
-                edges,
-                ctx,
-                "f3d surface patch historical uniqueness",
-            )?;
+            let members = cadmpeg_ir::features::SelectionMembers::try_from(edges);
             let native = scope.id.clone();
             return Ok(match members {
                 Ok(edges) => PathRef::HistoricalEdges {
@@ -5907,7 +5815,6 @@ fn loft_path_from_edge_selection(
 }
 
 fn project_circular_pattern(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -5939,7 +5846,6 @@ fn project_circular_pattern(
     let seed = if group.role() == DesignOperandRole::BODIES_A {
         PatternSeed::Faces(
             match resolved_historical_face_group(
-                ctx,
                 scope,
                 scope.previous_history_state_id(),
                 group,
@@ -6021,7 +5927,6 @@ impl PatternIntervals {
 }
 
 fn project_rectangular_pattern_scalars(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -6098,7 +6003,6 @@ fn project_rectangular_pattern_scalars(
             (Some(group), None) => Some(if group.role() == DesignOperandRole::BODIES_A {
                 PatternSeed::Faces(
                     match resolved_historical_face_group(
-                        ctx,
                         scope,
                         scope.previous_history_state_id(),
                         group,
@@ -6142,7 +6046,6 @@ fn project_rectangular_pattern_scalars(
 }
 
 fn project_mirror(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -6199,7 +6102,6 @@ fn project_mirror(
     } else {
         PatternSeed::Faces(
             match resolved_historical_face_group(
-                ctx,
                 scope,
                 scope.previous_history_state_id(),
                 seed_group,
@@ -6438,7 +6340,6 @@ pub(super) fn project_fixed_sweep(
     let orientation = match guide_surfaces.first() {
         Some(group) => Some(SweepOrientation::GuideSurface {
             faces: match resolved_historical_face_group(
-                ctx,
                 scope,
                 scope.previous_history_state_id(),
                 group,
@@ -7108,7 +7009,6 @@ fn project_hole(
 }
 
 fn project_replace_face(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -7159,13 +7059,11 @@ fn project_replace_face(
         return Ok(None);
     }
     let replacements = or_none!(resolved_body_recipe_selection(
-        ctx,
         scope,
         replacement_group,
         body_recipe_operands
     )?);
     let targets = or_none!(resolved_historical_face_group(
-        ctx,
         scope,
         scope.previous_history_state_id(),
         target_group,
@@ -7176,8 +7074,7 @@ fn project_replace_face(
             operands: or_none!(cadmpeg_ir::features::ReplaceFaceOperands::new(
                 targets,
                 replacements,
-                ctx,
-            )?
+            )
             .ok()),
         },
     )))
@@ -7190,7 +7087,6 @@ fn project_replace_face(
 /// that selects the cells to remove is decoded separately and bound to the
 /// projected operation after the source selections have been resolved.
 fn project_surface_trim(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     body_recipe_operands: &[DesignBodyRecipeOperand],
@@ -7237,7 +7133,6 @@ fn project_surface_trim(
         return Ok(None);
     }
     let faces = or_none!(resolved_body_recipe_selection(
-        ctx,
         scope,
         target_group,
         body_recipe_operands
@@ -7307,7 +7202,6 @@ pub(crate) fn bind_surface_trim_cell_selections(
 }
 
 pub(super) fn project_split(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -7387,13 +7281,13 @@ pub(super) fn project_split(
             let Some(tool) = tool else {
                 return Ok(None);
             };
-            let mut tools =
-                if let Some(selection) = resolved_historical_face_operand(ctx, scope, tool)? {
-                    selection
-                } else {
-                    direct_face_selection(ctx, scope, face_operands)?
-                        .unwrap_or_else(|| FaceSelection::Native(String::new()))
-                };
+            let mut tools = if let Some(selection) = resolved_historical_face_operand(scope, tool)?
+            {
+                selection
+            } else {
+                direct_face_selection(scope, face_operands)?
+                    .unwrap_or_else(|| FaceSelection::Native(String::new()))
+            };
             match &mut tools {
                 FaceSelection::Resolved { native, .. } | FaceSelection::Native(native) => {
                     native.clone_from(&tool.id);
@@ -7418,7 +7312,6 @@ pub(super) fn project_split(
 }
 
 fn project_split_face(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
@@ -7482,9 +7375,9 @@ fn project_split_face(
     {
         return Ok(None);
     }
-    let target_selection = project_face_selection(ctx, scope, targets, face_operands, histories)?;
+    let target_selection = project_face_selection(scope, targets, face_operands, histories)?;
     let tool = if let Some(path) =
-        resolved_split_face_path(ctx, scope, tool, entity_selection_operands, histories)?
+        resolved_split_face_path(scope, tool, entity_selection_operands, histories)?
     {
         SplitFaceTool::Path(path)
     } else if let Some(planes) =
@@ -7520,7 +7413,6 @@ fn project_split_face(
 }
 
 fn project_delete_face(
-    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -7598,7 +7490,6 @@ fn project_delete_face(
         return Ok(None);
     }
     let faces = resolved_historical_face_group(
-        ctx,
         scope,
         scope.previous_history_state_id(),
         group,
@@ -7745,7 +7636,7 @@ fn project_extrude(
                 }
                 ProfileRef::Planar(match (complete, state) {
                     (true, Some(state)) if !faces.is_empty() => {
-                        match PlanarProfileRef::historical_faces(state, faces, native, ctx)? {
+                        match PlanarProfileRef::historical_faces(state, faces, native) {
                             Ok(profile) => profile,
                             Err(_) => PlanarProfileRef::Native(scope.id.clone()),
                         }
@@ -7937,7 +7828,6 @@ fn project_extrude(
     let selected_face =
         |group: &DesignConstructionOperandGroup| -> Result<FaceSelection, CodecError> {
             if let Some(selection) = resolved_historical_face_group(
-                ctx,
                 scope,
                 scope.previous_history_state_id(),
                 group,
@@ -8107,8 +7997,7 @@ fn project_extrude(
                 }
                 ([], [target]) if effective_side_one_offset.is_none() => {
                     let target =
-                        match resolved_body_recipe_shape(ctx, scope, target, body_recipe_operands)?
-                        {
+                        match resolved_body_recipe_shape(scope, target, body_recipe_operands)? {
                             Some(selection) => selection,
                             None => FaceSelection::Native(target.id.clone()),
                         };

@@ -1232,20 +1232,17 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
 
     let state =
         FeatureInputTopologyId::mint("f3d:history-input:state#feature").expect("identity grammar");
-    let selection = crate::test_support::with_decode_context(|decode_ctx| {
-        partial_historical_edge_selection(
-            [
-                ("operand-a", Some(17)),
-                ("operand-b", None),
-                ("operand-c", Some(17)),
-            ],
-            41,
-            cadmpeg_ir::identity_key!("feature").as_str(),
-            state.clone(),
-            "group",
-            decode_ctx,
-        )
-    })
+    let selection = partial_historical_edge_selection(
+        [
+            ("operand-a", Some(17)),
+            ("operand-b", None),
+            ("operand-c", Some(17)),
+        ],
+        41,
+        cadmpeg_ir::identity_key!("feature").as_str(),
+        state.clone(),
+        "group",
+    )
     .unwrap()
     .expect("mixed proof state");
     assert_eq!(
@@ -1258,12 +1255,10 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             ],
             vec!["operand-b".into()],
             "group".into(),
-            &cadmpeg_test_support::service_decode_context()
         )
-        .expect("selection storage is admitted")
         .unwrap()
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+    assert!({
         partial_historical_edge_selection(
             [("operand-a", Some(17)), ("operand-b", Some(18))],
             41,
@@ -1271,21 +1266,19 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             FeatureInputTopologyId::mint("test:model:feature-input#state")
                 .expect("identity grammar"),
             "group",
-            decode_ctx,
         )
-    })
+    }
     .unwrap()
     .is_none());
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| partial_historical_edge_selection(
+        partial_historical_edge_selection(
             [("operand-a", None), ("operand-b", None)],
             41,
             cadmpeg_ir::identity_key!("feature").as_str(),
             FeatureInputTopologyId::mint("test:model:feature-input#state")
                 .expect("identity grammar"),
-            "group",
-            decode_ctx
-        ))
+            "group"
+        )
         .unwrap(),
         None
     );
@@ -1650,7 +1643,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::unique_edge_assignment_with_context(
+            crate::design::edge_resolve::unique_edge_assignment(
                 &[
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![17, 18]),
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
@@ -1664,7 +1657,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::unique_edge_assignment_with_context(
+            crate::design::edge_resolve::unique_edge_assignment(
                 &[
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
                     crate::design::edge_resolve::EdgeAssignmentCandidates::Context,

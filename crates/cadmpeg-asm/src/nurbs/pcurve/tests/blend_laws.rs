@@ -329,13 +329,6 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
 
 #[test]
 fn sub_surface_layout_decodes_at_both_integer_widths() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["sub_spl_sur", "subsur"] {
             let mut bytes = vec![0x0f];
@@ -351,11 +344,8 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
             bytes.push(0x10);
 
             let decoded = crate::nurbs::proc_surface::sub_spl_sur(
-                &resource_ctx,
                 &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
             )
-            .transpose()
-            .expect("resource allocation")
             .unwrap_or_else(|| panic!("{name} at integer width {int_width}"));
             let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
             let (definition, _) = decoded.into_parts();

@@ -36,14 +36,12 @@ fn numerical_0922b_pcurve_knot_units() {
     for d in [1., 1e9] {
         let p = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0., 0., d, d],
                 vec![Point2::new(0., 0.), Point2::new(1., 0.)],
                 None,
                 false,
             )
-            .expect("fixture pcurve construction admission")
             .unwrap(),
         };
         let seeds = with_context(|ctx| {
@@ -72,7 +70,6 @@ fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
     let index = ModelIndex::new_model_only(&ir);
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![-f64::MAX, -f64::MAX, 0.0, f64::MAX, f64::MAX],
             vec![
@@ -83,7 +80,6 @@ fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     let mut fractions = Vec::new();
@@ -108,7 +104,6 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("test:audit:surface#wide-periodic").expect("surface id");
     let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-max, -max, max, max], true),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -120,7 +115,6 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("wide periodic surface");
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: id.clone(),
@@ -232,16 +226,8 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
-                1,
-                knots,
-                controls,
-                None,
-                false,
-            )
-            .expect("fixture constructor admission")
-            .expect("finite many-span curve"),
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(1, knots, controls, None, false)
+                .expect("finite many-span curve"),
         )),
         source_object: None,
     });
@@ -304,14 +290,12 @@ fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
     let index = ModelIndex::new_model_only(&ir);
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., 1., 1.],
             vec![Point2::new(0., 0.), Point2::new(1e-200, 0.)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
     assert_eq!(

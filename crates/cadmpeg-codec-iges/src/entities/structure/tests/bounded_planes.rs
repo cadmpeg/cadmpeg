@@ -286,7 +286,6 @@ fn linear_nurbs_boundary_points_close_a_square_loop() {
 
     let ctx = cadmpeg_test_support::service_decode_context();
     let nurbs = NurbsCurve::from_lanes(
-        &ctx,
         1,
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
         vec![
@@ -299,7 +298,6 @@ fn linear_nurbs_boundary_points_close_a_square_loop() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let points = super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], &ctx)
         .unwrap()

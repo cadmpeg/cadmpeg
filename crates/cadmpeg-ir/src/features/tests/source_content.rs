@@ -76,14 +76,7 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
         native_ref: None,
     };
     let dependency = FeatureId::mint("test:test:feature#dependency").unwrap();
-    feature
-        .dependencies
-        .insert(
-            &cadmpeg_test_support::service_decode_context(),
-            dependency.clone(),
-            "insert fixture member",
-        )
-        .expect("member insertion admission");
+    feature.dependencies.insert(dependency.clone());
     let parameter =
         FeatureSourceContent::Parameter(ParameterId::mint("test:test:parameter#one").unwrap());
     ({

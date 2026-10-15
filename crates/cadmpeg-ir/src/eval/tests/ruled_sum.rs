@@ -34,14 +34,12 @@ fn direct_surface_fixture(
             id: CurveId::mint("test:model:entity#first").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 crate::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 2.0, 3.0), Point3::new(3.0, 2.0, 3.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -51,14 +49,12 @@ fn direct_surface_fixture(
             id: CurveId::mint("test:model:entity#second").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 crate::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(5.0, 10.0, 13.0), Point3::new(5.0, 13.0, 13.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -229,14 +225,12 @@ fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
     ]) {
         curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             crate::geometry::nurbs::NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 poles.to_vec(),
                 None,
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap(),
         ));
     }

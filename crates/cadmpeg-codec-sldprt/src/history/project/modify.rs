@@ -2,8 +2,6 @@
 //! Fillet, chamfer, and body/face-edit projection.
 
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferSpec, RadiusSpec, VariableRadius},
@@ -244,30 +242,21 @@ pub(super) fn project_draft(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(super) fn project_combine(
-    ctx: &DecodeContext<'_>,
-    feature: &Feature,
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(op) = feature
+pub(super) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
+    let op = feature
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
-        .and_then(|op| op.try_into().ok())
-    else {
-        return Ok(None);
-    };
+        .and_then(|op| op.try_into().ok())?;
     let operands = cadmpeg_ir::features::CombineOperands::new(
         property_text(feature, "Target").map_or(BodySelection::Unresolved, BodySelection::Native),
         property_text(feature, "Tools").map_or(BodySelection::Unresolved, BodySelection::Native),
-        ctx,
-    )?
-    .ok();
-    Ok(operands.map(|operands| {
-        FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands,
-            op,
-            keep_tools: false,
-        })
+    )
+    .ok()?;
+    Some(FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
+        op,
+        keep_tools: false,
     }))
 }
 
@@ -331,28 +320,20 @@ pub(super) fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition
     }))
 }
 
-pub(super) fn project_replace_face(
-    ctx: &DecodeContext<'_>,
-    feature: &Feature,
-) -> Result<Option<FeatureDefinition>, CodecError> {
+pub(super) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
     if !feature.properties.contains_key("Faces")
         || !feature.properties.contains_key("ReplacementFaces")
     {
-        return Ok(None);
+        return None;
     }
-    let (Some(faces), Some(replacement)) = (
-        property_text(feature, "Faces"),
-        property_text(feature, "ReplacementFaces"),
-    ) else {
-        return Ok(None);
-    };
-    Ok(cadmpeg_ir::features::ReplaceFaceOperands::new(
+    let faces = property_text(feature, "Faces")?;
+    let replacement = property_text(feature, "ReplacementFaces")?;
+    cadmpeg_ir::features::ReplaceFaceOperands::new(
         FaceSelection::Native(faces),
         FaceSelection::Native(replacement),
-        ctx,
-    )?
+    )
     .ok()
-    .map(|operands| FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands })))
+    .map(|operands| FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }))
 }
 
 pub(super) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {

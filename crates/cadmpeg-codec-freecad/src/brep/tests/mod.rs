@@ -38,13 +38,13 @@ fn in_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 fn test_parse_text(
     bytes: &[u8],
 ) -> Result<(super::ShapeSet, super::TextTopologyVersion), CodecError> {
-    in_decode_context(|ctx| parse_text(ctx, bytes))
+    parse_text(bytes)
 }
 
 fn test_parse_binary_prefix(
     bytes: &[u8],
 ) -> Result<(super::ShapeSet, super::BinaryTopologyVersion), CodecError> {
-    in_decode_context(|ctx| parse_binary_prefix(ctx, bytes))
+    parse_binary_prefix(bytes)
 }
 
 fn test_parse_payloads(
@@ -366,62 +366,59 @@ fn face_table_references_preserve_wire_absence_and_reject_zero_triangulation() {
 
 #[test]
 fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
-    in_decode_context(|ctx| {
-        let normalized = normalize_periodic_surface(
-            ctx,
-            [3, 1],
-            [
-                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
-                    .into_iter()
-                    .map(|value| FiniteReal::new(value).unwrap())
-                    .collect(),
-                vec![0.0, 0.0, 1.0, 1.0]
-                    .into_iter()
-                    .map(|value| FiniteReal::new(value).unwrap())
-                    .collect(),
-            ],
-            [6, 2],
-            (0..6)
-                .flat_map(|u| {
-                    [
-                        Point3::new(f64::from(u), 0.0, 0.0),
-                        Point3::new(f64::from(u), 1.0, 0.0),
-                    ]
-                })
-                .map(|point| FinitePoint3::new(point).unwrap())
+    let normalized = normalize_periodic_surface(
+        [3, 1],
+        [
+            vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+                .into_iter()
+                .map(|value| FiniteReal::new(value).unwrap())
                 .collect(),
-            None,
-            [true, false],
-        )
-        .expect("valid periodic surface");
+            vec![0.0, 0.0, 1.0, 1.0]
+                .into_iter()
+                .map(|value| FiniteReal::new(value).unwrap())
+                .collect(),
+        ],
+        [6, 2],
+        (0..6)
+            .flat_map(|u| {
+                [
+                    Point3::new(f64::from(u), 0.0, 0.0),
+                    Point3::new(f64::from(u), 1.0, 0.0),
+                ]
+            })
+            .map(|point| FinitePoint3::new(point).unwrap())
+            .collect(),
+        None,
+        [true, false],
+    )
+    .expect("valid periodic surface");
 
-        assert_eq!(normalized.u_count(), 7);
-        assert_eq!(
-            normalized.u_knots().as_slice(),
-            [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
-        );
-        let poles = normalized.poles();
-        assert_eq!(poles.len(), 14);
-        assert_eq!(poles[12], poles[0]);
-        assert_eq!(poles[13], poles[1]);
-        let start = cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &normalized,
-            0.0,
-            0.5,
-        )
-        .expect("periodic start point");
-        let end = cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &normalized,
-            1.0,
-            0.5,
-        )
-        .expect("periodic end point");
-        assert!((start.x - end.x).abs() <= 1.0e-12);
-        assert!((start.y - end.y).abs() <= 1.0e-12);
-        assert!((start.z - end.z).abs() <= 1.0e-12);
-    });
+    assert_eq!(normalized.u_count(), 7);
+    assert_eq!(
+        normalized.u_knots().as_slice(),
+        [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
+    );
+    let poles = normalized.poles();
+    assert_eq!(poles.len(), 14);
+    assert_eq!(poles[12], poles[0]);
+    assert_eq!(poles[13], poles[1]);
+    let start = cadmpeg_ir::eval::decode::nurbs_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &normalized,
+        0.0,
+        0.5,
+    )
+    .expect("periodic start point");
+    let end = cadmpeg_ir::eval::decode::nurbs_surface_point(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &normalized,
+        1.0,
+        0.5,
+    )
+    .expect("periodic end point");
+    assert!((start.x - end.x).abs() <= 1.0e-12);
+    assert!((start.y - end.y).abs() <= 1.0e-12);
+    assert!((start.z - end.z).abs() <= 1.0e-12);
 }
 
 fn text_brep(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) -> String {
@@ -432,126 +429,120 @@ fn text_brep(curves: &str, curve_count: usize, surfaces: &str, surface_count: us
 
 #[test]
 fn binary_edge_continuity_retains_decimal_byte_spelling() {
-    in_decode_context(|ctx| {
-        for (byte, spelling) in [(0, "0"), (2, "2")] {
-            for kind in [3, 4] {
-                let mut bytes = Vec::new();
-                if kind == 3 {
-                    bytes.extend_from_slice(&1_i32.to_le_bytes());
-                    bytes.extend_from_slice(&2_i32.to_le_bytes());
-                }
-                bytes.push(byte);
+    for (byte, spelling) in [(0, "0"), (2, "2")] {
+        for kind in [3, 4] {
+            let mut bytes = Vec::new();
+            if kind == 3 {
+                bytes.extend_from_slice(&1_i32.to_le_bytes());
+                bytes.extend_from_slice(&2_i32.to_le_bytes());
+            }
+            bytes.push(byte);
+            bytes.extend_from_slice(&1_i32.to_le_bytes());
+            bytes.extend_from_slice(&0_i32.to_le_bytes());
+            if kind == 3 {
+                bytes.extend_from_slice(&0_f64.to_le_bytes());
+                bytes.extend_from_slice(&1_f64.to_le_bytes());
+            } else {
                 bytes.extend_from_slice(&1_i32.to_le_bytes());
                 bytes.extend_from_slice(&0_i32.to_le_bytes());
-                if kind == 3 {
-                    bytes.extend_from_slice(&0_f64.to_le_bytes());
-                    bytes.extend_from_slice(&1_f64.to_le_bytes());
-                } else {
-                    bytes.extend_from_slice(&1_i32.to_le_bytes());
-                    bytes.extend_from_slice(&0_i32.to_le_bytes());
-                }
-                let mut cursor = BinaryCursor::new(ctx, &bytes);
-                let record = parse_binary_edge_representation(
-                    &mut cursor,
-                    1,
-                    kind,
-                    super::BinaryGeometryCounts {
-                        curves: 0,
-                        curves2d: 2,
-                        surfaces: 1,
-                        locations: 0,
-                        polygons3d: 0,
-                        indexed_polygons: 0,
-                        triangulations: 0,
-                    },
-                )
-                .unwrap();
-                let (TextEdgeRepresentation::PcurvePair { continuity, .. }
-                | TextEdgeRepresentation::Regularity { continuity, .. }) = record
-                else {
-                    panic!("expected continuity representation");
-                };
-                assert_eq!(continuity, spelling);
-                assert_eq!(cursor.remaining(), 0);
             }
+            let mut cursor = BinaryCursor::new(&bytes);
+            let record = parse_binary_edge_representation(
+                &mut cursor,
+                1,
+                kind,
+                super::BinaryGeometryCounts {
+                    curves: 0,
+                    curves2d: 2,
+                    surfaces: 1,
+                    locations: 0,
+                    polygons3d: 0,
+                    indexed_polygons: 0,
+                    triangulations: 0,
+                },
+            )
+            .unwrap();
+            let (TextEdgeRepresentation::PcurvePair { continuity, .. }
+            | TextEdgeRepresentation::Regularity { continuity, .. }) = record
+            else {
+                panic!("expected continuity representation");
+            };
+            assert_eq!(continuity, spelling);
+            assert_eq!(cursor.remaining(), 0);
         }
-    });
+    }
 }
 
 #[test]
 fn parses_joined_seam_pcurve_continuity_token() {
-    in_decode_context(|ctx| {
-        let tokens = ["1", "2CN", "1", "0", "0", "10"];
-        let mut cursor = TokenCursor::new(ctx, &tokens);
-        let counts = BTreeMap::from([
-            ("Curve2ds".to_owned(), 2),
-            ("Surfaces".to_owned(), 1),
-            ("Locations".to_owned(), 0),
-        ]);
-        let record = parse_edge_representation(3, &mut cursor, &counts, 1)
-            .expect("joined pcurve continuity");
-        let TextEdgeRepresentation::PcurvePair {
-            curves, continuity, ..
-        } = record
-        else {
-            panic!("expected pcurve pair");
-        };
-        assert_eq!(curves, [1, 2]);
-        assert_eq!(continuity, "CN");
-        assert!(cursor.is_empty());
-    });
+    let tokens = ["1", "2CN", "1", "0", "0", "10"];
+    let mut cursor = TokenCursor::new(&tokens);
+    let counts = BTreeMap::from([
+        ("Curve2ds".to_owned(), 2),
+        ("Surfaces".to_owned(), 1),
+        ("Locations".to_owned(), 0),
+    ]);
+    let record =
+        parse_edge_representation(3, &mut cursor, &counts, 1).expect("joined pcurve continuity");
+    let TextEdgeRepresentation::PcurvePair {
+        curves, continuity, ..
+    } = record
+    else {
+        panic!("expected pcurve pair");
+    };
+    assert_eq!(curves, [1, 2]);
+    assert_eq!(continuity, "CN");
+    assert!(cursor.is_empty());
 }
 
 #[test]
 fn retains_indirect_analytic_surface_parameter_frames() {
-    in_decode_context(|ctx| {
-        let tokens = [
-            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",
-        ];
-        let mut cursor = TokenCursor::new(ctx, &tokens);
-        let cone =
-            parse_analytic_surface(AnalyticSurfaceKind::Cone, &mut cursor).expect("indirect cone");
-        assert!(matches!(
-            cone,
-            TextSurface::Cone {
-                radius,
-                half_angle,
-                u_reversed: true,
-                ..
-            } if radius.get() == 2.0 && half_angle.get() == 0.5
-        ));
+    let tokens = [
+        "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",
+    ];
+    let mut cursor = TokenCursor::new(&tokens);
+    let cone =
+        parse_analytic_surface(AnalyticSurfaceKind::Cone, &mut cursor).expect("indirect cone");
+    assert!(matches!(
+        cone,
+        TextSurface::Cone {
+            radius,
+            half_angle,
+            u_reversed: true,
+            ..
+        } if radius.get() == 2.0 && half_angle.get() == 0.5
+    ));
 
-        let tokens = [
-            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2",
-        ];
-        let mut cursor = TokenCursor::new(ctx, &tokens);
-        let sphere = parse_analytic_surface(AnalyticSurfaceKind::Sphere, &mut cursor)
-            .expect("indirect sphere");
-        assert!(matches!(
-            sphere,
-            TextSurface::Sphere {
-                radius,
-                u_reversed: true,
-                ..
-            } if radius.get() == 2.0
-        ));
+    let tokens = [
+        "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2",
+    ];
+    let mut cursor = TokenCursor::new(&tokens);
+    let sphere =
+        parse_analytic_surface(AnalyticSurfaceKind::Sphere, &mut cursor).expect("indirect sphere");
+    assert!(matches!(
+        sphere,
+        TextSurface::Sphere {
+            radius,
+            u_reversed: true,
+            ..
+        } if radius.get() == 2.0
+    ));
 
-        let tokens = [
-            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "4", "1",
-        ];
-        let mut cursor = TokenCursor::new(ctx, &tokens);
-        let torus = parse_analytic_surface(AnalyticSurfaceKind::Torus, &mut cursor)
-            .expect("indirect torus");
-        assert!(matches!(
-            torus,
-            TextSurface::Torus {
-                major_radius,
-                minor_radius,
-                u_reversed: true,
-                ..
-            } if major_radius.get() == 4.0 && minor_radius.get() == 1.0
-        ));
-    });
+    let tokens = [
+        "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "4", "1",
+    ];
+    let mut cursor = TokenCursor::new(&tokens);
+    let torus =
+        parse_analytic_surface(AnalyticSurfaceKind::Torus, &mut cursor).expect("indirect torus");
+    assert!(matches!(
+        torus,
+        TextSurface::Torus {
+            major_radius,
+            minor_radius,
+            u_reversed: true,
+            ..
+        } if major_radius.get() == 4.0 && minor_radius.get() == 1.0
+    ));
 }
 
 #[test]

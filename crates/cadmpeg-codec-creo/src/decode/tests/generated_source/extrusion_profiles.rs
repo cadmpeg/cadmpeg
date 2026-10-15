@@ -18,12 +18,7 @@ use cadmpeg_ir::sketches::{
 
 #[test]
 fn spline_extrusion_preserves_directrix_basis_and_weights() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
     let directrix = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -34,16 +29,13 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         Some(vec![1.0, 0.5, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid directrix");
     let surface = extruded_nurbs_surface(
-        &ctx,
         &directrix,
         [0.0, 0.0, 4.0],
         &"extrusion directrix fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect("extrusion resources")
     .expect("valid extrusion surface");
 
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
@@ -91,17 +83,14 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
         (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
     ] {
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-            circular_pcurve(
-                ctx,
-                [2.0, 2.0],
-                3.0,
-                start,
-                end,
-                &"circular pcurve fixture",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        })
+        let pcurve = circular_pcurve(
+            [2.0, 2.0],
+            3.0,
+            start,
+            end,
+            &"circular pcurve fixture",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
         .expect("resource admission")
         .expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::decode::pcurve_uv(
@@ -293,17 +282,14 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
-        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-            extrusion_cap_pcurve(
-                ctx,
-                &circle,
-                reversed,
-                seam,
-                seam,
-                &"extrusion cap fixture",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        })
+        let pcurve = extrusion_cap_pcurve(
+            &circle,
+            reversed,
+            seam,
+            seam,
+            &"extrusion cap fixture",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
         .expect("resource admission")
         .expect("extrusion cap pcurve fixture");
         let first = cadmpeg_ir::eval::decode::pcurve_uv(

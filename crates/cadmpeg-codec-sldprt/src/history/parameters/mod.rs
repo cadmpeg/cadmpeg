@@ -98,7 +98,7 @@ pub(crate) fn project_parameters(
             }
         }
     }
-    populate_parameter_dependencies(ctx, &mut parameters, &feature_names, &global_owners)?;
+    populate_parameter_dependencies(&mut parameters, &feature_names, &global_owners);
     order_parameters_by_dependencies(&mut parameters)?;
     evaluate_parameter_expressions(ctx, &mut parameters, &feature_names, &global_owners)?;
     for parameter in parameters
@@ -339,42 +339,34 @@ pub(crate) fn format_native_scalar(
 }
 
 fn project_parameter_dependencies(
-    ctx: &DecodeContext<'_>,
     parameter: &DesignParameter,
     aliases: ParameterAliasView<'_>,
-) -> Result<cadmpeg_ir::features::DistinctMembers<ParameterId>, CodecError> {
-    const OPERATION: &str = "collect SLDPRT parameter dependencies";
+) -> cadmpeg_ir::features::DistinctMembers<ParameterId> {
     let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
     let Some(tokens) = expression_identifier_tokens(&parameter.expression) else {
-        return Ok(dependencies);
+        return dependencies;
     };
     for token in tokens.iter().filter(|token| !token.is_syntax()) {
         let Some(dependency) = aliases.get(token.value()).and_then(Option::as_ref) else {
             continue;
         };
-        if dependency == &parameter.id || dependencies.contains(dependency) {
-            continue;
+        if dependency != &parameter.id {
+            dependencies.insert(dependency.clone());
         }
-        dependencies.insert(ctx, dependency.clone(), OPERATION)?;
     }
-    Ok(dependencies)
+    dependencies
 }
 
 fn populate_parameter_dependencies(
-    ctx: &DecodeContext<'_>,
     parameters: &mut [DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-) -> Result<(), CodecError> {
+) {
     let aliases = ParameterAliases::new(parameters, feature_names, global_owners);
     for parameter in parameters.iter_mut() {
-        parameter.dependencies = project_parameter_dependencies(
-            ctx,
-            parameter,
-            aliases.for_owner(parameter.owner.as_ref()),
-        )?;
+        parameter.dependencies =
+            project_parameter_dependencies(parameter, aliases.for_owner(parameter.owner.as_ref()));
     }
-    Ok(())
 }
 
 fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) -> Result<(), CodecError> {
@@ -687,25 +679,21 @@ pub(crate) fn parameters_with_unevaluable_expressions(
 }
 
 pub(crate) fn parameters_with_incoherent_dependencies(
-    ctx: &DecodeContext<'_>,
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-) -> Result<usize, CodecError> {
+) -> usize {
     let aliases = ParameterAliases::new(parameters, feature_names, global_owners);
-    let mut count = 0;
-    for parameter in parameters {
-        if parameter.dependencies
-            != project_parameter_dependencies(
-                ctx,
-                parameter,
-                aliases.for_owner(parameter.owner.as_ref()),
-            )?
-        {
-            count += 1;
-        }
-    }
-    Ok(count)
+    parameters
+        .iter()
+        .filter(|parameter| {
+            parameter.dependencies
+                != project_parameter_dependencies(
+                    parameter,
+                    aliases.for_owner(parameter.owner.as_ref()),
+                )
+        })
+        .count()
 }
 
 pub(crate) fn parameters_with_incoherent_evaluated_values(

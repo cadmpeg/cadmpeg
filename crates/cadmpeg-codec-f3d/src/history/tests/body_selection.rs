@@ -162,12 +162,7 @@ fn move_body_selection_uses_unique_owning_history() {
         regions: &[],
         shells: &[],
     };
-    bind_feature_body_selections(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_mut(&mut feature),
-        &inputs,
-    )
-    .unwrap();
+    bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs).unwrap();
 
     let expected_body = crate::ids::history_input_body_id(
         &crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("move"), 41),
@@ -182,10 +177,7 @@ fn move_body_selection_uses_unique_owning_history() {
     ));
 }
 
-fn pattern_seed_error(
-    max_retained: u64,
-) -> Result<cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
         patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
@@ -263,12 +255,7 @@ fn pattern_seed_error(
         regions: &[],
         shells: &[],
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = max_retained;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::super::bind_pattern_body_selections(
-        &ctx,
         std::slice::from_mut(&mut feature),
         &inputs,
         &mut crate::history::body_candidates::BodyCandidates::new(
@@ -278,8 +265,8 @@ fn pattern_seed_error(
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    )?;
-    Ok(feature)
+    );
+    feature
 }
 
 #[test]
@@ -287,7 +274,7 @@ fn pattern_body_seed_preserves_native_selection() {
     use cadmpeg_ir::features::{
         patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
-    let feature = pattern_seed_error(u64::MAX).unwrap();
+    let feature = pattern_seed_feature();
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
             if matches!(seeds.as_slice(),

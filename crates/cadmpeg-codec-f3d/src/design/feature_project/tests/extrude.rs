@@ -660,16 +660,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             profiles: Default::default(),
             native_ref: Some(placement.id.clone()),
         }];
-        crate::test_support::with_decode_context(|decode_ctx| {
+        {
             crate::design::feature_project::bind_sketch_feature_geometry(
-                decode_ctx,
                 &mut features,
                 &scopes,
                 std::slice::from_ref(&placement),
                 &sketches,
                 &[],
             )
-        })
+        }
         .unwrap();
         let sketch_feature = features
             .iter()
@@ -730,16 +729,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             .expect("fixture collection admission")],
             native_ref: Some(placement.id.clone()),
         };
-        crate::test_support::with_decode_context(|decode_ctx| {
+        {
             crate::design::feature_project::bind_sketch_feature_geometry(
-                decode_ctx,
                 &mut spatial_features,
                 &scopes,
                 std::slice::from_ref(&placement),
                 &[],
                 std::slice::from_ref(&spatial_sketch),
             )
-        })
+        }
         .unwrap();
         let spatial_feature = spatial_features
             .iter()
@@ -798,16 +796,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             profiles: Vec::new(),
             native_ref: Some(placement.id.clone()),
         };
-        crate::test_support::with_decode_context(|decode_ctx| {
+        {
             crate::design::feature_project::bind_sketch_feature_geometry(
-                decode_ctx,
                 &mut open_spatial_features,
                 &scopes,
                 std::slice::from_ref(&placement),
                 &[],
                 std::slice::from_ref(&open_spatial_sketch),
             )
-        })
+        }
         .unwrap();
         let open_spatial_extrude = open_spatial_features
             .iter()
@@ -1106,7 +1103,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         second_target_operand.resolved_body_face_slots = vec![30, 31];
         let operands = [target_shape_operand.clone(), second_target_operand.clone()];
         assert!(matches!(
-            crate::test_support::with_decode_context(|decode_ctx| resolved_body_recipe_shape(decode_ctx, &scope, &multi_target_group, &operands)).unwrap(),
+            resolved_body_recipe_shape(&scope, &multi_target_group, &operands).unwrap(),
             Some(FaceSelection::Historical { faces, .. })
                 if faces.as_slice() == [
                     crate::ids::history_input_face_id(&prefix, 12),
@@ -1117,16 +1114,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 ]
         ));
         second_target_operand.resolved_body_state_id = Some(8);
-        assert!(
-            crate::test_support::with_decode_context(|decode_ctx| resolved_body_recipe_shape(
-                decode_ctx,
-                &scope,
-                &multi_target_group,
-                &[target_shape_operand.clone(), second_target_operand]
-            ))
-            .unwrap()
-            .is_none()
-        );
+        assert!(resolved_body_recipe_shape(
+            &scope,
+            &multi_target_group,
+            &[target_shape_operand.clone(), second_target_operand]
+        )
+        .unwrap()
+        .is_none());
 
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
         set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
@@ -1872,22 +1866,10 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections: vec![
                 LoftSection::Profile(
-                    ProfileRef::spatial_sketch_profiles(
-                        spatial_sketch.clone(),
-                        vec![2],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .expect("profile membership admission")
-                    .unwrap(),
+                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![2]).unwrap(),
                 ),
                 LoftSection::Profile(
-                    ProfileRef::spatial_sketch_profiles(
-                        spatial_sketch.clone(),
-                        vec![5],
-                        &cadmpeg_test_support::service_decode_context(),
-                    )
-                    .expect("profile membership admission")
-                    .unwrap(),
+                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![5]).unwrap(),
                 ),
             ],
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Sketch(
@@ -1905,16 +1887,15 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     let expected_dependencies = [spatial_feature.id.clone(), planar_feature.id.clone()];
     let mut features = vec![planar_feature, spatial_feature, base_flange, loft];
 
-    crate::test_support::with_decode_context(|decode_ctx| {
+    {
         crate::design::feature_project::bind_sketch_feature_geometry(
-            decode_ctx,
             &mut features,
             &[],
             &[],
             &[],
             &[],
         )
-    })
+    }
     .unwrap();
 
     assert_eq!(

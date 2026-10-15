@@ -7,7 +7,6 @@ use crate::math::Point3;
 fn quadratic_surface_local_partials_match_the_closed_form() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let surface = NurbsSurface::from_lanes(
-        &ctx,
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -28,7 +27,6 @@ fn quadratic_surface_local_partials_match_the_closed_form() {
         ),
         false,
     )
-    .expect("surface admission")
     .expect("quadratic surface");
     let scratch = Scratch::new(&ctx);
     let local = nurbs_surface_local(&scratch, &surface, 0.25, 0.75).expect("finite local surface");

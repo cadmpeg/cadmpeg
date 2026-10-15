@@ -2702,7 +2702,7 @@ fn build_one(
                 IdentityKey::from(face_step).with_tail(&face_suffix),
             ));
             let name = face_info.name.as_ref().and_then(|value| {
-                super::decode_text_charged(
+                super::decode_text(
                     exchange,
                     value,
                     losses,

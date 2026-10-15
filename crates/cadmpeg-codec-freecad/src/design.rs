@@ -148,7 +148,7 @@ pub(crate) fn transfer(
                 children: TreeChildren::default(),
             })
         } else if is_body(&object.type_name) {
-            body_definition(ctx, &owned, &feature_ids)?
+            body_definition(&owned, &feature_ids)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned)
@@ -399,7 +399,7 @@ pub(crate) fn transfer(
             dependencies
         };
         let mut dependency_members = DistinctMembers::default();
-        dependency_members.append(ctx, dependencies, "fcstd distinct feature dependencies")?;
+        dependency_members.extend(dependencies);
         ir.model.features.push(Feature {
             id,
             ordinal: feature_ordinals[object.id().as_str()],
@@ -412,7 +412,7 @@ pub(crate) fn transfer(
             source_content: FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from(outputs, ctx)
+                cadmpeg_ir::features::DistinctMembers::try_from(outputs)
                     .map_err(cadmpeg_core::CodecError::from)?,
             ),
             native_ref: Some(object.id().to_owned()),
@@ -426,7 +426,6 @@ pub(crate) fn transfer(
         initial_cycle_affected_features.insert(feature_id(object)?);
     }
     let parameter_cycle_features = bind_parameter_dependencies(
-        ctx,
         &mut ir.model.parameters,
         objects,
         &initial_cycle_affected_features,
@@ -474,7 +473,6 @@ fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
 }
 
 fn body_definition(
-    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -498,19 +496,14 @@ fn body_definition(
         BodyTipResolution::Invalid => return Ok(None),
     };
     Ok(
-        match cadmpeg_ir::features::TreeChildren::new(children, active_child, ctx) {
-            Ok(children) => Some(children),
-            Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
-                return Err(limit.into())
-            }
-            Err(_) => None,
-        }
-        .map(|children| {
-            FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                role: FeatureTreeNodeRole::SolidBodies,
-                children,
-            })
-        }),
+        cadmpeg_ir::features::TreeChildren::new(children, active_child)
+            .ok()
+            .map(|children| {
+                FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                    role: FeatureTreeNodeRole::SolidBodies,
+                    children,
+                })
+            }),
     )
 }
 
@@ -1425,7 +1418,7 @@ fn parse_sketch(
             let native_kind = native_kind.to_owned();
             let attributes = sketch_attributes(carrier);
             let geometry_value = match carrier
-                .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
+                .map(|carrier| sketch_nurbs(&native_kind, carrier))
                 .transpose()?
                 .flatten()
             {
@@ -1620,10 +1613,8 @@ fn builtin_reference_usage(
         .filter(|node| node.has_tag_name("Constrain"))
     {
         let type_code = int_attr(node, "Type");
-        let operands = match constraint_operands(node) {
-            Ok(operands) => operands,
-            Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
-            Err(_) => continue,
+        let Ok(operands) = constraint_operands(node) else {
+            continue;
         };
         root |= matches!(type_code, Some(7 | 8)) && operands.len() == 1;
         for (entity, position) in operands {
@@ -1654,51 +1645,39 @@ struct SketchNurbsLanes {
 /// Read a sketch B-spline record. `Ok(None)` states the record is not a
 /// B-spline; `Err` states a B-spline record whose lanes the carrier refuses.
 fn sketch_nurbs(
-    ctx: &DecodeContext<'_>,
     kind: &str,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<Option<SketchGeometry>, CodecError> {
-    let Some(lanes) = sketch_nurbs_lanes(ctx, kind, node)? else {
+    let Some(lanes) = sketch_nurbs_lanes(kind, node) else {
         return Ok(None);
     };
     Ok(Some(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-            ctx,
             lanes.degree,
             lanes.knots,
             lanes.control_points,
             lanes.weights,
             lanes.periodic,
-        )??,
+        )?,
     )))
 }
 
-fn sketch_nurbs_lanes(
-    ctx: &DecodeContext<'_>,
-    kind: &str,
-    node: roxmltree::Node<'_, '_>,
-) -> Result<Option<SketchNurbsLanes>, CodecError> {
+fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchNurbsLanes> {
     if !matches!(kind, "Part::GeomBSplineCurve" | "BSplineCurve")
         && !node.has_tag_name("BSplineCurve")
     {
-        return Ok(None);
+        return None;
     }
-    let Some((degree, periodic, pole_count, knot_count)) = (|| {
-        Some((
-            node.attribute("Degree")?.parse::<u32>().ok()?,
-            matches!(node.attribute("IsPeriodic")?, "1" | "true" | "True"),
-            node.attribute("PolesCount")?.parse::<usize>().ok()?,
-            node.attribute("KnotsCount")?.parse::<usize>().ok()?,
-        ))
-    })() else {
-        return Ok(None);
-    };
+    let degree = node.attribute("Degree")?.parse::<u32>().ok()?;
+    let periodic = matches!(node.attribute("IsPeriodic")?, "1" | "true" | "True");
+    let pole_count = node.attribute("PolesCount")?.parse::<usize>().ok()?;
+    let knot_count = node.attribute("KnotsCount")?.parse::<usize>().ok()?;
     if pole_count == 0
         || knot_count == 0
         || pole_count > MAX_SKETCH_RECORDS
         || knot_count > MAX_SKETCH_RECORDS
     {
-        return Ok(None);
+        return None;
     }
     if node
         .children()
@@ -1706,25 +1685,20 @@ fn sketch_nurbs_lanes(
         .count()
         != pole_count
     {
-        return Ok(None);
+        return None;
     }
     let mut poles = Vec::new();
     for pole in node.children().filter(|child| child.has_tag_name("Pole")) {
-        let Some(value) = (|| {
-            let point = FinitePoint2::new(Point2::new(
-                pole.attribute("X")?.parse().ok()?,
-                pole.attribute("Y")?.parse().ok()?,
-            ))?;
-            let z = FiniteReal::new(pole.attribute("Z")?.parse::<f64>().ok()?)?;
-            if z.get().abs() > f64::EPSILON {
-                return None;
-            }
-            let weight = PositiveReal::new(pole.attribute("Weight")?.parse::<f64>().ok()?)?;
-            Some((point, weight))
-        })() else {
-            return Ok(None);
-        };
-        poles.push(value);
+        let point = FinitePoint2::new(Point2::new(
+            pole.attribute("X")?.parse().ok()?,
+            pole.attribute("Y")?.parse().ok()?,
+        ))?;
+        let z = FiniteReal::new(pole.attribute("Z")?.parse::<f64>().ok()?)?;
+        if z.get().abs() > f64::EPSILON {
+            return None;
+        }
+        let weight = PositiveReal::new(pole.attribute("Weight")?.parse::<f64>().ok()?)?;
+        poles.push((point, weight));
     }
     if node
         .children()
@@ -1732,19 +1706,14 @@ fn sketch_nurbs_lanes(
         .count()
         != knot_count
     {
-        return Ok(None);
+        return None;
     }
     let mut knots = Vec::new();
     for knot in node.children().filter(|child| child.has_tag_name("Knot")) {
-        let Some(value) = (|| {
-            Some((
-                FiniteReal::new(knot.attribute("Value")?.parse::<f64>().ok()?)?,
-                knot.attribute("Mult")?.parse::<usize>().ok()?,
-            ))
-        })() else {
-            return Ok(None);
-        };
-        knots.push(value);
+        knots.push((
+            FiniteReal::new(knot.attribute("Value")?.parse::<f64>().ok()?)?,
+            knot.attribute("Mult")?.parse::<usize>().ok()?,
+        ));
     }
     if poles.len() != pole_count
         || knots.len() != knot_count
@@ -1759,26 +1728,21 @@ fn sketch_nurbs_lanes(
             .windows(2)
             .any(|pair| pair[0].0.get() >= pair[1].0.get())
     {
-        return Ok(None);
+        return None;
     }
-    let Some(expanded_count) = knots.iter().try_fold(0_usize, |count, (_, multiplicity)| {
+    let expanded_count = knots.iter().try_fold(0_usize, |count, (_, multiplicity)| {
         count.checked_add(*multiplicity)
-    }) else {
-        return Ok(None);
-    };
+    })?;
     if expanded_count > MAX_SKETCH_RECORDS {
-        return Ok(None);
+        return None;
     }
     if !periodic {
-        let Some(expected) = usize::try_from(degree)
+        let expected = usize::try_from(degree)
             .ok()
             .and_then(|degree| pole_count.checked_add(degree))
-            .and_then(|count| count.checked_add(1))
-        else {
-            return Ok(None);
-        };
+            .and_then(|count| count.checked_add(1))?;
         if expanded_count != expected {
-            return Ok(None);
+            return None;
         }
     }
     let mut full_knots = Vec::new();
@@ -1801,16 +1765,14 @@ fn sketch_nurbs_lanes(
     } else {
         None
     };
-    let Some(knots) = KnotVector::from_finite_lanes(ctx, full_knots)?.ok() else {
-        return Ok(None);
-    };
-    Ok(Some(SketchNurbsLanes {
+    let knots = KnotVector::from_finite_lanes(full_knots).ok()?;
+    Some(SketchNurbsLanes {
         degree,
         knots,
         control_points,
         weights,
         periodic,
-    }))
+    })
 }
 
 fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
@@ -2447,7 +2409,6 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
 }
 
 fn bind_parameter_dependencies(
-    ctx: &DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
     objects: &[ObjectRecord],
     cycle_affected_features: &BTreeSet<FeatureId>,
@@ -2534,7 +2495,7 @@ fn bind_parameter_dependencies(
         } else {
             let mut members = Vec::new();
             members.extend(dependencies);
-            DistinctMembers::try_from(members, ctx).map_err(CodecError::from)?
+            DistinctMembers::try_from(members).map_err(CodecError::from)?
         };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
@@ -5187,7 +5148,7 @@ fn section_shape_definition(
     };
     let base = BodySelection::Native(base.id.clone());
     let tool = BodySelection::Native(tool.id.clone());
-    cadmpeg_ir::features::SectionOperands::new(base, tool, ctx)?
+    cadmpeg_ir::features::SectionOperands::new(base, tool)
         .ok()
         .map(|operands| -> Result<_, CodecError> {
             Ok(FeatureDefinition::Operation(
@@ -5830,8 +5791,7 @@ fn boolean_definition(
             BodySelection::Native(format!("{}:links:1..{}", shapes.id, shapes.links().len())),
         )
     };
-    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools, ctx)?.ok()
-    else {
+    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools).ok() else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(

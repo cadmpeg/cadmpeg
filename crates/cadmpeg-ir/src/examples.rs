@@ -43,7 +43,7 @@ pub enum ExampleError {
     Geometry(&'static str),
     /// A loop ring violated its structural contract.
     #[error(transparent)]
-    LoopRing(#[from] crate::topology::LoopRingAdmissionError),
+    LoopRing(#[from] crate::topology::LoopRingError),
     /// A shell had no admitted members.
     #[error(transparent)]
     Shell(#[from] crate::features::BodySelectionError),
@@ -238,10 +238,10 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: cube_id!(FaceId, "face", name.clone()),
-            boundary: crate::topology::LoopBoundary::Ring(
-                crate::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
-                    .map_err(crate::topology::LoopRingAdmissionError::from)?,
-            ),
+            boundary: crate::topology::LoopBoundary::Ring(crate::topology::LoopRing::new(
+                coedge_ids.clone(),
+                Vec::new(),
+            )?),
         });
         ir.model.faces.push(Face {
             id: cube_id!(FaceId, "face", name.clone()),
@@ -305,12 +305,6 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
 
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
 pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
@@ -437,8 +431,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
                 )
             })?],
             Vec::new(),
-            &ctx,
-        )?
+        )
         .map_err(|_| {
             crate::geometry::ProceduralGeometryError::Payload("invalid directed SubD example cage")
         })?,

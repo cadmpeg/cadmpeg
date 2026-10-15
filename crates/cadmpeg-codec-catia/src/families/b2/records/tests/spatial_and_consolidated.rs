@@ -105,14 +105,11 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
 
 #[test]
 fn offset_support_binds_by_native_domain_knot_limits() {
-    let mut carriers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service decode");
     let mut decoy = carriers[0].clone();
     edit::replace(&mut decoy.geometry, |previous| {
         let mut knots = previous.v_knots().to_vec();
@@ -124,7 +121,6 @@ fn offset_support_binds_by_native_domain_knot_limits() {
             }
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -138,7 +134,6 @@ fn offset_support_binds_by_native_domain_knot_limits() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     carriers.push(decoy);
@@ -168,14 +163,11 @@ fn offset_support_binds_by_native_domain_knot_limits() {
 #[test]
 fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let tiny = 1e-200_f64;
-    let mut carriers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service decode");
     let surface = &mut carriers[0].geometry;
     edit::replace(surface, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -189,7 +181,6 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             }
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -203,7 +194,6 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(surface, |previous| {
@@ -218,7 +208,6 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             }
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -232,7 +221,6 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     let interval = |range: [f64; 2]| {

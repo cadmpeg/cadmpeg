@@ -9,14 +9,12 @@ use super::super::edges::{
     ordered_subrange, orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
-use super::super::surfaces::{rational_arc as charged_rational_arc, revolve_nurbs};
+use super::super::surfaces::{rational_arc, revolve_nurbs};
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
-use crate::families::b5::transfer::{
-    curve_on_parameter_range as charged_curve_on_parameter_range, transfer, SurfacePlan,
-};
+use crate::families::b5::transfer::{curve_on_parameter_range, transfer, SurfacePlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
@@ -29,42 +27,6 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-fn curve_on_parameter_range(
-    curve: CurveGeometry,
-    source: [f64; 2],
-    target: cadmpeg_ir::topology::IncreasingParameterInterval,
-    record: &dyn std::fmt::Display,
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<CurveGeometry> {
-    crate::test_support::with_service_context(|ctx| {
-        charged_curve_on_parameter_range(ctx, curve, source, target, record, refusal)
-    })
-    .expect("service resource budget")
-}
-
-fn rational_arc(
-    center: [f64; 3],
-    direction_x: [f64; 3],
-    direction_y: [f64; 3],
-    radius: f64,
-    interval: [f64; 2],
-    record: &dyn std::fmt::Display,
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<NurbsCurve> {
-    crate::test_support::with_service_context(|ctx| {
-        charged_rational_arc(
-            ctx,
-            center,
-            (direction_x, direction_y),
-            radius,
-            interval,
-            record,
-            refusal,
-        )
-    })
-    .expect("service resource budget")
-}
 
 fn b5_edge_support_definition(
     supports: &[super::super::B5Support],
@@ -96,14 +58,12 @@ use super::super::referenced_surface_ids;
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     let nurbs = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![10.0, 10.0, 20.0, 20.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid affine curve");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
@@ -180,14 +140,12 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(20.0, 0.0, 0.0), Point3::new(30.0, 0.0, 0.0)],
                 None,
-                false
+                false,
             )
-            .expect("fixture constructor admission")
             .expect("valid NurbsCurve fixture")
         )))
     );
@@ -196,14 +154,12 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
 #[test]
 fn wide_affine_nurbs_range_maps_finite_exterior_knots() {
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-0.01, 0.0, 1.0, 1.01],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("finite NURBS with exterior knots");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -226,14 +182,12 @@ fn wide_affine_nurbs_range_maps_finite_exterior_knots() {
 fn tiny_affine_nurbs_range_maps_when_scale_ratio_overflows() {
     let tiny = f64::MIN_POSITIVE / 4.0;
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, tiny, tiny],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("finite NURBS with a tiny domain");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1215,8 +1169,7 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
 fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
     assert!(rational_arc(
         [0.0; 3],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
+        ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         1.0e-300,
         [0.0, 1.0],
         &"test record",
@@ -1224,14 +1177,12 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
     )
     .is_none());
     let profile = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid revolution profile");
     assert!(
         crate::test_support::with_service_context(|ctx| revolve_nurbs(
@@ -1249,14 +1200,12 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
     let mut wide_knots = vec![0.0; 123];
     wide_knots.extend([1.0, 1.0]);
     let wide_profile = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         wide_knots,
         vec![Point3::new(1.0, 0.0, 0.0); 123],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid wide revolution profile");
     assert!(
         crate::test_support::with_service_context(|ctx| revolve_nurbs(
@@ -1589,14 +1538,12 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         (
             PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                     None,
                     false,
                 )
-                .expect("fixture pcurve construction admission")
                 .expect("valid test pcurve"),
             },
             false,
@@ -1752,27 +1699,21 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
 fn reparameterized_nurbs_knots_result() {
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![10.0, 10.0, 20.0, 20.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .expect("valid curve"),
     ));
     let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        charged_curve_on_parameter_range(
-            ctx,
-            curve,
-            [10.0, 20.0],
-            target,
-            &"curve",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service budget");
-    assert!(admitted.is_some());
+    assert!(curve_on_parameter_range(
+        curve,
+        [10.0, 20.0],
+        target,
+        &"curve",
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .is_some());
 }

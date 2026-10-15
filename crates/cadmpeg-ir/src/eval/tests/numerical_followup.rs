@@ -18,7 +18,6 @@ fn numerical_followup_surface_projection_is_independent_of_scale() {
     for scale in [1.0, 1e-5, 1e-100, 1e100] {
         let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
         let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             axis.clone(),
             axis,
             NurbsSurfaceLanes::new(
@@ -30,7 +29,6 @@ fn numerical_followup_surface_projection_is_independent_of_scale() {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let target = Point3::new(0.3 * scale, 0.4 * scale, 0.);
         let uv = nurbs_surface_parameter_near_point(
@@ -49,14 +47,12 @@ fn numerical_followup_surface_projection_is_independent_of_scale() {
 #[test]
 fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0., 0., 1., 1.],
         vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     assert_eq!(
         nurbs_curve_parameter_near_point(
@@ -74,14 +70,12 @@ fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
 #[test]
 fn curve_search_admits_its_tolerance_before_the_search() {
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0., 0., 1., 1.],
         vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let point = Point3::new(0.25, 1e-3, 0.);
     for tolerance in [-1e-3, f64::NAN, f64::INFINITY] {
@@ -127,14 +121,12 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
     let points = [Point2::new(0., 0.), Point2::new(1., 0.)];
     for w in [1.0, 1e-200, 1e200, 1e308] {
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., 1., 1.],
             poles.clone(),
             Some(vec![w, w]),
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         assert_eq!(
             nurbs_curve_speed_bound(&curve).map(crate::scalar::FiniteReal::get),
@@ -154,13 +146,12 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
         );
         assert_eq!(
             nurbs_pcurve_contains_point(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 &[0., 0., 1., 1.],
                 &points,
                 Some(&[w, w]),
                 Point2::new(0.5, 0.),
-                0.
+                0.,
             )
             .expect("resource allocation did not fail"),
             Some(true)
@@ -171,25 +162,15 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
 #[test]
 fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
     let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
-    let implicit = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        poles.clone(),
-        None,
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("polynomial curve");
+    let implicit = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], poles.clone(), None, false)
+        .expect("polynomial curve");
     let explicit = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         poles,
         Some(vec![1.0, 1.0]),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("unit-weight rational curve");
     assert_eq!(
         nurbs_curve_speed_bound(&implicit).expect("speed bound admission"),
@@ -215,24 +196,15 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
     );
     let controls = [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
     assert_eq!(
+        nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0,)
+            .expect("resource allocation did not fail"),
         nurbs_pcurve_contains_point(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            &[0.0, 0.0, 1.0, 1.0],
-            &controls,
-            None,
-            controls[0],
-            0.0
-        )
-        .expect("resource allocation did not fail"),
-        nurbs_pcurve_contains_point(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             &[0.0, 0.0, 1.0, 1.0],
             &controls,
             Some(&[1.0, 1.0]),
             controls[0],
-            0.0
+            0.0,
         )
         .expect("resource allocation did not fail")
     );
@@ -241,14 +213,12 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
 #[test]
 fn numerical_followup_periodic_mapping_stays_finite_and_canonical() {
     let curve = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-1e308, -1e308, -9e307, -9e307],
         vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
         None,
         true,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let mapped = map_nurbs_curve_parameter(&curve, crate::scalar::FiniteReal::new(1e308).unwrap())
         .unwrap()

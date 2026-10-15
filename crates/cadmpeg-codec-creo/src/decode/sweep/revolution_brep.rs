@@ -144,20 +144,18 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let mut surfaces = Vec::new();
         let mut complete = true;
         for (index, entity) in profile.iter().enumerate() {
-            let Some(geometry) = entity.geometry().to_sketch(ctx)? else {
+            let Some(geometry) = entity.geometry().to_sketch() else {
                 complete = false;
                 break;
             };
             let Some(surface) = revolved_brep_surface(
-                ctx,
                 transform,
                 &geometry,
                 entity.reversed(),
                 &axis,
                 &format_args!("revolution feature {feature_id} profile segment {index}"),
                 &mut refusal,
-            )?
-            else {
+            ) else {
                 complete = false;
                 break;
             };
@@ -205,7 +203,6 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 let mut diagnostics =
                     crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                 let Some(row) = PrevalidatedRevolutionBoundary::new(
-                    ctx,
                     transform,
                     segment,
                     &surface_geometries[index],
@@ -487,7 +484,6 @@ struct PrevalidatedRevolutionBoundary {
 
 impl PrevalidatedRevolutionBoundary {
     fn new(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         transform: &crate::placement::FeatureSectionTransform,
         segment: &super::profiles::ProfileEntity,
         surface: &cadmpeg_ir::geometry::SurfaceGeometry,
@@ -498,7 +494,6 @@ impl PrevalidatedRevolutionBoundary {
         let (section_point, boundary) = boundary_point;
 
         let Some(geometry) = revolution_profile_boundary_pcurve(
-            ctx,
             transform,
             segment,
             surface,

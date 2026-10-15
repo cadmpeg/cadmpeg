@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admit historical face references against the input topologies that were emitted.
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::edge_treatments::{FullRoundFilletGroup, FullRoundSideSelection};
 use cadmpeg_ir::features::{
@@ -153,7 +152,6 @@ impl<'a> FaceInputs<'a> {
     }
     fn hole(
         &mut self,
-        ctx: &DecodeContext<'_>,
         feature: &FeatureId,
         selection: &mut FaceSelection,
         losses: &mut Vec<LossNote>,
@@ -171,25 +169,21 @@ impl<'a> FaceInputs<'a> {
             })?;
             if !faces.iter().all(|face| current.contains(face)) {
                 let native = native.to_owned();
-                let historical = (|| -> Result<Option<FaceSelection>, CodecError> {
-                    let Some(topology) = self.feature(feature) else {
-                        return Ok(None);
-                    };
+                let historical = (|| -> Option<FaceSelection> {
+                    let topology = self.feature(feature)?;
 
                     let source = topology
                         .native_ref
                         .as_deref()
                         .and_then(super::historical_brep_source);
-                    let Some(state) = topology
+                    let state = topology
                         .id
                         .as_str()
                         .rsplit_once(':')
-                        .and_then(|(_, state)| state.parse::<i64>().ok())
-                    else {
-                        return Ok(None);
-                    };
-                    if crate::ids::history_input_state_id_charged(feature, state)? != topology.id {
-                        return Ok(None);
+                        .and_then(|(_, state)| state.parse::<i64>().ok())?;
+                    let prefix = crate::ids::history_input_prefix(&feature.key(), state);
+                    if crate::ids::history_input_state_id(&prefix) != topology.id {
+                        return None;
                     }
                     let members = self.members(topology);
                     let mut selected = Vec::new();
@@ -199,21 +193,19 @@ impl<'a> FaceInputs<'a> {
                                 super::active_brep_face_matches_source(face, source)
                             })
                         {
-                            return Ok(None);
+                            return None;
                         }
-                        let Some(slot) = super::stable_ref(face.as_str()) else {
-                            return Ok(None);
-                        };
-                        let id = crate::ids::history_input_face_id_charged(feature, state, slot)?;
+                        let slot = super::stable_ref(face.as_str())?;
+                        let id = crate::ids::history_input_face_id(&prefix, slot);
                         if !members.contains(&id) {
-                            return Ok(None);
+                            return None;
                         }
                         selected.push(id);
                     }
                     let state = topology.id.clone();
                     let identity = native.clone();
-                    Ok(FaceSelection::historical(state, selected, identity, ctx)?.ok())
-                })()?;
+                    FaceSelection::historical(state, selected, identity).ok()
+                })();
                 *selection = match historical {
                     Some(value) => value,
                     None => {
@@ -233,20 +225,18 @@ fn record_loss(feature: &FeatureId, losses: &mut Vec<LossNote>) {
     losses.push(crate::loss::F3dLossCode::HistoricalFaceSelectionUnbound.note(message));
 }
 
-struct FaceAdmission<'a, 'ctx, 'arena> {
-    ctx: &'ctx DecodeContext<'arena>,
+struct FaceAdmission<'a, 'l> {
     inputs: FaceInputs<'a>,
-    losses: &'ctx mut Vec<LossNote>,
+    losses: &'l mut Vec<LossNote>,
 }
 
-impl FaceAdmission<'_, '_, '_> {
+impl FaceAdmission<'_, '_> {
     fn operation(
         &mut self,
         id: &FeatureId,
         scope: Option<&str>,
         operation: &mut FeatureOperation,
     ) -> Result<(), CodecError> {
-        let ctx = self.ctx;
         let inputs = &mut self.inputs;
         let losses = &mut *self.losses;
         if let FeatureOperation::Extrude {
@@ -288,7 +278,7 @@ impl FaceAdmission<'_, '_, '_> {
         }
         let mut admit = |selection: &mut FaceSelection, hole: bool| {
             if hole {
-                inputs.hole(ctx, id, selection, losses)
+                inputs.hole(id, selection, losses)
             } else {
                 inputs.admit(id, selection, losses);
                 Ok(())
@@ -336,7 +326,7 @@ impl FaceAdmission<'_, '_, '_> {
                     let first = side(group.side_one_faces())?;
                     let second = side(group.side_two_faces())?;
                     admitted.push(
-                        FullRoundFilletGroup::new(center, first, second, ctx)?
+                        FullRoundFilletGroup::new(center, first, second)
                             .map_err(CodecError::malformed)?,
                     );
                 }
@@ -348,7 +338,7 @@ impl FaceAdmission<'_, '_, '_> {
                 let mut second = operands.second_faces().clone();
                 admit(&mut first, false)?;
                 admit(&mut second, false)?;
-                *operands = cadmpeg_ir::features::FaceBlendOperands::new(first, second, ctx)?
+                *operands = cadmpeg_ir::features::FaceBlendOperands::new(first, second)
                     .map_err(CodecError::malformed)?;
             }
             FeatureOperation::ReplaceFace { operands, .. } if edit_pair => {
@@ -356,7 +346,7 @@ impl FaceAdmission<'_, '_, '_> {
                 let mut second = operands.replacements().clone();
                 admit(&mut first, false)?;
                 admit(&mut second, false)?;
-                *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(first, second, ctx)?
+                *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(first, second)
                     .map_err(CodecError::malformed)?;
             }
             FeatureOperation::CosmeticThread { face, .. } => admit(face, false)?,
@@ -399,14 +389,12 @@ impl FaceAdmission<'_, '_, '_> {
 }
 
 pub(crate) fn admit_feature_input_faces(
-    ctx: &DecodeContext<'_>,
     features: &mut [Feature],
     topologies: &[FeatureInputTopology],
     faces: &[cadmpeg_ir::topology::Face],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut admission = FaceAdmission {
-        ctx,
         inputs: FaceInputs::new(topologies, faces),
         losses,
     };

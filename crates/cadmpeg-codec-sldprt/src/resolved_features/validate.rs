@@ -32,9 +32,6 @@ pub(crate) fn validate_native(
     let mut findings = Vec::new();
     for history in &native.feature_histories {
         if let Err(error) = crate::writer::validate_feature_graph(&history.features) {
-            if matches!(error, CodecError::ResourceLimit(_)) {
-                return Err(error);
-            }
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

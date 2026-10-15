@@ -17,13 +17,8 @@ fn spine_model(count: u32) -> (CadIr, CurveId) {
     let mut knots = vec![0.0];
     knots.extend((0..count).map(f64::from));
     knots.push(f64::from(count - 1));
-    let bytes = serde_json::to_vec(&(knots.as_slice(), points.as_slice())).unwrap();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let nurbs = NurbsCurve::from_lanes(&ctx, 1, knots, points, None, false)
-        .expect("service storage")
-        .expect("clamped linear test spine");
+    let nurbs =
+        NurbsCurve::from_lanes(1, knots, points, None, false).expect("clamped linear test spine");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         parameter_range: None,
@@ -53,14 +48,12 @@ fn closest_pcurve_parameters_fit_a_polynomial_line() {
 
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("polynomial pcurve"),
     };
     let result = crate::test_support::with_decode_context(|ctx| {

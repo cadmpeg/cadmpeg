@@ -201,15 +201,7 @@ fn validate_embedded_helix_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let projection_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
-    let embedded = project_features(&ctx, &native.feature_histories)?
+    let embedded = project_features(&native.feature_histories)?
         .into_iter()
         .filter_map(|feature| {
             matches!(
@@ -322,10 +314,9 @@ fn project_feature_model_with_native_inputs(
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
     )?;
-    let mut projection = project_feature_model(&ctx, &histories)?;
+    let mut projection = project_feature_model(&histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
-        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
@@ -359,17 +350,6 @@ fn validate_compact_body_selection_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputBodySelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -402,8 +382,7 @@ fn validate_compact_body_selection_edits(
             crate::resolved_features::component_paths::compact_body_selection_value(
                 &selection.local_body_ids,
             ),
-            &ctx,
-        )?
+        )
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
         if bodies != &expected {
             return Err(CodecError::NotImplemented(format!(

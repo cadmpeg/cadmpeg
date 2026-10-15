@@ -134,10 +134,10 @@ pub(super) fn scan_carriers(
         i += 1;
     }
     let mut lane_refusals = Vec::new();
-    for carrier in spline::scan_curve_carriers(ctx, body, &mut lane_refusals)?.into_values() {
+    for carrier in spline::scan_curve_carriers(body, &mut lane_refusals).into_values() {
         out.insert(Carrier::Curve(carrier));
     }
-    for carrier in spline::scan_surface_carriers(ctx, body, &mut lane_refusals)?.into_values() {
+    for carrier in spline::scan_surface_carriers(body, &mut lane_refusals).into_values() {
         out.insert(Carrier::Surface(carrier));
     }
     for carrier in subset::scan(ctx, body, &out)? {
@@ -149,7 +149,7 @@ pub(super) fn scan_carriers(
     out.blend_support_pairs = pairs;
     out.offsets = offset::scan(body);
     for intersection in
-        intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?.into_values()
+        intersection::scan_intersection_carriers(body, &mut lane_refusals).into_values()
     {
         out.insert_intersection(intersection);
     }

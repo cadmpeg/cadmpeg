@@ -135,7 +135,6 @@ mod tests {
         knots.extend((1..COUNT - 3).map(f64::from));
         knots.extend([f64::from(COUNT - 3); 4]);
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(3, knots.clone(), false),
             NurbsSurfaceAxis::new(3, knots, false),
             NurbsSurfaceLanes::new(
@@ -153,7 +152,6 @@ mod tests {
             ),
             false,
         )
-        .expect("fixture admission")
         .expect("dense cubic surface")
     }
 

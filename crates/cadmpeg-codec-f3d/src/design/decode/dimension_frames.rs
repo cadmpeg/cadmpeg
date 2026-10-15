@@ -699,12 +699,12 @@ pub(crate) fn bind_dimension_recipe_reference_candidates(
 ) {
     for record in records {
         for reference in &mut record.references {
-            bind_recipe_reference_candidates_charged(reference, tags, Some(&record.id));
+            bind_recipe_reference_candidates(reference, tags, Some(&record.id));
         }
     }
 }
 
-pub(crate) fn bind_recipe_reference_candidates_charged(
+pub(crate) fn bind_recipe_reference_candidates(
     reference: &mut crate::records::dimensions::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,

@@ -160,23 +160,6 @@ struct ParseFailure {
     offset: usize,
 }
 
-enum ParseIssue {
-    Malformed(ParseFailure),
-    Resource(CodecError),
-}
-
-impl From<ParseFailure> for ParseIssue {
-    fn from(value: ParseFailure) -> Self {
-        Self::Malformed(value)
-    }
-}
-
-impl From<CodecError> for ParseIssue {
-    fn from(value: CodecError) -> Self {
-        Self::Resource(value)
-    }
-}
-
 fn lp_graphic(
     bytes: &[u8],
     at: usize,
@@ -195,7 +178,7 @@ fn take_version_guid(
     at: &mut usize,
     field: &'static str,
     allow_zero_prefix: bool,
-) -> Result<(), ParseIssue> {
+) -> Result<(), ParseFailure> {
     let initial = *at;
     for prefix_len in [0, 4] {
         if prefix_len != 0 && (!allow_zero_prefix || View::u32_le_at(bytes, initial) != Some(0)) {
@@ -215,11 +198,10 @@ fn take_version_guid(
     Err(ParseFailure {
         field,
         offset: initial,
-    }
-    .into())
+    })
 }
 
-fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> {
+fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
     let initial = *at;
     for prefix_len in [0, 4] {
         if prefix_len != 0 && View::u32_le_at(bytes, initial) != Some(0) {
@@ -243,11 +225,10 @@ fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> {
     Err(ParseFailure {
         field: "version-context version URN",
         offset: initial,
-    }
-    .into())
+    })
 }
 
-fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> {
+fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
     let count_at = *at;
     let count = require(View::u32_le_at(bytes, *at), "version-context count", *at)?;
     *at = require(at.checked_add(4), "version-context count", *at)?;
@@ -255,8 +236,7 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> 
         return Err(ParseFailure {
             field: "version-context count",
             offset: count_at,
-        }
-        .into());
+        });
     }
     for _ in 0..count {
         let token_end = require(at.checked_add(8), "version-context token", *at)?;
@@ -267,11 +247,7 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> 
         // Legacy full contexts omit the separate revision GUID and place the
         // version URN directly after the asset GUID.
         let legacy_full_at = *at;
-        if match take_version_urn(bytes, at) {
-            Ok(()) => true,
-            Err(ParseIssue::Malformed(_)) => false,
-            Err(error) => return Err(error),
-        } {
+        if take_version_urn(bytes, at).is_ok() {
             take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
             require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
@@ -281,27 +257,23 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> 
         take_version_guid(bytes, at, "version-context revision GUID", true)?;
 
         let full_at = *at;
-        let full: Result<(), ParseIssue> = (|| {
+        let full: Result<(), ParseFailure> = (|| {
             take_version_urn(bytes, at)?;
             take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
             require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
             Ok(())
         })();
-        match full {
-            Ok(()) => {}
-            Err(ParseIssue::Malformed(_)) => {
-                *at = full_at;
-                require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
-                *at = require(at.checked_add(4), "version-context revision", *at)?;
-            }
-            Err(error) => return Err(error),
+        if full.is_err() {
+            *at = full_at;
+            require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
+            *at = require(at.checked_add(4), "version-context revision", *at)?;
         }
     }
     Ok(())
 }
 
-fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseIssue> {
+fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseFailure> {
     let (_, at) = require(lp_graphic(bytes, 0, 1..=256), "short segment type name", 0)?;
     let at = require(at.checked_add(4), "segment id", at)?;
     let (_, at) = require(lp_utf16_bounded(bytes, at, 0..=256), "asset GUID", at)?;
@@ -323,11 +295,7 @@ fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseIssue> {
     Ok((magic, at))
 }
 
-fn parse_error(issue: ParseIssue, stream: &str) -> CodecError {
-    let failure = match issue {
-        ParseIssue::Malformed(failure) => failure,
-        ParseIssue::Resource(error) => return error,
-    };
+fn parse_error(failure: ParseFailure, stream: &str) -> CodecError {
     CodecError::malformed(format_args!(
         "invalid F3D MetaStream {} at byte {}: {stream}",
         failure.field, failure.offset
@@ -338,10 +306,10 @@ fn parse_error(issue: ParseIssue, stream: &str) -> CodecError {
 pub(crate) fn serializer_magic(bytes: &[u8], stream: &str) -> Result<u32, CodecError> {
     parse_segment_header(bytes)
         .map(|(magic, _)| magic)
-        .map_err(|issue| parse_error(issue, stream))
+        .map_err(|failure| parse_error(failure, stream))
 }
 
-fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
+fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     // Header: short segment type name, segment id, asset GUID, serializer
     // magic and its magic-gated integer group, full segment type name, add-in
     // name, and the segment type code.
@@ -493,8 +461,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
         return Err(ParseFailure {
             field: "trailing bytes",
             offset: at,
-        }
-        .into());
+        });
     }
     Ok(MetaStream {
         types,
@@ -505,7 +472,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
 
 /// Parse one complete `MetaStream` segment and reject any unframed remainder.
 pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError> {
-    parse_inner(bytes).map_err(|issue| parse_error(issue, stream))
+    parse_inner(bytes).map_err(|failure| parse_error(failure, stream))
 }
 
 #[cfg(test)]

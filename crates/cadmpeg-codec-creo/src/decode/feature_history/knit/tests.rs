@@ -4,7 +4,6 @@ use super::super::selections::feature_result_edge_ids_by_feature;
 use super::{feature_result_surface_ids, knit_surface_feature_definition};
 
 fn feature_result_topology(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
     curve_rows: &[crate::curve::CurveTopologyRow],
@@ -13,7 +12,7 @@ fn feature_result_topology(
     let edges = feature_result_edge_ids_by_feature(curve_rows)
         .remove(&feature_id)
         .unwrap_or_default();
-    super::feature_result_topology(ctx, tables, rows, &edges, feature_id)
+    super::feature_result_topology(tables, rows, &edges, feature_id)
 }
 
 fn one_knit_scan() -> crate::container::ContainerScan<'static> {
@@ -308,29 +307,17 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         Some(vec![98, 145])
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_result_topology(
-            ctx,
-            std::slice::from_ref(&table),
-            &rows,
-            &curve_rows,
-            97
-        ))
-        .expect("service profile admits the result topology")
-        .expect("complete result topology")
-        .faces(),
+        feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
+            .expect("service profile admits the result topology")
+            .expect("complete result topology")
+            .faces(),
         vec!["surface#98", "surface#145"]
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_result_topology(
-            ctx,
-            std::slice::from_ref(&table),
-            &rows,
-            &curve_rows,
-            97
-        ))
-        .expect("service profile admits the result topology")
-        .expect("complete result topology")
-        .edges(),
+        feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
+            .expect("service profile admits the result topology")
+            .expect("complete result topology")
+            .edges(),
         vec!["curve#77"]
     );
 

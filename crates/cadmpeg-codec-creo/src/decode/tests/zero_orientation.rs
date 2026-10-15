@@ -1347,19 +1347,15 @@ fn nonplanar_saved_spline_places_as_model_curve() {
     )
     .expect("valid section frame");
     let local = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid local NURBS");
 
-    let placed = (placed_section_nurbs(&transform, &local))
-        .expect("placement resources")
-        .expect("finite placed NURBS");
+    let placed = placed_section_nurbs(&transform, &local).expect("finite placed NURBS");
 
     assert_eq!(placed.control_points()[0], Point3::new(11.0, 17.0, 32.0));
     assert_eq!(placed.control_points()[1], Point3::new(14.0, 14.0, 35.0));
@@ -1382,33 +1378,25 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
 #[test]
 fn full_revolution_uses_exact_quadratic_circle_poles() {
     let directrix = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid revolution directrix");
-    let surface = crate::decode::with_test_decode_ctx(|ctx| {
-        revolved_nurbs_surface(
-            ctx,
-            &directrix,
-            &RevolutionAxis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .expect("finite point fixture"),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    0.0, 0.0, 1.0,
-                ))
+    let surface = revolved_nurbs_surface(
+        &directrix,
+        &RevolutionAxis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite point fixture"),
+            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("valid direction fixture"),
-                reference: None,
-            },
-            &"revolution directrix fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service revolution allocation")
+            reference: None,
+        },
+        &"revolution directrix fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
     .expect("revolution surface");
 
     assert_eq!((surface.u_count(), surface.v_count()), (2, 9));
@@ -1455,7 +1443,6 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     };
     let spline = SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             2,
             vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
             vec![
@@ -1467,7 +1454,6 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
             Some(vec![1.0, 0.75, 0.75, 1.0]),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     );
     let segment = crate::decode::with_test_decode_ctx(|ctx| {
@@ -1475,18 +1461,14 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     })
     .expect("service profile resources")
     .expect("valid profile entity");
-    let surface = crate::decode::with_test_decode_ctx(|ctx| {
-        revolved_brep_surface(
-            ctx,
-            &transform,
-            &spline,
-            false,
-            &axis,
-            &"revolved spline fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service revolution allocation")
+    let surface = revolved_brep_surface(
+        &transform,
+        &spline,
+        false,
+        &axis,
+        &"revolved spline fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
     .expect("revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
@@ -1520,17 +1502,14 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &"revolution boundary fixture start",
         &mut start_refusal,
     );
-    let start_pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-        revolution_profile_boundary_pcurve(
-            ctx,
-            &transform,
-            &segment,
-            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
-            &axis,
-            (segment.start(), RevolutionBoundary::Start),
-            &mut start_diagnostics,
-        )
-    })
+    let start_pcurve = revolution_profile_boundary_pcurve(
+        &transform,
+        &segment,
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        &axis,
+        (segment.start(), RevolutionBoundary::Start),
+        &mut start_diagnostics,
+    )
     .expect("resource admission")
     .expect("start boundary pcurve");
     let mut end_refusal = crate::lane_refusal::LaneRefusals::new();
@@ -1538,17 +1517,14 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &"revolution boundary fixture end",
         &mut end_refusal,
     );
-    let end_pcurve = crate::decode::with_test_decode_ctx(|ctx| {
-        revolution_profile_boundary_pcurve(
-            ctx,
-            &transform,
-            &segment,
-            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
-            &axis,
-            (segment.end(), RevolutionBoundary::End),
-            &mut end_diagnostics,
-        )
-    })
+    let end_pcurve = revolution_profile_boundary_pcurve(
+        &transform,
+        &segment,
+        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+        &axis,
+        (segment.end(), RevolutionBoundary::End),
+        &mut end_diagnostics,
+    )
     .expect("resource admission")
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
@@ -1606,18 +1582,14 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     .expect("reverse face sense");
     assert_ne!(forward_sense, reverse_sense);
 
-    let reversed = crate::decode::with_test_decode_ctx(|ctx| {
-        revolved_brep_surface(
-            ctx,
-            &transform,
-            &spline,
-            true,
-            &axis,
-            &"reversed revolved spline fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-    })
-    .expect("service revolution allocation")
+    let reversed = revolved_brep_surface(
+        &transform,
+        &spline,
+        true,
+        &axis,
+        &"reversed revolved spline fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
     .expect("reversed revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(reversed)) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");

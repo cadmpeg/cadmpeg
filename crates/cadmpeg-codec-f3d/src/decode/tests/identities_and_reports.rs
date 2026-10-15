@@ -1,35 +1,5 @@
 use cadmpeg_core::decode::DecodePolicy;
 
-fn face_assignment() -> crate::materials::FaceAppearanceAssignment {
-    crate::materials::FaceAppearanceAssignment {
-        face_guid: "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb".into(),
-        visual_guid: crate::records::references::DesignVisualToken::try_from(
-            "11111111-2222-3333-4444-555555555555_Post2015".to_owned(),
-        )
-        .unwrap(),
-        color: None,
-    }
-}
-
-#[test]
-fn face_appearance_binding_id_preserves_identity_text() {
-    let assignment = face_assignment();
-    let face = cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap();
-    let charged = crate::ids::face_appearance_binding_id_charged(
-        &assignment.face_guid,
-        &assignment.visual_guid,
-        &face,
-    )
-    .unwrap();
-    let original = crate::ids::face_appearance_binding_id(
-        &assignment.face_guid,
-        assignment.visual_guid.identity_key(),
-        &face,
-    )
-    .unwrap();
-    assert_eq!(charged, original);
-}
-
 fn annotation_placement() -> crate::records::sketch_placement::DesignSketchPlacement {
     crate::records::sketch_placement::DesignSketchPlacement {
         id: "f3d:test/BulkStream.dat:design-sketch-placement#4".into(),

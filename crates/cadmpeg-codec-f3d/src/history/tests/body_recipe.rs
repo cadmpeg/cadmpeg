@@ -130,7 +130,6 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     };
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     bind_direct_body_recipe_body_selection(
-        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         &scope,
         &inputs,
@@ -141,8 +140,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
-    )
-    .unwrap();
+    );
     assert_eq!(
         selection,
         BodySelection::NativeSet(vec![native].try_into().unwrap())

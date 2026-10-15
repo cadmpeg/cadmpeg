@@ -363,7 +363,6 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             3,
                             vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
@@ -385,7 +384,6 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                         ),
                         false,
                     )
-                    .expect("fixture constructor admission")
                     .expect("valid seeded offset support"),
                 )),
                 source_object: None,

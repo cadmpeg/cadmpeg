@@ -12,7 +12,7 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{is_guid_relaxed, take_reference};
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
-    bind_recipe_reference_candidates_charged, contiguous_i32_program, decode_recipe_references,
+    bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
     recipe_record_prefix,
 };
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
@@ -573,7 +573,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
         let scope_id = scope.id.clone();
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
-                bind_recipe_reference_candidates_charged(reference, tags, Some(&scope_id));
+                bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
             }
         }
         let Some(construction) = scope.work_point_construction_mut() else {
@@ -581,7 +581,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
         };
         for recipe in construction.rule.vertex_recipes_mut() {
             for reference in &mut recipe.recipe_references {
-                bind_recipe_reference_candidates_charged(reference, tags, Some(&scope_id));
+                bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
             }
         }
     }
@@ -594,7 +594,7 @@ pub(crate) fn bind_edge_treatment_vertex_candidates(
 ) {
     for operand in operands {
         for reference in &mut operand.recipe.recipe_references {
-            bind_recipe_reference_candidates_charged(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
         }
     }
 }
@@ -1306,7 +1306,7 @@ pub(crate) fn bind_face_operand_candidates(
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates_charged(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -1365,7 +1365,7 @@ pub(crate) fn bind_edge_operand_candidates(
     for operand in operands {
         operand.candidate_faces.clear();
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates_charged(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -4966,7 +4966,7 @@ fn parse_edge_operand(
             ),
         )
     })?;
-    let recipe_structure = match edge_recipe_structure_with_context(ctx, &parsed.recipe_program) {
+    let recipe_structure = match edge_recipe_structure(ctx, &parsed.recipe_program) {
         Ok(structure) => structure,
         Err(error) => return Some(Err(error)),
     };
@@ -5043,7 +5043,7 @@ fn parse_edge_operand(
 /// orders of magnitude below this cap.
 pub(crate) const RECIPE_SIDE_SEARCH_WORK: usize = 1 << 22;
 
-pub(crate) fn edge_recipe_structure_with_context(
+pub(crate) fn edge_recipe_structure(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
@@ -5401,7 +5401,7 @@ fn edge_recipe_counted_side_candidates<'w>(
     candidates
 }
 
-pub(crate) fn face_recipe_structure_with_context(
+pub(crate) fn face_recipe_structure(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::face::DesignFaceRecipeStructure>, CodecError> {
@@ -5478,7 +5478,7 @@ pub(crate) fn face_recipe_program_kind(program: &[i32]) -> Option<FaceRecipeProg
         .then_some(FaceRecipeProgramKind::Counted { header_value })
 }
 
-fn face_recipe_nodes_with_context(
+fn face_recipe_nodes(
     ctx: &DecodeContext<'_>,
     recipe_program: &[i32],
     recipe_program_at: usize,
@@ -5524,7 +5524,7 @@ fn face_recipe_nodes_with_context(
             return Ok(None);
         };
         let recipe_structure = match program.get(3..) {
-            Some(tail) => face_recipe_structure_with_context(ctx, tail)?,
+            Some(tail) => face_recipe_structure(ctx, tail)?,
             None => None,
         };
         let program = program.to_vec();
@@ -5760,8 +5760,7 @@ pub(super) fn parse_face_operand(
     let program_kind = face_recipe_program_kind(&recipe_program)?;
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
     let recipe_nodes =
-        match face_recipe_nodes_with_context(ctx, &recipe_program, recipe_program_at, program_kind)
-        {
+        match face_recipe_nodes(ctx, &recipe_program, recipe_program_at, program_kind) {
             Ok(Some(nodes)) => nodes,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),

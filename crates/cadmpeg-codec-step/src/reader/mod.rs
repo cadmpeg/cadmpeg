@@ -301,7 +301,7 @@ pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
-    let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
+    let (exchange, diagnostics) = parse::parse(input, ctx)?;
     decode_exchange(input, exchange, &diagnostics, ctx, packaging)
 }
 
@@ -1430,7 +1430,7 @@ fn claim_trivia(
     Ok(())
 }
 
-fn decode_text_charged(
+fn decode_text(
     exchange: &Exchange,
     value: &Value,
     losses: &mut Vec<LossNote>,

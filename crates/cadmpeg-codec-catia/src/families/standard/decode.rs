@@ -483,7 +483,6 @@ mod consolidated_revolution_binding_tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![
                         -f64::MAX,
@@ -501,7 +500,6 @@ mod consolidated_revolution_binding_tests {
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("finite wide curve"),
             )),
             source_object: None,
@@ -1457,7 +1455,6 @@ fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
 /// standard tag names one E5 face, that face names one valid `0xf1` wrapper,
 /// and the wrapper's first reference names one supported E5 surface carrier.
 fn associate_standard_freeform_e5_surfaces(
-    ctx: &DecodeContext<'_>,
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1465,7 +1462,7 @@ fn associate_standard_freeform_e5_surfaces(
     let carrier_ids = standard_freeform_e5_carrier_ids(data);
 
     let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
-    for surface in crate::families::e5::records::e5_surfaces(ctx, data, refusal)? {
+    for surface in crate::families::e5::records::e5_surfaces(data, refusal)? {
         if let Some(stored) = surfaces.get_mut(&surface.record_id) {
             if stored
                 .as_ref()
@@ -2156,7 +2153,7 @@ fn try_decode_standard_population(
         face_bounds.push(bounds);
     }
     let mut freeform_geometries = std::mem::take(&mut object_evidence.surface_geometries);
-    let e5_freeform_geometries = match associate_standard_freeform_e5_surfaces(ctx, &records, &scan.data, refusal) {
+    let e5_freeform_geometries = match associate_standard_freeform_e5_surfaces(&records, &scan.data, refusal) {
         Ok(geometries) => geometries,
         Err(error) => return Some(Err(error)),
     };
@@ -3363,31 +3360,27 @@ fn standard_object_evidence(
         refusal,
     )?;
     merge_standard_limit_curves_from_records(
-        ctx,
         &mut evidence.limit_curves,
         &scan.data,
         consolidated_records,
         refusal,
-    )?;
+    );
     Ok(evidence)
 }
 
 fn merge_standard_limit_curves_from_records(
-    ctx: &DecodeContext<'_>,
     curves: &mut Vec<NurbsCurve>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(geometry) = crate::families::a5a8::records::rolling_ball_limit_curve(
-                ctx,
                 &jet,
                 second_limit,
                 refusal,
-            )?
-            else {
+            ) else {
                 continue;
             };
             if !curves.contains(&geometry) {
@@ -3395,7 +3388,6 @@ fn merge_standard_limit_curves_from_records(
             }
         }
     }
-    Ok(())
 }
 
 pub(super) fn standard_object_evidence_from_streams(
@@ -3418,13 +3410,7 @@ pub(super) fn standard_object_evidence_from_streams(
                 stream,
             ))),
         )?;
-        merge_standard_limit_curves_from_records(
-            ctx,
-            &mut limit_curves,
-            stream,
-            &records,
-            refusal,
-        )?;
+        merge_standard_limit_curves_from_records(&mut limit_curves, stream, &records, refusal);
         for population in crate::families::b5::graph::object_stream_populations(stream) {
             populations.push(population);
         }
@@ -7591,11 +7577,7 @@ fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
     (left - right).abs() <= NURBS_SHARED_BOUNDARY_TOLERANCE * left.abs().max(right.abs()).max(1.0)
 }
 
-fn nurbs_shared_boundary_curves_match(
-    ctx: &DecodeContext<'_>,
-    left: &NurbsCurve,
-    right: &NurbsCurve,
-) -> Result<bool, CodecError> {
+fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> bool {
     let same_payload = |left: &NurbsCurve, right: &NurbsCurve| {
         left.degree() == right.degree()
             && left.periodic() == right.periodic()
@@ -7633,16 +7615,16 @@ fn nurbs_shared_boundary_curves_match(
             })
     };
     if same_payload(left, right) {
-        return Ok(true);
+        return true;
     }
     let Some(range) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(right)
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
     else {
-        return Ok(false);
+        return false;
     };
-    Ok(reverse_nurbs_curve(ctx, right, range)?
+    reverse_nurbs_curve(right, range)
         .ok()
-        .is_some_and(|reversed| same_payload(left, &reversed)))
+        .is_some_and(|reversed| same_payload(left, &reversed))
 }
 
 fn nurbs_surface_boundary_curves(
@@ -7741,7 +7723,7 @@ fn standard_shared_nurbs_boundary_pair_options(
     let mut shared = [false; 4];
     for (index, left) in left_boundaries.iter().enumerate() {
         for right in &right_boundaries {
-            if nurbs_shared_boundary_curves_match(ctx, left, right)? {
+            if nurbs_shared_boundary_curves_match(left, right) {
                 shared[index] = true;
                 break;
             }
@@ -8156,7 +8138,7 @@ fn bind_standard_a5_owner_surfaces(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let StandardConsolidatedSource { data, records } = source;
     let carriers =
-        crate::families::a5a8::records::a5_surfaces_from_records(ctx, data, records, refusal)?;
+        crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal)?;
     let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records)
         .collect::<Vec<_>>();
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
@@ -8898,7 +8880,6 @@ mod circle_axis_tests {
         let u = NurbsSurfaceAxis::new(1, vec![0., 0., 1e-10, 1e-10], false);
         let v = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
         let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             u,
             v,
             NurbsSurfaceLanes::new(
@@ -8910,7 +8891,6 @@ mod circle_axis_tests {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("anisotropic nurbs surface");
         let residual = super::surface_membership::nurbs_surface_witness_distance(
             &cadmpeg_test_support::service_decode_context(),

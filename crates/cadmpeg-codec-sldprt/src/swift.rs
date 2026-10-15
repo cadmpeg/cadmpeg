@@ -773,21 +773,6 @@ fn enrich_implicit_nominals(
     root: &Entity,
     rendered: &[RenderedDimension],
     annotations: &mut Vec<PmiAnnotation>,
-) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("empty root fits test policy");
-    *annotations = project_with_topology(&ctx, root, None, rendered, None)
-        .expect("test projection fits policy")
-        .annotations;
-}
-
-#[cfg(test)]
-fn enrich_implicit_nominals_with_context(
-    root: &Entity,
-    rendered: &[RenderedDimension],
-    annotations: &mut Vec<PmiAnnotation>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) {
     let arena = cadmpeg_core::decode::DecodeArena::new();

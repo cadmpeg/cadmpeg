@@ -155,7 +155,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
     );
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &second])).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&first, &axis, &second]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
@@ -169,11 +169,11 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
         radius: Length::new(2.0).unwrap(),
     })
     .unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &mismatched])
-    })
-    .expect("resource allocation did not fail")
-    .is_none());
+    assert!(
+        exact_counted_dimension_relation(&[&first, &axis, &mismatched])
+            .expect("resource allocation did not fail")
+            .is_none()
+    );
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
     );
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &second])).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&first, &axis, &second]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
@@ -231,11 +231,11 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
         end_angle: Angle::new(5.0 * std::f64::consts::FRAC_PI_4 + 0.1).unwrap(),
     })
     .unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &mismatched])
-    })
-    .expect("resource allocation did not fail")
-    .is_none());
+    assert!(
+        exact_counted_dimension_relation(&[&first, &axis, &mismatched])
+            .expect("resource allocation did not fail")
+            .is_none()
+    );
 }
 
 #[test]
@@ -266,7 +266,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&circle, &arc])).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&circle, &arc]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == arc.id().clone()
     ));
@@ -280,7 +280,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&circle, &coradial])).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&circle, &coradial]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coradial { first, second })
             if first == circle.id().clone() && second == coradial.id().clone()
     ));
@@ -299,7 +299,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&circle, &ellipse])).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&circle, &ellipse]).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == ellipse.id().clone()
     ));
@@ -312,11 +312,9 @@ fn counted_dimension_groups_resolve_centered_entities() {
         end_angle: Angle::new(1.0).unwrap(),
     })
     .unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        exact_counted_dimension_relation(decode_ctx, &[&circle, &displaced])
-    })
-    .expect("resource allocation did not fail")
-    .is_none());
+    assert!(exact_counted_dimension_relation(&[&circle, &displaced])
+        .expect("resource allocation did not fail")
+        .is_none());
 }
 
 #[test]

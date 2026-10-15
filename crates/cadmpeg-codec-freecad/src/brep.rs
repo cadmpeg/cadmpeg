@@ -2324,10 +2324,10 @@ pub(crate) fn parse_payloads(
             .rsplit_once('.')
             .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
         {
-            let (facts, version) = parse_binary_prefix(ctx, entry.data())?;
+            let (facts, version) = parse_binary_prefix(entry.data())?;
             ShapePayload::Binary { facts, version }
         } else {
-            let (facts, version) = parse_text(ctx, entry.data())?;
+            let (facts, version) = parse_text(entry.data())?;
             ShapePayload::Text { facts, version }
         };
         payloads.push(ShapePayloadRecord {
@@ -2531,10 +2531,7 @@ fn census_surface(
     Ok(())
 }
 
-fn parse_text(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
+fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let headers = [
@@ -2602,36 +2599,27 @@ fn parse_text(
             shape_types.values().sum::<usize>()
         )));
     }
-    let locations = parse_locations(ctx, &tokens, &section_counts)?;
+    let locations = parse_locations(&tokens, &section_counts)?;
     let curve2ds = parse_geometry_table(
-        ctx,
         &tokens,
         &section_counts,
         "Curve2ds",
         "Curves",
         parse_curve2d,
     )?;
-    let curves = parse_geometry_table(
-        ctx,
-        &tokens,
-        &section_counts,
-        "Curves",
-        "Polygon3D",
-        parse_curve,
-    )?;
+    let curves =
+        parse_geometry_table(&tokens, &section_counts, "Curves", "Polygon3D", parse_curve)?;
     let surfaces = parse_geometry_table(
-        ctx,
         &tokens,
         &section_counts,
         "Surfaces",
         "Triangulations",
         parse_surface,
     )?;
-    let polygons3d = parse_polygons3d(ctx, &tokens, &section_counts)?;
-    let polygons_on_triangulations =
-        parse_polygons_on_triangulations(ctx, &tokens, &section_counts)?;
-    let triangulations = parse_triangulations(ctx, &tokens, &section_counts, topology_version)?;
-    let (tshapes, roots) = parse_tshapes(ctx, &tokens, &section_counts, topology_version)?;
+    let polygons3d = parse_polygons3d(&tokens, &section_counts)?;
+    let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
+    let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
+    let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
     let facts = ShapeSet {
         locations,
         curve2ds,
@@ -2692,11 +2680,8 @@ fn text_brep_section(
     Ok((index, count))
 }
 
-fn parse_binary_prefix(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
-    let mut cursor = BinaryCursor::new(ctx, bytes);
+fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
+    let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
         let line = line.trim();
@@ -2963,7 +2948,7 @@ struct BinaryGeometryCounts {
 }
 
 fn parse_binary_tshape(
-    cursor: &mut BinaryCursor<'_, '_, '_>,
+    cursor: &mut BinaryCursor<'_>,
     version: u8,
     index: usize,
     tshape_count: usize,
@@ -3195,7 +3180,7 @@ fn parse_binary_tshape(
 }
 
 fn parse_binary_edge_representation(
-    cursor: &mut BinaryCursor<'_, '_, '_>,
+    cursor: &mut BinaryCursor<'_>,
     version: u8,
     kind: u8,
     counts: BinaryGeometryCounts,
@@ -3421,7 +3406,7 @@ fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
 }
 
 fn parse_binary_surface(
-    cursor: &mut BinaryCursor<'_, '_, '_>,
+    cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextSurface, CodecError> {
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
@@ -3532,7 +3517,6 @@ fn parse_binary_surface(
             }
             TextSurface::Nurbs(
                 NurbsSurface::from_finite_lanes(
-                    cursor.ctx,
                     NurbsSurfaceAxis::new(
                         u32::try_from(u_degree).map_err(|_| {
                             CodecError::Malformed("binary Bezier u degree exceeds u32".into())
@@ -3554,7 +3538,7 @@ fn parse_binary_surface(
                             .transpose()?,
                     ),
                     false,
-                )?
+                )
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
@@ -3582,7 +3566,6 @@ fn parse_binary_surface(
                 }
             }
             TextSurface::Nurbs(normalize_periodic_surface(
-                cursor.ctx,
                 [u_degree, v_degree],
                 [
                     cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
@@ -3629,7 +3612,7 @@ fn checked_grid_count(u_count: usize, v_count: usize, label: &str) -> Result<usi
 }
 
 fn parse_binary_curve(
-    cursor: &mut BinaryCursor<'_, '_, '_>,
+    cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextCurve, CodecError> {
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
@@ -3710,7 +3693,6 @@ fn parse_binary_curve(
             }
             TextCurve::Nurbs(
                 NurbsCurve::from_finite_lanes(
-                    cursor.ctx,
                     u32::try_from(degree).map_err(|_| {
                         CodecError::Malformed("binary Bezier degree exceeds u32".into())
                     })?,
@@ -3718,7 +3700,7 @@ fn parse_binary_curve(
                     control_points,
                     weights,
                     false,
-                )?
+                )
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
@@ -3742,15 +3724,8 @@ fn parse_binary_curve(
             let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
             append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve::Nurbs(
-                NurbsCurve::from_finite_lanes(
-                    cursor.ctx,
-                    degree,
-                    knots,
-                    control_points,
-                    weights,
-                    periodic,
-                )?
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                NurbsCurve::from_finite_lanes(degree, knots, control_points, weights, periodic)
+                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
         8 => TextCurve::Trimmed {
@@ -3776,7 +3751,7 @@ fn parse_binary_curve(
 }
 
 fn parse_binary_curve2d(
-    cursor: &mut BinaryCursor<'_, '_, '_>,
+    cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextCurve2d, CodecError> {
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
@@ -3889,16 +3864,14 @@ fn parse_binary_curve2d(
     })
 }
 
-struct BinaryCursor<'a, 'c, 'r> {
+struct BinaryCursor<'a> {
     view: View<'a>,
-    ctx: &'c DecodeContext<'r>,
 }
 
-impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
-    fn new(ctx: &'c DecodeContext<'r>, bytes: &'a [u8]) -> Self {
+impl<'a> BinaryCursor<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
         Self {
             view: View::over_retained(bytes),
-            ctx,
         }
     }
 
@@ -4064,7 +4037,6 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
 }
 
 fn parse_locations(
-    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
 ) -> Result<Vec<TextLocation>, CodecError> {
@@ -4078,7 +4050,7 @@ fn parse_locations(
         .position(|token| *token == "Curve2ds")
         .ok_or_else(|| CodecError::Malformed("text B-rep has no Curve2ds table".into()))?;
     let count = section_counts.get("Locations").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(ctx, &tokens[start..end]);
+    let mut cursor = TokenCursor::new(&tokens[start..end]);
     // Each location consumes at least its one type token.
     let mut locations: Vec<TextLocation> = Vec::new();
     for index in 0..count {
@@ -4150,12 +4122,11 @@ fn parse_locations(
 }
 
 fn parse_geometry_table<T>(
-    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
     table: &str,
     next_table: &str,
-    mut parse: impl FnMut(&mut TokenCursor<'_, '_, '_>, usize, usize) -> Result<T, CodecError>,
+    mut parse: impl FnMut(&mut TokenCursor<'_>, usize, usize) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let start = tokens
         .iter()
@@ -4169,12 +4140,9 @@ fn parse_geometry_table<T>(
             CodecError::malformed(format_args!("text B-rep has no {next_table} table"))
         })?;
     let count = section_counts.get(table).copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(
-        ctx,
-        tokens.get(start..end).ok_or_else(|| {
-            CodecError::malformed(format_args!("text B-rep {table} table has invalid bounds"))
-        })?,
-    );
+    let mut cursor = TokenCursor::new(tokens.get(start..end).ok_or_else(|| {
+        CodecError::malformed(format_args!("text B-rep {table} table has invalid bounds"))
+    })?);
     // Every row consumes at least its type token.
     let mut curves = Vec::new();
     for index in 0..count {
@@ -4189,7 +4157,7 @@ fn parse_geometry_table<T>(
 }
 
 fn parse_curve2d(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve2d, CodecError> {
@@ -4259,7 +4227,7 @@ fn parse_curve2d(
     })
 }
 
-fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve2d, CodecError> {
+fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, CodecError> {
     let rational = cursor.boolean("2D Bezier rational flag")?;
     let degree = cursor.count("2D Bezier degree", 64)?;
     let pole_count = degree + 1;
@@ -4281,7 +4249,7 @@ fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCur
     })
 }
 
-fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve2d, CodecError> {
+fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, CodecError> {
     let rational = cursor.boolean("2D B-spline rational flag")?;
     let periodic = cursor.boolean("2D B-spline periodic flag")?;
     let degree = cursor.count("2D B-spline degree", 64)?;
@@ -4347,11 +4315,10 @@ fn invert_affine(transform: Transform) -> Result<Transform, CodecError> {
 }
 
 fn parse_polygons3d(
-    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
 ) -> Result<Vec<TextPolygon3d>, CodecError> {
-    let mut cursor = section_cursor(ctx, tokens, "Polygon3D", "PolygonOnTriangulations")?;
+    let mut cursor = section_cursor(tokens, "Polygon3D", "PolygonOnTriangulations")?;
     let count = section_counts.get("Polygon3D").copied().unwrap_or(0);
     // Each polygon consumes at least a node-count, flag, and deflection token.
     let mut polygons = Vec::new();
@@ -4385,11 +4352,10 @@ fn parse_polygons3d(
 }
 
 fn parse_polygons_on_triangulations(
-    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
 ) -> Result<Vec<TextPolygonOnTriangulation>, CodecError> {
-    let mut cursor = section_cursor(ctx, tokens, "PolygonOnTriangulations", "Surfaces")?;
+    let mut cursor = section_cursor(tokens, "PolygonOnTriangulations", "Surfaces")?;
     let count = section_counts
         .get("PolygonOnTriangulations")
         .copied()
@@ -4445,12 +4411,11 @@ fn parse_polygons_on_triangulations(
 }
 
 fn parse_triangulations(
-    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<Vec<TextTriangulation>, CodecError> {
-    let mut cursor = section_cursor(ctx, tokens, "Triangulations", "TShapes")?;
+    let mut cursor = section_cursor(tokens, "Triangulations", "TShapes")?;
     let count = section_counts.get("Triangulations").copied().unwrap_or(0);
     // Each triangulation consumes at least two counts, a flag, and a deflection token.
     let mut triangulations = Vec::new();
@@ -4510,12 +4475,11 @@ fn parse_triangulations(
     Ok(triangulations)
 }
 
-fn section_cursor<'a, 'c, 'r>(
-    ctx: &'c DecodeContext<'r>,
+fn section_cursor<'a>(
     tokens: &'a [&'a str],
     section: &str,
     following: &str,
-) -> Result<TokenCursor<'a, 'c, 'r>, CodecError> {
+) -> Result<TokenCursor<'a>, CodecError> {
     let start = tokens
         .iter()
         .position(|token| *token == section)
@@ -4527,13 +4491,10 @@ fn section_cursor<'a, 'c, 'r>(
         .ok_or_else(|| {
             CodecError::malformed(format_args!("text B-rep has no {following} table"))
         })?;
-    Ok(TokenCursor::new(ctx, &tokens[start..end]))
+    Ok(TokenCursor::new(&tokens[start..end]))
 }
 
-fn ensure_section_consumed(
-    cursor: &TokenCursor<'_, '_, '_>,
-    section: &str,
-) -> Result<(), CodecError> {
+fn ensure_section_consumed(cursor: &TokenCursor<'_>, section: &str) -> Result<(), CodecError> {
     if cursor.is_empty() {
         Ok(())
     } else {
@@ -4544,7 +4505,6 @@ fn ensure_section_consumed(
 }
 
 fn parse_tshapes(
-    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
     topology_version: u8,
@@ -4555,7 +4515,7 @@ fn parse_tshapes(
         .ok_or_else(|| CodecError::Malformed("text B-rep has no TShapes table".into()))?
         + 2;
     let count = section_counts.get("TShapes").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(ctx, &tokens[start..]);
+    let mut cursor = TokenCursor::new(&tokens[start..]);
     // Each TShape consumes at least its one kind token.
     let mut shapes = Vec::new();
     for index in 1..=count {
@@ -4619,7 +4579,7 @@ fn parse_shape_kind(token: &str) -> Result<TextShapeKind, CodecError> {
 
 fn parse_tshape_geometry(
     kind: TextShapeKind,
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextTShapeGeometry, CodecError> {
@@ -4636,7 +4596,7 @@ fn parse_tshape_geometry(
 }
 
 fn parse_vertex_geometry(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
     let tolerance = cursor.finite_real("vertex tolerance")?;
@@ -4653,7 +4613,7 @@ fn parse_vertex_geometry(
                 "vertex representation-count limit exceeded".into(),
             ));
         }
-        let location_of = |cursor: &mut TokenCursor<'_, '_, '_>| {
+        let location_of = |cursor: &mut TokenCursor<'_>| {
             parse_reference(cursor, "vertex location", counts["Locations"], true)
         };
         let representation = match kind {
@@ -4695,7 +4655,7 @@ fn parse_vertex_geometry(
 }
 
 fn parse_edge_geometry(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextTShapeGeometry, CodecError> {
@@ -4732,7 +4692,7 @@ fn parse_edge_geometry(
 
 fn parse_edge_representation(
     kind: i64,
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextEdgeRepresentation, CodecError> {
@@ -4882,7 +4842,7 @@ fn parse_edge_representation(
 }
 
 fn parse_face_geometry(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
     let natural_restriction = cursor.boolean("face natural-restriction flag")?;
@@ -4929,7 +4889,7 @@ fn parse_shape_flags(token: &str, topology_version: u8) -> Result<[bool; 7], Cod
 }
 
 fn parse_shape_use(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     shape_count: usize,
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextShapeUse, CodecError> {
@@ -4963,7 +4923,7 @@ fn parse_shape_use(
 }
 
 fn parse_reference(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     label: &str,
     maximum: usize,
     allow_zero: bool,
@@ -4976,7 +4936,7 @@ fn parse_reference(
 }
 
 fn parse_reference_suffix(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     label: &str,
     maximum: usize,
 ) -> Result<(usize, Option<String>), CodecError> {
@@ -4996,10 +4956,7 @@ fn parse_reference_suffix(
     Ok((value, (!suffix.is_empty()).then(|| suffix.to_owned())))
 }
 
-fn parse_range(
-    cursor: &mut TokenCursor<'_, '_, '_>,
-    label: &str,
-) -> Result<[FiniteReal; 2], CodecError> {
+fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[FiniteReal; 2], CodecError> {
     let range = [
         cursor.finite_real(&format!("{label} first parameter"))?,
         cursor.finite_real(&format!("{label} last parameter"))?,
@@ -5013,7 +4970,7 @@ fn parse_range(
 }
 
 fn parse_surface(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     depth: usize,
     table_index: usize,
 ) -> Result<TextSurface, CodecError> {
@@ -5101,7 +5058,7 @@ enum AnalyticSurfaceKind {
 
 fn parse_analytic_surface(
     kind: AnalyticSurfaceKind,
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
 ) -> Result<TextSurface, CodecError> {
     let origin = cursor.finite_point("surface origin")?;
     let axis = cursor.finite_vector("surface axis")?;
@@ -5160,7 +5117,7 @@ fn frame_v_reversed(axis: Vector3, x_axis: Vector3, y_axis: Vector3) -> bool {
     ) < 0.0
 }
 
-fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurface, CodecError> {
+fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {
     let u_rational = cursor.boolean("B-spline u rational flag")?;
     let v_rational = cursor.boolean("B-spline v rational flag")?;
     let rational = u_rational || v_rational;
@@ -5189,7 +5146,6 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurf
     let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
     let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v")?;
     normalize_periodic_surface(
-        cursor.ctx,
         [
             u32::try_from(u_degree)
                 .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
@@ -5204,7 +5160,7 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurf
     )
 }
 
-fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurface, CodecError> {
+fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {
     let u_rational = cursor.boolean("Bezier u rational flag")?;
     let v_rational = cursor.boolean("Bezier v rational flag")?;
     let rational = u_rational || v_rational;
@@ -5224,7 +5180,6 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
         }
     }
     NurbsSurface::from_finite_lanes(
-        cursor.ctx,
         NurbsSurfaceAxis::new(
             u32::try_from(u_degree)
                 .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
@@ -5244,12 +5199,12 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
                 .transpose()?,
         ),
         false,
-    )?
+    )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn parse_knots(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     knot_count: usize,
     degree: usize,
     label: &str,
@@ -5357,7 +5312,6 @@ fn append_periodic_curve_poles<T: Clone>(
 }
 
 fn normalize_periodic_surface(
-    ctx: &DecodeContext<'_>,
     degrees: [u32; 2],
     knots: [Vec<FiniteReal>; 2],
     counts: [usize; 2],
@@ -5415,7 +5369,6 @@ fn normalize_periodic_surface(
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
     NurbsSurface::from_finite_lanes(
-        ctx,
         NurbsSurfaceAxis::new(degrees[0], u_knots, periodic[0]),
         NurbsSurfaceAxis::new(degrees[1], v_knots, periodic[1]),
         NurbsSurfaceLanes::new(
@@ -5441,12 +5394,12 @@ fn normalize_periodic_surface(
                 .transpose()?,
         ),
         false,
-    )?
+    )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn parse_curve(
-    cursor: &mut TokenCursor<'_, '_, '_>,
+    cursor: &mut TokenCursor<'_>,
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve, CodecError> {
@@ -5550,7 +5503,7 @@ fn parse_curve(
     })
 }
 
-fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve, CodecError> {
+fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecError> {
     let rational = cursor.boolean("B-spline rational flag")?;
     let periodic = cursor.boolean("B-spline periodic flag")?;
     let degree = cursor.count("B-spline degree", 64)?;
@@ -5575,18 +5528,17 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve,
     )?;
     append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
     NurbsCurve::from_finite_lanes(
-        cursor.ctx,
         u32::try_from(degree)
             .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         knots,
         control_points,
         weights,
         periodic,
-    )?
+    )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
-fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve, CodecError> {
+fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecError> {
     let rational = cursor.boolean("Bezier rational flag")?;
     let degree = cursor.count("Bezier degree", 64)?;
     let pole_count = degree + 1;
@@ -5599,14 +5551,13 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve
         }
     }
     NurbsCurve::from_finite_lanes(
-        cursor.ctx,
         u32::try_from(degree)
             .map_err(|_| CodecError::Malformed("B-rep integer exceeds u32".into()))?,
         clamped_bezier_knots(degree)?,
         control_points,
         weights,
         false,
-    )?
+    )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -5638,19 +5589,14 @@ fn grid_rows<T>(values: Vec<T>, width: usize) -> Result<Vec<Vec<T>>, CodecError>
     Ok(rows)
 }
 
-struct TokenCursor<'a, 'c, 'r> {
+struct TokenCursor<'a> {
     tokens: &'a [&'a str],
     index: usize,
-    ctx: &'c DecodeContext<'r>,
 }
 
-impl<'a, 'c, 'r> TokenCursor<'a, 'c, 'r> {
-    fn new(ctx: &'c DecodeContext<'r>, tokens: &'a [&'a str]) -> Self {
-        Self {
-            tokens,
-            index: 0,
-            ctx,
-        }
+impl<'a> TokenCursor<'a> {
+    fn new(tokens: &'a [&'a str]) -> Self {
+        Self { tokens, index: 0 }
     }
 
     fn is_empty(&self) -> bool {

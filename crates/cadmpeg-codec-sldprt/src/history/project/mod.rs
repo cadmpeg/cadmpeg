@@ -3,7 +3,6 @@
 
 use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureContent, FeatureHistory};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
@@ -165,7 +164,6 @@ impl fmt::Display for FeatureOrdinal {
 }
 
 pub(crate) fn project_feature_model(
-    ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
     let (mut features, parents) = histories.iter().try_fold(
@@ -225,7 +223,7 @@ pub(crate) fn project_feature_model(
                         .unwrap_or(u64::from(feature.ordinal)),
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                     suppressed: Some(feature.suppressed),
-                    dependencies: project_feature_dependencies(ctx, feature, &by_source)?,
+                    dependencies: project_feature_dependencies(feature, &by_source)?,
                     source_properties: feature.properties.clone(),
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.as_deref().map(str::to_owned),
@@ -233,7 +231,6 @@ pub(crate) fn project_feature_model(
 
                     evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                         project_definition(
-                            ctx,
                             feature,
                             &by_source,
                             &native_by_source,
@@ -272,7 +269,6 @@ pub(crate) fn project_feature_model(
             regeneration_parents.push((child, parent));
             continue;
         };
-        let mut result = Ok(());
         features[tree_parent_index]
             .evaluation
             .edit(|definition, _| {
@@ -280,13 +276,12 @@ pub(crate) fn project_feature_model(
                     children, ..
                 }) = definition
                 {
-                    result = children.insert(ctx, child, "collect SLDPRT tree children");
+                    children.insert(child);
                 }
             });
-        result?;
     }
-    bind_offset_plane_references(ctx, &mut features)?;
-    bind_native_construction_features(ctx, &mut features, histories)?;
+    bind_offset_plane_references(&mut features);
+    bind_native_construction_features(&mut features, histories);
     Ok(FeatureProjection {
         features,
         regeneration_parents,
@@ -294,10 +289,9 @@ pub(crate) fn project_feature_model(
 }
 
 pub(crate) fn project_features(
-    ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
-    project_feature_model(ctx, histories).map(|projection| projection.features)
+    project_feature_model(histories).map(|projection| projection.features)
 }
 
 /// Project standalone history notes into the semantic-annotation arena.
@@ -345,10 +339,7 @@ pub(crate) fn project_semantic_notes(
     Ok(notes)
 }
 
-pub(super) fn bind_offset_plane_references(
-    ctx: &DecodeContext<'_>,
-    features: &mut [cadmpeg_ir::features::Feature],
-) -> Result<(), CodecError> {
+pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
     fn canonical_plane_id<'a>(
         id: &'a FeatureId,
         parents: &'a HashMap<FeatureId, FeatureId>,
@@ -597,12 +588,8 @@ pub(super) fn bind_offset_plane_references(
             feature
                 .dependencies
                 .retain(|dependency| dependency != &reference_id);
-        } else if !feature.dependencies.contains(&reference_id) {
-            feature.dependencies.insert(
-                ctx,
-                reference_id,
-                "bind SLDPRT offset plane dependencies",
-            )?;
+        } else {
+            feature.dependencies.insert(reference_id);
         }
     }
     let mut frames = HashMap::new();
@@ -771,11 +758,7 @@ pub(super) fn bind_offset_plane_references(
             if !bound {
                 continue;
             }
-            features[index].dependencies.insert(
-                ctx,
-                reference,
-                "bind SLDPRT offset plane dependencies",
-            )?;
+            features[index].dependencies.insert(reference);
             changed = true;
         }
         if !changed {
@@ -806,14 +789,12 @@ pub(super) fn bind_offset_plane_references(
             }
         });
     }
-    Ok(())
 }
 
 fn bind_native_construction_features(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
-) -> Result<(), CodecError> {
+) {
     let mut construction_native_refs = HashSet::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         if !matches!(
@@ -848,92 +829,71 @@ fn bind_native_construction_features(
         let dependencies = &mut feature.dependencies;
         let insert_dependency =
             |dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>,
-             target: &FeatureId|
-             -> Result<(), CodecError> {
-                if target != feature_id && !dependencies.contains(target) {
-                    dependencies.insert(
-                        ctx,
-                        target.clone(),
-                        "bind SLDPRT native construction dependencies",
-                    )?;
+             target: &FeatureId| {
+                if target != feature_id {
+                    dependencies.insert(target.clone());
                 }
-                Ok(())
             };
-        let bind_planar = |profile: &mut PlanarProfileRef,
-                           dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>|
-         -> Result<(), CodecError> {
-            let PlanarProfileRef::Native(native) = profile else {
-                return Ok(());
+        let bind_planar =
+            |profile: &mut PlanarProfileRef,
+             dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>| {
+                let PlanarProfileRef::Native(native) = profile else {
+                    return;
+                };
+                let Some(target) = feature_ids_by_native.get(native.as_str()) else {
+                    return;
+                };
+                let target_id = target.clone();
+                insert_dependency(dependencies, target);
+                *profile = PlanarProfileRef::Feature(target_id);
             };
-            let Some(target) = feature_ids_by_native.get(native.as_str()) else {
-                return Ok(());
+        let bind =
+            |profile: &mut ProfileRef,
+             dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>| {
+                if let ProfileRef::Planar(profile) = profile {
+                    bind_planar(profile, dependencies);
+                }
             };
-            let target_id = target.clone();
-            insert_dependency(dependencies, target)?;
-            *profile = PlanarProfileRef::Feature(target_id);
-            Ok(())
-        };
-        let bind = |profile: &mut ProfileRef,
-                    dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>|
-         -> Result<(), CodecError> {
-            if let ProfileRef::Planar(profile) = profile {
-                bind_planar(profile, dependencies)?;
+        feature.evaluation.edit(|definition, _| match definition {
+            FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
+                bind(profile, dependencies);
             }
-            Ok(())
-        };
-        let mut result: Result<(), CodecError> = Ok(());
-        feature.evaluation.edit(|definition, _| {
-            result = (|| {
-                match definition {
-                    FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                        bind(profile, dependencies)?;
-                    }
-                    FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
-                        bind_planar(profile, dependencies)?;
-                    }
-                    FeatureDefinition::Operation(FeatureOperation::Revolve {
-                        construction,
-                        ..
-                    }) => {
-                        if let Some(profile) = construction.profile_mut() {
-                            bind_planar(profile, dependencies)?;
-                        }
-                    }
-                    FeatureDefinition::Operation(FeatureOperation::Rib {
-                        construction, ..
-                    }) => {
-                        if let Some(profile) = &mut construction.profile {
-                            bind_planar(profile, dependencies)?;
-                        }
-                    }
-                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
-                        if let Some(profile) = shape.referenced_profile_mut() {
-                            bind_planar(profile, dependencies)?;
-                        }
-                    }
-                    FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
-                        for section in sections {
-                            if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
-                                bind(profile, dependencies)?;
-                            }
-                        }
-                    }
-                    FeatureDefinition::Operation(FeatureOperation::SplitFace {
-                        tool: SplitFaceTool::Path(PathRef::Native(native)),
-                        ..
-                    }) => {
-                        if let Some(target) = feature_ids_by_native.get(native.as_str()) {
-                            insert_dependency(dependencies, target)?;
-                        }
-                    }
-                    _ => {}
+            FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
+                bind_planar(profile, dependencies);
+            }
+            FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
+                if let Some(profile) = construction.profile_mut() {
+                    bind_planar(profile, dependencies);
                 }
-                Ok(())
-            })();
+            }
+            FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => {
+                if let Some(profile) = &mut construction.profile {
+                    bind_planar(profile, dependencies);
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
+                if let Some(profile) = shape.referenced_profile_mut() {
+                    bind_planar(profile, dependencies);
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
+                for section in sections {
+                    if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                        bind(profile, dependencies);
+                    }
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::SplitFace {
+                tool: SplitFaceTool::Path(PathRef::Native(native)),
+                ..
+            }) => {
+                if let Some(target) = feature_ids_by_native.get(native.as_str()) {
+                    insert_dependency(dependencies, target);
+                }
+            }
+            _ => {}
         });
-        result?;
     }
-    Ok(())
 }
 
 struct EncodedNativeKey<'a>(&'a str);
@@ -1133,7 +1093,6 @@ fn project_feature_content(
 }
 
 fn project_feature_dependencies(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
 ) -> Result<cadmpeg_ir::features::DistinctMembers<FeatureId>, CodecError> {
@@ -1152,20 +1111,15 @@ fn project_feature_dependencies(
             let Some(dependency) = by_source.get(reference) else {
                 continue;
             };
-            if dependency == &owner || dependencies.contains(dependency) {
-                continue;
+            if dependency != &owner {
+                dependencies.insert(dependency.clone());
             }
-            dependencies.insert(
-                ctx,
-                dependency.clone(),
-                "collect SLDPRT feature dependencies",
-            )?;
         }
     }
     Ok(dependencies)
 }
 
-/// Project decoded native configurations under the caller's resource budget.
+/// Project decoded native configurations into neutral design configurations.
 pub(crate) fn project_configurations(
     histories: &[FeatureHistory],
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
@@ -1204,7 +1158,6 @@ pub(crate) fn project_configurations(
 
 /// Project every native feature dimension into the neutral parameter arena.
 fn project_definition(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
     native_by_source: &HashMap<String, &str>,
@@ -1352,7 +1305,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::SplitFace) {
         project_split_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Combine) {
-        project_combine(ctx, feature)?.unwrap_or_else(|| native_definition(feature))
+        project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::CutWithSurface) {
         project_cut_with_surface(feature)
     } else if class == Some(FeatureClass::DeleteBody) {
@@ -1360,7 +1313,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::DeleteFace) {
         project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::ReplaceFace) {
-        project_replace_face(ctx, feature)?.unwrap_or_else(|| native_definition(feature))
+        project_replace_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::MoveFace) {
         project_move_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::MoveBody) {

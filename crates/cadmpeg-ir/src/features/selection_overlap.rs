@@ -1,77 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Borrowed, fallible overlap checks for feature operand memberships.
-
-use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
+//! Borrowed overlap checks for feature operand memberships.
 
 use super::{
     BodyMembers, BodySelection, FaceSelection, GeneratedBodyRef, GeneratedFaceRef, VertexSelection,
 };
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId, HistoricalFaceId};
 
-pub(super) trait OverlapAdmission {
-    type Error;
-    fn work(&self, count: usize) -> Result<(), Self::Error>;
-}
-
-pub(super) struct StandardAdmission;
-
-impl OverlapAdmission for StandardAdmission {
-    type Error = std::convert::Infallible;
-    fn work(&self, _count: usize) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-impl OverlapAdmission for DecodeContext<'_> {
-    type Error = ResourceLimit;
-    fn work(&self, _count: usize) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-pub(super) fn standard_result<T>(value: Result<T, std::convert::Infallible>) -> T {
-    match value {
-        Ok(value) => value,
-        Err(never) => match never {},
-    }
-}
-
-pub(super) fn text_equal<S: OverlapAdmission>(
-    admission: &S,
-    first: &str,
-    second: &str,
-) -> Result<bool, S::Error> {
-    admission.work(1)?;
-    if first.len() != second.len() {
-        return Ok(false);
-    }
-    admission.work(first.len())?;
-    Ok(first == second)
-}
-
-fn any_overlap<'a, 'b, S: OverlapAdmission, T: 'a + 'b>(
-    admission: &S,
+fn any_overlap<'a, 'b, T: 'a + 'b>(
     first: impl IntoIterator<Item = &'a T>,
     second: &(impl Iterator<Item = &'b T> + Clone),
-    equal: impl Fn(&T, &T) -> Result<bool, S::Error>,
-) -> Result<bool, S::Error> {
-    for first in first {
-        admission.work(1)?;
-        for second in second.clone() {
-            admission.work(1)?;
-            if equal(first, second)? {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
+    equal: impl Fn(&T, &T) -> bool,
+) -> bool {
+    first
+        .into_iter()
+        .any(|first| second.clone().any(|second| equal(first, second)))
 }
 
-pub(super) fn face_selections_overlap<S: OverlapAdmission>(
-    admission: &S,
-    first: &FaceSelection,
-    second: &FaceSelection,
-) -> Result<bool, S::Error> {
+pub(super) fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
     fn direct(selection: &FaceSelection) -> Option<&[crate::ids::FaceId]> {
         match selection {
             FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
@@ -92,56 +37,41 @@ pub(super) fn face_selections_overlap<S: OverlapAdmission>(
         }
     }
     if let Some((first, second)) = direct(first).zip(direct(second)) {
-        return any_overlap(admission, first, &second.iter(), |first, second| {
-            text_equal(admission, first.as_str(), second.as_str())
+        return any_overlap(first, &second.iter(), |first, second| {
+            first.as_str() == second.as_str()
         });
     }
     if let Some(((first_state, first), (second_state, second))) =
         historical(first).zip(historical(second))
     {
-        if !text_equal(admission, first_state.as_str(), second_state.as_str())? {
-            return Ok(false);
+        if first_state.as_str() != second_state.as_str() {
+            return false;
         }
-        return any_overlap(admission, first, &second.iter(), |first, second| {
-            text_equal(admission, first.as_str(), second.as_str())
+        return any_overlap(first, &second.iter(), |first, second| {
+            first.as_str() == second.as_str()
         });
     }
     match (first, second) {
         (
             FaceSelection::Generated { faces: first, .. },
             FaceSelection::Generated { faces: second, .. },
-        ) => any_overlap(
-            admission,
-            first,
-            &second.iter(),
-            |first: &GeneratedFaceRef, second| {
-                Ok(
-                    text_equal(admission, first.feature.as_str(), second.feature.as_str())?
-                        && text_equal(
-                            admission,
-                            first.local_id.as_str(),
-                            second.local_id.as_str(),
-                        )?,
-                )
-            },
-        ),
-        _ => Ok(false),
+        ) => any_overlap(first, &second.iter(), |first: &GeneratedFaceRef, second| {
+            first.feature.as_str() == second.feature.as_str()
+                && first.local_id.as_str() == second.local_id.as_str()
+        }),
+        _ => false,
     }
 }
 
-pub(super) fn vertex_targets_equal<S: OverlapAdmission>(
-    admission: &S,
-    first: &VertexSelection,
-    second: &VertexSelection,
-) -> Result<bool, S::Error> {
+pub(super) fn vertex_targets_equal(first: &VertexSelection, second: &VertexSelection) -> bool {
     match (first, second) {
         (
             VertexSelection::Generated { vertex: first, .. },
             VertexSelection::Generated { vertex: second, .. },
-        ) => Ok(
-            text_equal(admission, first.feature.as_str(), second.feature.as_str())?
-                && text_equal(admission, first.local_id.as_str(), second.local_id.as_str())?,
-        ),
+        ) => {
+            first.feature.as_str() == second.feature.as_str()
+                && first.local_id.as_str() == second.local_id.as_str()
+        }
         (
             VertexSelection::Historical {
                 state: first_state,
@@ -153,15 +83,15 @@ pub(super) fn vertex_targets_equal<S: OverlapAdmission>(
                 vertex: second_vertex,
                 ..
             },
-        ) => Ok(
-            text_equal(admission, first_state.as_str(), second_state.as_str())?
-                && text_equal(admission, first_vertex.as_str(), second_vertex.as_str())?,
-        ),
-        (VertexSelection::Native(first), VertexSelection::Native(second)) => {
-            text_equal(admission, first.as_str(), second.as_str())
+        ) => {
+            first_state.as_str() == second_state.as_str()
+                && first_vertex.as_str() == second_vertex.as_str()
         }
-        (VertexSelection::Unresolved, VertexSelection::Unresolved) => Ok(true),
-        _ => Ok(false),
+        (VertexSelection::Native(first), VertexSelection::Native(second)) => {
+            first.as_str() == second.as_str()
+        }
+        (VertexSelection::Unresolved, VertexSelection::Unresolved) => true,
+        _ => false,
     }
 }
 
@@ -192,11 +122,7 @@ impl<'a, T> BodyRows<'a, T> {
     }
 }
 
-pub(super) fn body_selections_overlap<S: OverlapAdmission>(
-    admission: &S,
-    first: &BodySelection,
-    second: &BodySelection,
-) -> Result<bool, S::Error> {
+pub(super) fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
     fn direct(selection: &BodySelection) -> Option<BodyRows<'_, BodyId>> {
         match selection {
             BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
@@ -221,51 +147,37 @@ pub(super) fn body_selections_overlap<S: OverlapAdmission>(
     }
     if let Some(first) = direct(first) {
         let Some(second) = direct(second) else {
-            return Ok(false);
+            return false;
         };
-        return any_overlap(admission, first.iter(), &second.iter(), |first, second| {
-            text_equal(admission, first.as_str(), second.as_str())
+        return any_overlap(first.iter(), &second.iter(), |first, second| {
+            first.as_str() == second.as_str()
         });
     }
     if let Some(((first_state, first), (second_state, second))) =
         historical(first).zip(historical(second))
     {
-        if !text_equal(admission, first_state.as_str(), second_state.as_str())? {
-            return Ok(false);
+        if first_state.as_str() != second_state.as_str() {
+            return false;
         }
-        return any_overlap(admission, first.iter(), &second.iter(), |first, second| {
-            text_equal(admission, first.as_str(), second.as_str())
+        return any_overlap(first.iter(), &second.iter(), |first, second| {
+            first.as_str() == second.as_str()
         });
     }
     match (first, second) {
         (
             BodySelection::Generated { bodies: first, .. },
             BodySelection::Generated { bodies: second, .. },
-        ) => any_overlap(
-            admission,
-            first,
-            &second.iter(),
-            |first: &GeneratedBodyRef, second| {
-                Ok(
-                    text_equal(admission, first.feature.as_str(), second.feature.as_str())?
-                        && text_equal(
-                            admission,
-                            first.local_id.as_str(),
-                            second.local_id.as_str(),
-                        )?,
-                )
-            },
-        ),
+        ) => any_overlap(first, &second.iter(), |first: &GeneratedBodyRef, second| {
+            first.feature.as_str() == second.feature.as_str()
+                && first.local_id.as_str() == second.local_id.as_str()
+        }),
         (
             BodySelection::Local { bodies: first, .. },
             BodySelection::Local { bodies: second, .. },
-        ) => any_overlap(
-            admission,
-            first.as_slice(),
-            &second.iter(),
-            |first, second| text_equal(admission, first, second),
-        ),
-        _ => Ok(false),
+        ) => any_overlap(first.as_slice(), &second.iter(), |first, second| {
+            first == second
+        }),
+        _ => false,
     }
 }
 

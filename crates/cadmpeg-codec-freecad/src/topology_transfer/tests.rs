@@ -836,7 +836,6 @@ fn collapsed_pcurve_ranges_are_unbounded() {
 fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![2.0, 2.0, 4.0, 4.0],
             vec![
@@ -846,7 +845,6 @@ fn adjacent_pcurve_domain_rounding_is_canonicalized() {
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     };
 
@@ -1678,19 +1676,12 @@ fn numerical_seventh_pcurve_snapping_preserves_distinct_endpoints() {
     use cadmpeg_ir::math::Point2;
     for domain in [[0.0, SMALL_PCURVE_DOMAIN], [1.0e8, 1.0e8 + 0.01]] {
         let nurbs = PcurveNurbs::new(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![domain[0], domain[0], domain[1], domain[1]],
-            PcurveNurbsPoles::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
-                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                None,
-            )
-            .expect("fixture pcurve construction admission")
-            .unwrap(),
+            PcurveNurbsPoles::from_lanes(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], None)
+                .unwrap(),
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap();
         let geometry = PcurveGeometry::Nurbs { nurbs };
         assert_eq!(
