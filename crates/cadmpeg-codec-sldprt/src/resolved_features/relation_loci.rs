@@ -6,8 +6,8 @@ use super::relation_geometry::relation_uses_solver_line_operand;
 use super::relation_records::{relation_uses_dynamic_operands, relation_uses_solver_points};
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
-    sketch_entity_locus_points, sketch_frame_marker_transform, sort_marker_entity_ids,
-    MarkerEntityFilter, MarkerTransform, ProfileAxis, SketchLocusRole,
+    marker_entity_ids, sketch_entity_locus_points, sketch_frame_marker_transform,
+    sort_marker_entity_ids, MarkerEntityFilter, MarkerTransform, ProfileAxis, SketchLocusRole,
 };
 use super::typed_relations::{
     line_endpoint_markers_in, owner_link, relation_link_is_geometric_operand,
@@ -198,6 +198,62 @@ impl<'a> ProfileEntities<'a> {
             .get_hash_map(&self.by_reference, reference, operation)?
             .map_or(&[], Vec::as_slice))
     }
+}
+
+/// A locus role with an identity borrowed from its source arena.
+#[derive(Clone, Copy)]
+struct BorrowedLocus<'a> {
+    role: SketchLocusRole,
+    entity: &'a SketchEntityId,
+}
+
+impl<'a> BorrowedLocus<'a> {
+    fn of(locus: &'a SketchLocus) -> Self {
+        Self {
+            role: SketchLocusRole::of_locus(locus),
+            entity: locus_entity(locus),
+        }
+    }
+
+    fn key(self) -> (&'a SketchEntityId, u8) {
+        (self.entity, self.role.ordinal())
+    }
+
+    fn point(
+        self,
+        ctx: &DecodeContext<'_>,
+        entities: &ProfileEntities<'_>,
+        operation: &'static str,
+    ) -> Result<Option<Point2>, CodecError> {
+        let Some(entity) = entities.entity(ctx, self.entity, operation)? else {
+            return Ok(None);
+        };
+        Ok(sketch_entity_locus_points(entity)
+            .into_iter()
+            .flatten()
+            .find_map(|(point, role)| (role == self.role).then_some(point)))
+    }
+
+    fn copy(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<SketchLocus, CodecError> {
+        role_locus(ctx, self.role, self.entity, operation)
+    }
+}
+
+fn sort_borrowed_loci(
+    ctx: &DecodeContext<'_>,
+    loci: &mut Vec<BorrowedLocus<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.sort_unstable_by_key(loci, |locus| locus.key(), Ord::cmp, operation)?;
+    ctx.dedup_by(
+        loci,
+        |left, right| ctx.equal(&left.key(), &right.key(), "deduplicate SLDPRT profile loci"),
+        "deduplicate SLDPRT profile loci",
+    )
 }
 
 /// The indexes one relation projection resolves every relation against.
@@ -820,8 +876,8 @@ pub(super) fn relation_definition(
         _ => None,
     };
     let dynamic = relation_uses_dynamic_operands(relation);
-    // Each operand's marker, point and curve are resolved once and reused by
-    // every resolver below.
+    // Operand marker lookups and point/curve fallback values are cached.
+    // Dynamic candidate rosters borrow source identities.
     let marker_cache: [OnceCell<Option<&str>>; 2] = Default::default();
     let marker = |operand: usize| -> Result<Option<&str>, CodecError> {
         let resolve = || relation_operand_marker_in(ctx, relation, operand, sketch, index.markers);
@@ -896,9 +952,17 @@ pub(super) fn relation_definition(
             .map(|locus| copy_locus(ctx, locus, POINT))
             .transpose()
     };
+    let solver_cache: [OnceCell<Option<&SketchEntityId>>; 2] = Default::default();
+    let solver = |operand: usize| {
+        memoized(
+            &solver_cache[operand],
+            || solver_line_entity(ctx, relation, operand, sketch, entities),
+            |entity| Ok(*entity),
+        )
+    };
     let resolve_curve = |operand: usize| -> Result<Option<SketchEntityId>, CodecError> {
-        match solver_line_entity(ctx, relation, operand, sketch, entities)? {
-            Some(entity) => Ok(Some(entity)),
+        match solver(operand)? {
+            Some(entity) => entity.try_clone_for_decode(ctx, CURVE).map(Some),
             None => match marker(operand)? {
                 Some(marker) => single_marker_line_entity_in(
                     ctx,
@@ -940,12 +1004,14 @@ pub(super) fn relation_definition(
             PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
                 unique_dynamic_marker_point_pair(
                     ctx,
-                    relation,
                     sketch,
                     parameter,
                     (point_value(0)?, point_value(1)?),
                     index,
-                    profile_axis,
+                    &marker,
+                    |first, second| {
+                        dynamic_point_distance(relation.family, profile_axis, first, second)
+                    },
                 )?
             }
             _ => None,
@@ -966,6 +1032,7 @@ pub(super) fn relation_definition(
             sketch,
             parameter,
             index,
+            &marker,
             profile_axis,
         )?
     } else {
@@ -976,6 +1043,10 @@ pub(super) fn relation_definition(
     // defined witness; an ambiguous arc-center carrier must remain unresolved
     // instead of being bypassed by a coincidental whole-sketch distance.
     let mut roster_has_no_center = dynamic
+        && matches!(
+            relation.family,
+            PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance
+        )
         && dynamic_point_pair.is_none()
         && dynamic_direct_point_pair.is_none()
         && ctx.all_by(
@@ -986,11 +1057,7 @@ pub(super) fn relation_definition(
     if roster_has_no_center {
         for operand in 0..2 {
             if let Some(marker) = marker(operand)? {
-                let (centers, _center_storage) = ctx
-                    .with_scoped_storage("SLDPRT dynamic center presence", || {
-                        dynamic_marker_center_candidates(ctx, marker, sketch, index)
-                    })?;
-                if centers.is_some() {
+                if dynamic_marker_has_arc(ctx, marker, index.markers)? {
                     roster_has_no_center = false;
                     break;
                 }
@@ -1023,12 +1090,12 @@ pub(super) fn relation_definition(
             let (_candidate_storage, (point_candidates, line_candidates));
             ((point_candidates, line_candidates), _candidate_storage) =
                 ctx.with_scoped_storage("SLDPRT dynamic point-line candidates", || {
-                    let point_candidates = match point(0)? {
+                    let point_candidates = match point_value(0)? {
                         Some(point) => {
                             let mut candidates = Vec::new();
                             ctx.push_vec(
                                 &mut candidates,
-                                point,
+                                BorrowedLocus::of(point),
                                 "collect SLDPRT dynamic point candidates",
                             )?;
                             candidates
@@ -1040,8 +1107,9 @@ pub(super) fn relation_definition(
                             None => Vec::new(),
                         },
                     };
-                    let line_candidates =
-                        dynamic_line_operand_candidates(ctx, relation, 1, sketch, index)?;
+                    let line_candidates = dynamic_line_operand_candidates(
+                        ctx, relation, 1, sketch, index, &marker, &solver,
+                    )?;
                     Ok::<_, CodecError>((point_candidates, line_candidates))
                 })?;
             unique_point_line_candidate_pair(
@@ -1070,7 +1138,9 @@ pub(super) fn relation_definition(
         None
     };
     let dynamic_line_distance_pair = if dynamic && relation.family == LineLineDistance {
-        match unique_dynamic_marker_line_distance_pair(ctx, relation, sketch, parameter, index)? {
+        match unique_dynamic_marker_line_distance_pair(
+            ctx, relation, sketch, parameter, index, &marker, &solver,
+        )? {
             Some(pair) => Some(pair),
             None => {
                 if let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
@@ -1125,7 +1195,9 @@ pub(super) fn relation_definition(
             None
         };
     let dynamic_angle_pair = if dynamic && relation.family == Angle {
-        match unique_dynamic_marker_line_angle_pair(ctx, relation, sketch, parameter, index)? {
+        match unique_dynamic_marker_line_angle_pair(
+            ctx, relation, sketch, parameter, index, &marker, &solver,
+        )? {
             Some(pair) => Some(pair),
             None => match (curve_value(0)?, curve_value(1)?) {
                 (Some(first), None) => match unique_dynamic_profile_line_angle_entity(
@@ -1706,13 +1778,13 @@ pub(super) fn relation_definition(
     })
 }
 
-fn solver_line_entity(
+fn solver_line_entity<'a>(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     operand_index: usize,
     sketch: &SketchId,
-    entities: &ProfileEntities<'_>,
-) -> Result<Option<SketchEntityId>, CodecError> {
+    entities: &ProfileEntities<'a>,
+) -> Result<Option<&'a SketchEntityId>, CodecError> {
     const OPERATION: &str = "select SLDPRT solver line identity";
 
     let Some(operand) = relation.operands.get(operand_index) else {
@@ -1744,7 +1816,7 @@ fn solver_line_entity(
             return Ok(None);
         }
         if let Some(entity) = selected {
-            return entity.id().try_clone_for_decode(ctx, OPERATION).map(Some);
+            return Ok(Some(entity.id()));
         }
         if !relation_uses_dynamic_operands(relation) {
             return Ok(None);
@@ -1760,9 +1832,7 @@ fn solver_line_entity(
         OPERATION,
     )?;
     let candidates = entities.with_geometry_ref(ctx, &geometry_ref, OPERATION)?;
-    unique_entity(ctx, candidates, OPERATION, sketch_line)?
-        .map(|entity| entity.id().try_clone_for_decode(ctx, OPERATION))
-        .transpose()
+    Ok(unique_entity(ctx, candidates, OPERATION, sketch_line)?.map(SketchEntity::id))
 }
 
 fn repeated_dimensioned_circular_entities(
@@ -2641,28 +2711,36 @@ pub(super) fn find_profile_entity<'a>(
     )
 }
 
-fn select_dynamic_line_pair(
+fn select_dynamic_line_pair<'a>(
     ctx: &DecodeContext<'_>,
-    first_candidates: &[SketchEntityId],
-    second_candidates: &[SketchEntityId],
+    candidates: impl Fn(usize) -> Result<Vec<&'a SketchEntityId>, CodecError>,
     entities: &ProfileEntities<'_>,
     ordering: LinePairOrdering,
     matches: impl Fn(&SketchEntity, &SketchEntity) -> bool,
 ) -> Result<Option<(SketchEntityId, SketchEntityId)>, CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic line pair";
-    if first_candidates.is_empty() || second_candidates.is_empty() {
+    let (first_candidates, first_storage) =
+        ctx.with_scoped_storage("SLDPRT dynamic line candidates", || candidates(0))?;
+    if first_candidates.is_empty() {
+        return Ok(None);
+    }
+    let (second_candidates, second_storage) =
+        ctx.with_scoped_storage("SLDPRT dynamic line candidates", || candidates(1))?;
+    if second_candidates.is_empty() {
         return Ok(None);
     }
     let mut selected: Option<(&SketchEntityId, &SketchEntityId)> = None;
     if !ctx.all_by(
-        first_candidates,
+        &first_candidates,
         |first| {
+            let first = *first;
             let Some(first_entity) = entities.entity(ctx, first, OPERATION)? else {
                 return Ok(false);
             };
             if !ctx.all_by(
-                second_candidates,
+                &second_candidates,
                 |second| {
+                    let second = *second;
                     if ctx.equal(first, second, OPERATION)? {
                         return Ok(true);
                     }
@@ -2707,35 +2785,37 @@ fn select_dynamic_line_pair(
     let Some((first, second)) = selected else {
         return Ok(None);
     };
+    drop(first_candidates);
+    drop(first_storage);
+    drop(second_candidates);
+    drop(second_storage);
     Ok(Some((
         first.try_clone_for_decode(ctx, OPERATION)?,
         second.try_clone_for_decode(ctx, OPERATION)?,
     )))
 }
 
-fn unique_dynamic_marker_line_angle_pair(
+fn unique_dynamic_marker_line_angle_pair<'s, 'a, 'm>(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
-    index: RelationIndex<'_, '_>,
-) -> Result<Option<(SketchEntityId, SketchEntityId)>, CodecError> {
+    index: RelationIndex<'s, 'a>,
+    marker: &impl Fn(usize) -> Result<Option<&'m str>, CodecError>,
+    solver: &impl Fn(usize) -> Result<Option<&'a SketchEntityId>, CodecError>,
+) -> Result<Option<(SketchEntityId, SketchEntityId)>, CodecError>
+where
+    'a: 's,
+{
     let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) = parameter.value.as_ref()
     else {
         return Ok(None);
     };
-    let (_candidate_storage, (first_candidates, second_candidates));
-    ((first_candidates, second_candidates), _candidate_storage) =
-        ctx.with_scoped_storage("SLDPRT dynamic line candidates", || {
-            Ok::<_, CodecError>((
-                dynamic_line_operand_candidates(ctx, relation, 0, sketch, index)?,
-                dynamic_line_operand_candidates(ctx, relation, 1, sketch, index)?,
-            ))
-        })?;
     select_dynamic_line_pair(
         ctx,
-        &first_candidates,
-        &second_candidates,
+        |operand| {
+            dynamic_line_operand_candidates(ctx, relation, operand, sketch, index, marker, solver)
+        },
         index.entities,
         LinePairOrdering::Operand,
         |first, second| {
@@ -2801,14 +2881,14 @@ fn dynamic_point_distance(
     }
 }
 
-fn unique_dynamic_marker_point_pair(
+fn unique_dynamic_marker_point_pair<'m>(
     ctx: &DecodeContext<'_>,
-    relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     known: (Option<&SketchLocus>, Option<&SketchLocus>),
     index: RelationIndex<'_, '_>,
-    profile_axis: Option<ProfileAxis>,
+    marker: &impl Fn(usize) -> Result<Option<&'m str>, CodecError>,
+    metric: impl Fn(Point2, Point2) -> Option<f64>,
 ) -> Result<Option<(SketchLocus, SketchLocus)>, CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic point pairs";
 
@@ -2817,25 +2897,18 @@ fn unique_dynamic_marker_point_pair(
     else {
         return Ok(None);
     };
-    let measure = |first: &SketchLocus, second: &SketchLocus| -> Result<Option<f64>, CodecError> {
-        let Some(first_point) = profile_locus_point_charged(ctx, first, index.entities, OPERATION)?
-        else {
-            return Ok(None);
+    let measure =
+        |first: BorrowedLocus<'_>, second: BorrowedLocus<'_>| -> Result<Option<f64>, CodecError> {
+            let Some(first_point) = first.point(ctx, index.entities, OPERATION)? else {
+                return Ok(None);
+            };
+            let Some(second_point) = second.point(ctx, index.entities, OPERATION)? else {
+                return Ok(None);
+            };
+            Ok(metric(first_point, second_point))
         };
-        let Some(second_point) =
-            profile_locus_point_charged(ctx, second, index.entities, OPERATION)?
-        else {
-            return Ok(None);
-        };
-        Ok(dynamic_point_distance(
-            relation.family,
-            profile_axis,
-            first_point,
-            second_point,
-        ))
-    };
     if let (Some(first), Some(second)) = (&known_first, &known_second) {
-        if measure(first, second)?
+        if measure(BorrowedLocus::of(first), BorrowedLocus::of(second))?
             .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
         {
             return Ok(Some((
@@ -2844,43 +2917,46 @@ fn unique_dynamic_marker_point_pair(
             )));
         }
     }
-    let additions = |operand: usize| match relation_operand_marker_in(
-        ctx,
-        relation,
-        operand,
-        sketch,
-        index.markers,
-    )? {
+    let additions = |operand: usize| match marker(operand)? {
         Some(marker) => dynamic_marker_point_candidates(ctx, marker, sketch, index),
         None => Ok(Vec::new()),
     };
-    let (_first_storage, first_additions);
-    (first_additions, _first_storage) = ctx.with_scoped_storage(OPERATION, || additions(0))?;
-    let (_second_storage, second_additions);
-    (second_additions, _second_storage) = ctx.with_scoped_storage(OPERATION, || additions(1))?;
-    let (_roster_storage, (mut first_candidates, mut second_candidates));
-    ((first_candidates, second_candidates), _roster_storage) =
-        ctx.with_scoped_storage(OPERATION, || {
-            Ok::<_, CodecError>((
-                ctx.collect_vec(
-                    known_first.into_iter().chain(first_additions.iter()),
-                    OPERATION,
-                )?,
-                ctx.collect_vec(
-                    known_second.into_iter().chain(second_additions.iter()),
-                    OPERATION,
-                )?,
-            ))
+    let (mut first_candidates, mut first_storage) =
+        ctx.with_scoped_storage(OPERATION, || additions(0))?;
+    if let Some(known) = known_first {
+        first_storage.with_storage(|| {
+            ctx.insert_vec(
+                &mut first_candidates,
+                0,
+                BorrowedLocus::of(known),
+                OPERATION,
+            )
         })?;
+    }
+    if first_candidates.is_empty() {
+        return Ok(None);
+    }
+    let (mut second_candidates, mut second_storage) =
+        ctx.with_scoped_storage(OPERATION, || additions(1))?;
+    if let Some(known) = known_second {
+        second_storage.with_storage(|| {
+            ctx.insert_vec(
+                &mut second_candidates,
+                0,
+                BorrowedLocus::of(known),
+                OPERATION,
+            )
+        })?;
+    }
     for candidates in [&mut first_candidates, &mut second_candidates] {
         deduplicate_physical_loci(ctx, candidates, |locus| {
-            profile_locus_point_charged(ctx, locus, index.entities, "resolve SLDPRT physical locus")
+            locus.point(ctx, index.entities, "resolve SLDPRT physical locus")
         })?;
     }
     if first_candidates.is_empty() || second_candidates.is_empty() {
         return Ok(None);
     }
-    let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
+    let mut selected: Option<(BorrowedLocus<'_>, BorrowedLocus<'_>)> = None;
     if !ctx.all_by(
         &first_candidates,
         |first| {
@@ -2889,7 +2965,7 @@ fn unique_dynamic_marker_point_pair(
                 &second_candidates,
                 |second| {
                     let second = *second;
-                    if ctx.equal(first, second, OPERATION)? {
+                    if ctx.equal(&first.key(), &second.key(), OPERATION)? {
                         return Ok(true);
                     }
                     if !measure(first, second)?
@@ -2897,17 +2973,14 @@ fn unique_dynamic_marker_point_pair(
                     {
                         return Ok(true);
                     }
-                    let pair = if ctx
-                        .compare(&locus_key(first), &locus_key(second), OPERATION)?
-                        .is_le()
-                    {
+                    let pair = if ctx.compare(&first.key(), &second.key(), OPERATION)?.is_le() {
                         (first, second)
                     } else {
                         (second, first)
                     };
                     if let Some((selected_first, selected_second)) = selected {
-                        if !(ctx.equal(selected_first, pair.0, OPERATION)?
-                            && ctx.equal(selected_second, pair.1, OPERATION)?)
+                        if !(ctx.equal(&selected_first.key(), &pair.0.key(), OPERATION)?
+                            && ctx.equal(&selected_second.key(), &pair.1.key(), OPERATION)?)
                         {
                             return Ok(false);
                         }
@@ -2930,18 +3003,23 @@ fn unique_dynamic_marker_point_pair(
     let Some((first, second)) = selected else {
         return Ok(None);
     };
+    drop(first_candidates);
+    drop(first_storage);
+    drop(second_candidates);
+    drop(second_storage);
     Ok(Some((
-        copy_locus(ctx, first, OPERATION)?,
-        copy_locus(ctx, second, OPERATION)?,
+        first.copy(ctx, OPERATION)?,
+        second.copy(ctx, OPERATION)?,
     )))
 }
 
-fn unique_dynamic_direct_point_roster_pair(
+fn unique_dynamic_direct_point_roster_pair<'m>(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     index: RelationIndex<'_, '_>,
+    marker: &impl Fn(usize) -> Result<Option<&'m str>, CodecError>,
     profile_axis: Option<ProfileAxis>,
 ) -> Result<Option<(SketchLocus, SketchLocus)>, CodecError> {
     const OPERATION: &str = "select SLDPRT direct marker point roster";
@@ -2965,9 +3043,7 @@ fn unique_dynamic_direct_point_roster_pair(
         )
     };
     for operand in 0..2 {
-        let Some(marker_id) =
-            relation_operand_marker_in(ctx, relation, operand, sketch, index.markers)?
-        else {
+        let Some(marker_id) = marker(operand)? else {
             return Ok(None);
         };
         let Some(marker) = index.markers.get(ctx, marker_id, OPERATION)? else {
@@ -3218,26 +3294,28 @@ fn unique_roster_point_line_pair(
 fn unique_point_line_candidate_pair(
     ctx: &DecodeContext<'_>,
     expected: cadmpeg_ir::scalar::Length,
-    point_candidates: &[SketchLocus],
-    line_candidates: &[SketchEntityId],
+    point_candidates: &[BorrowedLocus<'_>],
+    line_candidates: &[&SketchEntityId],
     entities: &ProfileEntities<'_>,
 ) -> Result<Option<(SketchLocus, SketchEntityId)>, CodecError> {
     const OPERATION: &str = "select SLDPRT dynamic point-line pair";
     if point_candidates.is_empty() || line_candidates.is_empty() {
         return Ok(None);
     }
-    let mut selected: Option<(&SketchLocus, &SketchEntityId)> = None;
+    let mut selected: Option<(BorrowedLocus<'_>, &SketchEntityId)> = None;
     if !ctx.all_by(
         point_candidates,
         |point| {
+            let point = *point;
             let Some(point_position) =
-                profile_locus_point_charged(ctx, point, entities, "resolve SLDPRT profile locus")?
+                point.point(ctx, entities, "resolve SLDPRT profile locus")?
             else {
                 return Ok(false);
             };
             if !ctx.all_by(
                 line_candidates,
                 |line| {
+                    let line = *line;
                     let Some(line_entity) = entities.entity(ctx, line, OPERATION)? else {
                         return Ok(false);
                     };
@@ -3249,7 +3327,7 @@ fn unique_point_line_candidate_pair(
                         return Ok(true);
                     }
                     if let Some((selected_point, selected_line)) = selected {
-                        if !(ctx.equal(selected_point, point, OPERATION)?
+                        if !(ctx.equal(&selected_point.key(), &point.key(), OPERATION)?
                             && ctx.equal(selected_line, line, OPERATION)?)
                         {
                             return Ok(false);
@@ -3274,34 +3352,32 @@ fn unique_point_line_candidate_pair(
         return Ok(None);
     };
     Ok(Some((
-        copy_locus(ctx, point, OPERATION)?,
+        point.copy(ctx, OPERATION)?,
         line.try_clone_for_decode(ctx, OPERATION)?,
     )))
 }
 
-fn unique_dynamic_marker_line_distance_pair(
+fn unique_dynamic_marker_line_distance_pair<'s, 'a, 'm>(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
-    index: RelationIndex<'_, '_>,
-) -> Result<Option<(SketchEntityId, SketchEntityId)>, CodecError> {
+    index: RelationIndex<'s, 'a>,
+    marker: &impl Fn(usize) -> Result<Option<&'m str>, CodecError>,
+    solver: &impl Fn(usize) -> Result<Option<&'a SketchEntityId>, CodecError>,
+) -> Result<Option<(SketchEntityId, SketchEntityId)>, CodecError>
+where
+    'a: 's,
+{
     let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref()
     else {
         return Ok(None);
     };
-    let (_candidate_storage, (first_candidates, second_candidates));
-    ((first_candidates, second_candidates), _candidate_storage) =
-        ctx.with_scoped_storage("SLDPRT dynamic line candidates", || {
-            Ok::<_, CodecError>((
-                dynamic_line_operand_candidates(ctx, relation, 0, sketch, index)?,
-                dynamic_line_operand_candidates(ctx, relation, 1, sketch, index)?,
-            ))
-        })?;
     select_dynamic_line_pair(
         ctx,
-        &first_candidates,
-        &second_candidates,
+        |operand| {
+            dynamic_line_operand_candidates(ctx, relation, operand, sketch, index, marker, solver)
+        },
         index.entities,
         LinePairOrdering::Identity,
         |first, second| {
@@ -3328,31 +3404,31 @@ fn unique_dynamic_roster_line_distance_pair(
     unique_profile_line_distance_pair(ctx, sketch, parameter, entities)
 }
 
-fn dynamic_line_operand_candidates(
+fn dynamic_line_operand_candidates<'s, 'a, 'm>(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     operand: usize,
     sketch: &SketchId,
-    index: RelationIndex<'_, '_>,
-) -> Result<Vec<SketchEntityId>, CodecError> {
+    index: RelationIndex<'s, 'a>,
+    marker: &impl Fn(usize) -> Result<Option<&'m str>, CodecError>,
+    solver: &impl Fn(usize) -> Result<Option<&'a SketchEntityId>, CodecError>,
+) -> Result<Vec<&'s SketchEntityId>, CodecError>
+where
+    'a: 's,
+{
     const OPERATION: &str = "filter SLDPRT dynamic line operand candidates";
 
-    let mut entities =
-        if let Some(entity) = solver_line_entity(ctx, relation, operand, sketch, index.entities)? {
-            let mut entities = Vec::new();
-            ctx.push_vec(&mut entities, entity, OPERATION)?;
-            entities
-        } else if let Some(marker) =
-            match relation_operand_marker_in(ctx, relation, operand, sketch, index.markers)? {
-                Some(marker) => Some(marker),
-                None => relation_line_point_marker(ctx, relation, operand, index.markers)?
-                    .map(SketchInputEntity::id),
-            }
-        {
-            dynamic_marker_line_candidates(ctx, marker, index)?
-        } else {
-            Vec::new()
-        };
+    let mut entities = if let Some(entity) = solver(operand)? {
+        ctx.collect_vec(std::iter::once(entity), OPERATION)?
+    } else if let Some(marker) = match marker(operand)? {
+        Some(marker) => Some(marker),
+        None => relation_line_point_marker(ctx, relation, operand, index.markers)?
+            .map(SketchInputEntity::id),
+    } {
+        dynamic_marker_line_candidates(ctx, marker, index)?
+    } else {
+        Vec::new()
+    };
     ctx.retain_vec(
         &mut entities,
         |candidate| {
@@ -3363,10 +3439,6 @@ fn dynamic_line_operand_candidates(
         },
         OPERATION,
     )?;
-    if entities.len() > 1 {
-        ctx.sort_unstable_by(&mut entities, |value| value, Ord::cmp, OPERATION)?;
-        ctx.dedup_vec(&mut entities, "deduplicate SLDPRT marker entities")?;
-    }
     Ok(entities)
 }
 
@@ -3449,44 +3521,50 @@ impl<'a> MarkerIdentities<'a> {
     }
 }
 
-fn dynamic_marker_point_candidates(
+fn dynamic_marker_point_candidates<'s, 'a>(
     ctx: &DecodeContext<'_>,
     marker: &str,
     sketch: &SketchId,
-    index: RelationIndex<'_, '_>,
-) -> Result<Vec<SketchLocus>, CodecError> {
+    index: RelationIndex<'s, 'a>,
+) -> Result<Vec<BorrowedLocus<'s>>, CodecError>
+where
+    'a: 's,
+{
     const OPERATION: &str = "select SLDPRT dynamic marker points";
     let _identity_storage;
     let identities;
     (identities, _identity_storage) = ctx.with_scoped_storage(OPERATION, || {
         MarkerIdentities::collect(ctx, marker, index.markers_by_id())
     })?;
-    let centers = dynamic_marker_center_loci(ctx, &identities, sketch, index)?;
+    let (centers, center_storage) = ctx.with_scoped_storage(OPERATION, || {
+        dynamic_marker_center_loci(ctx, &identities, sketch, index)
+    })?;
     if let Some(centers) = centers.filter(|centers| !centers.is_empty()) {
-        return Ok(if centers.len() == 1 {
-            centers
+        return if centers.len() == 1 {
+            center_storage.commit_value(centers)
         } else {
-            Vec::new()
-        });
+            Ok(Vec::new())
+        };
     }
+    drop(center_storage);
     let mut candidates = Vec::new();
     if let Some(locus) =
-        marker_point_locus(ctx, marker, index.markers_by_id(), index.loci_by_marker)?
+        borrowed_marker_point_locus(ctx, marker, index.markers_by_id(), index.loci_by_marker)?
     {
         if let Some(entity) = index
             .entities
-            .entity(ctx, locus_entity(&locus), OPERATION)?
+            .entity(ctx, locus_entity(locus), OPERATION)?
         {
             if in_sketch(ctx, entity, sketch, OPERATION)?
                 && profile_locus_point_charged(
                     ctx,
-                    &locus,
+                    locus,
                     index.entities,
                     "resolve SLDPRT profile locus",
                 )?
                 .is_some()
             {
-                ctx.push_vec(&mut candidates, locus, OPERATION)?;
+                ctx.push_vec(&mut candidates, BorrowedLocus::of(locus), OPERATION)?;
             }
         }
     }
@@ -3495,11 +3573,14 @@ fn dynamic_marker_point_candidates(
         .copied()
     {
         if is_point(entity) && identities.identify(ctx, entity, OPERATION)? {
-            let locus = role_locus(ctx, SketchLocusRole::Entity, entity.id(), OPERATION)?;
+            let locus = BorrowedLocus {
+                role: SketchLocusRole::Entity,
+                entity: entity.id(),
+            };
             ctx.push_vec(&mut candidates, locus, OPERATION)?;
         }
     }
-    sort_profile_loci(ctx, &mut candidates, OPERATION)?;
+    sort_borrowed_loci(ctx, &mut candidates, OPERATION)?;
     Ok(candidates)
 }
 
@@ -3509,24 +3590,76 @@ fn dynamic_marker_point_locus(
     sketch: &SketchId,
     index: RelationIndex<'_, '_>,
 ) -> Result<Option<SketchLocus>, CodecError> {
-    match dynamic_marker_center_candidates(ctx, marker, sketch, index)? {
-        Some(candidates) if !candidates.is_empty() => Ok(if candidates.len() == 1 {
-            candidates.into_iter().next()
-        } else {
-            None
-        }),
+    let (centers, _storage) = ctx
+        .with_scoped_storage("SLDPRT dynamic marker center candidates", || {
+            dynamic_marker_center_candidates(ctx, marker, sketch, index)
+        })?;
+    match centers {
+        Some(candidates) if !candidates.is_empty() => {
+            if candidates.len() == 1 {
+                candidates[0]
+                    .copy(ctx, "retain SLDPRT singleton marker locus")
+                    .map(Some)
+            } else {
+                Ok(None)
+            }
+        }
         Some(_) | None => {
             marker_point_locus(ctx, marker, index.markers_by_id(), index.loci_by_marker)
         }
     }
 }
 
-fn dynamic_marker_center_candidates(
+fn dynamic_marker_has_arc(
+    ctx: &DecodeContext<'_>,
+    marker: &str,
+    markers: &RelationMarkers<'_>,
+) -> Result<bool, CodecError> {
+    fn visit<'a>(
+        ctx: &DecodeContext<'_>,
+        id: &'a str,
+        markers: &RelationMarkers<'a>,
+        visited: &mut HashSet<&'a str>,
+        storage: &mut ScopedReservation<'_>,
+    ) -> Result<bool, CodecError> {
+        const OPERATION: &str = "find SLDPRT dynamic arc marker";
+        let _depth = ctx.enter_nested(OPERATION)?;
+        if !storage.with_storage(|| ctx.insert_hash_set(visited, id, OPERATION))? {
+            return Ok(false);
+        }
+        let Some(marker) = markers.get(ctx, id, OPERATION)? else {
+            return Ok(false);
+        };
+        if marker.kind() == SketchInputKind::Arc {
+            return Ok(true);
+        }
+        ctx.any_by(
+            marker.links(),
+            |link| {
+                if ctx.equal(link.entity_ref.as_str(), id, OPERATION)?
+                    || (matches!(marker.kind(), SketchInputKind::Relation(_))
+                        && owner_link(ctx, marker, link)?)
+                {
+                    return Ok(false);
+                }
+                visit(ctx, &link.entity_ref, markers, visited, storage)
+            },
+            OPERATION,
+        )
+    }
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT dynamic arc presence")?;
+    visit(ctx, marker, markers, &mut HashSet::new(), &mut storage)
+}
+
+fn dynamic_marker_center_candidates<'s, 'a>(
     ctx: &DecodeContext<'_>,
     marker: &str,
     sketch: &SketchId,
-    index: RelationIndex<'_, '_>,
-) -> Result<Option<Vec<SketchLocus>>, CodecError> {
+    index: RelationIndex<'s, 'a>,
+) -> Result<Option<Vec<BorrowedLocus<'s>>>, CodecError>
+where
+    'a: 's,
+{
     const OPERATION: &str = "select SLDPRT dynamic marker centers";
     let _identity_storage;
     let identities;
@@ -3538,12 +3671,15 @@ fn dynamic_marker_center_candidates(
 
 /// The arc centers in the sketch that the identities' arc markers resolve to,
 /// or `None` when no identity is an arc marker.
-fn dynamic_marker_center_loci(
+fn dynamic_marker_center_loci<'s, 'a>(
     ctx: &DecodeContext<'_>,
     identities: &MarkerIdentities<'_>,
     sketch: &SketchId,
-    index: RelationIndex<'_, '_>,
-) -> Result<Option<Vec<SketchLocus>>, CodecError> {
+    index: RelationIndex<'s, 'a>,
+) -> Result<Option<Vec<BorrowedLocus<'s>>>, CodecError>
+where
+    'a: 's,
+{
     const OPERATION: &str = "select SLDPRT dynamic marker centers";
     let mut has_arc_marker = false;
     let mut centers = Vec::new();
@@ -3555,14 +3691,18 @@ fn dynamic_marker_center_loci(
             continue;
         }
         has_arc_marker = true;
-        let Some(locus) =
-            marker_point_locus(ctx, marker_id, index.markers_by_id(), index.loci_by_marker)?
+        let Some(locus) = borrowed_marker_point_locus(
+            ctx,
+            marker_id,
+            index.markers_by_id(),
+            index.loci_by_marker,
+        )?
         else {
             continue;
         };
         let Some(entity) = index
             .entities
-            .entity(ctx, locus_entity(&locus), OPERATION)?
+            .entity(ctx, locus_entity(locus), OPERATION)?
         else {
             continue;
         };
@@ -3572,34 +3712,40 @@ fn dynamic_marker_center_loci(
                 SketchGeometryDefinition::Arc { .. }
             )
         {
-            let center = role_locus(ctx, SketchLocusRole::Center, entity.id(), OPERATION)?;
+            let center = BorrowedLocus {
+                role: SketchLocusRole::Center,
+                entity: entity.id(),
+            };
             ctx.push_vec(&mut centers, center, OPERATION)?;
         }
     }
     if !has_arc_marker {
         return Ok(None);
     }
-    sort_profile_loci(ctx, &mut centers, OPERATION)?;
+    sort_borrowed_loci(ctx, &mut centers, OPERATION)?;
     Ok(Some(centers))
 }
 
-fn dynamic_marker_line_candidates(
+fn dynamic_marker_line_candidates<'s, 'a>(
     ctx: &DecodeContext<'_>,
     marker: &str,
-    index: RelationIndex<'_, '_>,
-) -> Result<Vec<SketchEntityId>, CodecError> {
+    index: RelationIndex<'s, 'a>,
+) -> Result<Vec<&'s SketchEntityId>, CodecError>
+where
+    'a: 's,
+{
     const OPERATION: &str = "select SLDPRT dynamic marker lines";
     let _identity_storage;
     let identities;
     (identities, _identity_storage) = ctx.with_scoped_storage(OPERATION, || {
         MarkerIdentities::collect(ctx, marker, index.markers_by_id())
     })?;
-    let mut candidates = marker_entities(
+    let (mut candidates, mut candidate_storage) = marker_entity_ids(
         ctx,
         marker,
         index.markers_by_id(),
         index.loci_by_marker,
-        MarkerEntityFilter::Lines(index.entities.all()),
+        MarkerEntityFilter::Lines(index.entities),
     )?;
     // A line that carries several identities is added once per identity; the
     // sort below removes the repeats.
@@ -3612,25 +3758,25 @@ fn dynamic_marker_line_candidates(
             .copied()
         {
             if is_line(entity) {
-                let id = entity.id().try_clone_for_decode(ctx, OPERATION)?;
-                ctx.push_vec(&mut candidates, id, OPERATION)?;
+                let id = entity.id();
+                candidate_storage.with_storage(|| ctx.push_vec(&mut candidates, id, OPERATION))?;
             }
         }
     }
     if candidates.is_empty() {
-        if let Some(entity) = single_marker_line_entity_in(
+        if let Some(entity) = borrowed_single_marker_line_entity(
             ctx,
             marker,
             index.markers_by_id(),
             index.loci_by_marker,
             index.entities,
         )? {
-            ctx.push_vec(&mut candidates, entity, OPERATION)?;
+            candidate_storage.with_storage(|| ctx.push_vec(&mut candidates, entity, OPERATION))?;
         }
     }
     ctx.sort_unstable_by(&mut candidates, |value| value, Ord::cmp, OPERATION)?;
     ctx.dedup_vec(&mut candidates, "deduplicate SLDPRT marker line candidates")?;
-    Ok(candidates)
+    candidate_storage.commit_value(candidates)
 }
 
 fn unique_profile_line_angle_pair(
@@ -4437,6 +4583,26 @@ fn qualified_point_loci<'a>(
         .map(Vec::as_slice))
 }
 
+fn borrowed_marker_point_locus<'loci>(
+    ctx: &DecodeContext<'_>,
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &'loci HashMap<String, Vec<SketchLocus>>,
+) -> Result<Option<&'loci SketchLocus>, CodecError> {
+    if let Some([locus]) = qualified_point_loci(ctx, marker_id, loci_by_marker)? {
+        return Ok(Some(locus));
+    }
+    let mut storage = ctx.reserve_scoped(0, "resolve SLDPRT marker point locus")?;
+    resolved_marker_locus_inner(
+        ctx,
+        marker_id,
+        markers_by_id,
+        loci_by_marker,
+        &mut HashSet::new(),
+        &mut storage,
+    )
+}
+
 pub(super) fn marker_point_locus(
     ctx: &DecodeContext<'_>,
     marker_id: &str,
@@ -4711,21 +4877,29 @@ pub(super) fn single_marker_line_entity_in(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     entities: &ProfileEntities<'_>,
 ) -> Result<Option<SketchEntityId>, CodecError> {
+    borrowed_single_marker_line_entity(ctx, marker_id, markers_by_id, loci_by_marker, entities)?
+        .map(|id| id.try_clone_for_decode(ctx, "resolve SLDPRT single marker line"))
+        .transpose()
+}
+
+fn borrowed_single_marker_line_entity<'s, 'a>(
+    ctx: &DecodeContext<'_>,
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &'s HashMap<String, Vec<SketchLocus>>,
+    entities: &ProfileEntities<'a>,
+) -> Result<Option<&'s SketchEntityId>, CodecError>
+where
+    'a: 's,
+{
     const OPERATION: &str = "resolve SLDPRT single marker line";
-    let mut lines = marker_entities(
+    let (lines, _lines_storage) = marker_entity_ids(
         ctx,
         marker_id,
         markers_by_id,
         loci_by_marker,
-        MarkerEntityFilter::Lines(entities.all()),
+        MarkerEntityFilter::Lines(entities),
     )?;
-    ctx.sort_unstable_by(
-        &mut lines,
-        |value| value,
-        Ord::cmp,
-        "sort SLDPRT single marker line entities",
-    )?;
-    ctx.dedup_vec(&mut lines, "deduplicate SLDPRT marker entities")?;
     if lines.len() == 1 {
         return Ok(lines.into_iter().next());
     }
@@ -4733,7 +4907,13 @@ pub(super) fn single_marker_line_entity_in(
         return Ok(None);
     };
     let fallback = || {
-        unique_line_containing_marker_point(ctx, marker_id, markers_by_id, loci_by_marker, entities)
+        borrowed_line_containing_marker_point(
+            ctx,
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            entities,
+        )
     };
     let mut links = [None, None];
     let mut other = false;
@@ -4759,47 +4939,47 @@ pub(super) fn single_marker_line_entity_in(
         return fallback();
     }
     let Some(first_locus) =
-        marker_point_locus(ctx, &first_link.entity_ref, markers_by_id, loci_by_marker)?
+        borrowed_marker_point_locus(ctx, &first_link.entity_ref, markers_by_id, loci_by_marker)?
     else {
         return fallback();
     };
     let Some(second_locus) =
-        marker_point_locus(ctx, &second_link.entity_ref, markers_by_id, loci_by_marker)?
+        borrowed_marker_point_locus(ctx, &second_link.entity_ref, markers_by_id, loci_by_marker)?
     else {
         return fallback();
     };
-    let Some(first_entity) = entities.entity(ctx, locus_entity(&first_locus), OPERATION)? else {
+    let Some(first_entity) = entities.entity(ctx, locus_entity(first_locus), OPERATION)? else {
         return fallback();
     };
     let sketch = &first_entity.sketch;
-    let Some(second_entity) = entities.entity(ctx, locus_entity(&second_locus), OPERATION)? else {
+    let Some(second_entity) = entities.entity(ctx, locus_entity(second_locus), OPERATION)? else {
         return fallback();
     };
     if !in_sketch(ctx, second_entity, sketch, OPERATION)? {
         return fallback();
     }
-    let Some(first) = profile_locus_point_charged(ctx, &first_locus, entities, OPERATION)? else {
+    let Some(first) = profile_locus_point_charged(ctx, first_locus, entities, OPERATION)? else {
         return Ok(None);
     };
-    let Some(second) = profile_locus_point_charged(ctx, &second_locus, entities, OPERATION)? else {
+    let Some(second) = profile_locus_point_charged(ctx, second_locus, entities, OPERATION)? else {
         return Ok(None);
     };
     if same_dimension_length(first.u, second.u) && same_dimension_length(first.v, second.v) {
         return fallback();
     }
-    match unique_profile_line_through_points(ctx, sketch, entities, &[first, second])? {
+    match borrowed_profile_line_through_points(ctx, sketch, entities, &[first, second])? {
         Some(identity) => Ok(Some(identity)),
         None => fallback(),
     }
 }
 
-fn unique_line_containing_marker_point(
+fn borrowed_line_containing_marker_point<'a>(
     ctx: &DecodeContext<'_>,
     marker_id: &str,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-    entities: &ProfileEntities<'_>,
-) -> Result<Option<SketchEntityId>, CodecError> {
+    entities: &ProfileEntities<'a>,
+) -> Result<Option<&'a SketchEntityId>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT line through marker point";
     let Some(marker) = ctx.get_hash_map(markers_by_id, marker_id, OPERATION)? else {
         return Ok(None);
@@ -4810,24 +4990,25 @@ fn unique_line_containing_marker_point(
     ) {
         return Ok(None);
     }
-    let Some(locus) = marker_point_locus(ctx, marker_id, markers_by_id, loci_by_marker)? else {
+    let Some(locus) = borrowed_marker_point_locus(ctx, marker_id, markers_by_id, loci_by_marker)?
+    else {
         return Ok(None);
     };
-    let Some(point) = profile_locus_point_charged(ctx, &locus, entities, OPERATION)? else {
+    let Some(point) = profile_locus_point_charged(ctx, locus, entities, OPERATION)? else {
         return Ok(None);
     };
-    let Some(entity) = entities.entity(ctx, locus_entity(&locus), OPERATION)? else {
+    let Some(entity) = entities.entity(ctx, locus_entity(locus), OPERATION)? else {
         return Ok(None);
     };
-    unique_profile_line_through_points(ctx, &entity.sketch, entities, &[point])
+    borrowed_profile_line_through_points(ctx, &entity.sketch, entities, &[point])
 }
 
-fn unique_profile_line_through_points(
+fn borrowed_profile_line_through_points<'a>(
     ctx: &DecodeContext<'_>,
     sketch: &SketchId,
-    entities: &ProfileEntities<'_>,
+    entities: &ProfileEntities<'a>,
     points: &[Point2],
-) -> Result<Option<SketchEntityId>, CodecError> {
+) -> Result<Option<&'a SketchEntityId>, CodecError> {
     const OPERATION: &str = "select SLDPRT profile line through points";
     let mut remaining = entities.in_sketch(ctx, sketch, OPERATION)?.iter().copied();
     let accepts = |entity: &SketchEntity| -> Result<bool, CodecError> {
@@ -4848,7 +5029,7 @@ fn unique_profile_line_through_points(
     )? {
         return Ok(None);
     }
-    first.id().try_clone_for_decode(ctx, OPERATION).map(Some)
+    Ok(Some(first.id()))
 }
 
 fn sort_profile_loci(
