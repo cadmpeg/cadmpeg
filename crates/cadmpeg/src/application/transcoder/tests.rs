@@ -88,7 +88,7 @@ fn prepared(
     loss_policy: LossPolicy,
 ) -> PreparedConversion {
     let validation =
-        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     PreparedConversion {
         document: LoadedDocument::neutral(ir, 0),
         validation,
