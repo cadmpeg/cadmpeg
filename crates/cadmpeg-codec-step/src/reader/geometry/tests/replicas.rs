@@ -324,7 +324,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
                     && source.as_str() == "step:data:curve#6"
         )
     }));
-    let index = ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(result.ir());
     assert_eq!(
         model_curve_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -505,7 +505,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                         && source.as_str() == "step:data:surface#9"
             )
         }));
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -866,7 +866,7 @@ fn replicas_retain_bounded_parent_relations() {
                         && source.as_str() == "step:data:surface#12"
             )
         }));
-    let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::build(decoded.ir());
     assert_eq!(
         model_curve_point_by_id(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,

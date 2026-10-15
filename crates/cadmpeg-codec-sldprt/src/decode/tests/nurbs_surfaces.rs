@@ -192,7 +192,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     let face_surface = &result.ir().model.faces[0].surface;
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-        &cadmpeg_ir::index::ModelIndex::build(result.ir(), cadmpeg_ir::index::StandardIndex),
+        &cadmpeg_ir::index::ModelIndex::build(result.ir()),
         face_surface,
         0.0,
         0.0,

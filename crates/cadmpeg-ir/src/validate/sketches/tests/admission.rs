@@ -169,7 +169,6 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
     use crate::features::{ParameterId, ParameterValue};
     use crate::index::identities::BorrowedIdentities;
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
-    let ctx = cadmpeg_test_support::service_decode_context();
     let id: crate::sketches::SketchEntityId = "test:model:entity#same".try_into().unwrap();
     let point = |u, v| {
         SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -179,14 +178,14 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
     };
     let first = point(1.0, 2.0);
     let last = point(3.0, 4.0);
-    let geometry = BorrowedIdentities::build(&ctx, |add| {
+    let geometry = BorrowedIdentities::build(|add| {
         add(id.as_str(), &first)?;
         add(id.as_str(), &last)
     })
     .unwrap();
     let locus = SketchLocus::Entity(id.clone());
     assert_eq!(
-        super::super::sketch_locus_point(&ctx, &locus, &geometry).unwrap(),
+        super::super::sketch_locus_point(&locus, &geometry).unwrap(),
         Some(crate::math::Point2::new(3.0, 4.0))
     );
     let restriction = SketchConstraintDefinitionInput::Midpoint {
@@ -194,7 +193,7 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
         entity: id.clone(),
     };
     assert_eq!(
-        super::super::constraint_entity_kind_refusal(&ctx, &restriction, &geometry).unwrap(),
+        super::super::constraint_entity_kind_refusal(&restriction, &geometry),
         Some("sketch midpoint constraint references an entity that is not a bounded curve")
     );
     let parameter: ParameterId = "test:model:parameter#same".try_into().unwrap();
@@ -204,23 +203,19 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
     let last = Some(ParameterValue::Length(
         crate::scalar::Length::new(2.0).unwrap(),
     ));
-    let parameters = BorrowedIdentities::build(&ctx, |add| {
+    let parameters = BorrowedIdentities::build(|add| {
         add(parameter.as_str(), &first)?;
         add(parameter.as_str(), &last)
     })
     .unwrap();
     assert!(super::super::spatial_length_parameter_matches(
-        &ctx,
         Some(2.0),
         &parameter,
         &parameters
-    )
-    .unwrap());
+    ));
     assert!(!super::super::spatial_length_parameter_matches(
-        &ctx,
         Some(1.0),
         &parameter,
         &parameters
-    )
-    .unwrap());
+    ));
 }

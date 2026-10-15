@@ -25,7 +25,7 @@ fn support_side_finding_is_reported() {
     finds(
         &ir,
         |ctx, ir, findings| {
-            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            let index = crate::index::ModelIndex::new_model_only(ir);
             super::super::check_procedural_support_consistency(ctx, &index, findings)
         },
         "procedural support side 0 misses",
@@ -45,7 +45,7 @@ fn surface_offset_distance_finding_is_reported() {
     finds(
         &ir,
         |ctx, ir, findings| {
-            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            let index = crate::index::ModelIndex::new_model_only(ir);
             super::super::check_procedural_support_consistency(ctx, &index, findings)
         },
         "surface-offset solved curve misses",
@@ -118,7 +118,7 @@ fn mapped_pcurve_finding_is_reported() {
     finds(
         &ir,
         |ctx, ir, findings| {
-            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            let index = crate::index::ModelIndex::new_model_only(ir);
             super::super::check_pcurve_surface_consistency(ctx, &index, findings)
         },
         "pcurve mapped through the face surface misses",
@@ -203,7 +203,7 @@ fn charted_intersection_missing_evaluation_finding_is_reported() {
     finds(
         &charted(false),
         |ctx, ir, findings| {
-            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            let index = crate::index::ModelIndex::new_model_only(ir);
             super::super::check_procedural_support_consistency(ctx, &index, findings)
         },
         "charted tolerant intersection does not evaluate",
@@ -215,7 +215,7 @@ fn charted_intersection_witness_finding_is_reported() {
     finds(
         &charted(true),
         |ctx, ir, findings| {
-            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            let index = crate::index::ModelIndex::new_model_only(ir);
             super::super::check_procedural_support_consistency(ctx, &index, findings)
         },
         "charted tolerant intersection misses its endpoint witnesses",

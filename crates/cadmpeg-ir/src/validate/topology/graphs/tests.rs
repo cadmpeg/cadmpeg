@@ -15,9 +15,8 @@ fn radial_ring_crossing_keeps_error_order_and_owner() {
         .id
         .clone();
     ir.model.coedges[0].radial_next = other;
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::check_coedge_pairing(&ctx, &ir, &mut findings).unwrap();
+    super::check_coedge_pairing(&ir, &mut findings).unwrap();
     assert!(findings.len() >= 2);
     for finding in &findings[..2] {
         assert_eq!(finding.check, Check::CoedgePairing);

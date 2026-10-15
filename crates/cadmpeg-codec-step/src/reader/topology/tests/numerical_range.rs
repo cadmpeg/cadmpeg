@@ -32,7 +32,7 @@ fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
 #[test]
 fn numerical_0922b_pcurve_knot_units() {
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     for d in [1., 1e9] {
         let p = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
@@ -69,7 +69,7 @@ fn numerical_0922b_pcurve_knot_units() {
 #[test]
 fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
@@ -134,7 +134,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
         )
         .expect("line pcurve"),
     );
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let seeds = with_context(|ctx| {
         pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry, ctx)
     })
@@ -163,7 +163,7 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
         )),
         source_object: None,
     });
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let (exchange, _) = crate::test_support::with_service_context(
         include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"),
         crate::parse::parse_inner,
@@ -245,7 +245,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         )),
         source_object: None,
     });
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let midpoint = lower.midpoint(upper);
     for x in [0.5, 0.6] {
         assert!(curve_parameter_near_point(
@@ -301,7 +301,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
 #[test]
 fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
@@ -347,7 +347,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_end_is_measured_at_its_finite_end()
     // On the plane at x = MAX, the line end u = MAX has no finite point and
     // the start u = -MAX maps to the model origin.
     let (ir, id) = plane_at(f64::MAX);
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0., 0.),
@@ -377,7 +377,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
     // at t = 1.2e153 lands at about 7.25e153; halving it returns the search
     // to the finite range.
     let (ir, id) = plane_at(1.78e308);
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let parabola = PcurveGeometry::Parabola(
         cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
             Point2::new(0., 0.),
@@ -431,7 +431,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_di
         )
         .unwrap(),
     ));
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0., 0.),
@@ -459,7 +459,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
     // The line reaches u = MAX + MAX at its end, which the plane maps to no
     // finite point, and u = 0 at its start, which it maps to the origin.
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(f64::MAX, 0.),
@@ -485,7 +485,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
 #[test]
 fn certified_pcurve_endpoint_does_not_repeat_tangents_or_seed_searches() {
     let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0.0, 0.0),
@@ -527,7 +527,7 @@ fn certified_pcurve_endpoint_does_not_repeat_tangents_or_seed_searches() {
 fn established_curve_locus_witness_does_not_repeat_other_seed_inversions() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let curve = &ir.model.curves[0];
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = ModelIndex::new_model_only(&ir);
     let point = model_curve_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &index,

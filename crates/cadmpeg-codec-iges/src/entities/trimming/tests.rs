@@ -524,7 +524,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         ),
         [0.0, 1.0],
     )];
-    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir);
     assert!(!crate::test_support::with_service_context(
         &[],
         |ctx| super::edge_range_matches_curve(

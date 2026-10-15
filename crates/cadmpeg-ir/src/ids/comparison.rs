@@ -3,11 +3,8 @@
 
 use std::cmp::Ordering;
 
-use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
-
 pub(crate) mod sealed {
     pub trait TextWork {}
-    impl TextWork for cadmpeg_core::decode::DecodeContext<'_> {}
 }
 
 /// Work policy for byte-wise text comparisons.
@@ -16,13 +13,6 @@ pub trait TextWork: sealed::TextWork {
     type Error;
     #[doc(hidden)]
     fn comparison_work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error>;
-}
-
-impl TextWork for DecodeContext<'_> {
-    type Error = ResourceLimit;
-    fn comparison_work(&self, _count: u64, _operation: &'static str) -> Result<(), ResourceLimit> {
-        Ok(())
-    }
 }
 
 /// Compare text in byte order, admitting only the bytes actually compared.

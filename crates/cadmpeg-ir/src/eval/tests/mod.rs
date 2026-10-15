@@ -447,7 +447,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             }).unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let budget = WorkBudget::new(5);
     assert_eq!(
         crate::eval::admission::EvaluationAdmission::Standard.within_work_slice(
@@ -676,7 +676,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
         });
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+            &crate::index::ModelIndex::build(&ir),
             &id,
             point.get(),
             parameter,
@@ -778,7 +778,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
         });
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+            &crate::index::ModelIndex::build(&ir),
             &id,
             point,
             seed,
@@ -806,7 +806,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
         )),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = Point3::new(0.5, 0.005, 0.0);
     assert!(super::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
@@ -869,7 +869,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     });
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&ir),
         &id,
         point.get(),
         parameter,
@@ -893,7 +893,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     ));
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&ir),
         &id,
         Point3::new(0.0, 0.0, 0.0),
         0.0
@@ -919,7 +919,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     assert_eq!(
         crate::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_test_support::service_decode_context(),
-            &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+            &crate::index::ModelIndex::build(&ir),
             &id,
             point,
             seed
@@ -930,7 +930,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     );
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&ir),
         &id,
         Point3::new(2.0, 3.0, 5.0),
         seed
@@ -1056,7 +1056,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             record_bounds: None,
         },
     ];
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1149,7 +1149,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1220,7 +1220,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
 
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
-        &crate::index::ModelIndex::build(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::build(&ir),
         &offset_id,
         0.2,
         0.3,
@@ -1286,7 +1286,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
                 record_bounds: None,
             })
         .expect("offset surface exists and has no procedural construction");
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1348,7 +1348,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             }).unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -1419,7 +1419,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             }).unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1507,7 +1507,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let partials = model_surface_partials_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1526,7 +1526,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     let (ir, surface_id) = law_sweep::law_sweep_model(LawExpression::Text {
         value: cadmpeg_core::nonblank_literal!("2.0*X"),
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let expected = Point3::new(0.5, -0.5, 0.25);
     assert_eq!(
         model_surface_point_by_id(
@@ -1605,7 +1605,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             }).unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1672,7 +1672,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
                 cache_fit_tolerance: None,
                 record_bounds: None,
             }).unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let partials = model_surface_second_partials_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1732,7 +1732,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             cache_fit_tolerance: None,
             record_bounds: None,
         }).unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -1826,7 +1826,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
                 ])
                 .expect("finite record bounds")),
             }).unwrap();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,

@@ -753,7 +753,7 @@ pub(super) fn emit_topology(
         }
     }
     let (valid_pcurve_fins, fallback_pcurves) = {
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let valid_pcurve_fins = fin_ids
             .keys()
             .map(|fin_xmt| -> Result<Option<u32>, CodecError> {
@@ -784,7 +784,9 @@ pub(super) fn emit_topology(
                 let Some((edge, support, carrier_id, use_range)) = candidate else {
                     return Ok(None);
                 };
-                let Some(carrier) = index.pcurves(carrier_id.as_str(), ctx)? else {
+                let Some(carrier) =
+                    index.pcurves(carrier_id.as_str(), cadmpeg_ir::index::StandardIndex)
+                else {
                     return Ok(None);
                 };
                 let parameter_range = use_range
@@ -807,7 +809,7 @@ pub(super) fn emit_topology(
                     return Ok(None);
                 };
                 let Some(curve) = index
-                    .edges(edge.as_str(), ctx)?
+                    .edges(edge.as_str(), cadmpeg_ir::index::StandardIndex)
                     .and_then(|edge| edge.curve())
                 else {
                     return Ok(None);
@@ -1107,7 +1109,6 @@ pub(super) fn emit_topology(
         });
     }
     attach_tolerant_edge_intersections_with_budget(
-        ctx,
         ir,
         graph,
         &edges,
@@ -1126,7 +1127,6 @@ pub(super) fn emit_topology(
         completion_geometry_budget,
     )?;
     complete_exact_boundary_intersection_pcurves_with_budget(
-        ctx,
         ir,
         annotations,
         procedural_start,
@@ -1134,7 +1134,6 @@ pub(super) fn emit_topology(
         completion_geometry_budget,
     )?;
     complete_intersection_pcurves_from_opposite_charts_with_budget(
-        ctx,
         ir,
         procedural_start,
         completion_transfer_budget,

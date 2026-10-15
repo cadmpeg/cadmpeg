@@ -33,7 +33,7 @@ fn fixture() -> (crate::CadIr, crate::ids::SurfaceId, PcurveGeometry) {
 #[test]
 fn mapped_pcurve_inverse_admits_exact_linear_step_without_storage() {
     let (ir, id, geometry) = fixture();
-    let index = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::new_model_only(&ir);
     let context = super::super::SurfacePcurveContext {
         index: &index,
         surface_id: &id,

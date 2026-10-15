@@ -11,9 +11,8 @@ use crate::report::{
 };
 
 pub(super) fn check_presentation(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    all_ids: &BorrowedIdentities<'_, '_>,
+    all_ids: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if ir.model.presentation_documents.len() > 1 {
@@ -27,13 +26,13 @@ pub(super) fn check_presentation(
     }
     for document in &ir.model.presentation_documents {
         let native_valid = match &document.native_ref {
-            Some(native) => all_ids.contains(ctx, native)?,
+            Some(native) => all_ids.contains(native),
             None => true,
         };
         let mut assets_valid = true;
         'states: for state in document.states() {
             for asset in &state.assets {
-                if !all_ids.contains(ctx, asset)? {
+                if !all_ids.contains(asset) {
                     assets_valid = false;
                     break 'states;
                 }
@@ -53,12 +52,12 @@ pub(super) fn check_presentation(
     let mut orders = std::collections::BTreeSet::new();
     for view in &ir.model.view_presentations {
         let mut references_valid = match &view.object {
-            Some(object) => all_ids.contains(ctx, object)?,
+            Some(object) => all_ids.contains(object),
             None => true,
         };
         if references_valid {
             if let Some(native) = &view.native_ref {
-                references_valid = all_ids.contains(ctx, native)?;
+                references_valid = all_ids.contains(native);
             }
         }
         if !references_valid || !orders.insert(view.order) {
@@ -72,67 +71,67 @@ pub(super) fn check_presentation(
         }
     }
 
-    let bodies = BorrowedIdentities::build(ctx, |add| {
+    let bodies = BorrowedIdentities::build(|add| {
         for item in &ir.model.bodies {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let faces = BorrowedIdentities::build(ctx, |add| {
+    let faces = BorrowedIdentities::build(|add| {
         for item in &ir.model.faces {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let edges = BorrowedIdentities::build(ctx, |add| {
+    let edges = BorrowedIdentities::build(|add| {
         for item in &ir.model.edges {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let vertices = BorrowedIdentities::build(ctx, |add| {
+    let vertices = BorrowedIdentities::build(|add| {
         for item in &ir.model.vertices {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let points = BorrowedIdentities::build(ctx, |add| {
+    let points = BorrowedIdentities::build(|add| {
         for item in &ir.model.points {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let curves = BorrowedIdentities::build(ctx, |add| {
+    let curves = BorrowedIdentities::build(|add| {
         for item in &ir.model.curves {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let surfaces = BorrowedIdentities::build(ctx, |add| {
+    let surfaces = BorrowedIdentities::build(|add| {
         for item in &ir.model.surfaces {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let products = BorrowedIdentities::build(ctx, |add| {
+    let products = BorrowedIdentities::build(|add| {
         for item in &ir.model.product_definitions {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let occurrences = BorrowedIdentities::build(ctx, |add| {
+    let occurrences = BorrowedIdentities::build(|add| {
         for item in &ir.model.occurrences {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let pmi = BorrowedIdentities::build(ctx, |add| {
+    let pmi = BorrowedIdentities::build(|add| {
         for item in &ir.model.pmi {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let tessellations = BorrowedIdentities::build(ctx, |add| {
+    let tessellations = BorrowedIdentities::build(|add| {
         for item in &ir.model.tessellations {
             add(item.id.as_str(), ())?;
         }
@@ -141,24 +140,20 @@ pub(super) fn check_presentation(
     for layer in &ir.model.presentation_layers {
         for item in &layer.items {
             let resolved = match item {
-                PresentationItem::Body { body } => bodies.contains(ctx, body.as_str())?,
-                PresentationItem::Face { face } => faces.contains(ctx, face.as_str())?,
-                PresentationItem::Edge { edge } => edges.contains(ctx, edge.as_str())?,
-                PresentationItem::Vertex { vertex } => vertices.contains(ctx, vertex.as_str())?,
-                PresentationItem::Point { point } => points.contains(ctx, point.as_str())?,
-                PresentationItem::Curve { curve } => curves.contains(ctx, curve.as_str())?,
-                PresentationItem::Surface { surface } => {
-                    surfaces.contains(ctx, surface.as_str())?
-                }
-                PresentationItem::Product { product } => {
-                    products.contains(ctx, product.as_str())?
-                }
+                PresentationItem::Body { body } => bodies.contains(body.as_str()),
+                PresentationItem::Face { face } => faces.contains(face.as_str()),
+                PresentationItem::Edge { edge } => edges.contains(edge.as_str()),
+                PresentationItem::Vertex { vertex } => vertices.contains(vertex.as_str()),
+                PresentationItem::Point { point } => points.contains(point.as_str()),
+                PresentationItem::Curve { curve } => curves.contains(curve.as_str()),
+                PresentationItem::Surface { surface } => surfaces.contains(surface.as_str()),
+                PresentationItem::Product { product } => products.contains(product.as_str()),
                 PresentationItem::Occurrence { occurrence } => {
-                    occurrences.contains(ctx, occurrence.as_str())?
+                    occurrences.contains(occurrence.as_str())
                 }
-                PresentationItem::Pmi { annotation } => pmi.contains(ctx, annotation.as_str())?,
+                PresentationItem::Pmi { annotation } => pmi.contains(annotation.as_str()),
                 PresentationItem::Tessellation { tessellation } => {
-                    tessellations.contains(ctx, tessellation.as_str())?
+                    tessellations.contains(tessellation.as_str())
                 }
                 PresentationItem::Source { .. } => true,
             };

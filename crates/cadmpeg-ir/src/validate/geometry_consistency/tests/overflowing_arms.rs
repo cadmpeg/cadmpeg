@@ -28,7 +28,7 @@ fn a_support_side_whose_nurbs_pcurve_overflows_misses_its_contract_by_nan() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -65,7 +65,7 @@ fn a_support_side_whose_placed_support_overflows_misses_its_contract_by_inf() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -118,7 +118,7 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -168,7 +168,7 @@ fn a_surface_curve_whose_end_overflows_misses_its_support_contract_by_nan() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -189,7 +189,7 @@ fn a_surface_offset_whose_solved_end_overflows_misses_its_offset_distance_by_nan
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -212,7 +212,7 @@ fn a_surface_offset_whose_base_end_overflows_misses_its_contracts_by_nan() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -301,7 +301,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -569,7 +569,7 @@ fn a_support_side_on_a_blend_whose_support_partial_overflows_misses_its_contract
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -653,7 +653,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");

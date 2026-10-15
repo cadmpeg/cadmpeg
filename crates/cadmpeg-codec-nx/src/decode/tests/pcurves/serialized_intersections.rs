@@ -229,14 +229,14 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         assert_eq!(
             cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &surfaces[0],
                 5.0,
                 0.0
             ),
             cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &surfaces[1],
                 5.0,
                 0.0

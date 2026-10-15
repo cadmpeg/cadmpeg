@@ -81,7 +81,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let pcurve = Pcurve {
         id: "test:model:pcurve#large-surface-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
@@ -413,10 +413,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(
-            &mapped_surface_curve([2.0, 3.0]),
-            crate::index::StandardIndex,
-        ),
+        &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([2.0, 3.0])),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -424,10 +421,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
 
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(
-            &mapped_surface_curve([3.0, 2.0]),
-            crate::index::StandardIndex,
-        ),
+        &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([3.0, 2.0])),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -440,10 +434,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(
-            &mapped_surface_offset(),
-            crate::index::StandardIndex,
-        ),
+        &crate::index::ModelIndex::new_model_only(&mapped_surface_offset()),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -489,7 +480,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     });
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&context_first, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&context_first),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -508,7 +499,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     *line_curve = crate::geometry::analytic::LineCurve::new(origin, direction);
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -527,7 +518,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -549,7 +540,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     .unwrap();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&mismatched, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&mismatched),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -628,7 +619,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -657,7 +648,7 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -692,7 +683,7 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -813,7 +804,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let pcurve = Pcurve {
         id: "test:model:pcurve#pcurve"
             .try_into()
@@ -1432,7 +1423,7 @@ fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -1484,7 +1475,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     let mut findings = Vec::new();
     check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
-        &crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex),
+        &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
     .expect("resource allocation did not fail");
@@ -1521,7 +1512,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,
@@ -1582,7 +1573,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,
@@ -1641,7 +1632,7 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
         geometry: surface.clone(),
         source_object: None,
     });
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
         index: &index,
         surface_id: &surface_id,
@@ -1758,7 +1749,7 @@ fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
     };
     ir.model.coedges[0].pcurves[0].parameter_range =
         Some(DirectedParameterRange::new([0.0, 1.0]).unwrap());
-    let index = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::new_model_only(&ir);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

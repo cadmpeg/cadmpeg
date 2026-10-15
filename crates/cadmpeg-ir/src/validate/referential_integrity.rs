@@ -13,7 +13,7 @@ use crate::schema::EntitySchema;
 pub(super) fn check_typed_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    index: &BorrowedIdentities<'_, '_>,
+    index: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     macro_rules! check_arenas {
@@ -21,7 +21,7 @@ pub(super) fn check_typed_references(
             $(for entity in &ir.model.$field {
                 let owner = entity.identity();
                 let walk = entity.visit_references(ctx, &mut |target| {
-                    if index.contains(ctx, target)? { return Ok(()); }
+                    if index.contains(target) { return Ok(()); }
                     for finding in findings.iter() {
                         if finding.check != Check::ReferentialIntegrity { continue; }
                         if finding.entity.as_deref() != Some(owner) { continue; }
@@ -80,10 +80,10 @@ mod tests {
         ir.model.tessellations.push(tessellation);
         let mut findings = Vec::new();
         let ctx = cadmpeg_test_support::service_decode_context();
-        let index = ModelIndex::build(&ir, crate::index::StandardIndex);
-        let identities = super::BorrowedIdentities::build(&ctx, |add| {
-            for id in index.identities(&ctx) {
-                add(id?, ())?;
+        let index = ModelIndex::build(&ir);
+        let identities = super::BorrowedIdentities::build(|add| {
+            for id in index.identities(crate::index::StandardIndex) {
+                add(id, ())?;
             }
             Ok(())
         })
@@ -107,8 +107,7 @@ mod tests {
             point: "test:model:point#missing".try_into().unwrap(),
             tolerance: None,
         });
-        let source = cadmpeg_test_support::service_decode_context();
-        let identities = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
+        let identities = super::BorrowedIdentities::build(|_| Ok(())).unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
@@ -145,8 +144,7 @@ mod tests {
                 bodies: vec![target.try_into().unwrap(), target.try_into().unwrap()],
                 native_ref: None,
             });
-        let source = cadmpeg_test_support::service_decode_context();
-        let identities = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
+        let identities = super::BorrowedIdentities::build(|_| Ok(())).unwrap();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

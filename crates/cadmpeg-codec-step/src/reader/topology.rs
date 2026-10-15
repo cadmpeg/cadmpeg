@@ -485,8 +485,7 @@ pub(super) fn decode(
     let seed_cache = std::cell::RefCell::new(PcurveSeedCache::default());
     {
         let index = (!decoded_pcurves.is_empty())
-            .then(|| ModelIndex::new_model_only(commit_session.document(), ctx))
-            .transpose()?;
+            .then(|| ModelIndex::new_model_only(commit_session.document()));
         for (key, (id, record)) in root_sources {
             let mut root_losses = Vec::new();
             let outcome = build(
@@ -494,7 +493,7 @@ pub(super) fn decode(
                 record,
                 BuildSources {
                     exchange,
-                    index: index.as_deref(),
+                    index: index.as_ref(),
                     vdefs: &vertices,
                     edefs: &edges,
                     shell_definitions: &shells,
@@ -3950,11 +3949,11 @@ fn select_associated_pcurve(
     let candidate = candidate.clone();
     let surface_identity = ids::data(kind!("surface"), surface_step);
     let surface = index
-        .surfaces(surface_identity.as_str(), ctx)?
+        .surfaces(surface_identity.as_str(), cadmpeg_ir::index::StandardIndex)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
     let pcurve = index
-        .pcurves(candidate.as_str(), ctx)?
+        .pcurves(candidate.as_str(), cadmpeg_ir::index::StandardIndex)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
     let bound = COINCIDENCE_TOLERANCE.max(index.ir().tolerances.linear.get());
@@ -4064,7 +4063,7 @@ fn pcurve_locus_witness(
         return Ok(false);
     };
     let curve_id = CurveId::from(ids::data(kind!("curve"), curve_step));
-    let curve_seeds = curve_selection_parameter_domain(index, &curve_id, ctx)?.map_or(
+    let curve_seeds = curve_selection_parameter_domain(index, &curve_id).map_or(
         [
             0.0,
             1.0,
@@ -4280,7 +4279,7 @@ fn surface_selection_parameters(
     v: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<[f64; 2], ResourceLimit> {
-    let domains = match index.surfaces(surface_id.as_str(), ctx)? {
+    let domains = match index.surfaces(surface_id.as_str(), cadmpeg_ir::index::StandardIndex) {
         Some(surface) => {
             surface_selection_parameter_domains(index, surface_id, &surface.geometry, ctx)?
         }
@@ -4823,7 +4822,7 @@ fn surface_selection_parameter_domains(
 ) -> Result<[Option<[f64; 2]>; 2], ResourceLimit> {
     let _depth = ctx.enter_nested_limit("STEP surface selection domain depth")?;
     let definition = index
-        .procedural_surface_for_surface(surface_id.as_str(), ctx)?
+        .procedural_surface_for_surface(surface_id.as_str(), cadmpeg_ir::index::StandardIndex)
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     Ok(match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
@@ -4837,18 +4836,18 @@ fn surface_selection_parameter_domains(
         }
         Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => [
             Some([0.0, std::f64::consts::TAU]),
-            curve_selection_parameter_domain(index, definition_payload.directrix(), ctx)?,
+            curve_selection_parameter_domain(index, definition_payload.directrix()),
         ],
         Some(ProceduralSurfaceDefinition::Extrusion(payload)) => [
-            curve_selection_parameter_domain(index, payload.directrix(), ctx)?,
+            curve_selection_parameter_domain(index, payload.directrix()),
             None,
         ],
         Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => [
-            curve_selection_parameter_domain(index, definition_payload.directrix(), ctx)?,
+            curve_selection_parameter_domain(index, definition_payload.directrix()),
             None,
         ],
         Some(ProceduralSurfaceDefinition::Replica { source, .. }) => match index
-            .surfaces(source.as_str(), ctx)?
+            .surfaces(source.as_str(), cadmpeg_ir::index::StandardIndex)
         {
             Some(source_surface) => {
                 surface_selection_parameter_domains(index, source, &source_surface.geometry, ctx)?
@@ -4896,15 +4895,12 @@ fn subset_parameter_domain(range: [f64; 2]) -> Option<[f64; 2]> {
 fn curve_selection_parameter_domain(
     index: &ModelIndex<'_>,
     curve_id: &CurveId,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<[f64; 2]>, ResourceLimit> {
-    let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
-        return Ok(None);
-    };
-    Ok(curve
+) -> Option<[f64; 2]> {
+    let curve = index.curves(curve_id.as_str(), cadmpeg_ir::index::StandardIndex)?;
+    curve
         .geometry
         .solved()
-        .and_then(curve_selection_parameter_domain_from_geometry))
+        .and_then(curve_selection_parameter_domain_from_geometry)
 }
 
 fn curve_selection_parameter_domain_from_geometry(

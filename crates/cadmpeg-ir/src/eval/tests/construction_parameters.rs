@@ -32,7 +32,7 @@ fn line_in_nurbs_carrier() -> (CadIr, CurveId) {
 #[test]
 fn construction_mapping_refuses_nonfinite_widths_and_derivatives() {
     let (ir, id) = line_in_nurbs_carrier();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         super::super::construction_curve_parameter(
             crate::eval::admission::EvaluationAdmission::Standard,
@@ -62,7 +62,7 @@ fn construction_mapping_refuses_nonfinite_widths_and_derivatives() {
 #[test]
 fn extrusion_partials_preserve_zero_acceleration_at_large_parameter_scale() {
     let (ir, id) = line_in_nurbs_carrier();
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let direction = Vector3::new(0.0, 0.0, 1.0);
     let extrusion = |direction| {
         ExtrusionSurfaceConstruction::try_new(

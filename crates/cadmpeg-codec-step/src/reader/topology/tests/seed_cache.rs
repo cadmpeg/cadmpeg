@@ -29,8 +29,7 @@ fn repeated_pcurve_searches_share_one_admitted_seed_vector() {
     let surface_id = SurfaceId::mint("test:seeds:surface#1").expect("surface ID");
     let pcurve_id = PcurveId::mint("test:seeds:pcurve#1").expect("pcurve ID");
     let ir = cadmpeg_ir::CadIr::empty();
-    let index =
-        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     let policy = DecodePolicy::service();
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let cache = RefCell::new(super::super::PcurveSeedCache::default());

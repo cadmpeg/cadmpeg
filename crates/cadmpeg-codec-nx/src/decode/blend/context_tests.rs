@@ -42,7 +42,6 @@ fn in_memory_spine_inverse_accepts_normal_input_under_default_policy() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
         .expect("empty in-memory root is admitted");
     let parameter = closest_spine_parameter(&ctx, &ir, &curve, Point3::new(0.25, 0.0, 0.0), None)
-        .expect("normal residual storage fits the default allowance")
         .expect("linear spine has a closest parameter");
     assert!((parameter - 0.25).abs() <= 4.0 * f64::EPSILON);
 }

@@ -4750,11 +4750,11 @@ fn model_curve_parameter_near_point_with_tolerance(
     tolerance: NonNegativeLength,
 ) -> Result<Option<FiniteReal>, CodecError> {
     let _depth = ctx.enter_nested("IR model curve inversion depth")?;
-    let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
+    let Some(curve) = index.curves(curve_id.as_str(), crate::index::StandardIndex) else {
         return Ok(None);
     };
     if let Some(procedural) = index
-        .procedural_curves_for_curve(curve_id.as_str(), ctx)?
+        .procedural_curves_for_curve(curve_id.as_str(), crate::index::StandardIndex)
         .and_then(|procedurals| procedurals.first().copied())
     {
         match procedural.definition() {
@@ -4855,7 +4855,9 @@ fn model_curve_parameter_near_point_with_tolerance(
     let Some(construction) = curve.geometry.procedural_construction() else {
         return Ok(None);
     };
-    let Some(procedural) = index.procedural_curves(construction.as_str(), ctx)? else {
+    let Some(procedural) =
+        index.procedural_curves(construction.as_str(), crate::index::StandardIndex)
+    else {
         return Ok(None);
     };
     let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
@@ -4879,7 +4881,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     }
     let mut best_candidate: Option<FiniteReal> = None;
     for (support_id, pcurve) in supports.iter().zip(&parameterization.pcurves) {
-        let Some(surface) = index.surfaces(support_id.as_str(), ctx)? else {
+        let Some(surface) = index.surfaces(support_id.as_str(), crate::index::StandardIndex) else {
             continue;
         };
         let PcurveGeometry::Line(line_pcurve) = pcurve else {
@@ -6243,19 +6245,7 @@ fn model_surface_point_inner(
     }
     let procedural = procedural.ok_or(EvaluationFailure::NoValue)?;
     let carrier_interval = record_u_interval(procedural.record_bounds());
-    let decoded;
-    let standard;
-    let index = match admission.context() {
-        Some(ctx) => {
-            decoded = crate::index::ModelIndex::build(ir, ctx)
-                .map_err(EvaluationFailure::ResourceLimit)?;
-            &*decoded
-        }
-        None => {
-            standard = crate::index::ModelIndex::build(ir, crate::index::StandardIndex);
-            &standard
-        }
-    };
+    let index = &crate::index::ModelIndex::build(ir);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => model_native_extrusion_point(
             admission,

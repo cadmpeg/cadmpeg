@@ -23,7 +23,7 @@ pub(super) fn check(
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let segments = BorrowedIdentities::build(ctx, |add| {
+    let segments = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
@@ -33,11 +33,11 @@ pub(super) fn check(
         }
         Ok(())
     })?;
-    let mut complete = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    let mut active = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    let mut roots = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    let mut complete = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut active = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut roots = BorrowedIdentities::build(|_| Ok(()))?;
     for identity in segments.identities() {
-        roots.insert_unique(identity, ())?;
+        roots.insert_unique(identity, ());
     }
     let mut ordered = Vec::new();
     for identity in roots.identities() {
@@ -46,13 +46,13 @@ pub(super) fn check(
     ordered.sort_by(Ord::cmp);
     let mut stack = Vec::new();
     for root in ordered {
-        if complete.contains(ctx, root)? {
+        if complete.contains(root) {
             continue;
         }
-        let Some(children) = segments.get(ctx, root)? else {
+        let Some(children) = segments.get(root) else {
             continue;
         };
-        active.insert_unique(root, ())?;
+        active.insert_unique(root, ());
         let frame = Frame {
             node: root,
             children,
@@ -64,19 +64,19 @@ pub(super) fn check(
             if frame.next_child >= frame.children.len() {
                 let node = frame.node;
                 stack.pop();
-                active.remove(node)?;
-                complete.insert_unique(node, ())?;
+                active.remove(node);
+                complete.insert_unique(node, ());
                 continue;
             }
             let child = frame.children[frame.next_child].curve.as_str();
             frame.next_child += 1;
-            let Some(children) = segments.get(ctx, child)? else {
+            let Some(children) = segments.get(child) else {
                 continue;
             };
-            if complete.contains(ctx, child)? {
+            if complete.contains(child) {
                 continue;
             }
-            if !active.insert_unique(child, ())? {
+            if !active.insert_unique(child, ()) {
                 crate::validate::record_finding(
                     findings,
                     Check::ReferentialIntegrity,
