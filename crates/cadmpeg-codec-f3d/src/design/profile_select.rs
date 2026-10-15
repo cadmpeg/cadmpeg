@@ -824,13 +824,12 @@ fn historical_face_profile_selection(
     if selected_faces.is_empty() {
         return Ok(None);
     }
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let mut face_ids = Vec::new();
     for face in selected_faces {
-        let id = crate::design::identity::history_input_face_id(
-            &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
+        let id = crate::ids::history_input_face_id(
+            &crate::ids::feature_input_prefix(feature_id, previous_state_id),
             face,
-        )?;
+        );
         face_ids.push(id);
     }
     let mut group_ids = Vec::new();
@@ -838,7 +837,7 @@ fn historical_face_profile_selection(
         group_ids.push(group.id.clone());
     }
     Ok(PlanarProfileRef::historical_faces(
-        crate::design::identity::feature_input_topology_id(feature_id, previous_state_id)?,
+        crate::ids::feature_input_topology_id(feature_id, previous_state_id),
         face_ids,
         group_ids,
     )

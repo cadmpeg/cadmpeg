@@ -655,7 +655,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .map_or_else(
                         || native_scope_definition(scope, &parameters),
                         |_| Ok(FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
-                            joint: crate::design::identity::neutral_assembly_joint_id(scope)?,
+                            joint: crate::ids::neutral_assembly_joint_id(scope),
                         })),
                     )?,
                 Some(DesignFeatureFamily::Extrude) => project_extrude(
@@ -1767,13 +1767,10 @@ fn project_work_point_construction(
             return Ok(Some(EdgeSelection::Native(operand.id.clone())));
         };
         let feature_id = crate::design::identity::neutral_feature_id(scope)?;
-        let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-        let prefix = crate::design::identity::history_input_prefix(feature_key, state_id)?;
+        let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
         Ok(Some(match cadmpeg_ir::features::EdgeSelection::historical(
-            crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
-            vec![crate::design::identity::history_input_edge_id(
-                &prefix, edge_slot,
-            )?],
+            crate::ids::feature_input_topology_id(&feature_id, state_id),
+            vec![crate::ids::history_input_edge_id(&prefix, edge_slot)],
             operand.id.clone(),
         ) {
             Ok(selection) => selection,
@@ -1820,12 +1817,10 @@ fn project_work_point_construction(
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
                     let feature_id = crate::design::identity::neutral_feature_id(scope)?;
-                    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-                    let prefix =
-                        crate::design::identity::history_input_prefix(feature_key, state_id)?;
+                    let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
                     VertexSelection::historical(
-                        crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
-                        crate::design::identity::history_input_vertex_id(&prefix, vertex_slot)?,
+                        crate::ids::feature_input_topology_id(&feature_id, state_id),
+                        crate::ids::history_input_vertex_id(&prefix, vertex_slot),
                         recipe.recipe_id.clone(),
                     )
                     .unwrap_or(VertexSelection::Unresolved)
@@ -1893,15 +1888,14 @@ fn project_work_plane(
         }));
     };
     let feature_id = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-    let prefix = crate::design::identity::history_input_prefix(feature_key, state_id)?;
+    let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
     let vertex = |recipe: &crate::records::feature::work_geometry::DesignVertexRecipe|
         -> Result<Option<VertexSelection>, CodecError> {
             let Some(resolution) = recipe.resolution else { return Ok(None); };
             let native = recipe.recipe_id.clone();
             let selection = VertexSelection::historical(
-                crate::design::identity::feature_input_topology_id(&feature_id, state_id)?,
-                crate::design::identity::history_input_vertex_id(&prefix, resolution.vertex_slot())?,
+                crate::ids::feature_input_topology_id(&feature_id, state_id),
+                crate::ids::history_input_vertex_id(&prefix, resolution.vertex_slot()),
                 native,
             )
             .unwrap_or(VertexSelection::Unresolved);
@@ -3104,13 +3098,10 @@ fn selected_historical_face_selection(
         return Ok(None);
     }
     let feature = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
-    let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
+    let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     Ok(Some(match cadmpeg_ir::features::FaceSelection::historical(
-        crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
-        vec![crate::design::identity::history_input_face_id(
-            &prefix, face_slot,
-        )?],
+        crate::ids::feature_input_topology_id(&feature, previous_state_id),
+        vec![crate::ids::history_input_face_id(&prefix, face_slot)],
         group.id.clone(),
     ) {
         Ok(selection) => selection,
@@ -3285,8 +3276,7 @@ fn resolved_split_face_path(
     ));
     let stream = or_none!(native_stream(&scope.id));
     let feature = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
-    let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
+    let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     let mut edge_slots = Vec::new();
     for (ordinal, member) in group
         .members()
@@ -3314,11 +3304,11 @@ fn resolved_split_face_path(
     }
     let mut edges = Vec::new();
     for edge_slot in edge_slots {
-        let edge = crate::design::identity::history_input_edge_id(&prefix, edge_slot)?;
+        let edge = crate::ids::history_input_edge_id(&prefix, edge_slot);
         edges.push(edge);
     }
     Ok(PathRef::historical_edges(
-        crate::design::identity::feature_input_topology_id(&feature, previous_state_id)?,
+        crate::ids::feature_input_topology_id(&feature, previous_state_id),
         edges,
         group.id.clone(),
     )
@@ -4352,12 +4342,11 @@ pub(crate) fn direct_face_selection(
         members.push((operand.id.as_str(), operand.resolved_face_slots.as_slice()));
     }
     let feature_id = crate::design::identity::neutral_feature_id(scope)?;
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let historical_face = |previous_state_id, slot| -> Result<_, CodecError> {
-        let face = crate::design::identity::history_input_face_id(
-            &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
+        let face = crate::ids::history_input_face_id(
+            &crate::ids::feature_input_prefix(&feature_id, previous_state_id),
             slot,
-        )?;
+        );
         Ok(face)
     };
     let faces = match scope.previous_history_state_id() {
@@ -4370,7 +4359,7 @@ pub(crate) fn direct_face_selection(
                 }
             }
             match cadmpeg_ir::features::FaceSelection::historical(
-                crate::design::identity::feature_input_topology_id(&feature_id, previous_state_id)?,
+                crate::ids::feature_input_topology_id(&feature_id, previous_state_id),
                 resolved,
                 scope.id.clone(),
             ) {
@@ -4394,7 +4383,7 @@ pub(crate) fn direct_face_selection(
                 }
             }
             match cadmpeg_ir::features::FaceSelection::historical_partial(
-                crate::design::identity::feature_input_topology_id(&feature_id, previous_state_id)?,
+                crate::ids::feature_input_topology_id(&feature_id, previous_state_id),
                 faces,
                 unresolved,
                 scope.id.clone(),

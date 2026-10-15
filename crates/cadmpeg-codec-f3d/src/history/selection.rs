@@ -339,7 +339,7 @@ pub(super) fn bind_body_recipe_face_selection(
             slots.push(slot);
         }
     }
-    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let state = crate::ids::history_input_state_id(&prefix);
     let mut faces = Vec::new();
     for slot in slots {

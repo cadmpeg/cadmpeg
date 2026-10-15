@@ -267,65 +267,8 @@ pub(super) fn neutral_component_insert_occurrence_id(
     ))
 }
 
-pub(super) fn neutral_assembly_joint_id(
-    scope: &crate::records::feature::scope::DesignParameterScope,
-) -> Result<cadmpeg_ir::products::JointId, CodecError> {
-    let operation = "f3d assembly joint identifier";
-    let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-    let len = encoded_length(stream, operation)?;
-    mint(format!(
-        "f3d:model:joint#{len}:{}{}",
-        Encoded(stream, false),
-        scope.record_index
-    ))
-}
-
 pub(super) fn configuration_entry_id(entry: &str) -> String {
     format!("f3d:configuration:entry#{}", Encoded(entry, false))
-}
-
-pub(super) fn history_input_prefix(
-    key: &str,
-    previous: i64,
-) -> Result<cadmpeg_ir::ids::IdentityKey, CodecError> {
-    let text = format!("{}:{key}:{previous}", key.len());
-    cadmpeg_ir::ids::IdentityKey::try_new(text)
-        .map_err(|error| crate::design::text::malformed_design(format_args!("{error}")))
-}
-
-pub(super) fn feature_input_topology_id(
-    feature: &cadmpeg_ir::features::FeatureId,
-    previous: i64,
-) -> Result<cadmpeg_ir::ids::FeatureInputTopologyId, CodecError> {
-    let key = identity_key(feature.as_str())?;
-    mint(format!(
-        "f3d:history-input:state#{}:{key}:{previous}",
-        key.len()
-    ))
-}
-
-pub(super) fn history_input_edge_id(
-    prefix: &cadmpeg_ir::ids::IdentityKey,
-    slot: i64,
-) -> Result<cadmpeg_ir::ids::HistoricalEdgeId, CodecError> {
-    mint(format!("f3d:history-input:edge#{}:{slot}", prefix.as_str()))
-}
-
-pub(super) fn history_input_face_id(
-    prefix: &cadmpeg_ir::ids::IdentityKey,
-    slot: i64,
-) -> Result<cadmpeg_ir::ids::HistoricalFaceId, CodecError> {
-    mint(format!("f3d:history-input:face#{}:{slot}", prefix.as_str()))
-}
-
-pub(super) fn history_input_vertex_id(
-    prefix: &cadmpeg_ir::ids::IdentityKey,
-    slot: i64,
-) -> Result<cadmpeg_ir::ids::HistoricalVertexId, CodecError> {
-    mint(format!(
-        "f3d:history-input:vertex#{}:{slot}",
-        prefix.as_str()
-    ))
 }
 
 pub(super) fn neutral_assembly_axial_object_id(

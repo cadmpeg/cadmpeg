@@ -41,22 +41,18 @@ fn native_edge_selection(
 fn historical_identity_slots(
     group: &DesignConstructionOperandGroup,
     state: cadmpeg_ir::ids::FeatureInputTopologyId,
-    feature_key: &str,
+    feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     slots: &[i64],
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
-    let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
+) -> cadmpeg_ir::features::EdgeSelection {
+    let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let mut edges = Vec::new();
     for &slot in slots {
-        edges.push(crate::design::identity::history_input_edge_id(
-            &prefix, slot,
-        )?);
+        edges.push(crate::ids::history_input_edge_id(&prefix, slot));
     }
     let native = group.id.clone();
-    match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native) {
-        Ok(selection) => Ok(selection),
-        Err(_) => Ok(native_edge_selection(group)),
-    }
+    cadmpeg_ir::features::EdgeSelection::historical(state, edges, native)
+        .unwrap_or_else(|_| native_edge_selection(group))
 }
 
 pub(super) fn resolved_edge_group(
@@ -161,18 +157,17 @@ pub(super) fn resolved_surface_patch_edge_group(
         };
         edge_slots.push(slot);
     }
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let mut historical_edges = Vec::new();
     for edge_slot in edge_slots {
-        let id = crate::design::identity::history_input_edge_id(
-            &crate::design::identity::history_input_prefix(feature_key, state_id)?,
+        let id = crate::ids::history_input_edge_id(
+            &crate::ids::feature_input_prefix(feature_id, state_id),
             edge_slot,
-        )?;
+        );
         historical_edges.push(id);
     }
     let native = group.id.clone();
     let resolved = cadmpeg_ir::features::EdgeSelection::historical(
-        crate::design::identity::feature_input_topology_id(feature_id, state_id)?,
+        crate::ids::feature_input_topology_id(feature_id, state_id),
         historical_edges,
         native,
     );
@@ -297,14 +292,13 @@ pub(super) fn resolved_edge_flange_group(
     if edges.is_empty() {
         return Ok(selection);
     }
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-    let state = crate::design::identity::feature_input_topology_id(feature_id, previous_state_id)?;
+    let state = crate::ids::feature_input_topology_id(feature_id, previous_state_id);
     let mut historical_edges = Vec::new();
     for edge_slot in edges {
-        let id = crate::design::identity::history_input_edge_id(
-            &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
+        let id = crate::ids::history_input_edge_id(
+            &crate::ids::feature_input_prefix(feature_id, previous_state_id),
             edge_slot,
-        )?;
+        );
         historical_edges.push(id);
     }
     let native = group.id.clone();
@@ -568,7 +562,6 @@ fn resolved_edge_group_with_transition_chain(
         EdgeGroupProof::Treatment { radius } => (true, radius),
     };
 
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let unmatched_selection = |state_id: Option<i64>| -> Result<EdgeSelection, CodecError> {
         if group.lost_edge_references.is_empty() {
             Ok(native_edge_selection(group))
@@ -582,10 +575,10 @@ fn resolved_edge_group_with_transition_chain(
                     .iter()
                     .map(|identity| (identity.as_str(), None)),
                 state_id,
-                feature_key,
-                crate::design::identity::feature_input_topology_id(feature_id, state_id)?,
+                feature_id,
+                crate::ids::feature_input_topology_id(feature_id, state_id),
                 &group.id,
-            )?
+            )
             .unwrap_or(EdgeSelection::Unresolved))
         }
     };
@@ -655,15 +648,15 @@ fn resolved_edge_group_with_transition_chain(
         }
         let mut historical_edges = Vec::new();
         for edge_slot in resolved_edges {
-            let edge = crate::design::identity::history_input_edge_id(
-                &crate::design::identity::history_input_prefix(feature_key, state_id)?,
+            let edge = crate::ids::history_input_edge_id(
+                &crate::ids::feature_input_prefix(feature_id, state_id),
                 edge_slot,
-            )?;
+            );
             historical_edges.push(edge);
         }
         let native = group.id.clone();
         return match cadmpeg_ir::features::EdgeSelection::historical(
-            crate::design::identity::feature_input_topology_id(feature_id, state_id)?,
+            crate::ids::feature_input_topology_id(feature_id, state_id),
             historical_edges,
             native,
         ) {
@@ -832,8 +825,7 @@ fn resolved_edge_group_with_transition_chain(
         let Some(previous_state_id) = previous_state_id else {
             return unmatched_selection(None);
         };
-        let state =
-            crate::design::identity::feature_input_topology_id(feature_id, previous_state_id)?;
+        let state = crate::ids::feature_input_topology_id(feature_id, previous_state_id);
         if identity_matches.iter().all(|operand| {
             operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
         }) {
@@ -847,13 +839,10 @@ fn resolved_edge_group_with_transition_chain(
                     .chain(operand.resolved_edge_slots.iter().copied())
             }) {
                 if seen.insert(edge_slot) {
-                    let edge = crate::design::identity::history_input_edge_id(
-                        &crate::design::identity::history_input_prefix(
-                            feature_key,
-                            previous_state_id,
-                        )?,
+                    let edge = crate::ids::history_input_edge_id(
+                        &crate::ids::feature_input_prefix(feature_id, previous_state_id),
                         edge_slot,
-                    )?;
+                    );
                     edges.push(edge);
                 }
             }
@@ -864,20 +853,32 @@ fn resolved_edge_group_with_transition_chain(
             };
         }
         if let Some(edges) = identity_radius_slots.as_ref() {
-            return historical_identity_slots(group, state, feature_key, previous_state_id, edges);
+            return Ok(historical_identity_slots(
+                group,
+                state,
+                feature_id,
+                previous_state_id,
+                edges,
+            ));
         }
         if let Some(edges) = identity_group_transition_slots.as_ref() {
-            return historical_identity_slots(group, state, feature_key, previous_state_id, edges);
+            return Ok(historical_identity_slots(
+                group,
+                state,
+                feature_id,
+                previous_state_id,
+                edges,
+            ));
         }
         if identity_matches.len() == 1 && identity_matches[0].resolved_edge_slot.is_none() {
             if let Some(edges) = identity_transition_slots.as_ref() {
-                return historical_identity_slots(
+                return Ok(historical_identity_slots(
                     group,
                     state,
-                    feature_key,
+                    feature_id,
                     previous_state_id,
                     edges,
-                );
+                ));
             }
         }
         return match partial_historical_edge_selection(
@@ -885,10 +886,10 @@ fn resolved_edge_group_with_transition_chain(
                 .iter()
                 .map(|operand| (operand.id.as_str(), operand.resolved_edge_slot)),
             previous_state_id,
-            feature_key,
+            feature_id,
             state,
             &group.id,
-        )? {
+        ) {
             Some(selection) => Ok(selection),
             None => Ok(native_edge_selection(group)),
         };
@@ -931,7 +932,7 @@ fn resolved_edge_group_with_transition_chain(
             Ok(EdgeSelection::Unresolved)
         };
     };
-    let state = crate::design::identity::feature_input_topology_id(feature_id, previous_state_id)?;
+    let state = crate::ids::feature_input_topology_id(feature_id, previous_state_id);
     let lost_selection = || unmatched_selection(Some(previous_state_id));
     let mut exact_slots = Some(Vec::new());
     for operand in &matched_operands {
@@ -1032,10 +1033,10 @@ fn resolved_edge_group_with_transition_chain(
         if combined_edges.iter().all(Option::is_some) {
             let mut edges = Vec::new();
             for edge_slot in combined_edges.into_iter().flatten() {
-                let edge = crate::design::identity::history_input_edge_id(
-                    &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
+                let edge = crate::ids::history_input_edge_id(
+                    &crate::ids::feature_input_prefix(feature_id, previous_state_id),
                     edge_slot,
-                )?;
+                );
                 if !edges.contains(&edge) {
                     edges.push(edge);
                 }
@@ -1058,20 +1059,20 @@ fn resolved_edge_group_with_transition_chain(
         return match partial_historical_edge_selection(
             partial_members,
             previous_state_id,
-            feature_key,
+            feature_id,
             state,
             &group.id,
-        )? {
+        ) {
             Some(selection) => Ok(selection),
             None => Ok(native_edge_selection(group)),
         };
     };
     let mut edges = Vec::new();
     for edge_slot in resolved_slots {
-        let edge = crate::design::identity::history_input_edge_id(
-            &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
+        let edge = crate::ids::history_input_edge_id(
+            &crate::ids::feature_input_prefix(feature_id, previous_state_id),
             edge_slot,
-        )?;
+        );
         if !edges.contains(&edge) {
             edges.push(edge);
         }
@@ -1130,13 +1131,12 @@ pub(super) fn resolved_hem_edge_group(
     let Some(edge) = hem_transition_edge_slot(operand) else {
         return Ok(selection);
     };
-    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     Ok(cadmpeg_ir::features::EdgeSelection::historical(
-        crate::design::identity::feature_input_topology_id(feature_id, previous_state_id)?,
-        vec![crate::design::identity::history_input_edge_id(
-            &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
+        crate::ids::feature_input_topology_id(feature_id, previous_state_id),
+        vec![crate::ids::history_input_edge_id(
+            &crate::ids::feature_input_prefix(feature_id, previous_state_id),
             edge,
-        )?],
+        )],
         group.id.clone(),
     )
     .unwrap_or(selection))
@@ -1287,10 +1287,10 @@ fn unique_hem_transition_edge_candidate<'a>(
 fn partial_historical_edge_selection<'a>(
     members: impl IntoIterator<Item = (&'a str, Option<i64>)>,
     previous_state_id: i64,
-    feature_key: &str,
+    feature_id: &cadmpeg_ir::features::FeatureId,
     state: cadmpeg_ir::ids::FeatureInputTopologyId,
     native: &str,
-) -> Result<Option<cadmpeg_ir::features::EdgeSelection>, CodecError> {
+) -> Option<cadmpeg_ir::features::EdgeSelection> {
     use cadmpeg_ir::features::EdgeSelection;
 
     let mut edges = Vec::new();
@@ -1306,18 +1306,18 @@ fn partial_historical_edge_selection<'a>(
         }
     }
     if unresolved.is_empty() || edges.is_empty() {
-        return Ok(None);
+        return None;
     }
     let mut historical_edges = Vec::new();
     for edge_slot in edges {
-        let edge = crate::design::identity::history_input_edge_id(
-            &crate::design::identity::history_input_prefix(feature_key, previous_state_id)?,
+        let edge = crate::ids::history_input_edge_id(
+            &crate::ids::feature_input_prefix(feature_id, previous_state_id),
             edge_slot,
-        )?;
+        );
         historical_edges.push(edge);
     }
     let native_id = native.to_owned();
-    Ok(Some(
+    Some(
         match cadmpeg_ir::features::EdgeSelection::historical_partial(
             state,
             historical_edges,
@@ -1327,7 +1327,7 @@ fn partial_historical_edge_selection<'a>(
             Ok(selection) => selection,
             Err(_) => EdgeSelection::Native(native.to_owned()),
         },
-    ))
+    )
 }
 
 fn context_only_edge_group_candidates<'a>(

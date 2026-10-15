@@ -332,7 +332,7 @@ pub(crate) fn project_assembly_joints(
             }
             None => (None, None),
         };
-        let id = super::identity::neutral_assembly_joint_id(scope)?;
+        let id = crate::ids::neutral_assembly_joint_id(scope);
         let [first_operand, second_operand] = operands;
         let first_frame = super::components::neutral_transform(frames[0].transform)?;
         let second_frame = super::components::neutral_transform(frames[1].transform)?;
