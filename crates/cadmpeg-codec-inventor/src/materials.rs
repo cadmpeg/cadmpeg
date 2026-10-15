@@ -315,7 +315,7 @@ mod tests {
         let instances = one_connected_texture();
         assert_eq!(
             project_fixture(&instances)
-                .expect("connected appearance fits service profile")
+                .expect("project the connected appearance")
                 .appearances[0]
                 .textures
                 .len(),
@@ -328,7 +328,7 @@ mod tests {
         let instances = one_float_appearance();
         assert_eq!(
             project_fixture(&instances)
-                .expect("appearance fits the service profile")
+                .expect("project the appearance")
                 .appearances
                 .len(),
             1
@@ -351,7 +351,7 @@ mod tests {
         ));
         assert_eq!(
             project_fixture(&instances)
-                .expect("appearance fits the service profile")
+                .expect("project the appearance")
                 .appearances
                 .len(),
             1
