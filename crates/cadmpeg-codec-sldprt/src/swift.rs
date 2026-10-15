@@ -1378,11 +1378,10 @@ fn read_related(
         let (Some(name), Some(class)) = (pstr(ctx, cursor)?, pstr(ctx, cursor)?) else {
             return Ok(None);
         };
-        let descriptor = (name, class);
         descriptors_storage.with_storage(|| {
             ctx.push_vec(
                 &mut descriptors,
-                descriptor,
+                (name, class),
                 "collect SWIFT related descriptors",
             )
         })?;
@@ -2687,14 +2686,17 @@ fn location_projection(
                     _ => Ok(None),
                 },
             )?;
-            traversal.visit(id, 0, &mut |value| {
-                if let Some(first) = first {
-                    Ok(approximately_equal(value.get(), first.get()))
-                } else {
-                    first = Some(value);
-                    Ok(true)
-                }
-            })?.then_some(first).flatten()
+            traversal
+                .visit(id, 0, &mut |value| {
+                    if let Some(first) = first {
+                        Ok(approximately_equal(value.get(), first.get()))
+                    } else {
+                        first = Some(value);
+                        Ok(true)
+                    }
+                })?
+                .then_some(first)
+                .flatten()
         }
         _ => None,
     })
