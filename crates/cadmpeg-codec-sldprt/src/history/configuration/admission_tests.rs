@@ -145,8 +145,8 @@ fn assert_nesting_refusal(project: fn(&DecodePolicy) -> Result<(), CodecError>) 
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_carrier_nesting_limit() {
-    assert_nesting_refusal(run);
+fn configuration_sketch_projection_carrier_runs_under_service_policy() {
+    run(&DecodePolicy::service()).unwrap();
 }
 
 fn datum_model() -> cadmpeg_ir::CadIr {
