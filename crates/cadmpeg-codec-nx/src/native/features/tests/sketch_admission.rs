@@ -52,16 +52,7 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
         pair("pair-1", SketchPairForm::Legacy),
         pair("pair-2", SketchPairForm::Short),
     ];
-    assert!(
-        crate::test_support::with_decode_context(|ctx| feature_sketch_fixed_points(
-            ctx,
-            &[record],
-            std::slice::from_ref(&name),
-            &pairs
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(feature_sketch_fixed_points(&[record], std::slice::from_ref(&name), &pairs).is_empty());
 
     let mut foreign = pairs[0].clone();
     foreign.id = "foreign".to_string();
@@ -77,16 +68,7 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
         payload_start_offset: 0,
         payload_end_offset: 100,
     };
-    assert!(
-        crate::test_support::with_decode_context(|ctx| feature_sketch_fixed_points(
-            ctx,
-            &[record],
-            &[name],
-            &[foreign]
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(feature_sketch_fixed_points(&[record], &[name], &[foreign]).is_empty());
 }
 
 #[test]
@@ -136,13 +118,11 @@ fn sketch_points_require_owned_finite_scalar_fields() {
     };
     let scalars = [scalar("scalar-1", 1.0), scalar("scalar-2", 2.0)];
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| feature_sketch_points(
-            ctx,
+        feature_sketch_points(
             std::slice::from_ref(&record),
             std::slice::from_ref(&name),
             &scalars
-        ))
-        .unwrap()
+        )
         .len(),
         1
     );
@@ -154,14 +134,10 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         scalar_fields: vec![foreign.id.clone(), scalars[1].id.clone()],
         ..record.clone()
     };
-    assert!(
-        crate::test_support::with_decode_context(|ctx| feature_sketch_points(
-            ctx,
-            &[foreign_record],
-            std::slice::from_ref(&name),
-            &[foreign, scalars[1].clone()]
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(feature_sketch_points(
+        &[foreign_record],
+        std::slice::from_ref(&name),
+        &[foreign, scalars[1].clone()]
+    )
+    .is_empty());
 }

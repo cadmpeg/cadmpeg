@@ -20,14 +20,13 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::NxLossCode;
 use crate::topology::{
-    intersection_data_curves, FaceLoopError, FaceLoopFailure, Graph, Node, NodeCandidate,
-    TYPE_38_SCHEMA_HEADER,
+    intersection_data_curves, FaceLoopFailure, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
 };
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
 
 #[test]
-fn unique_candidate_filter_reuses_input_storage_with_only_key_admission() {
+fn unique_candidate_filter_reuses_input_storage() {
     let candidates = [9, 7, 2, 7, 4, 7]
         .into_iter()
         .enumerate()
@@ -41,25 +40,15 @@ fn unique_candidate_filter_reuses_input_storage_with_only_key_admission() {
         .collect::<Vec<_>>();
     let storage = candidates.as_ptr();
     let capacity = candidates.capacity();
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 4;
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let selected = Graph::select_unique_candidates(ctx, candidates).unwrap();
-            assert_eq!(selected.as_ptr(), storage);
-            assert_eq!(selected.capacity(), capacity);
-            assert_eq!(
-                selected
-                    .iter()
-                    .map(|node| (node.xmt(), node.pos, node.end, node.shift))
-                    .collect::<Vec<_>>(),
-                [(2, 80, 120, 0), (4, 160, 200, 0), (9, 0, 40, 0)]
-            );
-            assert!(ctx.resource_refusal().is_none());
-        },
+    let selected = Graph::select_unique_candidates(candidates);
+    assert_eq!(selected.as_ptr(), storage);
+    assert_eq!(selected.capacity(), capacity);
+    assert_eq!(
+        selected
+            .iter()
+            .map(|node| (node.xmt(), node.pos, node.end, node.shift))
+            .collect::<Vec<_>>(),
+        [(2, 80, 120, 0), (4, 160, 200, 0), (9, 0, 40, 0)]
     );
 }
 
@@ -78,275 +67,132 @@ fn unique_candidate_identity_includes_the_record_kind() {
         end: 80,
         ..point
     };
-    crate::test_support::with_decode_context(|ctx| {
-        let selected = Graph::select_unique_candidates(ctx, vec![point, line]).unwrap();
-        assert_eq!(selected.len(), 2);
-        assert!(selected
-            .iter()
-            .any(|node| node.kind == point.kind && node.pos == point.pos));
-        assert!(selected
-            .iter()
-            .any(|node| node.kind == line.kind && node.pos == line.pos));
-    });
-}
-
-#[test]
-fn empty_unique_candidate_filter_preserves_the_first_refusal() {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            ctx.charge_work(1, "unique candidate boundary test")
-                .unwrap_err();
-            let first = ctx.resource_refusal().unwrap();
-            assert!(matches!(
-                Graph::select_unique_candidates(ctx, Vec::new()),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
-            ));
-        },
-    );
-}
-
-#[test]
-fn topology_graph_parse_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let bytes = topology_partition_stream();
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = Graph::parse(ctx, &bytes).expect_err("collection refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems)
-            );
-        },
-    );
-}
-
-#[test]
-fn topology_graph_parse_refuses_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let bytes = topology_partition_stream();
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = Graph::parse(ctx, &bytes).expect_err("retained refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes)
-            );
-        },
-    );
-}
-
-#[test]
-fn topology_graph_parse_refuses_scoped_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let bytes = topology_partition_stream();
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            let error = Graph::parse(ctx, &bytes).expect_err("scoped refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::MaterializedBytes)
-            );
-        },
-    );
-}
-
-#[test]
-fn topology_graph_parse_refuses_work_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let bytes = topology_partition_stream();
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = Graph::parse(ctx, &bytes).expect_err("work refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits)
-            );
-        },
-    );
+    let selected = Graph::select_unique_candidates(vec![point, line]);
+    assert_eq!(selected.len(), 2);
+    assert!(selected
+        .iter()
+        .any(|node| node.kind == point.kind && node.pos == point.pos));
+    assert!(selected
+        .iter()
+        .any(|node| node.kind == line.kind && node.pos == line.pos));
 }
 
 #[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
-    crate::test_support::with_decode_context(|ctx| {
-        let valid = topology_partition_stream();
-        let graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &valid)
-        })
-        .unwrap();
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
+    let valid = topology_partition_stream();
+    let graph = crate::topology::Graph::parse(&valid);
+    assert_eq!(graph.body_shape_shells().count(), 1);
 
-        let mut broken = valid;
-        let face = broken
-            .windows(2)
-            .position(|window| window == [0, 14])
-            .expect("face record");
-        put_ref(&mut broken, face + 24, 99);
-        assert!(
-            crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
-                ctx, &broken
-            ))
-            .unwrap()
-            .body_shape_shells(ctx)
-            .unwrap()
-            .next()
-            .is_none()
-        );
+    let mut broken = valid;
+    let face = broken
+        .windows(2)
+        .position(|window| window == [0, 14])
+        .expect("face record");
+    put_ref(&mut broken, face + 24, 99);
+    assert!(crate::topology::Graph::parse(&broken)
+        .body_shape_shells()
+        .next()
+        .is_none());
 
-        let mut independent_previous = topology_partition_stream();
-        let face = independent_previous
-            .windows(2)
-            .position(|window| window == [0, 14])
-            .expect("face record");
-        put_ref(&mut independent_previous, face + 20, 99);
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
-                ctx,
-                &independent_previous
-            ))
-            .unwrap()
-            .body_shape_shells(ctx)
-            .unwrap()
+    let mut independent_previous = topology_partition_stream();
+    let face = independent_previous
+        .windows(2)
+        .position(|window| window == [0, 14])
+        .expect("face record");
+    put_ref(&mut independent_previous, face + 20, 99);
+    assert_eq!(
+        crate::topology::Graph::parse(&independent_previous)
+            .body_shape_shells()
             .count(),
-            1
-        );
-    });
+        1
+    );
 }
 
 #[test]
 fn topology_retains_shell_body_identity_without_body_record() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut stream = topology_partition_stream();
-        let body = stream
-            .windows(4)
-            .position(|window| window == [0, 12, 0, 2])
-            .expect("body record");
-        stream[body..body + 24].fill(0xff);
+    let mut stream = topology_partition_stream();
+    let body = stream
+        .windows(4)
+        .position(|window| window == [0, 12, 0, 2])
+        .expect("body record");
+    stream[body..body + 24].fill(0xff);
 
-        let graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(NodeKind::Body, 2).is_none());
+    assert_eq!(graph.body_shape_shells().count(), 1);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-        assert!(graph.get(NodeKind::Body, 2).is_none());
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
-
-        let mut input = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec
-            .decode(&mut input, &DecodeOptions::default())
-            .unwrap();
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.bodies[0].id.as_str(), "nx:s0:body#2");
-        assert_eq!(result.ir().model.faces.len(), 1);
-        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
-        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
-    });
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.bodies[0].id.as_str(), "nx:s0:body#2");
+    assert_eq!(result.ir().model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
 fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut stream = topology_partition_stream();
-        let fixed_nodes = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
-        .unwrap()
+    let mut stream = topology_partition_stream();
+    let fixed_nodes = crate::topology::Graph::parse(&stream)
         .nodes
         .values()
         .filter(|node| node.kind != NodeKind::Fin)
         .map(|node| (node.pos(), node.shift))
         .collect::<Vec<_>>();
-        for (ordinal, (pos, shift)) in fixed_nodes.into_iter().enumerate() {
-            let node_id = u32::MAX - u32::try_from(ordinal).unwrap();
-            stream[pos + 4 + shift..pos + 8 + shift].copy_from_slice(&node_id.to_be_bytes());
-        }
+    for (ordinal, (pos, shift)) in fixed_nodes.into_iter().enumerate() {
+        let node_id = u32::MAX - u32::try_from(ordinal).unwrap();
+        stream[pos + 4 + shift..pos + 8 + shift].copy_from_slice(&node_id.to_be_bytes());
+    }
 
-        let graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
+    let graph = crate::topology::Graph::parse(&stream);
+
+    assert_eq!(graph.body_shape_shells().count(), 1);
+    assert_eq!(graph.body_shape_face_count(), 1);
+    assert!(graph.has_complete_body_topology());
+    assert!(graph
+        .nodes
+        .values()
+        .filter(|node| node.kind != NodeKind::Fin)
+        .all(|node| View::u32_be_at(&node.bytes, 4).is_some_and(|id| id > 1_000_000)));
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
-        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
-        assert!(crate::test_support::with_decode_context(
-            |ctx| graph.has_complete_body_topology(ctx)
-        )
-        .unwrap());
-        assert!(graph
-            .nodes
-            .values()
-            .filter(|node| node.kind != NodeKind::Fin)
-            .all(|node| View::u32_be_at(&node.bytes, 4).is_some_and(|id| id > 1_000_000)));
-
-        let mut input = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec
-            .decode(&mut input, &DecodeOptions::default())
-            .unwrap();
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 1);
-        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
-        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
-    });
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
 fn topology_accepts_high_node_identity_among_low_identity_neighbors() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut stream = topology_partition_stream();
-        let initial_graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
-        .unwrap();
-        let face = initial_graph.get(NodeKind::Face, 4).unwrap();
-        let node_id_offset = face.pos() + 4 + face.shift;
-        stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+    let mut stream = topology_partition_stream();
+    let initial_graph = crate::topology::Graph::parse(&stream);
+    let face = initial_graph.get(NodeKind::Face, 4).unwrap();
+    let node_id_offset = face.pos() + 4 + face.shift;
+    stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
-        let graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
-        .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
 
-        assert_eq!(
-            graph
-                .get(NodeKind::Face, 4)
-                .and_then(crate::topology::Node::node_id),
-            Some(u32::MAX)
-        );
-        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
-        assert!(crate::test_support::with_decode_context(
-            |ctx| graph.has_complete_body_topology(ctx)
-        )
-        .unwrap());
-    });
+    assert_eq!(
+        graph
+            .get(NodeKind::Face, 4)
+            .and_then(crate::topology::Node::node_id),
+        Some(u32::MAX)
+    );
+    assert_eq!(graph.body_shape_face_count(), 1);
+    assert!(graph.has_complete_body_topology());
 }
 
 #[test]
 fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
     let mut stream = topology_partition_stream();
-    let initial_graph =
-        crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let initial_graph = Graph::parse(&stream);
     for (kind, xmt) in [(50, 6), (30, 9), (29, 11)] {
         let node = initial_graph
             .get(NodeKind::try_from(kind).unwrap(), xmt)
@@ -355,7 +201,7 @@ fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
         stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
     }
 
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
 
     for (kind, xmt) in [(50, 6), (30, 9), (29, 11)] {
         assert_eq!(
@@ -365,10 +211,7 @@ fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
             Some(u32::MAX)
         );
     }
-    assert!(
-        crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx))
-            .unwrap()
-    );
+    assert!(graph.has_complete_body_topology());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -398,47 +241,39 @@ fn topology_rejects_unreferenced_high_identity_carrier() {
     put_ref(&mut successor, 2, 100);
     stream.extend(successor);
 
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
 
     assert!(graph.get(NodeKind::Plane, 99).is_none());
     assert!(graph.get(NodeKind::Line, 100).is_some());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx))
-            .unwrap()
-    );
+    assert!(graph.has_complete_body_topology());
 }
 
 #[test]
 fn topology_admits_high_identity_region_from_shell_ownership() {
     let mut stream = topology_partition_stream();
-    let initial_graph =
-        crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let initial_graph = Graph::parse(&stream);
     let region = initial_graph.get(NodeKind::Region, 12).unwrap();
     let node_id_offset = region.pos + 4 + region.shift;
     stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
 
     assert_eq!(
         graph.get(NodeKind::Region, 12).and_then(Node::node_id),
         Some(u32::MAX)
     );
-    assert!(
-        crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx))
-            .unwrap()
-    );
+    assert!(graph.has_complete_body_topology());
 }
 
 #[test]
 fn topology_closes_high_identity_procedural_surface_dependencies() {
     let mut stream = offset_surface_topology_partition_stream();
-    let initial_graph =
-        crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let initial_graph = Graph::parse(&stream);
     let offset = initial_graph.get(NodeKind::OffsetSurface, 12).unwrap();
     let node_id_offset = offset.pos + 4 + offset.shift;
     stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
 
     assert_eq!(
         graph
@@ -446,12 +281,7 @@ fn topology_closes_high_identity_procedural_surface_dependencies() {
             .and_then(|node| node.u32_at(4)),
         Some(u32::MAX)
     );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| graph.offset_surfaces(ctx))
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(graph.offset_surfaces().len(), 1);
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -461,153 +291,9 @@ fn topology_closes_high_identity_procedural_surface_dependencies() {
 }
 
 #[test]
-fn topology_projection_route_refuses_collection_limit() {
-    let stream = offset_surface_topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &stream,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = graph
-                .offset_surfaces(ctx)
-                .expect_err("offset surface collection refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-            );
-        },
-    );
-}
-
-#[test]
-fn topology_projection_route_refuses_retained_limit() {
-    let stream = offset_surface_topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &stream,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = graph
-                .offset_surfaces(ctx)
-                .expect_err("offset surface retained refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
-        },
-    );
-}
-
-#[test]
-fn topology_carrier_references_refuse_collection_limit() {
-    let stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &stream,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = graph
-                .referenced_carrier_xmts(ctx)
-                .expect_err("carrier reference refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-            );
-        },
-    );
-}
-
-#[test]
-fn topology_shell_face_route_refuses_retained_limit() {
-    let stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    let shell = graph.get(NodeKind::Shell, 3).expect("shell");
-
-    crate::test_support::with_decode_context_over(
-        &stream,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = graph
-                .shell_face_xmts(ctx, shell)
-                .expect_err("shell face retained refusal");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
-        },
-    );
-}
-
-fn face_ring_refusal(
-    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> FaceLoopError {
-    let stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-
-    crate::test_support::with_decode_context_over(&stream, adjust, |ctx| {
-        graph
-            .face_loop_rings(ctx, 4)
-            .expect_err("face ring resource refusal")
-    })
-}
-
-#[test]
-fn topology_face_ring_refuses_collection_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_collection_items = 0;
-    };
-    assert!(matches!(face_ring_refusal(adjust_policy),
-        FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-}
-
-#[test]
-fn topology_face_ring_refuses_retained_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 0;
-    };
-    assert!(matches!(face_ring_refusal(adjust_policy),
-        FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-}
-
-#[test]
-fn topology_face_ring_refuses_scoped_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_materialized_bytes = 0;
-    };
-    assert!(matches!(face_ring_refusal(adjust_policy),
-        FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-}
-
-#[test]
-fn topology_face_ring_refuses_work_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = 0;
-    };
-    assert!(matches!(face_ring_refusal(adjust_policy),
-        FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
-}
-
-#[test]
 fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
     let mut stream = topology_partition_stream();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     let face = graph.get(NodeKind::Face, 4).unwrap();
     let node_id = face.node_id().unwrap();
     assert_eq!(
@@ -622,9 +308,7 @@ fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
     let mut duplicate = face.bytes.clone();
     duplicate[3] = 39;
     stream.extend(duplicate);
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph.get(NodeKind::Face, 39).and_then(Node::node_id),
         Some(node_id)
@@ -634,48 +318,43 @@ fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
 
 #[test]
 fn topology_accepts_cached_last_face_and_implicit_region_identity() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut stream = topology_partition_stream();
-        let shell = stream
-            .windows(4)
-            .position(|window| window == [0, 13, 0, 3])
-            .expect("shell record");
-        put_ref(&mut stream, shell + 22, 4);
-        let region = stream
-            .windows(4)
-            .position(|window| window == [0, 19, 0, 12])
-            .expect("region record");
-        stream[region..region + 16].fill(0xff);
-        let mut second_face = record(14, 39);
-        put_ref(&mut second_face, 2, 20);
-        put_f64(&mut second_face, 10, 0.000_2);
-        put_ref(&mut second_face, 18, 1);
-        put_ref(&mut second_face, 20, 1);
-        put_ref(&mut second_face, 22, 1);
-        put_ref(&mut second_face, 24, 3);
-        put_ref(&mut second_face, 26, 6);
-        second_face[28] = b'+';
-        stream.extend(second_face);
+    let mut stream = topology_partition_stream();
+    let shell = stream
+        .windows(4)
+        .position(|window| window == [0, 13, 0, 3])
+        .expect("shell record");
+    put_ref(&mut stream, shell + 22, 4);
+    let region = stream
+        .windows(4)
+        .position(|window| window == [0, 19, 0, 12])
+        .expect("region record");
+    stream[region..region + 16].fill(0xff);
+    let mut second_face = record(14, 39);
+    put_ref(&mut second_face, 2, 20);
+    put_f64(&mut second_face, 10, 0.000_2);
+    put_ref(&mut second_face, 18, 1);
+    put_ref(&mut second_face, 20, 1);
+    put_ref(&mut second_face, 22, 1);
+    put_ref(&mut second_face, 24, 3);
+    put_ref(&mut second_face, 26, 6);
+    second_face[28] = b'+';
+    stream.extend(second_face);
 
-        let graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(NodeKind::Region, 12).is_none());
+    assert_eq!(graph.body_shape_shells().count(), 1);
+    assert_eq!(graph.body_shape_face_count(), 2);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-        assert!(graph.get(NodeKind::Region, 12).is_none());
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
-        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 2);
-
-        let mut input = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec
-            .decode(&mut input, &DecodeOptions::default())
-            .unwrap();
-        assert_eq!(result.ir().model.regions.len(), 1);
-        assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
-        assert_eq!(result.ir().model.faces.len(), 2);
-        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail");
-        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
-    });
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
+    assert_eq!(result.ir().model.faces.len(), 2);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
@@ -686,10 +365,8 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .position(|window| window == [0, 17, 0, 7])
         .expect("fin record");
     put_ref(&mut stream, fin + 8, 99);
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    assert!(crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).is_err());
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.face_loop_rings(4).is_err());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -705,9 +382,8 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .position(|window| window == [0, 17, 0, 7])
         .expect("fin record");
     put_ref(&mut broken_partner, fin + 14, 99);
-    let graph =
-        crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &broken_partner)).unwrap();
-    assert!(crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).is_err());
+    let graph = Graph::parse(&broken_partner);
+    assert!(graph.face_loop_rings(4).is_err());
 }
 
 #[test]
@@ -718,14 +394,14 @@ fn unresolved_fin_edge_records_face_boundary_loss() {
         .position(|window| window == [0, 17, 0, 7])
         .expect("FIN");
     put_ref(&mut stream, fin + 16, 99);
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     assert!(matches!(
-        crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)),
-        Err(FaceLoopError::Invalid(FaceLoopFailure::UnresolvedFinEdge {
+        graph.face_loop_rings(4),
+        Err(FaceLoopFailure::UnresolvedFinEdge {
             loop_xmt: 5,
             fin_xmt: 7,
             edge_xmt: Some(99),
-        }))
+        })
     ));
 
     let mut input = Cursor::new(prt_with_partition(&stream));
@@ -744,11 +420,11 @@ fn unresolved_fin_edge_records_face_boundary_loss() {
 #[test]
 fn admitted_loop_records_loss_when_its_edge_cannot_emit() {
     let mut stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     let vertex = graph.get(NodeKind::Vertex, 10).expect("vertex");
     put_ref(&mut stream, vertex.pos() + 16, 99);
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    assert!(crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).is_ok());
+    let graph = Graph::parse(&stream);
+    assert!(graph.face_loop_rings(4).is_ok());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -765,7 +441,7 @@ fn admitted_loop_records_loss_when_its_edge_cannot_emit() {
 #[test]
 fn linked_fin_ring_order_is_emitted() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     let loop_node = graph.get(NodeKind::Loop, 5).expect("loop node");
     put_ref(&mut stream, loop_node.pos() + 10, 13);
     let first_fin = graph.get(NodeKind::Fin, 7).expect("first FIN");
@@ -783,11 +459,9 @@ fn linked_fin_ring_order_is_emitted() {
     put_ref(&mut third_fin, 18, 12);
     third_fin[22] = b'+';
     stream.extend(third_fin);
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4))
-            .expect("source ring")[0]
-            .1,
+        graph.face_loop_rings(4).expect("source ring")[0].1,
         vec![13, 7, 6]
     );
 
@@ -809,7 +483,7 @@ fn linked_fin_ring_order_is_emitted() {
 #[test]
 fn face_loop_chain_order_is_emitted() {
     let mut stream = partnered_trimmed_topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     let face = graph.get(NodeKind::Face, 4).expect("first face");
     let first_loop = graph.get(NodeKind::Loop, 5).expect("first loop");
     let second_loop = graph.get(NodeKind::Loop, 21).expect("second loop");
@@ -817,9 +491,8 @@ fn face_loop_chain_order_is_emitted() {
     put_ref(&mut stream, second_loop.pos + 12, 4);
     put_ref(&mut stream, second_loop.pos + 14, 5);
     put_ref(&mut stream, first_loop.pos + 14, 1);
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    let source = crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4))
-        .expect("linked loop chain");
+    let graph = Graph::parse(&stream);
+    let source = graph.face_loop_rings(4).expect("linked loop chain");
     assert_eq!(
         source.iter().map(|(xmt, _)| *xmt).collect::<Vec<_>>(),
         vec![21, 5]
@@ -852,9 +525,7 @@ fn topology_accepts_fixed_record_envelope_escape() {
         .position(|window| window == [0, 17, 0, 7])
         .expect("fin record");
     stream.insert(fin + 2, 0xff);
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
             .get(NodeKind::Fin, 7)
@@ -862,35 +533,25 @@ fn topology_accepts_fixed_record_envelope_escape() {
             .attribute_field_offset(),
         Some(fin + 5)
     );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4))
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
 }
 
 #[test]
 fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut stream = topology_partition_stream();
-        let shell = stream
-            .windows(4)
-            .position(|window| window == [0, 13, 0, 3])
-            .expect("shell record");
-        stream.insert(shell + 2, 0xff);
+    let mut stream = topology_partition_stream();
+    let shell = stream
+        .windows(4)
+        .position(|window| window == [0, 13, 0, 3])
+        .expect("shell record");
+    stream.insert(shell + 2, 0xff);
 
-        let graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
-        .unwrap();
-        assert_eq!(
-            graph.get(NodeKind::Shell, 3).map(super::Node::pos),
-            Some(shell)
-        );
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
-        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
-    });
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(
+        graph.get(NodeKind::Shell, 3).map(super::Node::pos),
+        Some(shell)
+    );
+    assert_eq!(graph.body_shape_shells().count(), 1);
+    assert_eq!(graph.body_shape_face_count(), 1);
 }
 
 #[test]
@@ -903,9 +564,7 @@ fn topology_iterates_each_record_family_in_physical_order() {
         stream.extend(point);
     }
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
             .of_kind(NodeKind::Point)
@@ -921,9 +580,7 @@ fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     put_ref(&mut stream, 2, 4);
     stream.extend(topology_partition_stream());
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     let face = graph.get(NodeKind::Face, 4).expect("valid later FACE");
     assert!(face.pos() >= 39);
     assert!(face.face_fields().is_some());
@@ -936,9 +593,7 @@ fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
     let mut successor = record(12, 24);
     put_ref(&mut successor, 2, 3);
     stream.extend_from_slice(&successor);
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(graph.of_kind(NodeKind::Body).count(), 2);
     assert_eq!(graph.at_pos(0).map(super::Node::xmt), Some(65_536));
     assert_eq!(graph.at_pos(26).map(super::Node::xmt), Some(3));
@@ -962,23 +617,16 @@ fn topology_disambiguates_direct_large_index_from_escaped_compact_record() {
     successor[22] = b'+';
     stream.extend_from_slice(&successor);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(graph.at_pos(0).map(super::Node::xmt), Some(32_896));
     assert_eq!(graph.at_pos(0).map(crate::topology::Node::end), Some(25));
     assert_eq!(graph.at_pos(25).map(super::Node::xmt), Some(7));
 
     let mut ambiguous = stream[..25].to_vec();
     ambiguous.extend_from_slice(&[0; 5]);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(
-            ctx, &ambiguous
-        ))
-        .unwrap()
+    assert!(crate::topology::Graph::parse(&ambiguous)
         .at_pos(0)
-        .is_none()
-    );
+        .is_none());
 }
 
 #[test]
@@ -991,9 +639,7 @@ fn topology_rejects_duplicate_fixed_record_identity() {
     put_vec3(&mut duplicate, 16, [0.04, 0.05, 0.06]);
     first.extend(duplicate);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &first))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&first);
     assert!(graph.get(NodeKind::Point, 11).is_none());
     assert!(graph.of_kind(NodeKind::Point).next().is_none());
 }
@@ -1013,9 +659,7 @@ fn topology_rejects_duplicate_identity_instead_of_preferring_body_shape() {
     put_ref(&mut duplicate, 22, 0);
     stream.extend(duplicate);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert!(graph.get(NodeKind::Shell, 3).is_none());
 }
 
@@ -1036,12 +680,7 @@ fn topology_rejects_overlapping_candidates_without_ranking() {
         end: 32,
     };
 
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        Graph::select_non_overlapping_candidates(ctx, &[], vec![first, second])
-            .map(|(nodes, _reservation)| nodes)
-    })
-    .unwrap()
-    .is_empty());
+    assert!(Graph::select_non_overlapping_candidates(&[], vec![first, second]).is_empty());
 }
 
 #[test]
@@ -1059,7 +698,7 @@ fn topology_ownership_candidate_cannot_suppress_typed_candidate() {
     let mut stream = vec![0, 12];
     stream.extend(face);
 
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     assert!(graph.get(NodeKind::Face, 4).is_some());
     assert!(graph.get(NodeKind::Body, 14).is_none());
 }
@@ -1076,17 +715,14 @@ fn topology_resolves_ownership_overlap_before_duplicate_identity() {
     let mut stream = outer;
     stream.extend(successor);
 
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     assert_eq!(graph.get(NodeKind::Body, 7).map(super::Node::pos), Some(0));
     assert_eq!(graph.get(NodeKind::Body, 8).map(super::Node::pos), Some(24));
 }
 
 #[test]
 fn topology_retains_non_overlapping_ownership_records() {
-    let graph = crate::test_support::with_decode_context(|ctx| {
-        Graph::parse(ctx, &topology_partition_stream())
-    })
-    .unwrap();
+    let graph = Graph::parse(&topology_partition_stream());
 
     assert!(graph.get(NodeKind::Body, 2).is_some());
     assert!(graph.get(NodeKind::Region, 12).is_some());
@@ -1110,20 +746,11 @@ fn topology_resolves_overlap_before_duplicate_identity() {
         end: 32,
     };
 
-    assert!(
-        crate::test_support::with_decode_context(|ctx| Graph::select_unique_candidates(
-            ctx,
-            vec![outer, embedded]
-        ))
-        .unwrap()
-        .is_empty()
-    );
-    let selected = crate::test_support::with_decode_context(|ctx| {
-        let (non_overlapping, _reservation) =
-            Graph::select_non_overlapping_candidates(ctx, &stream, vec![outer, embedded])?;
-        Graph::select_unique_candidates(ctx, non_overlapping)
-    })
-    .unwrap();
+    assert!(Graph::select_unique_candidates(vec![outer, embedded]).is_empty());
+    let selected = Graph::select_unique_candidates(Graph::select_non_overlapping_candidates(
+        &stream,
+        vec![outer, embedded],
+    ));
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].pos, outer.pos);
     assert_eq!(selected[0].end(), outer.end());
@@ -1131,10 +758,7 @@ fn topology_resolves_overlap_before_duplicate_identity() {
 
 #[test]
 fn topology_rejects_status_framed_delta_as_fixed_record() {
-    let graph = crate::test_support::with_decode_context(|ctx| {
-        Graph::parse(ctx, &variable_status_framed_deltas_stream())
-    })
-    .unwrap();
+    let graph = Graph::parse(&variable_status_framed_deltas_stream());
 
     assert!(graph.of_kind(NodeKind::Loop).next().is_none());
 }
@@ -1157,24 +781,12 @@ fn intersection_data_requires_complete_schema_header() {
         source[header_start..header_start + TYPE_38_SCHEMA_HEADER.len() - 1].to_vec();
     incomplete_header.push(0xfe);
     incomplete_header.extend_from_slice(&source[record_start..]);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| intersection_data_curves(
-            ctx,
-            &incomplete_header
-        ))
-        .unwrap()
-        .is_empty()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx,
-            &incomplete_header
-        ))
+    assert!(intersection_data_curves(&incomplete_header).is_empty());
+    assert!(crate::deltas::census::walk(&incomplete_header)
         .unwrap()
         .records
         .iter()
-        .all(|record| record.kind() != 90)
-    );
+        .all(|record| record.kind() != 90));
 }
 
 #[test]
@@ -1276,78 +888,48 @@ fn topology_reference_views_reserve_only_one_as_null() {
 #[test]
 fn canonical_point_admission_does_not_build_a_topology_graph() {
     let stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     let point = graph.of_kind(NodeKind::Point).next().unwrap();
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 128,
-        |ctx| {
-            assert!(
-                Graph::has_canonical_record(ctx, &point.bytes, NodeKind::Point, point.xmt())
-                    .unwrap()
-            );
-            assert!(ctx.resource_refusal().is_none());
-        },
-    );
+    assert!(Graph::has_canonical_record(
+        &point.bytes,
+        NodeKind::Point,
+        point.xmt()
+    ));
 }
 
 #[test]
 fn canonical_admission_keeps_the_graph_fallback_for_composite_input() {
     let stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     let point_xmt = graph.of_kind(NodeKind::Point).next().unwrap().xmt();
-    crate::test_support::with_decode_context(|ctx| {
-        assert!(Graph::has_canonical_record(ctx, &stream, NodeKind::Point, point_xmt).unwrap());
-        assert!(!Graph::has_canonical_record(ctx, &stream, NodeKind::Point, 999).unwrap());
-    });
+    assert!(Graph::has_canonical_record(
+        &stream,
+        NodeKind::Point,
+        point_xmt
+    ));
+    assert!(!Graph::has_canonical_record(&stream, NodeKind::Point, 999));
 }
 
 #[test]
 fn canonical_admission_matches_graph_identity_selection() {
-    crate::test_support::with_decode_context(|ctx| {
-        for bytes in [
-            topology_partition_stream(),
-            offset_surface_topology_partition_stream(),
-            partnered_trimmed_topology_partition_stream(),
-        ] {
-            let graph = Graph::parse(ctx, &bytes).unwrap();
-            for node in graph.nodes.values() {
-                for identity in [node.xmt(), 999_999] {
-                    let expected = Graph::parse(ctx, &node.bytes)
-                        .unwrap()
-                        .get(node.kind, identity)
-                        .is_some();
-                    assert_eq!(
-                        Graph::has_canonical_record(ctx, &node.bytes, node.kind, identity).unwrap(),
-                        expected,
-                        "family {:?}, identity {identity}",
-                        node.kind,
-                    );
-                }
+    for bytes in [
+        topology_partition_stream(),
+        offset_surface_topology_partition_stream(),
+        partnered_trimmed_topology_partition_stream(),
+    ] {
+        let graph = Graph::parse(&bytes);
+        for node in graph.nodes.values() {
+            for identity in [node.xmt(), 999_999] {
+                let expected = Graph::parse(&node.bytes).get(node.kind, identity).is_some();
+                assert_eq!(
+                    Graph::has_canonical_record(&node.bytes, node.kind, identity),
+                    expected,
+                    "family {:?}, identity {identity}",
+                    node.kind,
+                );
             }
         }
-    });
-}
-
-#[test]
-fn canonical_admission_preserves_work_refusals() {
-    let bytes = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &bytes)).unwrap();
-    let point = graph.of_kind(NodeKind::Point).next().unwrap();
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let refusal = Graph::has_canonical_record(ctx, &point.bytes, point.kind, point.xmt())
-                .expect_err("canonical framing remains charged");
-            assert!(matches!(
-                refusal,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.operation == "validate NX canonical record framing"
-                        && ctx.resource_refusal() == Some(limit)
-            ));
-        },
-    );
+    }
 }
 
 #[test]
@@ -1359,152 +941,73 @@ fn shell_census_work_does_not_scan_unrelated_record_kinds() {
         put_vec3(&mut point, 16, [0.01, 0.02, 0.03]);
         stream.extend(point);
     }
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let graph = Graph::parse(&stream);
     assert_eq!(graph.kind_count(NodeKind::Face), 1);
     assert_eq!(graph.kind_count(NodeKind::Point), 1001);
 
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 128,
-        |ctx| {
-            let shells: Vec<_> = graph.body_shape_shells(ctx).unwrap().collect();
-            assert_eq!(shells.len(), 1);
-            assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
-            assert_eq!(
-                graph.shell_face_xmts(ctx, shells[0]).unwrap(),
-                Some(vec![4])
-            );
-            assert_eq!(
-                graph.of_kind_charged(ctx, NodeKind::Face).unwrap().count(),
-                1
-            );
-            assert!(ctx.resource_refusal().is_none());
-        },
-    );
-}
-
-#[test]
-fn indexed_kind_traversal_still_refuses_insufficient_work() {
-    let stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let error = graph.of_kind_charged(ctx, NodeKind::Face).err().unwrap();
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.operation == "iterate NX topology records"
-            ));
-        },
-    );
-}
-
-#[test]
-fn body_shape_classification_refuses_work_before_census() {
-    let stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let error = graph.body_shape_shells(ctx).err().unwrap();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "classify NX body shells")
-            );
-        },
-    );
-}
-
-#[test]
-fn ownership_selection_refuses_cross_product_work_before_comparison() {
-    let owner = super::NodeCandidate {
-        kind: NodeKind::Body,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(2).unwrap(),
-        pos: 0,
-        shift: 0,
-        end: 24,
-    };
-    let selected = super::NodeCandidate {
-        kind: NodeKind::Point,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(3).unwrap(),
-        pos: 24,
-        shift: 0,
-        end: 60,
-    };
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let error = Graph::admit_disjoint_ownership(ctx, vec![owner], &[selected]).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare NX ownership overlaps")
-            );
-        },
-    );
+    let shells: Vec<_> = graph.body_shape_shells().collect();
+    assert_eq!(shells.len(), 1);
+    assert_eq!(graph.body_shape_face_count(), 1);
+    assert_eq!(graph.shell_face_xmts(shells[0]), Some(vec![4]));
+    assert_eq!(graph.of_kind(NodeKind::Face).count(), 1);
 }
 
 #[test]
 fn topology_nodes_retain_the_admitted_header_identity_and_source_span() {
     let bytes = topology_partition_stream();
-    crate::test_support::with_decode_context(|ctx| {
-        let graph = Graph::parse(ctx, &bytes).unwrap();
-        for node in graph.nodes.values() {
-            let cloned = node.clone();
-            let (identity, _) =
-                crate::framing::read_xmt(&cloned.bytes, 2 + usize::from(cloned.bytes[2] == 0xff))
-                    .unwrap();
-            assert_eq!(cloned.xmt(), identity);
-            assert!(cloned.xmt() > 1);
-            assert_eq!(cloned.end(), cloned.pos() + cloned.bytes.len());
-            assert_eq!(&bytes[cloned.pos()..cloned.end()], cloned.bytes.as_slice());
-            if let Some(offset) = cloned.attribute_field_offset() {
-                assert!((cloned.pos()..cloned.end()).contains(&offset));
-            }
+    let graph = Graph::parse(&bytes);
+    for node in graph.nodes.values() {
+        let cloned = node.clone();
+        let (identity, _) =
+            crate::framing::read_xmt(&cloned.bytes, 2 + usize::from(cloned.bytes[2] == 0xff))
+                .unwrap();
+        assert_eq!(cloned.xmt(), identity);
+        assert!(cloned.xmt() > 1);
+        assert_eq!(cloned.end(), cloned.pos() + cloned.bytes.len());
+        assert_eq!(&bytes[cloned.pos()..cloned.end()], cloned.bytes.as_slice());
+        if let Some(offset) = cloned.attribute_field_offset() {
+            assert!((cloned.pos()..cloned.end()).contains(&offset));
         }
-    });
+    }
 }
 
 #[test]
 fn topology_field_tolerances_require_finite_native_values() {
     let bytes = topology_partition_stream();
-    crate::test_support::with_decode_context(|ctx| {
-        let graph = Graph::parse(ctx, &bytes).unwrap();
-        for (kind, identity, offset) in [
-            (NodeKind::Face, 4, 10),
-            (NodeKind::Edge, 8, 10),
-            (NodeKind::Vertex, 10, 18),
+    let graph = Graph::parse(&bytes);
+    for (kind, identity, offset) in [
+        (NodeKind::Face, 4, 10),
+        (NodeKind::Edge, 8, 10),
+        (NodeKind::Vertex, 10, 18),
+    ] {
+        let mut node = graph.get(kind, identity).unwrap().clone();
+        for value in [
+            -1.0,
+            0.0,
+            f64::MAX,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
         ] {
-            let mut node = graph.get(kind, identity).unwrap().clone();
-            for value in [
-                -1.0,
-                0.0,
-                f64::MAX,
-                f64::NAN,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-            ] {
-                put_f64(&mut node.bytes, offset, value);
-                let tolerance = match kind {
-                    NodeKind::Face => node.face_fields().map(super::FaceFields::tolerance),
-                    NodeKind::Edge => node.edge_fields().map(super::EdgeFields::tolerance),
-                    NodeKind::Vertex => node.vertex_fields().map(super::VertexFields::tolerance),
-                    _ => panic!("test family"),
-                };
-                if value.is_finite() {
-                    assert_eq!(tolerance, Some(value));
-                } else {
-                    assert_eq!(tolerance, None);
-                }
+            put_f64(&mut node.bytes, offset, value);
+            let tolerance = match kind {
+                NodeKind::Face => node.face_fields().map(super::FaceFields::tolerance),
+                NodeKind::Edge => node.edge_fields().map(super::EdgeFields::tolerance),
+                NodeKind::Vertex => node.vertex_fields().map(super::VertexFields::tolerance),
+                _ => panic!("test family"),
+            };
+            if value.is_finite() {
+                assert_eq!(tolerance, Some(value));
+            } else {
+                assert_eq!(tolerance, None);
             }
         }
-        assert!(graph
-            .unique_curve_edge_witness(9)
-            .unwrap()
-            .tolerance()
-            .is_finite());
-    });
+    }
+    assert!(graph
+        .unique_curve_edge_witness(9)
+        .unwrap()
+        .tolerance()
+        .is_finite());
 }
 
 #[test]
@@ -1516,16 +1019,9 @@ fn identical_domain_selection_materializes_node_payloads_once() {
         put_vec3(&mut point, 16, [0.01, 0.02, 0.03]);
         stream.extend(point);
     }
-    crate::test_support::with_decode_context_over(
-        &stream,
-        |policy| policy.limits.max_collection_items = 6000,
-        |ctx| {
-            let graph = Graph::parse(ctx, &stream).unwrap();
-            assert_eq!(graph.kind_count(NodeKind::Point), 100);
-            for xmt in 100..200 {
-                assert!(graph.get(NodeKind::Point, xmt).is_some());
-            }
-            assert!(ctx.resource_refusal().is_none());
-        },
-    );
+    let graph = Graph::parse(&stream);
+    assert_eq!(graph.kind_count(NodeKind::Point), 100);
+    for xmt in 100..200 {
+        assert!(graph.get(NodeKind::Point, xmt).is_some());
+    }
 }

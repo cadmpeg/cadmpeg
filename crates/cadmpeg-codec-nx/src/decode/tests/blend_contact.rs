@@ -148,9 +148,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
         let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let grid = crate::decode::blend::blend_surface_parameter_grid_with_index_and_budget(
             &index, &surface, 0, &budget,
@@ -1320,9 +1318,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
         let mut contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
         let actual =

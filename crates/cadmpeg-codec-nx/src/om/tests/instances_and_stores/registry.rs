@@ -5,6 +5,7 @@ use crate::test_support::test_om::indexed_om_section;
 
 use crate::om::color_tables;
 use crate::om::indexed_sections;
+use crate::om::tests::section_budget;
 use crate::om::ExpressionUnit;
 
 fn sample_color_table_bytes() -> Vec<u8> {
@@ -51,122 +52,52 @@ fn sample_color_table_bytes() -> Vec<u8> {
 fn expression_declaration_name_for_test(
     bytes: &[u8],
 ) -> Option<crate::om::ExpressionDeclarationName<'_>> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::expression_declaration_name(ctx, bytes)
-    })
-    .unwrap()
+    crate::om::expression_declaration_name(bytes)
 }
 
 #[test]
 fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
     let bytes = sample_color_table_bytes();
 
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |_| {},
-        |ctx| {
-            let tables = color_tables(ctx, &bytes).unwrap();
-            assert_eq!(tables.len(), 1);
-            assert_eq!(
-                tables[0].background.map(|(component, _)| component.value()),
-                [1.0, 1.0, 1.0]
-            );
-            assert_eq!(tables[0].definitions.len(), 216);
-            assert_eq!(tables[0].definitions[0].name, "Color 1");
-            assert_eq!(
-                tables[0].definitions[0]
-                    .components
-                    .map(|(component, _)| component.value()),
-                [1.0, 1.0, 1.0]
-            );
-            assert_eq!(
-                tables[0].definitions[1]
-                    .components
-                    .map(|(component, _)| component.value()),
-                [0.5, 0.25, 0.0]
-            );
-            let index_offset = tables[0].definitions[127].offset + 1;
-            assert_eq!(bytes[index_offset..index_offset + 2], [0x80, 0x7f]);
-
-            let mut wrong_background = bytes.clone();
-            wrong_background[5] = b'b';
-            assert!(color_tables(ctx, &wrong_background).unwrap().is_empty());
-
-            let mut malformed = bytes.clone();
-            *malformed.last_mut().unwrap() = 0x02;
-            assert!(color_tables(ctx, &malformed).unwrap().is_empty());
-            let truncated = &bytes[..bytes.len() - 1];
-            assert!(color_tables(ctx, truncated).unwrap().is_empty());
-        },
+    let tables = color_tables(&bytes);
+    assert_eq!(tables.len(), 1);
+    assert_eq!(
+        tables[0].background.map(|(component, _)| component.value()),
+        [1.0, 1.0, 1.0]
     );
-}
-
-#[test]
-fn om_color_tables_refuse_collection_limit() {
-    let bytes = sample_color_table_bytes();
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = color_tables(ctx, &bytes).unwrap_err();
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            ));
-        },
+    assert_eq!(tables[0].definitions.len(), 216);
+    assert_eq!(tables[0].definitions[0].name, "Color 1");
+    assert_eq!(
+        tables[0].definitions[0]
+            .components
+            .map(|(component, _)| component.value()),
+        [1.0, 1.0, 1.0]
     );
-}
-
-#[test]
-fn om_color_tables_refuse_retained_limit() {
-    let bytes = sample_color_table_bytes();
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        |ctx| {
-            let error = color_tables(ctx, &bytes).unwrap_err();
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            ));
-        },
+    assert_eq!(
+        tables[0].definitions[1]
+            .components
+            .map(|(component, _)| component.value()),
+        [0.5, 0.25, 0.0]
     );
-}
+    let index_offset = tables[0].definitions[127].offset + 1;
+    assert_eq!(bytes[index_offset..index_offset + 2], [0x80, 0x7f]);
 
-#[test]
-fn om_color_tables_refuse_work_limit() {
-    let bytes = sample_color_table_bytes();
+    let mut wrong_background = bytes.clone();
+    wrong_background[5] = b'b';
+    assert!(color_tables(&wrong_background).is_empty());
 
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = color_tables(ctx, &bytes).unwrap_err();
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            ));
-        },
-    );
+    let mut malformed = bytes.clone();
+    *malformed.last_mut().unwrap() = 0x02;
+    assert!(color_tables(&malformed).is_empty());
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(color_tables(truncated).is_empty());
 }
 
 #[test]
 fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     let mut bytes = indexed_om_section();
     bytes.extend_from_slice(b"\x10UGS::PayloadText");
-    let sections =
-        crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].types.len(), 1);
     assert_eq!(sections[0].types[0].name, "UGS::EXP_expression");
@@ -177,12 +108,10 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
 #[test]
 fn om_numeric_expression_retains_identity_name_unit_and_value() {
     let bytes = indexed_om_section();
-    let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes))
+    let section = indexed_sections(&bytes, &section_budget())
         .unwrap()
         .remove(0);
-    let expression_records =
-        crate::test_support::with_decode_context(|ctx| section.numeric_expression_records(ctx))
-            .unwrap();
+    let expression_records = section.numeric_expression_records();
     assert_eq!(expression_records[0].0, 1);
     let expressions = expression_records
         .iter()
@@ -202,8 +131,8 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(expressions[0].unit, ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| expressions[0].constant_value(ctx))
-            .unwrap()
+        expressions[0]
+            .constant_value()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(120.0)
     );
@@ -229,50 +158,4 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(declaration.literal, None);
     assert!(expression_declaration_name_for_test(b"\x04\x04p1\0\x04\x04p2\0").is_none());
     assert!(expression_declaration_name_for_test(b"\x04\x05p1-\0").is_none());
-}
-
-#[test]
-fn om_indexed_numeric_expression_records_refuse_collection_limit() {
-    let bytes = indexed_om_section();
-    let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes))
-        .unwrap()
-        .remove(0);
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = section.numeric_expression_records(ctx).unwrap_err();
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            ));
-        },
-    );
-}
-
-#[test]
-fn om_indexed_numeric_expression_records_refuse_scoped_limit() {
-    let bytes = indexed_om_section();
-    let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes))
-        .unwrap()
-        .remove(0);
-
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            let error = section.numeric_expression_records(ctx).unwrap_err();
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            ));
-        },
-    );
 }

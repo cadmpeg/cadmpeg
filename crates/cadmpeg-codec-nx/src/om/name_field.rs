@@ -2,8 +2,7 @@
 //! Bounded graphic names with a type-free leading or compact-typed frame.
 
 use super::compact::{CompactIndexAtom, CompactIndexTarget, PositionedIndex};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::u64_from_index;
 use std::ops::Add;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,32 +76,22 @@ impl<T> NameField<String, u64, T> {
 impl NameField<&str, usize, ()> {
     pub(crate) fn into_native(
         self,
-        ctx: &DecodeContext<'_>,
         source_offset: impl FnOnce(u64) -> Option<u64>,
-    ) -> Result<Option<NameField<String>>, CodecError> {
-        let Some(offset) = u64::try_from(self.offset()).ok() else {
-            return Ok(None);
-        };
+    ) -> Option<NameField<String>> {
+        let offset = u64::try_from(self.offset()).ok()?;
         let code = self.code().map(|code| CompactIndexTarget {
             atom: code.atom,
             target: source_offset(u64_from_index(code.offset)),
         });
-        let mut value = ctx.retained_string(self.value.len(), "NX native name field")?;
-        value.push_str(self.value);
-        Ok(NameField::new(value, offset, code).ok())
+        NameField::new(self.value.to_owned(), offset, code).ok()
     }
 }
 
 /// Decode exact `66, compact_type, 03, declared_len, text, 00` fields.
-pub(crate) fn scan<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Vec<NameField<&'a str, usize, ()>>, CodecError> {
+pub(crate) fn scan(bytes: &[u8]) -> Vec<NameField<&str, usize, ()>> {
     let mut fields = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX name fields")?;
     if bytes.first() == Some(&3) {
         if let Some(value) = name_text(bytes, 1) {
-            ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
             fields.push(NameField {
                 form: Form::Leading,
                 value,
@@ -128,7 +117,6 @@ pub(crate) fn scan<'a>(
         let Some(value) = name_text(bytes, marker + 1) else {
             continue;
         };
-        ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
         fields.push(NameField {
             form: Form::Typed {
                 offset: start,
@@ -137,7 +125,7 @@ pub(crate) fn scan<'a>(
             value,
         });
     }
-    Ok(fields)
+    fields
 }
 
 fn name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
@@ -159,25 +147,7 @@ mod tests {
     use super::{scan, NameField};
 
     fn scan_test(bytes: &[u8]) -> Vec<NameField<&str, usize, ()>> {
-        crate::test_support::with_decode_context(|ctx| scan(ctx, bytes)).unwrap()
-    }
-
-    #[test]
-    fn name_field_scan_refuses_collection_limit() {
-        let bytes = [3, 3, b'A', 0];
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let error = scan(ctx, &bytes).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
-            },
-        );
+        scan(bytes)
     }
 
     #[test]
@@ -216,26 +186,17 @@ mod tests {
     fn source_name_mapping_keeps_optional_noncontiguous_source_positions() {
         let bytes = [0x66, 128, 1, 3, 3, b'A', 0];
         let field = scan_test(&bytes).pop().unwrap();
-        let native = crate::test_support::with_decode_context(|ctx| {
-            field.clone().into_native(ctx, |_| Some(900))
-        })
-        .unwrap()
-        .unwrap();
+        let native = field.clone().into_native(|_| Some(900)).unwrap();
         assert_eq!(native.offset(), 0);
         assert_eq!(native.code().unwrap().offset, 1);
         assert_eq!(*native.code().unwrap().target, Some(900));
         assert_eq!(native.value(), "A");
-        let unmapped =
-            crate::test_support::with_decode_context(|ctx| field.into_native(ctx, |_| None))
-                .unwrap()
-                .unwrap();
+        let unmapped = field.into_native(|_| None).unwrap();
         assert_eq!(*unmapped.code().unwrap().target, None);
         let leading = scan_test(&[3, 3, b'A', 0]).pop().unwrap();
-        let leading = crate::test_support::with_decode_context(|ctx| {
-            leading.into_native(ctx, |_| panic!("leading name has no type token"))
-        })
-        .unwrap()
-        .unwrap();
+        let leading = leading
+            .into_native(|_| panic!("leading name has no type token"))
+            .unwrap();
         assert_eq!(leading.offset(), 0);
         assert!(leading.code().is_none());
     }

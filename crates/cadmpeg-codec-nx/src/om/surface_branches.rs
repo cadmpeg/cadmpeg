@@ -157,18 +157,15 @@ impl<B> SurfaceBranch<B> {
 impl SurfaceBranch<()> {
     pub(crate) fn resolve<B>(
         self,
-        ctx: &DecodeContext<'_>,
         file_base: u64,
-        mut target: impl FnMut(PayloadIndexToken) -> Result<B, CodecError>,
-    ) -> Result<Option<SurfaceBranch<B>>, CodecError> {
-        let Some(offset) = self.offset.checked_add(file_base) else {
-            return Ok(None);
-        };
+        mut target: impl FnMut(PayloadIndexToken) -> B,
+    ) -> Option<SurfaceBranch<B>> {
+        let offset = self.offset.checked_add(file_base)?;
         let members = self
             .members
-            .try_map_indexed_charged(ctx, |_, (token, ())| Ok((token, target(token)?)))?;
-        let terminal = (self.terminal.0, target(self.terminal.0)?);
-        Ok(SurfaceBranch::new(
+            .map_indexed(|_, (token, ())| (token, target(token)));
+        let terminal = (self.terminal.0, target(self.terminal.0));
+        SurfaceBranch::new(
             offset,
             self.mode,
             self.witnessed,
@@ -176,7 +173,7 @@ impl SurfaceBranch<()> {
             terminal,
             self.suffix,
         )
-        .ok())
+        .ok()
     }
 }
 
@@ -203,7 +200,6 @@ fn surface_feature_branch_paths(
     terminator: &[u8],
 ) -> Result<Vec<Vec<SurfaceBranch<()>>>, CodecError> {
     let _depth = ctx.enter_nested("NX surface branch path")?;
-    ctx.charge_work(1, "scan NX surface branch path")?;
     if remaining == 0 {
         return Ok(Vec::new());
     }
@@ -227,7 +223,6 @@ fn surface_feature_branch_paths(
             return Ok(Vec::new());
         };
         cursor += token.raw().len();
-        ctx.reserve_vec(&mut members, 1, "NX surface branch members")?;
         members.push((token, ()));
     }
     let Ok(members) = BranchItems::new(members) else {
@@ -264,7 +259,6 @@ fn surface_feature_branch_paths(
 
     let mut paths = Vec::new();
     for suffix_len in 1..=5 {
-        ctx.charge_work(1, "scan NX surface branch suffix")?;
         let Some(suffix) = payload.get(cursor..cursor + suffix_len) else {
             continue;
         };
@@ -272,7 +266,6 @@ fn surface_feature_branch_paths(
         let continuations = if remaining == 1 {
             let mut continuations = Vec::new();
             if payload.get(next..next + terminator.len()) == Some(terminator) {
-                ctx.reserve_vec(&mut continuations, 1, "NX surface terminal paths")?;
                 continuations.push(Vec::new());
             }
             continuations
@@ -293,17 +286,10 @@ fn surface_feature_branch_paths(
             continue;
         };
         for mut continuation in continuations {
-            let mut member_copy = Vec::new();
-            for member in members.as_slice().iter().copied() {
-                ctx.reserve_vec(&mut member_copy, 1, "NX surface branch member copy")?;
-                member_copy.push(member);
-            }
-            let Ok(member_copy) = BranchItems::new(member_copy) else {
+            let Ok(member_copy) = BranchItems::new(members.as_slice().to_vec()) else {
                 continue;
             };
-            ctx.charge_collection_items(u64_from_index(suffix.len()), "NX surface suffix bytes")?;
-            let suffix_copy = ctx.copy_retained(suffix, "NX surface suffix bytes")?;
-            let Ok(suffix_copy) = SurfaceSuffix::new(suffix_copy) else {
+            let Ok(suffix_copy) = SurfaceSuffix::new(suffix.to_vec()) else {
                 continue;
             };
             let Ok(branch) = SurfaceBranch::new(
@@ -316,9 +302,7 @@ fn surface_feature_branch_paths(
             ) else {
                 continue;
             };
-            ctx.reserve_vec(&mut continuation, 1, "NX surface branch path entries")?;
             continuation.insert(0, branch);
-            ctx.reserve_vec(&mut paths, 1, "NX surface branch paths")?;
             paths.push(continuation);
             if paths.len() == 2 {
                 return Ok(paths);
@@ -343,10 +327,6 @@ pub(crate) fn surface_feature_payload_branches(
         "Studio Surface" => &STUDIO_TERMINATOR[..],
         _ => return Ok(None),
     };
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX surface branch groups",
-    )?;
     let mut candidate = None;
     for start in record
         .payload()
