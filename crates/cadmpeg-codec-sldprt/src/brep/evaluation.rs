@@ -90,7 +90,7 @@ fn surface_solver_budget<'ctx>(
     operation: &'static str,
 ) -> Result<cadmpeg_core::decode::WorkBudget<'ctx>, CodecError> {
     // One normalized evaluator unit also pays for fixed arithmetic and a
-    // complete scan of both knot vectors. Its local ceiling stays unchanged.
+    // complete scan of both knot vectors. The local ceiling bounds solver work.
     let scale = 64_u64
         .checked_add(u64_from_index(surface.u_knots().len()))
         .and_then(|scale| scale.checked_add(u64_from_index(surface.v_knots().len())))
@@ -131,29 +131,6 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
 ) -> Result<Option<f64>, CodecError> {
     const OPERATION: &str = "certify SLDPRT NURBS surface chord";
     let budget = surface_solver_budget(ctx, surface, OPERATION)?;
-    let u = u64::from(surface.u_degree())
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let v = u64::from(surface.v_degree())
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let patches = u64_from_index(surface.u_count())
-        .checked_mul(u64_from_index(surface.v_count()))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let splits = patches
-        .checked_mul(4)
-        .and_then(|count| count.checked_add(2))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    // Restricting each tensor-product line costs at most its squared support
-    // times the combined degrees. IR admits split scans and sorting.
-    let work = u
-        .checked_mul(v)
-        .and_then(|support| support.checked_mul(support))
-        .and_then(|work| work.checked_mul(u.checked_add(v)?))
-        .and_then(|work| work.checked_mul(64))
-        .and_then(|work| work.checked_mul(splits))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
     let result = cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
         ctx, surface, parameters, chord, &budget,
     );
@@ -173,6 +150,68 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use cadmpeg_ir::math::Point3;
+
+    const EPS_PLANAR_CHORD: f64 = 1e-10;
+
+    #[test]
+    fn chord_wrapper_charges_only_the_ir_work() {
+        use cadmpeg_ir::math::Point2;
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
+        let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)];
+        let operation = "test completed chord certificate";
+        let boundary = |wrapper| {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    policy.limits.max_retained_bytes = 0;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    let result = if wrapper {
+                        super::nurbs_surface_parameter_segment_chord_bound(
+                            &ctx, &surface, parameters, chord,
+                        )?
+                    } else {
+                        let budget = super::surface_solver_budget(
+                            &ctx,
+                            &surface,
+                            "certify SLDPRT NURBS surface chord",
+                        )?;
+                        cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
+                            &ctx, &surface, parameters, chord, &budget,
+                        )?
+                    };
+                    assert!(result.is_some_and(|bound| bound.abs() <= EPS_PLANAR_CHORD));
+                    ctx.charge_work(1, operation)
+                },
+            );
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("completed chord boundary")
+            };
+            limit.used
+        };
+        assert_eq!(boundary(true), boundary(false));
+        crate::test_support::work_refusal_at("IR surface segment patch search", |ctx| {
+            super::nurbs_surface_parameter_segment_chord_bound(ctx, &surface, parameters, chord)
+        });
+    }
 
     #[test]
     fn stored_surface_helpers_preserve_actual_admission_refusal() {

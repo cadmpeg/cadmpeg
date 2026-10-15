@@ -61,10 +61,10 @@ fn spatial_line_set_candidate_refuses_collection_limit() {
 }
 
 #[test]
-fn spatial_line_carrier_candidate_refuses_collection_limit() {
+fn spatial_line_carrier_candidate_refuses_work_limit() {
     fixture(
         "f3d spatial line carrier candidate",
-        ResourceDimension::CollectionItems,
+        ResourceDimension::WorkUnits,
     );
 }
 
@@ -103,4 +103,20 @@ fn spatial_carrier_output_member_refuses_collection_limit() {
         "f3d spatial carrier output member",
         ResourceDimension::CollectionItems,
     );
+}
+
+#[test]
+fn spatial_carrier_queries_refuse_actual_source_work() {
+    for operation in [
+        "f3d spatial line set source",
+        "f3d spatial line set sketch identity",
+        "f3d spatial line carrier source",
+        "f3d spatial line carrier member agreement",
+        "f3d spatial line carrier pair source",
+        "f3d spatial line carrier first span search",
+        "f3d spatial line carrier second span search",
+        "f3d spatial carrier output source",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
 }

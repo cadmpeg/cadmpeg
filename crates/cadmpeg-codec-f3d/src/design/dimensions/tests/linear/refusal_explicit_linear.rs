@@ -78,7 +78,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
                 .expect("synthetic native geometry record");
             (("stream", record_index), entity)
         })
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect::<std::collections::BTreeMap<_, _>>();
     let frame = |operands| crate::records::dimensions::DesignDimensionPresentationFrame {
         id: "stream:presentation#0".into(),
         byte_offset: 0,

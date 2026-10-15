@@ -337,6 +337,20 @@ macro_rules! design_feature_kinds {
             Native(DesignNativeFeatureName),
         }
 
+        impl cadmpeg_core::decode::cost::DecodeCost for DesignFeatureKind {
+            fn decode_cost(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                operation: &'static str,
+            ) -> Result<u64, cadmpeg_core::CodecError> {
+                let child = match self {
+                    Self::Native(name) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(name.0.as_ref(), ctx, operation)?,
+                    _ => 0,
+                };
+                1_u64.checked_add(child).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+            }
+        }
+
         impl DesignFeatureKind {
             /// Source spelling written on the wire.
             pub(crate) fn as_str(&self) -> &str {

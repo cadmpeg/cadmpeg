@@ -44,21 +44,54 @@ fn material_utf16_string_index_refuses_collection_limit() {
 }
 
 #[test]
-fn material_printable_ascii_refuses_retained_limit() {
+fn material_utf16_candidate_scan_refuses_work_limit() {
     let mut bytes = Vec::new();
-    super::lp_ascii(&mut bytes, "Body");
-    let error = material_context_with_limits(u64::MAX, 3, |ctx| {
-        super::super::lp_ascii_printable_charged(ctx, &bytes, 0).unwrap_err()
-    });
+    super::lp_utf16(&mut bytes, "Alpha");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D UTF-16 string candidates",
+        0,
+        |ctx| super::super::lp_utf16_strings(ctx, &bytes),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D printable ASCII string")
+        if limit.operation == "scan F3D UTF-16 string candidates")
     );
+}
+
+#[test]
+fn material_utf16_prefix_checks_a_bounded_semantic_prefix() {
+    let mut bytes = Vec::new();
+    super::lp_utf16(&mut bytes, "ABC😀X");
+    // The first four UTF-16 code units end with the high half of the pair;
+    // the full string decoder validates the low half after this prefix.
+    assert!(super::super::utf16_string_prefix_is_text(&bytes, 4, 6));
+    bytes[10..12].copy_from_slice(&0_u16.to_le_bytes());
+    assert!(!super::super::utf16_string_prefix_is_text(&bytes, 4, 6));
+}
+
+#[test]
+fn material_printable_ascii_refuses_work_limit() {
+    let mut bytes = Vec::new();
+    super::lp_ascii(&mut bytes, "Body");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "validate F3D printable ASCII bytes",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::lp_ascii_printable(&ctx, &bytes, 0).map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 fn definition_catalog_merge_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
     material_context_with_limits(max_items, max_retained, |ctx| {
-        let mut definitions = std::collections::HashMap::new();
+        let mut definitions = std::collections::BTreeMap::new();
         super::super::merge_definition_catalog_record(
             ctx,
             &mut definitions,
@@ -73,20 +106,12 @@ fn definition_catalog_merge_error(max_items: u64, max_retained: u64) -> cadmpeg_
 }
 
 #[test]
-fn material_definition_asset_key_refuses_retained_limit() {
-    let error = definition_catalog_merge_error(u64::MAX, 4);
+fn material_definition_schema_index_refuses_collection_limit() {
+    // The asset entry takes the one admitted item; its schema entry refuses.
+    let error = definition_catalog_merge_error(1, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D definition asset ID")
-    );
-}
-
-#[test]
-fn material_definition_schema_key_refuses_retained_limit() {
-    let error = definition_catalog_merge_error(u64::MAX, 10);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D definition schema")
+        if limit.operation == "index F3D definition catalog schemas")
     );
 }
 
@@ -260,20 +285,19 @@ fn schema_texture_index_refuses_collection_limit() {
 }
 
 #[test]
-fn schema_texture_key_refuses_retained_limit() {
+fn schema_texture_key_refuses_materialized_limit() {
     let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let path = "textures/a.png";
     let record = texture_record(guid, path);
 
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    // Texture keys live in the temporary index and use scoped materialized bytes.
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy F3D texture asset key",
-        |cap| {
-            Err::<(), cadmpeg_core::CodecError>(schema_appearance_error(
-                std::slice::from_ref(&record),
-                u64::MAX,
-                cap,
-            ))
+        0,
+        |ctx| {
+            super::super::appearances_from_schema_records(ctx, std::slice::from_ref(&record))
+                .map(|_| ())
         },
     );
     assert!(
@@ -317,22 +341,22 @@ fn browser_node_candidate_fold_refuses_materialized_limit() {
     );
 }
 
-fn fixed_appearance_error(asset_lib_id: &str, max_retained: u64) -> cadmpeg_core::CodecError {
+fn fixed_appearance_error(asset_lib_id: &str, operation: &str) -> cadmpeg_core::CodecError {
     let mut record = super::super::RECORD_MARKER.to_vec();
     for value in ["PhysMatSchema", "g", "b", asset_lib_id] {
         super::super::push_lp(&mut record, value).unwrap();
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = max_retained;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    super::super::decode_fixed_record(&ctx, &record).unwrap_err()
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        0,
+        |ctx| super::super::decode_fixed_record(ctx, &record),
+    )
 }
 
 #[test]
 fn fixed_appearance_guid_copy_refuses_retained_limit() {
-    let error = fixed_appearance_error("", 38);
+    let error = fixed_appearance_error("", "copy F3D fixed appearance GUID");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D fixed appearance GUID")
@@ -341,7 +365,7 @@ fn fixed_appearance_guid_copy_refuses_retained_limit() {
 
 #[test]
 fn fixed_appearance_library_copy_refuses_retained_limit() {
-    let error = fixed_appearance_error("L", 40);
+    let error = fixed_appearance_error("L", "copy F3D appearance library ID");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D appearance library ID")
@@ -546,8 +570,8 @@ fn material_assignment_id_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    let error = crate::ids::native_scoped_id_charged(&ctx, "BulkStream", "material-assignment", 1)
-        .unwrap_err();
+    let error =
+        crate::ids::native_scoped_id(&ctx, "BulkStream", "material-assignment", 1).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D native record ID")
@@ -603,4 +627,318 @@ fn browser_node_ambiguity_index_refuses_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D ambiguous browser nodes")
     );
+}
+
+fn material_stream_archive() -> Vec<u8> {
+    let mut design = Vec::new();
+    super::lp_ascii(&mut design, "Widget");
+    design.extend_from_slice(&1_u32.to_le_bytes());
+    design.extend_from_slice(&7_u64.to_le_bytes());
+
+    let mut act = Vec::new();
+    super::lp_ascii(&mut act, "001");
+    act.extend_from_slice(&[0; 10]);
+    act.extend_from_slice(&1_u32.to_le_bytes());
+    super::lp_ascii(&mut act, "Appearance");
+    super::lp_utf16(&mut act, "11111111-2222-3333-4444-555555555555");
+    super::lp_utf16(&mut act, "0_7");
+
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    super::write_synthetic_manifests(&mut archive, stored);
+    let asset = crate::manifest::GENERATED_DESIGN_ASSET_FOLDER;
+    archive
+        .start_file(format!("{asset}/Design1/MetaStream.dat"), stored)
+        .unwrap();
+    std::io::Write::write_all(&mut archive, &design).unwrap();
+    archive
+        .start_file(
+            format!("{asset}/FusionACTSegmentType1/BulkStream.dat"),
+            stored,
+        )
+        .unwrap();
+    std::io::Write::write_all(&mut archive, &act).unwrap();
+    archive.finish().unwrap().into_inner()
+}
+
+fn scan_material_archive<'a>(
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
+    archive: &'a [u8],
+) -> Result<crate::container::ContainerScan<'a>, cadmpeg_core::CodecError> {
+    crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(archive))
+}
+
+#[test]
+fn design_object_type_range_refuses_work_after_valid_output() {
+    let archive = material_stream_archive();
+    crate::test_support::with_decode_context(|ctx| {
+        let scan = scan_material_archive(ctx, &archive).unwrap();
+        let (_storage, object_types) = super::super::decode_design_object_types(ctx, &scan)
+            .expect("valid Design object type stream");
+        assert_eq!(object_types.get(&7).map(String::as_str), Some("Widget"));
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D Design object-type ids",
+        0,
+        |ctx| {
+            let scan = scan_material_archive(ctx, &archive)?;
+            let (storage, object_types) = super::super::decode_design_object_types(ctx, &scan)?;
+            drop(object_types);
+            drop(storage);
+            Ok(())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D Design object-type ids")
+    );
+}
+
+#[test]
+fn act_channel_group_range_refuses_work_after_valid_output() {
+    let archive = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    crate::test_support::with_decode_context(|ctx| {
+        let scan = scan_material_archive(ctx, &archive).unwrap();
+        let (_storage, channels) =
+            super::super::decode_act_channels(ctx, &scan).expect("valid ACT channel stream");
+        let channels = channels.get(&985).expect("generated ACT entity suffix");
+        assert_eq!(
+            channels.get("Appearance").map(String::as_str),
+            Some("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
+        );
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D ACT channel-group rows",
+        0,
+        |ctx| {
+            let scan = scan_material_archive(ctx, &archive)?;
+            let (storage, channels) = super::super::decode_act_channels(ctx, &scan)?;
+            drop(channels);
+            drop(storage);
+            Ok(())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D ACT channel-group rows")
+    );
+}
+
+#[test]
+fn definition_catalog_string_range_refuses_work_after_valid_input() {
+    let mut record = Vec::new();
+    record.extend_from_slice(&1_u32.to_le_bytes());
+    record.extend_from_slice(&1_u32.to_le_bytes());
+    record.push(b'x');
+    let mut position = 0;
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::consume_catalog_strings(ctx, &record, &mut position)
+            .expect("valid catalog string run");
+    });
+    assert_eq!(position, record.len());
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D catalog strings",
+        0,
+        |ctx| {
+            let mut position = 0;
+            super::super::consume_catalog_strings(ctx, &record, &mut position)
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D catalog strings")
+    );
+}
+
+#[test]
+fn generic_connection_range_uses_bounded_checked_skips() {
+    let mut empty = vec![0; 103];
+    empty[102] = 0;
+    assert_eq!(super::super::generic_connection_delta(&empty, 0), Some(0));
+
+    let mut one = vec![0; 113];
+    one[102] = 1;
+    one[104..108].copy_from_slice(&1_u32.to_le_bytes());
+    one[108..112].copy_from_slice(&1_u32.to_le_bytes());
+    one[112] = b'x';
+    assert_eq!(super::super::generic_connection_delta(&one, 0), Some(10));
+
+    let mut two = vec![0; 118];
+    two[102] = 1;
+    two[104..108].copy_from_slice(&2_u32.to_le_bytes());
+    two[108..112].copy_from_slice(&1_u32.to_le_bytes());
+    two[112] = b'x';
+    two[113..117].copy_from_slice(&1_u32.to_le_bytes());
+    two[117] = b'y';
+    assert_eq!(super::super::generic_connection_delta(&two, 0), Some(15));
+
+    let mut over_limit = vec![0; 108];
+    over_limit[102] = 1;
+    over_limit[104..108].copy_from_slice(&9_u32.to_le_bytes());
+    assert_eq!(super::super::generic_connection_delta(&over_limit, 0), None);
+    let mut unknown_flag = vec![0; 103];
+    unknown_flag[102] = 2;
+    assert_eq!(
+        super::super::generic_connection_delta(&unknown_flag, 0),
+        None
+    );
+    assert_eq!(super::super::generic_connection_delta(&one[..107], 0), None);
+    assert_eq!(super::super::generic_connection_delta(&two[..116], 0), None);
+}
+
+#[test]
+fn unsupported_fixed_schema_borrows_fields_without_storage() {
+    let mut record = super::super::RECORD_MARKER.to_vec();
+    for value in ["S", "G", "B", "L"] {
+        super::super::push_lp(&mut record, value).unwrap();
+    }
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(super::super::decode_fixed_record(ctx, &record)
+            .unwrap()
+            .is_none());
+    });
+}
+
+#[test]
+fn scanned_face_strings_release_scratch_without_retained_output() {
+    let mut bytes = Vec::new();
+    crate::test_support::lp_utf16(&mut bytes, "Alpha");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        super::super::face_appearance_assignments_in_frame(&ctx, &bytes)
+            .unwrap()
+            .is_empty()
+    );
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "scanned face scratch released",
+        )
+        .unwrap(),
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn schema_scalar_aliases_copy_only_the_final_neutral_name() {
+    let properties = [
+        ("generic_refraction_index", 1.0),
+        ("refraction_index", 2.0),
+        ("transparent_refraction_index", 3.0),
+    ]
+    .into_iter()
+    .map(|(name, value)| {
+        (
+            name.to_owned(),
+            cadmpeg_protein::property::DecodedProperty {
+                value_offset: 0,
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::Float(
+                        cadmpeg_ir::scalar::FiniteReal::new(value).unwrap(),
+                    ),
+                    connections: Vec::new(),
+                },
+            },
+        )
+    })
+    .collect();
+    let record = appearance_record("GenericSchema", properties);
+    let (out, count) = super::schema_appearances(std::slice::from_ref(&record)).unwrap();
+    assert_eq!(count, 0);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].properties.len(), 1);
+    assert_eq!(out[0].properties["refraction_index"].get(), 3.0);
+    let boundary = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D appearance property name",
+        0,
+        |ctx| {
+            super::super::appearances_from_schema_records(ctx, std::slice::from_ref(&record))
+                .map(|_| ())
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(boundary) = boundary else {
+        panic!("final property name must refuse");
+    };
+    let error = material_context_with_limits(
+        u64::MAX,
+        boundary.used.checked_add(boundary.additional).unwrap(),
+        |ctx| {
+            super::super::appearances_from_schema_records(ctx, std::slice::from_ref(&record))
+                .unwrap_err()
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain F3D native record ID")
+    );
+}
+
+#[test]
+fn texture_asset_conflict_diagnostic_refuses_retained_storage() {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let records = [
+        texture_record(guid, "textures/a.png"),
+        texture_record(guid, "textures/b.png"),
+    ];
+    crate::test_support::with_decode_context(|normal| {
+        let error = super::super::appearances_from_schema_records(normal, &records)
+            .expect_err("conflicting payloads");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::Malformed(message) if message == format!("Protein texture asset {guid} has conflicting payloads"))
+        );
+    });
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D malformed diagnostic",
+        0,
+        |ctx| super::super::appearances_from_schema_records(ctx, &records).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain F3D malformed diagnostic")
+    );
+}
+
+#[test]
+fn catalog_matching_schema_reuses_the_decoded_name() {
+    let bytes = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    crate::test_support::zip_test::with_scan(&bytes, |scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::MAX;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            // Catalog binding keeps the schema that selected its entry.
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "copy F3D catalog schema",
+                None,
+            );
+            let decoded = super::super::decode(ctx, scan).unwrap();
+            assert_eq!(decoded.appearances.len(), 1);
+            assert_eq!(
+                decoded.appearances[0].schema.as_deref(),
+                Some("GenericSchema")
+            );
+            assert_eq!(
+                decoded.appearances[0].category.as_deref(),
+                Some("Plastic/Thermoplastic")
+            );
+        });
+    });
 }

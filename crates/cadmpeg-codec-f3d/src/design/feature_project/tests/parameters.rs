@@ -159,14 +159,24 @@ fn parameters_project_all_design_database_unit_tokens() {
             .map(String::as_str),
         Some("2.75")
     );
-    assert_eq!(untyped_parameter_unit_count(&native), 1);
+    assert_eq!(
+        crate::test_support::with_decode_context(
+            |ctx| untyped_parameter_unit_count(ctx, &native).unwrap()
+        ),
+        1
+    );
 }
 
 #[test]
 fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
     let name = "Width$µ°\"A";
     assert_eq!(
-        expression_identifiers(&format!("{name} / 2 + sin(30 deg)")).collect::<Vec<_>>(),
+        crate::test_support::with_decode_context(|ctx| {
+            expression_identifiers(ctx, &format!("{name} / 2 + sin(30 deg)"))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|tokens| tokens.into_iter().map(str::to_owned).collect::<Vec<_>>())
+        })
+        .unwrap(),
         [name]
     );
     let parameter = |record_index, source_ordinal, expression: &str, name: &str| {
@@ -802,4 +812,43 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
             cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );
+}
+
+#[test]
+fn parameter_display_kind_queries_refuse_work_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for (kind, operation) in [
+        ("Diameter Dimension", "f3d parameter diameter display kind"),
+        ("Radius Dimension", "f3d parameter radius display kind"),
+    ] {
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "10 mm",
+            kind,
+            Some("mm"),
+            "Size",
+            1.0,
+        ))
+        .unwrap();
+        parameter.id = "f3d:native:parameter#size".into();
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let timelines = crate::design::test_support::synthetic_feature_timelines(&[]);
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    &ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: std::slice::from_ref(&parameter),
+                        timelines: &timelines,
+                        ..Default::default()
+                    },
+                )
+            },
+        );
+    }
 }

@@ -3,20 +3,17 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
 fn registry_search_refusal(operation: &str, creation_display: bool) {
-    let container = if creation_display {
-        crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(
-                ctx,
-                crate::test_support::test_prt::prt_with_named_payloads(&[(
-                    "/Root/FastLoad/RMFastLoad",
-                    crate::test_support::test_om::size_framed_om_section_with_record_area(),
-                )]),
-            )
-        })
-        .expect("fastload registry container")
+    let file = if creation_display {
+        crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/FastLoad/RMFastLoad",
+            crate::test_support::test_om::size_framed_om_section_with_record_area(),
+        )])
     } else {
-        super::part_color_container()
+        super::part_color_file()
     };
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("registry container");
     crate::test_support::with_decode_context(|ctx| {
         container.om_sections(ctx)?;
         container.indexed_om_sections(ctx).map(|_| ())
@@ -75,7 +72,7 @@ fn store_search_refusal(offset_only: bool) {
         crate::test_support::test_prt::prt_with_indexed_om_section()
     };
     let container = crate::test_support::with_decode_context(|ctx| {
-        let container = crate::container::scan_bytes(ctx, file)?;
+        let container = crate::container::scan_bytes(ctx, &file)?;
         // Build the section cache once so every walk step charges the same route.
         container.indexed_om_sections(ctx)?;
         Ok::<_, CodecError>(container)

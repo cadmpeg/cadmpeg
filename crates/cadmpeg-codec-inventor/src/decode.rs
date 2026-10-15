@@ -1203,14 +1203,8 @@ fn decode_container<'a>(
                 format_args!("inventor:kernel:carrier#{key}"),
                 "retain Inventor unknown carrier id",
             )?;
-            let validation_work = id.len().checked_add(key.len()).ok_or_else(|| {
-                ctx.refuse_codec_limit("validate Inventor retained carrier id", u64::MAX, u64::MAX)
-            })?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(validation_work),
-                "validate Inventor retained carrier id",
-            )?;
-            let id = UnknownId::mint(id).map_err(CodecError::malformed)?;
+            let id = UnknownId::mint_for_decode(ctx, id, "validate Inventor retained carrier id")?
+                .map_err(CodecError::malformed)?;
             let mut links_storage = ctx.reserve_scoped(0, "collect Inventor carrier link")?;
             let mut links = Vec::new();
             links_storage.with_storage(|| {

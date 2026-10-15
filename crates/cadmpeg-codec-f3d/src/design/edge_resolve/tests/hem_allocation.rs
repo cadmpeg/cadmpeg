@@ -5,18 +5,21 @@ use cadmpeg_core::CodecError;
 
 fn assert_hem_candidate_refusal(operation: &'static str) {
     let references: [&[i64]; 4] = [&[], &[167], &[106], &[110]];
-    for limit in 0..32 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match unique_hem_transition_edge_candidate(&[63, 106, 110, 167], references, &ctx) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected Hem refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no Hem refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (unique_hem_transition_edge_candidate(&[63, 106, 110, 167], references, &ctx))
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

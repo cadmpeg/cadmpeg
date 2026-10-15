@@ -28,6 +28,16 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// Whether native record `id` lies in the stream scope `stream`. An ID
 /// without a stream scope matches only an absent scope.
 fn same_stream(
@@ -204,12 +214,14 @@ fn exact_embedded_extrude_distance(
         record_index,
         |start, paired| {
             let Some(frame) = embedded_extrude_distance_at(
+                ctx,
                 bytes,
                 start,
                 paired,
                 record_index,
                 scope_record_index,
-            ) else {
+            )?
+            else {
                 return Ok(false);
             };
             Ok(found.replace(frame).is_some())
@@ -223,42 +235,52 @@ fn exact_embedded_extrude_distance(
 /// `paired`, when its references tie it to the scope and its two auxiliary
 /// records.
 fn embedded_extrude_distance_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired: usize,
     record_index: u32,
     scope_record_index: u32,
-) -> Option<FixedScalarFrame<PositiveReal>> {
-    (paired.checked_sub(start)? == 100).then_some(())?;
-    let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    let first_auxiliary = record_index.checked_add(1)?;
-    let second_auxiliary = record_index.checked_add(2)?;
+) -> Result<Option<FixedScalarFrame<PositiveReal>>, CodecError> {
+    try_some!((try_some!(paired.checked_sub(start)) == 100).then_some(()));
+    let (_, after_tag) = try_some!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        start,
+        3..=3,
+        u8::is_ascii_digit
+    )?);
+    let first_auxiliary = try_some!(record_index.checked_add(1));
+    let second_auxiliary = try_some!(record_index.checked_add(2));
     if after_tag != start + 7
         || !zeros_at::<10>(bytes, start + 11)
-        || marked_record_reference(bytes, start + 21)? != scope_record_index
+        || try_some!(marked_record_reference(bytes, start + 21)) != scope_record_index
         || !zeros_at::<6>(bytes, start + 26)
-        || View::u32_le_at(bytes, start + 32)? != 1
+        || try_some!(View::u32_le_at(bytes, start + 32)) != 1
         || marked_record_reference(bytes, start + 36).is_none()
         || !zeros_at::<6>(bytes, start + 41)
-        || View::u32_le_at(bytes, start + 47)? != 210
-        || View::u32_le_at(bytes, start + 59)? != 210
-        || marked_record_reference(bytes, start + 63)? != second_auxiliary
+        || try_some!(View::u32_le_at(bytes, start + 47)) != 210
+        || try_some!(View::u32_le_at(bytes, start + 59)) != 210
+        || try_some!(marked_record_reference(bytes, start + 63)) != second_auxiliary
         || !zeros_at::<6>(bytes, start + 68)
         || bytes_at::<3>(bytes, start + 74) != Some(&[1, 0, 0])
-        || marked_record_reference(bytes, start + 77)? != first_auxiliary
+        || try_some!(marked_record_reference(bytes, start + 77)) != first_auxiliary
         || !zeros_at::<7>(bytes, start + 82)
-        || marked_record_reference(bytes, start + 89)? != scope_record_index
+        || try_some!(marked_record_reference(bytes, start + 89)) != scope_record_index
         || !zeros_at::<6>(bytes, start + 94)
     {
-        return None;
+        return Ok(None);
     }
-    let value = PositiveReal::new(View::f64_le_at(bytes, start + 51)?)?;
-    Some(FixedScalarFrame {
+    let value = try_some!(PositiveReal::new(try_some!(View::f64_le_at(
+        bytes,
+        start + 51
+    ))));
+    Ok(Some(FixedScalarFrame {
         owner_record_index: Some(scope_record_index),
         ordinal: 0,
         value,
-        value_offset: u64::try_from(start + 51).ok()?,
-    })
+        value_offset: try_some!(u64::try_from(start + 51).ok()),
+    }))
 }
 
 pub(super) fn exact_fixed_fillet_parameters(

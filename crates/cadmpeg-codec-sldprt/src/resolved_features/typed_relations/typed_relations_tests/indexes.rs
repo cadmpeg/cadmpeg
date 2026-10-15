@@ -388,3 +388,78 @@ fn linked_and_unrecognized_endpoint_queries_leave_geometry_unbuilt() {
     assert!(endpoints.is_empty());
     assert!(cache.is_none());
 }
+
+#[test]
+fn unlocated_unrecognized_curves_leave_geometry_unbuilt() {
+    for kind in [SketchInputKind::LineOrCircle, SketchInputKind::Arc] {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut curve = SketchInputEntity::new("unknown", "lane", 0, 0, kind);
+        curve.feature_ref = Some("feature".into());
+        let unrelated: Vec<_> = (1..65)
+            .map(|offset| point(&format!("extra-{offset}"), offset, Some("other")))
+            .collect();
+        let mut roster = vec![&curve];
+        roster.extend(unrelated.iter());
+        let by_id = roster.iter().map(|marker| (marker.id(), *marker)).collect();
+        let index = CurveMarkers::new(&ctx, &roster).unwrap();
+        let mut cache = None;
+        let endpoints = marker_curve_endpoint_markers_in(
+            &ctx,
+            &[],
+            &curve,
+            &by_id,
+            &index,
+            CurveEndpointGeometry::Cached {
+                ctx: &ctx,
+                payload: &[],
+                cache: &mut cache,
+            },
+        )
+        .unwrap();
+        assert!(endpoints.is_empty());
+        assert!(cache.is_none());
+    }
+}
+
+#[test]
+fn endpoint_geometry_cache_reuses_its_first_index() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let marker = point("point", 0, Some("feature"));
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "index SLDPRT marker geometry"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "allocate SLDPRT marker prefix index",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_materialized_bytes = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut cache = None;
+        let mut provider = CurveEndpointGeometry::Cached {
+            ctx: &ctx,
+            payload: &[],
+            cache: &mut cache,
+        };
+        let original = std::ptr::from_ref(provider.get(&[&marker]).unwrap());
+        let _probe = RefusalProbe::arm(dimension, operation, None);
+        assert_eq!(
+            std::ptr::from_ref(provider.get(&[&marker]).unwrap()),
+            original
+        );
+        let error = match dimension {
+            ResourceDimension::WorkUnits => ctx.charge_work(1, operation).unwrap_err(),
+            ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, operation).unwrap_err(),
+            _ => unreachable!(),
+        };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("geometry cache must leave the constructor probe armed");
+        };
+        assert_eq!(limit.additional, 1);
+        assert_eq!(limit.operation, operation);
+    }
+}

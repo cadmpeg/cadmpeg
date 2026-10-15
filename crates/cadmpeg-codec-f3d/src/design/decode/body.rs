@@ -56,11 +56,11 @@ pub(crate) fn decode_body_members(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignBodyMember>, CodecError> {
     let mut out = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D body-member streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D body-member streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(marker_at) =
             ctx.find_bytes(bytes, BODY_MEMBER_MARKER, "find F3D body-member marker")?
         else {
@@ -145,11 +145,12 @@ pub(crate) fn decode_body_bounds(
         let Some(stream) = record_stream(ctx, &entity.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Ok(start) = usize::try_from(entity.byte_offset) else {
             continue;
         };
@@ -809,15 +810,16 @@ struct LocalReferenceCandidate<'bytes> {
 
 /// The local reference readings at `at`: the ordinary reference form and the
 /// doubled-marker form, each optionally followed by one extra zero.
-fn local_reference_candidates(
-    bytes: &[u8],
+fn local_reference_candidates<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
     at: usize,
     allow_extra_zero: bool,
-) -> [Option<LocalReferenceCandidate<'_>>; 4] {
+) -> Result<[Option<LocalReferenceCandidate<'bytes>>; 4], CodecError> {
     let mut candidates = [None; 4];
     let mut end = at;
     if let Some((target, inline_type_guid)) =
-        take_reference(bytes, &mut end).and_then(crate::bytes::Reference::into_local)
+        take_reference(ctx, bytes, &mut end)?.and_then(crate::bytes::Reference::into_local)
     {
         let candidate = LocalReferenceCandidate {
             target,
@@ -850,7 +852,7 @@ fn local_reference_candidates(
             }
         }
     }
-    candidates
+    Ok(candidates)
 }
 
 /// Whether a local reference names an entity of the expected type, and its
@@ -986,7 +988,7 @@ fn parse_snapshot_body_map_frame<'ctx>(
     let Some(companion_at) = frame.start.checked_add(21) else {
         return Ok(None);
     };
-    for companion in local_reference_candidates(bytes, companion_at, true)
+    for companion in local_reference_candidates(ctx, bytes, companion_at, true)?
         .into_iter()
         .flatten()
     {
@@ -1039,7 +1041,7 @@ fn parse_snapshot_body_map_frame<'ctx>(
         )? {
             continue;
         }
-        for container in local_reference_candidates(bytes, pairs_end, false)
+        for container in local_reference_candidates(ctx, bytes, pairs_end, false)?
             .into_iter()
             .flatten()
         {
@@ -1269,7 +1271,7 @@ fn parse_body_map_frame<'ctx>(
         Ok(accepted.then_some(name))
     };
     let mut typed_name = None;
-    for reference in local_reference_candidates(bytes, pairs_end, true)
+    for reference in local_reference_candidates(ctx, bytes, pairs_end, true)?
         .into_iter()
         .flatten()
     {
@@ -1403,12 +1405,12 @@ pub(crate) fn design_model_blob_names<'ctx>(
     // Every named carrier and whether its stream selects it.
     let mut carriers = Vec::new();
     let mut saw_design_stream = false;
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D Design body-map streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design body-map streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         saw_design_stream = true;
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
@@ -1447,13 +1449,12 @@ pub(crate) fn design_model_blob_names<'ctx>(
     }
 
     let mut archive_names = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D archive BREP entries")?
-        .filter(|entry| {
-            scan.belongs_to_design_asset(&entry.name)
-                && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
-        })
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D archive BREP entries")? {
+        if !(scan.belongs_to_design_asset(ctx, &entry.name)?
+            && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh))
+        {
+            continue;
+        }
         let basename = rsplit_once_ascii(ctx, &entry.name, b'/', "find F3D archive BREP basename")?
             .map_or(entry.name.as_str(), |(_, basename)| basename);
         ctx.push_scoped_vec(
@@ -1565,11 +1566,11 @@ pub(crate) fn decode_design_body_bindings(
         None => None,
     };
     let mut out = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D Design body binding streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design body binding streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
@@ -1755,11 +1756,11 @@ pub(crate) fn decode_all_body_visibility<'ctx>(
 ) -> Result<BodyVisibilities<'ctx>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d body visibility entries")?;
     let mut out = HashMap::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D body visibility streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D body visibility streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
@@ -2172,7 +2173,10 @@ mod tests {
                 assert_eq!(members[0].flags, 2);
                 assert_eq!(
                     members[0].id(),
-                    &crate::ids::native_design_body_member_id(ENTRY, member_offset)
+                    &crate::test_support::with_decode_context(|ctx| {
+                        crate::ids::native_design_body_member_id(ctx, ENTRY, member_offset)
+                            .expect("test F3D native identity")
+                    })
                 );
             });
         });
@@ -2434,10 +2438,12 @@ mod tests {
     fn snapshot_body_map_accepts_three_zero_companion_variant() {
         let mut bytes = snapshot_body_map_bytes(0);
         let mut companion_end = 4 + 3 + 8 + 6;
-        take_reference(&bytes, &mut companion_end).expect("ordinary companion reference");
+        let ctx = cadmpeg_test_support::service_decode_context();
+        take_reference(&ctx, &bytes, &mut companion_end)
+            .unwrap()
+            .expect("ordinary companion reference");
         bytes.insert(companion_end, 0);
 
-        let ctx = cadmpeg_test_support::service_decode_context();
         let records = snapshot_records(&ctx, &bytes, &snapshot_body_map_metadata())
             .expect("three-zero companion variant");
         assert_eq!(records.len(), 1);
@@ -3086,7 +3092,15 @@ mod tests {
         .unwrap();
         let make_bounds = || {
             DesignBodyBounds::try_from(DesignBodyBoundsWire {
-                id: format!("{}:design-body-bounds#0", crate::ids::native_scope(STREAM)),
+                id: format!(
+                    "{}:design-body-bounds#0",
+                    crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                        ctx,
+                        STREAM,
+                        "retain F3D native scope"
+                    )
+                    .expect("test F3D native identity"))
+                ),
                 entity_suffix: 7,
                 entity_byte_offset: 0,
                 record_indices: [8, 9, 10],
@@ -3143,7 +3157,12 @@ mod tests {
             DesignBodyBinding::try_from(DesignBodyBindingWire::<String> {
                 id: format!(
                     "{}:design-body-binding#{offset}",
-                    crate::ids::native_scope(stream)
+                    crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                        ctx,
+                        stream,
+                        "retain F3D native scope"
+                    )
+                    .expect("test F3D native identity"))
                 ),
                 stream: stream.into(),
                 pair_count: 1,
@@ -3167,7 +3186,12 @@ mod tests {
         let mut bounds = [DesignBodyBounds::try_from(DesignBodyBoundsWire {
             id: format!(
                 "{}:design-body-bounds#0",
-                crate::ids::native_scope("Design/BulkStream.dat")
+                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                    ctx,
+                    "Design/BulkStream.dat",
+                    "retain F3D native scope"
+                )
+                .expect("test F3D native identity"))
             ),
             entity_suffix: 7,
             entity_byte_offset: 0,
@@ -3202,7 +3226,12 @@ mod tests {
         crate::records::entity_header::DesignEntityHeader {
             id: format!(
                 "{}:design-entity-header#{byte_offset}",
-                crate::ids::native_scope(entry)
+                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                    ctx,
+                    entry,
+                    "retain F3D native scope"
+                )
+                .expect("test F3D native identity"))
             ),
             byte_offset,
             entity_id: crate::records::identity::DesignEntityId::try_from(format!("0_{suffix}"))

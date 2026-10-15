@@ -128,3 +128,85 @@ fn feature_rename_duplicate_parameter_without_owner_cancels_earlier_owner() {
     .unwrap();
     assert_eq!(parameters[2].expression, "Width@Old");
 }
+
+#[test]
+fn feature_rename_without_identifier_consumers_does_not_scan_owner_suffixes() {
+    let owner = FeatureId::mint("synthetic:test:feature#owner").unwrap();
+    let changes = HashMap::from([(owner.clone(), ("x".repeat(17 * 1024 * 1024), "New".into()))]);
+    for expression in ["", "\"unterminated", "pi + 1", "\"\""] {
+        let mut parameters = [
+            parameter("synthetic:test:parameter#owned", Some(owner.clone()), "1"),
+            parameter("synthetic:test:parameter#consumer", None, expression),
+        ];
+        parameters[1].dependencies = DistinctMembers::try_from(
+            vec![parameters[0].id.clone()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap();
+        let expected = parameters.clone();
+        apply_feature_name_changes(&mut parameters, &changes).unwrap();
+        assert_eq!(parameters, expected);
+    }
+}
+
+#[test]
+fn feature_rename_without_changed_dependency_owner_leaves_expression_unread() {
+    let owner = FeatureId::mint("synthetic:test:feature#owner").unwrap();
+    for live_owner in [false, true] {
+        let mut parameters = vec![parameter(
+            "synthetic:test:parameter#consumer",
+            None,
+            &"A+".repeat(1_000_001),
+        )];
+        parameters[0].dependencies = DistinctMembers::try_from(
+            vec![ParameterId::mint("synthetic:test:parameter#missing").unwrap()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap();
+        if live_owner {
+            parameters.push(parameter(
+                "synthetic:test:parameter#owned",
+                Some(owner.clone()),
+                "1",
+            ));
+        }
+        let expected = parameters.clone();
+        apply_feature_name_changes(
+            &mut parameters,
+            &HashMap::from([(owner.clone(), ("Old".into(), "New".into()))]),
+        )
+        .unwrap();
+        assert_eq!(parameters, expected);
+    }
+}
+
+#[test]
+fn feature_rename_with_only_empty_dependency_expressions_builds_no_owner_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let fixture_policy = DecodePolicy::desktop();
+    let (fixture_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &fixture_policy).unwrap();
+    let owner = FeatureId::mint("synthetic:test:feature#owner").unwrap();
+    let id = format!("synthetic:test:parameter#{}", "x".repeat(17 * 1024 * 1024));
+    let owned = parameter(&id, Some(owner.clone()), "1");
+    let mut consumer = parameter("synthetic:test:parameter#consumer", None, "");
+    consumer.dependencies =
+        DistinctMembers::try_from(vec![owned.id.clone()], &fixture_ctx).unwrap();
+    let mut parameters = [owned, consumer];
+    parameters[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("EquationId"),
+        "Width@Old".into(),
+    );
+    let mut expected = parameters.clone();
+    expected[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("EquationId"),
+        "Width@New".into(),
+    );
+    apply_feature_name_changes(
+        &mut parameters,
+        &HashMap::from([(owner, ("Old".into(), "New".into()))]),
+    )
+    .unwrap();
+    assert_eq!(parameters, expected);
+}

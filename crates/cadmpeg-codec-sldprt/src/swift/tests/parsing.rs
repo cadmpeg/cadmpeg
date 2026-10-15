@@ -172,40 +172,6 @@ fn parse_root_with_service(payload: &[u8]) -> Option<Entity> {
     parse_unique_root(&ctx, payload).expect("SWIFT root fits service budget")
 }
 
-#[test]
-fn swift_annotations_refuse_scoped_stream_limit() {
-    let root = Entity {
-        class: crate::swift::ROOT_CLASS.into(),
-        ..Entity::default()
-    };
-    let mut payload = Vec::new();
-    encode_entity(&root, &mut payload);
-    let mut source = crate::test_support::container::synthetic_sldprt();
-    source.extend(crate::test_support::container::make_block(
-        0x40,
-        "SWIFT/Schema",
-        &payload,
-    ));
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes,
-        "copy SWIFT source stream name",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
-            let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-            crate::swift::annotations(&ctx, &scan, &mut annotations, None)
-        },
-    );
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected scoped refusal");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "copy SWIFT source stream name");
-}
-
 fn swift_rendered_annotation_limit_error(
     set_limit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
 ) -> CodecError {
@@ -1340,8 +1306,15 @@ fn swift_suppressed_roster_skips_populated_feature_index() {
         "index SWIFT features",
         None,
     );
-    let projection =
-        crate::swift::project_with_topology(&ctx, &root, None, &[], None, None).unwrap();
+    let projection = crate::swift::project_with_topology(
+        &ctx,
+        &root,
+        None,
+        &crate::swift::RenderedDimensions::Borrowed(&[]),
+        None,
+        None,
+    )
+    .unwrap();
     assert!(projection.annotations.is_empty());
     assert!(projection.unsupported.is_empty());
     drop(projection);
@@ -1439,7 +1412,14 @@ fn swift_rejected_annotation_gates_skip_populated_feature_index() {
             None,
         );
         {
-            let result = crate::swift::project_with_topology(&ctx, &root, None, &[], None, None);
+            let result = crate::swift::project_with_topology(
+                &ctx,
+                &root,
+                None,
+                &crate::swift::RenderedDimensions::Borrowed(&[]),
+                None,
+                None,
+            );
             if class == "GdtDatum" {
                 let Err(CodecError::Malformed(message)) = result else {
                     panic!("missing datum identifier is malformed");
@@ -1579,3 +1559,41 @@ fn swift_unbindable_cad_identifiers_skip_topology_indexes() {
         ctx.finish_session().unwrap();
     }
 }
+
+#[test]
+fn swift_dimension_reuses_its_admitted_pmi_identity() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let root = super::entity("GdtAnalysis");
+    let counterbores = crate::swift::Counterbores::new(&ctx, &root).unwrap();
+    let mut entity = super::entity("GdtDiameter");
+    entity.doubles.insert("Nominal".into(), 4.0);
+    let id = crate::swift::pmi_id_charged(&ctx, "A10").unwrap().unwrap();
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "format SWIFT PMI identity",
+        None,
+    );
+    let geometry = crate::swift::ProjectionGeometry::new(&ctx, None, None, None);
+    let features = BTreeMap::new();
+    let annotation = crate::swift::project_dimension(
+        &ctx,
+        id,
+        &counterbores,
+        &entity,
+        || Ok(&features),
+        &geometry,
+        &crate::swift::RenderedDimensions::Borrowed(&[]),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(annotation.id, crate::swift::pmi_id("A10").unwrap());
+    assert_eq!(dimension_nominal(&[annotation], "A10"), length(4.0));
+    drop((geometry, counterbores));
+    ctx.finish_session().unwrap();
+}
+
+mod budget;

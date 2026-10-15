@@ -114,7 +114,6 @@ pub(crate) mod thru_curve_state;
 use discriminators::DraftBinary32Branch;
 use swp104_state::Swp104StateLane;
 pub(crate) mod audit;
-pub(crate) mod cache;
 pub(crate) mod product;
 pub(crate) mod registry;
 use audit::{AuditRecord, AuditTrailRow};

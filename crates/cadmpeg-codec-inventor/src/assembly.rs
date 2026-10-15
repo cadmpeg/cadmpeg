@@ -277,7 +277,12 @@ pub(crate) fn project_occurrences(
             format_args!("inventor:assembly:instance#{}", source.occurrence_id),
         )
         .map_err(|_| CodecError::malformed("cannot format Inventor occurrence id"))?;
-        let id = OccurrenceId::mint(id_text).map_err(CodecError::malformed)?;
+        let id = OccurrenceId::mint_for_decode(
+            ctx,
+            id_text,
+            "validate projected Inventor occurrence id",
+        )?
+        .map_err(CodecError::malformed)?;
         ctx.push_vec(
             &mut occurrences,
             Occurrence {
@@ -929,6 +934,37 @@ mod tests {
         drop(probe);
         ctx.finish_session()
             .expect("bounded identity format is not a refusal");
+    }
+
+    #[test]
+    fn occurrence_projection_propagates_identity_work_refusal() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("occurrence identity context");
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "validate projected Inventor occurrence id",
+            None,
+        );
+        let error = super::project_occurrences(
+            &ctx,
+            &[ufrx_occurrence(4, 7, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        )
+        .expect_err("identity grammar refuses before occurrence creation");
+        drop(probe);
+        assert!(matches!(&error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate projected Inventor occurrence id"
+                && limit.additional == 1));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+        );
     }
 
     #[test]

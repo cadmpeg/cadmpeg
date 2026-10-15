@@ -120,6 +120,17 @@ impl StateSlotLane<u64> {
         Ok(Self { offset, end, slots })
     }
 
+    pub(crate) fn from_wire(
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+        slots: StateSlots<Option<StateIndexToken>>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::extent(offset, slots.as_slice(), |slots| {
+            ctx.next_charged(slots, "NX native state slot extent")
+        })?
+        .map(|end| Self { offset, end, slots }))
+    }
+
     fn extent<'a, E>(
         offset: u64,
         slots: &'a [Option<StateIndexToken>],

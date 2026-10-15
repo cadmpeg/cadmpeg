@@ -3475,7 +3475,7 @@ fn native_radius_function_pcurve_block(
 ) -> Result<(), CodecError> {
     // Source-less geometry generation uses an independent writer policy.
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let writer_policy = crate::writer::primitives::WRITING_POLICY;
     let (writer_ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let PcurveGeometry::Nurbs { nurbs } = function else {
@@ -4571,7 +4571,7 @@ fn native_increasing_interval_curve(
         SolvedCurveGeometry::Nurbs(curve) => Ok(curve.clone()),
         SolvedCurveGeometry::Line(line_curve) => {
             let arena = cadmpeg_core::decode::DecodeArena::new();
-            let policy = cadmpeg_core::decode::DecodePolicy::default();
+            let policy = crate::writer::primitives::WRITING_POLICY;
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
@@ -4668,7 +4668,7 @@ fn native_conic_interval_curve(
     let knot_count = doubled.checked_add(4).ok_or_else(too_large)?;
     let step = delta / f64_from_index(spans).ok_or_else(too_large)?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let policy = crate::writer::primitives::WRITING_POLICY;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     ctx.charge_collection_items(
         u64_from_index(pole_count),
@@ -4731,7 +4731,7 @@ mod native_interval_curve_tests {
     };
 
     #[test]
-    fn generated_conic_interval_refuses_default_collection_limit() {
+    fn generated_conic_interval_refuses_unallocatable_control_points() {
         let circle = SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
@@ -4741,10 +4741,11 @@ mod native_interval_curve_tests {
             )
             .unwrap(),
         );
-        let error = native_interval_curve(&circle, [0.0, 1.0e9]).unwrap_err();
+        // Writers run under the writing policy, so only an allocation the
+        // platform cannot make refuses the interval.
+        let error = native_interval_curve(&circle, [0.0, 1.0e18]).unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d generated conic control points"));
+            if limit.operation == "f3d generated conic control points"));
         let normal = native_interval_curve(&circle, [0.0, std::f64::consts::PI]).unwrap();
         assert_eq!(normal.degree(), 2);
         assert_eq!(normal.control_points().len(), 5);
@@ -4950,10 +4951,6 @@ mod native_interval_curve_tests {
                 let error = result.expect_err("unallocatable conic interval must be refused");
                 if let CodecError::ResourceLimit(limit) = &error {
                     assert_eq!(limit.operation, "f3d generated conic control points");
-                    assert_eq!(
-                        limit.dimension,
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems
-                    );
                 } else {
                     assert!(error.to_string().contains("conic"), "{error}");
                 }
@@ -6001,7 +5998,7 @@ fn native_support_pcurve_for_range(
 ) -> Result<PcurveNurbs, CodecError> {
     // Source-less geometry generation uses an independent writer policy.
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let writer_policy = crate::writer::primitives::WRITING_POLICY;
     let (writer_ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     let native = native_pcurve_geometry(pcurve, range)?;
@@ -6901,7 +6898,7 @@ fn native_pcurve_geometry(
 ) -> Result<Cow<'_, PcurveNurbs>, CodecError> {
     // Source-less geometry generation uses an independent writer policy.
     let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-    let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let writer_policy = crate::writer::primitives::WRITING_POLICY;
     let (writer_ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &writer_arena, &writer_policy)?;
     match geometry {

@@ -41,29 +41,32 @@ pub(super) fn resolve_axis_candidates<T, const N: usize>(
 }
 
 #[derive(Debug)]
-pub(super) enum NurbsPcurveFailure {
-    Carrier(cadmpeg_ir::geometry::nurbs::NurbsError),
+pub(super) enum NurbsPcurveFailure<'ctx> {
+    Carrier(
+        cadmpeg_ir::geometry::nurbs::NurbsError,
+        Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    ),
     Resource(cadmpeg_core::CodecError),
 }
 
-impl From<cadmpeg_ir::geometry::nurbs::NurbsError> for NurbsPcurveFailure {
+impl From<cadmpeg_ir::geometry::nurbs::NurbsError> for NurbsPcurveFailure<'_> {
     fn from(error: cadmpeg_ir::geometry::nurbs::NurbsError) -> Self {
         match error {
             cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit) => {
                 Self::Resource(limit.into())
             }
-            error => Self::Carrier(error),
+            error => Self::Carrier(error, None),
         }
     }
 }
 
-impl From<cadmpeg_core::decode::ResourceLimit> for NurbsPcurveFailure {
+impl From<cadmpeg_core::decode::ResourceLimit> for NurbsPcurveFailure<'_> {
     fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
         Self::Resource(limit.into())
     }
 }
 
-impl From<cadmpeg_core::CodecError> for NurbsPcurveFailure {
+impl From<cadmpeg_core::CodecError> for NurbsPcurveFailure<'_> {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         Self::Resource(error)
     }
@@ -478,12 +481,12 @@ pub(super) fn nurbs_representation_matches(
     )?)
 }
 
-fn extended_nurbs_isocurve_axis_candidate(
-    ctx: &DecodeContext<'_>,
+fn extended_nurbs_isocurve_axis_candidate<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
-) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
+) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure<'ctx>> {
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.u_degree(),
@@ -644,22 +647,22 @@ fn extended_nurbs_isocurve_axis_candidate(
     }))
 }
 
-fn extended_nurbs_isocurve_pcurve(
-    ctx: &DecodeContext<'_>,
+fn extended_nurbs_isocurve_pcurve<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
+) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure<'ctx>> {
     Ok(resolve_axis_candidates([
         extended_nurbs_isocurve_axis_candidate(ctx, surface, curve, SurfaceParameterAxis::U)?,
         extended_nurbs_isocurve_axis_candidate(ctx, surface, curve, SurfaceParameterAxis::V)?,
     ]))
 }
 
-pub(super) fn nurbs_isocurve_pcurve(
-    ctx: &DecodeContext<'_>,
+pub(super) fn nurbs_isocurve_pcurve<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
+) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure<'ctx>> {
     match nurbs_strict_isocurve_pcurve(ctx, surface, curve)? {
         InverseResolution::NoMatch => extended_nurbs_isocurve_pcurve(ctx, surface, curve),
         other => Ok(other),
@@ -687,7 +690,7 @@ pub(super) fn nurbs_curve_sample_parameters<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<CurveSampleParameters<'ctx>>, NurbsPcurveFailure> {
+) -> Result<Option<CurveSampleParameters<'ctx>>, NurbsPcurveFailure<'ctx>> {
     let Some(domain) = nurbs_curve_parameter_domain(curve) else {
         return Ok(None);
     };
@@ -793,12 +796,12 @@ fn nurbs_edge_endpoint_parameters(
     Ok(Some([start, end]))
 }
 
-fn nurbs_curve_surface_deviation(
-    ctx: &DecodeContext<'_>,
+fn nurbs_curve_surface_deviation<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<f64>, NurbsPcurveFailure> {
+) -> Result<Option<f64>, NurbsPcurveFailure<'ctx>> {
     let Some(parameters) = nurbs_curve_sample_parameters(ctx, curve, range)? else {
         return Ok(None);
     };
@@ -851,7 +854,7 @@ pub(super) struct NurbsCacheControls<'ctx, 'arena> {
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-impl NurbsCacheControls<'_, '_> {
+impl<'ctx> NurbsCacheControls<'ctx, '_> {
     #[cfg(test)]
     pub(super) fn values(&self) -> &[cadmpeg_ir::math::Point2] {
         &self.values
@@ -860,7 +863,7 @@ impl NurbsCacheControls<'_, '_> {
     fn into_pcurve(
         self,
         source_knots: &cadmpeg_ir::geometry::nurbs::KnotVector,
-    ) -> Result<PcurveNurbs, NurbsPcurveFailure> {
+    ) -> Result<PcurveNurbs, NurbsPcurveFailure<'ctx>> {
         let knots = self
             .context
             .copy_slice(source_knots, "copy NURBS cache pcurve knots")?;
@@ -879,7 +882,7 @@ pub(super) fn nurbs_degree_one_cache_lanes<'ctx, 'arena>(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<(NurbsCacheControls<'ctx, 'arena>, f64)>, NurbsPcurveFailure> {
+) -> Result<Option<(NurbsCacheControls<'ctx, 'arena>, f64)>, NurbsPcurveFailure<'ctx>> {
     if curve.degree() != 1 || curve.pole_rows().weight_at(0).is_some() || curve.periodic() {
         return Ok(None);
     }
@@ -968,12 +971,12 @@ pub(super) fn nurbs_degree_one_cache_lanes<'ctx, 'arena>(
     )))
 }
 
-fn nurbs_degree_one_cache_pcurve(
-    ctx: &DecodeContext<'_>,
+fn nurbs_degree_one_cache_pcurve<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<(PcurveGeometry, f64)>, NurbsPcurveFailure> {
+) -> Result<Option<(PcurveGeometry, f64)>, NurbsPcurveFailure<'ctx>> {
     let Some((control_points, fit_tolerance)) =
         nurbs_degree_one_cache_lanes(ctx, surface, curve, range)?
     else {
@@ -987,7 +990,7 @@ pub(super) fn nurbs_edge_parameter_range(
     ctx: &DecodeContext<'_>,
     edge: &Edge,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-    endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+    endpoints: impl FnOnce() -> Result<Option<[cadmpeg_ir::math::Point3; 2]>, cadmpeg_core::CodecError>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let Some(domain) = nurbs_curve_parameter_domain(curve) else {
         return Ok(None);
@@ -996,16 +999,16 @@ pub(super) fn nurbs_edge_parameter_range(
     let range = if let Some(range) = edge.param_range() {
         range.get()
     } else {
-        let Some([start, end]) = endpoints else {
+        let Some([start, end]) = endpoints()? else {
             return Ok(None);
         };
-        match (
-            nurbs_parameter_at_point(ctx, curve, start)?,
-            nurbs_parameter_at_point(ctx, curve, end)?,
-        ) {
-            (InverseResolution::Unique(start), InverseResolution::Unique(end)) => [start, end],
-            _ => return Ok(None),
-        }
+        let InverseResolution::Unique(start) = nurbs_parameter_at_point(ctx, curve, start)? else {
+            return Ok(None);
+        };
+        let InverseResolution::Unique(end) = nurbs_parameter_at_point(ctx, curve, end)? else {
+            return Ok(None);
+        };
+        [start, end]
     };
     if !range[0].is_finite()
         || !range[1].is_finite()
@@ -1019,12 +1022,12 @@ pub(super) fn nurbs_edge_parameter_range(
     Ok(Some([range[0].min(range[1]), range[0].max(range[1])]))
 }
 
-pub(super) fn derive_nurbs_edge_pcurve(
-    ctx: &DecodeContext<'_>,
+pub(super) fn derive_nurbs_edge_pcurve<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<NurbsPcurveResolution, NurbsPcurveFailure> {
+) -> Result<NurbsPcurveResolution, NurbsPcurveFailure<'ctx>> {
     if nurbs_edge_endpoint_parameters(ctx, surface, curve, range)?.is_none() {
         return Ok(NurbsPcurveResolution::OffSurface);
     }

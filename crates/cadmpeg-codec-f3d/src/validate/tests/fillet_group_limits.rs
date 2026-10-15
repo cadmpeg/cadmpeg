@@ -44,7 +44,11 @@ fn group_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn fillet_missing_radius_finding_refuses_collection_limit() {
-    let error = group_error(0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -53,7 +57,11 @@ fn fillet_missing_radius_finding_refuses_collection_limit() {
 
 #[test]
 fn fillet_missing_radius_entity_refuses_retained_limit() {
-    let error = group_error(u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(group_error(u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -136,7 +144,11 @@ fn full_round_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecErr
 
 #[test]
 fn fillet_full_round_finding_refuses_collection_limit() {
-    let error = full_round_error(0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(full_round_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -145,7 +157,11 @@ fn fillet_full_round_finding_refuses_collection_limit() {
 
 #[test]
 fn fillet_full_round_entity_refuses_retained_limit() {
-    let error = full_round_error(u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(full_round_error(u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -253,7 +269,11 @@ fn radius_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_core:
 
 #[test]
 fn fillet_radius_record_index_refuses_collection_limit() {
-    let error = radius_error(true, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Fillet radius group records",
+        |cap| Err::<(), cadmpeg_core::CodecError>(radius_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Fillet radius group records")
@@ -262,7 +282,11 @@ fn fillet_radius_record_index_refuses_collection_limit() {
 
 #[test]
 fn fillet_radius_slot_refuses_collection_limit() {
-    let error = radius_error(true, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Fillet radius group slots",
+        |cap| Err::<(), cadmpeg_core::CodecError>(radius_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Fillet radius group slots")
@@ -271,7 +295,11 @@ fn fillet_radius_slot_refuses_collection_limit() {
 
 #[test]
 fn fillet_radius_invalid_finding_refuses_collection_limit() {
-    let error = radius_error(false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(radius_error(false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -280,7 +308,11 @@ fn fillet_radius_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn fillet_radius_invalid_entity_refuses_retained_limit() {
-    let error = radius_error(false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(radius_error(false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
