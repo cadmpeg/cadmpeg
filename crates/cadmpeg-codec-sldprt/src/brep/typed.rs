@@ -282,6 +282,9 @@ impl Facts {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<BTreeSet<u16>>, CodecError> {
+        if self.bodies.is_empty() {
+            return Ok(None);
+        }
         let Some(ownership) = self.ownership(ctx)? else {
             return Ok(None);
         };
@@ -300,10 +303,10 @@ impl Facts {
 
     /// Return body hierarchies only when the typed ownership graph is complete
     /// for the caller's compact face set.
-    pub(super) fn hierarchies(
+    pub(super) fn hierarchies<T>(
         &self,
         ctx: &DecodeContext<'_>,
-        bridge_attrs: &BTreeSet<u16>,
+        bridges: &BTreeMap<u16, T>,
     ) -> Result<Option<Vec<Hierarchy>>, CodecError> {
         let Some(Ownership {
             bodies,
@@ -322,7 +325,7 @@ impl Facts {
 
         // Every compact face bridge names a typed face whose shell is closed.
         let mut face_shells = BTreeMap::<u16, u16>::new();
-        for &attr in ctx.admit_iter(bridge_attrs, "match typed Parasolid face bridges")? {
+        for (&attr, _) in ctx.admit_iter(bridges, "match typed Parasolid face bridges")? {
             let Some(face) =
                 ctx.get_btree_map(&faces, &attr, "match typed Parasolid face bridges")?
             else {
@@ -412,7 +415,7 @@ impl Facts {
                 return Ok(None);
             }
         }
-        if bridge_attrs.is_empty() {
+        if bridges.is_empty() {
             for (&body_attr, _) in
                 ctx.admit_iter(&bodies, "track relevant typed Parasolid bodies")?
             {
@@ -458,7 +461,7 @@ impl Facts {
                     return Ok(None);
                 }
             }
-            if !bridge_attrs.is_empty() {
+            if !bridges.is_empty() {
                 let Some(needed) = ctx.get_btree_map(
                     &relevant_regions_by_body,
                     &body_attr,
@@ -502,7 +505,7 @@ impl Facts {
         for (&shell_attr, &shell) in
             ctx.admit_iter(&shells, "collect typed Parasolid body shells")?
         {
-            if !bridge_attrs.is_empty()
+            if !bridges.is_empty()
                 && !ctx.contains_btree_set(
                     &relevant_shells,
                     &shell_attr,
@@ -1551,8 +1554,36 @@ mod tests {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 
+    #[test]
+    fn empty_body_face_selector_skips_subordinate_ownership_work() {
+        let mut bytes = typed_shell(8, 53, 41);
+        bytes.extend(typed_region(41, 43, [8, 3, 1, 1, 3], b'S'));
+        bytes.extend(typed_face(100, 55, [1, 1, 1, 8, 12]));
+        let facts = with_test_context(|ctx| scan(&bytes, ctx).unwrap());
+        assert!(facts.bodies.is_empty());
+        assert!(!facts.shells.is_empty());
+        assert!(!facts.regions.is_empty());
+        assert!(!facts.faces.is_empty());
+        let error = crate::test_support::work_refusal_at(
+            "test completed empty BODY face selector",
+            |ctx| {
+                assert!(facts.valid_ownership_face_attrs(ctx)?.is_none());
+                ctx.charge_work(1, "test completed empty BODY face selector")
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("empty BODY selector work")
+        };
+        assert_eq!(limit.used, 0);
+    }
+
     fn test_hierarchies(facts: &Facts, attrs: &BTreeSet<u16>) -> Option<Vec<super::Hierarchy>> {
-        with_test_context(|ctx| facts.hierarchies(ctx, attrs).expect("hierarchy allocation"))
+        let bridges: BTreeMap<_, _> = attrs.iter().map(|&attr| (attr, true)).collect();
+        with_test_context(|ctx| {
+            facts
+                .hierarchies(ctx, &bridges)
+                .expect("hierarchy allocation")
+        })
     }
 
     fn test_has_valid_ownership(facts: &Facts) -> bool {
