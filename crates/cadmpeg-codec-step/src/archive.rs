@@ -45,7 +45,7 @@ pub(crate) fn has_root_marker(
 
 /// One STEP ZIP container whose required root member is proven present.
 pub(crate) struct OpenedRoot<'a, 'ctx> {
-    pub(crate) archive: ArchiveSnapshot<'a>,
+    pub(crate) archive: ArchiveSnapshot<'a, 'ctx>,
     pub(crate) view: View<'a>,
     pub(crate) data_start: u64,
     _storage: ScopedReservation<'ctx>,
@@ -269,7 +269,7 @@ fn resolve_uri<'a>(
 /// Resolves all root-file resource bindings and checks internal members.
 pub(crate) fn root_reference_notes(
     ctx: &DecodeContext<'_>,
-    archive: &ArchiveSnapshot<'_>,
+    archive: &ArchiveSnapshot<'_, '_>,
     exchange: &crate::parse::Exchange,
 ) -> Result<Vec<String>, CodecError> {
     // CE-02: Annex A.4 makes subsidiary access a root reference operation;

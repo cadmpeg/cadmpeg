@@ -151,7 +151,7 @@ fn has_property_set_header(bytes: &[u8]) -> bool {
 
 pub(crate) fn inventory<'a>(
     ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+    snapshot: &CompoundSnapshot<'a, '_>,
 ) -> Result<Vec<PropertySetDescriptor<'a>>, CodecError> {
     let mut property_sets = Vec::new();
     let mut entries = snapshot.entries().iter();

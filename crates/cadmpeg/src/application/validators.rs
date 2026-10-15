@@ -8,7 +8,10 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
-    report::check::{Finding, ValidationReport},
+    report::{
+        check::{Finding, ValidationReport},
+        Severity,
+    },
     validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity,
 };
 use cadmpeg_registry::InputCatalog;
@@ -24,7 +27,7 @@ pub(crate) fn validate_ir(
         Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
         None => validate_neutral(ir, losses),
     }?;
-    report.findings.extend(validate_native(ctx, inputs, ir)?);
+    validate_native(ctx, inputs, ir, &mut report.findings)?;
     Ok(report)
 }
 
@@ -33,31 +36,56 @@ fn validate_native(
     ctx: &DecodeContext<'_>,
     inputs: &InputCatalog,
     ir: &CadIr,
-) -> Result<Vec<Finding>, CodecError> {
-    let mut findings = Vec::new();
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     for descriptor in inputs.descriptors() {
         let Some(codec) = descriptor.codec() else {
             continue;
         };
         if ir.native.namespace(codec.id().as_str()).is_some() {
-            findings.extend(codec.validate_native(ctx, ir)?);
+            ctx.append_vec(
+                findings,
+                &mut codec.validate_native(ctx, ir)?,
+                "native validation findings",
+            )?;
         }
     }
-    Ok(findings)
+    Ok(())
+}
+
+/// Tests for an error or blocking finding, admitting only the visited findings.
+pub(crate) fn has_errors(
+    ctx: &DecodeContext<'_>,
+    report: &ValidationReport,
+) -> Result<bool, CodecError> {
+    ctx.any_by(
+        &report.findings,
+        |finding| Ok(finding.severity >= Severity::Error),
+        "validation verdict",
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::validate_native;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_ir::CadIr;
+    use super::{has_errors, validate_native};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::{
+        report::{
+            check::{Check, Finding, ValidationReport},
+            Severity,
+        },
+        CadIr,
+    };
     use cadmpeg_registry::InputCatalog;
 
     fn findings(inputs: &InputCatalog, ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("validation context");
-        validate_native(&ctx, inputs, ir).expect("validation fits service policy")
+        let mut findings = Vec::new();
+        let result = validate_native(&ctx, inputs, ir, &mut findings).map(|()| findings);
+        ctx.finish(result).expect("validation fits service policy")
     }
 
     #[test]
@@ -88,5 +116,133 @@ mod tests {
                 .any(|finding| finding.message.contains("FCStd")),
             "{findings:?}"
         );
+    }
+
+    /// The validator's own use of one dimension on an empty namespace,
+    /// read from the refusal of an oversized follow-up charge.
+    #[cfg(feature = "fcstd")]
+    fn codec_usage(ir: &CadIr, dimension: ResourceDimension) -> u64 {
+        let inputs = InputCatalog::with_builtins();
+        let codec = inputs
+            .descriptors()
+            .find_map(|descriptor| {
+                descriptor
+                    .codec()
+                    .filter(|codec| codec.id().as_str() == "fcstd")
+            })
+            .expect("FreeCAD codec is registered");
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("validation context");
+        let findings = codec.validate_native(&ctx, ir).expect("codec validation");
+        assert_eq!(findings.len(), 2);
+        let refusal = match dimension {
+            ResourceDimension::CollectionItems => ctx.charge_collection_items(u64::MAX, "probe"),
+            ResourceDimension::RetainedBytes => ctx.charge_retained(u64::MAX, "probe"),
+            _ => unreachable!("probed dimensions"),
+        };
+        let Err(CodecError::ResourceLimit(refusal)) = refusal else {
+            panic!("oversized probe refuses");
+        };
+        refusal.used
+    }
+
+    #[cfg(feature = "fcstd")]
+    #[test]
+    fn native_report_growth_admits_each_slot_once() {
+        let inputs = InputCatalog::with_builtins();
+        let mut ir = CadIr::empty();
+        let _ = ir.native.namespace_mut("fcstd");
+        // The empty namespace yields two findings; appending them to the
+        // report admits one slot each beyond the codec's own items.
+        let items = codec_usage(&ir, ResourceDimension::CollectionItems) + 2;
+        for limit in [items, items - 1] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut findings = Vec::new();
+            let result = validate_native(&ctx, &inputs, &ir, &mut findings).map(|()| findings);
+            let result = ctx.finish(result);
+            if limit == items {
+                assert_eq!(result.unwrap().len(), 2);
+            } else {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "native validation findings"));
+            }
+        }
+    }
+
+    #[cfg(feature = "fcstd")]
+    #[test]
+    fn native_report_growth_admits_backing_storage() {
+        let inputs = InputCatalog::with_builtins();
+        let mut ir = CadIr::empty();
+        let _ = ir.native.namespace_mut("fcstd");
+        // The empty destination grows to four Finding slots beyond the codec's
+        // own retained storage.
+        let bytes = codec_usage(&ir, ResourceDimension::RetainedBytes)
+            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Finding>());
+        for limit in [bytes, bytes - 1] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut findings = Vec::new();
+            let result = validate_native(&ctx, &inputs, &ir, &mut findings).map(|()| findings);
+            let result = ctx.finish(result);
+            if limit == bytes {
+                assert_eq!(result.unwrap().len(), 2);
+            } else {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "native validation findings"));
+            }
+        }
+    }
+
+    #[test]
+    fn validation_verdict_admits_only_visited_findings() {
+        // A match pays for its visits; a miss also pays for the end probe.
+        for (severities, work, invalid) in [
+            (vec![], 1, false),
+            (
+                vec![Severity::Warning, Severity::Error, Severity::Warning],
+                2,
+                true,
+            ),
+            (vec![Severity::Blocking, Severity::Warning], 1, true),
+            (vec![Severity::Warning, Severity::Warning], 3, false),
+        ] {
+            let report = ValidationReport {
+                entity_counts: std::collections::BTreeMap::default(),
+                findings: severities
+                    .into_iter()
+                    .map(|severity| Finding {
+                        check: Check::NativeLinks,
+                        severity,
+                        message: String::new(),
+                        entity: None,
+                    })
+                    .collect(),
+                losses: Vec::new(),
+            };
+            for limit in [work, work - 1] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_work_units = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = has_errors(&ctx, &report);
+                let result = ctx.finish(result);
+                if limit == work {
+                    assert_eq!(result.unwrap(), invalid);
+                } else {
+                    assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+                        if refusal.dimension == ResourceDimension::WorkUnits
+                        && refusal.operation == "validation verdict"));
+                }
+            }
+        }
     }
 }
