@@ -3828,8 +3828,8 @@ fn insert_scope_history_binding(
     scope_id: &str,
     history_id: &str,
 ) {
-    let scope = { scope_id.to_owned() };
-    let history = { history_id.to_owned() };
+    let scope = scope_id.to_owned();
+    let history = history_id.to_owned();
     resolved.insert(scope, history);
 }
 
@@ -3976,7 +3976,7 @@ pub(crate) fn bind_scope_histories(
             let mut assigned = HashSet::new();
             for index in members {
                 if let Some(history_id) = resolved.get(&candidates[*index].0.id) {
-                    let copy = { history_id.to_owned() };
+                    let copy = history_id.to_owned();
                     assigned.insert(copy);
                 }
             }
@@ -4458,20 +4458,18 @@ pub(crate) fn bind_face_operand_history_candidates(
                 } else if preserves_stable_face_set {
                     if let Some(stable) =
                         crate::design::face_resolve::resolve_stable_bounded_face_history_set(
-                            decode, operand,
-                        )?
+                            operand,
+                        )
                     {
                         stable
                     } else {
                         crate::design::face_resolve::resolve_bounded_face_history_candidates(
-                            decode, operand,
+                            operand,
                         )?
                         .unwrap_or_default()
                     }
                 } else if let Some(bounded) =
-                    crate::design::face_resolve::resolve_bounded_face_history_candidates(
-                        decode, operand,
-                    )?
+                    crate::design::face_resolve::resolve_bounded_face_history_candidates(operand)?
                 {
                     bounded
                 } else {

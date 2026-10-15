@@ -152,13 +152,8 @@ pub(crate) fn decode_configurations(
         } else {
             Vec::new()
         };
-        let configuration = DesignConfiguration::try_new_charged(
-            ctx,
-            entry.name.clone(),
-            kind,
-            variant_order,
-            payload,
-        )?;
+        let configuration =
+            DesignConfiguration::try_new_charged(entry.name.clone(), kind, variant_order, payload)?;
         configurations.push(configuration);
     }
     let mut names = HashSet::new();
@@ -177,7 +172,6 @@ pub(crate) fn decode_configurations(
 /// configuration arena. Rule documents remain in the native arena because a
 /// rule is a selector, not a model variant.
 pub(crate) fn project_configurations(
-    _ctx: &DecodeContext<'_>,
     native: &[DesignConfiguration],
 ) -> Result<Vec<cadmpeg_ir::features::DesignConfiguration>, CodecError> {
     use cadmpeg_ir::features::DesignConfiguration as NeutralConfiguration;
@@ -406,50 +400,42 @@ mod tests {
 
     #[test]
     fn configuration_variants_follow_serialized_member_order() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let bytes =
-                br#"{"configurations":{"Small":{},"Medium":{},"Large":{}},"active":"Medium"}"#;
-            let payload: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-            let variant_order = parse_configuration_variant_order("table.dsgcfg", bytes).unwrap();
-            assert_eq!(variant_order, ["Small", "Medium", "Large"]);
+        let bytes = br#"{"configurations":{"Small":{},"Medium":{},"Large":{}},"active":"Medium"}"#;
+        let payload: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        let variant_order = parse_configuration_variant_order("table.dsgcfg", bytes).unwrap();
+        assert_eq!(variant_order, ["Small", "Medium", "Large"]);
 
-            let table = crate::test_support::with_decode_context(|ctx| {
-                DesignConfiguration::try_new_charged(
-                    ctx,
-                    "table.dsgcfg".into(),
-                    DesignConfigurationKind::Table,
-                    variant_order,
-                    (payload).as_object().unwrap().clone(),
-                )
+        let table = DesignConfiguration::try_new_charged(
+            "table.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            variant_order,
+            (payload).as_object().unwrap().clone(),
+        )
+        .unwrap();
+        let projected = project_configurations(std::slice::from_ref(&table)).unwrap();
+        let mut authored = projected
+            .iter()
+            .filter_map(|configuration| {
+                Some((configuration.name.as_deref()?, configuration.ordinal))
             })
-            .unwrap();
-            let projected =
-                project_configurations(decode_ctx, std::slice::from_ref(&table)).unwrap();
-            let mut authored = projected
-                .iter()
-                .filter_map(|configuration| {
-                    Some((configuration.name.as_deref()?, configuration.ordinal))
-                })
-                .collect::<Vec<_>>();
-            authored.sort_by_key(|(_, ordinal)| *ordinal);
-            assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
-            let encoded = encode_configuration_payload(&table).unwrap();
-            assert_eq!(
-                parse_configuration_variant_order("table.dsgcfg", &encoded).unwrap(),
-                ["Small", "Medium", "Large"]
-            );
+            .collect::<Vec<_>>();
+        authored.sort_by_key(|(_, ordinal)| *ordinal);
+        assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
+        let encoded = encode_configuration_payload(&table).unwrap();
+        assert_eq!(
+            parse_configuration_variant_order("table.dsgcfg", &encoded).unwrap(),
+            ["Small", "Medium", "Large"]
+        );
 
-            assert!(parse_configuration_variant_order(
-                "table.dsgcfg",
-                br#"{"configurations":{"Small":{},"Small":{}}}"#
-            )
-            .is_err());
-            assert!(parse_configuration_variant_order(
-                "table.dsgcfg",
-                br#"{"configurations":null}"#
-            )
-            .is_err());
-        });
+        assert!(parse_configuration_variant_order(
+            "table.dsgcfg",
+            br#"{"configurations":{"Small":{},"Small":{}}}"#
+        )
+        .is_err());
+        assert!(
+            parse_configuration_variant_order("table.dsgcfg", br#"{"configurations":null}"#)
+                .is_err()
+        );
     }
 
     #[test]
@@ -462,46 +448,40 @@ mod tests {
     #[test]
     fn configuration_unknown_members_are_counted_at_each_semantic_level() {
         let native = [
-            crate::test_support::with_decode_context(|ctx| {
-                DesignConfiguration::try_new_charged(
-                    ctx,
-                    "table.dsgcfg".into(),
-                    DesignConfigurationKind::Table,
-                    vec!["variant".into()],
-                    (serde_json::json!({
-                        "active": "variant",
-                        "table_unknown": 1,
-                        "configurations": {
-                            "variant": {
-                                "parameters": {},
-                                "suppressed": [],
-                                "material": "steel",
-                                "variant_unknown": true
-                            }
+            DesignConfiguration::try_new_charged(
+                "table.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["variant".into()],
+                (serde_json::json!({
+                    "active": "variant",
+                    "table_unknown": 1,
+                    "configurations": {
+                        "variant": {
+                            "parameters": {},
+                            "suppressed": [],
+                            "material": "steel",
+                            "variant_unknown": true
                         }
-                    }))
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                )
-            })
+                    }
+                }))
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
             .unwrap(),
-            crate::test_support::with_decode_context(|ctx| {
-                DesignConfiguration::try_new_charged(
-                    ctx,
-                    "rule.dsgcfgrule".into(),
-                    DesignConfigurationKind::Rule,
-                    Vec::new(),
-                    (serde_json::json!({
-                        "when": "width > 20 mm",
-                        "activate": "variant",
-                        "rule_unknown": null
-                    }))
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                )
-            })
+            DesignConfiguration::try_new_charged(
+                "rule.dsgcfgrule".into(),
+                DesignConfigurationKind::Rule,
+                Vec::new(),
+                (serde_json::json!({
+                    "when": "width > 20 mm",
+                    "activate": "variant",
+                    "rule_unknown": null
+                }))
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
             .unwrap(),
         ];
         assert_eq!(unresolved_configuration_member_count(&native), 3);
@@ -509,175 +489,141 @@ mod tests {
 
     #[test]
     fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let native = [crate::test_support::with_decode_context(|ctx| {
-                DesignConfiguration::try_new_charged(
-                    ctx,
-                    "partial.dsgcfgrule".into(),
-                    DesignConfigurationKind::Rule,
-                    Vec::new(),
-                    (serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}))
-                        .as_object()
-                        .unwrap()
-                        .clone(),
-                )
-            })
-            .unwrap()];
-            let projected =
-                project_configurations(decode_ctx, &native).expect("empty rule projection");
-            assert!(projected.is_empty());
-            assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
-        });
+        let native = [DesignConfiguration::try_new_charged(
+            "partial.dsgcfgrule".into(),
+            DesignConfigurationKind::Rule,
+            Vec::new(),
+            (serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}))
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap()];
+        let projected = project_configurations(&native).expect("empty rule projection");
+        assert!(projected.is_empty());
+        assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
     }
 
     #[test]
     fn configuration_rules_bind_only_one_named_variant() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let table = |entry_name: &str, variant_name: &str| {
-                crate::test_support::with_decode_context(|ctx| {
-                    DesignConfiguration::try_new_charged(
-                        ctx,
-                        entry_name.into(),
-                        DesignConfigurationKind::Table,
-                        vec![variant_name.into()],
-                        (serde_json::json!({"configurations": {variant_name: {}}}))
-                            .as_object()
-                            .unwrap()
-                            .clone(),
-                    )
-                })
+        let table = |entry_name: &str, variant_name: &str| {
+            DesignConfiguration::try_new_charged(
+                entry_name.into(),
+                DesignConfigurationKind::Table,
+                vec![variant_name.into()],
+                (serde_json::json!({"configurations": {variant_name: {}}}))
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap()
+        };
+        let rule = DesignConfiguration::try_new_charged(
+            "rule.dsgcfgrule".into(),
+            DesignConfigurationKind::Rule,
+            Vec::new(),
+            (serde_json::json!({"when": "width > 20 mm", "activate": "wide"}))
+                .as_object()
                 .unwrap()
-            };
-            let rule = crate::test_support::with_decode_context(|ctx| {
-                DesignConfiguration::try_new_charged(
-                    ctx,
-                    "rule.dsgcfgrule".into(),
-                    DesignConfigurationKind::Rule,
-                    Vec::new(),
-                    (serde_json::json!({"when": "width > 20 mm", "activate": "wide"}))
-                        .as_object()
-                        .unwrap()
-                        .clone(),
-                )
-            })
-            .unwrap();
-            let native = [table("table.dsgcfg", "wide"), rule.clone()];
-            let projected =
-                project_configurations(decode_ctx, &native).expect("ordered configuration table");
-            assert_eq!(
-                projected[0].properties["activation_rule:rule.dsgcfgrule"],
-                "width > 20 mm"
-            );
-            assert_eq!(unresolved_configuration_rule_count(&native, &projected), 0);
+                .clone(),
+        )
+        .unwrap();
+        let native = [table("table.dsgcfg", "wide"), rule.clone()];
+        let projected = project_configurations(&native).expect("ordered configuration table");
+        assert_eq!(
+            projected[0].properties["activation_rule:rule.dsgcfgrule"],
+            "width > 20 mm"
+        );
+        assert_eq!(unresolved_configuration_rule_count(&native, &projected), 0);
 
-            let ambiguous = [
-                table("first.dsgcfg", "wide"),
-                table("second.dsgcfg", "wide"),
-                rule,
-            ];
-            let error = project_configurations(decode_ctx, &ambiguous)
-                .expect_err("independent nonempty tables have no shared order");
-            assert!(error
-                .to_string()
-                .contains("configuration tables have no shared authored order"));
-        });
+        let ambiguous = [
+            table("first.dsgcfg", "wide"),
+            table("second.dsgcfg", "wide"),
+            rule,
+        ];
+        let error = project_configurations(&ambiguous)
+            .expect_err("independent nonempty tables have no shared order");
+        assert!(error
+            .to_string()
+            .contains("configuration tables have no shared authored order"));
     }
 
     #[test]
     fn configuration_parameter_overrides_bind_only_unique_parameter_names() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let table = crate::test_support::with_decode_context(|ctx| {
-                DesignConfiguration::try_new_charged(
-                    ctx,
-                    "table.dsgcfg".into(),
-                    DesignConfigurationKind::Table,
-                    vec!["wide".into()],
-                    (serde_json::json!({
-                        "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
-                    }))
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                )
-            })
+        let table = DesignConfiguration::try_new_charged(
+            "table.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["wide".into()],
+            (serde_json::json!({
+                "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
+            }))
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .unwrap();
+        let parameter = NeutralParameter {
+            id: ParameterId::mint("f3d:model:parameter#width").expect("identity grammar"),
+            owner: None,
+            ordinal: 0,
+            name: "width".into(),
+            expression: "10 mm".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let mut projected = project_configurations(&[table]).expect("ordered configuration table");
+        bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter))
             .unwrap();
-            let parameter = NeutralParameter {
-                id: ParameterId::mint("f3d:model:parameter#width").expect("identity grammar"),
-                owner: None,
-                ordinal: 0,
-                name: "width".into(),
-                expression: "10 mm".into(),
-                display: None,
-                value: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                properties: BTreeMap::new(),
-                pmi: None,
-                native_ref: None,
-            };
-            let mut projected =
-                project_configurations(decode_ctx, &[table]).expect("ordered configuration table");
-            bind_configuration_parameter_overrides(
-                &mut projected,
-                std::slice::from_ref(&parameter),
-            )
-            .unwrap();
-            assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
-            assert!(projected[0].properties.is_empty());
-            assert_eq!(
-                unresolved_configuration_parameter_override_count(&projected),
-                0
-            );
+        assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
+        assert!(projected[0].properties.is_empty());
+        assert_eq!(
+            unresolved_configuration_parameter_override_count(&projected),
+            0
+        );
 
-            let duplicate = NeutralParameter {
-                id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
-                ..parameter.clone()
-            };
-            let mut ambiguous = project_configurations(
-                decode_ctx,
-                &[crate::test_support::with_decode_context(|ctx| {
-                    DesignConfiguration::try_new_charged(
-                        ctx,
-                        "other.dsgcfg".into(),
-                        DesignConfigurationKind::Table,
-                        vec!["wide".into()],
-                        (serde_json::json!({
-                            "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
-                        }))
-                        .as_object()
-                        .unwrap()
-                        .clone(),
-                    )
-                })
-                .unwrap()],
-            )
-            .expect("ordered configuration table");
-            bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate])
-                .unwrap();
-            assert!(ambiguous[0].parameter_overrides.is_empty());
-            assert_eq!(
-                unresolved_configuration_parameter_override_count(&ambiguous),
-                1
-            );
-        });
+        let duplicate = NeutralParameter {
+            id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
+            ..parameter.clone()
+        };
+        let mut ambiguous = project_configurations(&[DesignConfiguration::try_new_charged(
+            "other.dsgcfg".into(),
+            DesignConfigurationKind::Table,
+            vec!["wide".into()],
+            (serde_json::json!({
+                "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
+            }))
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .unwrap()])
+        .expect("ordered configuration table");
+        bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]).unwrap();
+        assert!(ambiguous[0].parameter_overrides.is_empty());
+        assert_eq!(
+            unresolved_configuration_parameter_override_count(&ambiguous),
+            1
+        );
     }
 
     #[test]
     fn configuration_suppression_binds_only_unique_feature_names() {
         crate::test_support::with_decode_context(|decode_ctx| {
-            let table = crate::test_support::with_decode_context(|ctx| {
-                DesignConfiguration::try_new_charged(
-                    ctx,
-                    "table.dsgcfg".into(),
-                    DesignConfigurationKind::Table,
-                    vec!["alternate".into()],
-                    (serde_json::json!({
-                        "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
-                    }))
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-                )
-            })
+            let table = DesignConfiguration::try_new_charged(
+                "table.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["alternate".into()],
+                (serde_json::json!({
+                    "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+                }))
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
             .unwrap();
             let feature = Feature {
                 id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
@@ -699,7 +645,7 @@ mod tests {
                 native_ref: None,
             };
             let mut projected =
-                project_configurations(decode_ctx, &[table]).expect("ordered configuration table");
+                project_configurations(&[table]).expect("ordered configuration table");
             bind_configuration_suppressed_features(
                 decode_ctx,
                 &mut projected,
@@ -720,24 +666,18 @@ mod tests {
                 id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
                 ..feature.clone()
             };
-            let mut ambiguous = project_configurations(
-                decode_ctx,
-                &[crate::test_support::with_decode_context(|ctx| {
-                    DesignConfiguration::try_new_charged(
-                        ctx,
-                        "other.dsgcfg".into(),
-                        DesignConfigurationKind::Table,
-                        vec!["alternate".into()],
-                        (serde_json::json!({
-                            "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
-                        }))
-                        .as_object()
-                        .unwrap()
-                        .clone(),
-                    )
-                })
-                .unwrap()],
+            let mut ambiguous = project_configurations(&[DesignConfiguration::try_new_charged(
+                "other.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["alternate".into()],
+                (serde_json::json!({
+                    "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+                }))
+                .as_object()
+                .unwrap()
+                .clone(),
             )
+            .unwrap()])
             .expect("ordered configuration table");
             bind_configuration_suppressed_features(
                 decode_ctx,

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validated UTF-16 text borrowed from a counted source field.
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::fmt::Write;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -66,21 +65,6 @@ impl<'a> Utf16View<'a> {
     }
     pub(crate) fn is_guid_urn_role(self) -> bool {
         self.guid_prefix() && self.chars().skip(36).take(5).eq("_urn:".chars())
-    }
-    pub(crate) fn to_retained(
-        self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<String, CodecError> {
-        ctx.utf16le_text(self.raw, self.raw.len() / 2, false, operation)
-    }
-
-    pub(crate) fn to_scoped<'ctx>(
-        self,
-        ctx: &'ctx DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<(String, ScopedReservation<'ctx>), CodecError> {
-        ctx.utf16le_scoped_text(self.raw, self.raw.len() / 2, false, operation)
     }
 }
 

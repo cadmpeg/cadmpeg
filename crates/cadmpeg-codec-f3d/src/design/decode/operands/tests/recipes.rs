@@ -66,14 +66,8 @@ fn parse_vertex_recipe(
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
 ) -> Option<crate::records::feature::work_geometry::DesignVertexRecipe> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    crate::design::decode::operands::parse_vertex_recipe(
-        &ctx, bytes, records, stream, header, recipes,
-    )
-    .map(|result| result.expect("recipe allocation admitted"))
+    crate::design::decode::operands::parse_vertex_recipe(bytes, records, stream, header, recipes)
+        .map(|result| result.expect("recipe allocation admitted"))
 }
 
 #[test]

@@ -340,7 +340,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     let scopes = vec![root, successor];
-    let bindings = { bind_scope_histories(&scopes, &[], &[], &histories) }.unwrap();
+    let bindings = bind_scope_histories(&scopes, &[], &[], &histories).unwrap();
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
     assert_eq!(bindings["f3d:native:scope#2"], "history");
@@ -1339,7 +1339,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             ],
         },
     ];
-    let selectors = { recipe_selector_candidates(Some(&structure), &contexts) }.unwrap();
+    let selectors = recipe_selector_candidates(Some(&structure), &contexts).unwrap();
     assert_eq!(selectors.len(), 2);
     assert_eq!(selectors[0].selector, 1);
     assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);

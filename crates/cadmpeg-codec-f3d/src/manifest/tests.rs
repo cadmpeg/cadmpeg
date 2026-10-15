@@ -15,8 +15,7 @@ const SECONDARY_GUID: &str = "30000000-0000-4000-8000-000000000003";
 #[test]
 fn current_top_level_manifest_round_trips() {
     let bytes = encode_top_level(DESIGN_GUID, &["Design Base", "Simulation"]).unwrap();
-    let manifest =
-        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base", "Simulation"]);
 }
 
@@ -41,20 +40,17 @@ fn legacy_top_level_manifest_accepts_both_terminal_forms() {
     push_utf16(&mut bytes, "Design Base").unwrap();
     push_u32(&mut bytes, 0);
 
-    let word_only =
-        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let word_only = parse_top_level(&bytes).unwrap();
     assert_eq!(word_only.asset_folder_bases, ["Simulation", "Design Base"]);
 
     bytes.push(0);
     push_utf16(&mut bytes, "Legacy Document").unwrap();
 
-    let manifest =
-        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Simulation", "Design Base"]);
 
     push_utf16(&mut bytes, "urn:synthetic:lineage").unwrap();
-    let with_lineage =
-        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let with_lineage = parse_top_level(&bytes).unwrap();
     assert_eq!(
         with_lineage.asset_folder_bases,
         ["Simulation", "Design Base"]
@@ -69,18 +65,15 @@ fn top_level_manifest_accepts_a_terminal_export_flag_without_a_marker() {
     assert!(bytes.ends_with(&marker));
     bytes.truncate(bytes.len() - marker.len());
 
-    let manifest =
-        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
 }
 
 #[test]
 fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
-    let manifest = parse_top_level(
-        &cadmpeg_test_support::service_decode_context(),
-        &encode_top_level(OTHER_GUID, &["Simulation", "Design Base"]).unwrap(),
-    )
-    .unwrap();
+    let manifest =
+        parse_top_level(&encode_top_level(OTHER_GUID, &["Simulation", "Design Base"]).unwrap())
+            .unwrap();
     let mut entries = BTreeMap::new();
     entries.insert(
         "Simulation/Manifest.dat".to_string(),
@@ -105,11 +98,9 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
 
 #[test]
 fn active_guid_can_be_shared_by_a_non_design_asset() {
-    let manifest = parse_top_level(
-        &cadmpeg_test_support::service_decode_context(),
-        &encode_top_level(DESIGN_GUID, &["Simulation", "Design Base"]).unwrap(),
-    )
-    .unwrap();
+    let manifest =
+        parse_top_level(&encode_top_level(DESIGN_GUID, &["Simulation", "Design Base"]).unwrap())
+            .unwrap();
     let entries = BTreeMap::from([
         (
             "Simulation/Manifest.dat".to_string(),
@@ -151,8 +142,7 @@ fn an_unknown_version_is_parsed_with_the_known_layout() {
     let known = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     let bytes = with_version(&known, "3-3-0-0");
 
-    let manifest =
-        parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+    let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
     assert_eq!(manifest.declared_version(), Some("3-3-0-0"));
 }
@@ -171,8 +161,7 @@ fn a_broken_layout_is_malformed_for_every_declared_version() {
     for version in [TOP_LEVEL_MANIFEST_VERSION, "3-3-0-0"] {
         let mut bytes = with_version(&known, version);
         bytes.splice(at..at + anchor.len(), moved.clone());
-        let error =
-            parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap_err();
+        let error = parse_top_level(&bytes).unwrap_err();
         assert!(
             matches!(&error, CodecError::Malformed(message)
                     if message.contains(version) && message.contains("grammar does not fit")),
@@ -185,11 +174,7 @@ fn a_broken_layout_is_malformed_for_every_declared_version() {
 fn top_level_manifest_version_requires_framing_but_recovers_unreadable_payload() {
     let complete = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
 
-    let truncated = parse_top_level(
-        &cadmpeg_test_support::service_decode_context(),
-        &complete[..6],
-    )
-    .unwrap_err();
+    let truncated = parse_top_level(&complete[..6]).unwrap_err();
     assert!(
         matches!(truncated, CodecError::Malformed(_)),
         "expected a malformed truncation, found {truncated:?}"
@@ -197,8 +182,7 @@ fn top_level_manifest_version_requires_framing_but_recovers_unreadable_payload()
 
     let mut non_ascii = complete.clone();
     non_ascii[4] = 0x01;
-    let recovered =
-        parse_top_level(&cadmpeg_test_support::service_decode_context(), &non_ascii).unwrap();
+    let recovered = parse_top_level(&non_ascii).unwrap();
     assert_eq!(recovered.declared_version(), None);
     assert_eq!(recovered.asset_folder_bases, ["Design Base"]);
     assert_eq!(recovered.diagnostics[0].field, "top-level manifest version");
@@ -208,7 +192,7 @@ fn top_level_manifest_version_requires_framing_but_recovers_unreadable_payload()
 fn top_level_manifest_rejects_trailing_bytes() {
     let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     bytes.push(0);
-    assert!(parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).is_err());
+    assert!(parse_top_level(&bytes).is_err());
 }
 
 #[test]
@@ -456,14 +440,12 @@ fn manifest_discarded_fields_and_failed_tails_keep_declared_folders() {
         push_u32(&mut failed, 99);
     }
     bytes.splice(at..at, failed);
-    crate::test_support::with_decode_context(|ctx| {
-        let manifest = parse_top_level(ctx, &bytes).unwrap();
-        assert_eq!(
-            manifest.declared_version(),
-            Some(TOP_LEVEL_MANIFEST_VERSION)
-        );
-        assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
-    });
+    let manifest = parse_top_level(&bytes).unwrap();
+    assert_eq!(
+        manifest.declared_version(),
+        Some(TOP_LEVEL_MANIFEST_VERSION)
+    );
+    assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
     let asset = generated_design_asset().unwrap();
     let header = parse_asset_header(&asset).unwrap();
     assert!(header.base_name.eq_str(GENERATED_DESIGN_ASSET_BASE));
@@ -499,18 +481,12 @@ fn descriptive_manifest_payload_recovery_preserves_folder_selection() {
                 }
                 let mut source = original.clone();
                 source[cursor + 4..cursor + 6].copy_from_slice(&malformed.to_le_bytes());
-                let recovered =
-                    parse_top_level(&cadmpeg_test_support::service_decode_context(), &source)
-                        .unwrap();
+                let recovered = parse_top_level(&source).unwrap();
                 assert_eq!(recovered.asset_folder_bases, ["Design Base"]);
                 assert_eq!(recovered.diagnostics.len(), 1);
                 let mut truncated = source;
                 truncated[cursor..cursor + 4].copy_from_slice(&u32::MAX.to_le_bytes());
-                assert!(parse_top_level(
-                    &cadmpeg_test_support::service_decode_context(),
-                    &truncated
-                )
-                .is_err());
+                assert!(parse_top_level(&truncated).is_err());
             }
         }
         cursor += 4 + 2 * count;

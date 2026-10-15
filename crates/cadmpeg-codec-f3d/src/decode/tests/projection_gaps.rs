@@ -22,11 +22,7 @@ fn design_projection_gaps(
     ir: &cadmpeg_ir::document::CadIr,
     native: &F3dNative,
 ) -> DesignProjectionGaps {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    super::super::design_projection_gaps(&ctx, ir, native).unwrap()
+    super::super::design_projection_gaps(ir, native).unwrap()
 }
 
 #[test]

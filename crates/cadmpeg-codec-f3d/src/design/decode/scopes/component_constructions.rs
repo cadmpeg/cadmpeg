@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact derived-instance, component-insert, copy-paste-component and component-pattern occurrence scopes.
 
-use crate::bytes::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
+use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
@@ -32,11 +32,10 @@ use crate::records::feature::patterns;
 use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_derived_instance_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -140,12 +139,8 @@ pub(super) fn exact_derived_instance_construction(
                 reference_record_index,
                 relation_record_index,
                 carrier_record_index,
-                component_guid: carrier
-                    .component_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
-                occurrence_guid: carrier
-                    .occurrence_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
+                component_guid: carrier.component_guid.clone(),
+                occurrence_guid: carrier.occurrence_guid.clone(),
                 transform,
                 transform_offset,
             })
@@ -155,21 +150,11 @@ pub(super) fn exact_derived_instance_construction(
 }
 
 pub(super) fn exact_component_insert_construction(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignComponentInsertConstruction>, CodecError> {
     let parsed = (|| {
-        macro_rules! admitted {
-            ($value:expr) => {
-                match $value {
-                    Ok(value) => value,
-                    Err(error) => return Some(Err(error)),
-                }
-            };
-        }
-
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let relation_record_index = *scope.reference_members().values().next()?;
         if scope.kind() != scope::DesignFeatureKind::ComponentInsert
@@ -319,17 +304,7 @@ pub(super) fn exact_component_insert_construction(
                     }
                     for transform_at in carrier_at + 11..at {
                         if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                            let role = match lp_utf16_bounded_charged(
-                                ctx,
-                                bytes,
-                                at,
-                                36..=36,
-                                "f3d Design UTF-16 text",
-                            ) {
-                                Ok(Some((role, _))) => role,
-                                Ok(None) => return None,
-                                Err(error) => return Some(Err(error)),
-                            };
+                            let role = lp_utf16_bounded(bytes, at, 36..=36)?.0;
                             placements.push((role, at + 4, Some(transform_at)));
                         }
                     }
@@ -346,7 +321,7 @@ pub(super) fn exact_component_insert_construction(
                     relation_record_index,
                     scope.record_index,
                 )?;
-            let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+            let role = role.to_string();
             (
                 carrier_record_index,
                 [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
@@ -391,7 +366,7 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                let role = role.to_string();
                 (
                     carrier_record_index,
                     [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
@@ -404,7 +379,7 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                let role = role.to_string();
                 (
                     carrier_record_index,
                     [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
@@ -417,7 +392,7 @@ pub(super) fn exact_component_insert_construction(
                     relation_at,
                     carrier_record_index,
                 )?;
-                let role = admitted!(role.to_retained(ctx, "retain F3D UTF-16 string"));
+                let role = role.to_string();
                 (
                     carrier_record_index,
                     [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
@@ -426,7 +401,6 @@ pub(super) fn exact_component_insert_construction(
             {
                 let (role, role_offset, carrier_transform_offset) =
                     match crate::xref::repeated_target_component_insert(
-                        ctx,
                         bytes,
                         carrier_at,
                         relation_at,
@@ -454,33 +428,19 @@ pub(super) fn exact_component_insert_construction(
                     }
                     let transform_at = after_role.checked_add(2)?;
                     if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                        let role = match lp_utf16_bounded_charged(
-                            ctx,
-                            bytes,
-                            at,
-                            36..=38,
-                            "f3d Design UTF-16 text",
-                        ) {
-                            Ok(Some((role, _))) => role,
-                            Ok(None) => return None,
-                            Err(error) => return Some(Err(error)),
-                        };
+                        let role = lp_utf16_bounded(bytes, at, 36..=38)?.0;
 
                         placements.push((role, at + 4, Some(transform_at)));
                     }
                 }
                 if scope.frame_length() == 381 {
-                    let legacy = match legacy_component_insert_placements(
-                        ctx,
+                    let legacy = legacy_component_insert_placements(
                         bytes,
                         carrier_at,
                         relation_at,
                         carrier_record_index,
                         transform,
-                    ) {
-                        Ok(value) => value,
-                        Err(error) => return Some(Err(error)),
-                    };
+                    );
 
                     placements.extend(legacy);
                 }
@@ -931,23 +891,22 @@ fn exact_component_insert_scope_414_264_389(
 }
 
 fn legacy_component_insert_placements(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
     transform: crate::records::sketch_placement::SketchPlacementMatrix,
-) -> Result<Vec<(String, usize, Option<usize>)>, CodecError> {
+) -> Vec<(String, usize, Option<usize>)> {
     let Some((class_tag, after_tag)) =
         lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)
     else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     if class_tag != "288"
         || after_tag != carrier_at + 7
         || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
     {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let mut placements = Vec::new();
     for first_at in carrier_at + 11..relation_at {
@@ -965,14 +924,8 @@ fn legacy_component_insert_placements(
         let Some(after_asset_guid) = fixed_guid_end(bytes, after_role + 14) else {
             continue;
         };
-        let Some((asset_identity, after_asset_identity, _asset_reservation)) =
-            lp_utf16_bounded_scoped(
-                ctx,
-                bytes,
-                after_asset_guid + 1,
-                37..=256,
-                "f3d Design temporary UTF-16 text",
-            )?
+        let Some((asset_identity, after_asset_identity)) =
+            lp_utf16_bounded(bytes, after_asset_guid + 1, 37..=256)
         else {
             continue;
         };
@@ -988,14 +941,8 @@ fn legacy_component_insert_placements(
         }
         let carrier_transform_at = after_asset_identity + 1;
         let after_transform = carrier_transform_at + 16 * 8;
-        let Some((repeated_identity, after_repeated_identity, _repeated_reservation)) =
-            lp_utf16_bounded_scoped(
-                ctx,
-                bytes,
-                after_transform + 4,
-                37..=256,
-                "f3d Design temporary UTF-16 text",
-            )?
+        let Some((repeated_identity, after_repeated_identity)) =
+            lp_utf16_bounded(bytes, after_transform + 4, 37..=256)
         else {
             continue;
         };
@@ -1005,19 +952,16 @@ fn legacy_component_insert_placements(
             && bytes.get(after_repeated_identity..relation_at)
                 == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         {
-            let Some((role, _)) =
-                lp_utf16_bounded_charged(ctx, bytes, role_at, 36..=36, "f3d Design UTF-16 text")?
-            else {
+            let Some((role, _)) = lp_utf16_bounded(bytes, role_at, 36..=36) else {
                 continue;
             };
             placements.push((role, role_at + 4, Some(carrier_transform_at)));
         }
     }
-    Ok(placements)
+    placements
 }
 
 pub(super) fn exact_copy_paste_component_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -1090,15 +1034,9 @@ pub(super) fn exact_copy_paste_component_operation(
                 relation_record_index,
                 source_occurrence_record_index: source.record_index,
                 copied_occurrence_record_index,
-                component_guid: copied
-                    .component_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
-                source_occurrence_guid: source
-                    .occurrence_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
-                copied_occurrence_guid: copied
-                    .occurrence_guid
-                    .try_clone_for_decode(ctx, "retain F3D construction GUID")?,
+                component_guid: copied.component_guid.clone(),
+                source_occurrence_guid: source.occurrence_guid.clone(),
+                copied_occurrence_guid: copied.occurrence_guid.clone(),
                 source_transform,
                 source_transform_offset: u64_from_index(source_transform_offset),
                 copied_transform,
@@ -1110,7 +1048,6 @@ pub(super) fn exact_copy_paste_component_operation(
 }
 
 pub(super) fn bind_component_pattern_occurrences(
-    ctx: &DecodeContext<'_>,
     scope: &mut DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
 ) -> Result<(), CodecError> {
@@ -1183,20 +1120,14 @@ pub(super) fn bind_component_pattern_occurrences(
             })?;
         generated.push(patterns::DesignPatternComponentInstance {
             instance: *frame,
-            occurrence_guid: candidate
-                .occurrence_guid
-                .try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
+            occurrence_guid: candidate.occurrence_guid.clone(),
         });
     }
     let bound = DesignRectangularPatternInstances::Components {
-        component_guid: seed
-            .component_guid
-            .try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
+        component_guid: seed.component_guid.clone(),
         seed: patterns::DesignPatternComponentInstance {
             instance: seed_frame,
-            occurrence_guid: seed
-                .occurrence_guid
-                .try_clone_for_decode(ctx, "retain F3D pattern GUID")?,
+            occurrence_guid: seed.occurrence_guid.clone(),
         },
         generated,
     };

@@ -339,7 +339,6 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         let frame = crate::records::dimensions::DesignDimensionAnnotationFrame::try_new_charged(
-            decode,
             crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
                 id: "f3d:Design/BulkStream.dat:annotation#9".into(),
                 companion_record_index: Some(8),

@@ -984,7 +984,7 @@ fn hole_transition_face_candidate(
     let [face_slot] = candidates.as_slice() else {
         return Ok(None);
     };
-    let history_id = { history.id.clone() };
+    let history_id = history.id.clone();
     Ok(Some(DesignEntitySelectionFaceCandidate {
         history_id,
         historical: crate::records::topology::fillet::HistoricalBinding {
@@ -1794,7 +1794,7 @@ pub(super) fn entity_selection_face_candidates(
         let Some(face_slot) = face_slot else {
             continue;
         };
-        let history_id = { history.id.clone() };
+        let history_id = history.id.clone();
 
         candidates.push(DesignEntitySelectionFaceCandidate {
             history_id,

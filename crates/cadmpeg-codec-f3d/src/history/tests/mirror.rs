@@ -293,7 +293,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             },
             face_slot: 10,
         };
-    let dispatched = { historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history)) }
+    let dispatched = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
         .unwrap()
         .expect("coedge dispatch uses radial plane resolver");
     assert_eq!(dispatched.origin, Point3::new(1.0, 2.0, 3.0));

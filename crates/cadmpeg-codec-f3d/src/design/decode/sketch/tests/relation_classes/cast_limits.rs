@@ -21,22 +21,19 @@ fn refuses_wrapped_offset(
     };
     let definition = SketchRelationDefinition::new(parsed.state, None)
         .expect("fixture constraint mask is admitted");
-    crate::test_support::with_decode_context(|ctx| {
-        let mut output = Vec::new();
-        let error = super::admit_sketch_relation(
-            ctx,
-            &mut output,
-            "BulkStream.dat",
-            &header,
-            &payload,
-            parsed,
-            definition,
-        )
-        .expect_err("offset above u32 must be refused before it wraps");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+    let mut output = Vec::new();
+    let error = super::admit_sketch_relation(
+        &mut output,
+        "BulkStream.dat",
+        &header,
+        &payload,
+        parsed,
+        definition,
+    )
+    .expect_err("offset above u32 must be refused before it wraps");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
             if message.contains(operation)));
-        assert!(output.is_empty());
-    });
+    assert!(output.is_empty());
 }
 
 #[test]

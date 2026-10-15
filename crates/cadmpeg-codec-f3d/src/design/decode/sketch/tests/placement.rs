@@ -22,9 +22,7 @@ fn tested_bind_sketch_graph(
     surfaces: &mut [crate::records::sketch_geometry::SketchSurface],
     relations: &mut [crate::records::sketch_relations::SketchRelation],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        bind_sketch_graph(ctx, entities, points, curves, surfaces, relations)
-    })
+    bind_sketch_graph(entities, points, curves, surfaces, relations)
 }
 
 fn tested_parse_sketch_member_run(
@@ -657,18 +655,14 @@ fn tested_decode_sketch_nurbs(
     payload: &[u8],
     record_at: usize,
 ) -> Option<Result<(SketchCurveGeometry, usize), cadmpeg_core::CodecError>> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_nurbs(ctx, payload, record_at)
-    })
+    crate::design::decode::sketch::decode_sketch_nurbs(payload, record_at)
 }
 
 fn tested_decode_legacy_sketch_nurbs(
     payload: &[u8],
     record_at: usize,
 ) -> Option<Result<(SketchCurveGeometry, usize), cadmpeg_core::CodecError>> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_legacy_sketch_nurbs(ctx, payload, record_at)
-    })
+    crate::design::decode::sketch::decode_legacy_sketch_nurbs(payload, record_at)
 }
 
 fn modern_sketch_nurbs_payload() -> Vec<u8> {
@@ -860,14 +854,11 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
             bulk_offset: 141,
         }],
     };
-    let curves = crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
-            ctx,
-            &bytes,
-            &meta,
-            "Design/BulkStream.dat",
-        )
-    })
+    let curves = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
     .expect("primary NURBS frame with a nested subtype header");
     let [curve] = curves.as_slice() else {
         panic!("one indexed NURBS curve");

@@ -12,7 +12,7 @@
 use cadmpeg_asm::kernel_header::RefWidth;
 use std::ops::RangeInclusive;
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -134,33 +134,14 @@ pub(crate) fn lp_utf16_bounded_view(
     Some((Utf16View::new(raw)?, end))
 }
 
-/// Decode a counted UTF-16 field into admitted retained storage.
-pub(crate) fn lp_utf16_bounded_charged(
-    ctx: &DecodeContext<'_>,
+/// Decode a counted UTF-16 field into an owned string.
+pub(crate) fn lp_utf16_bounded(
     bytes: &[u8],
     at: usize,
     bounds: RangeInclusive<usize>,
-    operation: &'static str,
-) -> Result<Option<(String, usize)>, CodecError> {
-    let Some((text, end)) = lp_utf16_bounded_view(bytes, at, bounds) else {
-        return Ok(None);
-    };
-    Ok(Some((text.to_retained(ctx, operation)?, end)))
-}
-
-/// Decode a counted UTF-16 field into storage held by a scoped reservation.
-pub(crate) fn lp_utf16_bounded_scoped<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    bytes: &[u8],
-    at: usize,
-    bounds: RangeInclusive<usize>,
-    operation: &'static str,
-) -> Result<Option<(String, usize, ScopedReservation<'ctx>)>, CodecError> {
-    let Some((text, end)) = lp_utf16_bounded_view(bytes, at, bounds) else {
-        return Ok(None);
-    };
-    let (text, reservation) = text.to_scoped(ctx, operation)?;
-    Ok(Some((text, end, reservation)))
+) -> Option<(String, usize)> {
+    let (text, end) = lp_utf16_bounded_view(bytes, at, bounds)?;
+    Some((text.to_string(), end))
 }
 
 /// Take a u32-length-prefixed strict-UTF-8 string, advancing `at` past it on
@@ -257,15 +238,14 @@ impl Reference<String, String> {
 
 /// Take one reference and copy the text it keeps.
 pub(crate) fn take_reference_charged(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: &mut usize,
-) -> Result<Option<Reference<String, String>>, CodecError> {
+) -> Option<Reference<String, String>> {
     let Some(reference) = take_reference(bytes, at) else {
-        return Ok(None);
+        return None;
     };
     let copy_guid = |guid: Option<&str>| guid.map(str::to_owned);
-    Ok(Some(match reference {
+    Some(match reference {
         Reference::Null => Reference::Null,
         Reference::Local {
             target,
@@ -292,9 +272,9 @@ pub(crate) fn take_reference_charged(
             target,
             inline_type_guid: copy_guid(inline_type_guid),
             segment,
-            link_name: link_name.to_retained(ctx, "retain F3D UTF-16 string")?,
+            link_name: link_name.to_string(),
         },
-    }))
+    })
 }
 
 /// Take one reference, advancing `at` past every byte it owns.
@@ -506,36 +486,28 @@ mod tests {
         *bytes.last_mut().unwrap() = 1;
         crate::test_support::lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
         crate::test_support::lp_utf16(&mut bytes, "urn:version:discarded");
-        crate::test_support::with_decode_context(|ctx| {
-            let mut at = 0;
-            let reference = super::take_reference_charged(ctx, &bytes, &mut at)
-                .unwrap()
-                .unwrap();
-            assert_eq!(reference.link_name(), Some("link"));
-            assert_eq!(reference.target(), Some(7));
-            assert_eq!(at, bytes.len());
-        });
+        let mut at = 0;
+        let reference = super::take_reference_charged(&bytes, &mut at).unwrap();
+        assert_eq!(reference.link_name(), Some("link"));
+        assert_eq!(reference.target(), Some(7));
+        assert_eq!(at, bytes.len());
         let mut cross_segment = vec![1];
         cross_segment.extend_from_slice(&7_u64.to_le_bytes());
         cross_segment.push(1);
         cross_segment.extend_from_slice(&0_u32.to_le_bytes());
         crate::test_support::lp_utf16(&mut cross_segment, "11111111-2222-3333-4444-555555555555");
         cross_segment.push(1);
-        crate::test_support::with_decode_context(|ctx| {
-            let mut at = 0;
-            let reference = super::take_reference_charged(ctx, &cross_segment, &mut at)
-                .unwrap()
-                .unwrap();
-            assert!(matches!(
-                reference,
-                super::Reference::CrossSegment {
-                    target: 7,
-                    segment: 0,
-                    inline_type_guid: None
-                }
-            ));
-            assert_eq!(at, cross_segment.len());
-        });
+        let mut at = 0;
+        let reference = super::take_reference_charged(&cross_segment, &mut at).unwrap();
+        assert!(matches!(
+            reference,
+            super::Reference::CrossSegment {
+                target: 7,
+                segment: 0,
+                inline_type_guid: None
+            }
+        ));
+        assert_eq!(at, cross_segment.len());
     }
 
     #[test]

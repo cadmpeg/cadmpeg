@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::sketch::decode_lost_edge_references_from_stream;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn lost_edge_bytes() -> Vec<u8> {
     let marker = b"EDGE_REFERENCE_LOST";
@@ -23,11 +22,8 @@ fn lost_edge_bytes() -> Vec<u8> {
 #[test]
 fn lost_edge_reference_scan_preserves_record_fields() {
     let bytes = lost_edge_bytes();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut references = Vec::new();
-    decode_lost_edge_references_from_stream(&ctx, "BulkStream.dat", &bytes, &mut references)
+    decode_lost_edge_references_from_stream("BulkStream.dat", &bytes, &mut references)
         .expect("valid lost edge record");
     assert_eq!(references.len(), 1);
     assert_eq!(

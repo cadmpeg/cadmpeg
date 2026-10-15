@@ -349,7 +349,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         states: vec![state(2, topology()), state(1, topology())],
     };
 
-    let plane = { historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history)) }
+    let plane = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
         .unwrap()
         .expect("stable selected-face plane");
     assert_eq!(

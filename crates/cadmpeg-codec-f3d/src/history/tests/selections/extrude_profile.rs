@@ -96,14 +96,11 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         }))
         .expect("profile face operand");
         *operand.recipe_prefix_bytes = paired_prefix();
-        operand.recipe_references = crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::dimension_frames::decode_recipe_references_charged(
-                ctx,
+        operand.recipe_references =
+            crate::design::decode::dimension_frames::decode_recipe_references(
                 &operand.recipe_prefix_bytes,
                 0,
-            )
-            .expect("recipe references")
-        });
+            );
         operand
     };
 

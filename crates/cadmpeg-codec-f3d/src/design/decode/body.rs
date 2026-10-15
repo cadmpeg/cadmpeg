@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse body members, bounds, bindings, and visibility.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::take_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::text::design_record_id_charged;
+use crate::design::decode::text::design_record_id;
 use crate::design::RECIPES;
 use crate::ids::native_stream;
 use crate::layout::indexed_design_record_header;
@@ -31,7 +31,6 @@ use std::collections::{HashMap, HashSet};
 /// stream) unless the declared count is fully consumed and immediately
 /// followed by a zero byte.
 pub(crate) fn decode_body_members(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignBodyMember>, CodecError> {
     let mut out = Vec::new();
@@ -83,13 +82,7 @@ pub(crate) fn decode_body_members(
                 decoded.clear();
                 break;
             };
-            let id = design_record_id_charged(
-                ctx,
-                &entry.name,
-                ":design-body-member#",
-                u64_from_index(cursor),
-                "f3d body member identifier",
-            )?;
+            let id = design_record_id(&entry.name, ":design-body-member#", u64_from_index(cursor));
             decoded.push(
                 DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
                     id,
@@ -110,7 +103,6 @@ pub(crate) fn decode_body_members(
 /// Decode the three consecutive indexed records that cache each Design body's
 /// axis-aligned model-space bounds.
 pub(crate) fn decode_body_bounds(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
@@ -217,13 +209,7 @@ pub(crate) fn decode_body_bounds(
                 CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
             })
         };
-        let id = design_record_id_charged(
-            ctx,
-            &entry.name,
-            ":design-body-bounds#",
-            entity.byte_offset,
-            "f3d body record identifier",
-        )?;
+        let id = design_record_id(&entry.name, ":design-body-bounds#", entity.byte_offset);
         let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
             id,
             entity_suffix: entity.entity_id.suffix(),
@@ -301,7 +287,6 @@ fn body_bound_candidates(
 }
 
 pub(super) fn decode_stream(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     out: &mut Vec<ConstructionRecipe>,
@@ -360,13 +345,7 @@ pub(super) fn decode_stream(
                 })
             });
             let recipe = ConstructionRecipe {
-                id: design_record_id_charged(
-                    ctx,
-                    stream,
-                    ":construction-recipe#",
-                    u64_from_index(offset),
-                    "f3d body record identifier",
-                )?,
+                id: design_record_id(stream, ":construction-recipe#", u64_from_index(offset)),
                 byte_offset: u64_from_index(offset),
                 kind,
                 design,
@@ -557,11 +536,10 @@ fn reference_has_type(
 /// Parse every exactly framed sibling body-map record that binds an `.smb`
 /// snapshot. The carrier uses a bare entity header in every serializer band.
 fn snapshot_body_map_records(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let frames = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
+    let frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
     let mut primary_by_entity = HashMap::new();
     for (ordinal, frame) in frames.iter().enumerate() {
         primary_by_entity.insert(frame.entity_id, ordinal);
@@ -621,7 +599,7 @@ fn snapshot_body_map_records(
                 )));
             }
             if let Some(record) =
-                parse_snapshot_body_map_frame(ctx, bytes, meta, frame.start, frame.end, entity)?
+                parse_snapshot_body_map_frame(bytes, meta, frame.start, frame.end, entity)?
             {
                 out.push(record);
             }
@@ -631,7 +609,6 @@ fn snapshot_body_map_records(
 }
 
 fn parse_snapshot_body_map_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     start: usize,
@@ -713,13 +690,7 @@ fn parse_snapshot_body_map_frame(
             else {
                 continue;
             };
-            let Some((blob_name, name_end)) = lp_utf16_bounded_charged(
-                ctx,
-                bytes,
-                name_at,
-                0..=max_chars,
-                "f3d Design UTF-16 text",
-            )?
+            let Some((blob_name, name_end)) = lp_utf16_bounded(bytes, name_at, 0..=max_chars)
             else {
                 continue;
             };
@@ -759,11 +730,10 @@ fn parse_snapshot_body_map_frame(
 /// extents. A candidate is a body map only when one supported reserved-zero
 /// width makes its count, pair run, tail, and basename consume that extent.
 fn body_map_records(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let record_frames = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
+    let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
     for (ordinal, record) in meta.records.iter().enumerate() {
@@ -857,8 +827,7 @@ fn body_map_records(
 
             let mut matched = None;
             for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
-                let Some(bindings) =
-                    parse_body_map_frame(ctx, bytes, meta, start, end, prefix_len)?
+                let Some(bindings) = parse_body_map_frame(bytes, meta, start, end, prefix_len)?
                 else {
                     continue;
                 };
@@ -877,11 +846,10 @@ fn body_map_records(
 }
 
 pub(crate) fn body_bindings(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyBinding>, CodecError> {
-    let records = body_map_records(ctx, bytes, meta)?;
+    let records = body_map_records(bytes, meta)?;
 
     let mut bindings = Vec::new();
     for record in records {
@@ -891,13 +859,12 @@ pub(crate) fn body_bindings(
 }
 
 fn selected_body_map_records(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let modern = body_map_records(ctx, bytes, meta)?;
+    let modern = body_map_records(bytes, meta)?;
     if modern.is_empty() {
-        snapshot_body_map_records(ctx, bytes, meta)
+        snapshot_body_map_records(bytes, meta)
     } else {
         Ok(modern)
     }
@@ -905,10 +872,7 @@ fn selected_body_map_records(
 
 /// Return the typed model-blob set selected independently in each Design
 /// stream. The modern `.smbh` map takes precedence over snapshot `.smb` maps.
-pub(crate) fn design_model_blob_names(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<String>, CodecError> {
+pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String>, CodecError> {
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
     let mut saw_design_stream = false;
@@ -920,12 +884,12 @@ pub(crate) fn design_model_blob_names(
         saw_design_stream = true;
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
         else {
             continue;
         };
-        let modern = body_map_records(ctx, bytes, &metadata)?;
-        let snapshots = snapshot_body_map_records(ctx, bytes, &metadata)?;
+        let modern = body_map_records(bytes, &metadata)?;
+        let snapshots = snapshot_body_map_records(bytes, &metadata)?;
         for record in modern.iter().chain(&snapshots) {
             if !record.blob_name.is_empty() {
                 if let Some(count) = carrier_counts.get_mut(&record.blob_name) {
@@ -983,7 +947,6 @@ pub(crate) fn design_model_blob_names(
 }
 
 fn parse_body_map_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     start: usize,
@@ -1027,13 +990,7 @@ fn parse_body_map_frame(
         else {
             return Ok(None);
         };
-        let Some((blob_name, name_end)) = lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            name_at,
-            0..=max_name_chars,
-            "f3d Design UTF-16 text",
-        )?
+        let Some((blob_name, name_end)) = lp_utf16_bounded(bytes, name_at, 0..=max_name_chars)
         else {
             return Ok(None);
         };
@@ -1125,11 +1082,11 @@ pub(crate) fn decode_design_body_bindings(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
         else {
             continue;
         };
-        for record in selected_body_map_records(ctx, bytes, &metadata)? {
+        for record in selected_body_map_records(bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
             let mut source_bodies = Vec::new();
@@ -1148,13 +1105,11 @@ pub(crate) fn decode_design_body_bindings(
                     source_bodies.iter().copied(),
                     binding.asm_key,
                 )?;
-                let id = design_record_id_charged(
-                    ctx,
+                let id = design_record_id(
                     &entry.name,
                     ":design-body-binding#",
                     u64_from_index(binding.asm_key_offset),
-                    "f3d body record identifier",
-                )?;
+                );
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id,
@@ -1184,7 +1139,6 @@ pub(crate) fn decode_design_body_bindings(
 /// Bind each body cache to every BREP map pair carrying the same Design entity
 /// suffix in the same stream.
 pub(crate) fn bind_body_bounds(
-    _ctx: &DecodeContext<'_>,
     bounds: &mut [DesignBodyBounds],
     bindings: &[DesignBodyBinding],
 ) -> Result<(), CodecError> {
@@ -1232,7 +1186,6 @@ pub(crate) struct DecodedBodyVisibility {
 }
 
 pub(crate) fn decode_all_body_visibility(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
@@ -1243,12 +1196,12 @@ pub(crate) fn decode_all_body_visibility(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
         else {
             continue;
         };
-        let hidden_by_entity = typed_browser_node_hidden_flags(ctx, bytes, &metadata)?;
-        for record in selected_body_map_records(ctx, bytes, &metadata)? {
+        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
+        for record in selected_body_map_records(bytes, &metadata)? {
             for binding in record.bindings {
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
                     continue;
@@ -1279,12 +1232,11 @@ struct BrowserNodeVisibility {
 }
 
 fn typed_browser_node_hidden_flags(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
-    let nodes = crate::design::decode::presentation::browser_node_records(ctx, bytes, meta)?;
-    let presentations = crate::design::decode::presentation::body_presentations(ctx, bytes, meta)?;
+    let nodes = crate::design::decode::presentation::browser_node_records(bytes, meta)?;
+    let presentations = crate::design::decode::presentation::body_presentations(bytes, meta)?;
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
     for node in &nodes {
         nodes_by_entity
@@ -1450,14 +1402,12 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            crate::design::test_support::with_test_decode_context(|ctx| {
-                let members = super::decode_body_members(ctx, scan).unwrap();
-                assert_eq!(members.len(), 1);
-                assert_eq!(
-                    members[0].id(),
-                    &crate::ids::native_design_body_member_id(ENTRY, member_offset)
-                );
-            });
+            let members = super::decode_body_members(scan).unwrap();
+            assert_eq!(members.len(), 1);
+            assert_eq!(
+                members[0].id(),
+                &crate::ids::native_design_body_member_id(ENTRY, member_offset)
+            );
         });
     }
 
@@ -1668,7 +1618,6 @@ mod tests {
     fn snapshot_body_map_accepts_every_reference_envelope() {
         for form in 0..=2 {
             let records = snapshot_body_map_records(
-                &cadmpeg_test_support::service_decode_context(),
                 &snapshot_body_map_bytes(form),
                 &snapshot_body_map_metadata(),
             )
@@ -1688,12 +1637,8 @@ mod tests {
         take_reference(&bytes, &mut companion_end).expect("ordinary companion reference");
         bytes.insert(companion_end, 0);
 
-        let records = snapshot_body_map_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &snapshot_body_map_metadata(),
-        )
-        .expect("three-zero companion variant");
+        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+            .expect("three-zero companion variant");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].blob_name, "BREP.snapshot.smb");
         assert_eq!(records[0].bindings.len(), 1);
@@ -1705,12 +1650,8 @@ mod tests {
         let companion_end = 4 + 3 + 8 + 6 + 2 + 8;
         bytes.insert(companion_end, 0);
 
-        let records = snapshot_body_map_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &snapshot_body_map_metadata(),
-        )
-        .expect("padded doubled companion");
+        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+            .expect("padded doubled companion");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].blob_name, "BREP.snapshot.smb");
         assert_eq!(records[0].bindings.len(), 1);
@@ -1720,13 +1661,11 @@ mod tests {
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
         metadata.types[2].entities = crate::records::identity::ReferenceRun::unlocated(Vec::new());
-        assert!(snapshot_body_map_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &snapshot_body_map_bytes(0),
-            &metadata
-        )
-        .expect("mixed carrier family")
-        .is_empty());
+        assert!(
+            snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
+                .expect("mixed carrier family")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1737,12 +1676,8 @@ mod tests {
             "BREP.snapshot.smb",
             crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
         );
-        let records = snapshot_body_map_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &snapshot_body_map_metadata(),
-        )
-        .expect("named zero-pair snapshot body map");
+        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+            .expect("named zero-pair snapshot body map");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].blob_name, "BREP.snapshot.smb");
         assert!(records[0].bindings.is_empty());
@@ -1756,12 +1691,8 @@ mod tests {
             "",
             crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
         );
-        let records = snapshot_body_map_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &snapshot_body_map_metadata(),
-        )
-        .expect("empty zero-pair snapshot body map");
+        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+            .expect("empty zero-pair snapshot body map");
         assert_eq!(records.len(), 1);
         assert!(records[0].blob_name.is_empty());
         assert!(records[0].bindings.is_empty());
@@ -1775,13 +1706,11 @@ mod tests {
             "BREP.snapshot.smb",
             crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
         );
-        assert!(snapshot_body_map_records(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &snapshot_body_map_metadata()
-        )
-        .expect("mixed carrier family")
-        .is_empty());
+        assert!(
+            snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+                .expect("mixed carrier family")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1789,12 +1718,8 @@ mod tests {
         let pairs = (0u64..65)
             .map(|ordinal| (1000 + ordinal, (1u64 << 40) + ordinal))
             .collect::<Vec<_>>();
-        let bindings = body_bindings(
-            &cadmpeg_test_support::service_decode_context(),
-            &body_map_bytes(10, 65, &pairs),
-            &body_map_metadata(),
-        )
-        .expect("65-pair body map");
+        let bindings = body_bindings(&body_map_bytes(10, 65, &pairs), &body_map_metadata())
+            .expect("65-pair body map");
         assert_eq!(bindings.len(), 65);
         assert_eq!(bindings[0].asm_key, 1000);
         assert_eq!(bindings[64].asm_key, 1064);
@@ -1804,12 +1729,7 @@ mod tests {
     #[test]
     fn body_map_accepts_typed_container_reference_tail() {
         let bytes = body_map_bytes_with_typed_tail(10, &[(2291, 7492), (2292, 7534)]);
-        let bindings = body_bindings(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &body_map_metadata(),
-        )
-        .expect("typed reference tail");
+        let bindings = body_bindings(&bytes, &body_map_metadata()).expect("typed reference tail");
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].asm_key, 2291);
         assert_eq!(bindings[0].entity_suffix, 7492);
@@ -1821,36 +1741,22 @@ mod tests {
     fn both_empty_body_map_prefixes_have_no_pairs_or_brep_basename() {
         for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
             let bytes = body_map_bytes(prefix_len, 0, &[]);
-            let frame = parse_body_map_frame(
-                &cadmpeg_test_support::service_decode_context(),
-                &bytes,
-                &body_map_metadata(),
-                0,
-                bytes.len(),
-                prefix_len,
-            )
-            .expect("empty body-map frame")
-            .expect("supported empty body-map variant");
+            let frame =
+                parse_body_map_frame(&bytes, &body_map_metadata(), 0, bytes.len(), prefix_len)
+                    .expect("empty body-map frame")
+                    .expect("supported empty body-map variant");
             assert!(frame.bindings.is_empty());
-            assert!(body_bindings(
-                &cadmpeg_test_support::service_decode_context(),
-                &bytes,
-                &body_map_metadata()
-            )
-            .expect("empty typed body map")
-            .is_empty());
+            assert!(body_bindings(&bytes, &body_map_metadata())
+                .expect("empty typed body map")
+                .is_empty());
         }
     }
 
     #[test]
     fn body_map_header_prevents_a_high_word_count_alias() {
         let bytes = body_map_bytes(10, 2, &[(10, (1u64 << 32) + 77), (20, 30)]);
-        let bindings = body_bindings(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &body_map_metadata(),
-        )
-        .expect("typed two-pair body map");
+        let bindings =
+            body_bindings(&bytes, &body_map_metadata()).expect("typed two-pair body map");
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].entity_suffix, (1u64 << 32) + 77);
         assert_eq!(bindings[1].asm_key, 20);
@@ -1859,13 +1765,9 @@ mod tests {
     #[test]
     fn truncated_body_map_frame_is_not_decoded() {
         let bytes = body_map_bytes(10, 2, &[(10, 20)]);
-        assert!(body_bindings(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &body_map_metadata()
-        )
-        .expect("typed carrier record")
-        .is_empty());
+        assert!(body_bindings(&bytes, &body_map_metadata())
+            .expect("typed carrier record")
+            .is_empty());
     }
 
     #[test]
@@ -1875,13 +1777,9 @@ mod tests {
         bytes.extend_from_slice(&[0xff; 4]);
         bytes.extend(body_map_bytes(10, 1, &[(10, 20)]));
 
-        assert!(body_bindings(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &body_map_metadata()
-        )
-        .expect("outer typed carrier record")
-        .is_empty());
+        assert!(body_bindings(&bytes, &body_map_metadata())
+            .expect("outer typed carrier record")
+            .is_empty());
     }
 
     #[test]
@@ -1929,22 +1827,14 @@ mod tests {
         zip.write_all(&[0]).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let visibility = super::decode_all_body_visibility(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
-            .unwrap();
+            let visibility = super::decode_all_body_visibility(scan).unwrap();
             assert!(
                 visibility
                     .get(&("BREP.synthetic.smbh".to_owned(), 7))
                     .unwrap()
                     .visible
             );
-            let names = super::design_model_blob_names(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
-            .unwrap();
+            let names = super::design_model_blob_names(scan).unwrap();
             assert_eq!(names, ["BREP.synthetic.smbh"]);
             let bindings = super::decode_design_body_bindings(
                 &cadmpeg_test_support::service_decode_context(),
@@ -2052,10 +1942,8 @@ mod tests {
             ],
             secondary_records: Vec::new(),
         };
-        let visibility = crate::design::test_support::with_test_decode_context(|ctx| {
-            typed_browser_node_hidden_flags(ctx, &bytes, &meta)
-        })
-        .expect("typed presentation graph");
+        let visibility =
+            { typed_browser_node_hidden_flags(&bytes, &meta) }.expect("typed presentation graph");
         let selected = visibility.get(&entity).expect("presentation-selected node");
         assert_eq!(selected.byte_offset, selected_offset);
         assert!(!selected.hidden);
@@ -2088,10 +1976,8 @@ mod tests {
             ],
             secondary_records: Vec::new(),
         };
-        let visibility = crate::design::test_support::with_test_decode_context(|ctx| {
-            typed_browser_node_hidden_flags(ctx, &nodes_only, &meta)
-        })
-        .expect("typed browser nodes");
+        let visibility =
+            { typed_browser_node_hidden_flags(&nodes_only, &meta) }.expect("typed browser nodes");
         assert!(
             !visibility.contains_key(&entity),
             "two unjoined typed nodes are ambiguous"
@@ -2128,12 +2014,7 @@ mod tests {
             records: vec![primary_record(100, 0)],
             secondary_records: Vec::new(),
         };
-        let selected = typed_browser_node_hidden_flags(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &metadata,
-        )
-        .unwrap();
+        let selected = typed_browser_node_hidden_flags(&bytes, &metadata).unwrap();
         assert!(selected.get(&42).unwrap().hidden);
     }
 
@@ -2204,12 +2085,7 @@ mod tests {
             .unwrap()
         };
         let mut bounds = [make_bounds()];
-        super::bind_body_bounds(
-            &cadmpeg_test_support::service_decode_context(),
-            &mut bounds,
-            &[binding],
-        )
-        .unwrap();
+        super::bind_body_bounds(&mut bounds, &[binding]).unwrap();
         assert_eq!(
             bounds[0].body_binding_ids().collect::<Vec<_>>(),
             ["f3d:Design/BulkStream.dat:design-body-binding#20"]
@@ -2251,12 +2127,7 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let bounds = super::decode_body_bounds(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-                std::slice::from_ref(&entity),
-            )
-            .unwrap();
+            let bounds = super::decode_body_bounds(scan, std::slice::from_ref(&entity)).unwrap();
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 7);
         });
@@ -2270,13 +2141,8 @@ mod tests {
         bytes.extend_from_slice(&16u32.to_le_bytes());
         bytes.extend_from_slice(b"body_recipe_data");
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            "Design/BulkStream.dat",
-            &mut recipes,
-        )
-        .unwrap();
+        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes)
+            .unwrap();
         assert_eq!(recipes.len(), 1);
         assert_eq!(recipes[0].record_index, None);
         let wire = serde_json::to_value(&recipes[0]).expect("recipe wire");
@@ -2296,13 +2162,8 @@ mod tests {
             bytes.extend_from_slice(&(-1i64).to_le_bytes());
         }
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            "Design/BulkStream.dat",
-            &mut recipes,
-        )
-        .unwrap();
+        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes)
+            .unwrap();
         assert_eq!(recipes.len(), 2);
         assert!(recipes
             .iter()
@@ -2319,13 +2180,8 @@ mod tests {
         body.extend_from_slice(&16u32.to_le_bytes());
         body.extend_from_slice(b"body_recipe_data");
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(
-            &cadmpeg_test_support::service_decode_context(),
-            &body,
-            "Design/BulkStream.dat",
-            &mut recipes,
-        )
-        .unwrap();
+        crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes)
+            .unwrap();
         assert_eq!(recipes.len(), 1);
         assert_eq!(
             recipes[0]

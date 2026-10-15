@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-use crate::bytes::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
+use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::assembly_alignment::exact_assembly_alignment;
@@ -48,7 +48,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::design_record_id_charged;
+use crate::design::decode::text::design_record_id;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
@@ -84,12 +84,11 @@ pub(crate) fn decode_parameter_scopes(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = crate::ids::native_scope(&entry.name);
-        let records = IndexedRecordOffsets::build(ctx, bytes)?;
+        let records = IndexedRecordOffsets::build(bytes)?;
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
             let Some(mut scope) = parse_parameter_scope(
-                ctx,
                 bytes,
                 &records,
                 header.record_index,
@@ -99,13 +98,8 @@ pub(crate) fn decode_parameter_scopes(
             else {
                 continue;
             };
-            scope.id = design_record_id_charged(
-                ctx,
-                &entry.name,
-                ":design-parameter-scope#",
-                scope.byte_offset(),
-                "f3d Design parameter scope ID",
-            )?;
+            scope.id =
+                design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -206,7 +200,6 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_hole_construction(
-                    ctx,
                     bytes,
                     &records,
                     &scope,
@@ -292,7 +285,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_surface_offset_operation(ctx, bytes, &records, &scope)?;
+                let construction = exact_surface_offset_operation(bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -361,13 +354,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_combine_operation(ctx, bytes, &records, &scope)?;
+                let construction = exact_combine_operation(bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
             {
-                let construction = exact_thread_construction(ctx, bytes, &scope)?;
+                let construction = exact_thread_construction(bytes, &scope)?;
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -452,15 +445,13 @@ pub(crate) fn decode_parameter_scopes(
                 alignment.form = Some(form);
             }
             {
-                let construction =
-                    exact_component_insert_construction(ctx, bytes, &records, &scope)?;
+                let construction = exact_component_insert_construction(bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_derived_instance_construction(
-                    ctx,
                     bytes,
                     &records,
                     &scope,
@@ -472,7 +463,6 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_copy_paste_component_operation(
-                    ctx,
                     bytes,
                     &records,
                     &scope,
@@ -482,9 +472,9 @@ pub(crate) fn decode_parameter_scopes(
                     *slot = construction;
                 }
             }
-            bind_component_pattern_occurrences(ctx, &mut scope, component_occurrences)?;
+            bind_component_pattern_occurrences(&mut scope, component_occurrences)?;
             {
-                let construction = exact_copy_paste_bodies_operation(ctx, bytes, &records, &scope)?;
+                let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::CopyPasteBodies(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -499,7 +489,7 @@ pub(crate) fn decode_parameter_scopes(
             out.push(scope);
         }
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
-        bind_axial_assembly_operand_targets(ctx, bytes, &records, &mut out[stream_scope_start..])?;
+        bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|a, b| a.id == b.id);
@@ -827,7 +817,6 @@ fn parameter_scope_previous_history_offset_for_form(
 }
 
 pub(in crate::design::decode) fn parse_parameter_scope(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
@@ -850,16 +839,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             .rev()
             .take_while(|at| *at < kind_scan_end)
         {
-            let (kind, kind_end, _reservation) = match lp_utf16_bounded_scoped(
-                ctx,
-                bytes,
-                at,
-                1..=256,
-                "f3d Design temporary UTF-16 text",
-            ) {
-                Ok(Some(decoded)) => decoded,
-                Ok(None) => continue,
-                Err(error) => return Some(Err(error)),
+            let Some((kind, kind_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
+                continue;
             };
             if !kind.chars().all(|character| !character.is_control()) {
                 continue;
@@ -880,13 +861,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 && tail_length.is_multiple_of(2)
                 && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78);
             let named_tail = if named_tail_possible {
-                match named_parameter_scope_tail_is_valid(
-                    ctx,
-                    bytes,
-                    kind_end,
-                    paired_at,
-                    tail_length,
-                ) {
+                match named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length) {
                     Ok(Some(valid)) => valid,
                     Ok(None) => false,
                     Err(error) => return Some(Err(error)),
@@ -912,17 +887,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             fixed_candidate
         };
         let (kind_at, kind_end, tail_length, tail_form) = candidate?;
-        let (kind_text, confirmed_kind_end) = match lp_utf16_bounded_charged(
-            ctx,
-            bytes,
-            kind_at,
-            1..=256,
-            "f3d Design UTF-16 text",
-        ) {
-            Ok(Some(decoded)) => decoded,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (kind_text, confirmed_kind_end) = lp_utf16_bounded(bytes, kind_at, 1..=256)?;
         if confirmed_kind_end != kind_end {
             return None;
         }
@@ -1217,7 +1182,6 @@ pub(in crate::design::decode) fn parse_parameter_scope(
 }
 
 fn named_parameter_scope_tail_is_valid(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     kind_end: usize,
     paired_at: usize,
@@ -1226,14 +1190,7 @@ fn named_parameter_scope_tail_is_valid(
     let Some(label_at) = kind_end.checked_add(8) else {
         return Ok(None);
     };
-    let Some((label, label_end, _reservation)) = lp_utf16_bounded_scoped(
-        ctx,
-        bytes,
-        label_at,
-        0..=256,
-        "f3d Design temporary UTF-16 text",
-    )?
-    else {
+    let Some((label, label_end)) = lp_utf16_bounded(bytes, label_at, 0..=256) else {
         return Ok(None);
     };
     Ok((|| {

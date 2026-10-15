@@ -30,9 +30,8 @@ fn external_reference_text_fields_refuse_retained_limits() {
     bytes.push(1);
     lp_utf16(&mut bytes, property);
     lp_utf16(&mut bytes, version);
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut cursor = 0;
-    let identity = take_external_reference_identity(&ctx, &bytes, &mut cursor)
+    let identity = take_external_reference_identity(&bytes, &mut cursor)
         .unwrap()
         .expect("admitted external reference");
     assert_eq!(cursor, bytes.len());
@@ -110,7 +109,6 @@ fn combine_tools_refuse_collection_limit() {
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
         header.record_index,
@@ -119,14 +117,9 @@ fn combine_tools_refuse_collection_limit() {
     )
     .unwrap()
     .expect("Combine scope");
-    let operation = exact_combine_operation(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &records,
-        &scope,
-    )
-    .unwrap()
-    .expect("two admitted Combine tools");
+    let operation = exact_combine_operation(&bytes, &records, &scope)
+        .unwrap()
+        .expect("two admitted Combine tools");
     assert_eq!(operation.tools.first.record_index, 92);
     assert_eq!(operation.tools.additional[0].record_index, 94);
 }
@@ -212,7 +205,6 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         byte_offset: 0,
     };
     let mut scope = parse_parameter_scope(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
@@ -222,7 +214,6 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     .unwrap()
     .expect("Combine scope");
     let operation = exact_combine_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -311,7 +302,6 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         })
         .unwrap();
     let compact = exact_combine_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &compact_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &compact_scope,
@@ -335,10 +325,9 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     let mut malformed_compact_tail = compact_bytes;
     malformed_compact_tail[45] = 1;
     assert!(exact_combine_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &malformed_compact_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_compact_tail),
-        &compact_scope,
+        &compact_scope
     )
     .unwrap()
     .is_none());
@@ -462,14 +451,9 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let operation = exact_combine_operation(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &records,
-        &scope,
-    )
-    .unwrap()
-    .expect("extended-reference Combine construction");
+    let operation = exact_combine_operation(&bytes, &records, &scope)
+        .unwrap()
+        .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
     assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
     assert_eq!(operation.operation_offset, 31);
@@ -512,21 +496,15 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_combine_operation(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &records,
-        &malformed_scope
-    )
-    .unwrap()
-    .is_none());
+    assert!(exact_combine_operation(&bytes, &records, &malformed_scope)
+        .unwrap()
+        .is_none());
     let mut malformed_reference = bytes.clone();
     malformed_reference[35] = 0;
     assert!(exact_combine_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &malformed_reference,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_reference),
-        &scope,
+        &scope
     )
     .unwrap()
     .is_none());
@@ -534,7 +512,6 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     let mut malformed_external_asset = bytes;
     malformed_external_asset[usize::try_from(identity.external_asset_id_offset()).unwrap()] = b'g';
     let operation = exact_combine_operation(
-        &cadmpeg_test_support::service_decode_context(),
         &malformed_external_asset,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_external_asset),
         &scope,

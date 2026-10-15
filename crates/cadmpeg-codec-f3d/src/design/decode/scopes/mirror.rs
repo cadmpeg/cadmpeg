@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact mirror scopes and mirror construction binding.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 
 use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
@@ -305,7 +305,7 @@ pub(crate) fn bind_mirror_constructions(
         let Some(plane_header) = headers_by_record.get(&(stream.as_str(), *plane_member)) else {
             continue;
         };
-        let work_plane = compact_feature_reference(ctx, bytes, plane_header)?.and_then(
+        let work_plane = compact_feature_reference(bytes, plane_header)?.and_then(
             |(plane_reference, plane_reference_offset)| {
                 plane_reference
                     .checked_add(1)
@@ -321,8 +321,7 @@ pub(crate) fn bind_mirror_constructions(
             },
         );
         let face_recipe = {
-            let records =
-                cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
+            let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes)?;
             parse_face_operand(
                 ctx,
                 bytes,
@@ -349,7 +348,6 @@ pub(crate) fn bind_mirror_constructions(
                     None,
                 )
             } else if crate::design::decode::operands::parse_entity_selection_operand(
-                ctx,
                 bytes,
                 plane_group,
                 0,
@@ -367,20 +365,20 @@ pub(crate) fn bind_mirror_constructions(
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
             [crate::records::identity::Located { value: member, .. }] => {
                 match headers_by_record.get(&(stream.as_str(), *member)) {
-                    Some(header) => compact_feature_reference(ctx, bytes, header)?.filter(
-                        |(record_index, _)| {
+                    Some(header) => {
+                        compact_feature_reference(bytes, header)?.filter(|(record_index, _)| {
                             scopes.iter().any(|scope| {
                                 native_stream(&scope.id) == Some(stream.as_str())
                                     && scope.record_index == *record_index
                             })
-                        },
-                    ),
+                        })
+                    }
                     None => None,
                 }
             }
             _ => None,
         };
-        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
+        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes)?;
         let count = unique_match(owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream.as_str())
                 && owner.scope_record_index() == scope_record_index
@@ -469,7 +467,6 @@ fn borrowed_ascii_tag(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
 }
 
 fn compact_feature_reference(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     header: &DesignRecordHeader,
 ) -> Result<Option<(u32, u64)>, CodecError> {
@@ -484,18 +481,10 @@ fn compact_feature_reference(
     {
         return Ok(None);
     }
-    let Some((asset_id, after_asset_id)) =
-        lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256, "f3d Design UTF-16 text")?
-    else {
+    let Some((asset_id, after_asset_id)) = lp_utf16_bounded(bytes, start + 36, 1..=256) else {
         return Ok(None);
     };
-    let Some((context_id, after_context_id)) = lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_asset_id,
-        1..=256,
-        "f3d Design UTF-16 text",
-    )?
+    let Some((context_id, after_context_id)) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)
     else {
         return Ok(None);
     };

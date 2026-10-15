@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -13,7 +13,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{f64s_at, take_reference, Reference};
 use crate::container::ContainerScan;
-use crate::design::decode::text::design_record_id_charged;
+use crate::design::decode::text::design_record_id;
 
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -33,7 +33,7 @@ use crate::records::{
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
 };
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -57,10 +57,7 @@ pub(in crate::design) struct IndexedRecordOffsets {
 
 impl IndexedRecordOffsets {
     /// Index every exact indexed-record header in `bytes` in one forward pass.
-    pub(in crate::design) fn build(
-        _ctx: &DecodeContext<'_>,
-        bytes: &[u8],
-    ) -> Result<Self, CodecError> {
+    pub(in crate::design) fn build(bytes: &[u8]) -> Result<Self, CodecError> {
         let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
         for header in indexed_record_offsets(bytes) {
             by_record_index
@@ -112,7 +109,6 @@ fn entity_meta_scope(bulk_scope: &str) -> Option<String> {
 
 /// Cache a stream index under its borrowed identity.
 pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
-    ctx: &DecodeContext<'_>,
     cache: &'a mut HashMap<&'s str, IndexedRecordOffsets>,
     stream: &'s str,
     bytes: &[u8],
@@ -120,14 +116,13 @@ pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
     match cache.entry(stream) {
         std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
         std::collections::hash_map::Entry::Vacant(entry) => {
-            Ok(entry.insert(IndexedRecordOffsets::build(ctx, bytes)?))
+            Ok(entry.insert(IndexedRecordOffsets::build(bytes)?))
         }
     }
 }
 
 /// Cache a stream index under owned stream text.
 pub(in crate::design) fn cached_owned_record_offsets<'a>(
-    ctx: &DecodeContext<'_>,
     cache: &'a mut HashMap<String, IndexedRecordOffsets>,
     stream: &str,
     bytes: &[u8],
@@ -135,7 +130,7 @@ pub(in crate::design) fn cached_owned_record_offsets<'a>(
     match cache.entry(stream.to_owned()) {
         std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
         std::collections::hash_map::Entry::Vacant(entry) => {
-            Ok(entry.insert(IndexedRecordOffsets::build(ctx, bytes)?))
+            Ok(entry.insert(IndexedRecordOffsets::build(bytes)?))
         }
     }
 }
@@ -146,7 +141,6 @@ pub(in crate::design) fn cached_owned_record_offsets<'a>(
 /// stream interval even though its generic reference table does not repeat
 /// the entity suffix.
 pub(crate) fn decode_sketch_placements(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     entities: &[DesignEntityHeader],
@@ -160,7 +154,7 @@ pub(crate) fn decode_sketch_placements(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        record_offsets.insert(scope, IndexedRecordOffsets::build(ctx, bytes)?);
+        record_offsets.insert(scope, IndexedRecordOffsets::build(bytes)?);
     }
     let mut visibilities = HashMap::new();
     for entry in scan
@@ -169,16 +163,14 @@ pub(crate) fn decode_sketch_placements(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(metadata) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
+        let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
         let scope = crate::ids::native_scope(&entry.name);
         let Some((key, _)) = record_offsets.get_key_value(&scope) else {
             continue;
         };
-        for (entity_suffix, visibility) in
-            decode_sketch_visibilities_in_stream(ctx, bytes, &metadata)?
-        {
+        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(bytes, &metadata)? {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
                 return Err(crate::design::text::malformed_design(format_args!(
                     "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
@@ -255,13 +247,11 @@ pub(crate) fn decode_sketch_placements(
             let Some(mut placement) = candidates.pop() else {
                 continue;
             };
-            placement.id = design_record_id_charged(
-                ctx,
+            placement.id = design_record_id(
                 &entry.name,
                 ":design-sketch-placement#",
                 placement.byte_offset(),
-                "f3d sketch placement ID",
-            )?;
+            );
 
             out.push(placement);
         }
@@ -312,13 +302,11 @@ pub(crate) fn decode_sketch_placements(
         if let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) {
             placement.scope_record_index = Some(scope.record_index);
         }
-        placement.id = design_record_id_charged(
-            ctx,
+        placement.id = design_record_id(
             entry_name,
             ":design-sketch-placement#",
             placement.byte_offset(),
-            "f3d sketch placement ID",
-        )?;
+        );
 
         out.push(placement);
     }
@@ -343,13 +331,11 @@ const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
 /// Geometry member. Other sketch-container versions do not expose this member
 /// layout and therefore leave neutral visibility unknown.
 fn decode_sketch_visibilities_in_stream(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let mut out = Vec::new();
     for frame in super::meta::typed_primary_frames(
-        ctx,
         bytes,
         metadata,
         SKETCH_CONTAINER_TYPE_GUID,
@@ -375,9 +361,9 @@ fn decode_sketch_visibilities_in_stream(
             entity_id,
             end: header_end,
             ..
-        }) = (match parse_settled_entity_header(ctx, &bytes[..frame.end], frame.start)? {
+        }) = (match parse_settled_entity_header(&bytes[..frame.end], frame.start) {
             Some(header) => Some(header),
-            None => parse_genesis_entity_header(ctx, &bytes[..frame.end], frame.start)?,
+            None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
         })
         else {
             return Err(crate::design::text::malformed_design(format_args!(
@@ -701,7 +687,6 @@ fn parse_sketch_placement_candidates(
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
 /// sorted by stream offset.
 pub(crate) fn decode_persistent_references(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
@@ -712,7 +697,7 @@ pub(crate) fn decode_persistent_references(
         .filter(|(_, entry)| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        decode_persistent_references_from_stream(ctx, entry_ordinal, &entry.name, bytes, &mut out)?;
+        decode_persistent_references_from_stream(entry_ordinal, &entry.name, bytes, &mut out)?;
     }
     Ok(finish_persistent_references(out))
 }
@@ -742,7 +727,6 @@ fn finish_persistent_references(
 }
 
 fn decode_persistent_references_from_stream(
-    ctx: &DecodeContext<'_>,
     entry_ordinal: usize,
     entry_name: &str,
     bytes: &[u8],
@@ -791,13 +775,11 @@ fn decode_persistent_references_from_stream(
             out.push((
                 entry_ordinal,
                 PersistentReference {
-                    id: design_record_id_charged(
-                        ctx,
+                    id: design_record_id(
                         entry_name,
                         ":persistent-reference#",
                         u64_from_index(offset),
-                        "f3d persistent reference ID",
-                    )?,
+                    ),
                     byte_offset: u64_from_index(offset),
                     value_offset: u32::try_from(value_offset - offset).map_err(|_| {
                         CodecError::malformed(
@@ -816,7 +798,6 @@ fn decode_persistent_references_from_stream(
 /// Decode every indexed `EDGE_REFERENCE_LOST` record from each design
 /// `BulkStream` entry in `scan`.
 pub(crate) fn decode_lost_edge_references(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
@@ -826,13 +807,12 @@ pub(crate) fn decode_lost_edge_references(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        decode_lost_edge_references_from_stream(ctx, &entry.name, bytes, &mut out)?;
+        decode_lost_edge_references_from_stream(&entry.name, bytes, &mut out)?;
     }
     Ok(out)
 }
 
 fn decode_lost_edge_references_from_stream(
-    ctx: &DecodeContext<'_>,
     entry_name: &str,
     bytes: &[u8],
     out: &mut Vec<LostEdgeReference>,
@@ -884,13 +864,11 @@ fn decode_lost_edge_references_from_stream(
         }
 
         let Ok(reference) = LostEdgeReference::new(
-            design_record_id_charged(
-                ctx,
+            design_record_id(
                 entry_name,
                 ":lost-edge-reference#",
                 u64_from_index(header_offset),
-                "f3d lost edge reference ID",
-            )?,
+            ),
             u64_from_index(header_offset),
             class_tag.to_owned(),
             record_index,
@@ -907,38 +885,30 @@ fn decode_lost_edge_references_from_stream(
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
 /// zero bytes, an optional slot, and the UTF-16LE entity id whose numeric
 /// suffix equals the header's entity suffix.
-pub(super) fn parse_settled_entity_header(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-) -> Result<Option<NamedEntityHeader>, CodecError> {
+pub(super) fn parse_settled_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
     let Some(entity_suffix) = View::u64_le_at(bytes, start + 7) else {
-        return Ok(None);
+        return None;
     };
     if entity_suffix == 0 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5]) {
-        return Ok(None);
+        return None;
     }
     let (optional_slot_present, string_offset) = match bytes.get(start + 20) {
         Some(0) => (false, start + 21),
         Some(1) if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
-        _ => return Ok(None),
+        _ => return None,
     };
-    let Some((entity_id, end)) =
-        lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
-    else {
-        return Ok(None);
+    let Some((entity_id, end)) = lp_utf16_bounded(bytes, string_offset, 1..=256) else {
+        return None;
     };
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
-        return Ok(None);
+        return None;
     };
-    Ok(
-        (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
-            entity_id,
-            entity_id_offset: string_offset + 4,
-            optional_slot_present,
-            end,
-        }),
-    )
+    (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
+        entity_id,
+        entity_id_offset: string_offset + 4,
+        optional_slot_present,
+        end,
+    })
 }
 
 /// An admitted entity identity and its source header locations.
@@ -954,16 +924,12 @@ pub(super) struct NamedEntityHeader {
 /// `0x01`-marked u32 1, the `EntityGenesis` and `IntrinsicMetaTypeuint64`
 /// key strings, the u64 origin bitfield, and the UTF-16LE entity id whose
 /// numeric suffix equals the record index.
-pub(super) fn parse_genesis_entity_header(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-) -> Result<Option<NamedEntityHeader>, CodecError> {
+pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
     let Some(entity_suffix) = View::u32_le_at(bytes, start + 7).map(u64::from) else {
-        return Ok(None);
+        return None;
     };
     if entity_suffix == 0 {
-        return Ok(None);
+        return None;
     }
     let mut cursor = start + 11;
     while bytes.get(cursor) == Some(&0) && cursor < start + 35 {
@@ -973,35 +939,26 @@ pub(super) fn parse_genesis_entity_header(
         || bytes.get(cursor) != Some(&1)
         || View::u32_le_at(bytes, cursor + 1) != Some(1)
     {
-        return Ok(None);
+        return None;
     }
     let Some(after_key) = lp_ascii_matches(bytes, cursor + 5, b"EntityGenesis") else {
-        return Ok(None);
+        return None;
     };
     let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") else {
-        return Ok(None);
+        return None;
     };
-    let Some((entity_id, end)) = lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        after_type + 8,
-        1..=256,
-        "f3d Design UTF-16 text",
-    )?
-    else {
-        return Ok(None);
+    let Some((entity_id, end)) = lp_utf16_bounded(bytes, after_type + 8, 1..=256) else {
+        return None;
     };
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
-        return Ok(None);
+        return None;
     };
-    Ok(
-        (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
-            entity_id,
-            entity_id_offset: after_type + 12,
-            optional_slot_present: false,
-            end,
-        }),
-    )
+    (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
+        entity_id,
+        entity_id_offset: after_type + 12,
+        optional_slot_present: false,
+        end,
+    })
 }
 
 fn lp_ascii_matches(bytes: &[u8], at: usize, expected: &[u8]) -> Option<usize> {
@@ -1157,13 +1114,12 @@ fn parse_legacy_sketch_container_members(
 /// sketch-typed entities, the trailing reference-list header. Headers occur in
 /// the fixed layout or in the `EntityGenesis` layout.
 pub(crate) fn decode_entity_headers(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
     // Entity ids are unique per Design stream, not archive-wide.
     let mut entity_modules = HashMap::<&str, HashMap<u64, &str>>::new();
-    let types = decode_types(ctx, scan)?;
+    let types = decode_types(scan)?;
     let mut legacy_sketch_candidates = HashMap::<&str, std::collections::HashSet<u32>>::new();
     for design_type in &types {
         if let Some(stream) = native_stream(design_type.id()) {
@@ -1206,7 +1162,7 @@ pub(crate) fn decode_entity_headers(
         for header in indexed_record_offsets(bytes) {
             let start = header.offset;
             let class_tag = header.class_tag.clone();
-            let settled = parse_settled_entity_header(ctx, bytes, start)?;
+            let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
             let Some(NamedEntityHeader {
                 entity_id,
@@ -1215,7 +1171,7 @@ pub(crate) fn decode_entity_headers(
                 ..
             }) = (match settled {
                 Some(header) => Some(header),
-                None => parse_genesis_entity_header(ctx, bytes, start)?,
+                None => parse_genesis_entity_header(bytes, start),
             })
             else {
                 continue;
@@ -1245,13 +1201,7 @@ pub(crate) fn decode_entity_headers(
                 Vec::new()
             };
             out.push(DesignEntityHeader {
-                id: design_record_id_charged(
-                    ctx,
-                    &entry.name,
-                    ":design-entity-header#",
-                    u64_from_index(start),
-                    "f3d entity header ID",
-                )?,
+                id: design_record_id(&entry.name, ":design-entity-header#", u64_from_index(start)),
                 byte_offset: u64_from_index(start),
                 entity_id,
                 class_tag,
@@ -1277,7 +1227,7 @@ pub(crate) fn decode_entity_headers(
         let Some(candidates) = candidates.filter(|candidates| !candidates.is_empty()) else {
             continue;
         };
-        let records = IndexedRecordOffsets::build(ctx, bytes)?;
+        let records = IndexedRecordOffsets::build(bytes)?;
         let mut existing = std::collections::HashSet::new();
         for entity in out
             .iter()
@@ -1302,13 +1252,7 @@ pub(crate) fn decode_entity_headers(
             };
             existing.insert(entity_suffix);
             out.push(DesignEntityHeader {
-                id: design_record_id_charged(
-                    ctx,
-                    &entry.name,
-                    ":design-entity-header#",
-                    u64_from_index(start),
-                    "f3d entity header ID",
-                )?,
+                id: design_record_id(&entry.name, ":design-entity-header#", u64_from_index(start)),
                 byte_offset: u64_from_index(start),
                 entity_id: crate::records::identity::DesignEntityId::from_parts(
                     "Sketch",
@@ -1355,7 +1299,6 @@ fn insert_legacy_candidate<'a>(
 /// class tag, for each record index named by any [`DesignEntityHeader`] in
 /// `entities`.
 pub(crate) fn decode_record_headers(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -1369,7 +1312,7 @@ pub(crate) fn decode_record_headers(
             })
     });
     let wanted = wanted_record_indices(references);
-    decode_headers_for_indices(ctx, scan, &wanted)
+    decode_headers_for_indices(scan, &wanted)
 }
 
 /// Decode the indexed dynamic-class record headers ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) named by
@@ -1377,7 +1320,6 @@ pub(crate) fn decode_record_headers(
 /// headers referenced by records other than [`DesignEntityHeader`] (for
 /// example, sketch relation records).
 pub(crate) fn decode_related_record_headers(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     indices: &[(String, u32)],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -1386,7 +1328,7 @@ pub(crate) fn decode_related_record_headers(
             .iter()
             .map(|(scope, index)| (scope.as_str(), *index)),
     );
-    decode_headers_for_indices(ctx, scan, &wanted)
+    decode_headers_for_indices(scan, &wanted)
 }
 
 fn wanted_record_indices<'a>(
@@ -1402,7 +1344,6 @@ fn wanted_record_indices<'a>(
 }
 
 fn decode_headers_for_indices(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     wanted: &std::collections::HashSet<(&str, u32)>,
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
@@ -1417,20 +1358,19 @@ fn decode_headers_for_indices(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        decode_headers_for_indices_from_stream(ctx, &entry.name, &scope, bytes, wanted, &mut out)?;
+        decode_headers_for_indices_from_stream(&entry.name, &scope, bytes, wanted, &mut out);
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
 fn decode_headers_for_indices_from_stream(
-    ctx: &DecodeContext<'_>,
     stream_name: &str,
     scope: &str,
     bytes: &[u8],
     wanted: &std::collections::HashSet<(&str, u32)>,
     out: &mut Vec<DesignRecordHeader>,
-) -> Result<(), CodecError> {
+) {
     let mut emitted = std::collections::HashSet::new();
     for header in indexed_record_offsets(bytes) {
         let position = header.offset;
@@ -1439,20 +1379,17 @@ fn decode_headers_for_indices_from_stream(
             emitted.insert(record_index);
 
             out.push(DesignRecordHeader {
-                id: design_record_id_charged(
-                    ctx,
+                id: design_record_id(
                     stream_name,
                     ":design-record-header#",
                     u64_from_index(position),
-                    "f3d record header ID",
-                )?,
+                ),
                 record_index,
                 class_tag: header.class_tag,
                 byte_offset: u64_from_index(position),
             });
         }
     }
-    Ok(())
 }
 
 /// Decode the sketch-relation body at each `records` entry's offset: the
@@ -1460,7 +1397,6 @@ fn decode_headers_for_indices_from_stream(
 /// and return-member list. `records` supplies the byte offsets and class tags
 /// (typically from [`decode_related_record_headers`]).
 pub(crate) fn decode_sketch_relations(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
@@ -1468,7 +1404,7 @@ pub(crate) fn decode_sketch_relations(
     // A record carries no class identity of its own: its class tag selects an
     // entry in its segment's own type table, and only that entry's GUID names
     // the class across segments.
-    let types = decode_types(ctx, scan)?;
+    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
@@ -1513,22 +1449,13 @@ pub(crate) fn decode_sketch_relations(
             ) else {
                 continue;
             };
-            admit_sketch_relation(
-                ctx,
-                &mut out,
-                &entry.name,
-                record,
-                payload,
-                parsed,
-                definition,
-            )?;
+            admit_sketch_relation(&mut out, &entry.name, record, payload, parsed, definition)?;
         }
     }
     Ok(out)
 }
 
 fn admit_sketch_relation(
-    ctx: &DecodeContext<'_>,
     out: &mut Vec<SketchRelation>,
     stream: &str,
     record: &DesignRecordHeader,
@@ -1543,7 +1470,6 @@ fn admit_sketch_relation(
         _ => None,
     };
     let members = crate::records::sketch_relations::SketchRelationMembers::from_indices(
-        ctx,
         parsed.members.into_iter().map(|member| {
             (
                 member.reference.value,
@@ -1554,7 +1480,6 @@ fn admit_sketch_relation(
     )?;
     let return_members =
         crate::records::sketch_relations::SketchRelationReturnMembers::from_indices(
-            ctx,
             parsed
                 .return_members
                 .into_iter()
@@ -1571,13 +1496,7 @@ fn admit_sketch_relation(
         });
     }
     let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
-        id: design_record_id_charged(
-            ctx,
-            stream,
-            ":sketch-relation#",
-            u64::from(record.record_index),
-            "f3d sketch relation ID",
-        )?,
+        id: design_record_id(stream, ":sketch-relation#", u64::from(record.record_index)),
         record_index: record.record_index,
         class_tag: record.class_tag.clone(),
         byte_offset: record.byte_offset,
@@ -1714,12 +1633,11 @@ fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
 }
 
 fn decode_sketch_points_from_stream(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchPoint>, CodecError> {
-    let frames = design_primary_frames(ctx, bytes, meta)?;
+    let frames = design_primary_frames(bytes, meta)?;
     let mut frames_by_entity = HashMap::new();
     let mut types_by_entity = HashMap::new();
     for frame in &frames {
@@ -1797,13 +1715,7 @@ fn decode_sketch_points_from_stream(
 
         out.push(SketchPoint::try_from_charged(
             crate::records::sketch_geometry::SketchPointDraft {
-                id: design_record_id_charged(
-                    ctx,
-                    stream,
-                    ":sketch-point#",
-                    u64_from_index(frame.start),
-                    "f3d sketch point ID",
-                )?,
+                id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
                 record_index,
                 owner_reference: decoded.owner_reference,
                 class_tag: frame.class_tag.clone(),
@@ -1826,11 +1738,8 @@ fn decode_sketch_points_from_stream(
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
 /// point record with a malformed or non-finite member sequence makes the
 /// stream malformed.
-pub(crate) fn decode_sketch_points(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<SketchPoint>, CodecError> {
-    decode_sketch_streams(ctx, scan, decode_sketch_points_from_stream)
+pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
+    decode_sketch_streams(scan, decode_sketch_points_from_stream)
 }
 
 struct SketchProperty<'a> {
@@ -1938,31 +1847,15 @@ const SKETCH_TEXT_TYPE_GUIDS: [&str; 2] = [
     "F0B1AFA3-3BAF-42D0-B2F3-94B95662F2A9",
 ];
 
-fn sketch_utf16_text(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    count_at: usize,
-    count: usize,
-) -> Result<Option<(String, usize)>, CodecError> {
-    lp_utf16_bounded_charged(
-        ctx,
-        payload,
-        count_at,
-        count..=count,
-        "f3d Design UTF-16 text",
-    )
-}
-
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
 fn decode_sketch_texts_from_stream(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
-    for frame in design_primary_frames(ctx, bytes, meta)? {
+    for frame in design_primary_frames(bytes, meta)? {
         if !SKETCH_TEXT_TYPE_GUIDS.iter().any(|type_guid| {
             frame
                 .design_type
@@ -1977,7 +1870,6 @@ fn decode_sketch_texts_from_stream(
         let class_tag = frame.class_tag;
         let payload = &bytes[frame.start..frame.end];
         if let Some(text) = decode_sketch_text_record(
-            ctx,
             payload,
             stream,
             class_tag,
@@ -1993,11 +1885,8 @@ fn decode_sketch_texts_from_stream(
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
-pub(crate) fn decode_sketch_texts(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<SketchText>, CodecError> {
-    decode_sketch_streams(ctx, scan, decode_sketch_texts_from_stream)
+pub(crate) fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
+    decode_sketch_streams(scan, decode_sketch_texts_from_stream)
 }
 
 /// Whether a sketch-text record carries one of the two parameter-reference
@@ -2179,7 +2068,6 @@ fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<
 
 /// Read the record prefix, property block, and the metrics up to the height.
 fn decode_sketch_text_head(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     class_version: u32,
 ) -> Result<Option<(SketchTextHead, SketchTextIdentity)>, CodecError> {
@@ -2235,11 +2123,7 @@ fn decode_sketch_text_head(
         if font_count == 0 || font_count > 1_024 {
             return None;
         }
-        let (font_family, after_font) = match sketch_utf16_text(ctx, payload, cursor, font_count) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (font_family, after_font) = lp_utf16_bounded(payload, cursor, font_count..=font_count)?;
         cursor = after_font;
         if matches!(identity, SketchTextIdentity::TextexTag { .. }) {
             (payload.get(cursor)? == &0).then_some(())?;
@@ -2269,7 +2153,6 @@ fn decode_sketch_text_head(
 /// width prefix is zero, unlike the legacy class form's one-byte prefix of
 /// one; the f64 width factor and the remaining metrics have the same roles.
 fn decode_indexed_sketch_text_head(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Option<(SketchTextHead, NonNegativeReal)>, CodecError> {
     (|| {
@@ -2293,11 +2176,7 @@ fn decode_indexed_sketch_text_head(
         if font_count == 0 || font_count > 1_024 {
             return None;
         }
-        let (font_family, after_font) = match sketch_utf16_text(ctx, payload, cursor, font_count) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (font_family, after_font) = lp_utf16_bounded(payload, cursor, font_count..=font_count)?;
         cursor = after_font;
         (payload.get(cursor)? == &0).then_some(())?;
         cursor += 1;
@@ -2323,7 +2202,6 @@ fn decode_indexed_sketch_text_head(
 /// slot forms, requiring the walk to end exactly on the owning-sketch
 /// reference.
 fn decode_sketch_text_tail(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
     first_slot: TextReferenceSlot,
@@ -2339,11 +2217,7 @@ fn decode_sketch_text_tail(
         if text_count == 0 || text_count > 1_048_576 {
             return None;
         }
-        let (text, after_text) = match sketch_utf16_text(ctx, payload, cursor, text_count) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (text, after_text) = lp_utf16_bounded(payload, cursor, text_count..=text_count)?;
         cursor = after_text;
         let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
         // Vertical alignment enum, one flag byte, and the font weight.
@@ -2394,7 +2268,6 @@ fn decode_sketch_text_tail(
 /// is followed by a counted reference run, fifteen bytes, and the trailing run
 /// and owning-sketch reference that close both forms.
 fn decode_txt_tag_sketch_text_tail(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
     class_version: u32,
@@ -2417,11 +2290,7 @@ fn decode_txt_tag_sketch_text_tail(
         if text_count == 0 || text_count > 1_048_576 {
             return None;
         }
-        let (text, after_text) = match sketch_utf16_text(ctx, payload, cursor, text_count) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (text, after_text) = lp_utf16_bounded(payload, cursor, text_count..=text_count)?;
         cursor = after_text;
         let references = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
         if references > MAX_RELATION_RUN {
@@ -2460,7 +2329,6 @@ fn decode_txt_tag_sketch_text_tail(
 /// discriminators used by the legacy class tail. The indexed suffix carries no
 /// neutral anchor or rotation; the source record is retained in full.
 fn decode_indexed_sketch_text_tail(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
     first_slot: TextReferenceSlot,
@@ -2475,11 +2343,7 @@ fn decode_indexed_sketch_text_tail(
         if text_count == 0 || text_count > 1_048_576 {
             return None;
         }
-        let (text, after_text) = match sketch_utf16_text(ctx, payload, cursor, text_count) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let (text, after_text) = lp_utf16_bounded(payload, cursor, text_count..=text_count)?;
         cursor = after_text;
         let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
         let vertical_alignment = View::u32_le_at(payload, cursor)?;
@@ -2533,7 +2397,6 @@ fn decode_indexed_sketch_text_tail(
 }
 
 fn decode_indexed_sketch_text_record_tail(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     cursor: usize,
     width_factor: NonNegativeReal,
@@ -2542,7 +2405,6 @@ fn decode_indexed_sketch_text_record_tail(
     for first_slot in TEXT_REFERENCE_SLOTS {
         for second_slot in TEXT_REFERENCE_SLOTS {
             let Some(tail) = decode_indexed_sketch_text_tail(
-                ctx,
                 payload,
                 cursor,
                 first_slot,
@@ -2571,7 +2433,6 @@ struct SketchTextRecord<'a> {
 }
 
 fn assemble_sketch_text(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     input: SketchTextRecord<'_>,
 ) -> Result<SketchText, CodecError> {
@@ -2584,14 +2445,12 @@ fn assemble_sketch_text(
         head,
         tail,
     } = input;
-    let id = design_record_id_charged(
-        ctx,
+    let id = design_record_id(
         stream,
         ":sketch-text#",
         u64::try_from(byte_offset)
             .map_err(|_| CodecError::malformed("f3d sketch text offset exceeds u64"))?,
-        "f3d sketch text identifier",
-    )?;
+    );
     let raw_bytes = payload.to_vec();
     Ok(SketchText {
         id,
@@ -2614,7 +2473,6 @@ fn assemble_sketch_text(
 }
 
 pub(crate) fn decode_sketch_text_record(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     stream: &str,
     class_tag: crate::records::references::DesignClassTag,
@@ -2623,7 +2481,7 @@ pub(crate) fn decode_sketch_text_record(
     byte_offset: usize,
 ) -> Result<Option<SketchText>, CodecError> {
     (|| {
-        let legacy_head = match decode_sketch_text_head(ctx, payload, class_version) {
+        let legacy_head = match decode_sketch_text_head(payload, class_version) {
             Ok(head) => head,
             Err(error) => return Some(Err(error)),
         };
@@ -2635,7 +2493,6 @@ pub(crate) fn decode_sketch_text_record(
                     'forms: for first_slot in TEXT_REFERENCE_SLOTS {
                         for second_slot in TEXT_REFERENCE_SLOTS {
                             let tail = decode_sketch_text_tail(
-                                ctx,
                                 payload,
                                 head.cursor,
                                 first_slot,
@@ -2663,7 +2520,6 @@ pub(crate) fn decode_sketch_text_record(
                     }
                 }
                 SketchTextIdentity::TxtTag { rotation } => match decode_txt_tag_sketch_text_tail(
-                    ctx,
                     payload,
                     head.cursor,
                     class_version,
@@ -2675,7 +2531,6 @@ pub(crate) fn decode_sketch_text_record(
             };
             if let Some(tail) = tail {
                 return Some(assemble_sketch_text(
-                    ctx,
                     payload,
                     crate::design::decode::sketch::SketchTextRecord {
                         stream,
@@ -2689,17 +2544,16 @@ pub(crate) fn decode_sketch_text_record(
                 ));
             }
         }
-        let (head, width_factor) = match decode_indexed_sketch_text_head(ctx, payload) {
+        let (head, width_factor) = match decode_indexed_sketch_text_head(payload) {
             Ok(head) => head?,
             Err(error) => return Some(Err(error)),
         };
-        let tail =
-            match decode_indexed_sketch_text_record_tail(ctx, payload, head.cursor, width_factor) {
-                Ok(tail) => tail?,
-                Err(error) => return Some(Err(error)),
-            };
+        let tail = match decode_indexed_sketch_text_record_tail(payload, head.cursor, width_factor)
+        {
+            Ok(tail) => tail?,
+            Err(error) => return Some(Err(error)),
+        };
         Some(assemble_sketch_text(
-            ctx,
             payload,
             crate::design::decode::sketch::SketchTextRecord {
                 stream,
@@ -3141,13 +2995,12 @@ impl SketchCurveClass {
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 fn decode_sketch_curve_identities_from_stream(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
-    for frame in design_primary_frames(ctx, bytes, meta)? {
+    for frame in design_primary_frames(bytes, meta)? {
         let payload = &bytes[frame.start..frame.end];
         let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
             decode_sketch_curve_identity(payload)
@@ -3166,7 +3019,6 @@ fn decode_sketch_curve_identities_from_stream(
         );
         let parsed_geometry = if let Some(curve_class) = curve_class {
             decode_sketch_curve_geometry(
-                ctx,
                 payload,
                 geometry_shift,
                 record_index,
@@ -3182,13 +3034,11 @@ fn decode_sketch_curve_identities_from_stream(
             });
 
         out.push(SketchCurveIdentity {
-            id: design_record_id_charged(
-                ctx,
+            id: design_record_id(
                 stream,
                 ":sketch-curve-identity#",
                 u64_from_index(frame.start),
-                "f3d sketch curve ID",
-            )?,
+            ),
             record_index,
             owner_reference: trailing_sketch_owner_reference(payload),
             class_tag: frame.class_tag,
@@ -3210,10 +3060,9 @@ fn decode_sketch_curve_identities_from_stream(
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 pub(crate) fn decode_sketch_curve_identities(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
-    decode_sketch_streams(ctx, scan, decode_sketch_curve_identities_from_stream)
+    decode_sketch_streams(scan, decode_sketch_curve_identities_from_stream)
 }
 
 #[derive(Debug)]
@@ -3301,7 +3150,6 @@ fn sketch_scalar_values(payload: &[u8], offset: usize, count: usize) -> Option<V
 }
 
 fn parse_sketch_surface(
-    _ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Result<Option<ParsedSketchSurface>, CodecError> {
@@ -3357,7 +3205,6 @@ fn parse_sketch_surface(
 
 /// Decode tensor-product surface entities owned by spatial Design sketches.
 pub(crate) fn decode_sketch_surfaces(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchSurface>, CodecError> {
     let mut out = Vec::new();
@@ -3379,7 +3226,7 @@ pub(crate) fn decode_sketch_surfaces(
                 continue;
             };
             let payload = &bytes[record_at..];
-            let Some(surface) = parse_sketch_surface(ctx, payload, record_at)? else {
+            let Some(surface) = parse_sketch_surface(payload, record_at)? else {
                 continue;
             };
 
@@ -3402,7 +3249,6 @@ pub(crate) fn decode_sketch_surfaces(
 
 /// Bind relation-connected sketch geometry to its unique owning sketch.
 pub(crate) fn bind_sketch_graph(
-    ctx: &DecodeContext<'_>,
     entities: &[DesignEntityHeader],
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
@@ -3607,7 +3453,7 @@ pub(crate) fn bind_sketch_graph(
                 .cloned()
                 .unwrap_or(SketchRelationOperand::Record { record_index })
         };
-        relation.resolve_members(ctx, resolve)?;
+        relation.resolve_members(resolve);
     }
     Ok(())
 }
@@ -3658,7 +3504,6 @@ struct DecodedSketchCurveGeometry {
 }
 
 fn decode_sketch_curve_geometry(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     geometry_shift: usize,
     record_index: u32,
@@ -3688,11 +3533,10 @@ fn decode_sketch_curve_geometry(
             }
         }
         SketchCurveClass::Nurbs => {
-            let legacy =
-                decode_legacy_sketch_nurbs(ctx, geometry_payload, record_at).transpose()?;
+            let legacy = decode_legacy_sketch_nurbs(geometry_payload, record_at).transpose()?;
             let geometry = match legacy {
                 Some(geometry) => Some(geometry),
-                None => decode_sketch_nurbs(ctx, geometry_payload, record_at).transpose()?,
+                None => decode_sketch_nurbs(geometry_payload, record_at).transpose()?,
             };
             geometry.map(|(geometry, _)| (geometry, 133))
         }
@@ -3823,7 +3667,6 @@ fn decode_text_frame_line(
 }
 
 fn decode_sketch_nurbs(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Option<Result<(SketchCurveGeometry, usize), CodecError>> {
@@ -3870,7 +3713,6 @@ fn decode_sketch_nurbs(
     }
     let coordinates = sketch_scalar_values(payload, points_at + 12, point_count.checked_mul(3)?)?;
     let geometry = match admit_source_sketch_nurbs(
-        ctx,
         degree,
         fit_tolerance,
         knots,
@@ -3894,7 +3736,6 @@ fn decode_sketch_nurbs(
 }
 
 fn decode_legacy_sketch_nurbs(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Option<Result<(SketchCurveGeometry, usize), CodecError>> {
@@ -3961,7 +3802,6 @@ fn decode_legacy_sketch_nurbs(
     }
     let coordinates = sketch_scalar_values(payload, points_at + 12, point_count.checked_mul(3)?)?;
     let geometry = match admit_source_sketch_nurbs(
-        ctx,
         degree,
         fit_tolerance,
         knots,
@@ -3985,7 +3825,6 @@ fn decode_legacy_sketch_nurbs(
 }
 
 fn admit_source_sketch_nurbs(
-    _ctx: &DecodeContext<'_>,
     degree: u32,
     fit_tolerance_cm: f64,
     knots: Vec<f64>,
@@ -4765,14 +4604,8 @@ fn decode_reference_list(
 }
 
 fn decode_sketch_streams<T>(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    decode: impl Fn(
-        &DecodeContext<'_>,
-        &[u8],
-        &crate::metastream::MetaStream,
-        &str,
-    ) -> Result<Vec<T>, CodecError>,
+    decode: impl Fn(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -4781,10 +4614,10 @@ fn decode_sketch_streams<T>(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        out.extend(decode(ctx, bytes, &meta, &entry.name)?);
+        out.extend(decode(bytes, &meta, &entry.name)?);
     }
     Ok(out)
 }

@@ -362,7 +362,6 @@ pub(crate) struct ScopeHistoryGraph<'a> {
 
 impl<'a> ScopeHistoryGraph<'a> {
     pub(crate) fn new(
-        _ctx: &DecodeContext<'_>,
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
         body_recipe_operands: &[DesignBodyRecipeOperand],
@@ -615,7 +614,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 // discarded-value: duplicate scope keys retain the last feature ID.
                 let _ = scope_ids.insert(
                     (stream, scope.record_index),
-                    crate::design::identity::neutral_feature_id(ctx, scope)?,
+                    crate::design::identity::neutral_feature_id(scope)?,
                 );
             }
         }
@@ -1225,7 +1224,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             Ok::<_, CodecError>(features)
         })?;
     let scope_history = ScopeHistoryGraph::new(
-        ctx,
         scopes,
         body_bindings,
         body_recipe_operands,
@@ -1819,7 +1817,7 @@ fn project_work_point_construction(
         else {
             return Ok(Some(EdgeSelection::Native(operand.id.clone())));
         };
-        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+        let feature_id = crate::design::identity::neutral_feature_id(scope)?;
         let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
         let prefix = crate::design::identity::history_input_prefix(feature_key, state_id)?;
         Ok(Some(match cadmpeg_ir::features::EdgeSelection::historical(
@@ -1876,7 +1874,7 @@ fn project_work_point_construction(
                 Some(resolution) => {
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
-                    let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+                    let feature_id = crate::design::identity::neutral_feature_id(scope)?;
                     let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
                     let prefix =
                         crate::design::identity::history_input_prefix(feature_key, state_id)?;
@@ -1953,7 +1951,7 @@ fn project_work_plane(
             family: UnresolvedFamily::DatumPlane,
         }));
     };
-    let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+    let feature_id = crate::design::identity::neutral_feature_id(scope)?;
     let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let prefix = crate::design::identity::history_input_prefix(feature_key, state_id)?;
     let vertex = |recipe: &crate::records::feature::work_geometry::DesignVertexRecipe|
@@ -2162,7 +2160,7 @@ fn project_fillet_arm(
                         vertex_operands: inputs.edge_treatment_vertex_operands,
                         histories: inputs.histories,
                         previous_state_id: scope.previous_history_state_id(),
-                        feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?,
+                        feature_id: &crate::design::identity::neutral_feature_id(scope)?,
                         treatment_radius: edge_radius,
                     },
                     ctx,
@@ -3112,7 +3110,7 @@ fn project_draft(
                         )?,
                         anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                             plane: cadmpeg_ir::features::FaceSelection::Native(
-                                crate::design::identity::neutral_feature_id(ctx, neutral_plane)?
+                                crate::design::identity::neutral_feature_id(neutral_plane)?
                                     .into_string(),
                             ),
                             pull: Some(cadmpeg_ir::features::DraftPull {
@@ -3120,7 +3118,6 @@ fn project_draft(
                                     pull_direction,
                                 ),
                                 plane: Some(crate::design::identity::neutral_feature_id(
-                                    ctx,
                                     neutral_plane,
                                 )?),
                             }),
@@ -3204,9 +3201,7 @@ fn project_draft(
                     )?,
                     pull: cadmpeg_ir::features::DraftPull {
                         direction: cadmpeg_ir::features::FeatureDirection3::from(pull_direction),
-                        plane: Some(crate::design::identity::neutral_feature_id(
-                            ctx, pull_plane,
-                        )?),
+                        plane: Some(crate::design::identity::neutral_feature_id(pull_plane)?),
                     },
                 },
                 angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
@@ -3255,7 +3250,7 @@ fn selected_historical_face_selection(
     if face_slots.any(|candidate| candidate != face_slot) {
         return Ok(None);
     }
-    let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
+    let feature = crate::design::identity::neutral_feature_id(scope)?;
     let feature_key = crate::design::identity::identity_key(feature.as_str())?;
     let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
     Ok(Some(match cadmpeg_ir::features::FaceSelection::historical(
@@ -3452,7 +3447,7 @@ fn resolved_split_face_path(
         scope, histories
     ));
     let stream = or_none!(native_stream(&scope.id));
-    let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
+    let feature = crate::design::identity::neutral_feature_id(scope)?;
     let feature_key = crate::design::identity::identity_key(feature.as_str())?;
     let prefix = crate::design::identity::history_input_prefix(feature_key, previous_state_id)?;
     let mut edge_slots = Vec::new();
@@ -3860,7 +3855,7 @@ fn project_edge_flange(
                     let target = match target_scopes.next() {
                         Some(target_scope) if target_scopes.next().is_none() => {
                             SheetMetalFlangeHeightTarget::Feature(
-                                crate::design::identity::neutral_feature_id(ctx, target_scope)?,
+                                crate::design::identity::neutral_feature_id(target_scope)?,
                             )
                         }
                         None => SheetMetalFlangeHeightTarget::Native(target_selection.id.clone()),
@@ -4005,7 +4000,7 @@ fn project_edge_flange(
             edge_operands,
             edge_identity_operands,
             scope.previous_history_state_id(),
-            &crate::design::identity::neutral_feature_id(ctx, scope)?,
+            &crate::design::identity::neutral_feature_id(scope)?,
             ctx,
         )?;
         selections.push(selection);
@@ -4167,7 +4162,7 @@ fn project_hem(
         edge_operands,
         edge_identity_operands,
         crate::history::effective_scope_previous_history_state_id(scope, histories),
-        &crate::design::identity::neutral_feature_id(ctx, scope)?,
+        &crate::design::identity::neutral_feature_id(scope)?,
         ctx,
     )?;
 
@@ -4351,7 +4346,7 @@ fn project_ruled_surface(
             edge_operands,
             edge_identity_operands,
             scope.previous_history_state_id(),
-            &crate::design::identity::neutral_feature_id(ctx, scope)?,
+            &crate::design::identity::neutral_feature_id(scope)?,
             ctx,
         )?;
         selections.push(selection);
@@ -4534,7 +4529,7 @@ pub(crate) fn direct_face_selection(
     for operand in &matching {
         members.push((operand.id.as_str(), operand.resolved_face_slots.as_slice()));
     }
-    let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+    let feature_id = crate::design::identity::neutral_feature_id(scope)?;
     let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
     let historical_face = |previous_state_id, slot| -> Result<_, CodecError> {
         let face = crate::design::identity::history_input_face_id(
@@ -4873,7 +4868,7 @@ fn project_variable_fillet(
                         vertex_operands: edge_treatment_vertex_operands,
                         histories,
                         previous_state_id: scope.previous_history_state_id(),
-                        feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?,
+                        feature_id: &crate::design::identity::neutral_feature_id(scope)?,
                         treatment_radius: None,
                     },
                     ctx,
@@ -5173,7 +5168,7 @@ fn project_chamfer(
                     vertex_operands: edge_treatment_vertex_operands,
                     histories,
                     previous_state_id: scope.previous_history_state_id(),
-                    feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?,
+                    feature_id: &crate::design::identity::neutral_feature_id(scope)?,
                     treatment_radius: None,
                 },
                 ctx,
@@ -5237,7 +5232,7 @@ fn project_fixed_chamfer(
                         vertex_operands: edge_treatment_vertex_operands,
                         histories,
                         previous_state_id: scope.previous_history_state_id(),
-                        feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?,
+                        feature_id: &crate::design::identity::neutral_feature_id(scope)?,
                         treatment_radius: None,
                     },
                     ctx,
@@ -5877,7 +5872,7 @@ fn resolved_loft_path(
         operands,
         identity_operands,
         scope.previous_history_state_id(),
-        &crate::design::identity::neutral_feature_id(ctx, scope)?,
+        &crate::design::identity::neutral_feature_id(scope)?,
         ctx,
     )?;
     Ok(loft_path_from_edge_selection(&group.id, selection))
@@ -5909,7 +5904,7 @@ fn resolved_surface_patch_path(
                 operands,
                 identity_operands,
                 scope.previous_history_state_id(),
-                &crate::design::identity::neutral_feature_id(ctx, scope)?,
+                &crate::design::identity::neutral_feature_id(scope)?,
                 ctx,
             )
         } else {
@@ -5919,7 +5914,7 @@ fn resolved_surface_patch_path(
                 operands,
                 identity_operands,
                 scope.previous_history_state_id(),
-                &crate::design::identity::neutral_feature_id(ctx, scope)?,
+                &crate::design::identity::neutral_feature_id(scope)?,
                 ctx,
             )
         }?;
@@ -6303,9 +6298,7 @@ fn project_mirror(
         let Some(seed_scope) = seed_scope else {
             return Ok(None);
         };
-        PatternSeed::Feature(crate::design::identity::neutral_feature_id(
-            ctx, seed_scope,
-        )?)
+        PatternSeed::Feature(crate::design::identity::neutral_feature_id(seed_scope)?)
     } else if seed_group.role() == DesignOperandRole::BODIES_B {
         PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
             seed_group.id.clone(),
@@ -7609,7 +7602,7 @@ fn project_split_face(
     {
         let mut selected = Vec::new();
         for plane in planes {
-            let id = crate::design::identity::neutral_feature_id(ctx, plane)?;
+            let id = crate::design::identity::neutral_feature_id(plane)?;
             selected.push(id);
         }
         if selected.len() == 1 {

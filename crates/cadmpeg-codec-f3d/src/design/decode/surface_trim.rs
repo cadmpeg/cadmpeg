@@ -11,7 +11,7 @@ use crate::design::decode::sketch::{
     cached_owned_record_offsets, indexed_record_header_at, next_indexed_record_offset,
     IndexedRecordOffsets,
 };
-use crate::design::decode::text::design_record_id_charged;
+use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
 use crate::records::feature::{
     scope::DesignParameterScope,
@@ -19,7 +19,7 @@ use crate::records::feature::{
         DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord, DesignSurfaceTrimOperation,
     },
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -31,7 +31,6 @@ use std::collections::{HashMap, HashSet};
 /// cells selected for removal, and the trailing value is the total cell count
 /// of the operation's partition.
 fn exact_surface_trim_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -47,7 +46,6 @@ fn exact_surface_trim_operation(
         let selection_class_tag =
             exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
         let selection = match parse_entity_selection_frame(
-            ctx,
             bytes,
             selection_record_index,
             u64::try_from(selection_byte_offset).ok()?,
@@ -205,7 +203,6 @@ fn exact_surface_trim_operation(
 
 /// Decode every exact `SurfaceTrim` BRep-cell carrier into its own native arena.
 pub(crate) fn decode_surface_trim_operations(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
@@ -222,17 +219,15 @@ pub(crate) fn decode_surface_trim_operations(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(ctx, &mut record_offsets, stream, bytes)?;
-        let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
+        let records = cached_owned_record_offsets(&mut record_offsets, stream, bytes)?;
+        let Some(mut operation) = exact_surface_trim_operation(bytes, records, scope)? else {
             continue;
         };
-        operation.id = design_record_id_charged(
-            ctx,
+        operation.id = design_record_id(
             &entry.name,
             ":design-surface-trim-operation#",
             scope.byte_offset(),
-            "f3d surface-trim operation identifier",
-        )?;
+        );
 
         out.push(operation);
     }

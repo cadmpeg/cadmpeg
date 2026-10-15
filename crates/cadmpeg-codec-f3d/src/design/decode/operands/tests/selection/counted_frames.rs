@@ -38,10 +38,6 @@ use cadmpeg_ir::sketches::SketchId;
 #[test]
 fn extrude_selection_group_and_members_have_exact_counted_frames() {
     crate::test_support::with_decode_context(|decode_ctx| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scope = DesignParameterScope::try_new(
             crate::records::feature::scope::DesignParameterScopeDraft {
                 id: "f3d:Design/BulkStream.dat:scope#12".into(),
@@ -111,7 +107,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         let paired_at = group_bytes.len();
         indexed_header(&mut group_bytes, *b"259", 100);
 
-        let mut group = parse_extrude_selection_group(&ctx, &group_bytes, &scope, 0, &record)
+        let mut group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
             .expect("group decode resources")
             .expect("counted Extrude selection group");
         assert_eq!(
@@ -144,10 +140,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         member_bytes.extend_from_slice(&[0; 5]);
         indexed_header(&mut member_bytes, *b"290", 201);
 
-        let mut member =
-            parse_extrude_selection_member(&ctx, &member_bytes, &group, 0, &member_record)
-                .expect("fixed Extrude selection member")
-                .unwrap();
+        let mut member = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
+            .expect("fixed Extrude selection member")
+            .unwrap();
         assert_eq!(member.local_id, 586);
         assert_eq!(member.next_byte_offset(), 190);
         assert_eq!(member.next_record_index, 201);
@@ -156,14 +151,14 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
         member_bytes[185] = 1;
         let member_with_slot =
-            parse_extrude_selection_member(&ctx, &member_bytes, &group, 0, &member_record)
+            parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
                 .expect("Extrude selection member with present tail slot")
                 .unwrap();
         assert!(member_with_slot.tail_slot_present);
         assert_eq!(member_with_slot.tail_slot_offset, 185);
 
         let terminal_member =
-            parse_extrude_selection_member(&ctx, &member_bytes[..190], &group, 0, &member_record)
+            parse_extrude_selection_member(&member_bytes[..190], &group, 0, &member_record)
                 .expect("terminal fixed Extrude selection member")
                 .unwrap();
         assert_eq!(terminal_member.next_byte_offset(), 190);
@@ -184,13 +179,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             &mut edge_identity_bytes,
             "1d8b67fc-c638-4af3-b13d-776dce4f472d",
         );
-        let edge_identity = crate::design::decode::operands::parse_edge_identity_member(
-            &ctx,
-            &edge_identity_bytes,
-            0,
-        )
-        .expect("fixed edge-treatment selection identity")
-        .unwrap();
+        let edge_identity =
+            crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
+                .expect("fixed edge-treatment selection identity");
         assert_eq!(edge_identity.local_id, 5890);
         assert!(!edge_identity.layout.is_compact());
         assert_eq!(edge_identity.layout.local_id_offset(), 24);
@@ -198,13 +189,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         assert_eq!(edge_identity.context_id_offset, 118);
 
         edge_identity_bytes.remove(22);
-        let compact_edge_identity = crate::design::decode::operands::parse_edge_identity_member(
-            &ctx,
-            &edge_identity_bytes,
-            0,
-        )
-        .expect("compact fixed edge-treatment selection identity")
-        .unwrap();
+        let compact_edge_identity =
+            crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
+                .expect("compact fixed edge-treatment selection identity");
         assert!(compact_edge_identity.layout.is_compact());
         assert_eq!(compact_edge_identity.local_id, 5890);
         assert_eq!(compact_edge_identity.layout.local_id_offset(), 23);
@@ -212,13 +199,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         assert_eq!(compact_edge_identity.context_id_offset, 117);
 
         edge_identity_bytes.remove(21);
-        let shortest_edge_identity = crate::design::decode::operands::parse_edge_identity_member(
-            &ctx,
-            &edge_identity_bytes,
-            0,
-        )
-        .expect("short compact edge-treatment selection identity")
-        .unwrap();
+        let shortest_edge_identity =
+            crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
+                .expect("short compact edge-treatment selection identity");
         assert!(shortest_edge_identity.layout.is_compact());
         assert_eq!(shortest_edge_identity.local_id, 5890);
         assert_eq!(shortest_edge_identity.layout.local_id_offset(), 22);

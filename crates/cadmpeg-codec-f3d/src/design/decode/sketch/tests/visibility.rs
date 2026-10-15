@@ -9,20 +9,7 @@ use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 const ENTITY_SUFFIX: u64 = 201;
 
-fn decode_sketch_visibilities_in_stream(
-    bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
-) -> Result<
-    Vec<(
-        u64,
-        crate::records::sketch_placement::DesignSketchVisibility,
-    )>,
-    cadmpeg_core::CodecError,
-> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_visibilities_in_stream(ctx, bytes, meta)
-    })
-}
+use crate::design::decode::sketch::decode_sketch_visibilities_in_stream;
 
 fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
     let mut bytes = Vec::new();

@@ -4,7 +4,6 @@ use crate::design::decode::sketch::{
     decode_persistent_references_from_stream, finish_persistent_references,
 };
 use crate::records::references::PersistentReference;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn reference_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -17,22 +16,16 @@ fn reference_bytes() -> Vec<u8> {
     bytes
 }
 
-fn scan_references(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<PersistentReference>, cadmpeg_core::CodecError> {
+fn scan_references(bytes: &[u8]) -> Result<Vec<PersistentReference>, cadmpeg_core::CodecError> {
     let mut indexed = Vec::new();
-    decode_persistent_references_from_stream(ctx, 0, "BulkStream.dat", bytes, &mut indexed)?;
+    decode_persistent_references_from_stream(0, "BulkStream.dat", bytes, &mut indexed)?;
     Ok(finish_persistent_references(indexed))
 }
 
 #[test]
 fn persistent_reference_scan_preserves_byte_order_after_kind_scan() {
     let bytes = reference_bytes();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let references = scan_references(&ctx, &bytes).expect("two typed references");
+    let references = scan_references(&bytes).expect("two typed references");
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].value, 71);
     assert_eq!(references[1].value, 29);

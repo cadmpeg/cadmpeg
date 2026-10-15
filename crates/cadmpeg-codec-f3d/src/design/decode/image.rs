@@ -4,7 +4,6 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 
@@ -66,12 +65,10 @@ pub(super) fn embedded_image_asset(
 
 /// Decode image scopes in their owning streams, ordered by native identity.
 pub(super) fn decode_scoped_images<T>(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     kind: &crate::records::feature::scope::DesignFeatureKind,
     mut parse: impl FnMut(
-        &DecodeContext<'_>,
         &[u8],
         &str,
         &crate::records::feature::scope::DesignParameterScope,
@@ -90,7 +87,7 @@ pub(super) fn decode_scoped_images<T>(
             scope.kind().as_str() == kind.as_str()
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
         }) {
-            if let Some(image) = parse(ctx, bytes, &entry.name, scope)? {
+            if let Some(image) = parse(bytes, &entry.name, scope)? {
                 images.push(image);
             }
         }
@@ -170,18 +167,15 @@ mod tests {
             .unwrap();
         let kind = crate::records::feature::scope::DesignFeatureKind::Fillet;
         with_scan(&archive, |scan| {
-            crate::design::test_support::with_test_decode_context(|ctx| {
-                let images = super::decode_scoped_images(
-                    ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    &kind,
-                    |_, _, _, _| Ok(Some(17_u32)),
-                    |_| "image",
-                )
-                .unwrap();
-                assert_eq!(images, [17]);
-            });
+            let images = super::decode_scoped_images(
+                scan,
+                std::slice::from_ref(&scope),
+                &kind,
+                |_, _, _| Ok(Some(17_u32)),
+                |_| "image",
+            )
+            .unwrap();
+            assert_eq!(images, [17]);
         });
     }
 }

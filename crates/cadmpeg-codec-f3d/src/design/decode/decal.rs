@@ -2,7 +2,7 @@
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
 use crate::bytes::lp_ascii_filtered_view;
-use crate::bytes::lp_utf16_bounded_charged;
+use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
@@ -31,12 +31,10 @@ const DECAL_TARGET_ROLE: crate::records::topology::extrude_selection::DesignOper
 
 /// Decode every structurally complete Decal image record.
 pub(crate) fn decode_decal_images(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignDecalImage>, CodecError> {
     super::image::decode_scoped_images(
-        ctx,
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Decal,
@@ -100,7 +98,7 @@ pub(crate) fn project_decal_images(
         let Some(asset) = embedded_image_asset(scan, image.asset.name())? else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+        let feature_id = crate::design::identity::neutral_feature_id(scope)?;
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
@@ -126,7 +124,6 @@ pub(crate) fn project_decal_images(
 }
 
 fn parse_decal_image(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
@@ -134,11 +131,10 @@ fn parse_decal_image(
     let Ok(scope_at) = usize::try_from(scope.byte_offset()) else {
         return Ok(None);
     };
-    parse_decal_image_frame(ctx, bytes, stream, scope.record_index, scope_at)
+    parse_decal_image_frame(bytes, stream, scope.record_index, scope_at)
 }
 
 fn parse_decal_image_frame(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope_record_index: u32,
@@ -177,8 +173,7 @@ fn parse_decal_image_frame(
             if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
                 continue;
             }
-            let candidate = match parse_decal_asset_record(ctx, bytes, asset_at, asset_record_index)
-            {
+            let candidate = match parse_decal_asset_record(bytes, asset_at, asset_record_index) {
                 Ok(Some(candidate)) => candidate,
                 Ok(None) => continue,
                 Err(error) => return Some(Err(error)),
@@ -204,7 +199,6 @@ fn parse_decal_image_frame(
 }
 
 fn parse_decal_asset_record(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     asset_at: usize,
     asset_record_index: u32,
@@ -238,17 +232,11 @@ fn parse_decal_asset_record(
         {
             return None;
         }
-        let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
-            ctx,
+        let (asset_name, after_asset_name) = lp_utf16_bounded(
             bytes,
             name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
             1..=1024,
-            "f3d Design UTF-16 text",
-        ) {
-            Ok(Some(value)) => value,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        )?;
         let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
         if after_asset_name != next_at {
             return None;
@@ -309,15 +297,9 @@ mod tests {
     #[test]
     fn decal_frame_decodes_image_mode_and_target() {
         let (bytes, scope_at) = fixture();
-        let image = parse_decal_image_frame(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            "Design/BulkStream.dat",
-            23,
-            scope_at,
-        )
-        .unwrap()
-        .expect("complete synthetic Decal frame");
+        let image = parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at)
+            .unwrap()
+            .expect("complete synthetic Decal frame");
         assert_eq!(image.asset.record_index(), 17);
         assert_eq!(image.asset.entity_suffix(), 50);
         assert_eq!(image.asset.name(), "mark.png");
@@ -337,15 +319,11 @@ mod tests {
     fn decal_frame_rejects_an_unframed_name() {
         let (mut bytes, scope_at) = fixture();
         bytes[scope_at..scope_at + 4].fill(0);
-        assert!(parse_decal_image_frame(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            "Design/BulkStream.dat",
-            23,
-            scope_at
-        )
-        .unwrap()
-        .is_none());
+        assert!(
+            parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -360,15 +338,9 @@ mod tests {
         const STREAM: &str = "Design/BulkStream.dat";
         const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/mark.png";
         let (bytes, scope_at) = fixture();
-        let image = parse_decal_image_frame(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            STREAM,
-            23,
-            scope_at,
-        )
-        .unwrap()
-        .unwrap();
+        let image = parse_decal_image_frame(&bytes, STREAM, 23, scope_at)
+            .unwrap()
+            .unwrap();
         let scope = crate::records::feature::scope::DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:scope#23",
             crate::records::feature::scope::DesignFeatureKind::Decal,

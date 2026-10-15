@@ -50,36 +50,18 @@ fn compact_reference_fixture() -> (Vec<u8>, DesignRecordHeader, usize, u32) {
 fn compact_mirror_reference_uses_the_identity_record_lane() {
     let (mut bytes, header, identity, reference) = compact_reference_fixture();
     assert_eq!(
-        compact_feature_reference(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &header
-        )
-        .unwrap(),
+        compact_feature_reference(&bytes, &header).unwrap(),
         Some((reference, u64_from_index(identity + 21)))
     );
     bytes[identity + 20] = 1;
-    assert_eq!(
-        compact_feature_reference(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &header
-        )
-        .unwrap(),
-        None
-    );
+    assert_eq!(compact_feature_reference(&bytes, &header).unwrap(), None);
 }
 
 #[test]
 fn compact_mirror_reference_refuses_guid_text_limits() {
     let (bytes, header, identity, reference) = compact_reference_fixture();
     assert_eq!(
-        compact_feature_reference(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &header
-        )
-        .unwrap(),
+        compact_feature_reference(&bytes, &header).unwrap(),
         Some((reference, u64_from_index(identity + 21)))
     );
 }
