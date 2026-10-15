@@ -12,7 +12,6 @@ use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
 use crate::families::standard::decode::edge_geometry::plane_intersection_line;
 use crate::families::standard::decode::edge_geometry::standard_analytic_curve_parameter_range;
 use crate::families::standard::decode::edge_geometry::standard_oriented_analytic_curve_parameter_range;
-use crate::families::standard::decode::edge_geometry::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::decode::edge_geometry::witness_arc_end;
 use crate::families::standard::decode::emit_standard_topology;
 use crate::families::standard::decode::include_native_endpoint_pairs;
@@ -28,7 +27,6 @@ use crate::families::standard::decode::same_cone_generator_pair;
 use crate::families::standard::decode::standard_circle_endpoint_candidates;
 use crate::families::standard::decode::standard_curve_edge_classes;
 use crate::families::standard::decode::standard_curve_geometry_gauge_keys;
-use crate::families::standard::decode::standard_endpoint_pair_supports_topology as charged_endpoint_pair_supports_topology;
 use crate::families::standard::decode::standard_face_boundary_witnesses;
 use crate::families::standard::decode::standard_face_point_membership;
 use crate::families::standard::decode::standard_freeform_e5_carrier_ids;
@@ -82,7 +80,7 @@ fn standard_pcurve_geometry(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     crate::test_support::with_service_context(|ctx| {
-        charged_standard_pcurve_geometry(
+        crate::families::standard::decode::edge_geometry::standard_pcurve_geometry(
             ctx,
             surface,
             support,
@@ -104,7 +102,9 @@ fn standard_endpoint_pair_supports_topology(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> bool {
     crate::test_support::with_service_context(|ctx| {
-        charged_endpoint_pair_supports_topology(ctx, surface, support, start, end, witness, refusal)
+        crate::families::standard::decode::standard_endpoint_pair_supports_topology(
+            ctx, surface, support, start, end, witness, refusal,
+        )
     })
     .expect("service budget admits endpoint topology")
 }

@@ -2372,20 +2372,18 @@ fn append_resolved_consolidated_surface_curves(
                     .map(|(index, (_, _, _, _, endpoints))| (index, *endpoints)),
             )
         });
-        let attachment = selected_attachment
-            .map(|(index, reversed)| {
-                let (edge, procedure, curve, surfaces, _) = &attachable_edges[index];
-                Ok::<_, cadmpeg_core::CodecError>((
-                    (
-                        *edge,
-                        *procedure,
-                        curve.clone(),
-                        [surfaces[0].clone(), surfaces[1].clone()],
-                    ),
-                    reversed,
-                ))
-            })
-            .transpose()?;
+        let attachment = selected_attachment.map(|(index, reversed)| {
+            let (edge, procedure, curve, surfaces, _) = &attachable_edges[index];
+            (
+                (
+                    *edge,
+                    *procedure,
+                    curve.clone(),
+                    [surfaces[0].clone(), surfaces[1].clone()],
+                ),
+                reversed,
+            )
+        });
         macro_rules! option_or_none {
             ($value:expr) => {
                 match $value {
@@ -2539,7 +2537,7 @@ fn append_resolved_consolidated_surface_curves(
                         ) {
                             Ok(Some(pcurve)) => pcurve,
                             Ok(None) => return Ok(None),
-                            Err(RechartFailure::NonFinite) => {
+                            Err(RechartFailure) => {
                                 binding_counts.rechart_numeric_failures += 1;
                                 return Ok(None);
                             }
@@ -2678,13 +2676,11 @@ fn append_resolved_consolidated_surface_curves(
                         binding_counts.standard_face_surfaces += 1;
                         bound_new_standard_surface = true;
                     }
-                    let copy_side = |side: usize| {
-                        Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                            surface: Some(binding.standard_surfaces[side].clone()),
-                            pcurve: Some(binding.edge_pcurves[side].clone().into()),
-                        })
+                    let copy_side = |side: usize| IntcurveSupportSide {
+                        surface: Some(binding.standard_surfaces[side].clone()),
+                        pcurve: Some(binding.edge_pcurves[side].clone().into()),
                     };
-                    sides = [copy_side(0)?, copy_side(1)?];
+                    sides = [copy_side(0), copy_side(1)];
                 }
             }
         }
@@ -3188,10 +3184,9 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
         <= EPS_APEX_ALIGNMENT * scale
 }
 
+/// A rechart produced a non-finite pcurve coordinate.
 #[derive(Debug)]
-enum RechartFailure {
-    NonFinite,
-}
+struct RechartFailure;
 
 fn rechart_equivalent_surface_pcurve(
     pcurve: &PcurveGeometry,
@@ -3218,14 +3213,14 @@ fn rechart_equivalent_surface_pcurve(
         + (source_origin.y - target_origin.y) * source_axis.y
         + (source_origin.z - target_origin.z) * source_axis.z;
     if !v_shift.is_finite() {
-        return Err(RechartFailure::NonFinite);
+        return Err(RechartFailure);
     }
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
             let shifted_origin =
                 cadmpeg_ir::units::FinitePoint2::new(Point2::new(origin.u, origin.v + v_shift))
-                    .ok_or(RechartFailure::NonFinite)?;
+                    .ok_or(RechartFailure)?;
             Ok(Some(PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                     shifted_origin,
@@ -3252,7 +3247,7 @@ fn rechart_equivalent_surface_pcurve(
                             raw.u,
                             raw.v + v_shift,
                         ))
-                        .ok_or(RechartFailure::NonFinite)?;
+                        .ok_or(RechartFailure)?;
                     }
                 }
                 PcurveNurbsPoles::Rational { points } => {
@@ -3262,7 +3257,7 @@ fn rechart_equivalent_surface_pcurve(
                             raw.u,
                             raw.v + v_shift,
                         ))
-                        .ok_or(RechartFailure::NonFinite)?;
+                        .ok_or(RechartFailure)?;
                     }
                 }
             }
@@ -3272,7 +3267,7 @@ fn rechart_equivalent_surface_pcurve(
                 poles,
                 nurbs.periodic(),
             )
-            .map_err(|_| RechartFailure::NonFinite)?;
+            .map_err(|_| RechartFailure)?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: shifted }))
         }
         _ => Ok(None),
@@ -4008,7 +4003,7 @@ mod tests {
         };
         assert!(matches!(
             rechart_equivalent_surface_pcurve(&pcurve, &source, &target),
-            Err(RechartFailure::NonFinite),
+            Err(RechartFailure),
         ));
     }
 
