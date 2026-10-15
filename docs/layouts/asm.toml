@@ -836,10 +836,17 @@ source = "spec"
 anchor = "`u_scale` u-parameter scale (f64)"
 
 [[record.field]]
-name = "trailing_flags"
-type = "bytes[5]"
+name = "u_sense"
+type = "sab_logical"
 source = "spec"
-anchor = "5×`0x0b`"
+anchor = "u-sense logical (`FALSE` = `forward`, `TRUE` = `reversed`)"
+
+[[record.field]]
+name = "bounds"
+type = "bytes[4]"
+source = "spec"
+anchor = "u-sense logical (`FALSE` = `forward`, `TRUE` = `reversed`), four optional parameter bounds"
+note = "Four absent bounds, each `0x0b`, in the 161-byte form."
 
 [[record]]
 name = "sphere_surface"

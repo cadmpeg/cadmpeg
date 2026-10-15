@@ -274,7 +274,8 @@ Covers circular and elliptical cylinders when the stored sine is zero. The spec 
 | 5 | `sine_half_angle` | `sab_f64` | little | spec | `sin(half_angle)` (f64, 0 ⇒ cylinder) |
 | 6 | `cosine_half_angle` | `sab_f64` | little | spec | `cos(half_angle)` (f64) |
 | 7 | `u_scale` | `sab_f64` | little | spec | `u_scale` u-parameter scale (f64) |
-| 8 | `trailing_flags` | `bytes[5]` | little | spec | 5×`0x0b` |
+| 8 | `u_sense` | `sab_logical` | little | spec | u-sense logical (`FALSE` = `forward`, `TRUE` = `reversed`) |
+| 9 | `bounds` | `bytes[4]` | little | spec | Four absent bounds, each `0x0b`, in the 161-byte form. |
 
 ## `sphere_surface`
 
