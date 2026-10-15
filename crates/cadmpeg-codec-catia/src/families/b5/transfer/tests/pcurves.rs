@@ -349,9 +349,11 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         angular_scale: crate::test_support::test_b5::finite(2.0),
         chart_origin: crate::test_support::test_b5::finite(0.0),
     };
-    assert!(
-        matches!(lifted_curve_geometry(&pcurve, &cylinder), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) if { circle_curve.radius().get() == 2.0 })
-    );
+    assert!(matches!(
+        lifted_curve_geometry(&pcurve, &cylinder),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+            if { circle_curve.radius().get() == 2.0 }
+    ));
     let meridian = B5Pcurve {
         control_points: vec![
             crate::test_support::test_b5::finite_vector([1.0, -2.0]),

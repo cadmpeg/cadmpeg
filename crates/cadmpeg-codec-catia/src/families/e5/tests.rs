@@ -349,13 +349,15 @@ fn e5_surface_parser_reads_framed_torus() {
     let mut large = e5_torus_stream();
     large[110..118].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[118..126].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
-    assert!(
-        matches!(crate::families::e5::records::e5_surfaces(&large, &mut crate::nurbs::LaneRefusals::new()).expect("service resource budget")[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-        if {
-            (torus_surface.major_radius().get() == 2_000_000.0)
-                && (torus_surface.minor_radius().get() == 1_500_000.0)
-        })
-    );
+    assert!(matches!(
+        crate::families::e5::records::e5_surfaces(
+            &large, &mut crate::nurbs::LaneRefusals::new()
+        ).expect("service resource budget")[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+    if {
+        (torus_surface.major_radius().get() == 2_000_000.0)
+            && (torus_surface.minor_radius().get() == 1_500_000.0)
+    }));
 
     let mut tiny = e5_torus_stream();
     tiny[110..118].copy_from_slice(&f64::from_bits(1).to_le_bytes());
@@ -502,7 +504,10 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     ));
     assert!(matches!(
         procedural.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>() == [2.0, 5.0]
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet)
+            if jet.degree() == 5
+            && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>()
+            == [2.0, 5.0]
             && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
             && jet.stations().len() == 2));
     assert!(result.report().losses.iter().any(|loss| {
