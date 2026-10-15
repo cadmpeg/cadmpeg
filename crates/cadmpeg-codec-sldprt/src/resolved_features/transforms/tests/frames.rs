@@ -1227,7 +1227,13 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
 
     let (resolved, radius) = declared_entity_handle_circular_marker(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&lane),
+        || {
+            crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+                &cadmpeg_test_support::service_decode_context(),
+                std::slice::from_ref(&lane),
+                &operand,
+            )
+        },
         "feature-native",
         &operand,
         5.0,
@@ -1243,7 +1249,11 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         lane.sketch_entities[0].reclassify(kind);
         assert!(declared_entity_handle_circular_marker(
             &cadmpeg_test_support::service_decode_context(),
-            std::slice::from_ref(&lane),
+            || crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+                &cadmpeg_test_support::service_decode_context(),
+                std::slice::from_ref(&lane),
+                &operand
+            ),
             "feature-native",
             &operand,
             5.0,
@@ -1255,7 +1265,11 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     invalid_radial.sketch_entities[1].reclassify(SketchInputKind::Arc);
     assert!(declared_entity_handle_circular_marker(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&invalid_radial),
+        || crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&invalid_radial),
+            &operand
+        ),
         "feature-native",
         &operand,
         5.0,
@@ -1275,7 +1289,11 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         .extend([second_center, second_radial]);
     assert!(declared_entity_handle_circular_marker(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&ambiguous),
+        || crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&ambiguous),
+            &operand
+        ),
         "feature-native",
         &operand,
         5.0,

@@ -1012,7 +1012,7 @@ pub(super) fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
 #[derive(Clone, Copy)]
 pub(super) enum MarkerEntityFilter<'a> {
     All,
-    Lines(&'a [SketchEntity]),
+    Lines(&'a super::relation_loci::ProfileEntities<'a>),
 }
 
 /// The sketch entities a marker resolves to, in identity order.
@@ -1027,7 +1027,7 @@ pub(super) fn relation_marker_entities<'a, 'loci>(
     let mut entities = BTreeMap::<&'loci str, &'loci SketchEntityId>::new();
     for marker_id in marker_ids {
         let mut marker_storage = ctx.reserve_scoped(0, "resolve SLDPRT marker entities")?;
-        let identities = marker_entities_inner(
+        let (identities, _identity_storage) = marker_entities_inner(
             ctx,
             &mut marker_storage,
             marker_id,
@@ -1059,16 +1059,8 @@ pub(super) fn marker_entities<'a>(
     filter: MarkerEntityFilter<'_>,
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker entities";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let identities = marker_entities_inner(
-        ctx,
-        &mut storage,
-        marker_id,
-        markers_by_id,
-        loci_by_marker,
-        filter,
-        &mut HashSet::new(),
-    )?;
+    let (identities, _storage) =
+        marker_entity_ids(ctx, marker_id, markers_by_id, loci_by_marker, filter)?;
     let mut result = Vec::new();
     for identity in ctx.admit_iter(identities, OPERATION)? {
         let identity = copy_sketch_entity_identity(ctx, identity, OPERATION)?;
@@ -1077,26 +1069,56 @@ pub(super) fn marker_entities<'a>(
     Ok(result)
 }
 
-fn marker_entities_inner<'a, 'loci>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+pub(super) fn marker_entity_ids<'a, 'loci, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    marker_id: &'a str,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+    loci_by_marker: &'loci HashMap<String, Vec<SketchLocus>>,
+    filter: MarkerEntityFilter<'_>,
+) -> Result<
+    (
+        Vec<&'loci SketchEntityId>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    const OPERATION: &str = "resolve SLDPRT marker entities";
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    marker_entities_inner(
+        ctx,
+        &mut storage,
+        marker_id,
+        markers_by_id,
+        loci_by_marker,
+        filter,
+        &mut HashSet::new(),
+    )
+}
+
+fn marker_entities_inner<'a, 'loci, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    visited_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     marker_id: &'a str,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     loci_by_marker: &'loci HashMap<String, Vec<SketchLocus>>,
     filter: MarkerEntityFilter<'_>,
     visited: &mut HashSet<&'a str>,
-) -> Result<BTreeSet<&'loci SketchEntityId>, cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<&'loci SketchEntityId>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     const OPERATION: &str = "resolve SLDPRT linked marker entities";
     let _nesting = ctx.enter_nested(OPERATION)?;
     let mut direct = None;
     if let Some(loci) = ctx.get_hash_map(loci_by_marker, marker_id, OPERATION)? {
-        let mut identities = BTreeSet::new();
+        let (mut identities, mut storage) = (Vec::new(), ctx.reserve_scoped(0, OPERATION)?);
         for locus in ctx.admit_iter(loci, OPERATION)? {
             let identity = locus_entity(locus);
             if let MarkerEntityFilter::Lines(entities) = filter {
-                let Some(entity) =
-                    super::relation_loci::find_profile_entity(ctx, entities, identity, OPERATION)?
-                else {
+                let Some(entity) = entities.entity(ctx, identity, OPERATION)? else {
                     continue;
                 };
                 if !matches!(
@@ -1106,15 +1128,17 @@ fn marker_entities_inner<'a, 'loci>(
                     continue;
                 }
             }
-            storage.with_storage(|| ctx.insert_btree_set(&mut identities, identity, OPERATION))?;
+            storage.with_storage(|| ctx.push_vec(&mut identities, identity, OPERATION))?;
         }
+        ctx.sort_unstable_by(&mut identities, |id| *id, Ord::cmp, OPERATION)?;
+        ctx.dedup_vec(&mut identities, "deduplicate SLDPRT marker entities")?;
         if matches!(filter, MarkerEntityFilter::Lines(_)) || identities.len() == 1 {
-            return Ok(identities);
+            return Ok((identities, storage));
         }
-        direct = Some(identities);
+        direct = Some((identities, storage));
     }
-    if !storage.with_storage(|| ctx.insert_hash_set(visited, marker_id, OPERATION))? {
-        return Ok(BTreeSet::new());
+    if !visited_storage.with_storage(|| ctx.insert_hash_set(visited, marker_id, OPERATION))? {
+        return Ok((Vec::new(), ctx.reserve_scoped(0, OPERATION)?));
     }
     let mut selected = direct;
     if let Some(marker) = ctx.get_hash_map(markers_by_id, marker_id, OPERATION)? {
@@ -1126,9 +1150,9 @@ fn marker_entities_inner<'a, 'loci>(
             {
                 continue;
             }
-            let candidates = marker_entities_inner(
+            let (candidates, candidate_storage) = marker_entities_inner(
                 ctx,
-                storage,
+                visited_storage,
                 &link.entity_ref,
                 markers_by_id,
                 loci_by_marker,
@@ -1138,19 +1162,22 @@ fn marker_entities_inner<'a, 'loci>(
             if candidates.is_empty() {
                 continue;
             }
-            let Some(entities) = selected.as_mut() else {
-                selected = Some(candidates);
+            let Some((identities, _storage)) = selected.as_mut() else {
+                selected = Some((candidates, candidate_storage));
                 continue;
             };
-            ctx.retain_btree_set(
-                entities,
-                |identity| ctx.contains_btree_set(&candidates, identity, OPERATION),
+            ctx.retain_vec(
+                identities,
+                |identity| Ok(ctx.binary_search(&candidates, identity, OPERATION)?.is_ok()),
                 OPERATION,
             )?;
         }
     }
     ctx.remove_hash_set(visited, marker_id, OPERATION)?;
-    Ok(selected.unwrap_or_default())
+    match selected {
+        Some(selected) => Ok(selected),
+        None => Ok((Vec::new(), ctx.reserve_scoped(0, OPERATION)?)),
+    }
 }
 
 pub(super) fn sort_marker_entity_ids(

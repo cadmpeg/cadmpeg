@@ -28,8 +28,7 @@ fn circle_scalar(
 }
 
 #[test]
-fn circle_handle_admits_class_names_and_skips_singleton_sort() {
-    const WORK: u64 = 74;
+fn circle_handle_classifies_literal_names_and_skips_singleton_sort() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let mut display = circle_scalar(0, "", FeatureInputScalarRole::Display, None);
@@ -63,24 +62,42 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
     assert!(circle_dimension_handle_driver(&ctx, &relation, &input)
         .unwrap()
         .is_none());
+    let mut input = input;
+    input.classes[1].name = "unrelated".repeat(128);
+    let mut probe_policy = DecodePolicy::service();
+    probe_policy.limits.max_work_units = u64::MAX;
+    let probe_arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &probe_arena, &probe_policy).unwrap();
+    let operation = "match SLDPRT circle handle class";
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        operation,
+        None,
+    );
+    assert!(circle_dimension_handle_driver(&ctx, &relation, &input)
+        .unwrap()
+        .is_none());
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {
+        panic!("fixed-literal classification must not charge name lengths");
+    };
+    assert_eq!(limit.additional, 1);
+    drop(probe);
+
     let CodecError::ResourceLimit(limit) =
-        crate::test_support::work_refusal_at("match SLDPRT circle handle class", |ctx| {
+        crate::test_support::work_refusal_at("match SLDPRT circle handle driver", |ctx| {
             circle_dimension_handle_driver(ctx, &relation, &input)
         })
     else {
-        panic!("class comparison must refuse");
+        panic!("driver visit after class visits must refuse");
     };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "match SLDPRT circle handle class");
-    assert_eq!(limit.additional, 11);
+    assert_eq!(limit.additional, 1);
 
-    // One scalar visit, one lookup visit, two ID bytes, three class visits,
-    // three comparisons of two eleven-byte names, and one driver visit.
+    let work_per_call = limit.used.checked_add(limit.additional).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 32;
     policy.limits.max_collection_items = 64;
-    policy.limits.max_work_units = WORK * 64;
+    policy.limits.max_work_units = work_per_call.checked_mul(64).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
@@ -89,16 +106,6 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
             .is_none());
     }
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(limit) =
-        crate::test_support::work_refusal_at("match SLDPRT circle handle driver", |ctx| {
-            circle_dimension_handle_driver(ctx, &relation, &input)
-        })
-    else {
-        panic!("driver visit after class comparisons must refuse");
-    };
-    assert_eq!(limit.used, WORK - 1);
-    assert_eq!(limit.additional, 1);
-
     // A singleton has no sorting work. Its visits and ID comparison remain admitted.
     let mut singleton = input.clone();
     singleton.classes.clear();
