@@ -5983,16 +5983,13 @@ fn native_support_pcurve_for_range(
             Some(NativeChart::Plane { reverse_v: false })
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            NativeChart::cone(0.0, 1.0, cylinder_surface.radius().get() / LEN_TO_MM)
+            NativeChart::cone(1.0, cylinder_surface.radius().get() / LEN_TO_MM, false)
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let half_angle = cone_surface.half_angle().get();
-            NativeChart::cone(
-                half_angle.sin(),
-                half_angle.cos(),
-                cone_surface.radius().get() / LEN_TO_MM,
-            )
-        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => NativeChart::cone(
+            cone_surface.half_angle().get().cos(),
+            cone_surface.radius().get() / LEN_TO_MM,
+            false,
+        ),
         SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_),
         ) => Some(NativeChart::LatitudeFirst { reverse_v: false }),
@@ -6082,8 +6079,8 @@ mod pcurve_chart_tests {
     }
 
     /// The native pcurve chart of each support `native_embedded_surface`
-    /// writes: plane lengths in centimetres, cone `(axial / (direction cos
-    /// r), azimuth)`, and sphere and torus latitude first.
+    /// writes: plane lengths in centimetres, cone `(axial / (|cos| r),
+    /// azimuth)` about the written axis, and sphere and torus latitude first.
     #[test]
     fn writer_native_support_pcurves_follow_the_native_charts() {
         use cadmpeg_ir::geometry::analytic::{
@@ -6137,10 +6134,7 @@ mod pcurve_chart_tests {
                 solved(SolvedSurfaceGeometry::Cone(
                     ConeSurface::try_new(origin, axis, reference, 12.0, 1.0, half_angle).unwrap(),
                 )),
-                neutral.map(|p| {
-                    let direction = if half_angle < 0.0 { -1.0 } else { 1.0 };
-                    Point2::new(p.v / (direction * 12.0 * half_angle.cos()), p.u)
-                }),
+                neutral.map(|p| Point2::new(p.v / (12.0 * half_angle.cos()), p.u)),
             ));
         }
         for (support, expected) in cases {

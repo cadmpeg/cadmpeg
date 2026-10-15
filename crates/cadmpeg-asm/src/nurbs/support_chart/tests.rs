@@ -161,6 +161,31 @@ fn outward_cylinder_generator_runs_along_its_axis() {
     cone_case(0.0, 1.0, 1.0, false);
 }
 
+#[test]
+fn inward_cylinder_generator_runs_along_its_axis() {
+    cone_case(0.0, -1.0, 1.0, false);
+}
+
+#[test]
+fn cone_chart_holds_for_every_sine_and_cosine_sign() {
+    let (sine, cosine) = (0.5_f64, 0.75_f64.sqrt());
+    for (sine, cosine) in [
+        (sine, cosine),
+        (-sine, cosine),
+        (sine, -cosine),
+        (-sine, -cosine),
+    ] {
+        cone_case(sine, cosine, 1.0, false);
+        cone_case(sine, cosine, 0.6, false);
+    }
+}
+
+#[test]
+fn reversed_cone_negates_the_generator_coordinate() {
+    cone_case(0.0, 1.0, 1.0, true);
+    cone_case(0.5, 0.75_f64.sqrt(), 1.0, true);
+}
+
 /// A sphere record and its native point at latitude `first` and longitude
 /// `second`, negated by `reverse_v`.
 fn sphere_case(radius: f64, reverse_v: bool) {
@@ -258,17 +283,27 @@ fn embedded_support_chart_reads_the_same_fields_as_the_record() {
         Token::Position([0.0; 3]),
         Token::Vector3([0.0, 0.0, 1.0]),
         Token::Vector3([1.0, 0.0, 0.0]),
+        Token::Double(1.0),
         Token::True,
+        Token::Double(-2.0),
+        Token::False,
+        Token::Double(-0.5),
+        Token::Double(0.75_f64.sqrt()),
+        Token::Double(1.5),
+        Token::False,
     ];
-    let mut embedded = vec![Token::Ident("plane".into())];
+    let mut embedded = vec![Token::Ident("cone".into())];
     embedded.extend(fields.iter().cloned());
     assert_eq!(
         SupportChart::embedded_at(&embedded, 0),
-        SupportChart::of_surface_record("plane", &fields)
+        SupportChart::of_surface_record("cone", &fields)
     );
     assert_eq!(
         SupportChart::embedded_at(&embedded, 0),
-        Some(SupportChart::Native(NativeChart::Plane { reverse_v: true }))
+        Some(SupportChart::Native {
+            chart: NativeChart::cone(0.75_f64.sqrt(), 1.5, false).expect("nonzero scale"),
+            axis_reversed: true,
+        })
     );
     let spline = [Token::Ident("spline".into())];
     assert_eq!(
@@ -284,7 +319,7 @@ fn native_point_inverts_frame_point() {
     for chart in [
         NativeChart::Plane { reverse_v: false },
         NativeChart::Plane { reverse_v: true },
-        NativeChart::cone(0.5, 0.75_f64.sqrt(), 1.75).expect("nonzero scale"),
+        NativeChart::cone(-0.5, 1.75, true).expect("nonzero scale"),
         NativeChart::LatitudeFirst { reverse_v: false },
         NativeChart::LatitudeFirst { reverse_v: true },
     ] {
@@ -292,13 +327,16 @@ fn native_point_inverts_frame_point() {
         let miss = (back.u - native.u).abs().max((back.v - native.v).abs());
         assert!(miss <= EPS_VERTEX_MM, "{chart:?}: {back:?} != {native:?}");
     }
-    assert_eq!(NativeChart::cone(0.0, 0.0, 1.0), None);
-    assert_eq!(NativeChart::cone(0.0, 1.0, f64::INFINITY), None);
+    assert_eq!(NativeChart::cone(0.0, 1.0, false), None);
+    assert_eq!(NativeChart::cone(1.0, f64::INFINITY, false), None);
 }
 
 #[test]
 fn chart_overflow_refuses_conversion_without_changing_the_pcurve() {
-    let chart = SupportChart::Native(NativeChart::Plane { reverse_v: false });
+    let chart = SupportChart::Native {
+        chart: NativeChart::Plane { reverse_v: false },
+        axis_reversed: false,
+    };
     let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);
     let original = pcurve.clone();
     assert!(chart.normalize(&mut pcurve).is_none());

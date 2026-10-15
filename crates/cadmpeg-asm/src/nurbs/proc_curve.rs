@@ -23,7 +23,7 @@ use crate::nurbs::reader::{
 use crate::nurbs::subtypes::{
     find_owned_intcurve_subtype, find_owned_subtype_marker, subtype_span,
 };
-use crate::nurbs::support_chart::SupportChart;
+use crate::nurbs::support_chart::{cone_axis_reversed, cone_is_circular_cylinder, SupportChart};
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::features::FinitePoint3;
@@ -2932,7 +2932,7 @@ fn embedded_surface_fields(
                 }
                 no_ranges
             };
-            let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
+            let surface = if cone_is_circular_cylinder(sine, ratio) {
                 let (origin, frame) = admitted_placement(point, native_axis, ref_direction)?;
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
                     origin,
@@ -2940,7 +2940,7 @@ fn embedded_surface_fields(
                     PositiveLength::new(radius)?,
                 )))
             } else {
-                let axis = if sine * cosine < 0.0 {
+                let axis = if cone_axis_reversed(sine, cosine, ratio) {
                     native_axis.negated()
                 } else {
                     native_axis
@@ -3079,7 +3079,7 @@ fn decode_embedded_surface_fields(
                 }
                 no_ranges
             };
-            let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
+            let surface = if cone_is_circular_cylinder(sine, ratio) {
                 let (origin, frame) = admitted_placement(point, native_axis, ref_direction)?;
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
                     origin,
@@ -3087,7 +3087,7 @@ fn decode_embedded_surface_fields(
                     PositiveLength::new(radius)?,
                 )))
             } else {
-                let axis = if sine * cosine < 0.0 {
+                let axis = if cone_axis_reversed(sine, cosine, ratio) {
                     native_axis.negated()
                 } else {
                     native_axis
