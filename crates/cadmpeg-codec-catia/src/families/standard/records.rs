@@ -1063,7 +1063,7 @@ mod tests {
     }
 
     #[test]
-    fn surface_prefix_and_vertex_roster_limits_result() {
+    fn surface_prefix_and_vertex_roster_parse_one_entry_each() {
         let prefix = [0x12, 0x34, 0x56, 0, 0x1a, 0, 0x33, 0x33, 0];
         assert_eq!(super::surface_prefixes(&prefix).len(), 1);
         let roster = [0x54, 1, 0, 0, 0, 0, 0];
@@ -1071,7 +1071,7 @@ mod tests {
     }
 
     #[test]
-    fn surface_roster_tables_groups_and_supports_result() {
+    fn surface_populations_collect_one_population() {
         let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
         for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
             bytes.extend_from_slice(&value.to_le_bytes());

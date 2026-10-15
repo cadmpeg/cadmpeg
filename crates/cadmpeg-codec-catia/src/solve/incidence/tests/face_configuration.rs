@@ -401,7 +401,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
 }
 
 #[test]
-fn incidence_face_factor_allocations_result() {
+fn face_configuration_domains_prepare_for_shared_edge_faces() {
     let edge = MeshBoundaryEdgeCandidate {
         edge: 0,
         start: 0,
@@ -430,7 +430,7 @@ fn incidence_face_factor_allocations_result() {
 }
 
 #[test]
-fn ordered_face_support_result() {
+fn ordered_face_support_pruning_accepts_a_two_edge_boundary() {
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,

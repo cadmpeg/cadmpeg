@@ -1647,7 +1647,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_coordinate_boundary_result() {
+    fn deferred_coordinate_boundary_admits_a_cycle_with_a_missing_edge() {
         use cadmpeg_core::decode::DecodeArena;
         use cadmpeg_core::decode::DecodeContext;
         use cadmpeg_core::decode::DecodePolicy;

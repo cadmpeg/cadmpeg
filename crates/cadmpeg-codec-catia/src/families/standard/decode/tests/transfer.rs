@@ -1020,7 +1020,7 @@ fn standard_decode_transfers_consolidated_guide_curve() {
 }
 
 #[test]
-fn standard_population_entity_rewrite_result() {
+fn population_scope_prefixes_rewritten_body_ids() {
     use super::super::StandardPopulationScope;
     use cadmpeg_ir::document::EntityRewrite;
     use cadmpeg_ir::ids::BodyId;
@@ -1046,7 +1046,7 @@ fn standard_population_entity_rewrite_result() {
 }
 
 #[test]
-fn standard_initial_carrier_identity_result() {
+fn standard_catpart_decodes_as_a_standard_population() {
     let file = standard_catpart();
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, file.clone())
@@ -1068,7 +1068,7 @@ fn standard_initial_carrier_identity_result() {
 }
 
 #[test]
-fn standard_revolution_procedure_copy_result() {
+fn copying_a_revolution_procedure_preserves_it() {
     let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],

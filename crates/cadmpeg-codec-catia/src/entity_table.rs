@@ -2311,7 +2311,7 @@ mod tests {
     }
 
     #[test]
-    fn entity_table_cumulative_path_storage_result() {
+    fn two_increasing_single_identity_records_form_a_monotone_run() {
         let candidate = |entity_id| EntityRecordCandidates {
             pos: 0,
             total_len: 12,
@@ -2328,7 +2328,7 @@ mod tests {
     }
 
     #[test]
-    fn numeric_packet_items_result() {
+    fn numeric_value_packet_parses_a_binary64_item() {
         let mut payload = vec![0xaa, 0x81, 0x87, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6];
         payload.extend_from_slice(&42.0_f64.to_bits().to_le_bytes());
         payload.extend_from_slice(&[0xfe, 0xbb]);
@@ -2336,7 +2336,7 @@ mod tests {
     }
 
     #[test]
-    fn definition_schema_selectors_result() {
+    fn definition_schema_prefix_yields_one_selector_at_offset_zero() {
         let prefix = [0x32, 4, 0, 0, 0];
         let admitted = super::parse_definition_schema_selectors(&prefix);
         assert_eq!(

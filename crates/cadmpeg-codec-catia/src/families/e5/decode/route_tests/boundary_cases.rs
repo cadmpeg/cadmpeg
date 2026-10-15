@@ -905,7 +905,7 @@ fn occurrence_intersection_accepts_roundoff_equivalent_side_ranges() {
 }
 
 #[test]
-fn e5_boundary_nurbs_lift_result() {
+fn e5_plane_nurbs_lift_keeps_poles_and_rational_weights() {
     let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
         Point3::new(1.0, 2.0, 3.0),
         Vector3::new(0.0, 0.0, 1.0),

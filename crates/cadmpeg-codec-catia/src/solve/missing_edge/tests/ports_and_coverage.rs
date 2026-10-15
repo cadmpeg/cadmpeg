@@ -639,7 +639,7 @@ fn endpoint_pruning_with_known_domains_keeps_them() {
 }
 
 #[test]
-fn mesh_boundary_assignment_projection_result() {
+fn standard_quad_yields_mesh_boundary_assignments() {
     let bytes = standard_quad_topology_stream();
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         crate::solve::missing_edge::standard_mesh_boundary_assignments(
@@ -655,7 +655,7 @@ fn mesh_boundary_assignment_projection_result() {
 }
 
 #[test]
-fn boundary_support_outer_rows_and_sets_result() {
+fn single_boundary_candidate_has_endpoint_support() {
     use cadmpeg_core::decode::WorkBudget;
     let boundary = [crate::solve::missing_edge::MeshBoundaryEdgeCandidate {
         edge: 0,
@@ -678,7 +678,7 @@ fn boundary_support_outer_rows_and_sets_result() {
 }
 
 #[test]
-fn unmatched_standard_gap_walk_result() {
+fn standard_quad_with_an_unmatched_row_yields_missing_edge_assignments() {
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
         .windows(3)
@@ -702,7 +702,7 @@ fn unmatched_standard_gap_walk_result() {
 }
 
 #[test]
-fn endpoint_pruning_result() {
+fn endpoint_pruning_admits_a_quad_missing_one_edge_candidate() {
     let bytes = standard_quad_topology_stream();
     let candidates = [Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {

@@ -1794,7 +1794,7 @@ fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() 
 mod admission;
 
 #[test]
-fn native_fixed_owner_packets_result() {
+fn b2_owner_packet_stream_projects_one_owner_packet() {
     let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let packets = crate::test_support::with_service_context(|ctx| {

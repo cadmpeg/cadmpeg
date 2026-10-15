@@ -1401,7 +1401,7 @@ mod route_tests {
     }
 
     #[test]
-    fn annotation_result() {
+    fn annotation_records_stream_offset_and_formatted_tag() {
         let annotations = {
             let mut builder = cadmpeg_ir::AnnotationBuilder::new();
             super::annotate(
@@ -1422,7 +1422,7 @@ mod route_tests {
     }
 
     #[test]
-    fn container_report_losses_result() {
+    fn standard_catpart_report_lists_missing_brep_and_topology_losses() {
         let scan = crate::test_support::with_service_context(|ctx| {
             crate::container::scan_bytes(
                 ctx,
@@ -1439,7 +1439,7 @@ mod route_tests {
     }
 
     #[test]
-    fn payload_carrier_links_result() {
+    fn payload_links_the_unknown_curve_carrier() {
         let mut ir = CadIr::empty();
         let id = CurveId::mint("catia:test:curve#link".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
@@ -1467,7 +1467,7 @@ mod route_tests {
     }
 
     #[test]
-    fn unresolved_carrier_inventory_and_note_result() {
+    fn unknown_curve_carrier_adds_one_unresolved_loss() {
         let mut ir = CadIr::empty();
         let id =
             CurveId::mint("catia:test:curve#unresolved".to_string()).expect("identity grammar");
@@ -1483,7 +1483,7 @@ mod route_tests {
     }
 
     #[test]
-    fn source_metadata_result() {
+    fn source_metadata_records_the_file_size() {
         let scan = crate::test_support::with_service_context(|ctx| {
             crate::container::scan_bytes(
                 ctx,
@@ -1498,7 +1498,7 @@ mod route_tests {
     }
 
     #[test]
-    fn cgm_source_object_identity_result() {
+    fn cgm_source_ids_join_the_kind_and_the_formatted_key() {
         let source =
             super::cgm_source("surface", 0x1234).expect("service profile admits source identity");
         assert_eq!(source.object_id.as_str(), "cgm-surface:001234");

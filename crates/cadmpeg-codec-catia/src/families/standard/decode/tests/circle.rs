@@ -276,7 +276,7 @@ fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
 }
 
 #[test]
-fn standard_attached_circle_axes_result() {
+fn sphere_section_circle_attaches_one_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
@@ -314,7 +314,7 @@ fn standard_attached_circle_axes_result() {
 }
 
 #[test]
-fn standard_edge_circle_axes_result() {
+fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {

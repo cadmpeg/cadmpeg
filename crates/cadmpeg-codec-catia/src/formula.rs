@@ -4631,7 +4631,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_design_parameter_copy_result() {
+    fn design_parameter_copy_keeps_dependencies_and_properties() {
         let mut parameter = unset_candidate(FormulaParameterType::String).parameter;
         parameter.dependencies.insert(
             ParameterId::mint("synthetic:test:id#dependency".to_string())
@@ -4647,7 +4647,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_candidate_index_result() {
+    fn merging_one_candidate_into_an_empty_index_adds_it() {
         let candidate = unset_candidate(FormulaParameterType::String);
         let mut candidates = BTreeMap::new();
         super::merge_formula_parameter_candidate(
@@ -4660,7 +4660,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_literal_and_property_projection_result() {
+    fn parameter_properties_record_value_type_and_binding() {
         let properties = super::parameter_properties("String", Some("source-binding"))
             .expect("service profile admits properties");
         assert_eq!(properties["value_type"], "String");
@@ -4668,7 +4668,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_string_value_copy_result() {
+    fn string_parameter_value_clone_equals_the_original() {
         let value = ParameterValue::String("source string".to_string());
         let admitted = { value.clone() };
         assert_eq!(admitted, value);

@@ -1391,7 +1391,7 @@ fn owner_carrier_helper_preserves_session_depth_refusal() {
 }
 
 #[test]
-fn standard_e5_carrier_identity_maps_result() {
+fn freeform_e5_carrier_ids_resolve_a_record_to_its_wrapped_surface() {
     let mut stream = e5_torus_stream();
     let mut wrapper = vec![0x85, 0xaa, 0x81, 0x82, 0x83, 0x84];
     wrapper.extend_from_slice(&[0; 38]);
@@ -1401,7 +1401,7 @@ fn standard_e5_carrier_identity_maps_result() {
 }
 
 #[test]
-fn a5_owner_domain_entries_result() {
+fn invariant_face_carrier_binding_selects_a_sole_candidate() {
     let domains = vec![vec![(0, vec![7])]];
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
@@ -1413,7 +1413,7 @@ fn a5_owner_domain_entries_result() {
 }
 
 #[test]
-fn a5_face_witness_index_result() {
+fn face_boundary_witnesses_are_empty_without_faces() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point::new(
         PointId::mint("catia:test:point#a5-witness").expect("identity grammar"),
@@ -1428,7 +1428,7 @@ fn a5_face_witness_index_result() {
 }
 
 #[test]
-fn a5_owner_binding_result() {
+fn a5_owner_binding_binds_no_surface_without_face_bounds() {
     let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
     bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
@@ -1483,7 +1483,7 @@ fn a5_owner_binding_result() {
 }
 
 #[test]
-fn standard_endpoint_and_edge_builders_result() {
+fn one_line_support_yields_one_edge_class_and_one_gauge_key() {
     let support = StandardCurveSupport {
         pos: 0,
         tag: 7,
@@ -1497,7 +1497,7 @@ fn standard_endpoint_and_edge_builders_result() {
 }
 
 #[test]
-fn native_endpoint_evidence_result() {
+fn propagated_endpoint_pairs_fill_gaps_from_either_source() {
     assert_eq!(
         combine_propagated_endpoint_pairs(
             Some(vec![Some([0, 1]), None]),
@@ -1508,7 +1508,7 @@ fn native_endpoint_evidence_result() {
 }
 
 #[test]
-fn standard_topology_identity_result() {
+fn standard_loop_id_uses_the_catia_standard_namespace() {
     use cadmpeg_ir::ids::LoopId;
     let admitted =
         standard_id("loop", format_args!("0:0"), LoopId::mint).expect("valid loop identity");

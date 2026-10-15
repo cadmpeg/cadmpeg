@@ -1126,7 +1126,7 @@ fn native_load_derives_complete_source_ordered_preview_views() {
 }
 
 #[test]
-fn native_projection_result() {
+fn arena_projection_lists_catalogs_and_their_entries() {
     let mut native = super::super::CatiaNative::default();
     native.catalogs.push(super::super::CatiaCatalog {
         id: "catia:catalog#0".to_string(),
@@ -1147,7 +1147,7 @@ fn native_projection_result() {
 }
 
 #[test]
-fn legacy_native_projection_result() {
+fn legacy_entity_run_reads_catalog_manager_identity() {
     let mut bytes = vec![0xea];
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&[0x81, 0xfd, 0x8c]);
@@ -1158,7 +1158,7 @@ fn legacy_native_projection_result() {
 }
 
 #[test]
-fn native_graph_projection_result() {
+fn object_graph_fixture_projects_nonempty_records() {
     let bytes = object_graph_stream();
     let parsed = crate::object_graph::parse(&bytes).expect("fixture has an object graph");
     let admitted = super::super::projection::native_object_graph(parsed, Vec::new(), None, None);
@@ -1166,7 +1166,7 @@ fn native_graph_projection_result() {
 }
 
 #[test]
-fn native_incoming_incidences_result() {
+fn incoming_incidences_list_references_to_the_entity() {
     let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);
     let graph = &native.object_graphs[0];
@@ -1175,7 +1175,7 @@ fn native_incoming_incidences_result() {
 }
 
 #[test]
-fn configuration_chain_derivation_result() {
+fn derived_configuration_row_chains_match_decoded_chains() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     let classes = super::super::entity_class_index(
@@ -1197,7 +1197,7 @@ fn configuration_chain_derivation_result() {
 }
 
 #[test]
-fn native_semantic_indices_result() {
+fn semantic_indices_find_entities_in_configuration_row_chain() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     let records = native
@@ -1213,14 +1213,14 @@ fn native_semantic_indices_result() {
 }
 
 #[test]
-fn native_relation_signature_result() {
+fn relation_signature_names_its_input_parameter() {
     let source = "(#1_ : #In Length) : Real\n";
     let service = super::super::relation_type_signature(None, source).expect("valid signature");
     assert_eq!(service.inputs[0].parameter, "#1_");
 }
 
 #[test]
-fn native_configuration_production_result() {
+fn configuration_entity_produces_a_schema_configuration_record() {
     let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);
     let graph = &native.object_graphs[0];
@@ -1255,7 +1255,7 @@ fn native_configuration_production_result() {
 }
 
 #[test]
-fn native_graph_catalog_link_result() {
+fn decode_links_value_block_graph_to_its_catalog() {
     let bytes = standard_catpart_with_value_block();
     let native = crate::test_support::with_service_context(|ctx| {
         super::super::CatiaNative::decode_with_record_sources(

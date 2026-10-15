@@ -661,7 +661,7 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
 }
 
 #[test]
-fn native_edge_support_match_result() {
+fn edge_support_reuses_the_surface_with_matching_source_record() {
     let source =
         crate::assemble::cgm_source("surface", 42).expect("service profile admits source identity");
     let id = SurfaceId::mint("catia:test:surface#matching".to_owned()).expect("surface identity");
@@ -689,7 +689,7 @@ fn native_edge_support_match_result() {
 }
 
 #[test]
-fn native_edge_support_nurbs_copy_result() {
+fn nurbs_edge_support_adds_one_surface_and_returns_its_id() {
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface())),
     );

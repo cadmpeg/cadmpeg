@@ -1683,7 +1683,7 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
 }
 
 #[test]
-fn reparameterized_nurbs_knots_result() {
+fn nurbs_curve_reparameterizes_onto_a_new_range() {
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
             1,

@@ -529,7 +529,7 @@ fn cylinder_circumference_tolerance_is_an_absolute_length() {
 }
 
 #[test]
-fn b2_offset_support_binding_result() {
+fn b2_offset_support_binds_to_the_a5_surface_carrier() {
     let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
     let carriers = crate::families::a5a8::records::a5_surfaces(
         &a5_surface_stream(),

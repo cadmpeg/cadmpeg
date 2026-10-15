@@ -16,7 +16,7 @@ use crate::solve::mesh_quotient::possible_face_equations;
 use crate::solve::mesh_quotient::possible_face_choices;
 
 #[test]
-fn edge_class_constraint_result() {
+fn single_edge_class_choice_yields_a_search_constraint() {
     catia_test_context!(service_ctx);
     let choices = [vec![[0usize, 1usize]]];
     assert!(edge_class_search_constraint(&service_ctx, &[0], &choices)
@@ -25,7 +25,7 @@ fn edge_class_constraint_result() {
 }
 
 #[test]
-fn mesh_selection_orientation_result() {
+fn selected_face_with_open_edge_direction_is_orientable() {
     use cadmpeg_core::decode::DecodeContext;
 
     use std::cell::RefCell;
@@ -67,7 +67,7 @@ fn mesh_selection_orientation_result() {
 }
 
 #[test]
-fn mesh_selection_completion_result() {
+fn remaining_face_with_fixed_edge_direction_is_orientable() {
     use cadmpeg_core::decode::DecodeArena;
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::DecodePolicy;
@@ -113,7 +113,7 @@ fn mesh_selection_completion_result() {
 }
 
 #[test]
-fn mesh_selection_selected_edges_result() {
+fn selected_face_reports_its_boundary_edge() {
     use std::cell::RefCell;
     use std::collections::HashSet;
     let assignments = vec![vec![MeshFaceBoundaryAssignment {

@@ -2382,7 +2382,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_support_walk_result() {
+    fn intersection_support_on_one_line_pcurve_closes() {
         let pcurves = BTreeMap::from([(
             3,
             E5Pcurve::Line {
@@ -2405,7 +2405,7 @@ mod tests {
     }
 
     #[test]
-    fn aa_nurbs_pcurve_result() {
+    fn nurbs_pcurve_payload_parses_to_a_nurbs_pcurve() {
         let mut payload = vec![0x81, 0x87, 0, 0];
         for value in [1_u32, 0, 0, 2, 0] {
             payload.extend_from_slice(&value.to_le_bytes());
@@ -2429,7 +2429,7 @@ mod tests {
     }
 
     #[test]
-    fn jet_pcurve_result() {
+    fn jet_pcurve_payload_parses_to_a_jet_pcurve() {
         let mut payload = Vec::new();
         for value in [5_u32, 0, 0, 2, 0, 0, 0] {
             payload.extend_from_slice(&value.to_le_bytes());
@@ -2454,7 +2454,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_topology_collections_result() {
+    fn torus_topology_stream_parses() {
         let bytes = crate::test_support::test_e5::e5_torus_topology_stream();
         assert!(
             crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes))
@@ -2464,7 +2464,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_curve_support_tail_result() {
+    fn curve_support_keeps_trailing_bytes_as_its_tail() {
         let mut payload = vec![0x81, 0x81, 0x81, 0, 0];
         payload.extend_from_slice(&0.0_f64.to_le_bytes());
         payload.extend_from_slice(&1.0_f64.to_le_bytes());
@@ -2483,7 +2483,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_orientation_result() {
+    fn single_outer_loop_face_solves_absolute_orientation() {
         let faces = vec![E5Face {
             record_id: 1,
             surface: 2,
@@ -2503,7 +2503,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_edge_tail_result() {
+    fn stream_with_only_an_edge_record_has_no_topology() {
         let mut bytes = Vec::new();
         append_e5_record(
             &mut bytes,

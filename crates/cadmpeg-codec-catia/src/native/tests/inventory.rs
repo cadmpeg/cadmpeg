@@ -797,7 +797,7 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
 }
 
 #[test]
-fn native_value_selector_views_result() {
+fn native_value_block_resolves_one_catalog_schema_selection() {
     let mut bytes = value_block_stream(&[0x32, 4, 0, 0, 0, 0x81]);
     bytes.extend(catalog_stream(&[
         "CATCatalogManager",
@@ -820,7 +820,7 @@ fn native_value_selector_views_result() {
 }
 
 #[test]
-fn native_catalog_projection_result() {
+fn catalog_projection_keeps_every_entry() {
     let catalog = crate::catalog::Catalog {
         pos: 16,
         total_len: 24,
@@ -835,7 +835,7 @@ fn native_catalog_projection_result() {
 }
 
 #[test]
-fn native_alias_graph_link_result() {
+fn alias_row_links_to_its_object_graph_record() {
     let mut stream = object_graph_stream();
     let mut alias = surface_alias_stream();
     alias[13..16].copy_from_slice(&[3, 0, 2]);

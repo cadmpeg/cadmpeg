@@ -1485,7 +1485,7 @@ mod overflowing_support;
 mod circle_ranges;
 
 #[test]
-fn standard_evidence_store_result() {
+fn evidence_store_outputs_one_unknown_surface_geometry() {
     use crate::families::standard::decode::{StandardEvidenceStore, StandardSurfaceEvidence};
     let build = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let mut store = StandardEvidenceStore::default();
@@ -1510,7 +1510,7 @@ fn standard_evidence_store_result() {
 }
 
 #[test]
-fn plane_normal_candidate_and_result_maps_result() {
+fn plane_normal_comes_from_its_face_frame() {
     let records = [StandardSurfaceRecord::Analytic(SurfacePrefix {
         pos: 0,
         target: 10,
@@ -1524,7 +1524,7 @@ fn plane_normal_candidate_and_result_maps_result() {
 }
 
 #[test]
-fn native_support_pcurve_copy_result() {
+fn native_support_keeps_its_pcurves_without_bound_endpoints() {
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             1,
@@ -1560,7 +1560,7 @@ fn native_support_pcurve_copy_result() {
 }
 
 #[test]
-fn standard_native_reverse_label_result() {
+fn native_support_matches_endpoints_and_reverses_pcurves() {
     let points = [1.0, 4.0]
         .into_iter()
         .enumerate()
@@ -1620,7 +1620,7 @@ fn standard_native_reverse_label_result() {
 }
 
 #[test]
-fn standard_edge_limit_curve_copy_result() {
+fn bspline_edge_takes_its_limit_curve_geometry() {
     let mut ir = CadIr::empty();
     for (index, x) in [0.0, 1.0].into_iter().enumerate() {
         ir.model.points.push(Point::new(

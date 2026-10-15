@@ -2346,7 +2346,7 @@ mod tests {
     }
 
     #[test]
-    fn resolved_cylinder_winner_and_loci_result() {
+    fn pcurve_on_its_cylinder_resolves_and_lifts_to_the_same_points() {
         let pcurve_bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let pcurve_records = crate::wire::records::consolidated_records(&pcurve_bytes);
         let pcurves = crate::wire::records::family_pcurves_from_records(

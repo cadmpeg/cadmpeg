@@ -51,7 +51,7 @@ mod tests {
     }
 
     #[test]
-    fn neutral_history_identity_result() {
+    fn neutral_history_id_replaces_object_with_the_given_kind() {
         let admitted = neutral_history_id(
             "catia:graph:object#owner:child",
             &cadmpeg_ir::identity_component!("feature"),

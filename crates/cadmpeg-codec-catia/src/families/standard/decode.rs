@@ -754,7 +754,7 @@ mod consolidated_revolution_binding_tests {
     }
 
     #[test]
-    fn revolution_binding_result() {
+    fn no_revolution_bindings_bind_no_faces_or_seams() {
         let mut ir = CadIr::empty();
         ir.model.points.push(Point::new(
             PointId::mint("catia:test:point#revolution-limit").expect("identity grammar"),
@@ -1081,7 +1081,7 @@ mod consolidated_analytic_refinement_tests {
     }
 
     #[test]
-    fn cylinder_refinement_result() {
+    fn cylinder_stream_without_surfaces_refines_nothing() {
         let bytes = crate::test_support::test_b2::b2_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let mut surfaces = [];

@@ -9126,11 +9126,11 @@ impl ExtentOwners {
 mod tests;
 
 #[cfg(test)]
-mod consolidated_cone_face_limit_tests {
+mod consolidated_cone_face_tests {
     use super::consolidated_parameter_points;
 
     #[test]
-    fn native_cone_face_parameter_links_result() {
+    fn cone_face_stream_yields_four_parameter_points() {
         let bytes = crate::test_support::test_b2::b2_cone_face_parameter_point_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let points = consolidated_parameter_points(&bytes, &records);
@@ -9139,11 +9139,11 @@ mod consolidated_cone_face_limit_tests {
 }
 
 #[cfg(test)]
-mod consolidated_cylinder_limit_tests {
+mod consolidated_cylinder_tests {
     use super::{consolidated_cylinder_groups, consolidated_cylinders};
 
     #[test]
-    fn native_standalone_cylinder_result() {
+    fn cylinder_stream_yields_one_standalone_cylinder() {
         let bytes = crate::test_support::test_b2::b2_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let cylinders = consolidated_cylinders(&bytes, &records);
@@ -9151,7 +9151,7 @@ mod consolidated_cylinder_limit_tests {
     }
 
     #[test]
-    fn native_embedded_cylinder_and_group_result() {
+    fn embedded_cylinder_stream_yields_one_group_and_one_cylinder() {
         let bytes = crate::test_support::test_b2::b2_embedded_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let (groups, cylinders) = consolidated_cylinder_groups(&bytes, &records);
@@ -9160,10 +9160,10 @@ mod consolidated_cylinder_limit_tests {
 }
 
 #[cfg(test)]
-mod consolidated_pcurve_limit_tests {
+mod consolidated_pcurve_tests {
 
     #[test]
-    fn native_pcurve_id_and_output_result() {
+    fn a5_pcurve_stream_yields_one_two_point_pcurve() {
         let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let pcurves = super::consolidated_pcurves(&bytes, &records);

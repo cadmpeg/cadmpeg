@@ -1799,7 +1799,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_coverage_result() {
+    fn zero_entity_coverage_counts_transferred_support_curves() {
         let build = |_: &cadmpeg_core::decode::DecodeContext<'_>| {
             super::zero_entity_coverage(1, 1, WireTransferCounts::default(), None)
         };
@@ -1811,7 +1811,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_closed_wire_members_result() {
+    fn closed_wire_loop_yields_one_member() {
         let point = Point3::new(0.0, 0.0, 0.0);
         let run = crate::families::zero_entity::records::ZeroEntitySupportRun {
             carrier_pos: 0,
@@ -1840,7 +1840,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_wire_nurbs_copy_result() {
+    fn wire_nurbs_geometry_clone_equals_the_original() {
         let nurbs = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],

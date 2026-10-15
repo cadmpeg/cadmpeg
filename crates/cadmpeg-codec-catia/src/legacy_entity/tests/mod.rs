@@ -790,7 +790,7 @@ fn rejects_unclosed_and_nonidentifier_type_descriptors() {
 }
 
 #[test]
-fn legacy_schema_program_and_identifiers_result() {
+fn schema_program_reads_its_identifier() {
     let mut bytes = Vec::new();
     identity(&mut bytes, 1);
     bytes.extend_from_slice(CATALOG_OPEN);
@@ -804,14 +804,14 @@ fn legacy_schema_program_and_identifiers_result() {
 }
 
 #[test]
-fn legacy_relation_signature_result() {
+fn relation_signature_lists_only_in_parameters_as_inputs() {
     let signature = "(#2_ : #Out Real,#1_ : #In Real) : VoidType\n";
     let admitted = super::parse_relation_signature(signature).expect("valid relation signature");
     assert_eq!(admitted.inputs[0].parameter, "#1_");
 }
 
 #[test]
-fn void_relation_result_type_result() {
+fn void_relation_signature_splits_into_output_and_void_type() {
     let signature = super::LegacyRelationSignature {
         inputs: Vec::new(),
         result: super::LegacyRelationResult::Void {

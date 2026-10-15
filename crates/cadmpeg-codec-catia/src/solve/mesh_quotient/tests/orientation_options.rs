@@ -8,7 +8,7 @@ use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
 use crate::solve::mesh_quotient::MeshQuotient;
 
 #[test]
-fn mesh_orientation_options_result() {
+fn open_single_edge_boundary_has_no_orientation_options() {
     use cadmpeg_core::decode::DecodeContext;
 
     use std::collections::HashSet;
@@ -36,7 +36,7 @@ fn mesh_orientation_options_result() {
 }
 
 #[test]
-fn quotient_edge_domains_result() {
+fn edge_domains_outside_the_quotient_are_not_viable() {
     use std::sync::Arc;
 
     let mut quotient = MeshQuotient::new(
@@ -50,7 +50,7 @@ fn quotient_edge_domains_result() {
 }
 
 #[test]
-fn fixed_mesh_directions_result() {
+fn open_single_edge_boundary_has_no_fixed_direction_options() {
     use std::sync::Arc;
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
@@ -73,7 +73,7 @@ fn fixed_mesh_directions_result() {
 }
 
 #[test]
-fn label_directions_result() {
+fn open_single_edge_boundary_cannot_merge_label_directions() {
     use std::sync::Arc;
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {

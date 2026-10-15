@@ -1047,10 +1047,10 @@ impl CatiaOuterContainerBinding {
 }
 
 #[cfg(test)]
-mod consolidated_edge_run_limit_tests {
+mod consolidated_edge_run_tests {
 
     #[test]
-    fn native_edge_runs_result() {
+    fn surface_only_stream_has_no_edge_runs() {
         let bytes = crate::test_support::test_a5a8::a5_surface_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let runs = crate::test_support::with_service_context(|ctx| {

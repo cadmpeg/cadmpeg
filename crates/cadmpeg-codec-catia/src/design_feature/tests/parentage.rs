@@ -211,7 +211,7 @@ fn omits_all_parents_in_an_owner_cycle() {
 }
 
 #[test]
-fn feature_parent_lookup_result() {
+fn object_without_owner_chain_gets_no_feature_parent() {
     let native = CatiaNative {
         design_objects: vec![design_object("synthetic:test:object#one", None)],
         ..CatiaNative::default()
