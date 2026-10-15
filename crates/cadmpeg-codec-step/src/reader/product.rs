@@ -19,7 +19,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::decode_text;
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
@@ -121,7 +121,7 @@ pub(super) fn decode(
             continue;
         };
         let Some(description) = parameters.get(1).and_then(|value| {
-            decode_text_charged(
+            decode_text(
                 exchange,
                 value,
                 &mut losses,
@@ -155,7 +155,7 @@ pub(super) fn decode(
         let product_id = parameters
             .first()
             .and_then(|value| {
-                decode_text_charged(
+                decode_text(
                     exchange,
                     value,
                     &mut losses,
@@ -168,7 +168,7 @@ pub(super) fn decode(
         let name = parameters
             .get(1)
             .and_then(|value| {
-                decode_text_charged(
+                decode_text(
                     exchange,
                     value,
                     &mut losses,
@@ -181,7 +181,7 @@ pub(super) fn decode(
         let product_description = parameters
             .get(2)
             .and_then(|value| {
-                decode_text_charged(
+                decode_text(
                     exchange,
                     value,
                     &mut losses,
@@ -302,7 +302,7 @@ pub(super) fn decode(
     let mut usages = BTreeMap::new();
     for (id, record) in exchange.entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
         let name = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1).and_then(|value| {
-            decode_text_charged(
+            decode_text(
                 exchange,
                 value,
                 &mut losses,

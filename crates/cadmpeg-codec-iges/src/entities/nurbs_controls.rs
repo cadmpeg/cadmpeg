@@ -353,13 +353,12 @@ fn trim_surface_u(
         };
         let knots = surface.u_knots().to_vec();
         let curve = NurbsCurve::from_checked_lanes(
-            ctx,
             surface.u_degree(),
             knots,
             points,
             weights,
             surface.u_periodic(),
-        )?
+        )
         .map_err(CodecError::malformed)?;
         let Some(column) = trim_nurbs_lanes(ctx, &curve, interval)? else {
             return Ok(None);
@@ -408,12 +407,11 @@ fn trim_surface_u(
     let u_knots = first.2.clone();
     let v_knots = surface.v_knots().to_vec();
     NurbsSurface::from_checked_lanes(
-        ctx,
         NurbsSurfaceAxis::new(surface.u_degree(), u_knots, false),
         NurbsSurfaceAxis::new(surface.v_degree(), v_knots, surface.v_periodic()),
         NurbsSurfaceLanes::new(points, weights),
         surface.normal_reversed(),
-    )?
+    )
     .map(Some)
     .map_err(CodecError::malformed)
 }

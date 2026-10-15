@@ -201,22 +201,16 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     let records = crate::wire::records::consolidated_records(&nurbs);
     assert_eq!(
         parsed_a5_nurbs_curves(&nurbs),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a5_nurbs_curves_from_records(
-                ctx,
-                &nurbs,
-                &records,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        })
+        crate::families::a5a8::records::a5_nurbs_curves_from_records(
+            &nurbs,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new()
+        )
     );
 }
 
 fn parsed_a5_nurbs_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A5NurbsCurve> {
-    crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_nurbs_curves(ctx, data).expect("service decode")
-    })
+    crate::families::a5a8::records::a5_nurbs_curves(data)
 }
 
 pub(super) fn a5_nurbs_curve_stream() -> Vec<u8> {

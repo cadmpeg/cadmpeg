@@ -2546,7 +2546,6 @@ pub(super) fn solve_damped_least_squares_4x4(
 }
 
 pub(super) fn intersection_side(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
@@ -2593,13 +2592,12 @@ pub(super) fn intersection_side(
     let pcurve = match lanes {
         Some((control_points, knots)) => Some(PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                ctx,
                 1,
                 knots,
                 control_points,
                 None,
                 false,
-            )?
+            )
             .map_err(cadmpeg_core::CodecError::malformed)?,
         }),
         None => None,
@@ -2761,17 +2759,14 @@ mod tests {
         use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
         use cadmpeg_ir::math::Vector3;
 
-        let setup = cadmpeg_test_support::service_decode_context();
         let original = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
-                &setup,
                 1,
                 vec![0., 0., 1., 1.],
                 vec![Point2::new(1., 2.), Point2::new(3., 4.)],
                 Some(vec![2., 1.]),
                 false,
             )
-            .expect("admission")
             .expect("curve"),
         };
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -2813,7 +2808,6 @@ mod tests {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         NurbsSurfaceAxis::new(
                             1,
                             vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
@@ -2829,7 +2823,6 @@ mod tests {
                         ),
                         false,
                     )
-                    .expect("fixture constructor admission")
                     .expect("finite wide surface"),
                 )),
                 source_object: None,
@@ -2913,7 +2906,6 @@ mod tests {
             let coordinates = [0.0, 0.5, 1.0];
             let square_controls = [0.0, 0.0, 1.0];
             let support = NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -2942,7 +2934,6 @@ mod tests {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .expect("valid offset support");
             let mut candidate = support.clone();
             candidate
@@ -2985,7 +2976,6 @@ mod tests {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
@@ -3006,7 +2996,6 @@ mod tests {
                     ),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid rational hull support"),
             )),
             source_object: None,
@@ -3043,7 +3032,6 @@ mod tests {
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
@@ -3063,7 +3051,6 @@ mod tests {
                         ),
                         false,
                     )
-                    .expect("fixture constructor admission")
                     .expect("valid linear support"),
                 )),
                 source_object: None,
@@ -3238,7 +3225,6 @@ mod tests {
         for weight in [1., 1e-300, 1e-200, 1e-120, 1e120, 1e200, 1e300] {
             let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
             let surface = NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
                 axis.clone(),
                 axis,
                 NurbsSurfaceLanes::new(
@@ -3250,7 +3236,6 @@ mod tests {
                 ),
                 false,
             )
-            .expect("fixture constructor admission")
             .unwrap();
             let net = super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface).unwrap();
             let derivatives = super::RationalSurfaceDerivativeNets::from_net(&net).unwrap();
@@ -3283,15 +3268,9 @@ mod tests {
                 })
                 .collect();
             let [u, v] = axes;
-            let surface = NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
-                u,
-                v,
-                NurbsSurfaceLanes::new(points, None),
-                false,
-            )
-            .expect("fixture constructor admission")
-            .expect("a degree-zero axis can contain a single pole");
+            let surface =
+                NurbsSurface::from_lanes(u, v, NurbsSurfaceLanes::new(points, None), false)
+                    .expect("a degree-zero axis can contain a single pole");
             assert!(super::translation_net_normal(&surface).is_none());
         }
     }

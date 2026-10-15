@@ -654,11 +654,10 @@ fn append_design_losses(
         .count();
     let incoherent_parameter_dependencies =
         crate::history::parameters::parameters_with_incoherent_dependencies(
-            ctx,
             &ir.model.parameters,
             &feature_names,
             &global_parameter_owners,
-        )?;
+        );
     let incoherent_parameter_values =
         crate::history::parameters::parameters_with_incoherent_evaluated_values(
             ctx,
@@ -2372,13 +2371,11 @@ fn build_geometry_ir(
         &mut supplemental_config_lanes,
     )?;
     crate::resolved_features::projections::project_compact_edge_selections(
-        ctx,
         &mut ir.model.features,
         &[],
         &supplemental_config_lanes,
     )?;
     crate::history::configuration::project_configuration_supplemental_edge_selections(
-        ctx,
         &mut ir,
         &supplemental_config_lanes,
     )?;
@@ -2421,18 +2418,12 @@ fn build_geometry_ir(
         &histories,
         sketch_lanes,
     );
-    crate::history::bind::bind_unique_sketch_feature(
-        ctx,
-        &mut ir.model.features,
-        &sketches,
-        &histories,
-    )?;
+    crate::history::bind::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::component_paths::project_dissected_sketches(
-        ctx,
         &mut ir.model.features,
         &sketches,
         &histories,
-    )?;
+    );
     crate::resolved_features::axes::bind_profile_revolution_axes(
         &mut ir.model.features,
         &histories,
@@ -2441,17 +2432,15 @@ fn build_geometry_ir(
         &brep.surfaces,
     );
     crate::resolved_features::bindings::bind_pattern_inputs(
-        ctx,
         &mut ir.model.features,
         &histories,
         lanes,
     )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-        ctx,
         &mut ir.model.features,
         &histories,
         lanes,
-    )?;
+    );
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut sketch_entities,
         &sketches,
@@ -2571,7 +2560,6 @@ fn build_geometry_ir(
         })
         .collect::<Vec<_>>();
     crate::history::bind::derive_feature_outputs(
-        ctx,
         &mut ir.model.features,
         &histories,
         crate::history::bind::FeatureOutputSources {
@@ -2592,7 +2580,6 @@ fn build_geometry_ir(
         face_identities: &face_identities,
     };
     crate::history::selections::bind_topology_selections(
-        ctx,
         &mut ir.model.features,
         &histories,
         &topology_selection_inputs,
@@ -2613,7 +2600,6 @@ fn build_geometry_ir(
         &all_lanes,
     )?;
     crate::resolved_features::holes::project_hole_position_sketches(
-        ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
@@ -2695,7 +2681,7 @@ fn build_geometry_ir(
         &all_lanes,
     )?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    assign_configuration_bodies(ctx, &mut ir, configuration_bodies)?;
+    assign_configuration_bodies(&mut ir, configuration_bodies)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
         &mut ir,
@@ -2705,7 +2691,6 @@ fn build_geometry_ir(
     )?;
     pmi_losses.extend(configuration_losses);
     crate::history::configuration::bind_configuration_topology_selections(
-        ctx,
         &mut ir,
         &histories,
         &all_lanes,
@@ -3524,13 +3509,11 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     )?;
     crate::resolved_features::projections::project_compact_edge_selections(
-        ctx,
         &mut ir.model.features,
         &[],
         &supplemental_config_lanes,
     )?;
     crate::history::configuration::project_configuration_supplemental_edge_selections(
-        ctx,
         &mut ir,
         &supplemental_config_lanes,
     )?;
@@ -3574,17 +3557,15 @@ fn build_metadata_ir(
         sketch_lanes,
     );
     crate::history::bind::bind_unique_sketch_feature(
-        ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
-    )?;
+    );
     crate::resolved_features::component_paths::project_dissected_sketches(
-        ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
-    )?;
+    );
     crate::resolved_features::axes::bind_profile_revolution_axes(
         &mut ir.model.features,
         &histories,
@@ -3593,17 +3574,15 @@ fn build_metadata_ir(
         &ir.model.surfaces,
     );
     crate::resolved_features::bindings::bind_pattern_inputs(
-        ctx,
         &mut ir.model.features,
         &histories,
         lanes,
     )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-        ctx,
         &mut ir.model.features,
         &histories,
         lanes,
-    )?;
+    );
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
@@ -3664,7 +3643,6 @@ fn build_metadata_ir(
         lanes,
     )?;
     crate::resolved_features::holes::project_hole_position_sketches(
-        ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
@@ -3819,10 +3797,9 @@ fn project_design_history(
     )?;
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(&semantic_projection)?;
-    crate::history::project::project_feature_model(ctx, &semantic_projection)?
+    crate::history::project::project_feature_model(&semantic_projection)?
         .install(&mut ir.model, losses)?;
     crate::resolved_features::bindings::bind_pattern_inputs(
-        ctx,
         &mut ir.model.features,
         &semantic_projection,
         lanes,
@@ -4298,7 +4275,6 @@ fn stamp_feature_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(),
 }
 
 fn assign_configuration_bodies(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
 ) -> Result<(), CodecError> {
@@ -4335,15 +4311,13 @@ fn assign_configuration_bodies(
         if source_counts.get(&source_index) == Some(&1) {
             configuration.bodies = Some(cadmpeg_ir::features::DistinctMembers::try_from(
                 partition_map.remove(&source_index).unwrap_or_default(),
-                ctx,
             )?);
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
         if let Some(bodies) = partition_map.remove(&active_index) {
-            ir.model.configurations[position].bodies = Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx)?,
-            );
+            ir.model.configurations[position].bodies =
+                Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
         }
     }
     for (source_index, bodies) in partition_map {
@@ -4372,9 +4346,7 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from(
-                    bodies, ctx,
-                )?),
+                bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?),
                 parameter_values: std::collections::BTreeMap::new(),
                 parameter_overrides: BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),

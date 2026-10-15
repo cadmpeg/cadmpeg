@@ -29,14 +29,12 @@ fn support_sides_move_pcurve_storage() {
     use cadmpeg_ir::math::Point2;
 
     let pcurve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture pcurve construction admission")
     .unwrap();
     let knot_address = pcurve.knots().as_slice().as_ptr();
     let sides = into_support_sides(
@@ -207,15 +205,7 @@ fn tolerant_coedge_extension_retains_the_release_band() {
             ..Reachable::default()
         };
         let mut out = AsmBrep::default();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .unwrap();
         emit_coedges(
-            &ctx,
             &mut out,
             &records,
             CoedgeDecodeInputs {
@@ -264,15 +254,7 @@ fn tolerant_coedge_source_refuses_nonfinite_interval() {
         ..Reachable::default()
     };
     let mut out = AsmBrep::default();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .unwrap();
     let error = emit_coedges(
-        &ctx,
         &mut out,
         &records,
         CoedgeDecodeInputs {
@@ -721,14 +703,12 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
             ProceduralCurveSource::Cached {
                 construction: Box::new(ProceduralCurveConstruction::Subset((
                     NurbsCurve::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],
                         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                         None,
                         false,
                     )
-                    .expect("fixture constructor admission")
                     .unwrap(),
                     [2.0, 1.0],
                 ))),
@@ -845,14 +825,12 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
                         base_v_range: [0.0, 1.0],
                         base_range: [0.0, 1.0],
                         base: NurbsCurve::from_lanes(
-                            &cadmpeg_test_support::service_decode_context(),
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
                             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                             None,
                             false,
                         )
-                        .expect("fixture constructor admission")
                         .unwrap(),
                         distance,
                         shift: 0.0,
@@ -964,9 +942,7 @@ fn invalid_embedded_use_curve_interval_keeps_independent_coedges() {
         ..Reachable::default()
     };
     let mut out = AsmBrep::default();
-    let ctx = cadmpeg_test_support::service_decode_context();
     emit_coedges(
-        &ctx,
         &mut out,
         &records,
         CoedgeDecodeInputs {
@@ -1035,9 +1011,7 @@ fn tolerant_coedge_parameters_follow_the_stored_base_layout() {
             ..Reachable::default()
         };
         let mut out = AsmBrep::default();
-        let ctx = cadmpeg_test_support::service_decode_context();
         emit_coedges(
-            &ctx,
             &mut out,
             &records,
             CoedgeDecodeInputs {

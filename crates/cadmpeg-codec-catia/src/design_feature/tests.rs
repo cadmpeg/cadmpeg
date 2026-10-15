@@ -392,10 +392,7 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         ..DesignFeatureTransfer::default()
     };
 
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
-    })
-    .unwrap();
+    transfer.assign_feature_dependencies(&mut ir, &native);
 
     let source = ir
         .model
@@ -1610,10 +1607,7 @@ fn feature_dependency_lookup_result() {
     let transfer = DesignFeatureTransfer::default();
     let mut ir = CadIr::empty();
     ir.model.features.push(feature("owner", object_id));
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
-    })
-    .expect("service profile admits dependency indexes");
+    transfer.assign_feature_dependencies(&mut ir, &native);
     assert!(ir.model.features[0].dependencies.is_empty());
 }
 

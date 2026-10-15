@@ -324,7 +324,6 @@ pub(crate) fn decode(
         let start_pcurve = cap_pcurve(&start_nurbs, cap_origins[0], start_frame, version_offset)?;
         let end_pcurve = cap_pcurve(&end_nurbs, cap_origins[1], end_frame, version_offset)?;
         let lateral = crate::surfaces::extrusion_nurbs(
-            expand.ctx(),
             &start_nurbs,
             &end_nurbs,
             path_domain,
@@ -1348,7 +1347,6 @@ pub(crate) mod tests {
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     (0..count + 2)
                         .map(|value| {
@@ -1360,7 +1358,6 @@ pub(crate) mod tests {
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid polygon curve"),
             )),
             Diagnostics::new(),
@@ -1398,14 +1395,12 @@ pub(crate) mod tests {
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
                     points,
                     Some(weights),
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("valid circle curve"),
             )),
             Diagnostics::new(),
@@ -1580,7 +1575,7 @@ pub(crate) mod tests {
             panic!("polygon NURBS fixture");
         };
         curve
-            .edit_knots(&ctx, |knots| {
+            .edit_knots(|knots| {
                 knots.copy_from_slice(&[
                     -f64::MAX,
                     -f64::MAX,
@@ -1591,7 +1586,6 @@ pub(crate) mod tests {
                     f64::MAX,
                 ]);
             })
-            .expect("knot edit admission")
             .expect("wide polygon knot interval");
         assert_eq!(
             exact_orientation(&ctx, &profile, 0).expect("finite orientation"),

@@ -1479,7 +1479,6 @@ fn extended_geometry_json(
         crate::wire::canonical_json(&MeshJson(&mesh)).ok()
     } else if crate::subd::supported_class(value.class_id) {
         let subd = match crate::subd::decode(
-            expand.ctx(),
             data,
             value.class_data_range.clone(),
             archive,
@@ -1611,7 +1610,7 @@ fn extended_geometry_json(
         .ok()
     } else if value.class_id == crate::detail::CLASS {
         let detail = optional_geometry(
-            crate::detail::decode(expand.ctx(), data, value.class_data_range.clone(), archive),
+            crate::detail::decode(data, value.class_data_range.clone(), archive),
             refusal,
         )?;
         crate::wire::canonical_json(&DetailJson(&detail)).ok()
@@ -2080,7 +2079,7 @@ pub(crate) fn project(
         );
         let properties = named_properties(&native_ids[index], properties, sink.warnings);
         let parameters = named_properties(&native_ids[index], parameters, sink.warnings);
-        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
             .map_err(|error| ProjectionError::Codec(error.into()))?;
 
         let feature_id_text = ids[index].as_str().to_owned();

@@ -9,7 +9,7 @@ use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_
 #[cfg(test)]
 use crate::wire::records::{consolidated_records, ConsolidatedPcurve};
 use crate::wire::records::{ConsolidatedFamily, ConsolidatedFrame, ConsolidatedRecord};
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
@@ -527,11 +527,10 @@ impl A5FreeformCurve {
 /// Lower either limiting locus of a complete rolling-ball jet to its exact
 /// degree-5 NURBS representation.
 pub(in crate::families) fn rolling_ball_limit_curve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     jet: &A5FreeformCurve,
     second_limit: bool,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<NurbsCurve>, cadmpeg_core::CodecError> {
+) -> Option<NurbsCurve> {
     let offset = usize::from(second_limit) * 3;
     let mut positions = Vec::new();
     let mut first = Vec::new();
@@ -564,7 +563,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
             ),
             "states knot-aligned jet samples the degree-5 B-spline lowering does not close",
         );
-        return Ok(None);
+        return None;
     };
     let mut poles = Vec::new();
 
@@ -573,21 +572,20 @@ pub(in crate::families) fn rolling_ball_limit_curve(
             .into_iter()
             .map(|point| Point3::new(point[0], point[1], point[2])),
     );
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            ctx,
             A5FreeformCurve::DEGREE,
             knots,
             poles,
             None,
             false,
-        )?,
+        ),
         refusal,
         format_args!(
             "consolidated_a5_03_32 rolling-ball limit curve at byte {}",
             jet.pos
         ),
-    ))
+    )
 }
 
 /// One position in an `a5/a6/a7 03 39` jet.
@@ -635,17 +633,16 @@ pub(in crate::families) struct A5NurbsCurve {
 
 /// Decode length-closed `a5/a6/a7 13 16` non-rational NURBS curves.
 #[cfg(test)]
-fn a5_nurbs_curves(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<A5NurbsCurve>, CodecError> {
+fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
     let records = consolidated_records(data);
-    a5_nurbs_curves_from_records(ctx, data, &records, &mut crate::nurbs::LaneRefusals::new())
+    a5_nurbs_curves_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
 
 pub(in crate::families) fn a5_nurbs_curves_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Vec<A5NurbsCurve>, CodecError> {
+) -> Vec<A5NurbsCurve> {
     let mut curves = Vec::new();
 
     for record in records
@@ -661,24 +658,21 @@ pub(in crate::families) fn a5_nurbs_curves_from_records(
             end: end.end,
             header_token: record.header_token(),
         };
-        if let Some(curve) = parse_a5_nurbs_curve(ctx, data, frame, refusal)? {
+        if let Some(curve) = parse_a5_nurbs_curve(data, frame, refusal) {
             curves.push(curve);
         }
     }
-    Ok(curves)
+    curves
 }
 
 fn parse_a5_nurbs_curve(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<A5NurbsCurve>, CodecError> {
-    if data.get(frame.payload..frame.end).is_none() {
-        return Ok(None);
-    }
+) -> Option<A5NurbsCurve> {
+    data.get(frame.payload..frame.end)?;
 
-    let Some((degree, knot_count, control_count, knot_start, control_start)) = (|| {
+    let (degree, knot_count, control_count, knot_start, control_start) = (|| {
         let mut at = frame.payload;
         let degree = compact_int(data, &mut at)?;
         let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
@@ -730,29 +724,19 @@ fn parse_a5_nurbs_curve(
             return None;
         }
         Some((degree, knot_count, control_count, knot_start, control_start))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     let mut distinct_knots = Vec::new();
 
     for index in 0..knot_count {
-        let Some(at) = knot_start.checked_add(index * 8) else {
-            return Ok(None);
-        };
-        let Some(knot) = f64_le(data, at) else {
-            return Ok(None);
-        };
+        let at = knot_start.checked_add(index * 8)?;
+        let knot = f64_le(data, at)?;
         distinct_knots.push(knot.get());
     }
     let mut control_points = Vec::new();
 
     for index in 0..control_count {
-        let Some(at) = control_start.checked_add(index * 24) else {
-            return Ok(None);
-        };
-        let Some(point) = f64_point(data, at) else {
-            return Ok(None);
-        };
+        let at = control_start.checked_add(index * 24)?;
+        let point = f64_point(data, at)?;
         control_points.push(point);
     }
     let mut knots = Vec::new();
@@ -765,15 +749,14 @@ fn parse_a5_nurbs_curve(
         };
         knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
     }
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            ctx,
             degree,
             knots,
             control_points,
             None,
             false,
-        )?,
+        ),
         refusal,
         format_args!("a5 NURBS curve record at byte {}", frame.pos),
     )
@@ -781,7 +764,7 @@ fn parse_a5_nurbs_curve(
         pos: frame.pos,
         header_token: frame.header_token,
         geometry,
-    }))
+    })
 }
 
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
@@ -1383,7 +1366,6 @@ fn parse_object_stream_pcurve(
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
 pub(crate) fn a8_surfaces(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
@@ -1392,7 +1374,7 @@ pub(crate) fn a8_surfaces(
         let Some(parsed) = parse_a8_surface_header(data, frame) else {
             continue;
         };
-        if let Some(surface) = a8_surface_from_parsed(ctx, data, parsed, refusal)? {
+        if let Some(surface) = a8_surface_from_parsed(data, parsed, refusal)? {
             surfaces.push(surface);
         }
     }
@@ -1403,14 +1385,12 @@ pub(crate) fn a8_surfaces(
 /// parameter records whose pole grids occupy a uniquely bounded external
 /// allocation.
 pub(in crate::families) fn resolved_a8_surfaces(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
     let mut surfaces = Vec::new();
     for frame in a8_frames(data, 0x34) {
         if let Some(surface) = resolved_a8_surface_from_object_frame(
-            ctx,
             data,
             frame.pos,
             frame.end,
@@ -1444,7 +1424,6 @@ pub(in crate::families) fn a8_surface_header_from_object_frame(
 
 /// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
 pub(in crate::families) fn resolved_a8_surface_from_object_frame(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     start: usize,
     end: usize,
@@ -1455,9 +1434,9 @@ pub(in crate::families) fn resolved_a8_surface_from_object_frame(
         return Ok(None);
     };
     if parsed.header.pole_storage == PoleStorage::Elided {
-        a8_surface_from_external_grid(ctx, data, &parsed.header, refusal)
+        a8_surface_from_external_grid(data, &parsed.header, refusal)
     } else {
-        a8_surface_from_parsed(ctx, data, parsed, refusal)
+        a8_surface_from_parsed(data, parsed, refusal)
     }
 }
 
@@ -1466,7 +1445,6 @@ pub(in crate::families) fn resolved_a8_surface_from_object_frame(
 /// between a length-closed `b5 <flag> 21` pcurve and the following A/B-family
 /// frame; its pcurve support reference must equal the surface object id.
 fn a8_surface_from_external_grid(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     header: &A8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1514,12 +1492,11 @@ fn a8_surface_from_external_grid(
         .transpose()?;
     Ok(crate::nurbs::note_refusal(
         NurbsSurface::from_checked_lanes(
-            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.v_degree, v_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
             false,
-        )?,
+        ),
         refusal,
         format_args!(
             "a8 NURBS surface record #{} at byte {}",
@@ -1703,7 +1680,6 @@ fn grid_rows<T>(values: Vec<T>, row_len: usize) -> Result<Vec<Vec<T>>, CodecErro
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
 pub(crate) fn a5_surfaces(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
@@ -1713,11 +1689,10 @@ pub(crate) fn a5_surfaces(
             data,
         ))),
     )?;
-    a5_surfaces_from_records(ctx, data, &records, refusal)
+    a5_surfaces_from_records(data, &records, refusal)
 }
 
 pub(in crate::families) fn a5_surfaces_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1737,7 +1712,7 @@ pub(in crate::families) fn a5_surfaces_from_records(
             end: end.end,
             header_token: record.header_token(),
         };
-        if let Some(surface) = a5_surface(ctx, data, frame, refusal)? {
+        if let Some(surface) = a5_surface(data, frame, refusal)? {
             surfaces.push(surface);
         }
     }
@@ -1745,7 +1720,6 @@ pub(in crate::families) fn a5_surfaces_from_records(
 }
 
 fn a5_surface(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1848,12 +1822,11 @@ fn a5_surface(
         .transpose()?;
     Ok(crate::nurbs::note_refusal(
         NurbsSurface::from_checked_lanes(
-            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
             false,
-        )?,
+        ),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
     )
@@ -2046,7 +2019,6 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
 }
 
 fn a8_surface_from_parsed(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     parsed: ParsedA8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -2147,12 +2119,11 @@ fn a8_surface_from_parsed(
     let weights = rational.then(|| grid_rows(weights, v_count)).transpose()?;
     Ok(crate::nurbs::note_refusal(
         NurbsSurface::from_checked_lanes(
-            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
             false,
-        )?,
+        ),
         refusal,
         format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
     )

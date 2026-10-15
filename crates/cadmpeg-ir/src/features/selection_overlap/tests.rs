@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
 use crate::features::{
     BodyMember, BodyMembers, BodySelection, DistinctMembers, FaceSelection, FeatureId,
     GeneratedBodyRef, GeneratedFaceRef, NativeSelections, NonEmptyMembers, SelectionMembers,
@@ -160,40 +158,12 @@ fn selection_overlap_preserves_every_membership_form() {
         (local_body("same"), local_body("other"), false),
         (bodies("same"), historical_body(), false),
     ];
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_recursion_depth = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     for (first, second, expected) in face_cases {
-        assert_eq!(
-            super::face_selections_overlap(&ctx, &first, &second).expect("decode comparisons"),
-            expected
-        );
-        assert_eq!(
-            super::standard_result(super::face_selections_overlap(
-                &super::StandardAdmission,
-                &first,
-                &second
-            )),
-            expected
-        );
+        assert_eq!(super::face_selections_overlap(&first, &second), expected);
     }
     for (first, second, expected) in body_cases {
-        assert_eq!(
-            super::body_selections_overlap(&ctx, &first, &second).expect("decode comparisons"),
-            expected
-        );
-        assert_eq!(
-            super::standard_result(super::body_selections_overlap(
-                &super::StandardAdmission,
-                &first,
-                &second
-            )),
-            expected
-        );
+        assert_eq!(super::body_selections_overlap(&first, &second), expected);
     }
-    ctx.finish_session().expect("only comparison work");
 }
 
 #[test]
@@ -207,11 +177,5 @@ fn selection_overlap_stops_at_the_first_shared_member() {
         first_id.clone(),
         FaceId::mint("test:model:face#third").expect("face identity"),
     ]);
-    let policy = DecodePolicy::service();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(
-        super::face_selections_overlap(&ctx, &first, &second).expect("first comparison is enough")
-    );
-    ctx.finish_session().expect("unvisited members use no work");
+    assert!(super::face_selections_overlap(&first, &second));
 }

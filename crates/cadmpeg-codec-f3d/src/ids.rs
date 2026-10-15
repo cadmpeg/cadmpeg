@@ -86,7 +86,6 @@ pub(crate) fn brep_face_id(
 }
 
 /// Build an appearance identity from its source visual token.
-#[cfg(test)]
 pub(crate) fn appearance_id(key: cadmpeg_ir::ids::IdentityKey) -> cadmpeg_ir::ids::AppearanceId {
     cadmpeg_ir::ids::AppearanceId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "design", "appearance"),
@@ -94,19 +93,7 @@ pub(crate) fn appearance_id(key: cadmpeg_ir::ids::IdentityKey) -> cadmpeg_ir::id
     )
 }
 
-pub(crate) fn appearance_id_charged(
-    key: &str,
-) -> Result<cadmpeg_ir::ids::AppearanceId, cadmpeg_core::CodecError> {
-    let id = native_scoped_id("design", "appearance", key);
-    cadmpeg_ir::ids::AppearanceId::mint(id).map_err(|error| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "F3D appearance identity is invalid: {error}"
-        ))
-    })
-}
-
 /// Build a body appearance binding identity.
-#[cfg(test)]
 pub(crate) fn body_appearance_binding_id(
     entity_suffix: u64,
     visual_guid: cadmpeg_ir::ids::IdentityKey,
@@ -118,20 +105,7 @@ pub(crate) fn body_appearance_binding_id(
     )
 }
 
-pub(crate) fn body_appearance_binding_id_charged(
-    entity_suffix: u64,
-    visual_guid: &str,
-) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
-    let id = native_scoped_id(
-        "appearance",
-        "body",
-        format_args!("{entity_suffix}:{visual_guid}"),
-    );
-    cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
-}
-
 /// Build a body assignment appearance binding identity.
-#[cfg(test)]
 pub(crate) fn assignment_appearance_binding_id(
     entity_id: &str,
     visual_guid: cadmpeg_ir::ids::IdentityKey,
@@ -146,24 +120,7 @@ pub(crate) fn assignment_appearance_binding_id(
     ))
 }
 
-pub(crate) fn assignment_appearance_binding_id_charged(
-    entity_id: &str,
-    visual_guid: &str,
-) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
-    let id = native_scoped_id(
-        "appearance",
-        "binding",
-        format_args!("{entity_id}:{visual_guid}"),
-    );
-    cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(|error| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "F3D appearance binding identity is invalid: {error}"
-        ))
-    })
-}
-
 /// Build a face appearance binding identity.
-#[cfg(test)]
 pub(crate) fn face_appearance_binding_id(
     face_guid: &str,
     visual_guid: cadmpeg_ir::ids::IdentityKey,
@@ -181,65 +138,6 @@ pub(crate) fn face_appearance_binding_id(
         &cadmpeg_ir::identity_namespace!("f3d", "appearance", "face"),
         key,
     ))
-}
-
-fn write_escaped_identity_component(
-    formatter: &mut std::fmt::Formatter<'_>,
-    source: &str,
-) -> std::fmt::Result {
-    for character in source.chars() {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut bytes = [0; 4];
-            for byte in character.encode_utf8(&mut bytes).as_bytes() {
-                write!(formatter, "%{byte:02X}")?;
-            }
-        } else {
-            write!(formatter, "{character}")?;
-        }
-    }
-    Ok(())
-}
-
-struct FaceBindingKey<'a> {
-    face_guid: &'a str,
-    visual_guid: &'a str,
-    face: &'a str,
-    escaped_face_len: usize,
-}
-
-impl std::fmt::Display for FaceBindingKey<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "{}:{}:{}:",
-            self.face_guid, self.visual_guid, self.escaped_face_len
-        )?;
-        write_escaped_identity_component(formatter, self.face)
-    }
-}
-
-/// Compose a face appearance binding ID with its caller's decode budget.
-pub(crate) fn face_appearance_binding_id_charged(
-    face_guid: &str,
-    visual_guid: &crate::records::references::DesignVisualToken,
-    face: &cadmpeg_ir::ids::FaceId,
-) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
-    let escaped_face_len = escaped_scope_len(face.as_str());
-    let id = native_scoped_id(
-        "appearance",
-        "face",
-        FaceBindingKey {
-            face_guid,
-            visual_guid,
-            face: face.as_str(),
-            escaped_face_len,
-        },
-    );
-    cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(|error| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "F3D face appearance binding identity is invalid: {error}"
-        ))
-    })
 }
 
 /// Build a T-spline identity from its source entry key.
@@ -362,32 +260,18 @@ pub(crate) fn neutral_component_insert_occurrence_id(
 #[cfg(test)]
 pub(crate) fn neutral_assembly_joint_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
-) -> Result<cadmpeg_ir::products::JointId, cadmpeg_core::CodecError> {
-    struct JointKey<'a> {
-        stream: &'a str,
-        encoded_len: usize,
-        record_index: u32,
-    }
-    impl std::fmt::Display for JointKey<'_> {
-        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(formatter, "{}:", self.encoded_len)?;
-            write_escaped_identity_component(formatter, self.stream)?;
-            write!(formatter, "{}", self.record_index)
-        }
-    }
-    let stream = native_stream(&scope.id).unwrap_or(DEFAULT_STREAM);
-
-    let encoded_len = escaped_scope_len(stream);
-    let id = native_scoped_id(
-        "model",
-        "joint",
-        JointKey {
-            stream,
-            encoded_len,
-            record_index: scope.record_index,
-        },
+) -> cadmpeg_ir::products::JointId {
+    let stream = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(
+        native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
     );
-    cadmpeg_ir::products::JointId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
+    let key = cadmpeg_ir::ids::IdentityKey::from(stream.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&stream)
+        .then(scope.record_index);
+    cadmpeg_ir::products::JointId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"),
+        key,
+    )
 }
 
 #[cfg(test)]
@@ -839,7 +723,6 @@ pub(crate) fn neutral_dimension_constraint_id(
 
 /// The shared body of a history-input key: the feature key length-prefixed and
 /// joined to `previous_state_id` by colons.
-#[cfg(test)]
 pub(crate) fn history_input_prefix(
     feature_key: &cadmpeg_ir::ids::IdentityKey,
     previous_state_id: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -851,7 +734,6 @@ pub(crate) fn history_input_prefix(
 }
 
 /// The history-input state key for a `prefix` from [`history_input_prefix`].
-#[cfg(test)]
 pub(crate) fn history_input_state_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,
 ) -> cadmpeg_ir::ids::FeatureInputTopologyId {
@@ -862,7 +744,6 @@ pub(crate) fn history_input_state_id(
 }
 
 /// The history-input edge key for `slot` under a `prefix`.
-#[cfg(test)]
 pub(crate) fn history_input_edge_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -874,7 +755,6 @@ pub(crate) fn history_input_edge_id(
 }
 
 /// The history-input vertex key for `slot` under a `prefix`.
-#[cfg(test)]
 pub(crate) fn history_input_vertex_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -886,7 +766,6 @@ pub(crate) fn history_input_vertex_id(
 }
 
 /// The history-input face key for `slot` under a `prefix`.
-#[cfg(test)]
 pub(crate) fn history_input_face_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -898,7 +777,6 @@ pub(crate) fn history_input_face_id(
 }
 
 /// The history-input body key for `slot` under a `prefix`.
-#[cfg(test)]
 pub(crate) fn history_input_body_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -907,81 +785,6 @@ pub(crate) fn history_input_body_id(
         &cadmpeg_ir::identity_namespace!("f3d", "history-input", "body"),
         prefix.clone().colon(slot),
     )
-}
-
-/// Compose one history-input entity identity without copying an intermediate key.
-fn history_input_entity_id(
-    feature: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-    kind: &'static str,
-    slot: impl std::fmt::Display,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
-        .1;
-    Ok(format!(
-        "f3d:history-input:{kind}#{}:{feature_key}:{previous_state_id}:{slot}",
-        feature_key.len(),
-    ))
-}
-
-macro_rules! charged_history_input_entity_id {
-    ($name:ident, $type:path, $kind:literal) => {
-        pub(crate) fn $name(
-            feature: &cadmpeg_ir::features::FeatureId,
-            previous_state_id: i64,
-            slot: impl std::fmt::Display,
-        ) -> Result<$type, cadmpeg_core::CodecError> {
-            <$type>::mint(history_input_entity_id(
-                feature,
-                previous_state_id,
-                $kind,
-                slot,
-            )?)
-            .map_err(cadmpeg_core::CodecError::malformed)
-        }
-    };
-}
-
-charged_history_input_entity_id!(
-    history_input_body_id_charged,
-    cadmpeg_ir::ids::HistoricalBodyId,
-    "body"
-);
-charged_history_input_entity_id!(
-    history_input_face_id_charged,
-    cadmpeg_ir::ids::HistoricalFaceId,
-    "face"
-);
-charged_history_input_entity_id!(
-    history_input_edge_id_charged,
-    cadmpeg_ir::ids::HistoricalEdgeId,
-    "edge"
-);
-charged_history_input_entity_id!(
-    history_input_vertex_id_charged,
-    cadmpeg_ir::ids::HistoricalVertexId,
-    "vertex"
-);
-
-/// Compose the history-input state identity with one retained allocation.
-pub(crate) fn history_input_state_id_charged(
-    feature: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-) -> Result<cadmpeg_ir::ids::FeatureInputTopologyId, cadmpeg_core::CodecError> {
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
-        .1;
-    let value = format!(
-        "f3d:history-input:state#{}:{feature_key}:{previous_state_id}",
-        feature_key.len()
-    );
-    cadmpeg_ir::ids::FeatureInputTopologyId::mint(value)
-        .map_err(cadmpeg_core::CodecError::malformed)
 }
 
 // --- native design-record keys ---------------------------------------------
@@ -1055,20 +858,6 @@ pub(crate) fn native_scope_matches(stream: &str, entry: &str) -> bool {
 /// Build one record ID in an archive-entry-qualified native scope.
 pub(crate) fn native_scoped_id(scope: &str, kind: &str, key: impl std::fmt::Display) -> String {
     format!("{}:{kind}#{key}", native_scope(scope))
-}
-
-/// The byte length of `scope` after escaping.
-fn escaped_scope_len(scope: &str) -> usize {
-    scope
-        .chars()
-        .map(|character| {
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-                character.len_utf8() * 3
-            } else {
-                character.len_utf8()
-            }
-        })
-        .sum()
 }
 
 /// Macro defining one `f3d:{scope}:{kind}#{offset}` native-record builder.
@@ -1219,32 +1008,6 @@ mod tests {
     }
 
     #[test]
-    fn history_input_ids_match_composed_identity_bytes() {
-        let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#a:b%20c").unwrap();
-        let prefix = super::history_input_prefix(&feature.key(), -3);
-        assert_eq!(
-            super::history_input_body_id_charged(&feature, -3, 9).unwrap(),
-            super::history_input_body_id(&prefix, 9)
-        );
-        assert_eq!(
-            super::history_input_face_id_charged(&feature, -3, 9).unwrap(),
-            super::history_input_face_id(&prefix, 9)
-        );
-        assert_eq!(
-            super::history_input_edge_id_charged(&feature, -3, 9).unwrap(),
-            super::history_input_edge_id(&prefix, 9)
-        );
-        assert_eq!(
-            super::history_input_vertex_id_charged(&feature, -3, 9).unwrap(),
-            super::history_input_vertex_id(&prefix, 9)
-        );
-        assert_eq!(
-            super::history_input_state_id_charged(&feature, -3).unwrap(),
-            super::history_input_state_id(&prefix)
-        );
-    }
-
-    #[test]
     fn empty_stream_remains_empty_before_the_sketch_entity_suffix() {
         let placement = crate::records::sketch_placement::DesignSketchPlacement {
             id: ":record#4".into(),
@@ -1313,24 +1076,6 @@ mod tests {
         assert_eq!(
             super::subd_id("cage:one%20").unwrap().as_str(),
             "f3d:tspline:subd#cage:one%20"
-        );
-    }
-
-    #[test]
-    fn appearance_ids_preserve_identity_text() {
-        let visual = cadmpeg_ir::ids::IdentityKey::try_new("visual").unwrap();
-        assert_eq!(
-            super::appearance_id_charged(visual.as_str()).unwrap(),
-            super::appearance_id(visual.clone())
-        );
-        assert_eq!(
-            super::body_appearance_binding_id_charged(42, visual.as_str()).unwrap(),
-            super::body_appearance_binding_id(42, visual.clone())
-        );
-        assert_eq!(
-            super::assignment_appearance_binding_id_charged("part:one%20_7", visual.as_str())
-                .unwrap(),
-            super::assignment_appearance_binding_id("part:one%20_7", visual).unwrap()
         );
     }
 

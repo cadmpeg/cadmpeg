@@ -8,7 +8,6 @@ use crate::records::feature::scope::{
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
@@ -68,50 +67,51 @@ fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
     .unwrap()
 }
 
-fn assert_projects(
-    project: impl for<'a> Fn(
-        &'a DecodeContext<'a>,
-    ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError>,
-) {
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx))
-            .unwrap()
-            .is_some()
-    );
+fn assert_projects(projected: Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError>) {
+    assert!(projected.unwrap().is_some());
 }
 
 #[test]
 fn offset_faces_projects_native_group() {
     let scope = scope(DesignFeatureKind::OffsetFaces);
     let group = group(DesignOperandRole::ROLE_0X10);
-    assert_projects(|ctx| {
-        super::super::project_offset_faces(ctx, &scope, &[], &[], std::slice::from_ref(&group))
-    });
+    assert_projects(super::super::project_offset_faces(
+        &scope,
+        &[],
+        &[],
+        std::slice::from_ref(&group),
+    ));
 }
 
 #[test]
 fn thicken_projects_native_group() {
     let scope = scope(DesignFeatureKind::Thicken);
     let group = group(DesignOperandRole::ROLE_0X5);
-    assert_projects(|ctx| {
-        super::super::project_thicken(ctx, &scope, &[], std::slice::from_ref(&group))
-    });
+    assert_projects(super::super::project_thicken(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ));
 }
 
 #[test]
 fn shell_projects_native_face_group() {
     let scope = scope(DesignFeatureKind::Shell);
     let group = group(DesignOperandRole::ROLE_0X10);
-    assert_projects(|ctx| {
-        super::super::project_shell(ctx, &scope, &[], std::slice::from_ref(&group))
-    });
+    assert_projects(super::super::project_shell(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ));
 }
 
 #[test]
 fn shell_projects_native_body_group() {
     let scope = scope(DesignFeatureKind::Shell);
     let group = group(DesignOperandRole::BODIES_A);
-    assert_projects(|ctx| {
-        super::super::project_shell(ctx, &scope, &[], std::slice::from_ref(&group))
-    });
+    assert_projects(super::super::project_shell(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    ));
 }

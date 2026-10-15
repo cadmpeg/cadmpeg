@@ -316,7 +316,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
-            let Some(placed) = placed_section_nurbs(transform, &nurbs)? else {
+            let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
                 continue;
             };
             annotate(
@@ -356,16 +356,12 @@ pub(in super::super) fn transfer_saved_spline_curves(
 }
 
 pub(in super::super) fn revolved_nurbs_surface(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     directrix: &NurbsCurve,
     axis: &RevolutionAxis,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
-    let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z])
-    else {
-        return Ok(None);
-    };
+) -> Option<NurbsSurface> {
+    let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let angular_poles = [
         [1.0, 0.0],
@@ -393,9 +389,7 @@ pub(in super::super) fn revolved_nurbs_surface(
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
     for index in 0..directrix.pole_count() {
-        let Some(point) = directrix.pole_rows().point_at(index) else {
-            return Ok(None);
-        };
+        let point = directrix.pole_rows().point_at(index)?;
         let relative = [
             point.x - axis_origin[0],
             point.y - axis_origin[1],
@@ -449,19 +443,18 @@ pub(in super::super) fn revolved_nurbs_surface(
     let mut v_knots = Vec::new();
     v_knots.extend(angular_knots);
     match NurbsSurface::from_lanes(
-        ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(directrix.degree(), u_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, Some(weights)),
         false,
-    )? {
-        Ok(surface) => Ok(Some(surface)),
+    ) {
+        Ok(surface) => Some(surface),
         Err(error) => {
             refusal.note(
                 format_args!("creo revolved NURBS surface record for {record}"),
                 &error,
             );
-            Ok(None)
+            None
         }
     }
 }
@@ -750,15 +743,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
-            let Some(placed) = placed_section_nurbs(transform, &section_curve)? else {
+            let Some(placed) = placed_section_nurbs(transform, &section_curve) else {
                 continue;
             };
-            let Some(directrix) = translated_nurbs_curve(&placed, lower_translation)? else {
+            let Some(directrix) = translated_nurbs_curve(&placed, lower_translation) else {
                 continue;
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(surface) = extruded_nurbs_surface(
-                ctx,
                 &directrix,
                 sweep,
                 &format_args!(
@@ -766,7 +758,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     spline.offset
                 ),
                 &mut refusal,
-            )?
+            )
             else {
                 for record in refusal.take_records() {
                     push_saved_spline_loss(losses, format_args!(

@@ -292,68 +292,62 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
 
 #[test]
 fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        let first = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.5, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-            ],
-            None,
-            false,
+    let first = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.5, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .expect("valid first rail");
+    let second = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    )
+    .expect("valid second rail");
+    let surface = super::ruled_surface_carrier(&first, &second)
+        .expect("ruled lanes pair")
+        .expect("partition-aligned rational ruled carrier");
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (5, 2));
+    assert_eq!(
+        surface.u_knots().as_slice(),
+        [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
+    );
+    for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
+        let first_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &first,
+            u,
         )
-        .expect("fixture constructor admission")
-        .expect("valid first rail");
-        let second = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-            Some(vec![1.0, 0.5]),
-            false,
+        .expect("first rail point");
+        let second_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &second,
+            u,
         )
-        .expect("fixture constructor admission")
-        .expect("valid second rail");
-        let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
-            .expect("ruled lanes pair")
-            .expect("partition-aligned rational ruled carrier");
-        assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
-        assert_eq!((surface.u_count(), surface.v_count()), (5, 2));
-        assert_eq!(
-            surface.u_knots().as_slice(),
-            [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
+        .expect("second rail point");
+        let expected = Point3::new(
+            (1.0 - v) * first_point.x + v * second_point.x,
+            (1.0 - v) * first_point.y + v * second_point.y,
+            (1.0 - v) * first_point.z + v * second_point.z,
         );
-        for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
-            let first_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &first,
-                u,
-            )
-            .expect("first rail point");
-            let second_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &second,
-                u,
-            )
-            .expect("second rail point");
-            let expected = Point3::new(
-                (1.0 - v) * first_point.x + v * second_point.x,
-                (1.0 - v) * first_point.y + v * second_point.y,
-                (1.0 - v) * first_point.z + v * second_point.z,
-            );
-            let actual = cadmpeg_ir::eval::decode::nurbs_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &surface,
-                u,
-                v,
-            )
-            .expect("ruled surface point");
-            assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
-        }
-    });
+        let actual = cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            u,
+            v,
+        )
+        .expect("ruled surface point");
+        assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
+    }
 }
 
 #[test]
@@ -980,62 +974,56 @@ fn reversed_ruled_rail_with_nonfinite_knots_reports_a_transform_loss() {
 
 #[test]
 fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
-        let first = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
+    let first = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("valid first rail");
+    let second = NurbsCurve::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+        vec![
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, 1.0, 0.0),
+        ],
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .expect("valid second rail");
+    let surface = super::ruled_surface_carrier(&first, &second)
+        .expect("ruled lanes pair")
+        .expect("relative-parameter rational ruled carrier");
+    assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
+    for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
+        let first_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &first,
+            u,
         )
-        .expect("fixture constructor admission")
-        .expect("valid first rail");
-        let second = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            2,
-            vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
-            vec![
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(1.0, 2.0, 0.0),
-                Point3::new(2.0, 1.0, 0.0),
-            ],
-            Some(vec![1.0, 0.5, 1.0]),
-            false,
+        .expect("first rail point");
+        let second_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &second,
+            2.0 * u,
         )
-        .expect("fixture constructor admission")
-        .expect("valid second rail");
-        let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
-            .expect("ruled lanes pair")
-            .expect("relative-parameter rational ruled carrier");
-        assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
-        assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
-        for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
-            let first_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &first,
-                u,
-            )
-            .expect("first rail point");
-            let second_point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &second,
-                2.0 * u,
-            )
-            .expect("second rail point");
-            let expected = Point3::new(
-                (1.0 - v) * first_point.x + v * second_point.x,
-                (1.0 - v) * first_point.y + v * second_point.y,
-                (1.0 - v) * first_point.z + v * second_point.z,
-            );
-            let actual = cadmpeg_ir::eval::decode::nurbs_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &surface,
-                u,
-                v,
-            )
-            .expect("ruled surface point");
-            assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
-        }
-    });
+        .expect("second rail point");
+        let expected = Point3::new(
+            (1.0 - v) * first_point.x + v * second_point.x,
+            (1.0 - v) * first_point.y + v * second_point.y,
+            (1.0 - v) * first_point.z + v * second_point.z,
+        );
+        let actual = cadmpeg_ir::eval::decode::nurbs_surface_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &surface,
+            u,
+            v,
+        )
+        .expect("ruled surface point");
+        assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
+    }
 }

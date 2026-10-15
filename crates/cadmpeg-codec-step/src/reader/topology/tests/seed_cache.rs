@@ -12,17 +12,13 @@ use cadmpeg_ir::math::Point2;
 
 #[test]
 fn repeated_pcurve_searches_share_one_admitted_seed_vector() {
-    let geometry = crate::test_support::with_service_context(b"", |_, ctx| {
-        PcurveNurbs::from_lanes(
-            ctx,
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
-            None,
-            false,
-        )
-    })
-    .expect("fixture resource admission")
+    let geometry = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+        None,
+        false,
+    )
     .expect("finite pcurve");
     let geometry = PcurveGeometry::Nurbs { nurbs: geometry };
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });

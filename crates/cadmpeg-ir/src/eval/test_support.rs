@@ -18,15 +18,8 @@ pub(in crate::eval) fn high_degree_plane() -> crate::geometry::nurbs::NurbsSurfa
                 .collect()
         })
         .collect();
-    NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        axis(),
-        axis(),
-        NurbsSurfaceLanes::new(poles, None),
-        false,
-    )
-    .expect("surface fixture admission")
-    .expect("degree-16 plane")
+    NurbsSurface::from_lanes(axis(), axis(), NurbsSurfaceLanes::new(poles, None), false)
+        .expect("degree-16 plane")
 }
 
 pub(in crate::eval) fn with_policy<T>(

@@ -1161,7 +1161,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 knots,
@@ -1175,7 +1174,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     edit::replace(&mut nurbs, |previous| {
@@ -1185,7 +1183,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
                 previous.u_knots().to_vec(),
@@ -1199,14 +1196,12 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             previous.pole_grid().clone(),
             previous.normal_reversed(),
         )
-        .expect("fixture final NURBS admission")
     })
     .unwrap();
     {
         let replacement = true;
         edit::replace(&mut nurbs, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1220,7 +1215,6 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
                 previous.pole_grid().clone(),
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
         .unwrap()
     };
@@ -1280,16 +1274,13 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         rows[0][1] = 0.65;
     }
     let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         nurbs.pole_grid().raw_points(),
         weight_rows,
-    )
-    .expect("fixture pole pairing admission");
+    );
     {
         let replacement = poles.unwrap();
         edit::replace(&mut nurbs, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                &cadmpeg_test_support::service_decode_context(),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
@@ -1303,7 +1294,6 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
                 replacement,
                 previous.normal_reversed(),
             )
-            .expect("fixture final NURBS admission")
         })
     }
     .unwrap();
@@ -1361,14 +1351,12 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
     *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![-2.0, -2.0, 3.0, 3.0, 3.0],
         control_points,
         nurbs.pole_rows().weights(),
         true,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let expected = nurbs.clone();
 

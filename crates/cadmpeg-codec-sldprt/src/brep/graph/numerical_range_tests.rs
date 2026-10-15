@@ -8,7 +8,6 @@ use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, Nu
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![domain[0], domain[0], domain[1], domain[1]], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceLanes::new(
@@ -20,7 +19,6 @@ fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 #[test]
@@ -54,14 +52,12 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
     .unwrap();
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let c = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0., 0., d, d],
             vec![Point3::new(0., 0., 0.), Point3::new(1., 1., 1.)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let samples = nurbs_curve_sample_parameters(&c, [0., d]).unwrap();
         let (uv, error) = nurbs_degree_one_cache_lanes(&ctx, &s, &c, [0., d])
@@ -261,14 +257,12 @@ fn numerical_0922b_wide_curve_inverse() {
     .unwrap();
     for d in [[0., 1.], [-1e308, 1e308], [1e308, 1.1e308]] {
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![d[0], d[0], d[1], d[1]],
             vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
             None,
             false,
         )
-        .expect("fixture constructor admission")
         .unwrap();
         let r = nurbs_parameter_at_point(&ctx, &curve, Point3::new(0.3, 0., 0.)).unwrap();
         let result = match r {

@@ -517,7 +517,7 @@ pub(crate) struct ParseDiagnostic {
 }
 
 /// Parse one exchange structure in the caller's decode session.
-pub(crate) fn parse_with_context(
+pub(crate) fn parse(
     input: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {

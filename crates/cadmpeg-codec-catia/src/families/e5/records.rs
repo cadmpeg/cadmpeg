@@ -8,7 +8,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::families::a5a8::records::rolling_ball_jet_derivative;
 use crate::math::distance;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -297,7 +297,6 @@ pub(super) fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
 /// records. The E5 plane class does not serialize a standalone normal.
 pub(in crate::families) fn e5_surfaces(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<E5Surface>, CodecError> {
@@ -334,7 +333,7 @@ pub(in crate::families) fn e5_surfaces(
                     ],
                 ))
             }),
-            0xe7 => e5_nurbs_surface(ctx, data, record, refusal)?
+            0xe7 => e5_nurbs_surface(data, record, refusal)?
                 .map(|geometry| (geometry, [FiniteReal::ONE, FiniteReal::ONE])),
             _ => None,
         };
@@ -638,7 +637,6 @@ pub(in crate::families) fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrap
 }
 
 fn e5_nurbs_surface(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: E5Record,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -740,22 +738,21 @@ fn e5_nurbs_surface(
     };
     Ok(crate::nurbs::note_refusal(
         NurbsSurface::new(
-            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 u_degree,
-                cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, u_knots)?
+                cadmpeg_ir::geometry::nurbs::KnotVector::new(u_knots)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 false,
             ),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 v_degree,
-                cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, v_knots)?
+                cadmpeg_ir::geometry::nurbs::KnotVector::new(v_knots)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 false,
             ),
             poles,
             false,
-        )?,
+        ),
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
     )
@@ -1042,10 +1039,8 @@ mod tests {
         for mode in [0, 1] {
             let mut bytes = Vec::new();
             append_e5_record(&mut bytes, 0xe7, 116, &nurbs_surface_payload(mode));
-            let surfaces = crate::test_support::with_service_context(|ctx| {
-                e5_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
-            })
-            .expect("service resource budget");
+            let surfaces = e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+                .expect("service resource budget");
             let [surface] = surfaces.as_slice() else {
                 panic!("E7 surface did not decode");
             };
@@ -1069,13 +1064,9 @@ mod tests {
         payload.pop();
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xe7, 116, &payload);
-        assert!(crate::test_support::with_service_context(|ctx| e5_surfaces(
-            ctx,
-            &bytes,
-            &mut crate::nurbs::LaneRefusals::new()
-        ))
-        .expect("service resource budget")
-        .is_empty());
+        assert!(e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("service resource budget")
+            .is_empty());
     }
 
     #[test]

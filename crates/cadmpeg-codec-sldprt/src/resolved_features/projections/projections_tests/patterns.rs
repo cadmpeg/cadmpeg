@@ -5,7 +5,6 @@ use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
     FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind, FeatureSource,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
     patterns::{PatternKind, PatternSeed},
     BodySelection, FaceSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
@@ -112,10 +111,7 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
 #[test]
 fn pattern_surface_seed_uses_generated_face_and_dependency() {
     let (mut features, history, lane) = pattern_fixture();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("test context");
-    project_compact_surface_selections(&ctx, &mut features, &[history], &[lane])
+    project_compact_surface_selections(&mut features, &[history], &[lane])
         .expect("pattern projection");
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
         features[1].evaluation.definition()

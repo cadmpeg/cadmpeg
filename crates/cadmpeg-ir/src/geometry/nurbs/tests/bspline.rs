@@ -12,29 +12,25 @@ fn points() -> Vec<Vec<Point3>> {
 
 #[test]
 fn bspline_constructor_preserves_axis_shape_and_scalar_error_precedence() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let mut invalid = points();
     invalid[1].pop();
     invalid[0][0].x = f64::NAN;
     assert_eq!(
-        BsplineSurface::new(&ctx, 2, 1, knots.clone(), knots.clone(), invalid.clone())
-            .expect("diagnostic admitted"),
+        BsplineSurface::new(2, 1, knots.clone(), knots.clone(), invalid.clone()),
         Err(NurbsError::Structure(
             "control_points u count must exceed degree 2, found 2".into()
         ))
     );
     assert_eq!(
-        BsplineSurface::new(&ctx, 1, 1, knots.clone(), knots.clone(), invalid.clone())
-            .expect("diagnostic admitted"),
+        BsplineSurface::new(1, 1, knots.clone(), knots.clone(), invalid.clone()),
         Err(NurbsError::Structure(
             "control_points row must contain 2 values, found 1".into()
         ))
     );
     invalid[1].push(Point3::new(4.0, 0.0, 0.0));
     assert_eq!(
-        BsplineSurface::new(&ctx, 1, 1, knots.clone(), knots, invalid)
-            .expect("diagnostic admitted"),
+        BsplineSurface::new(1, 1, knots.clone(), knots, invalid),
         Err(NurbsError::Structure(
             "control_points contains a non-finite point".into()
         ))
@@ -43,11 +39,9 @@ fn bspline_constructor_preserves_axis_shape_and_scalar_error_precedence() {
 
 #[test]
 fn bspline_constructor_keeps_poles_moves_knots_and_preserves_wire() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let storage = knots.as_ptr();
-    let surface = BsplineSurface::new(&ctx, 1, 1, knots, vec![0.0, 0.0, 1.0, 1.0], points())
-        .expect("construction admission")
+    let surface = BsplineSurface::new(1, 1, knots, vec![0.0, 0.0, 1.0, 1.0], points())
         .expect("valid surface");
     assert_eq!(surface.u_knots.as_ptr(), storage);
     assert_eq!(

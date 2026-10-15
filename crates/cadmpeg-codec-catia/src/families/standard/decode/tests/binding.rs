@@ -1,5 +1,6 @@
 use crate::assemble::circle_parameter_range_from_surface_branch;
 use crate::assemble::ordered_range;
+use crate::assemble::rational_pcurve_arc;
 use crate::families::b2::records::B2OwnerReferenceEncoding;
 use crate::families::b5::graph::B5LogicalVertex;
 use crate::families::standard::decode::associate_standard_freeform_e5_rolling_ball_jets;
@@ -71,19 +72,6 @@ use cadmpeg_ir::AnnotationBuilder;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-fn rational_pcurve_arc(
-    center: [f64; 2],
-    radius: f64,
-    range: [f64; 2],
-    refusal: &mut crate::nurbs::LaneRefusals,
-    record: &str,
-) -> Option<PcurveGeometry> {
-    crate::test_support::with_service_context(|ctx| {
-        crate::assemble::rational_pcurve_arc(ctx, center, radius, range, refusal, record)
-    })
-    .expect("service budget admits rational arc")
-}
-
 fn standard_pcurve_geometry(
     surface: &SurfaceGeometry,
     support: &StandardCurveSupport,
@@ -123,7 +111,6 @@ fn standard_endpoint_pair_supports_topology(
 
 fn unit_square_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -135,7 +122,6 @@ fn unit_square_surface() -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("valid unit-square surface")
 }
 
@@ -864,14 +850,11 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
         forward: true,
     }];
 
-    let associated = crate::test_support::with_service_context(|ctx| {
-        associate_standard_freeform_e5_surfaces(
-            ctx,
-            &records,
-            &stream,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
+    let associated = associate_standard_freeform_e5_surfaces(
+        &records,
+        &stream,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
     .expect("service resource budget");
     assert!(matches!(
         associated.get(&7),
@@ -1449,15 +1432,12 @@ fn a5_owner_binding_result() {
     let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
     bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert!(!crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces_from_records(
-            ctx,
-            &bytes,
-            &records,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    })
+    assert!(!crate::families::a5a8::records::a5_surfaces_from_records(
+        &bytes,
+        &records,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("service decode")
     .is_empty());
     assert!(
         !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)

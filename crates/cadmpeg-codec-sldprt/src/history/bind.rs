@@ -21,11 +21,10 @@ struct SketchBinding {
 }
 
 pub(crate) fn bind_unique_sketch_feature(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[FeatureHistory],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         native_features.insert(feature.id.as_str(), feature);
@@ -148,13 +147,9 @@ pub(crate) fn bind_unique_sketch_feature(
             continue;
         };
         let native_ref = native_ref.to_owned();
-        if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index].dependencies.insert(
-                ctx,
-                base_dependency.clone(),
-                "bind SLDPRT sketch alias dependency",
-            )?;
-        }
+        features[*index]
+            .dependencies
+            .insert(base_dependency.clone());
         let Some(binding) = bindings.iter().find(|binding| binding.index == base_index) else {
             continue;
         };
@@ -170,31 +165,20 @@ pub(crate) fn bind_unique_sketch_feature(
     bindings.extend(aliases);
     for feature in features {
         let dependencies = &mut feature.dependencies;
-        let mut result = Ok(());
         feature.evaluation.edit(|definition, _| {
-            result = (|| {
-                for binding in &bindings {
-                    if bind_definition_sketch(
-                        definition,
-                        &binding.native_ref,
-                        &binding.feature_id,
-                        &binding.sketch,
-                        binding.has_profile,
-                    ) && !dependencies.contains(&binding.feature_id)
-                    {
-                        dependencies.insert(
-                            ctx,
-                            binding.feature_id.clone(),
-                            "bind SLDPRT sketch dependency",
-                        )?;
-                    }
+            for binding in &bindings {
+                if bind_definition_sketch(
+                    definition,
+                    &binding.native_ref,
+                    &binding.feature_id,
+                    &binding.sketch,
+                    binding.has_profile,
+                ) {
+                    dependencies.insert(binding.feature_id.clone());
                 }
-                Ok::<_, cadmpeg_core::CodecError>(())
-            })();
+            }
         });
-        result?;
     }
-    Ok(())
 }
 
 fn sketch_alias_base_name(name: &str) -> Option<&str> {
@@ -369,7 +353,6 @@ pub(crate) struct FeatureOutputSources<'a> {
 }
 
 pub(crate) fn derive_feature_outputs(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     sources: FeatureOutputSources<'_>,
@@ -416,15 +399,9 @@ pub(crate) fn derive_feature_outputs(
                 Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
                 Err(error) => return Err(error),
             };
-            if !feature.evaluation.outputs().contains(&body) {
-                let mut outputs = feature.evaluation.outputs().clone();
-                outputs.push(body);
-                feature
-                    .evaluation
-                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
-                        outputs, ctx,
-                    )?);
-            }
+            feature.evaluation.edit(|_, outputs| {
+                outputs.insert(body);
+            });
         }
     }
     if face_producers.is_empty() {
@@ -461,12 +438,10 @@ pub(crate) fn derive_feature_outputs(
             continue;
         };
         if let Some(bodies) = produced.get(&source_id) {
-            let outputs = bodies.iter().copied().cloned().collect();
+            let outputs: Vec<_> = bodies.iter().copied().cloned().collect();
             feature
                 .evaluation
-                .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
-                    outputs, ctx,
-                )?);
+                .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs)?);
         }
     }
     Ok(())

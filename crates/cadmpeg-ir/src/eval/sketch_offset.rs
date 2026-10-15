@@ -132,7 +132,6 @@ mod tests {
 
     fn curve(v: f64, weights: Option<Vec<f64>>) -> PcurveNurbs {
         PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 0.5, 1.0, 1.0],
             vec![
@@ -143,7 +142,6 @@ mod tests {
             weights,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap()
     }
 
@@ -166,14 +164,12 @@ mod tests {
             None
         );
         let degenerate = PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(1.0, 2.0); 2],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap();
         assert_eq!(
             super::clamped_nurbs_pcurve_endpoint_frames(&degenerate),

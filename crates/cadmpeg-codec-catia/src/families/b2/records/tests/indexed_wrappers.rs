@@ -232,15 +232,11 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_nurbs_curves_from_records(
-                ctx,
-                &bytes,
-                &records,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-            .expect("service decode")
-        })
+        crate::families::b2::records::b2_nurbs_curves_from_records(
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
         .into_iter()
         .map(|record| record.pos)
         .collect(),

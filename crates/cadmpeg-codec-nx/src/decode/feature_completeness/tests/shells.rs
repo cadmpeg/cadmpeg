@@ -23,10 +23,10 @@ fn nx_shell_completeness_requires_each_construction_field() {
 
     let complete = FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: Some(BodySelection::Bodies(
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![BodyId::mint("test:model:body#shell").expect("identity grammar")],
-                &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                "test:model:body#shell",
             )
+            .expect("identity grammar")])
             .expect("distinct bodies"),
         )),
         removed_faces: FaceSelection::Faces(vec![

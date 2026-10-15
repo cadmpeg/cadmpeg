@@ -10,7 +10,6 @@ use crate::decode::sketch::radii::{
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use crate::decode::sweep::nurbs::extruded_geometry_surface;
 use crate::decode::sweep::surfaces::placed_section_geometry_curve;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::{SketchConstraint, SketchGeometry, SketchId};
 use std::collections::BTreeMap;
@@ -34,13 +33,6 @@ mod section_solver_constraints_require_complete_unique_semantics;
 mod sketch_curve;
 mod transfer_coverage;
 mod zero_orientation;
-
-fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
-        .expect("test decode context");
-    run(&ctx)
-}
 
 pub(super) fn synchronize_skamp_count(
     definition: &mut crate::feature::definitions::FeatureDefinition,

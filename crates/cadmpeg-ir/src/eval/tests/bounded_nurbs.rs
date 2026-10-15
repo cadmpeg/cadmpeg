@@ -10,7 +10,6 @@ fn matching_polynomial_seed_returns_the_seed_parameter() {
     knots.extend((1..1_021).map(|ordinal| f64::from(ordinal) / 1_021.0));
     knots.extend([1.0; 4]);
     let curve = NurbsCurve::from_lanes(
-        &preparation,
         3,
         knots,
         (0..1_024)
@@ -19,7 +18,6 @@ fn matching_polynomial_seed_returns_the_seed_parameter() {
         None,
         false,
     )
-    .expect("admitted authored spline")
     .expect("valid authored spline");
     let point = crate::eval::decode::nurbs_curve_point_at(&preparation, &curve, 0.5)
         .expect("seed evaluation")
@@ -42,14 +40,12 @@ fn matching_rational_seed_keeps_positive_weight_search_admission() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let point = Point3::new(0.0, 0.0, 0.0);
     let curve = NurbsCurve::from_lanes(
-        &ctx,
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![point, Point3::new(1.0, 0.0, 0.0)],
         Some(vec![-1.0, 1.0]),
         false,
     )
-    .expect("admitted signed-weight fixture")
     .expect("valid signed-weight carrier");
     assert_eq!(
         super::super::nurbs_curve_parameter_near_point(&ctx, &curve, point, 0.0, 0.0)
@@ -139,14 +135,12 @@ fn bounded_curve_search_finds_the_linear_parameter() {
     use crate::scalar::FiniteReal;
     let ctx = cadmpeg_test_support::service_decode_context();
     let curve = NurbsCurve::from_lanes(
-        &ctx,
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     assert_eq!(
         super::super::nurbs_curve_parameter_near_point(
@@ -173,13 +167,12 @@ fn pcurve_containment_finds_a_point_on_a_linear_pcurve() {
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
         super::super::nurbs_pcurve_contains_point(
-            &ctx,
             1,
             &[0., 0., 1., 1.],
             &[Point2::new(0., 0.), Point2::new(1., 0.)],
             None,
             Point2::new(0.5, 0.),
-            0.
+            0.,
         )
         .expect("no session refusal"),
         Some(true)
@@ -208,7 +201,6 @@ fn bounded_curve_search_returns_the_session_depth_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![
@@ -218,7 +210,6 @@ fn bounded_curve_search_returns_the_session_depth_refusal() {
         None,
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

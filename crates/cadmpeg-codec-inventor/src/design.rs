@@ -536,7 +536,7 @@ pub(crate) fn project_parameters(
         )?;
         let id = parameter_id(parameter)?;
         let mut dependency_members = cadmpeg_ir::features::DistinctMembers::default();
-        dependency_members.append(ctx, dependencies, "collect Inventor parameter dependencies")?;
+        dependency_members.extend(dependencies);
         projected.push(DesignParameter {
             id,
             owner: None,
@@ -1851,11 +1851,8 @@ mod tests {
             value: Some(ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
             )),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                dependencies,
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("valid test fixture"),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
+                .expect("valid test fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -1904,7 +1901,6 @@ mod tests {
             value: None,
             dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
                 dependency.into_iter().map(id).collect::<Vec<_>>(),
-                &cadmpeg_test_support::service_decode_context(),
             )
             .expect("valid dependency fixture"),
             properties: std::collections::BTreeMap::new(),

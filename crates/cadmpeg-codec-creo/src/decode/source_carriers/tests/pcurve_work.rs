@@ -9,14 +9,12 @@ fn pcurve_normalization_scales_owned_nurbs_coordinates() {
     let mut pcurve = admission_pcurve();
     pcurve.geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![cadmpeg_ir::math::Point2::new(1.0, 2.0); 2],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("curve"),
     };
     let mut ir = CadIr::empty();

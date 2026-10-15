@@ -28,7 +28,6 @@ fn test_surface(
     u_periodic: bool,
 ) -> cadmpeg_ir::geometry::nurbs::NurbsSurface {
     cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, u_knots, u_periodic),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -37,7 +36,6 @@ fn test_surface(
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap()
 }
 
@@ -49,14 +47,12 @@ fn test_pcurve(
 ) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             degree,
             knots,
             control_points,
             weights,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .unwrap(),
     }
 }
@@ -96,14 +92,12 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
                     vec![Point3::new(2.0, 2.0, 0.0), Point3::new(2.0, 2.0, 1.0)],
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .expect("finite wide spine"),
             )),
             source_object: None,
@@ -718,7 +712,6 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     vec![0.0, 0.0, 0.5, 1.0, 1.0],
                     vec![
@@ -729,7 +722,6 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
                     None,
                     false,
                 )
-                .expect("fixture constructor admission")
                 .unwrap(),
             )),
             source_object: None,
@@ -838,14 +830,12 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
             unreachable!("folded test pcurve is NURBS");
         };
         *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs.pole_rows().raw_points(),
             Some(vec![1.0; 3]),
             nurbs.periodic(),
         )
-        .expect("fixture pcurve construction admission")
         .unwrap();
         assert_eq!(
             closest_pcurve_parameters(

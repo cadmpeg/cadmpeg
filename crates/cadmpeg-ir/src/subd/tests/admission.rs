@@ -28,22 +28,17 @@ fn gripped_cage() -> SubdCage {
 
 #[test]
 fn cage_validation_keeps_a_gripped_cage_and_names_a_missing_face_edge() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let cage = gripped_cage();
     let expected = cage.clone();
     assert_eq!(
-        SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)
-            .unwrap()
-            .unwrap(),
+        SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries).unwrap(),
         expected
     );
     let mut cage = super::triangle_cage();
     cage.faces[0].edges[1].edge = 2;
     cage.faces[0].edges[2].edge = u32::MAX;
     let wire = serde_json::to_value(&cage).unwrap();
-    let error = SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries, &ctx)
-        .unwrap()
-        .unwrap_err();
+    let error = SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries).unwrap_err();
     assert_eq!(
         error.to_string(),
         "faces[0].edges references a missing edge"

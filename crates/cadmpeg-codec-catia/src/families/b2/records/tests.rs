@@ -24,9 +24,7 @@ use crate::test_support::test_b2::{
 use crate::test_support::test_b5::{finite, finite_vector, increasing, positive_angle};
 
 fn parsed_b2_nurbs_curves(data: &[u8]) -> Vec<crate::families::b2::records::B2NurbsCurve> {
-    crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_nurbs_curves(ctx, data).expect("service decode")
-    })
+    crate::families::b2::records::b2_nurbs_curves(data)
 }
 
 #[test]

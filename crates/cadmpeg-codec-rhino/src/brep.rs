@@ -1213,7 +1213,6 @@ fn parse_legacy_major2(
     for _ in 0..face_count {
         let start = reader.position();
         let _surface = crate::surfaces::read_nurbs_surface_prefix(
-            ctx,
             &mut reader,
             crate::settings::MillimeterScale::IDENTITY,
         )?;

@@ -495,7 +495,7 @@ pub(super) fn decode(
                     points.insert(id, position);
                     let source_name = representation_item_name(record)
                         .and_then(|value| {
-                            super::decode_text_charged(
+                            super::decode_text(
                                 exchange,
                                 value,
                                 &mut losses,
@@ -550,7 +550,7 @@ pub(super) fn decode(
             _ => {}
         }
     }
-    decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses, ctx)?;
+    decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses);
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records().values() {
         if record
@@ -938,13 +938,13 @@ pub(super) fn decode(
                         )))
                     },
                 ),
-            LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses, ctx)?
+            LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses)
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved),
             LeafCurveEntity::BSplineWithKnots
             | LeafCurveEntity::UniformCurve
             | LeafCurveEntity::QuasiUniformCurve
-            | LeafCurveEntity::BezierCurve => nurbs_curve(id, record, &points, &mut losses, ctx)?
+            | LeafCurveEntity::BezierCurve => nurbs_curve(id, record, &points, &mut losses)
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved),
         };
@@ -973,7 +973,7 @@ pub(super) fn decode(
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses, ctx)? {
+        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses) {
             ir.model.curves.push(Curve {
                 parameter_range: None,
                 id: CurveId::from(ids::data(kind!("curve"), id)),
@@ -1581,11 +1581,9 @@ pub(super) fn decode(
             LeafSurfaceEntity::BSplineWithKnots
             | LeafSurfaceEntity::UniformSurface
             | LeafSurfaceEntity::QuasiUniformSurface
-            | LeafSurfaceEntity::BezierSurface => {
-                nurbs_surface(id, record, &points, &mut losses, ctx)?
-                    .map(SolvedSurfaceGeometry::Nurbs)
-                    .map(SurfaceGeometry::Solved)
-            }
+            | LeafSurfaceEntity::BezierSurface => nurbs_surface(id, record, &points, &mut losses)
+                .map(SolvedSurfaceGeometry::Nurbs)
+                .map(SurfaceGeometry::Solved),
         };
         if let Some(geometry) = geometry {
             ir.model.surfaces.push(Surface {
@@ -1607,7 +1605,7 @@ pub(super) fn decode(
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses, ctx)? {
+        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses) {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
@@ -2273,8 +2271,7 @@ fn decode_tessellated_curve_sets(
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
+) {
     for (&id, record) in exchange.records() {
         if record.partial("TESSELLATED_CURVE_SET").is_none() {
             continue;
@@ -2310,7 +2307,7 @@ fn decode_tessellated_curve_sets(
         };
         let source_name = representation_item_name(record)
             .and_then(|value| {
-                super::decode_text_charged(
+                super::decode_text(
                     exchange,
                     value,
                     losses,
@@ -2338,8 +2335,7 @@ fn decode_tessellated_curve_sets(
             let Some(polyline) = PolylineCurve::from_checked_samples(
                 PolylineSamples::Unparameterized { points },
                 0.0,
-                ctx,
-            )?
+            )
             .ok() else {
                 continue;
             };
@@ -2355,7 +2351,6 @@ fn decode_tessellated_curve_sets(
             typed.insert(source_id);
         }
     }
-    Ok(())
 }
 
 fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
@@ -2429,7 +2424,7 @@ pub(super) fn associate_free_geometric_set_members(
                 .get(&member)
                 .and_then(representation_item_name)
                 .and_then(|value| {
-                    super::decode_text_charged(
+                    super::decode_text(
                         exchange,
                         value,
                         losses,
@@ -2500,7 +2495,7 @@ pub(super) fn associate_free_representation_members(
                 .get(&member)
                 .and_then(representation_item_name)
                 .and_then(|value| {
-                    super::decode_text_charged(
+                    super::decode_text(
                         exchange,
                         value,
                         losses,
@@ -2595,7 +2590,7 @@ fn associate_presentation_carrier(
         .get(&target)
         .and_then(representation_item_name)
         .and_then(|value| {
-            super::decode_text_charged(
+            super::decode_text(
                 exchange,
                 value,
                 losses,
@@ -4585,54 +4580,50 @@ fn nurbs_curve_definition(
     record: &RawRecord,
     losses: &mut Vec<LossNote>,
     periodicity_field: &str,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<NurbsCurveDefinition>, CodecError> {
+) -> Option<NurbsCurveDefinition> {
     let (base, offset) = if record.partials.len() > 1 {
-        (geometry_or_none!(record.partial("B_SPLINE_CURVE")), 0)
+        (record.partial("B_SPLINE_CURVE")?, 0)
     } else {
-        let base = geometry_or_none!([
+        let base = [
             "B_SPLINE_CURVE_WITH_KNOTS",
             "UNIFORM_CURVE",
             "QUASI_UNIFORM_CURVE",
             "BEZIER_CURVE",
         ]
         .into_iter()
-        .find_map(|name| record.partial(name)));
+        .find_map(|name| record.partial(name))?;
         (base, 1)
     };
-    let degree = geometry_or_none!(base
+    let degree = base
         .parameters
         .get(offset)
         .and_then(Value::integer)
-        .and_then(|degree| u32::try_from(degree).ok()));
-    let control_points = geometry_or_none!(references(geometry_or_none!(base
-        .parameters
-        .get(offset + 1)))?);
+        .and_then(|degree| u32::try_from(degree).ok())?;
+    let control_points = references(base.parameters.get(offset + 1)?)?;
     if usize::try_from(degree)
         .ok()
         .is_none_or(|degree| degree >= control_points.len())
     {
-        return Ok(None);
+        return None;
     }
-    let periodic = geometry_or_none!(periodic_value(
+    let periodic = periodic_value(
         base.parameters.get(offset + 3),
         periodicity_field,
         id,
-        losses
-    ));
-    let degree_usize = geometry_or_none!(usize::try_from(degree).ok());
-    let expected_knots = geometry_or_none!(control_points
+        losses,
+    )?;
+    let degree_usize = usize::try_from(degree).ok()?;
+    let expected_knots = control_points
         .len()
         .checked_add(degree_usize)
-        .and_then(|count| count.checked_add(1)));
+        .and_then(|count| count.checked_add(1))?;
     let knots = if let Some(knot_leaf) = record.partial("B_SPLINE_CURVE_WITH_KNOTS") {
-        let tail = geometry_or_none!(knot_leaf.parameters.len().checked_sub(3));
-        geometry_or_none!(expand_knots(
-            geometry_or_none!(knot_leaf.parameters.get(tail)),
-            geometry_or_none!(knot_leaf.parameters.get(tail + 1)),
+        let tail = knot_leaf.parameters.len().checked_sub(3)?;
+        expand_knots(
+            knot_leaf.parameters.get(tail)?,
+            knot_leaf.parameters.get(tail + 1)?,
             expected_knots,
-            ctx,
-        )?)
+        )?
     } else {
         let kind = if record.partial("UNIFORM_CURVE").is_some() {
             DefaultNurbsKnotKind::Uniform
@@ -4641,67 +4632,57 @@ fn nurbs_curve_definition(
         } else if record.partial("BEZIER_CURVE").is_some() {
             DefaultNurbsKnotKind::Bezier
         } else {
-            return Ok(None);
+            return None;
         };
-        geometry_or_none!(default_nurbs_knots(
-            control_points.len(),
-            degree,
-            kind,
-            ctx
-        )?)
+        default_nurbs_knots(control_points.len(), degree, kind)?
     };
     if knots.len() != expected_knots {
-        return Ok(None);
+        return None;
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
-        Some(geometry_or_none!(numbers(geometry_or_none!(leaf
-            .parameters
-            .first()))?))
+        Some(numbers(leaf.parameters.first()?)?)
     } else {
         None
     };
-    Ok(Some(NurbsCurveDefinition {
+    Some(NurbsCurveDefinition {
         degree,
         control_points,
         knots,
         weights,
         periodic,
-    }))
+    })
 }
 
 fn default_nurbs_knots(
     control_point_count: usize,
     degree: u32,
     kind: DefaultNurbsKnotKind,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<KnotVector>, CodecError> {
-    let degree = geometry_or_none!(usize::try_from(degree).ok());
-    let expected = geometry_or_none!(control_point_count
+) -> Option<KnotVector> {
+    let degree = usize::try_from(degree).ok()?;
+    let expected = control_point_count
         .checked_add(degree)
-        .and_then(|count| count.checked_add(1)));
+        .and_then(|count| count.checked_add(1))?;
     let mut knots = Vec::new();
     match kind {
         DefaultNurbsKnotKind::Uniform => {
             for index in 0..expected {
-                let index = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
-                let degree = geometry_or_none!(cadmpeg_core::convert::f64_from_index(degree));
-                let knot = geometry_or_none!(FiniteReal::new(index - degree));
+                let index = cadmpeg_core::convert::f64_from_index(index)?;
+                let degree = cadmpeg_core::convert::f64_from_index(degree)?;
+                let knot = FiniteReal::new(index - degree)?;
                 knots.push(knot.get());
             }
         }
         DefaultNurbsKnotKind::QuasiUniform => {
-            let distinct_count = geometry_or_none!(control_point_count
+            let distinct_count = control_point_count
                 .checked_sub(degree)
-                .and_then(|count| count.checked_add(1)));
+                .and_then(|count| count.checked_add(1))?;
             for index in 0..distinct_count {
                 let multiplicity = if index == 0 || index + 1 == distinct_count {
-                    geometry_or_none!(degree.checked_add(1))
+                    degree.checked_add(1)?
                 } else {
                     1
                 };
-                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(
-                    cadmpeg_core::convert::f64_from_index(index)
-                )));
+                let knot = FiniteReal::new(cadmpeg_core::convert::f64_from_index(index)?)?;
                 for _ in 0..multiplicity {
                     knots.push(knot.get());
                 }
@@ -4709,23 +4690,21 @@ fn default_nurbs_knots(
         }
         DefaultNurbsKnotKind::Bezier => {
             if degree == 0 {
-                return Ok(None);
+                return None;
             }
-            let segment_count = geometry_or_none!(control_point_count.checked_sub(1));
+            let segment_count = control_point_count.checked_sub(1)?;
             if segment_count % degree != 0 {
-                return Ok(None);
+                return None;
             }
             let segment_count = segment_count / degree;
-            let distinct_count = geometry_or_none!(segment_count.checked_add(1));
+            let distinct_count = segment_count.checked_add(1)?;
             for index in 0..distinct_count {
                 let multiplicity = if index == 0 || index + 1 == distinct_count {
-                    geometry_or_none!(degree.checked_add(1))
+                    degree.checked_add(1)?
                 } else {
                     degree
                 };
-                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(
-                    cadmpeg_core::convert::f64_from_index(index)
-                )));
+                let knot = FiniteReal::new(cadmpeg_core::convert::f64_from_index(index)?)?;
                 for _ in 0..multiplicity {
                     knots.push(knot.get());
                 }
@@ -4733,9 +4712,9 @@ fn default_nurbs_knots(
         }
     }
     if knots.len() != expected {
-        return Ok(None);
+        return None;
     }
-    Ok(KnotVector::new(ctx, knots)?.ok())
+    KnotVector::new(knots).ok()
 }
 
 fn nurbs_curve(
@@ -4743,35 +4722,27 @@ fn nurbs_curve(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<NurbsCurve>, CodecError> {
-    let definition = geometry_or_none!(nurbs_curve_definition(
-        id,
-        record,
-        losses,
-        "B_SPLINE_CURVE",
-        ctx
-    )?);
+) -> Option<NurbsCurve> {
+    let definition = nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE")?;
     let mut control_points = Vec::new();
     for id in definition.control_points {
-        let point = geometry_or_none!(points.get(&id).copied());
+        let point = points.get(&id).copied()?;
         control_points.push(point);
     }
     let curve = NurbsCurve::from_lanes(
-        ctx,
         definition.degree,
         definition.knots,
         control_points,
         definition.weights,
         definition.periodic,
-    )?;
+    );
     match curve {
-        Ok(curve) => Ok(Some(curve)),
+        Ok(curve) => Some(curve),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_CURVE #{id} is not a curve carrier: {error}"
             )));
-            Ok(None)
+            None
         }
     }
 }
@@ -4781,35 +4752,27 @@ fn nurbs_pcurve(
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<PcurveGeometry>, CodecError> {
-    let definition = geometry_or_none!(nurbs_curve_definition(
-        id,
-        record,
-        losses,
-        "B_SPLINE_CURVE pcurve",
-        ctx
-    )?);
+) -> Option<PcurveGeometry> {
+    let definition = nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE pcurve")?;
     let mut control_points = Vec::new();
     for id in definition.control_points {
-        let point = geometry_or_none!(points.get(&id).copied());
+        let point = points.get(&id).copied()?;
         control_points.push(point);
     }
     let pcurve = PcurveNurbs::from_lanes(
-        ctx,
         definition.degree,
         definition.knots,
         control_points,
         definition.weights,
         definition.periodic,
-    )?;
+    );
     match pcurve {
-        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_CURVE pcurve #{id} is not a pcurve carrier: {error}"
             )));
-            Ok(None)
+            None
         }
     }
 }
@@ -4857,7 +4820,7 @@ fn decode_pcurve_geometry(
                     | "BEZIER_CURVE"
             )
         }) {
-            geometry_or_none!(nurbs_pcurve(id, record, points, losses, ctx)?)
+            geometry_or_none!(nurbs_pcurve(id, record, points, losses))
         } else {
             let curve_type = geometry_or_none!(entity_type(
                 record,
@@ -4972,7 +4935,7 @@ fn decode_pcurve_geometry(
                         )
                     ))
                 }
-                "POLYLINE" => geometry_or_none!(polyline_pcurve(id, record, points, losses, ctx)?),
+                "POLYLINE" => geometry_or_none!(polyline_pcurve(id, record, points, losses)),
                 "CURVE_REPLICA" => {
                     let basis_id = geometry_or_none!(
                         named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
@@ -5520,34 +5483,31 @@ fn polyline_pcurve(
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<PcurveGeometry>, CodecError> {
-    let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
+) -> Option<PcurveGeometry> {
+    let values = record.parameter(1).and_then(Value::list)?;
     let mut control_points = Vec::new();
     for value in values {
-        let point = geometry_or_none!(value.reference().and_then(|id| points.get(&id).copied()));
+        let point = value.reference().and_then(|id| points.get(&id).copied())?;
         control_points.push(point);
     }
     if control_points.len() < 2 {
-        return Ok(None);
+        return None;
     }
-    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(
-        control_points.len() - 1
-    ));
+    let last = cadmpeg_core::convert::f64_from_index(control_points.len() - 1)?;
     let mut knots = Vec::new();
     knots.push(0.0);
     for index in 0..control_points.len() {
-        let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+        let knot = cadmpeg_core::convert::f64_from_index(index)?;
         knots.push(knot);
     }
     knots.push(last);
-    match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
-        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+    match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
+        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "POLYLINE pcurve #{id} is not a pcurve carrier: {error}"
             )));
-            Ok(None)
+            None
         }
     }
 }
@@ -5557,44 +5517,35 @@ fn polyline(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<NurbsCurve>, CodecError> {
-    let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
+) -> Option<NurbsCurve> {
+    let values = record.parameter(1).and_then(Value::list)?;
     let mut control_points = Vec::new();
     for value in values {
-        let point = geometry_or_none!(value
+        let point = value
             .reference()
-            .and_then(|id| points.get(&id).copied().map(FinitePoint3::get)));
+            .and_then(|id| points.get(&id).copied().map(FinitePoint3::get))?;
         control_points.push(point);
     }
     if control_points.len() < 2 {
-        return Ok(None);
+        return None;
     }
-    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(
-        control_points.len() - 1
-    ));
+    let last = cadmpeg_core::convert::f64_from_index(control_points.len() - 1)?;
     let mut knots = Vec::new();
     knots.push(0.0);
     for index in 0..control_points.len() {
-        let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+        let knot = cadmpeg_core::convert::f64_from_index(index)?;
         knots.push(knot);
     }
     knots.push(last);
-    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        ctx,
-        1,
-        knots,
-        control_points,
-        None,
-        false,
-    )? {
-        Ok(curve) => Ok(Some(curve)),
+    match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(1, knots, control_points, None, false)
+    {
+        Ok(curve) => Some(curve),
         Err(error) => {
             losses.push(
                 StepLossCode::DecodeWarning
                     .note(format!("POLYLINE #{id} is not a curve carrier: {error}")),
             );
-            Ok(None)
+            None
         }
     }
 }
@@ -5604,40 +5555,39 @@ fn nurbs_surface(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<NurbsSurface>, CodecError> {
+) -> Option<NurbsSurface> {
     let (base, offset) = if record.partials.len() > 1 {
-        (geometry_or_none!(record.partial("B_SPLINE_SURFACE")), 0)
+        (record.partial("B_SPLINE_SURFACE")?, 0)
     } else {
-        let base = geometry_or_none!([
+        let base = [
             "B_SPLINE_SURFACE_WITH_KNOTS",
             "UNIFORM_SURFACE",
             "QUASI_UNIFORM_SURFACE",
             "BEZIER_SURFACE",
         ]
         .into_iter()
-        .find_map(|name| record.partial(name)));
+        .find_map(|name| record.partial(name))?;
         (base, 1)
     };
-    let u_degree = geometry_or_none!(base
+    let u_degree = base
         .parameters
         .get(offset)
         .and_then(Value::integer)
-        .and_then(|degree| u32::try_from(degree).ok()));
-    let v_degree = geometry_or_none!(base
+        .and_then(|degree| u32::try_from(degree).ok())?;
+    let v_degree = base
         .parameters
         .get(offset + 1)
         .and_then(Value::integer)
-        .and_then(|degree| u32::try_from(degree).ok()));
-    let rows = geometry_or_none!(base.parameters.get(offset + 2).and_then(Value::list));
+        .and_then(|degree| u32::try_from(degree).ok())?;
+    let rows = base.parameters.get(offset + 2).and_then(Value::list)?;
     if !rows.iter().all(|row| row.list().is_some()) {
-        return Ok(None);
+        return None;
     }
-    let u_count = geometry_or_none!(u32::try_from(rows.len()).ok());
-    let v_count = geometry_or_none!(rows
+    let u_count = u32::try_from(rows.len()).ok()?;
+    let v_count = rows
         .first()
         .and_then(Value::list)
-        .and_then(|row| u32::try_from(row.len()).ok()));
+        .and_then(|row| u32::try_from(row.len()).ok())?;
     if v_count == 0
         || u_degree >= u_count
         || v_degree >= v_count
@@ -5646,15 +5596,15 @@ fn nurbs_surface(
                 .is_none_or(|row| row.len() != cadmpeg_core::decode::index_from_u32(v_count))
         })
     {
-        return Ok(None);
+        return None;
     }
     let mut control_points = Vec::new();
     for row in rows {
         let mut decoded_row = Vec::new();
-        for value in geometry_or_none!(row.list()) {
-            let point = geometry_or_none!(value
+        for value in row.list()? {
+            let point = value
                 .reference()
-                .and_then(|id| points.get(&id).copied().map(FinitePoint3::get)));
+                .and_then(|id| points.get(&id).copied().map(FinitePoint3::get))?;
             decoded_row.push(point);
         }
         control_points.push(decoded_row);
@@ -5668,46 +5618,48 @@ fn nurbs_surface(
     .into_iter()
     .find(|name| record.partial(name).is_some())
     .unwrap_or("B_SPLINE_SURFACE");
-    let u_periodic = geometry_or_none!(periodic_value(
+    let u_periodic = periodic_value(
         base.parameters.get(offset + 4),
         &format!("{surface_name} U direction"),
         id,
         losses,
-    ));
-    let v_periodic = geometry_or_none!(periodic_value(
+    )?;
+    let v_periodic = periodic_value(
         base.parameters.get(offset + 5),
         &format!("{surface_name} V direction"),
         id,
         losses,
-    ));
-    let expected_u = geometry_or_none!(usize::try_from(u_count)
+    )?;
+    let expected_u = usize::try_from(u_count)
         .ok()
-        .and_then(|count| usize::try_from(u_degree)
-            .ok()
-            .and_then(|degree| count.checked_add(degree)))
-        .and_then(|count| count.checked_add(1)));
-    let expected_v = geometry_or_none!(usize::try_from(v_count)
+        .and_then(|count| {
+            usize::try_from(u_degree)
+                .ok()
+                .and_then(|degree| count.checked_add(degree))
+        })
+        .and_then(|count| count.checked_add(1))?;
+    let expected_v = usize::try_from(v_count)
         .ok()
-        .and_then(|count| usize::try_from(v_degree)
-            .ok()
-            .and_then(|degree| count.checked_add(degree)))
-        .and_then(|count| count.checked_add(1)));
+        .and_then(|count| {
+            usize::try_from(v_degree)
+                .ok()
+                .and_then(|degree| count.checked_add(degree))
+        })
+        .and_then(|count| count.checked_add(1))?;
     let (u_knots, v_knots) = if let Some(knot_leaf) = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")
     {
-        let tail = geometry_or_none!(knot_leaf.parameters.len().checked_sub(5));
+        let tail = knot_leaf.parameters.len().checked_sub(5)?;
         (
-            geometry_or_none!(expand_knots(
-                geometry_or_none!(knot_leaf.parameters.get(tail)),
-                geometry_or_none!(knot_leaf.parameters.get(tail + 2)),
+            expand_knots(
+                knot_leaf.parameters.get(tail)?,
+                knot_leaf.parameters.get(tail + 2)?,
                 expected_u,
-                ctx,
-            )?),
-            geometry_or_none!(expand_knots(
-                geometry_or_none!(knot_leaf.parameters.get(tail + 1)),
-                geometry_or_none!(knot_leaf.parameters.get(tail + 3)),
+            )?,
+            expand_knots(
+                knot_leaf.parameters.get(tail + 1)?,
+                knot_leaf.parameters.get(tail + 3)?,
                 expected_v,
-                ctx,
-            )?),
+            )?,
         )
     } else {
         let kind = if record.partial("UNIFORM_SURFACE").is_some() {
@@ -5717,33 +5669,23 @@ fn nurbs_surface(
         } else if record.partial("BEZIER_SURFACE").is_some() {
             DefaultNurbsKnotKind::Bezier
         } else {
-            return Ok(None);
+            return None;
         };
         (
-            geometry_or_none!(default_nurbs_knots(
-                geometry_or_none!(usize::try_from(u_count).ok()),
-                u_degree,
-                kind,
-                ctx
-            )?),
-            geometry_or_none!(default_nurbs_knots(
-                geometry_or_none!(usize::try_from(v_count).ok()),
-                v_degree,
-                kind,
-                ctx
-            )?),
+            default_nurbs_knots(usize::try_from(u_count).ok()?, u_degree, kind)?,
+            default_nurbs_knots(usize::try_from(v_count).ok()?, v_degree, kind)?,
         )
     };
     if u_knots.len() != expected_u || v_knots.len() != expected_v {
-        return Ok(None);
+        return None;
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_SURFACE") {
-        let rows = geometry_or_none!(leaf.parameters.first().and_then(Value::list));
+        let rows = leaf.parameters.first().and_then(Value::list)?;
         let mut values = Vec::new();
         for row in rows {
             let mut decoded_row = Vec::new();
-            for value in geometry_or_none!(row.list()) {
-                let number = geometry_or_none!(value.number());
+            for value in row.list()? {
+                let number = value.number()?;
                 decoded_row.push(number);
             }
             values.push(decoded_row);
@@ -5753,62 +5695,56 @@ fn nurbs_surface(
         None
     };
     let surface = NurbsSurface::from_lanes(
-        ctx,
         NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
         NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
         false,
-    )?;
+    );
     match surface {
-        Ok(surface) => Ok(Some(surface)),
+        Ok(surface) => Some(surface),
         Err(error) => {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_SURFACE #{id} is not a surface carrier: {error}"
             )));
-            Ok(None)
+            None
         }
     }
 }
 
-fn expand_knots(
-    multiplicities: &Value,
-    distinct: &Value,
-    expected: usize,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<KnotVector>, CodecError> {
-    let multiplicities = geometry_or_none!(multiplicities.list());
-    let distinct = geometry_or_none!(distinct.list());
+fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<KnotVector> {
+    let multiplicities = multiplicities.list()?;
+    let distinct = distinct.list()?;
     if multiplicities.len() != distinct.len() {
-        return Ok(None);
+        return None;
     }
     let mut knots = Vec::new();
     for (multiplicity, knot) in multiplicities.iter().zip(distinct) {
-        let count = geometry_or_none!(multiplicity
+        let count = multiplicity
             .integer()
-            .and_then(|count| usize::try_from(count).ok()));
-        let knot = geometry_or_none!(knot.number().and_then(FiniteReal::new));
+            .and_then(|count| usize::try_from(count).ok())?;
+        let knot = knot.number().and_then(FiniteReal::new)?;
         if count == 0
             || knots
                 .len()
                 .checked_add(count)
                 .is_none_or(|len| len > expected)
         {
-            return Ok(None);
+            return None;
         }
 
         knots.extend(std::iter::repeat_with(|| knot.get()).take(count));
     }
-    Ok(KnotVector::new(ctx, knots)?.ok())
+    KnotVector::new(knots).ok()
 }
 
-fn references(value: &Value) -> Result<Option<Vec<u64>>, CodecError> {
-    let values = geometry_or_none!(value.list());
+fn references(value: &Value) -> Option<Vec<u64>> {
+    let values = value.list()?;
     let mut references = Vec::new();
     for value in values {
-        let id = geometry_or_none!(value.reference());
+        let id = value.reference()?;
         references.push(id);
     }
-    Ok(Some(references))
+    Some(references)
 }
 
 pub(super) fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
@@ -5825,14 +5761,14 @@ pub(super) fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> 
     }
 }
 
-fn numbers(value: &Value) -> Result<Option<Vec<f64>>, CodecError> {
-    let values = geometry_or_none!(value.list());
+fn numbers(value: &Value) -> Option<Vec<f64>> {
+    let values = value.list()?;
     let mut numbers = Vec::new();
     for value in values {
-        let number = geometry_or_none!(value.number());
+        let number = value.number()?;
         numbers.push(number);
     }
-    Ok(Some(numbers))
+    Some(numbers)
 }
 
 pub(super) fn normalize(vector: Vector3) -> Option<UnitVector3> {

@@ -799,13 +799,12 @@ pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
 }
 
 pub(crate) fn rational_pcurve_arc(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     center: [f64; 2],
     radius: f64,
     range: [f64; 2],
     refusal: &mut crate::nurbs::LaneRefusals,
     record: &str,
-) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+) -> Option<PcurveGeometry> {
     let span = range[1] - range[0];
     if !center.into_iter().all(f64::is_finite)
         || !range.into_iter().all(f64::is_finite)
@@ -814,26 +813,19 @@ pub(crate) fn rational_pcurve_arc(
         || radius <= 0.0
         || !span.is_finite()
     {
-        return Ok(None);
+        return None;
     }
     let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS {
-        return Ok(None);
+        return None;
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(segment_count) =
-        truncate_f64_to_usize(segment_count).and_then(std::num::NonZeroUsize::new)
-    else {
-        return Ok(None);
-    };
+    let segment_count =
+        truncate_f64_to_usize(segment_count).and_then(std::num::NonZeroUsize::new)?;
     let segment_count = segment_count.get();
-    let step = span
-        / match f64_from_index(segment_count) {
-            Some(value) => value,
-            None => return Ok(None),
-        };
+    let step = span / f64_from_index(segment_count)?;
     let mut control_points = Vec::new();
 
     let mut weights = Vec::new();
@@ -842,16 +834,12 @@ pub(crate) fn rational_pcurve_arc(
 
     knots.extend([range[0]; 3]);
     for index in 0..segment_count {
-        let start = range[0]
-            + match f64_from_index(index) {
-                Some(value) => value,
-                None => return Ok(None),
-            } * step;
+        let start = range[0] + f64_from_index(index)? * step;
         let end = start + step;
         let middle = (start + end) * 0.5;
         let middle_weight = (step * 0.5).cos();
         if !middle_weight.is_finite() || middle_weight == 0.0 {
-            return Ok(None);
+            return None;
         }
         if index == 0 {
             control_points.push(Point2::new(
@@ -881,39 +869,32 @@ pub(crate) fn rational_pcurve_arc(
             .all(|point| point.is_finite())
         || !weights.iter().copied().all(f64::is_finite)
     {
-        return Ok(None);
+        return None;
     }
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        ctx,
-        2,
-        knots,
-        control_points,
-        Some(weights),
-        false,
-    )? {
-        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
-        Err(error) => Ok(crate::nurbs::note_refusal::<PcurveGeometry>(
-            Err(error),
-            refusal,
-            record,
-        )),
-    }
+    crate::nurbs::note_refusal(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            2,
+            knots,
+            control_points,
+            Some(weights),
+            false,
+        ),
+        refusal,
+        record,
+    )
+    .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
 }
 
 pub(crate) fn quintic_jet_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     points: &[[f64; 2]],
     (first, second): (&[[f64; 2]], &[[f64; 2]]),
     refusal: &mut crate::nurbs::LaneRefusals,
     record: impl std::fmt::Display,
-) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    let Some((full_knots, controls)) =
-        crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)
-    else {
-        return Ok(None);
-    };
+) -> Option<PcurveGeometry> {
+    let (full_knots, controls) =
+        crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?;
     let mut control_points = Vec::new();
 
     control_points.extend(
@@ -921,21 +902,18 @@ pub(crate) fn quintic_jet_pcurve(
             .into_iter()
             .map(|point| Point2::new(point[0], point[1])),
     );
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        ctx,
-        degree,
-        full_knots,
-        control_points,
-        None,
-        false,
-    )? {
-        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
-        Err(error) => Ok(crate::nurbs::note_refusal::<PcurveGeometry>(
-            Err(error),
-            refusal,
-            record,
-        )),
-    }
+    crate::nurbs::note_refusal(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            degree,
+            full_knots,
+            control_points,
+            None,
+            false,
+        ),
+        refusal,
+        record,
+    )
+    .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
 }
 
 #[cfg(test)]
@@ -943,7 +921,7 @@ mod route_tests {
     use crate::assemble::source_meta;
     use crate::assemble::{
         circle_parameter_range_from_surface_branch, neutral_model_is_admissible,
-        unresolved_carrier_counts,
+        rational_pcurve_arc, unresolved_carrier_counts,
     };
 
     use cadmpeg_ir::document::CadIr;
@@ -983,19 +961,6 @@ mod route_tests {
             None,
         );
         assert!(!report.losses.is_empty());
-    }
-
-    fn rational_pcurve_arc(
-        center: [f64; 2],
-        radius: f64,
-        range: [f64; 2],
-        refusal: &mut crate::nurbs::LaneRefusals,
-        record: &str,
-    ) -> Option<PcurveGeometry> {
-        crate::test_support::with_service_context(|ctx| {
-            super::rational_pcurve_arc(ctx, center, radius, range, refusal, record)
-        })
-        .expect("service budget admits rational arc")
     }
 
     #[test]

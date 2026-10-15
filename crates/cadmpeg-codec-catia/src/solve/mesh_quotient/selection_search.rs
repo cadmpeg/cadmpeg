@@ -5,14 +5,14 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::{
     canonical_mesh_boundary_directions, changed_quotient_edges, common_supported_corner_equations,
-    distinct_domain_matching_with_budget, initial_mesh_quotient,
-    mesh_candidates_equivalent_with_context, orient_face_cycles, reconstruct_mesh_selection,
-    same_unordered_pair, Arc, BoundaryDraft, CodecError, CoedgeUse, DecodeContext, EdgeRow,
-    FaceTopologyDraft, HashMap, HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure,
-    MeshCandidateGauge, MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection,
-    MeshFixedDirectionOption, MeshQuotient, MeshQuotientSignature, MeshSelectionSearch,
-    MeshSelectionStateSignature, MeshSolve, SearchOutcome, StandardTopologyDraft, VecDeque,
-    WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
+    distinct_domain_matching_with_budget, initial_mesh_quotient, mesh_candidates_equivalent,
+    orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, Arc, BoundaryDraft,
+    CodecError, CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap, HashSet,
+    MeshBoundaryEdgeCandidate, MeshCandidateFailure, MeshCandidateGauge, MeshEndpointResolve,
+    MeshFaceBoundaryAssignment, MeshFaceSelection, MeshFixedDirectionOption, MeshQuotient,
+    MeshQuotientSignature, MeshSelectionSearch, MeshSelectionStateSignature, MeshSolve,
+    SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES,
+    MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
 
 #[cfg(test)]
@@ -810,9 +810,7 @@ impl MeshSelectionSearch<'_, '_> {
                     let gauge = self.candidate_gauge;
                     let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
                         (previous == &candidate)
-                            || mesh_candidates_equivalent_with_context(
-                                self.ctx, previous, &candidate, gauge,
-                            )?
+                            || mesh_candidates_equivalent(self.ctx, previous, &candidate, gauge)?
                     } else {
                         false
                     };
@@ -1068,7 +1066,7 @@ impl MeshSelectionSearch<'_, '_> {
                                 let equivalent =
                                     if let SearchOutcome::Solved(previous) = &self.outcome {
                                         (previous == &candidate)
-                                            || mesh_candidates_equivalent_with_context(
+                                            || mesh_candidates_equivalent(
                                                 self.ctx, previous, &candidate, gauge,
                                             )?
                                     } else {
@@ -1183,9 +1181,7 @@ impl MeshSelectionSearch<'_, '_> {
                 let gauge = self.candidate_gauge;
                 let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
                     (previous == &candidate)
-                        || mesh_candidates_equivalent_with_context(
-                            self.ctx, previous, &candidate, gauge,
-                        )?
+                        || mesh_candidates_equivalent(self.ctx, previous, &candidate, gauge)?
                 } else {
                     false
                 };
@@ -2026,7 +2022,7 @@ pub(super) fn resolve_singleton_mesh_selection(
         let Some(alternate) = materialize(&alternate.points)? else {
             continue;
         };
-        if !mesh_candidates_equivalent_with_context(ctx, &first, &alternate, candidate_gauge)? {
+        if !mesh_candidates_equivalent(ctx, &first, &alternate, candidate_gauge)? {
             return Ok(Some(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))));
         }
     }

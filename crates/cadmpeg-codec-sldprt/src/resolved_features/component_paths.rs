@@ -7,8 +7,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::{HashMap, HashSet};
 
@@ -195,11 +194,10 @@ pub(super) fn component_path_feature<'a>(
 }
 
 pub(crate) fn project_adjacent_extrusion_profiles(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     #[derive(PartialEq)]
     enum ProfileVote<'a> {
         Missing,
@@ -376,16 +374,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         }
         if let Some(&profile_index) = neutral_indices.get(*profile) {
             let reference = features[profile_index].id.clone();
-            if !features[index]
-                .dependencies
-                .contains(&features[profile_index].id)
-            {
-                features[index].dependencies.insert(
-                    ctx,
-                    reference.clone(),
-                    "collect SLDPRT adjacent profile dependencies",
-                )?;
-            }
+            features[index].dependencies.insert(reference.clone());
             features[index].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
                     definition
@@ -397,7 +386,6 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             });
         }
     }
-    Ok(())
 }
 
 pub(super) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
@@ -478,11 +466,10 @@ pub(crate) fn is_dissected_profile_feature(feature: &crate::records::Feature) ->
 }
 
 pub(crate) fn project_dissected_sketches(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
-) -> Result<(), CodecError> {
+) {
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         native_features.insert(feature.id.as_str(), feature);
@@ -603,16 +590,9 @@ pub(crate) fn project_dissected_sketches(
             feature
                 .dependencies
                 .retain(|dependency| dependency != &child);
-            if !feature.dependencies.contains(&owner) {
-                feature.dependencies.insert(
-                    ctx,
-                    owner,
-                    "collect SLDPRT dissected profile dependencies",
-                )?;
-            }
+            feature.dependencies.insert(owner);
         }
     }
-    Ok(())
 }
 
 fn append_compact_edge_path(value: &mut String, selection: &FeatureInputEdgeSelection) {

@@ -884,8 +884,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                             triangles.clone(),
                             triangulation.deflection,
                             *deflection_scale,
-                            self.ctx,
-                        )?
+                        )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     )),
                     source_object: Some(self.source_association()?),
@@ -1194,7 +1193,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             id: CurveId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 place_polyline_samples(&mut samples, carrier_transform)?;
-                PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
+                PolylineCurve::from_scaled_deflection(samples, deflection, scale)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
             source_object: Some(self.source_association()?),
@@ -1214,7 +1213,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 id: Self::polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform)?;
-                    PolylineCurve::from_scaled_deflection(samples, deflection, scale, self.ctx)?
+                    PolylineCurve::from_scaled_deflection(samples, deflection, scale)
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
                 source_object: Some(self.source_association()?),
@@ -1836,12 +1835,11 @@ pub(crate) fn pcurve_geometry(
             knots.extend(nurbs.knots.iter().map(|knot| knot.get()));
             Some(PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::new(
-                    ctx,
                     nurbs.degree,
-                    cadmpeg_ir::geometry::nurbs::KnotVector::new(ctx, knots)??,
+                    cadmpeg_ir::geometry::nurbs::KnotVector::new(knots)?,
                     poles,
                     nurbs.periodic,
-                )??,
+                )?,
             })
         }
         TextCurve2d::Trimmed {

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical path selection binding.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{FeatureId, PathRef};
 
 fn path_fixture() -> (
@@ -96,23 +95,14 @@ fn path_fixture() -> (
     (scope, vec![group], vec![operand], PathRef::Native(group_id))
 }
 
-fn bind_with_limits(max_retained_bytes: u64) -> Result<PathRef, cadmpeg_core::CodecError> {
+fn bind() -> PathRef {
     let (scope, groups, operands, mut path) = path_fixture();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = max_retained_bytes;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let feature = FeatureId::mint("f3d:model:feature#path").unwrap();
-    super::super::bind_entity_selection_path(
-        &ctx, &mut path, &feature, 1, &scope, &groups, &operands,
-    )?;
-    Ok(path)
+    super::super::bind_entity_selection_path(&mut path, &feature, 1, &scope, &groups, &operands);
+    path
 }
 
 #[test]
 fn path_edges_keep_historical_identity() {
-    assert!(matches!(
-        bind_with_limits(u64::MAX).unwrap(),
-        PathRef::HistoricalEdges { .. }
-    ));
+    assert!(matches!(bind(), PathRef::HistoricalEdges { .. }));
 }

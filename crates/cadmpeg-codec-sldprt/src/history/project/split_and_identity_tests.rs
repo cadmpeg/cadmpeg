@@ -24,14 +24,6 @@ use cadmpeg_ir::features::RibConstruction;
 use cadmpeg_ir::features::SplitFaceTool;
 use std::collections::BTreeMap;
 
-fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    run(&ctx)
-}
-
 #[test]
 fn split_face_path_uses_the_prebound_source_sketch() {
     let dimensions =
@@ -69,11 +61,7 @@ fn split_face_path_uses_the_prebound_source_sketch() {
         features: vec![split.clone(), sketch.clone()],
     };
 
-    let projected = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&history),
-    )
-    .unwrap();
+    let projected = project_features(std::slice::from_ref(&history)).unwrap();
     let split_feature = projected
         .iter()
         .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
@@ -135,11 +123,7 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
 
     let annotations =
         project_semantic_notes(std::slice::from_ref(&history)).expect("semantic note projection");
-    assert!(
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(project_features(&[history]).unwrap().is_empty());
     assert_eq!(
         annotations[0].id.as_str(),
         "sldprt:semantic-annotation:note#7:3"
@@ -230,8 +214,7 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
         features: vec![principal, offset],
     };
 
-    let projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let projected = project_features(&[history]).unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -257,24 +240,20 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
         configurations: Vec::new(),
         features: vec![first, second],
     }];
-    let mut projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
-    with_test_ctx(|ctx| {
-        derive_feature_outputs(
-            ctx,
-            &mut projected,
-            &histories,
-            crate::history::bind::FeatureOutputSources {
-                face_producers: &[],
-                body_modifiers: &body_modifiers,
-            },
-            &[],
-            &[],
-            &[],
-        )
-    })
+    derive_feature_outputs(
+        &mut projected,
+        &histories,
+        crate::history::bind::FeatureOutputSources {
+            face_producers: &[],
+            body_modifiers: &body_modifiers,
+        },
+        &[],
+        &[],
+        &[],
+    )
     .unwrap();
 
     assert!(projected[0].evaluation.outputs().is_empty());
@@ -304,24 +283,20 @@ fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
             features: vec![feature("b", None, 0), feature("b-next", None, 1)],
         },
     ];
-    let mut projected =
-        project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let mut projected = project_features(&histories).unwrap();
     let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
 
-    with_test_ctx(|ctx| {
-        derive_feature_outputs(
-            ctx,
-            &mut projected,
-            &histories,
-            crate::history::bind::FeatureOutputSources {
-                face_producers: &[],
-                body_modifiers: &body_modifiers,
-            },
-            &[],
-            &[],
-            &[],
-        )
-    })
+    derive_feature_outputs(
+        &mut projected,
+        &histories,
+        crate::history::bind::FeatureOutputSources {
+            face_producers: &[],
+            body_modifiers: &body_modifiers,
+        },
+        &[],
+        &[],
+        &[],
+    )
     .unwrap();
 
     assert!(projected
@@ -385,29 +360,26 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "3deg".into());
 
-    let projected = project_features(
-        &cadmpeg_test_support::service_decode_context(),
-        &[FeatureHistory {
-            id: "history".into(),
-            part_name: None,
-            properties: BTreeMap::new(),
-            content: Vec::new(),
-            configurations: Vec::new(),
-            features: vec![
-                dome,
-                rib,
-                surface_loft,
-                cut_loft,
-                surface_extrude,
-                offset_surface,
-                knit_surface,
-                filled_surface,
-                trim_surface,
-                extend_surface,
-                draft,
-            ],
-        }],
-    )
+    let projected = project_features(&[FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            dome,
+            rib,
+            surface_loft,
+            cut_loft,
+            surface_extrude,
+            offset_surface,
+            knit_surface,
+            filled_surface,
+            trim_surface,
+            extend_surface,
+            draft,
+        ],
+    }])
     .unwrap();
 
     assert!(matches!(

@@ -85,20 +85,12 @@ pub fn intersection(data: &[u8]) {
 
 /// Exercise NX NURBS curve extraction.
 pub fn nurbs_curves(data: &[u8]) {
-    let arena = DecodeArena::new();
-    let policy = fuzz_policy();
-    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
-        drop(crate::nurbs::curves(&ctx, data));
-    }
+    drop(crate::nurbs::curves(data));
 }
 
 /// Exercise NX NURBS surface extraction.
 pub fn nurbs_surfaces(data: &[u8]) {
-    let arena = DecodeArena::new();
-    let policy = fuzz_policy();
-    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
-        drop(crate::nurbs::surfaces(&ctx, data));
-    }
+    drop(crate::nurbs::surfaces(data));
 }
 
 /// Exercise NX Parasolid topology parsing.

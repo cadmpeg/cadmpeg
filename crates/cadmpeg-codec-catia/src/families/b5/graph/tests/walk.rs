@@ -10,7 +10,7 @@ use crate::families::b5::graph::{
     object_stream_populations, object_stream_run_ranges, parameter_incidence, parse,
     parse_a8_class21_pcurve, parse_edge, parse_extrusion_surface, parse_flat, parse_from_frames,
     parse_from_records, parse_supported_surface, parse_vertex_incidence_link, records,
-    records_from_frames, records_from_frames_budgeted, select_object_stream_population,
+    records_from_frames, select_object_stream_population,
     supported_surface_parameters_match_carrier, supported_surface_pcurves_match, surface_node,
     targeted_geometry_graph, topology_root_run_ranges, topology_runs, typed_class_21_pcurves,
     typed_class_21_pcurves_from_records, typed_edge_records, typed_edge_records_from_records,
@@ -541,7 +541,7 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
 fn indexed_frame_parse_matches_one_shot_parse() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let records = records_from_frames(&bytes, &frames);
+    let records = records_from_frames(&bytes, &frames, None);
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| parse(
@@ -571,6 +571,7 @@ fn indexed_frame_parse_matches_one_shot_parse() {
             &records,
             &frames,
             true,
+            None,
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("service resource budget")
@@ -609,10 +610,10 @@ fn indexed_frame_parse_matches_one_shot_parse() {
 fn budgeted_dependency_admission_matches_one_shot_records() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let expected = records_from_frames(&bytes, &frames);
+    let expected = records_from_frames(&bytes, &frames, None);
     let budget = cadmpeg_core::decode::WorkBudget::new(10_000);
 
-    let actual = records_from_frames_budgeted(&bytes, &frames, Some(&budget));
+    let actual = records_from_frames(&bytes, &frames, Some(&budget));
 
     assert_eq!(actual, expected);
     assert!(!budget.exhausted());

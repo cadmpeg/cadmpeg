@@ -246,7 +246,6 @@ fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
 #[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
     let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -260,7 +259,6 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .unwrap();
     let point = crate::eval::decode::nurbs_surface_point(
         crate::eval::admission::EvaluationAdmission::Standard,

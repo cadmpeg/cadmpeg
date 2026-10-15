@@ -25,25 +25,19 @@ pub fn parasolid(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
 
 /// Exercise spline-curve carrier scanning.
 pub fn spline_curves(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
     drop(crate::brep::spline::scan_curve_carriers(
-        &ctx,
         data,
         &mut Vec::new(),
-    )?);
+    ));
     Ok(())
 }
 
 /// Exercise spline-surface carrier scanning.
 pub fn spline_surfaces(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
     drop(crate::brep::spline::scan_surface_carriers(
-        &ctx,
         data,
         &mut Vec::new(),
-    )?);
+    ));
     Ok(())
 }
 

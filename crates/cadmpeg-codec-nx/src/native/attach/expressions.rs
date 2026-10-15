@@ -116,11 +116,7 @@ pub(in crate::native) fn attach_expression_parameters(
 
             source_content.push(FeatureSourceContent::Parameter(parameter));
         }
-        let source_content = cadmpeg_ir::features::FeatureContent::new(
-            source_content,
-            ctx,
-            "NX expression feature content validation",
-        )?;
+        let source_content = cadmpeg_ir::features::FeatureContent::try_from(source_content)?;
         if !source_content.is_empty() {
             annotations
                 .derived(&feature_id, "source_content")
@@ -279,7 +275,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 expression: expression.expression.clone(),
                 display: None,
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
+                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
                     .map_err(cadmpeg_core::CodecError::from)?,
                 properties,
                 pmi: None,

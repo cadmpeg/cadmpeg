@@ -279,7 +279,6 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     )
     .expect("history topology is within resource limits");
     super::super::emit::emit_coedges(
-        &asm_decode_ctx,
         &mut out,
         &records,
         crate::brep::emit::CoedgeDecodeInputs {

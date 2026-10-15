@@ -443,14 +443,11 @@ fn an_offset_support_holds_only_increasing_domains_and_binds_them() {
         u_range: interval([0.0, 1.0]),
         v_range: interval([0.0, 1.0]),
     };
-    let carriers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect("service decode")
-    });
+    let carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service decode");
     assert_eq!(
         crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
         [Some(0)]
@@ -534,13 +531,10 @@ fn cylinder_circumference_tolerance_is_an_absolute_length() {
 #[test]
 fn b2_offset_support_binding_result() {
     let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
-    let carriers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_surfaces(
-            ctx,
-            &a5_surface_stream(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
+    let carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
     .expect("service profile admits surface");
     let service = crate::families::b2::records::offset_support_carriers(&offsets, &carriers);
     assert_eq!(service.len(), 1);

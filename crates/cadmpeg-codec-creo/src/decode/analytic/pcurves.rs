@@ -2014,14 +2014,12 @@ pub(in crate::decode) fn unique_oriented_native_pcurve(
 }
 
 pub(in crate::decode) fn planar_curve_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    let mut resource_error = None;
-    let result = (|| -> Option<PcurveGeometry> {
+) -> Option<PcurveGeometry> {
+    (|| -> Option<PcurveGeometry> {
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
             return None;
         };
@@ -2153,18 +2151,11 @@ pub(in crate::decode) fn planar_curve_pcurve(
                             let Some(projected_point) =
                                 cadmpeg_ir::units::FinitePoint2::new(projected_point)
                             else {
-                                let reason = match Ok(
-                                    "control_points contains a non-finite point".to_owned()
-                                ) {
-                                    Ok(reason) => reason,
-                                    Err(error) => {
-                                        resource_error = Some(error);
-                                        return None;
-                                    }
-                                };
                                 refusal.note(
                                     format_args!("creo planar-curve pcurve record for {record}"),
-                                    &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(reason),
+                                    &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                        "control_points contains a non-finite point".to_owned(),
+                                    ),
                                 );
                                 return None;
                             };
@@ -2183,18 +2174,11 @@ pub(in crate::decode) fn planar_curve_pcurve(
                             let Some(projected_point) =
                                 cadmpeg_ir::units::FinitePoint2::new(projected_point)
                             else {
-                                let reason = match Ok(
-                                    "control_points contains a non-finite point".to_owned()
-                                ) {
-                                    Ok(reason) => reason,
-                                    Err(error) => {
-                                        resource_error = Some(error);
-                                        return None;
-                                    }
-                                };
                                 refusal.note(
                                     format_args!("creo planar-curve pcurve record for {record}"),
-                                    &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(reason),
+                                    &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                        "control_points contains a non-finite point".to_owned(),
+                                    ),
                                 );
                                 return None;
                             };
@@ -2209,13 +2193,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
                     }
                 };
                 let knots = nurbs.knots().clone();
-                match match PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic()) {
-                    Ok(result) => result,
-                    Err(error) => {
-                        resource_error = Some(error);
-                        return None;
-                    }
-                } {
+                match PcurveNurbs::new(nurbs.degree(), knots, poles, nurbs.periodic()) {
                     Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
                     Err(error) => {
                         refusal.note(
@@ -2228,11 +2206,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
             }
             _ => None,
         }
-    })();
-    match resource_error {
-        Some(error) => Err(error),
-        None => Ok(result),
-    }
+    })()
 }
 
 #[cfg(test)]
@@ -2480,7 +2454,6 @@ mod tests {
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
-                        &cadmpeg_test_support::service_decode_context(),
                         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
@@ -2500,7 +2473,6 @@ mod tests {
                         ),
                         false,
                     )
-                    .expect("fixture constructor admission")
                     .expect("valid test surface"),
                 )),
                 source_object: None,

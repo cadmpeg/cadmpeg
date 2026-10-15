@@ -118,7 +118,7 @@ pub(crate) fn transfer_parameters(
                 }
             } else {
                 let id = candidate.parameter.id.clone();
-                let parameter = copy_design_parameter(ctx, &candidate.parameter)?;
+                let parameter = copy_design_parameter(&candidate.parameter)?;
                 relation_program_parameters.insert(id, Some((parameter, candidate.parameter_type)));
             }
             match candidates.get(&candidate.parameter.id) {
@@ -255,7 +255,7 @@ pub(crate) fn transfer_parameters(
             .iter()
             .map(|candidate| -> Result<_, cadmpeg_core::CodecError> {
                 Ok((
-                    copy_design_parameter(ctx, &candidate.parameter)?,
+                    copy_design_parameter(&candidate.parameter)?,
                     candidate.parameter_type,
                 ))
             })
@@ -300,13 +300,7 @@ pub(crate) fn transfer_parameters(
                             ctx.charge_entities(1, "admit CATIA formula candidate")?;
                             let mut output_dependencies =
                                 cadmpeg_ir::features::DistinctMembers::default();
-                            for dependency in dependencies {
-                                output_dependencies.insert(
-                                    ctx,
-                                    dependency,
-                                    "catia_formula_output_dependencies",
-                                )?;
-                            }
+                            output_dependencies.extend(dependencies);
                             let output_name = output_value.name.value.clone();
                             let output_expression = expression.expression.value.clone();
                             let output_native_ref = output.id.clone();
@@ -341,12 +335,7 @@ pub(crate) fn transfer_parameters(
         }
 
         for candidate in transferred {
-            merge_formula_parameter_candidate(
-                ctx,
-                &mut candidates,
-                &mut conflicting_inputs,
-                candidate,
-            )?;
+            merge_formula_parameter_candidate(&mut candidates, &mut conflicting_inputs, candidate)?;
         }
     }
 
@@ -391,12 +380,7 @@ pub(crate) fn transfer_parameters(
             continue;
         };
         programs.push(program);
-        merge_formula_parameter_candidate(
-            ctx,
-            &mut candidates,
-            &mut conflicting_inputs,
-            candidate,
-        )?;
+        merge_formula_parameter_candidate(&mut candidates, &mut conflicting_inputs, candidate)?;
     }
 
     for id in &conflicting_inputs {
@@ -1022,9 +1006,7 @@ fn collect_legacy_parameters(
             }
             let expression = evaluation.expression.to_owned();
             let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
-            for id in evaluation.dependencies {
-                dependencies.insert(ctx, id, "catia_legacy_formula_dependencies")?;
-            }
+            dependencies.extend(evaluation.dependencies);
             candidate.parameter.expression = expression;
             candidate.parameter.dependencies = dependencies;
             candidate.role = FormulaParameterRole::FormulaOutput { fallback: None };
@@ -1358,7 +1340,6 @@ struct FormulaProgramCandidate {
 }
 
 fn merge_formula_parameter_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
     conflicting_inputs: &mut BTreeSet<ParameterId>,
     mut candidate: FormulaParameterCandidate,
@@ -1389,7 +1370,7 @@ fn merge_formula_parameter_candidate(
         {
             candidate.role = FormulaParameterRole::FormulaOutput {
                 fallback: Some(Box::new((
-                    copy_design_parameter(ctx, &existing.parameter)?,
+                    copy_design_parameter(&existing.parameter)?,
                     existing.parameter_type,
                 ))),
             };
@@ -1534,15 +1515,7 @@ fn relation_program_output_candidate(
     let output_expression = expression.expression.value.clone();
     let output_native_ref = output_entity.id.clone();
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
-    for dependency in &dependencies {
-        if !output_dependencies.contains(dependency) {
-            output_dependencies.insert(
-                ctx,
-                dependency.clone(),
-                "catia_relation_program_output_dependencies",
-            )?;
-        }
-    }
+    output_dependencies.extend(dependencies.iter().cloned());
     let candidate = FormulaParameterCandidate {
         parameter: DesignParameter {
             id: candidate_id,
@@ -1655,21 +1628,14 @@ fn parameter_expression(value: &ParameterValue) -> String {
 }
 
 fn copy_design_parameter(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &DesignParameter,
 ) -> Result<DesignParameter, cadmpeg_core::CodecError> {
-    let operation = "catia_formula_parameter_copy";
     let id = source.id.clone();
     let owner = source.owner.clone();
     let name = source.name.clone();
     let expression = source.expression.clone();
     let value = source.value.clone();
-    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
-    if !source.dependencies.is_empty() {
-        for dependency in &source.dependencies {
-            dependencies.insert(ctx, dependency.clone(), operation)?;
-        }
-    }
+    let dependencies = source.dependencies.clone();
     let mut properties = BTreeMap::new();
     for (key, value) in &source.properties {
         let key = key.as_str().to_owned();
@@ -4633,23 +4599,16 @@ mod parser_tests {
     #[test]
     fn formula_design_parameter_copy_result() {
         let mut parameter = unset_candidate(FormulaParameterType::String).parameter;
-        parameter
-            .dependencies
-            .insert(
-                &cadmpeg_test_support::service_decode_context(),
-                ParameterId::mint("synthetic:test:id#dependency".to_string())
-                    .expect("identity grammar"),
-                "insert fixture member",
-            )
-            .expect("member insertion admission");
+        parameter.dependencies.insert(
+            ParameterId::mint("synthetic:test:id#dependency".to_string())
+                .expect("identity grammar"),
+        );
         parameter.properties.insert(
             cadmpeg_core::nonblank_literal!("source"),
             "value".to_string(),
         );
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            super::copy_design_parameter(ctx, &parameter)
-        })
-        .expect("service profile admits parameter copy");
+        let admitted = super::copy_design_parameter(&parameter)
+            .expect("service profile admits parameter copy");
         assert_eq!(admitted, parameter);
     }
 
@@ -4657,14 +4616,11 @@ mod parser_tests {
     fn formula_candidate_index_result() {
         let candidate = unset_candidate(FormulaParameterType::String);
         let mut candidates = BTreeMap::new();
-        crate::test_support::with_service_context(|ctx| {
-            super::merge_formula_parameter_candidate(
-                ctx,
-                &mut candidates,
-                &mut std::collections::BTreeSet::new(),
-                candidate,
-            )
-        })
+        super::merge_formula_parameter_candidate(
+            &mut candidates,
+            &mut std::collections::BTreeSet::new(),
+            candidate,
+        )
         .expect("service profile admits candidate");
         assert_eq!(candidates.len(), 1);
     }

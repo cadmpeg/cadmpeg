@@ -13,97 +13,17 @@ use crate::native::attach::DeleteBodyField;
 use crate::native::attach::FeatureDefinition;
 use crate::native::attach::FeatureOperation;
 use crate::native::attach::FeatureTreeNodeRole;
+use crate::native::attach::{
+    boolean_feature_definition, delete_body_feature_definition, extract_body_feature_definition,
+    offset_store_trim_body_feature_definition, sew_body_feature_definition,
+    trim_body_feature_definition,
+};
 use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
-
-fn boolean_feature_definition(
-    operation: &crate::native::features::FeatureBooleanOperation,
-    roots: &BTreeMap<u32, u32>,
-    resolution: &BooleanOffsetStoreResolution,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::boolean_feature_definition(ctx, operation, roots, resolution, bodies)
-    })
-}
-
-fn delete_body_feature_definition(
-    field: DeleteBodyField<'_>,
-    roots: &BTreeMap<u32, u32>,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::delete_body_feature_definition(ctx, field, roots, bodies)
-            .expect("resource admission")
-    })
-}
-
-fn extract_body_feature_definition(
-    body: Option<u32>,
-    offset_bodies: &[(u32, String)],
-    roots: &BTreeMap<u32, u32>,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::extract_body_feature_definition(
-            ctx,
-            body,
-            offset_bodies,
-            roots,
-            bodies,
-        )
-        .expect("resource admission")
-    })
-}
-
-fn offset_store_trim_body_feature_definition(
-    offset_bodies: &[(u32, String)],
-    operands: &[&crate::native::features::FeatureOperationBodyOperand],
-) -> Option<FeatureDefinition> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::offset_store_trim_body_feature_definition(
-            ctx,
-            offset_bodies,
-            operands,
-        )
-        .expect("resource admission")
-    })
-}
-
-fn sew_body_feature_definition(
-    primary: Option<u32>,
-    offset_bodies: &[(u32, String)],
-    operands: &[&crate::native::features::FeatureOperationBodyOperand],
-    roots: &BTreeMap<u32, u32>,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> Option<FeatureDefinition> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::sew_body_feature_definition(
-            ctx,
-            primary,
-            offset_bodies,
-            operands,
-            roots,
-            bodies,
-        )
-        .expect("resource admission")
-    })
-}
-
-fn trim_body_feature_definition(
-    target: u32,
-    operands: &[&crate::native::features::FeatureOperationBodyOperand],
-    roots: &BTreeMap<u32, u32>,
-    bodies: &BTreeMap<u32, Vec<BodyId>>,
-) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::attach::trim_body_feature_definition(ctx, target, operands, roots, bodies)
-    })
-}
 
 #[test]
 fn nx_boolean_keeps_body_namespace_proofs_atomic() {
@@ -136,9 +56,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#94".to_string()),
                 BodySelection::Native("nx:om-object-indices#122".to_string()),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -160,9 +78,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#94".to_string()),
                 BodySelection::Native("nx:om-object-indices#122".to_string()),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -190,20 +106,14 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
                 BodySelection::local(
                     vec!["nx:om-data-blocks-3:block#94".to_string()],
                     "nx:om-object-index#94".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-data-blocks-3:block#122".to_string()],
                     "nx:om-object-indices#122".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Cut,
@@ -239,9 +149,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Native("nx:om-object-index#401".to_string()),
                 BodySelection::Native("nx:om-object-indices#402,403".to_string()),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             op: BooleanKind::Join,
@@ -287,9 +195,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-body-object#30".to_string(),
                 ],
                 "nx:om-object-indices#10,20,30".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -332,17 +238,13 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         sew_body_feature_definition(Some(10), &[], &references, &roots, &resolved,),
         Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![
-                        BodyId::mint("test:model:entity#target".to_string())
-                            .expect("identity grammar"),
-                        BodyId::mint("test:model:entity#first-tool".to_string())
-                            .expect("identity grammar"),
-                        BodyId::mint("test:model:entity#second-tool".to_string())
-                            .expect("identity grammar"),
-                    ],
-                    &cadmpeg_test_support::service_decode_context()
-                )
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar"),
+                    BodyId::mint("test:model:entity#first-tool".to_string())
+                        .expect("identity grammar"),
+                    BodyId::mint("test:model:entity#second-tool".to_string())
+                        .expect("identity grammar"),
+                ],)
                 .expect("distinct bodies"),
                 native: "nx:om-object-indices#10,20,30".to_string(),
             })
@@ -366,9 +268,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-body-object#20".to_string(),
                 ],
                 "nx:om-object-indices#10,20,30".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -416,9 +316,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                     "nx:om-data-blocks-4:block#70".to_string(),
                 ],
                 "nx:om-object-indices#72,71,70".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap())
             .try_into()
             .unwrap(),
@@ -456,9 +354,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#20".to_string()],
                 "nx:om-object-index#20".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -469,9 +365,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#72".to_string()],
                 "nx:om-object-index#72".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -489,9 +383,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
             bodies: BodySelection::local(
                 vec!["nx:om-data-blocks-2:block#72".to_string()],
                 "nx:om-object-index#72".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap(),
             mode: BodyRetentionMode::DeleteSelected,
         })
@@ -523,20 +415,14 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#114".to_string()],
                     "nx:om-object-index#114".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#113".to_string()],
                     "nx:om-object-indices#113".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -556,14 +442,10 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
                 BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#114".to_string()],
                     "nx:om-object-index#114".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::Unresolved,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -600,20 +482,14 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                 BodySelection::local(
                     vec!["nx:om-body-object#10".to_string()],
                     "nx:om-object-index#10".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::local(
                     vec!["nx:om-body-object#20".to_string()],
                     "nx:om-object-indices#20".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -634,26 +510,22 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![BodyId::mint("test:model:entity#target".to_string())
-                            .expect("identity grammar")],
-                        &cadmpeg_test_support::service_decode_context()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                        "test:model:entity#target".to_string()
                     )
+                    .expect("identity grammar")],)
                     .expect("distinct bodies"),
                     native: "nx:om-object-index#10".to_string(),
                 },
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                        vec![BodyId::mint("test:model:entity#tool".to_string())
-                            .expect("identity grammar")],
-                        &cadmpeg_test_support::service_decode_context()
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                        "test:model:entity#tool".to_string()
                     )
+                    .expect("identity grammar")],)
                     .expect("distinct bodies"),
                     native: "nx:om-object-indices#20".to_string(),
                 },
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -666,14 +538,10 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                 BodySelection::local(
                     vec!["nx:om-body-object#10".to_string()],
                     "nx:om-object-index#10".to_string(),
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("body selection admission")
                 .unwrap(),
                 BodySelection::Unresolved,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,
@@ -1029,11 +897,10 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         extract_body_feature_definition(Some(20), &[], &roots, &bodies),
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![BodyId::mint("test:model:entity#body".to_string())
-                        .expect("identity grammar")],
-                    &cadmpeg_test_support::service_decode_context()
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                    "test:model:entity#body".to_string()
                 )
+                .expect("identity grammar")],)
                 .expect("distinct bodies"),
                 native: "nx:om-object-index#20".to_string(),
             },
@@ -1050,9 +917,7 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
             source: BodySelection::local(
                 vec!["nx:om-data-blocks-2:block#72".to_string()],
                 "nx:om-object-index#72".to_string(),
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("body selection admission")
             .unwrap(),
         })
     );
@@ -1091,9 +956,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Unresolved,
                     BodySelection::Unresolved,
-                    &cadmpeg_test_support::service_decode_context(),
                 )
-                .expect("operand admission")
                 .unwrap(),
 
                 op,
@@ -1232,9 +1095,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Unresolved,
                 BodySelection::Unresolved,
-                &cadmpeg_test_support::service_decode_context(),
             )
-            .expect("operand admission")
             .unwrap(),
 
             keep: BodyTrimSide::Unresolved,

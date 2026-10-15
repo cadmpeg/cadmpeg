@@ -27,7 +27,7 @@ pub fn parse(data: &[u8]) {
     else {
         return;
     };
-    let _probe = crate::parse::parse_with_context(data, &ctx);
+    let _probe = crate::parse::parse(data, &ctx);
 }
 
 /// Entity count for the parse benchmark; hides the typed exchange.
@@ -36,7 +36,7 @@ pub fn parse_entity_count(data: &[u8]) -> Result<usize, cadmpeg_core::CodecError
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)?;
-    crate::parse::parse_with_context(data, &ctx).map(|(exchange, _)| exchange.records().len())
+    crate::parse::parse(data, &ctx).map(|(exchange, _)| exchange.records().len())
 }
 
 #[cfg(test)]

@@ -16,7 +16,6 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
-use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -6853,27 +6852,16 @@ impl IntcurveSupportContext {
         self.sides[side].pcurve = geometry.map(SupportPcurve::from);
     }
 
-    /// Copy a support pcurve under a decoder's allocation limits.
-    pub fn try_copy_pcurve_for_decode(
-        &mut self,
-        source: usize,
-        target: usize,
-    ) -> Result<(), CodecError> {
+    /// Copy the support pcurve of side `source` onto side `target`.
+    pub fn copy_pcurve(&mut self, source: usize, target: usize) {
         if source == target {
-            return Ok(());
+            return;
         }
         let copied = self.sides[source]
             .pcurve
             .as_ref()
-            .map(|pcurve| {
-                Ok::<_, CodecError>(SupportPcurve::new(
-                    pcurve.geometry.clone(),
-                    pcurve.parameter_range,
-                ))
-            })
-            .transpose()?;
+            .map(|pcurve| SupportPcurve::new(pcurve.geometry.clone(), pcurve.parameter_range));
         self.sides[target].pcurve = copied;
-        Ok(())
     }
 
     /// Return the ordered support sides.

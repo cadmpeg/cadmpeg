@@ -193,14 +193,12 @@ fn a_polar_nurbs_pcurve_whose_axial_spline_overflows_reports_the_point_it_reache
     };
     let pcurve = PcurveGeometry::PolarNurbs {
         nurbs: PolarPcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![pole(0.0), pole(f64::MAX)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("polar NURBS pcurve fixture"),
     };
     // At `t = 2` the axial spline reaches `2 MAX`; the radial spline stays at
@@ -252,14 +250,12 @@ fn a_spherical_great_circle_pcurve_whose_azimuth_or_phase_overflows_reports_the_
 fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() {
     let linear = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(f64::MAX, 0.0)],
             None,
             false,
         )
-        .expect("fixture pcurve construction admission")
         .expect("NURBS pcurve fixture"),
     };
     assert_eq!(
@@ -299,16 +295,8 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
         })
         .collect();
     let high_degree = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            20,
-            knots,
-            poles,
-            None,
-            false,
-        )
-        .expect("fixture pcurve construction admission")
-        .expect("degree-20 NURBS pcurve fixture"),
+        nurbs: PcurveNurbs::from_lanes(20, knots, poles, None, false)
+            .expect("degree-20 NURBS pcurve fixture"),
     };
     assert!(is_non_finite_point2(
         crate::eval::decode::pcurve_uv(
@@ -453,16 +441,8 @@ fn pcurve_tangents_whose_helper_quotient_overflows_report_the_tangent_they_reach
 #[test]
 fn nurbs_pcurve_tangents_whose_derivative_quotient_overflows_report_the_tangent_they_reached() {
     let nurbs = |degree, knots: Vec<f64>, poles: Vec<Point2>| PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            degree,
-            knots,
-            poles,
-            None,
-            false,
-        )
-        .expect("fixture pcurve construction admission")
-        .expect("NURBS pcurve fixture"),
+        nurbs: PcurveNurbs::from_lanes(degree, knots, poles, None, false)
+            .expect("NURBS pcurve fixture"),
     };
     // The derivative projection `1e10 / 1e-300` overflows.
     let projected = nurbs(
@@ -522,7 +502,6 @@ fn nurbs_pcurve_tangents_whose_derivative_quotient_overflows_report_the_tangent_
 /// `x = xs[1]`; at `u = 2` its `x` coordinate is `2 xs[1]`.
 fn bilinear_nurbs(u_knots: [f64; 4], x: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(1, u_knots.to_vec(), false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -534,7 +513,6 @@ fn bilinear_nurbs(u_knots: [f64; 4], x: f64) -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("bilinear NURBS surface fixture")
 }
 
@@ -1169,7 +1147,6 @@ fn a_difference_quotient_over_an_empty_domain_has_no_value_and_one_that_overflow
 /// order `1e-190 / 1e-400` overflows.
 fn narrow_quadratic_nurbs() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0e-200, 1.0e-200, 1.0e-200], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
@@ -1180,7 +1157,6 @@ fn narrow_quadratic_nurbs() -> NurbsSurface {
         ),
         false,
     )
-    .expect("fixture constructor admission")
     .expect("quadratic NURBS surface fixture")
 }
 
@@ -1457,7 +1433,6 @@ fn an_offset_surface_whose_support_partial_overflows_reaches_no_coordinate() {
 fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
     let support = solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
             NurbsSurfaceLanes::new(
@@ -1472,7 +1447,6 @@ fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
             ),
             false,
         )
-        .expect("fixture constructor admission")
         .expect("wide partials NURBS"),
     ));
     let (ir, offset) = procedural_surface_model(support, |support| {

@@ -1412,14 +1412,8 @@ impl F3dNative {
         Self::load_inner(decode_ctx, namespace)
     }
 
-    pub(crate) fn load_charged(
-        ctx: &DecodeContext<'_>,
-        namespace: &cadmpeg_ir::NativeNamespace,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Self::load_inner(ctx, namespace).map_err(Into::into)
-    }
-
-    fn load_inner(
+    /// Load the typed native records from `namespace` under `ctx`.
+    pub(crate) fn load_inner(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
