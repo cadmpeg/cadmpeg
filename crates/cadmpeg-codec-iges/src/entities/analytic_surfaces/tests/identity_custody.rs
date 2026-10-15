@@ -14,17 +14,28 @@ use crate::test_support::test_surface_fixtures::pointer_defined_surface_file;
 #[test]
 fn analytic_surface_retains_one_generated_identity() {
     let bytes = pointer_defined_surface_file(196, 0);
-    let (directory, parameters, global) = crate::test_support::with_service_context(&bytes, |ctx| {
-        let scan = crate::card::scan_with_context(&bytes, ctx).expect("cards");
-        let (global, _, _storage) = crate::global::parse(&scan, ctx).expect("global");
-        let (directory, quarantined) =
-            crate::directory::parse(&scan, global.global_table(), ctx).expect("directory");
-        assert!(quarantined.is_empty());
-        let parameters = crate::parameter::assemble_with_context(
-            &scan, &directory, &quarantined, &global, ctx,
-        ).expect("parameters").records;
-        (directory, parameters, global.length_context().expect("length context"))
-    });
+    let (directory, parameters, global) =
+        crate::test_support::with_service_context(&bytes, |ctx| {
+            let scan = crate::card::scan_with_context(&bytes, ctx).expect("cards");
+            let (global, _, _storage) = crate::global::parse(&scan, ctx).expect("global");
+            let (directory, quarantined) =
+                crate::directory::parse(&scan, global.global_table(), ctx).expect("directory");
+            assert!(quarantined.is_empty());
+            let parameters = crate::parameter::assemble_with_context(
+                &scan,
+                &directory,
+                &quarantined,
+                &global,
+                ctx,
+            )
+            .expect("parameters")
+            .records;
+            (
+                directory,
+                parameters,
+                global.length_context().expect("length context"),
+            )
+        });
     let identity = "iges:model:surface#D3";
     // The source-sequence key is scoped. Only the surface ID, source object
     // ID, label and layer are retained; the sphere payload has no heap lane.
@@ -50,7 +61,12 @@ fn analytic_surface_retains_one_generated_identity() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut sequences = SourceSequences::new(&ctx).expect("sequence storage");
         let result = super::super::project(
-            &mut ir, &directory, &parameters, &global, &ctx, &mut sequences,
+            &mut ir,
+            &directory,
+            &parameters,
+            &global,
+            &ctx,
+            &mut sequences,
         );
         if refuse_source_object {
             let first = match result.err().expect("source object refusal") {
@@ -59,8 +75,10 @@ fn analytic_surface_retains_one_generated_identity() {
             };
             assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
             assert_eq!(first.operation, "iges source object ID");
-            assert_eq!((first.used, first.additional, first.limit),
-                (identity_bytes, 2, identity_bytes));
+            assert_eq!(
+                (first.used, first.additional, first.limit),
+                (identity_bytes, 2, identity_bytes)
+            );
             assert_eq!(ir.model, before);
             for _ in 0..64 {
                 assert!(matches!(super::super::project(
@@ -78,7 +96,10 @@ fn analytic_surface_retains_one_generated_identity() {
             assert_eq!(ir.model.surfaces.len(), 1);
             let surface = &ir.model.surfaces[0];
             assert_eq!(surface.id.as_str(), identity);
-            assert_eq!(sequences.surface(&surface.id, &ctx).expect("sequence"), Some(3));
+            assert_eq!(
+                sequences.surface(&surface.id, &ctx).expect("sequence"),
+                Some(3)
+            );
             let source = surface.source_object.as_ref().expect("source association");
             assert_eq!(source.object_id.as_str(), "D3");
             assert_eq!(source.name.as_deref(), Some("SURFACE"));
@@ -89,8 +110,15 @@ fn analytic_surface_retains_one_generated_identity() {
             ctx.finish_session().expect("unfused session");
             // The output identity and source association survive scratch release.
             assert_eq!(ir.model.surfaces[0].id.as_str(), identity);
-            assert_eq!(ir.model.surfaces[0].source_object.as_ref()
-                .expect("retained association").object_id.as_str(), "D3");
+            assert_eq!(
+                ir.model.surfaces[0]
+                    .source_object
+                    .as_ref()
+                    .expect("retained association")
+                    .object_id
+                    .as_str(),
+                "D3"
+            );
         }
     }
 }

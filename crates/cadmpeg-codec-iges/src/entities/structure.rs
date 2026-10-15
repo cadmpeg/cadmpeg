@@ -2427,11 +2427,9 @@ fn plane_boundary_edge<'ir>(
     })?;
     if !proofs.keys.contains(proof_key) {
         proofs.storage.with_storage(|| {
-            proofs.keys.insert(
-                proof_key,
-                ctx,
-                "iges plane boundary proof keys",
-            )
+            proofs
+                .keys
+                .insert(proof_key, ctx, "iges plane boundary proof keys")
         })?;
     }
     Ok(source_edge)

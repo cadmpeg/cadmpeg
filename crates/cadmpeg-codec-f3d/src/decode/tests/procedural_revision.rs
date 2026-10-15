@@ -1482,14 +1482,11 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // isoline at u = 1 is the patch's far edge.
     let ctx = cadmpeg_test_support::service_decode_context();
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
-    let curve = decode_par_int_cur_isoline(
-        &ctx,
-        &scope,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    )
-        .transpose()
-        .expect("resource allocation did not fail")
-        .expect("form-2 isoline");
+    let curve =
+        decode_par_int_cur_isoline(&ctx, &scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
+            .transpose()
+            .expect("resource allocation did not fail")
+            .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
@@ -1500,25 +1497,21 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // A pcurve that crosses the support holds neither parameter fixed, so no
     // NURBS curve reproduces it and the form is refused.
     let diagonal = generated_form_two_par_int_cur([0.0, 0.0], [1.0, 1.0]);
-    assert!(
-        decode_par_int_cur_isoline(
-            &ctx,
-            &diagonal,
-            cadmpeg_asm::kernel_header::RefWidth::Eight,
-        )
-            .is_none()
-    );
+    assert!(decode_par_int_cur_isoline(
+        &ctx,
+        &diagonal,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .is_none());
 
     // A pcurve running only part of the support's domain would need a trim.
     let partial = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 0.5]);
-    assert!(
-        decode_par_int_cur_isoline(
-            &ctx,
-            &partial,
-            cadmpeg_asm::kernel_header::RefWidth::Eight,
-        )
-        .is_none()
-    );
+    assert!(decode_par_int_cur_isoline(
+        &ctx,
+        &partial,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .is_none());
 }
 
 #[test]
@@ -1562,7 +1555,9 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     .expect("test decode context");
 
     let bytes = synthetic_cyl_spl_sur_smbh();
-    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes)
+        .unwrap()
+        .unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();

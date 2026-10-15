@@ -1332,16 +1332,22 @@ mod tests {
             Token::Long(1),
             Token::SubtypeClose,
         ];
-        let records = [crate::test_support::sab::record(0, "spline".into(), tokens.clone().into(), 0, 0)
-                    .expect("indexed record fixture")];
+        let records =
+            [
+                crate::test_support::sab::record(0, "spline".into(), tokens.clone().into(), 0, 0)
+                    .expect("indexed record fixture"),
+            ];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert!(table.span(0).is_none());
         assert_eq!(table.span(1).unwrap().tokens(), &tokens[3..6]);
         assert!(table.span(2).is_none());
         let mut complete = tokens;
         complete.push(Token::SubtypeClose);
-        let records = [crate::test_support::sab::record(0, "spline".into(), complete.clone().into(), 0, 0)
-                    .expect("indexed record fixture")];
+        let records =
+            [
+                crate::test_support::sab::record(0, "spline".into(), complete.clone().into(), 0, 0)
+                    .expect("indexed record fixture"),
+            ];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert_eq!(table.span(0).unwrap().tokens(), &complete[1..]);
         assert_eq!(table.span(1).unwrap().interior(), &[ident("child")]);

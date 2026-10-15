@@ -79,11 +79,23 @@ fn face_ancestor_claim_preserves_original_session_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::service())
         .expect("source fits policy");
     let mut cache = FaceAttributeCache::new(&ctx).expect("empty face cache");
-    assert!(matches!(face_attributes(1, exchange.records().get(&1).expect("face"),
-        &exchange, &mut BTreeSet::new(), &mut cache).expect("resolve ancestor"),
-        FaceResolution::Resolved(_)));
-    let mut claim_storage = ctx.reserve_scoped(0, "test face claims").expect("claim scope");
-    let mut seen_storage = ctx.reserve_scoped(0, "test seen ancestors").expect("seen scope");
+    assert!(matches!(
+        face_attributes(
+            1,
+            exchange.records().get(&1).expect("face"),
+            &exchange,
+            &mut BTreeSet::new(),
+            &mut cache
+        )
+        .expect("resolve ancestor"),
+        FaceResolution::Resolved(_)
+    ));
+    let mut claim_storage = ctx
+        .reserve_scoped(0, "test face claims")
+        .expect("claim scope");
+    let mut seen_storage = ctx
+        .reserve_scoped(0, "test seen ancestors")
+        .expect("seen scope");
     let mut claims = BTreeSet::new();
     let mut seen = BTreeSet::new();
     let CodecError::ResourceLimit(original) = ctx

@@ -16,7 +16,9 @@ fn mapping_with_cache(cache_version: i32) -> Vec<u8> {
     let mut cache = cache_version.to_le_bytes().to_vec();
     cache.extend(17_i32.to_le_bytes());
     let userdata = class_userdata_v1_with_direct_payload(
-        ArchiveVersion::V8, MAPPING_CRC_CACHE.to_wire(), &cache,
+        ArchiveVersion::V8,
+        MAPPING_CRC_CACHE.to_wire(),
+        &cache,
     );
     let primitive = class_wrapper_with_userdata(ArchiveVersion::V8, MESH_CLASS, &[], &userdata);
     let mut payload = MESH_CLASS.to_vec();
@@ -52,17 +54,23 @@ fn assert_mapping_scratch_released(cache_version: i32, cache_requires_opaque: bo
     policy.limits.max_materialized_bytes = userdata_capacity_bytes();
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let first = parse_texture_mapping(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 42).unwrap();
-    let second = parse_texture_mapping(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 43).unwrap();
+    let first =
+        parse_texture_mapping(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 42).unwrap();
+    let second =
+        parse_texture_mapping(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 43).unwrap();
     for mapping in [&first, &second] {
         assert_eq!(mapping.value.id, expected_id);
         assert_eq!(mapping.value.source_uuid.as_deref(), Some(uuid.as_str()));
-        assert_eq!(mapping.value.primitive_class_uuid.as_deref(), Some(uuid.as_str()));
+        assert_eq!(
+            mapping.value.primitive_class_uuid.as_deref(),
+            Some(uuid.as_str())
+        );
         assert_eq!(mapping.value.name, "");
         assert_eq!(mapping.value.mapping_type, 6);
         assert_eq!(mapping.cache_requires_opaque, cache_requires_opaque);
     }
-    let released = ctx.reserve_scoped(userdata_capacity_bytes(), "mapping primitive scratch reuse")
+    let released = ctx
+        .reserve_scoped(userdata_capacity_bytes(), "mapping primitive scratch reuse")
         .expect("both records survive while all primitive parse backing is released");
     drop(released);
     assert_eq!(ctx.resource_refusal(), None);
@@ -89,20 +97,29 @@ fn assert_userdata_refusal(dimension: ResourceDimension, additional: u64) {
         _ => panic!("fixture covers userdata slots or backing"),
     }
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let FramingError::Resource(original) = parse_texture_mapping(
-        &ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 42,
-    ).err().expect("userdata is refused") else { panic!("resource refusal"); };
+    let FramingError::Resource(original) =
+        parse_texture_mapping(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
+            .err()
+            .expect("userdata is refused")
+    else {
+        panic!("resource refusal");
+    };
     assert_eq!(original.operation, "Rhino class userdata");
     assert_eq!(original.dimension, dimension);
     assert_eq!(original.used, 0);
     assert_eq!(original.additional, additional);
     assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+    );
 }
 
 #[test]
 fn mapping_primitive_userdata_refuses_actual_temporary_backing_and_stays_fused() {
-    assert_userdata_refusal(ResourceDimension::MaterializedBytes, userdata_capacity_bytes());
+    assert_userdata_refusal(
+        ResourceDimension::MaterializedBytes,
+        userdata_capacity_bytes(),
+    );
 }
 
 #[test]

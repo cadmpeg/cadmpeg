@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hatch projection stops before unvisited coordinates and lines.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use crate::chunks::{ArchiveVersion, FramingError};
 use crate::presentation::{parse_hatch_pattern, PatternTransferError, SourceHatchLine};
 use crate::settings::{MillimeterScale, StandardUnit, UnitBinding};
 use crate::test_support::finite;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn invalid_fixed_hatch_coordinate_does_not_admit_any_dash() {
@@ -19,8 +19,12 @@ fn invalid_fixed_hatch_coordinate_does_not_admit_any_dash() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = line.into_millimeters(&ctx, StandardUnit::Centimeters.into(), 42).unwrap_err();
-    assert!(matches!(error, FramingError::Structural { offset: 42, message } if message == "scaled hatch line is invalid"));
+    let error = line
+        .into_millimeters(&ctx, StandardUnit::Centimeters.into(), 42)
+        .unwrap_err();
+    assert!(
+        matches!(error, FramingError::Structural { offset: 42, message } if message == "scaled hatch line is invalid")
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -36,8 +40,12 @@ fn invalid_first_hatch_dash_does_not_admit_the_tail() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = line.into_millimeters(&ctx, StandardUnit::Centimeters.into(), 42).unwrap_err();
-    assert!(matches!(error, FramingError::Structural { offset: 42, message } if message == "scaled hatch line is invalid"));
+    let error = line
+        .into_millimeters(&ctx, StandardUnit::Centimeters.into(), 42)
+        .unwrap_err();
+    assert!(
+        matches!(error, FramingError::Structural { offset: 42, message } if message == "scaled hatch line is invalid")
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -53,7 +61,9 @@ fn empty_hatch_dash_source_has_no_exhaustion_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let projected = line.into_millimeters(&ctx, MillimeterScale::IDENTITY, 42).unwrap();
+    let projected = line
+        .into_millimeters(&ctx, MillimeterScale::IDENTITY, 42)
+        .unwrap();
     assert_eq!(projected.base_millimeters, [finite(1.0), finite(2.0)]);
     assert_eq!(projected.offset_millimeters, [finite(3.0), finite(4.0)]);
     assert!(projected.dashes_millimeters.is_empty());
@@ -82,10 +92,19 @@ fn hatch_pattern_projection_stops_after_first_invalid_line() {
     // Parsing executes one visit per line. Projection executes only the first line.
     policy.limits.max_work_units = u64::try_from(line_count).unwrap() + 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = parse_hatch_pattern(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5,
-        UnitBinding::Millimeters(StandardUnit::Centimeters.into()), 42).unwrap_err();
-    assert!(matches!(error, PatternTransferError::Framing(FramingError::Structural { offset: 42, message })
-        if message == "scaled hatch line is invalid"));
+    let error = parse_hatch_pattern(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V5,
+        UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+        42,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, PatternTransferError::Framing(FramingError::Structural { offset: 42, message })
+        if message == "scaled hatch line is invalid")
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -109,8 +128,14 @@ fn linetype_projection_stops_after_first_missing_unit_binding() {
     policy.limits.max_work_units = u64::try_from(segment_count).unwrap() + 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = crate::presentation::parse_linetype(
-        &ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, UnitBinding::Native, 42,
-    ).unwrap_err();
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        UnitBinding::Native,
+        42,
+    )
+    .unwrap_err();
     assert!(matches!(error, PatternTransferError::NativeDocumentUnits));
     ctx.finish_session().unwrap();
 }

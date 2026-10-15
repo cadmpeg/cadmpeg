@@ -19,18 +19,28 @@ fn assert_first_visit(objects: Vec<ObjectRecord<()>>, metadata: &DocumentMetadat
     let mut warnings = Diagnostics::new();
     let error = crate::objects::resolve_identities(&ctx, objects, metadata, &mut warnings)
         .expect_err("only the first identity visit is refused");
-    let CodecError::ResourceLimit(refusal) = error else { panic!("identity visit refusal"); };
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("identity visit refusal");
+    };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, "Rhino resolve identities traversal");
     assert_eq!((refusal.used, refusal.additional), (0, 1));
     assert!(warnings.is_empty());
     assert_eq!(ctx.resource_refusal(), Some(refusal));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal)
+    );
 }
 
 #[test]
 fn identity_object_traversal_refuses_only_first_visit() {
-    let objects = vec![ObjectRecord::Degraded { range: 0..0, warning: String::new() }; 1024];
+    let objects = vec![
+        ObjectRecord::Degraded {
+            range: 0..0,
+            warning: String::new()
+        };
+        1024
+    ];
     assert_first_visit(objects, &DocumentMetadata::default());
 }
 
@@ -59,6 +69,9 @@ fn identity_layer_traversal_refuses_only_first_visit() {
         embedded_section_style: None,
         per_viewport_settings: Vec::new(),
     };
-    let metadata = DocumentMetadata { layers: vec![layer; 1024], ..DocumentMetadata::default() };
+    let metadata = DocumentMetadata {
+        layers: vec![layer; 1024],
+        ..DocumentMetadata::default()
+    };
     assert_first_visit(Vec::new(), &metadata);
 }

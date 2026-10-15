@@ -61,12 +61,7 @@ fn view_staging_stays_materialized_through_native_install() {
     }
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let service_context = cadmpeg_test_support::service_decode_context();
-    let installed = super::super::install(
-        &service_context,
-        &scan,
-        &mut ir,
-    )
-    .unwrap();
+    let installed = super::super::install(&service_context, &scan, &mut ir).unwrap();
     assert!(installed.losses.is_empty());
     assert!(installed.opaque_records.is_empty());
     let records = &ir.native.namespace("rhino").unwrap().arenas()["views"];

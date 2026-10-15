@@ -134,23 +134,25 @@ fn existing_appearance_does_not_copy_its_id_again() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let id = crate::ids::appearance_color_admitted(&crate::ids::Stem::directory(1_u32), &ctx)
-        .unwrap();
+    let id =
+        crate::ids::appearance_color_admitted(&crate::ids::Stem::directory(1_u32), &ctx).unwrap();
     let color = cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.appearances.push(cadmpeg_ir::appearance::Appearance {
-        id: id.clone(),
-        name: None,
-        asset_guid: None,
-        library_id: None,
-        visual_guid: None,
-        physical_token: None,
-        schema: None,
-        category: None,
-        base_color: Some(color),
-        properties: BTreeMap::new(),
-        textures: Vec::new(),
-    });
+    ir.model
+        .appearances
+        .push(cadmpeg_ir::appearance::Appearance {
+            id: id.clone(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(color),
+            properties: BTreeMap::new(),
+            textures: Vec::new(),
+        });
     let mut identities = None;
     let mut storage = ctx.reserve_scoped(0, "test appearance scratch").unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
@@ -359,34 +361,19 @@ fn general_note_font_codes_follow_the_declared_dialect() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
 
-    assert!(!general_note_font_valid_for_global_table(
-        2001,
-        &entries,
-        GlobalTable::V4_0,
-        &ctx
-    )
-    .unwrap());
-    assert!(general_note_font_valid_for_global_table(
-        2001,
-        &entries,
-        GlobalTable::V5_0,
-        &ctx
-    )
-    .unwrap());
-    assert!(!general_note_font_valid_for_global_table(
-        3001,
-        &entries,
-        GlobalTable::V5_0,
-        &ctx
-    )
-    .unwrap());
-    assert!(general_note_font_valid_for_global_table(
-        3001,
-        &entries,
-        GlobalTable::V5Later,
-        &ctx
-    )
-    .unwrap());
+    assert!(
+        !general_note_font_valid_for_global_table(2001, &entries, GlobalTable::V4_0, &ctx).unwrap()
+    );
+    assert!(
+        general_note_font_valid_for_global_table(2001, &entries, GlobalTable::V5_0, &ctx).unwrap()
+    );
+    assert!(
+        !general_note_font_valid_for_global_table(3001, &entries, GlobalTable::V5_0, &ctx).unwrap()
+    );
+    assert!(
+        general_note_font_valid_for_global_table(3001, &entries, GlobalTable::V5Later, &ctx)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -396,13 +383,9 @@ fn text_font_pointer_lookup_is_admitted_and_propagates_refusal() {
     let entries = BTreeMap::from([(3, &target)]);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(general_note_font_valid_for_global_table(
-        -3,
-        &entries,
-        GlobalTable::V5Later,
-        &ctx
-    )
-    .unwrap());
+    assert!(
+        general_note_font_valid_for_global_table(-3, &entries, GlobalTable::V5Later, &ctx).unwrap()
+    );
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "iges presentation font pointer lookup",
@@ -411,13 +394,8 @@ fn text_font_pointer_lookup_is_admitted_and_propagates_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            general_note_font_valid_for_global_table(
-                -3,
-                &entries,
-                GlobalTable::V5Later,
-                &ctx,
-            )
-            .map(|_| ())
+            general_note_font_valid_for_global_table(-3, &entries, GlobalTable::V5Later, &ctx)
+                .map(|_| ())
         },
     );
 }
@@ -1479,9 +1457,7 @@ fn invalid_color_definition_does_not_copy_its_name() {
         "iges color definition name",
         None,
     );
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .unwrap();
+    let result = IgesCodec.decode(&mut Cursor::new(bytes), &options).unwrap();
     assert!(result
         .report()
         .losses
@@ -1609,9 +1585,8 @@ fn repeated_body_name_properties_do_not_rescan_shared_text() {
         },
     ]);
     let setup_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (setup_ctx, _) = DecodeContext::from_root_bytes(
-        &bytes, &setup_arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &setup_arena, &DecodePolicy::service()).unwrap();
     let (directory, global, assembly) = {
         let ctx = &setup_ctx;
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();

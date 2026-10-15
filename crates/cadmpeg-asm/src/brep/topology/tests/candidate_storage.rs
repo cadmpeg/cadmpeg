@@ -22,7 +22,8 @@ fn normalization_rejection_releases_explicit_pcurve_storage() {
         ));
     }
     for index in 0..count {
-        records.push(crate::test_support::sab::record(
+        records.push(
+            crate::test_support::sab::record(
                 4 + count + index,
                 "pcurve".into(),
                 vec![
@@ -51,7 +52,8 @@ fn normalization_rejection_releases_explicit_pcurve_storage() {
                 0,
                 0,
             )
-            .expect("indexed record fixture"));
+            .expect("indexed record fixture"),
+        );
     }
     let service = cadmpeg_test_support::service_decode_context();
     let span = nurbs::toks::payload_subtype_toks(&service, &records[4 + count], 5, "exp_par_cur")

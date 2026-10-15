@@ -33,14 +33,9 @@ fn parse_csg_projection_input(bytes: &[u8]) -> CsgProjectionInput {
         let (global, _, _) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) =
             crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
-        let parameters = crate::parameter::assemble_with_context(
-            &scan,
-            &directory,
-            &quarantined,
-            &global,
-            ctx,
-        )
-        .unwrap();
+        let parameters =
+            crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, ctx)
+                .unwrap();
         CsgProjectionInput {
             directory,
             records: parameters.records,
@@ -103,8 +98,7 @@ fn btree_storage_bytes<K, V>(nodes: usize) -> u64 {
     let alignment = std::mem::align_of::<K>()
         .max(std::mem::align_of::<V>())
         .max(std::mem::align_of::<usize>());
-    let bytes_per_node = 11
-        * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
+    let bytes_per_node = 11 * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
         + 16 * std::mem::size_of::<usize>()
         + 2 * alignment;
     u64::try_from(bytes_per_node).unwrap() * u64::try_from(nodes).unwrap()
@@ -173,10 +167,7 @@ fn rejected_boolean_definitions_release_each_postfix_vector_before_the_next() {
         .map(|index| if index == 0 { "0" } else { "-1" })
         .collect::<Vec<_>>()
         .join(",");
-    let unbalanced_stack = (0..TERM_COUNT)
-        .map(|_| "-1")
-        .collect::<Vec<_>>()
-        .join(",");
+    let unbalanced_stack = (0..TERM_COUNT).map(|_| "-1").collect::<Vec<_>>().join(",");
     let bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 180,
@@ -195,8 +186,8 @@ fn rejected_boolean_definitions_release_each_postfix_vector_before_the_next() {
     ]);
     let input = parse_csg_projection_input(&bytes);
 
-    let loss_note_bytes = u64::try_from(std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>())
-        .unwrap();
+    let loss_note_bytes =
+        u64::try_from(std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>()).unwrap();
     assert!(std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>() <= 1024);
     let term_vector_bytes = u64::try_from(TERM_COUNT).unwrap()
         * u64::try_from(std::mem::size_of::<super::BooleanTerm>()).unwrap();
@@ -225,7 +216,13 @@ fn selected_component_transform_runs_after_boolean_validation_storage_drops() {
     const TRANSFORM_CHAIN_LENGTH: usize = 36;
 
     let terms = (0..BOOLEAN_TERM_COUNT)
-        .map(|index| if index < 2 || index % 2 == 1 { "-1" } else { "1" })
+        .map(|index| {
+            if index < 2 || index % 2 == 1 {
+                "-1"
+            } else {
+                "1"
+            }
+        })
         .collect::<Vec<_>>()
         .join(",");
     let mut entities = vec![
@@ -884,17 +881,21 @@ fn profile_proof_model() -> CadIr {
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     1.0,
-                ).unwrap(),
+                )
+                .unwrap(),
             )),
             source_object: None,
         });
     }
     for (slot, position) in [Point3::new(1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 0.0)]
-        .into_iter().enumerate()
+        .into_iter()
+        .enumerate()
     {
         let point = PointId::mint(format!("test:model:point#{slot}")).unwrap();
         ir.model.points.push(Point::new(
-            point.clone(), cadmpeg_ir::features::FinitePoint3::new(position).unwrap(), None,
+            point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(position).unwrap(),
+            None,
         ));
         ir.model.vertices.push(Vertex {
             id: VertexId::mint(format!("test:model:vertex#{slot}")).unwrap(),
@@ -903,13 +904,18 @@ fn profile_proof_model() -> CadIr {
         });
     }
     for (slot, sequence, end) in [(0, 1, 0), (1, 3, 1), (2, 5, 0), (3, 5, 1)] {
-        let range = if end == 0 { std::f64::consts::TAU } else { std::f64::consts::PI };
+        let range = if end == 0 {
+            std::f64::consts::TAU
+        } else {
+            std::f64::consts::PI
+        };
         ir.model.edges.push(Edge {
             id: EdgeId::mint(format!("test:model:edge#{slot}")).unwrap(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(CurveId::mint(format!("iges:model:curve#D{sequence}")).unwrap()),
                 Some([0.0, range]),
-            ).unwrap(),
+            )
+            .unwrap(),
             start: VertexId::mint("test:model:vertex#0").unwrap(),
             end: VertexId::mint(format!("test:model:vertex#{end}")).unwrap(),
             tolerance: None,
@@ -931,26 +937,57 @@ fn repeated_profile_closure_reuses_the_complete_source_proof() {
     crate::test_support::with_policy_context(&[], &policy, |ctx| {
         let mut proofs = super::ProfileClosureProofs {
             proven: std::collections::BTreeMap::new(),
-            storage: ctx.reserve_scoped(0, "iges solid profile closure proofs").unwrap(),
+            storage: ctx
+                .reserve_scoped(0, "iges solid profile closure proofs")
+                .unwrap(),
         };
         for _ in 0..REPEATS {
-            assert_eq!(proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, ctx)
-                .unwrap(), Some(true));
+            assert_eq!(
+                proofs
+                    .closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, ctx)
+                    .unwrap(),
+                Some(true)
+            );
         }
     });
     crate::test_support::with_service_context(&[], |ctx| {
         let mut proofs = super::ProfileClosureProofs {
             proven: std::collections::BTreeMap::new(),
-            storage: ctx.reserve_scoped(0, "iges solid profile closure proofs").unwrap(),
+            storage: ctx
+                .reserve_scoped(0, "iges solid profile closure proofs")
+                .unwrap(),
         };
-        assert_eq!(proofs.closed(3, &index, &[&ir.model.edges[1]], EPS_PROFILE_CLOSURE, ctx)
-            .unwrap(), Some(false));
-        assert_eq!(proofs.closed(3, &index, &[&ir.model.edges[1]], 3.0, ctx)
-            .unwrap(), Some(true));
+        assert_eq!(
+            proofs
+                .closed(3, &index, &[&ir.model.edges[1]], EPS_PROFILE_CLOSURE, ctx)
+                .unwrap(),
+            Some(false)
+        );
+        assert_eq!(
+            proofs
+                .closed(3, &index, &[&ir.model.edges[1]], 3.0, ctx)
+                .unwrap(),
+            Some(true)
+        );
         for _ in 0..2 {
-            assert_eq!(proofs.closed(5, &index, &[&ir.model.edges[2], &ir.model.edges[3]],
-                EPS_PROFILE_CLOSURE, ctx).unwrap(), None);
-            assert_eq!(proofs.closed(7, &index, &[], EPS_PROFILE_CLOSURE, ctx).unwrap(), None);
+            assert_eq!(
+                proofs
+                    .closed(
+                        5,
+                        &index,
+                        &[&ir.model.edges[2], &ir.model.edges[3]],
+                        EPS_PROFILE_CLOSURE,
+                        ctx
+                    )
+                    .unwrap(),
+                None
+            );
+            assert_eq!(
+                proofs
+                    .closed(7, &index, &[], EPS_PROFILE_CLOSURE, ctx)
+                    .unwrap(),
+                None
+            );
         }
         assert_eq!(proofs.proven.len(), 4);
     });
@@ -961,9 +998,18 @@ fn profile_closure_proof_cache_preserves_refusal_boundaries() {
     let ir = profile_proof_model();
     let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     for (dimension, operation) in [
-        (ResourceDimension::WorkUnits, "iges solid profile closure lookup"),
-        (ResourceDimension::CollectionItems, "iges solid profile closure proofs"),
-        (ResourceDimension::MaterializedBytes, "iges solid profile closure proofs"),
+        (
+            ResourceDimension::WorkUnits,
+            "iges solid profile closure lookup",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges solid profile closure proofs",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "iges solid profile closure proofs",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -974,17 +1020,23 @@ fn profile_closure_proof_cache_preserves_refusal_boundaries() {
                 ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
                 _ => unreachable!(),
             }
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let mut proofs = super::ProfileClosureProofs {
                 proven: std::collections::BTreeMap::new(),
                 storage: ctx.reserve_scoped(0, "iges solid profile closure proofs")?,
             };
-            let result = proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, &ctx)
-                .and_then(|_| proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, &ctx));
+            let result = proofs
+                .closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, &ctx)
+                .and_then(|_| {
+                    proofs.closed(1, &index, &[&ir.model.edges[0]], EPS_PROFILE_CLOSURE, &ctx)
+                });
             drop(proofs);
             if let Err(CodecError::ResourceLimit(ref limit)) = result {
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
-                    if actual == *limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
+                    if actual == *limit)
+                );
             } else {
                 ctx.finish_session()?;
             }

@@ -803,13 +803,8 @@ fn primary_layout_directory_lookup_is_admitted_and_keeps_missing_entry_fallback(
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            entity_primary_end_for_global_table(
-                &record,
-                &directory,
-                GlobalTable::V5Later,
-                &ctx,
-            )
-            .map(|_| ())
+            entity_primary_end_for_global_table(&record, &directory, GlobalTable::V5Later, &ctx)
+                .map(|_| ())
         },
     );
     assert!(matches!(

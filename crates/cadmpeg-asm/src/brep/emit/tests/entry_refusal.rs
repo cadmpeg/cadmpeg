@@ -87,8 +87,10 @@ fn asm_attribute_shell_index_refuses_first_source_visit() {
 
 #[test]
 fn asm_record_reference_indices_refuse_first_source_visit() {
-    let records = [crate::test_support::sab::record(0, "body".into(), Vec::new().into(), 0, 0)
-            .expect("indexed record fixture")];
+    let records = [
+        crate::test_support::sab::record(0, "body".into(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture"),
+    ];
     index_source_refusal(AsmBrep::default(), &records, "ASM record reference scan");
 }
 

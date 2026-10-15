@@ -31,14 +31,13 @@ fn rgb_attribute_chain_decodes_body_color() {
         .iter()
         .map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r))
         .collect();
-    let color =
-        cadmpeg_asm::brep::attributes::attribute_chain_color(
-            &cadmpeg_test_support::service_decode_context(),
-            &records[0],
-            &by_index,
-        )
-        .expect("color parser admission")
-        .unwrap();
+    let color = cadmpeg_asm::brep::attributes::attribute_chain_color(
+        &cadmpeg_test_support::service_decode_context(),
+        &records[0],
+        &by_index,
+    )
+    .expect("color parser admission")
+    .unwrap();
     assert_eq!(
         (color.r(), color.g(), color.b(), color.a()),
         (0.1, 0.2, 0.3, 1.0)
@@ -72,14 +71,13 @@ fn truecolor_attribute_chain_decodes_by_color_as_opaque_rgb() {
         .iter()
         .map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r))
         .collect();
-    let color =
-        cadmpeg_asm::brep::attributes::attribute_chain_color(
-            &cadmpeg_test_support::service_decode_context(),
-            &records[0],
-            &by_index,
-        )
-        .expect("color parser admission")
-        .unwrap();
+    let color = cadmpeg_asm::brep::attributes::attribute_chain_color(
+        &cadmpeg_test_support::service_decode_context(),
+        &records[0],
+        &by_index,
+    )
+    .expect("color parser admission")
+    .unwrap();
     assert_eq!(
         (color.r(), color.g(), color.b(), color.a()),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
@@ -112,14 +110,13 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
         .iter()
         .map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r))
         .collect();
-    let color =
-        cadmpeg_asm::brep::attributes::attribute_chain_color(
-            &cadmpeg_test_support::service_decode_context(),
-            &records[0],
-            &by_index,
-        )
-        .expect("color parser admission")
-        .unwrap();
+    let color = cadmpeg_asm::brep::attributes::attribute_chain_color(
+        &cadmpeg_test_support::service_decode_context(),
+        &records[0],
+        &by_index,
+    )
+    .expect("color parser admission")
+    .unwrap();
     assert_eq!(
         (color.r(), color.g(), color.b(), color.a()),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
@@ -153,15 +150,13 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
             .iter()
             .map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r))
             .collect();
-        assert!(
-            cadmpeg_asm::brep::attributes::attribute_chain_color(
-                &cadmpeg_test_support::service_decode_context(),
-                &records[0],
-                &by_index,
-            )
-            .expect("color parser admission")
-            .is_none()
-        );
+        assert!(cadmpeg_asm::brep::attributes::attribute_chain_color(
+            &cadmpeg_test_support::service_decode_context(),
+            &records[0],
+            &by_index,
+        )
+        .expect("color parser admission")
+        .is_none());
     }
 }
 
@@ -239,14 +234,13 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
         .iter()
         .map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r))
         .collect();
-    let color =
-        cadmpeg_asm::brep::attributes::attribute_chain_color(
-            &cadmpeg_test_support::service_decode_context(),
-            &records[0],
-            &by_index,
-        )
-        .expect("color parser admission")
-        .unwrap();
+    let color = cadmpeg_asm::brep::attributes::attribute_chain_color(
+        &cadmpeg_test_support::service_decode_context(),
+        &records[0],
+        &by_index,
+    )
+    .expect("color parser admission")
+    .unwrap();
     assert_eq!(
         (color.r(), color.g(), color.b(), color.a()),
         (0.1, 0.2, 0.3, 1.0)

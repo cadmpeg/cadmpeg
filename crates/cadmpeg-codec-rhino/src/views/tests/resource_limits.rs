@@ -334,7 +334,6 @@ fn viewport_userdata_children_ceiling_is_a_resource_refusal() {
     );
 }
 
-
 #[test]
 fn view_attribute_checksum_ranges_release_after_use() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -349,14 +348,19 @@ fn view_attribute_checksum_ranges_release_after_use() {
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     {
         let (attributes, ranges_buffer, _range_storage) = parse_attributes(
-            &ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5,
+            &ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
             crate::settings::MillimeterScale::IDENTITY,
-        ).expect("only checksum range backing allocates");
+        )
+        .expect("only checksum range backing allocates");
         let ranges = ranges_buffer;
         assert_eq!(ranges.len(), 1);
         assert_eq!(attributes.page_settings.unwrap().printer_name, "");
     }
-    let recovered = ctx.reserve_scoped(backing_bytes, "view checksum scratch release probe")
+    let recovered = ctx
+        .reserve_scoped(backing_bytes, "view checksum scratch release probe")
         .expect("range backing is released after checksum use");
     drop(recovered);
     ctx.finish_session().unwrap();
@@ -376,13 +380,18 @@ fn view_attribute_checksum_ranges_hold_storage_until_drop() {
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let refusal = {
         let (attributes, ranges_buffer, _range_storage) = parse_attributes(
-            &ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5,
+            &ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
             crate::settings::MillimeterScale::IDENTITY,
-        ).expect("page checksum range fits");
+        )
+        .expect("page checksum range fits");
         let ranges = ranges_buffer;
         assert_eq!(ranges.len(), 1);
         assert!(attributes.page_settings.is_some());
-        let error = ctx.reserve_scoped(1, "view live checksum storage probe")
+        let error = ctx
+            .reserve_scoped(1, "view live checksum storage probe")
             .expect_err("live range backing occupies all materialized bytes");
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("live checksum backing resource refusal");

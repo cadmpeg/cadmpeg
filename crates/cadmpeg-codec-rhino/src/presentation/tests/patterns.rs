@@ -650,12 +650,7 @@ fn linetype_install_retains_model_distances_without_physical_units() {
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete linetype document");
         let mut ir = CadIr::empty();
         let service_context = cadmpeg_test_support::service_decode_context();
-        let installed = install(
-            &service_context,
-            &scan,
-            &mut ir,
-        )
-        .expect("linetype install");
+        let installed = install(&service_context, &scan, &mut ir).expect("linetype install");
         let linetypes = &ir.native.namespace("rhino").unwrap().arenas()["linetypes"];
         assert_eq!(linetypes.len(), usize::from(typed), "unit={unit:?}");
         assert_eq!(
@@ -701,12 +696,7 @@ fn hatch_install_retains_document_distances_without_physical_units() {
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
         let service_context = cadmpeg_test_support::service_decode_context();
-        let installed = install(
-            &service_context,
-            &scan,
-            &mut ir,
-        )
-        .expect("hatch install");
+        let installed = install(&service_context, &scan, &mut ir).expect("hatch install");
         let hatch_patterns = &ir.native.namespace("rhino").unwrap().arenas()["hatch_patterns"];
         let typed = unit == Some(2);
         assert_eq!(hatch_patterns.len(), usize::from(typed), "unit={unit:?}");
@@ -840,12 +830,7 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
         let service_context = cadmpeg_test_support::service_decode_context();
-        let installed = install(
-            &service_context,
-            &scan,
-            &mut ir,
-        )
-        .expect("hatch install");
+        let installed = install(&service_context, &scan, &mut ir).expect("hatch install");
         let hatch_patterns = &ir.native.namespace("rhino").unwrap().arenas()["hatch_patterns"];
         assert_eq!(
             hatch_patterns.len(),
