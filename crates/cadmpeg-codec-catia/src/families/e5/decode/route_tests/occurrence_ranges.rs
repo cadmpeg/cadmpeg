@@ -53,8 +53,7 @@ fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
             curve: Some((line.clone(), range)),
         },
     ];
-    let context = ({ e5_support_occurrence_intersection_context(range, range, &sides) })
-        .expect("service budget admits context")
+    let context = e5_support_occurrence_intersection_context(range, range, &sides)
         .expect("wide support context");
     assert_eq!(context.parameter_range().endpoints(), range);
     let (cached, cached_range) = crate::test_support::with_service_context(|ctx| {
@@ -96,10 +95,8 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
             curve: None,
         },
     ];
-    let context =
-        ({ e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides) })
-            .expect("service budget admits context")
-            .expect("support intersection context");
+    let context = e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides)
+        .expect("support intersection context");
     assert_eq!(context.parameter_range().endpoints(), [10.0, 20.0]);
     assert_eq!(
         context.sides()[0]
