@@ -285,7 +285,7 @@ fn resolve_pcurve_uses<'a>(
     support: &SurfaceSupport<'_>,
     endpoints: PcurveEndpointCheck,
     ctx: &'a DecodeContext<'_>,
-    model_index: &mut Option<cadmpeg_ir::index::DecodeModelIndex<'a, 'a>>,
+    model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
         start: expected_start,
@@ -296,7 +296,7 @@ fn resolve_pcurve_uses<'a>(
         return Ok(Some(Vec::new()));
     }
     if model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source, ctx)?);
+        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source));
     }
     let Some(index) = model_index.as_ref() else {
         return Ok(None);

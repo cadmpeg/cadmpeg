@@ -91,7 +91,7 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
         },
         "ruled",
     );
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -143,7 +143,7 @@ fn cacheless_sum_surface_adds_independent_curve_parameters() {
         ),
         "sum",
     );
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let point = model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,
@@ -179,7 +179,7 @@ fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
         },
         "ruled",
     );
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     let reached =
         |point: Result<crate::features::FinitePoint3, crate::eval::EvaluationFailure<Point3>>| {
             matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
@@ -240,7 +240,7 @@ fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
             .unwrap(),
         ));
     }
-    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::build(&ir);
     assert_eq!(
         model_surface_point_by_id(
             crate::eval::admission::EvaluationAdmission::Standard,

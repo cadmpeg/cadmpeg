@@ -54,7 +54,7 @@ fn cycle_check_reports_one_cycle_for_repeated_carrier_rows() {
     let (mut ir, curve, surface) = cyclic_model();
     // Repeated carrier rows still share the last graph entry and one active state.
     ir.model.curves.push(ir.model.curves[0].clone());
-    let index = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    let index = crate::index::ModelIndex::new_model_only(&ir);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_evaluation_cycles(&ctx, &ir, &index, &mut findings).unwrap();
@@ -140,8 +140,8 @@ fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
     };
     ir.model.surfaces.push(carrier);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let index = super::CycleIndex::build(&ctx, &ir).unwrap();
-    let general = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+    let index = super::CycleIndex::build(&ir).unwrap();
+    let general = crate::index::ModelIndex::new_model_only(&ir);
     assert_eq!(
         index.curve(&ctx, curve.as_str()).unwrap(),
         general.curve(&ctx, curve.as_str()).unwrap()

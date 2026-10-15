@@ -8,23 +8,22 @@ use crate::report::{
 };
 
 pub(super) fn check_tessellations(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let bodies = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
+    let bodies = crate::index::identities::BorrowedIdentities::build(|add| {
         for body in &ir.model.bodies {
             add(body.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let faces = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
+    let faces = crate::index::identities::BorrowedIdentities::build(|add| {
         for face in &ir.model.faces {
             add(face.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let assets = crate::index::identities::BorrowedIdentities::build(ctx, |add| {
+    let assets = crate::index::identities::BorrowedIdentities::build(|add| {
         for asset in &ir.model.assets {
             add(asset.id.as_str(), ())?;
         }
@@ -32,7 +31,7 @@ pub(super) fn check_tessellations(
     })?;
     for mesh in &ir.model.tessellations {
         if let Some(body) = &mesh.body {
-            if !bodies.contains(ctx, body.as_str())? {
+            if !bodies.contains(body.as_str()) {
                 super::record_finding(
                     findings,
                     Check::Tessellation,
@@ -43,7 +42,7 @@ pub(super) fn check_tessellations(
             }
         }
         for face in &mesh.faces {
-            if !faces.contains(ctx, face.as_str())? {
+            if !faces.contains(face.as_str()) {
                 super::record_finding(
                     findings,
                     Check::Tessellation,
@@ -55,7 +54,7 @@ pub(super) fn check_tessellations(
             }
         }
         for assignment in mesh.texture_assignments() {
-            if !assets.contains(ctx, assignment.texture.as_str())? {
+            if !assets.contains(assignment.texture.as_str()) {
                 super::record_finding(
                     findings,
                     Check::Tessellation,

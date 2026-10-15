@@ -15,19 +15,19 @@ pub(super) fn check_products(
     ir: &CadIr,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let definitions = BorrowedIdentities::build(ctx, |add| {
+    let definitions = BorrowedIdentities::build(|add| {
         for definition in &ir.model.product_definitions {
             add(definition.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let occurrences = BorrowedIdentities::build(ctx, |add| {
+    let occurrences = BorrowedIdentities::build(|add| {
         for occurrence in &ir.model.occurrences {
             add(occurrence.id.as_str(), ())?;
         }
         Ok(())
     })?;
-    let bodies = BorrowedIdentities::build(ctx, |add| {
+    let bodies = BorrowedIdentities::build(|add| {
         for body in &ir.model.bodies {
             add(body.id.as_str(), ())?;
         }
@@ -35,7 +35,7 @@ pub(super) fn check_products(
     })?;
     for definition in &ir.model.product_definitions {
         for body in &definition.bodies {
-            if !bodies.contains(ctx, body.as_str())? {
+            if !bodies.contains(body.as_str()) {
                 record_finding(
                     findings,
                     Check::ReferentialIntegrity,
@@ -57,30 +57,28 @@ pub(super) fn check_products(
         );
     }
     let mut root_ordinals = std::collections::BTreeSet::new();
-    let mut sibling_ordinals: BorrowedIdentities<'_, '_, std::collections::BTreeSet<u32>> =
-        BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    let mut sibling_ordinals: BorrowedIdentities<'_, std::collections::BTreeSet<u32>> =
+        BorrowedIdentities::build(|_| Ok(()))?;
     for occurrence in &ir.model.occurrences {
         let valid_prototype = match &occurrence.prototype {
-            PrototypeReference::Local { definition } => {
-                definitions.contains(ctx, definition.as_str())?
-            }
+            PrototypeReference::Local { definition } => definitions.contains(definition.as_str()),
             PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => true,
         };
         let valid_parent = match &occurrence.parent {
             OccurrenceParent::Root {} => true,
             OccurrenceParent::Occurrence { occurrence } => {
-                occurrences.contains(ctx, occurrence.as_str())?
+                occurrences.contains(occurrence.as_str())
             }
         };
         let ordinal_unique = match &occurrence.parent {
             OccurrenceParent::Root {} => root_ordinals.insert(occurrence.ordinal),
             OccurrenceParent::Occurrence { occurrence: parent } => {
-                if let Some(orders) = sibling_ordinals.get_mut(ctx, parent.as_str())? {
+                if let Some(orders) = sibling_ordinals.get_mut(parent.as_str()) {
                     orders.insert(occurrence.ordinal)
                 } else {
                     let mut orders = std::collections::BTreeSet::new();
                     let unique = orders.insert(occurrence.ordinal);
-                    sibling_ordinals.insert_unique(parent.as_str(), orders)?;
+                    sibling_ordinals.insert_unique(parent.as_str(), orders);
                     unique
                 }
             }
@@ -88,7 +86,7 @@ pub(super) fn check_products(
         let mut auxiliary_definitions = true;
         if let Some(link) = &occurrence.link {
             let element_valid = match link.element_component() {
-                Some(definition) => definitions.contains(ctx, definition.as_str())?,
+                Some(definition) => definitions.contains(definition.as_str()),
                 None => true,
             };
             let mut copy_targets_valid = true;
@@ -98,7 +96,7 @@ pub(super) fn check_products(
                     .flatten()
                 {
                     if let PrototypeReference::Local { definition } = reference {
-                        if !definitions.contains(ctx, definition.as_str())? {
+                        if !definitions.contains(definition.as_str()) {
                             copy_targets_valid = false;
                             break;
                         }
@@ -120,7 +118,7 @@ pub(super) fn check_products(
     for joint in &ir.model.assembly_joints {
         for connector in joint.connectors() {
             if let OperandContainer::Occurrence { occurrence } = &connector.operand.container {
-                if !occurrences.contains(ctx, occurrence.as_str())? {
+                if !occurrences.contains(occurrence.as_str()) {
                     record_finding(
                         findings,
                         Check::ReferentialIntegrity,

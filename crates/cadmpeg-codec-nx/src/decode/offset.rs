@@ -926,15 +926,15 @@ fn offset_support_control_hull_excludes_point(
     surface: &SurfaceId,
     point: Point3,
     mut allowance: f64,
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> bool {
     let mut current = surface;
     for _ in &index.ir().model.surfaces {
         if !allowance.is_finite() || allowance < 0.0 {
-            return Ok(false);
+            return false;
         }
-        let Some(carrier) = index.surfaces(current.as_str(), ctx)? else {
-            return Ok(false);
+        let Some(carrier) = index.surfaces(current.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
+            return false;
         };
         match &carrier.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
@@ -962,32 +962,33 @@ fn offset_support_control_hull_excludes_point(
                             )
                         },
                     );
-                return Ok(point.x < minimum.x - allowance
+                return point.x < minimum.x - allowance
                     || point.x > maximum.x + allowance
                     || point.y < minimum.y - allowance
                     || point.y > maximum.y + allowance
                     || point.z < minimum.z - allowance
-                    || point.z > maximum.z + allowance);
+                    || point.z > maximum.z + allowance;
             }
             SurfaceGeometry::Procedural { construction, .. } => {
-                let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)?
+                let Some(procedural) = index
+                    .procedural_surfaces(construction.as_str(), cadmpeg_ir::index::StandardIndex)
                 else {
-                    return Ok(false);
+                    return false;
                 };
                 let ProceduralSurfaceDefinition::Offset(definition) = procedural.definition()
                 else {
-                    return Ok(false);
+                    return false;
                 };
                 if definition.linear_support_extension() {
-                    return Ok(false);
+                    return false;
                 }
                 allowance += definition.distance().get().abs();
                 current = definition.support();
             }
-            SurfaceGeometry::Solved(_) => return Ok(false),
+            SurfaceGeometry::Solved(_) => return false,
         }
     }
-    Ok(false)
+    false
 }
 
 #[cfg(test)]
@@ -1010,8 +1011,7 @@ pub(super) fn offset_surface_parameters_with_tolerance(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)
-        .expect("decode index allocation succeeds");
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     offset_surface_parameters_with_tolerance_with_index(
         ctx,
         &index,
@@ -1054,13 +1054,14 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     if geometry_budget.exhausted() {
         return Ok(None);
     }
-    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.ctx)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     let SurfaceGeometry::Procedural { construction, .. } = &carrier.geometry else {
         return Ok(None);
     };
-    let Some(procedural) = index.procedural_surfaces(construction.as_str(), geometry_budget.ctx)?
+    let Some(procedural) =
+        index.procedural_surfaces(construction.as_str(), cadmpeg_ir::index::StandardIndex)
     else {
         return Ok(None);
     };
@@ -1090,8 +1091,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                 support,
                 point,
                 tolerance + distance.abs(),
-                geometry_budget.ctx,
-            )?,
+            ),
             None => false,
         }
     {
@@ -1259,13 +1259,14 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
     if !point.is_finite() || !fit_tolerance.is_finite() || fit_tolerance < 0.0 {
         return Ok(None);
     }
-    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.ctx)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     let SurfaceGeometry::Procedural { construction, .. } = &carrier.geometry else {
         return Ok(None);
     };
-    let Some(procedural) = index.procedural_surfaces(construction.as_str(), geometry_budget.ctx)?
+    let Some(procedural) =
+        index.procedural_surfaces(construction.as_str(), cadmpeg_ir::index::StandardIndex)
     else {
         return Ok(None);
     };
@@ -1460,7 +1461,7 @@ fn coarse_surface_sample_counts(
     if depth >= 32 {
         return Ok([CoarseSampleCount::unknown(); 2]);
     }
-    let Some(carrier) = index.surfaces(surface.as_str(), ctx)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok([CoarseSampleCount::unknown(); 2]);
     };
     Ok(match &carrier.geometry {
@@ -1469,7 +1470,9 @@ fn coarse_surface_sample_counts(
             CoarseSampleCount::for_control_points(nurbs.v_count()),
         ],
         SurfaceGeometry::Procedural { construction, .. } => {
-            let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)? else {
+            let Some(procedural) =
+                index.procedural_surfaces(construction.as_str(), cadmpeg_ir::index::StandardIndex)
+            else {
                 return Ok([CoarseSampleCount::unknown(); 2]);
             };
             match procedural.definition() {
@@ -1496,7 +1499,7 @@ fn initial_surface_parameters_with_index_and_budget(
     fit_tolerance: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.ctx)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     match &carrier.geometry {
@@ -1525,7 +1528,7 @@ fn initial_surface_parameters_with_index_and_budget(
         ),
         SurfaceGeometry::Procedural { construction, .. } => {
             let Some(procedural) =
-                index.procedural_surfaces(construction.as_str(), geometry_budget.ctx)?
+                index.procedural_surfaces(construction.as_str(), cadmpeg_ir::index::StandardIndex)
             else {
                 return Ok(None);
             };
@@ -1560,7 +1563,7 @@ pub(super) fn surface_parameter_domain_with_index(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<[[f64; 2]; 2]>, cadmpeg_core::decode::ResourceLimit> {
     let _depth = ctx.enter_nested_limit("NX surface parameter domain depth")?;
-    let Some(carrier) = index.surfaces(surface.as_str(), ctx)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
     match &carrier.geometry {
@@ -1579,7 +1582,9 @@ pub(super) fn surface_parameter_domain_with_index(
             ])
         })()),
         SurfaceGeometry::Procedural { construction, .. } => {
-            let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)? else {
+            let Some(procedural) =
+                index.procedural_surfaces(construction.as_str(), cadmpeg_ir::index::StandardIndex)
+            else {
                 return Ok(None);
             };
             let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
@@ -1784,8 +1789,7 @@ fn continue_surface_intersection_parameters_with_seeds(
     seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
     let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)
-        .expect("decode index allocation succeeds");
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
         &index,
         surfaces,
@@ -1841,7 +1845,8 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                               seed: Option<Point2>|
      -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
         let surface = surfaces[side];
-        let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.ctx)? else {
+        let Some(carrier) = index.surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
             return Ok(None);
         };
         let geometry = &carrier.geometry;
@@ -1911,8 +1916,8 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
             surface_parameter_domain_with_index(index, surfaces[1], geometry_budget.ctx)?,
         ],
         periods: [
-            surface_parameter_periods_with_index(index, surfaces[0], geometry_budget.ctx)?,
-            surface_parameter_periods_with_index(index, surfaces[1], geometry_budget.ctx)?,
+            surface_parameter_periods_with_index(index, surfaces[0]),
+            surface_parameter_periods_with_index(index, surfaces[1]),
         ],
     };
     let seed = [first[0].u, first[0].v, first[1].u, first[1].v];
@@ -2075,12 +2080,12 @@ pub(super) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -
 pub(super) fn surface_parameter_periods_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<[Option<f64>; 2], cadmpeg_core::decode::ResourceLimit> {
+) -> [std::option::Option<f64>; 2] {
     let mut current = surface;
     for _ in &index.ir().model.surfaces {
-        let Some(carrier) = index.surfaces(current.as_str(), ctx)? else {
-            return Ok([None, None]);
+        let Some(carrier) = index.surfaces(current.as_str(), cadmpeg_ir::index::StandardIndex)
+        else {
+            return [None, None];
         };
         match &carrier.geometry {
             SurfaceGeometry::Solved(
@@ -2088,10 +2093,10 @@ pub(super) fn surface_parameter_periods_with_index(
                 | SolvedSurfaceGeometry::Cone(_)
                 | SolvedSurfaceGeometry::Sphere(_),
             ) => {
-                return Ok([Some(std::f64::consts::TAU), None]);
+                return [Some(std::f64::consts::TAU), None];
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
-                return Ok([Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)]);
+                return [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)];
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 let period = |periodic: bool, knots: &[f64], degree: u32, count: usize| {
@@ -2101,7 +2106,7 @@ pub(super) fn surface_parameter_periods_with_index(
                         (period.is_finite() && period > 0.0).then_some(period)
                     })?
                 };
-                return Ok([
+                return [
                     period(
                         nurbs.u_periodic(),
                         nurbs.u_knots(),
@@ -2114,23 +2119,24 @@ pub(super) fn surface_parameter_periods_with_index(
                         nurbs.v_degree(),
                         nurbs.v_count(),
                     ),
-                ]);
+                ];
             }
             SurfaceGeometry::Procedural { construction, .. } => {
-                let Some(procedural) = index.procedural_surfaces(construction.as_str(), ctx)?
+                let Some(procedural) = index
+                    .procedural_surfaces(construction.as_str(), cadmpeg_ir::index::StandardIndex)
                 else {
-                    return Ok([None, None]);
+                    return [None, None];
                 };
                 let ProceduralSurfaceDefinition::Offset(definition) = procedural.definition()
                 else {
-                    return Ok([None, None]);
+                    return [None, None];
                 };
                 current = definition.support();
             }
-            SurfaceGeometry::Solved(_) => return Ok([None, None]),
+            SurfaceGeometry::Solved(_) => return [None, None],
         }
     }
-    Ok([None, None])
+    [None, None]
 }
 
 // Newton correction carries its chart, scale, and shared work slice together
@@ -2703,8 +2709,7 @@ mod tests {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
-        let index =
-            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
         let arena = DecodeArena::new();
@@ -2829,10 +2834,7 @@ mod tests {
                 )),
                 source_object: None,
             });
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(
-                &ir,
-                cadmpeg_ir::index::StandardIndex,
-            );
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let geometry_budget =
                 GeometryWorkBudget::from_context(geometry_ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
             let parameters = super::coarse_model_surface_parameters(
@@ -2881,8 +2883,7 @@ mod tests {
         let absent = SurfaceId::mint("test:model:entity#synthetic:absent-surface")
             .expect("identity grammar");
         let ir = CadIr::empty();
-        let index =
-            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
         assert_eq!(
             coarse_surface_sample_counts(
@@ -3010,25 +3011,20 @@ mod tests {
             )),
             source_object: None,
         });
-        let index =
-            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
         assert!(offset_support_control_hull_excludes_point(
             &index,
             &support,
             Point3::new(100.0, 0.5, 0.0),
-            1.1,
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .unwrap());
+            1.1
+        ));
         assert!(!offset_support_control_hull_excludes_point(
             &index,
             &support,
             Point3::new(2.0, 0.5, 0.0),
-            1.1,
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .unwrap());
+            1.1
+        ));
     }
 
     #[test]
@@ -3102,10 +3098,7 @@ mod tests {
                 ));
 
             let fit_tolerance = f64::EPSILON.sqrt();
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(
-                &ir,
-                cadmpeg_ir::index::StandardIndex,
-            );
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let target = Point3::new(3.0, 0.25, 1.0);
             let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -3121,10 +3114,8 @@ mod tests {
                 &index,
                 &offset,
                 target,
-                fit_tolerance,
-                &cadmpeg_test_support::service_decode_context()
-            )
-            .unwrap());
+                fit_tolerance
+            ));
             let parameters = offset_surface_parameters_with_tolerance(
                 geometry_ctx,
                 &ir,
@@ -3194,10 +3185,7 @@ mod tests {
                     })
                 })
                 .expect("finite translated support");
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(
-                &near_zero,
-                cadmpeg_ir::index::StandardIndex,
-            );
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
             let target = Point3::new(3., 0.25, 1e-200);
             assert!(offset_surface_parameters_with_tolerance(
                 geometry_ctx,
@@ -3396,8 +3384,7 @@ mod tests {
             let axis_x = 1.701e308;
             let radius = 1.0e307;
             let target = Point3::new(axis_x + radius * 0.3_f64.cos(), radius * 0.3_f64.sin(), 0.0);
-            let index =
-                cadmpeg_ir::index::ModelIndex::new_model_only(ir, cadmpeg_ir::index::StandardIndex);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
             let first_candidate = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &index,

@@ -23,8 +23,7 @@ fn topology_regeneration_references_keep_byte_order_and_uniqueness() {
         })
         .unwrap(),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let references = super::super::regeneration_references(&ctx, &definition).unwrap();
+    let references = super::super::regeneration_references(&definition).unwrap();
     assert_eq!(&*references, [&first, &second]);
 }
 

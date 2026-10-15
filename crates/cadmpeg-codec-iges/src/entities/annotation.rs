@@ -68,12 +68,12 @@ fn sectioned_area_curves_coplanar(
     if !resolution.is_finite() || resolution < 0.0 {
         return Ok(false);
     }
-    let index = ModelIndex::new_model_only(ir, ctx)?;
+    let index = ModelIndex::new_model_only(ir);
     let identity = Transform::identity();
     let mut active = BTreeSet::new();
     for sequence in sequences {
         let curve_id = crate::ids::curve(&crate::ids::Stem::directory(sequence));
-        let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
+        let Some(curve) = index.curves(curve_id.as_str(), cadmpeg_ir::index::StandardIndex) else {
             return Ok(false);
         };
         if active.contains(&curve_id) {

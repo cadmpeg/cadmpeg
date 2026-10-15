@@ -22,7 +22,7 @@ fn model_entity_wins_when_native_id_collides() {
     );
     ir.native.0.insert("collision".into(), namespace);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id.as_str(), ())).unwrap();
+    let all_ids = super::BorrowedIdentities::build(|add| add(id.as_str(), ())).unwrap();
     let mut builder = crate::AnnotationBuilder::new();
     builder.derived(&id, "position").unwrap();
     builder.derived(&id, "native_only").unwrap();
@@ -258,7 +258,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id, ())).unwrap();
+    let all_ids = super::BorrowedIdentities::build(|add| add(id, ())).unwrap();
     let mut findings = Vec::new();
     check_annotations(
         &ctx,
@@ -292,7 +292,7 @@ fn annotations_on_many_model_points_resolve_without_findings() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let all_ids = super::BorrowedIdentities::build(&ctx, |add| {
+    let all_ids = super::BorrowedIdentities::build(|add| {
         for point in &ir.model.points {
             add(point.id.as_str(), ())?;
         }

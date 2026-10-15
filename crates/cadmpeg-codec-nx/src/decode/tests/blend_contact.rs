@@ -144,8 +144,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
             ),
             None,
         ));
-        let index =
-            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
             crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
@@ -267,7 +266,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
             let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &first,
                 lanes[0][ordinal].u,
                 lanes[0][ordinal].v,
@@ -275,7 +274,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .unwrap();
             let second_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &second,
                 lanes[1][ordinal].u,
                 lanes[1][ordinal].v,
@@ -350,7 +349,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
             let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &cylinder,
                 cylinder_uv.u,
                 cylinder_uv.v,
@@ -358,7 +357,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .unwrap();
             let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+                &cadmpeg_ir::index::ModelIndex::build(&ir),
                 &section_plane,
                 plane_uv.u,
                 plane_uv.v,
@@ -614,15 +613,9 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
         ));
     }
 
-    let model_index =
-        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     assert_eq!(
-        crate::decode::offset::surface_parameter_periods_with_index(
-            &model_index,
-            &surfaces[0],
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .unwrap(),
+        crate::decode::offset::surface_parameter_periods_with_index(&model_index, &surfaces[0]),
         [None, None]
     );
 }
@@ -749,7 +742,6 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
             cadmpeg_ir::math::Point3::new(-5.0, 2.0, 0.0),
             Some(0.9),
         )
-        .expect("evaluator allocation succeeds")
         .unwrap();
 
         assert!((actual - 0.25).abs() < 1.0e-10);
@@ -1312,8 +1304,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         let parameter = 0.35;
         let expected = Point2::new(parameter, 0.0);
         let point = Point3::new(0.0, 0.0, parameter);
-        let index =
-            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
             crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
@@ -1374,9 +1365,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
             source_object: None,
         });
 
-        let first = closest_spine_parameter(geometry_ctx, &ir, &ellipse, point, None)
-            .expect("evaluator allocation succeeds")
-            .unwrap();
+        let first = closest_spine_parameter(geometry_ctx, &ir, &ellipse, point, None).unwrap();
         let continued = closest_spine_parameter(
             geometry_ctx,
             &ir,
@@ -1384,7 +1373,6 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
             point,
             Some(parameter + std::f64::consts::TAU),
         )
-        .expect("evaluator allocation succeeds")
         .unwrap();
 
         assert!((first - parameter).abs() < 1.0e-8, "{first}");
@@ -1394,12 +1382,10 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         );
 
         let center = Point3::new(2.0, 3.0, 4.0);
-        let upper = closest_spine_parameter(geometry_ctx, &ir, &ellipse, center, Some(1.4))
-            .expect("evaluator allocation succeeds")
-            .unwrap();
-        let lower = closest_spine_parameter(geometry_ctx, &ir, &ellipse, center, Some(4.8))
-            .expect("evaluator allocation succeeds")
-            .unwrap();
+        let upper =
+            closest_spine_parameter(geometry_ctx, &ir, &ellipse, center, Some(1.4)).unwrap();
+        let lower =
+            closest_spine_parameter(geometry_ctx, &ir, &ellipse, center, Some(4.8)).unwrap();
         assert!(
             (upper - std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
             "{upper}"

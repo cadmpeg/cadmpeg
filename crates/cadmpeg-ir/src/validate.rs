@@ -136,7 +136,7 @@ fn validate_model(
     ir: &CadIr,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let index = crate::index::ModelIndex::build(ir);
     validate_model_with_index(ctx, ir, losses, &index)
 }
 
@@ -152,34 +152,34 @@ fn validate_model_with_index(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ctx, ids.native_view(), &mut findings)?;
+    check_identity_and_order(ids.native_view(), &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
-    check_pmi(ctx, ir, &mut findings)?;
-    check_coedge_pairing(ctx, ir, &mut findings)?;
-    check_shell_connectivity(ctx, ir, &mut findings)?;
-    check_wire_topology(ctx, ir, &mut findings)?;
+    check_pmi(ir, &mut findings)?;
+    check_coedge_pairing(ir, &mut findings)?;
+    check_shell_connectivity(ir, &mut findings)?;
+    check_wire_topology(ir, &mut findings)?;
     check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
-    check_native_links(ctx, ids.native_view(), ids, &mut findings)?;
+    check_native_links(ids.native_view(), ids, &mut findings)?;
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
     check_pcurve_surface_consistency(ctx, ids, &mut findings)?;
     check_procedural_support_consistency(ctx, ids, &mut findings)?;
     check_topology_tolerances(ir, &mut findings);
-    check_tessellations(ctx, ir, &mut findings)?;
+    check_tessellations(ir, &mut findings)?;
     check_sketches(ctx, ir, &mut findings)?;
-    check_spreadsheets(ctx, ir, &mut findings)?;
+    check_spreadsheets(ir, &mut findings)?;
     check_products(ctx, ir, &mut findings)?;
-    let reference_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities(ctx) {
-            add(id?, ())?;
+    let reference_ids = BorrowedIdentities::build(|add| {
+        for id in ids.identities(crate::index::StandardIndex) {
+            add(id, ())?;
         }
         Ok(())
     })?;
-    check_presentation(ctx, ir, &reference_ids, &mut findings)?;
-    check_drawings(ctx, ir, &reference_ids, &mut findings)?;
-    check_semantic_annotations(ctx, ir, &reference_ids, &mut findings)?;
+    check_presentation(ir, &reference_ids, &mut findings)?;
+    check_drawings(ir, &reference_ids, &mut findings);
+    check_semantic_annotations(ir, &reference_ids, &mut findings);
     check_typed_references(ctx, ir, &reference_ids, &mut findings)?;
 
     Ok(ValidationReport {
@@ -207,9 +207,9 @@ fn validate_annotations<'a>(
     additional: impl IntoIterator<Item = &'a str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let all_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities(ctx) {
-            add(id?, ())?;
+    let all_ids = BorrowedIdentities::build(|add| {
+        for id in ids.identities(crate::index::StandardIndex) {
+            add(id, ())?;
         }
         for id in additional {
             add(id, ())?;
@@ -225,7 +225,7 @@ fn validate_model_with_annotations(
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let index = crate::index::ModelIndex::build(ir);
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
     validate_annotations(
         ctx,
@@ -244,8 +244,7 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
-        let index =
-            crate::index::ModelIndex::with_additional_native_identities(ir, additional, ctx)?;
+        let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
         validate_model_with_index(ctx, ir, losses, &index)
     })
 }
@@ -291,7 +290,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
-    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let index = crate::index::ModelIndex::build(ir);
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
     validate_annotations(
         ctx,

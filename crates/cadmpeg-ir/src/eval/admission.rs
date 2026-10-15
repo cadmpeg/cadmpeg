@@ -288,9 +288,6 @@ impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
     fn finish<T>(&self, result: Result<T, EvaluationRefusal>) -> Self::Output<T> {
         result
     }
-    fn lazy(&self) -> bool {
-        self.context().is_none()
-    }
     fn work(&self, count: usize, _operation: &'static str) -> Result<(), EvaluationRefusal> {
         EvaluationAdmission::work(*self, count)
     }
@@ -401,7 +398,7 @@ mod tests {
             )),
             source_object: None,
         });
-        let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+        let index = crate::index::ModelIndex::build(&ir);
         for route in 0..4 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_recursion_depth = 0;
@@ -475,7 +472,7 @@ mod tests {
                 ),
             )
             .unwrap();
-        let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+        let index = crate::index::ModelIndex::build(&ir);
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

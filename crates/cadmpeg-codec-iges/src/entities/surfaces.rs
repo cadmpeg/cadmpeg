@@ -1171,7 +1171,7 @@ fn indicator_normal(
     let parameters = parameters.unwrap_or([0.0, 0.0]);
     let partials = match procedural {
         Some(_) => {
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
             finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                 &index,

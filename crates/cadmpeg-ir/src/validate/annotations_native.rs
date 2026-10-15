@@ -23,12 +23,12 @@ macro_rules! define_model_entity_projection {
         fn model_entity_projection<'ctx, 'ir>(
             ctx: &'ctx DecodeContext<'_>,
             ir: &'ir CadIr,
-            wanted: &BorrowedIdentities<'_, '_, bool>,
+            wanted: &BorrowedIdentities<'_, bool>,
             add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ctx, 'ir>) -> Result<(), CodecError>,
         ) -> Result<(), CodecError> {
             $(for entity in &ir.model.$field {
                 let id = crate::schema::EntitySchema::identity(entity);
-                if wanted.contains(ctx, id)? {
+                if wanted.contains(id) {
                     let value = match crate::schema::structural::project(ctx, entity, "annotated entity projection") {
                         Ok(value) => value,
                         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -47,10 +47,10 @@ pub(super) fn check_annotations(
     ctx: &DecodeContext<'_>,
     view: NativeView<'_>,
     annotations: &crate::Annotations,
-    all_ids: &BorrowedIdentities<'_, '_>,
+    all_ids: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let mut wanted = BorrowedIdentities::build(ctx, |add| {
+    let mut wanted = BorrowedIdentities::build(|add| {
         for (id, note) in annotations.exactness() {
             if !note.fields().is_empty() {
                 add(id, false)?;
@@ -59,7 +59,7 @@ pub(super) fn check_annotations(
         Ok(())
     })?;
     let mut values = Vec::new();
-    let entities = BorrowedIdentities::build(ctx, |add_identity| {
+    let entities = BorrowedIdentities::build(|add_identity| {
         // Sort small identity slots rather than moving projected payloads.
         let mut add = |id, value| {
             let position = values.len();
@@ -68,7 +68,7 @@ pub(super) fn check_annotations(
         };
         view.visit::<cadmpeg_core::CodecError>(|_, _, records| {
             for record in records.records() {
-                let Some(seen) = wanted.get_mut(ctx, record.id())? else {
+                let Some(seen) = wanted.get_mut(record.id()) else {
                     continue;
                 };
                 if *seen {
@@ -88,7 +88,7 @@ pub(super) fn check_annotations(
         model_entity_projection(ctx, view.ir, &wanted, &mut add)
     })?;
     for id in annotations.provenance.keys() {
-        if !all_ids.contains(ctx, id)? {
+        if !all_ids.contains(id) {
             super::record_finding(
                 findings,
                 Check::Annotations,
@@ -99,7 +99,7 @@ pub(super) fn check_annotations(
         }
     }
     for (id, note) in annotations.exactness() {
-        if !all_ids.contains(ctx, id)? {
+        if !all_ids.contains(id) {
             super::record_finding(
                 findings,
                 Check::Annotations,
@@ -112,7 +112,7 @@ pub(super) fn check_annotations(
         if note.fields().is_empty() {
             continue;
         }
-        let Some(position) = entities.get(ctx, id)? else {
+        let Some(position) = entities.get(id) else {
             super::record_finding(
                 findings,
                 Check::Annotations,
@@ -243,19 +243,18 @@ fn field_path_resolves(mut value: &Value, path: &str) -> bool {
 }
 
 pub(super) fn check_native_links(
-    ctx: &DecodeContext<'_>,
     view: NativeView<'_>,
     all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let ir = view.ir;
-    let all_targets = BorrowedIdentities::build(ctx, |add| {
-        for id in all_ids.identities(ctx) {
-            add(id?, ())?;
+    let all_targets = BorrowedIdentities::build(|add| {
+        for id in all_ids.identities(crate::index::StandardIndex) {
+            add(id, ())?;
         }
         Ok(())
     })?;
-    let native_ids = BorrowedIdentities::build(ctx, |add| {
+    let native_ids = BorrowedIdentities::build(|add| {
         view.visit::<cadmpeg_core::CodecError>(|_, _, records| {
             for record in records.records() {
                 add(record.id(), ())?;
@@ -265,7 +264,7 @@ pub(super) fn check_native_links(
     })?;
     for feature in &ir.model.features {
         if let Some(target) = &feature.native_ref {
-            if !native_ids.contains(ctx, target.as_str())? {
+            if !native_ids.contains(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -282,7 +281,7 @@ pub(super) fn check_native_links(
             },
         ) = feature.evaluation.definition()
         {
-            if !native_ids.contains(ctx, target.as_str())? {
+            if !native_ids.contains(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -295,7 +294,7 @@ pub(super) fn check_native_links(
     }
     for parameter in &ir.model.parameters {
         if let Some(target) = &parameter.native_ref {
-            if !native_ids.contains(ctx, target.as_str())? {
+            if !native_ids.contains(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -306,7 +305,7 @@ pub(super) fn check_native_links(
             }
         }
         if let Some(semantic) = &parameter.pmi {
-            if !native_ids.contains(ctx, semantic.native_ref.as_str())? {
+            if !native_ids.contains(semantic.native_ref.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -319,7 +318,7 @@ pub(super) fn check_native_links(
     }
     for configuration in &ir.model.configurations {
         if let Some(target) = &configuration.native_ref {
-            if !native_ids.contains(ctx, target.as_str())? {
+            if !native_ids.contains(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -332,7 +331,7 @@ pub(super) fn check_native_links(
     }
     for sketch in &ir.model.sketches {
         if let Some(target) = &sketch.native_ref {
-            if !native_ids.contains(ctx, target.as_str())? {
+            if !native_ids.contains(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -345,7 +344,7 @@ pub(super) fn check_native_links(
     }
     for sketch in &ir.model.spatial_sketches {
         if let Some(target) = &sketch.native_ref {
-            if !native_ids.contains(ctx, target.as_str())? {
+            if !native_ids.contains(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -358,7 +357,7 @@ pub(super) fn check_native_links(
     }
     for constraint in &ir.model.sketch_constraints {
         if let Some(target) = &constraint.native_ref {
-            if !native_ids.contains(ctx, target.as_str())? {
+            if !native_ids.contains(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -373,7 +372,7 @@ pub(super) fn check_native_links(
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {
-                    if !native_ids.contains(ctx, target.as_str())? {
+                    if !native_ids.contains(target.as_str()) {
                         super::record_finding(
                             findings,
                             Check::NativeLinks,
@@ -388,7 +387,7 @@ pub(super) fn check_native_links(
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         if let Some(target) = &constraint.native_ref {
-            if !native_ids.contains(ctx, target.as_str())? {
+            if !native_ids.contains(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -404,7 +403,7 @@ pub(super) fn check_native_links(
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {
-                    if !native_ids.contains(ctx, target.as_str())? {
+                    if !native_ids.contains(target.as_str()) {
                         super::record_finding(
                             findings,
                             Check::NativeLinks,
@@ -425,7 +424,7 @@ pub(super) fn check_native_links(
         for entity in records.records() {
             let NativeEntity::Product(record) = entity else {
                 for target in entity.links() {
-                    if !all_targets.contains(ctx, &target)? {
+                    if !all_targets.contains(&target) {
                         super::record_finding(
                             findings,
                             Check::NativeLinks,
@@ -470,7 +469,7 @@ pub(super) fn check_native_links(
                     );
                     continue;
                 };
-                if !all_targets.contains(ctx, target)? {
+                if !all_targets.contains(target) {
                     super::record_finding(
                         findings,
                         Check::NativeLinks,
