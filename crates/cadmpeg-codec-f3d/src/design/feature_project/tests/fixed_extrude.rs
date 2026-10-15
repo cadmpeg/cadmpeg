@@ -126,7 +126,6 @@ fn fixed_extrude(
                         )
                         .unwrap(),
                     ),
-                    ..crate::records::feature::scope::DesignExtrudeScope::default()
                 },
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
