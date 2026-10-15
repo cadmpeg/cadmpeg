@@ -1208,18 +1208,14 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
         panic!("expected NURBS pcurve")
     };
     nurbs
-        .try_map_control_points(
-            |pole_index, point| {
-                let mut point = point.get();
-                if pole_index == 0 {
-                    point.u = -0.75;
-                }
-                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
+            if pole_index == 0 {
+                point.u = -0.75;
+            }
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+        })
+        .expect("pole edit admission");
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
         &mut pcurve.metadata
     else {
@@ -1250,18 +1246,14 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
         panic!("expected rational pcurve")
     };
     nurbs
-        .try_map_control_points(
-            |pole_index, point| {
-                let mut point = point.get();
-                if pole_index == 0 {
-                    point.u = -0.25;
-                }
-                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
+            if pole_index == 0 {
+                point.u = -0.25;
+            }
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+        })
+        .expect("pole edit admission");
     let mut weights = nurbs.pole_rows().weights();
     if let Some(weights) = &mut weights {
         weights[1] = 0.75;
@@ -1317,21 +1309,17 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         panic!("expected ref-form NURBS pcurve")
     };
     nurbs
-        .try_map_control_points(
-            |pole_index, point| {
-                let mut point = point.get();
-                if pole_index == 0 {
-                    point.u = -0.75;
-                }
-                if pole_index == 1 {
-                    point.v = 3.5;
-                }
-                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission")
-        .unwrap();
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
+            if pole_index == 0 {
+                point.u = -0.75;
+            }
+            if pole_index == 1 {
+                point.v = 3.5;
+            }
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+        })
+        .expect("pole edit admission");
     edit::replace(nurbs, |previous| {
         let mut knots = previous.knots().to_vec();
         {

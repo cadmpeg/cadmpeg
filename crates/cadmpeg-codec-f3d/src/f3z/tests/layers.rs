@@ -409,10 +409,6 @@ fn merged_member_losses_keep_their_xref_context() {
 
 #[test]
 fn duplicate_member_layer_identity_is_a_recorded_loss() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test input");
     let mut target =
         cadmpeg_core::dialect::DialectLayers::of(crate::dialect::F3dDialect::classify_f3z(&[
             "part.f3d",
@@ -424,13 +420,8 @@ fn duplicate_member_layer_identity_is_a_recorded_loss() {
         crate::dialect::F3dDialect::classify_document(Some("3-3-0-0")),
     );
 
-    assert!(
-        crate::f3z::archive::merge_member_layers(&ctx, &mut target, &first, "part.f3d")
-            .unwrap()
-            .is_empty()
-    );
-    let losses =
-        crate::f3z::archive::merge_member_layers(&ctx, &mut target, &later, "part.f3d").unwrap();
+    assert!(crate::f3z::archive::merge_member_layers(&mut target, &first, "part.f3d").is_empty());
+    let losses = crate::f3z::archive::merge_member_layers(&mut target, &later, "part.f3d");
 
     assert_eq!(target.iter().count(), 2);
     assert!(target.iter().any(|layer| {

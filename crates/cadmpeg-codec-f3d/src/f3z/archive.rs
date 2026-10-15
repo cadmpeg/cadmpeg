@@ -109,10 +109,7 @@ pub(super) fn classify_members<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<ArchiveSession<'a>, CodecError> {
     let mut members = BTreeMap::new();
-    let primary = scan
-        .kind
-        .dialect()
-        .try_clone_for_decode(ctx, "copy dialect layers")?;
+    let primary = scan.kind.dialect().clone();
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     for member_path in scan
@@ -151,11 +148,10 @@ pub(super) fn classify_members<'a>(
         }
         losses.append(&mut member_losses);
         losses.extend(merge_member_layers(
-            ctx,
             &mut layers,
             &member_layers,
             member_path,
-        )?);
+        ));
 
         members.insert(
             member_path.to_owned(),
@@ -173,34 +169,25 @@ pub(super) fn classify_members<'a>(
 
 /// Attaches one archive member's identity and nested layers to its archive path.
 pub(super) fn merge_member_layers(
-    ctx: &DecodeContext<'_>,
     target: &mut DialectLayers,
     member: &DialectLayers,
     member_path: &str,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Vec<LossNote> {
     let mut losses = Vec::new();
     for matched in member.iter() {
-        let matched = matched.try_clone_for_decode(ctx, "copy dialect layers")?;
         let instance = match matched.instance() {
             Some(nested) => format!("{member_path}/{nested}"),
             None => member_path.to_owned(),
         };
         let matched = matched
+            .clone()
             .with_declared_entry(
-                ctx,
                 cadmpeg_core::nonblank_const!(crate::dialect::DECLARED_ARCHIVE_MEMBER),
                 member_path,
-                "declare F3Z archive member",
-            )?
+            )
             .with_instance(instance);
-        if let Err(rejected) =
-            match target.insert_for_decode(ctx, matched, "collect F3Z member dialect layers") {
-                Ok(()) => Ok(()),
-                Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(layer)) => Err(layer),
-                Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => {
-                    return Err(limit.into())
-                }
-            }
+        if let Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected)) =
+            target.insert(matched)
         {
             let format = rejected.format();
             let collision_instance = rejected.instance().unwrap_or("unidentified");
@@ -209,7 +196,7 @@ pub(super) fn merge_member_layers(
                 ));
         }
     }
-    Ok(losses)
+    losses
 }
 
 fn model_root_member(

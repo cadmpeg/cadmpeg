@@ -24,36 +24,20 @@ const EPS_EXTRUDE_START_ANGULAR: f64 = 1.0e-10;
 fn extrude_start_plane_geometry_fallback_requires_complete_nested_recipe() {
     let (operand, group, faces) = start_geometry_fixture();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            extrude_start_plane_geometry_candidates(
-                decode_ctx,
-                &group,
-                std::slice::from_ref(&operand),
-                &faces,
-            )
-        })
-        .unwrap(),
+        extrude_start_plane_geometry_candidates(&group, std::slice::from_ref(&operand), &faces),
         Some(vec![face(10)])
     );
     let mut bound = operand.clone();
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| retain_face_operand_resolution(
-            decode_ctx,
-            &group,
-            std::slice::from_mut(&mut bound),
-            &face(10)
-        ))
-        .unwrap()
-    );
+    assert!(retain_face_operand_resolution(
+        &group,
+        std::slice::from_mut(&mut bound),
+        &face(10)
+    ));
     assert_eq!(bound.resolved_active_face, Some(face(10)));
 
     let mut incomplete = operand;
     incomplete.recipe_nodes.clear();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        extrude_start_plane_geometry_candidates(decode_ctx, &group, &[incomplete], &faces)
-    })
-    .unwrap()
-    .is_none());
+    assert!(extrude_start_plane_geometry_candidates(&group, &[incomplete], &faces).is_none());
 }
 
 fn start_binder_fixture(
@@ -146,12 +130,10 @@ fn start_binder_fixture(
 }
 
 fn assert_start_binder_binds_face(nested: bool) {
-    use cadmpeg_core::decode::DecodeContext;
-
     use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
 
     let (feature, sketch, group, operand, faces, surfaces) = start_binder_fixture(nested);
-    let run = |ctx: &DecodeContext<'_>| {
+    let run = || {
         let mut features = [feature.clone()];
         let mut operands = [operand.clone()];
         let mut resolution = ExtrudeFaceResolution {
@@ -162,16 +144,14 @@ fn assert_start_binder_binds_face(nested: bool) {
             linear_tolerance: EPS_FACE_TEST_TARGET_LINEAR_E9,
             angular_tolerance: EPS_FACE_TEST_TARGET_ANGULAR_E9,
         };
-        let result = crate::design::face_resolve::bind_extrude_start_planes(
-            ctx,
+        crate::design::face_resolve::bind_extrude_start_planes(
             &mut features,
             std::slice::from_ref(&sketch),
             &mut resolution,
         );
-        (result, features)
+        features
     };
-    let (result, features) = crate::test_support::with_decode_context(|decode_ctx| run(decode_ctx));
-    result.unwrap();
+    let features = run();
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -196,8 +176,6 @@ fn extrude_start_binds_coincident_selected_face() {
 
 #[test]
 fn extrude_target_face_binds_resolved_face() {
-    use cadmpeg_core::decode::DecodeContext;
-
     use cadmpeg_ir::features::{
         ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation,
         LinearTermination,
@@ -232,7 +210,7 @@ fn extrude_target_face_binds_resolved_face() {
             };
         }
     });
-    let run = |ctx: &DecodeContext<'_>| {
+    let run = || {
         let mut features = [feature.clone()];
         let mut operands = [operand.clone()];
         let mut resolution = ExtrudeFaceResolution {
@@ -243,16 +221,14 @@ fn extrude_target_face_binds_resolved_face() {
             linear_tolerance: EPS_FACE_TEST_TARGET_LINEAR_E9,
             angular_tolerance: EPS_FACE_TEST_TARGET_ANGULAR_E9,
         };
-        let result = crate::design::face_resolve::bind_extrude_target_faces(
-            ctx,
+        crate::design::face_resolve::bind_extrude_target_faces(
             &mut features,
             std::slice::from_ref(&sketch),
             &mut resolution,
         );
-        (result, features)
+        features
     };
-    let (result, features) = crate::test_support::with_decode_context(|decode_ctx| run(decode_ctx));
-    result.unwrap();
+    let features = run();
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -497,10 +473,7 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
             linear_tolerance: TARGET_LINEAR_TOLERANCE,
             angular_tolerance: TARGET_ANGULAR_TOLERANCE,
         };
-        crate::test_support::with_decode_context(|decode_ctx| {
-            extrude_target_plane_candidate(decode_ctx, &group, &resolution, origin, sweep_direction)
-        })
-        .unwrap()
+        extrude_target_plane_candidate(&group, &resolution, origin, sweep_direction)
     };
 
     assert_eq!(candidate(&[1, 3, 4]), Some(face(1)));
@@ -673,15 +646,8 @@ fn extrude_leaf_hierarchy_refuses_depth_limit() {
 fn extrude_active_faces_resolve_candidate() {
     let (_, _, operands) = extrude_leaf_fixture();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::face_resolve::resolved_extrude_profile_active_faces(
-                decode_ctx,
-                &[0],
-                &operands,
-            )
-        })
-        .unwrap()
-        .unwrap(),
+        crate::design::face_resolve::resolved_extrude_profile_active_faces(&[0], &operands)
+            .unwrap(),
         [face(10)]
     );
 }

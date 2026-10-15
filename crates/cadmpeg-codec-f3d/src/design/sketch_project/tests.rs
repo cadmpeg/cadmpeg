@@ -812,29 +812,20 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(point.geometry_ref.clone())
     .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point], decode_ctx)).unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point], decode_ctx)).unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Horizontal,
-            &[point, point],
-            decode_ctx
-        ))
-        .unwrap()
-        .is_none()
+        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point])
+            .unwrap()
+            .is_none()
     );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Midpoint,
-            &[line, point],
-            decode_ctx
-        ))
-        .unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]).unwrap(),
         Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     for kind in [
@@ -842,15 +833,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(
-            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-                kind,
-                &[line, point],
-                decode_ctx
-            ))
+        assert!(exact_atomic_constraint(kind, &[line, point])
             .unwrap()
-            .is_none()
-        );
+            .is_none());
     }
     let other_line = SketchEntity::new(
         SketchEntityId::mint("generated:test:line#other").unwrap(),
@@ -862,30 +847,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(line.geometry_ref.clone())
     .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Tangent,
-            &[line, &other_line],
-            decode_ctx
-        ))
-        .unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]).unwrap(),
         Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Curvature,
-            &[line, &other_line],
-            decode_ctx
-        ))
-        .unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line]).unwrap(),
         Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-            SketchConstraintKind::Equal,
-            &[line, &other_line],
-            decode_ctx
-        ))
-        .unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]).unwrap(),
         Some(SketchConstraintDefinitionInput::Equal { .. })
     ));
     for kind in [
@@ -897,15 +867,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(
-            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
-                kind,
-                &[line, line],
-                decode_ctx
-            ))
+        assert!(exact_atomic_constraint(kind, &[line, line])
             .unwrap()
-            .is_none()
-        );
+            .is_none());
     }
 }
 
@@ -1277,17 +1241,14 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 if start == Point3::new(10.0, 21.0, 32.0)
                     && end == Point3::new(10.0, 24.0, 32.0)
         )));
-    let constraints = crate::test_support::with_decode_context(|decode_ctx| {
-        project_spatial_sketch_constraints(
-            decode_ctx,
-            &[placement],
-            &relations,
-            &points,
-            &curves,
-            &surfaces,
-            &entities,
-        )
-    })
+    let constraints = project_spatial_sketch_constraints(
+        &[placement],
+        &relations,
+        &points,
+        &curves,
+        &surfaces,
+        &entities,
+    )
     .unwrap();
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[

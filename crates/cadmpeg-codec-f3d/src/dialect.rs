@@ -182,21 +182,12 @@ pub(crate) fn classify_layers(
     ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
 ) -> Result<(DialectLayers, Vec<LossNote>), CodecError> {
-    let primary = scan
-        .kind
-        .dialect()
-        .try_clone_for_decode(ctx, "copy dialect layers")?;
+    let primary = scan.kind.dialect().clone();
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
-    let mut add_layer = |layer: DialectMatch| -> Result<(), CodecError> {
-        if let Err(rejected) =
-            match layers.insert_for_decode(ctx, layer, "collect F3D dialect layers") {
-                Ok(()) => Ok(()),
-                Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(layer)) => Err(layer),
-                Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => {
-                    return Err(limit.into())
-                }
-            }
+    let mut add_layer = |layer: DialectMatch| {
+        if let Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected)) =
+            layers.insert(layer)
         {
             let format = rejected.format();
             let instance = rejected.instance().unwrap_or("unidentified");
@@ -204,7 +195,6 @@ pub(crate) fn classify_layers(
                 format!("the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"),
             ));
         }
-        Ok(())
     };
     let instance = if scan.breps.len() + crate::container::text_brep_names(scan).count() > 1 {
         LayerInstance::Tagged
@@ -218,7 +208,7 @@ pub(crate) fn classify_layers(
         );
         add_layer(cadmpeg_asm::dialect::classify_layer(
             header, &brep.name, instance,
-        )?)?;
+        )?);
     }
     for name in crate::container::text_brep_names(scan) {
         let matched = match scan.text_breps.get(name) {
@@ -240,7 +230,7 @@ pub(crate) fn classify_layers(
                 instance,
             )?,
         };
-        add_layer(matched)?;
+        add_layer(matched);
     }
     Ok((layers, losses))
 }

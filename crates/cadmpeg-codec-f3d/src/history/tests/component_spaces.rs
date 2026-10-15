@@ -248,28 +248,22 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
     let references = [reference(203, &[8, 7]), reference(199, &[9])];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| direct_face_recipe_candidates(
-            decode_ctx,
+        direct_face_recipe_candidates(
             crate::records::recipes::ConstructionRecipeKind::Face,
             &references,
             203
-        ))
-        .unwrap(),
+        ),
         Some(vec![
             cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar"),
             cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(8)).expect("identity grammar"),
         ])
     );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| direct_face_recipe_candidates(
-            decode_ctx,
-            crate::records::recipes::ConstructionRecipeKind::BoundedFace,
-            &references,
-            203
-        ))
-        .unwrap()
-        .is_none()
-    );
+    assert!(direct_face_recipe_candidates(
+        crate::records::recipes::ConstructionRecipeKind::BoundedFace,
+        &references,
+        203
+    )
+    .is_none());
 }
 
 #[test]

@@ -29,13 +29,8 @@ fn distinct_form_cage_ids<T: Eq + Hash>(ids: &[T]) -> bool {
     true
 }
 
-fn push_form_cage_id(
-    ctx: &DecodeContext<'_>,
-    ids: &mut Vec<cadmpeg_ir::ids::SubdId>,
-    id: &cadmpeg_ir::ids::SubdId,
-) -> Result<(), CodecError> {
-    ids.push(id.try_clone_for_decode(ctx, "f3d form cage id")?);
-    Ok(())
+fn push_form_cage_id(ids: &mut Vec<cadmpeg_ir::ids::SubdId>, id: &cadmpeg_ir::ids::SubdId) {
+    ids.push(id.clone());
 }
 
 /// Replace a resolved Form scope's native definition with its committed cages.
@@ -99,7 +94,7 @@ pub(crate) fn bind_form_cages(
                         valid = false;
                         break;
                     }
-                    push_form_cage_id(ctx, &mut resolved, &cage.id)?;
+                    push_form_cage_id(&mut resolved, &cage.id);
                 }
                 if valid && !resolved.is_empty() && distinct_form_cage_ids(&resolved) {
                     let feature_id = crate::design::identity::neutral_feature_id(scope)?;
@@ -156,7 +151,7 @@ pub(crate) fn bind_form_cages(
                     valid = false;
                     break;
                 }
-                push_form_cage_id(ctx, &mut resolved, &cage.id)?;
+                push_form_cage_id(&mut resolved, &cage.id);
             }
             if valid
                 && !resolved.is_empty()
@@ -205,7 +200,7 @@ pub(crate) fn bind_form_cages(
                             cadmpeg_ir::features::FeatureOperation::Form {
                                 cages: {
                                     let mut ids = Vec::new();
-                                    push_form_cage_id(ctx, &mut ids, &cages[0].id)?;
+                                    push_form_cage_id(&mut ids, &cages[0].id);
                                     ids
                                 },
                             },
@@ -240,7 +235,7 @@ pub(crate) fn bind_form_cages(
             if matches.next().is_some() {
                 continue 'scope;
             }
-            push_form_cage_id(ctx, &mut resolved, &cage.id)?;
+            push_form_cage_id(&mut resolved, &cage.id);
         }
         if !distinct_form_cage_ids(&resolved) {
             continue;

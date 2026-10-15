@@ -132,7 +132,7 @@ pub(super) fn resolved_surface_patch_edge_group(
         }
         matched_operands.push(operand);
     }
-    let edges = match surface_patch_grouped_recipe_edges(&matched_operands, ctx)? {
+    let edges = match surface_patch_grouped_recipe_edges(&matched_operands) {
         SurfacePatchRecipeEdges::Absent => return fallback(),
         SurfacePatchRecipeEdges::Inconclusive => {
             return Ok(cadmpeg_ir::features::EdgeSelection::Native(
@@ -191,12 +191,9 @@ enum SurfacePatchRecipeEdges {
     Resolved(Vec<cadmpeg_ir::ids::EdgeId>),
 }
 
-fn surface_patch_grouped_recipe_edges(
-    operands: &[&DesignEdgeOperand],
-    ctx: &DecodeContext<'_>,
-) -> Result<SurfacePatchRecipeEdges, CodecError> {
+fn surface_patch_grouped_recipe_edges(operands: &[&DesignEdgeOperand]) -> SurfacePatchRecipeEdges {
     if operands.is_empty() {
-        return Ok(SurfacePatchRecipeEdges::Absent);
+        return SurfacePatchRecipeEdges::Absent;
     }
     let mut edges = Vec::new();
     let mut has_absent_member = false;
@@ -210,25 +207,25 @@ fn surface_patch_grouped_recipe_edges(
             continue;
         };
         let [edge] = first.candidate_edges.as_slice() else {
-            return Ok(SurfacePatchRecipeEdges::Inconclusive);
+            return SurfacePatchRecipeEdges::Inconclusive;
         };
         if exact.any(|reference| reference.candidate_edges.as_slice() != std::slice::from_ref(edge))
         {
-            return Ok(SurfacePatchRecipeEdges::Inconclusive);
+            return SurfacePatchRecipeEdges::Inconclusive;
         }
-        let copied = (edge).try_clone_for_decode(ctx, "f3d surface patch recipe edge id")?;
+        let copied = (edge).clone();
         edges.push(copied);
     }
     if has_absent_member {
-        return Ok(SurfacePatchRecipeEdges::Absent);
+        return SurfacePatchRecipeEdges::Absent;
     }
     let mut distinct = HashSet::new();
     for edge in &edges {
         if !distinct.insert(edge.as_str()) {
-            return Ok(SurfacePatchRecipeEdges::Inconclusive);
+            return SurfacePatchRecipeEdges::Inconclusive;
         }
     }
-    Ok(SurfacePatchRecipeEdges::Resolved(edges))
+    SurfacePatchRecipeEdges::Resolved(edges)
 }
 
 fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId) -> Option<i64> {
@@ -2524,7 +2521,7 @@ pub(super) fn project_fixed_fillet_with_corners(
                     parameter: 1.0,
                     radius: end_radius,
                 });
-                let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)?.ok() else { return Ok(None); };
+                let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok() else { return Ok(None); };
                 Some(RadiusSpec::Variable {
                     points,
                 })

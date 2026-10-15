@@ -222,12 +222,9 @@ fn face_candidate() -> (bool, bool) {
     candidates.face_body_candidates(&operands[0], &body.id)
 }
 
-fn external_body(
-    source: Option<&str>,
-) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+fn external_body(source: Option<&str>) -> Option<cadmpeg_ir::ids::BodyId> {
     let (_, _, operands, _) = selection_fixture();
     let (body, region, shell) = face_geometry();
-    let ctx = cadmpeg_test_support::service_decode_context();
     crate::history::body_candidates::BodyCandidates::new(
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
@@ -235,10 +232,10 @@ fn external_body(
         &[],
         &[],
     )
-    .external(&ctx, &operands[0], source)
+    .external(&operands[0], source)
 }
 
-fn linked_body() -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     use crate::records::identity::RecordedValue;
     use crate::records::recipes::{
         ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
@@ -281,13 +278,12 @@ fn linked_body() -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecE
         design_reference: 9,
         ordinal: 0,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
     let bodies = [body];
     let recipes = [recipe];
     let links = [link];
     let mut candidates =
         crate::history::body_candidates::BodyCandidates::new(&bodies, &[], &[], &recipes, &links);
-    candidates.linked(&ctx, &operands[0])
+    candidates.linked(&operands[0])
 }
 
 #[test]
@@ -310,7 +306,7 @@ fn direct_body_recipe_keeps_resolved_selection() {
 
 #[test]
 fn persistent_body_link_preserves_identity() {
-    assert_eq!(linked_body().unwrap().unwrap().as_str(), "f3d:brep:body#1");
+    assert_eq!(linked_body().unwrap().as_str(), "f3d:brep:body#1");
 }
 
 #[test]
@@ -320,8 +316,5 @@ fn body_recipe_face_carrier_preserves_selected_candidate() {
 
 #[test]
 fn external_body_preserves_selected_identity() {
-    assert_eq!(
-        external_body(None).unwrap().unwrap().as_str(),
-        "f3d:brep:body#1"
-    );
+    assert_eq!(external_body(None).unwrap().as_str(), "f3d:brep:body#1");
 }

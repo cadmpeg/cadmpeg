@@ -51,7 +51,6 @@ fn historical_radii_replace_each_carrier_once_and_keep_last_blend() {
 
 #[test]
 fn historical_coedge_neighbors_follow_ring_order() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut brep = cadmpeg_asm::brep::AsmBrep::default();
     let owner = LoopId::mint("test:brep:loop#1").unwrap();
     let ids: Vec<_> = (10..110)
@@ -60,11 +59,7 @@ fn historical_coedge_neighbors_follow_ring_order() {
     brep.loops.push(Loop {
         id: owner.clone(),
         face: FaceId::mint("test:brep:face#2").unwrap(),
-        boundary: LoopBoundary::Ring(
-            LoopRing::new(&ctx, ids.clone(), Vec::new())
-                .unwrap()
-                .unwrap(),
-        ),
+        boundary: LoopBoundary::Ring(LoopRing::new(ids.clone(), Vec::new()).unwrap()),
     });
     for id in &ids {
         brep.coedges.push(Coedge {

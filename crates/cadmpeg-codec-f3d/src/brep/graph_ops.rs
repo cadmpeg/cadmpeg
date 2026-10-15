@@ -10,7 +10,6 @@ use std::collections::{HashMap, HashSet};
 
 pub(super) mod ordered;
 
-use cadmpeg_ir::ids::comparison::{compare, equal};
 use ordered::{select_links, select_rows};
 
 type BrepAdjacency = HashMap<String, HashSet<String>>;
@@ -29,7 +28,7 @@ fn add_dependencies<T: RewriteIdentities>(
     row: &T,
 ) -> Result<(), CodecError> {
     row.visit_identity_references(ctx, &mut |target| {
-        if !equal(ctx, owner, target, "compare F3D dependency owner")? {
+        if owner != target {
             insert_brep_adjacency(adjacency, owner, target);
         }
         Ok(())
@@ -50,7 +49,7 @@ impl Brep {
                 native_bodies.insert(body);
             }
             let mut reachable = HashSet::new();
-            for body in self.body_selectors_for(ctx, selected_keys)?.into_keys() {
+            for body in self.body_selectors_for(selected_keys)?.into_keys() {
                 reachable.insert(body.into_string());
             }
             for body in &self.asm.bodies {
@@ -175,22 +174,13 @@ impl Brep {
         namespace: &str,
     ) -> Result<(), CodecError> {
         let prefix = format!("{format}:");
-        let mut map =
-            IdentityMap::new(ctx, "rewrite F3D qualified BREP fields", |source: &str| {
-                let suffix = match source.get(..prefix.len()) {
-                    Some(start)
-                        if compare(ctx, start, &prefix, "match F3D BREP scheme prefix")?
-                            .is_eq() =>
-                    {
-                        &source[prefix.len()..]
-                    }
-                    _ => source,
-                };
-                Ok(format!("{format}:brep/{namespace}/{suffix}"))
-            })?;
+        let mut map = IdentityMap::new(|source: &str| {
+            let suffix = source.strip_prefix(prefix.as_str()).unwrap_or(source);
+            Ok(format!("{format}:brep/{namespace}/{suffix}"))
+        });
         let source = std::mem::take(self);
         let rewritten = source.rewrite_identities(ctx, &mut map);
-        map.finish(ctx)?;
+        map.finish()?;
         *self = rewritten?;
         Ok(())
     }

@@ -210,9 +210,7 @@ impl<'a> FaceInputs<'a> {
                         }
                         selected.push(id);
                     }
-                    let state = topology
-                        .id
-                        .try_clone_for_decode(ctx, "retain F3D Hole input topology")?;
+                    let state = topology.id.clone();
                     let identity = native.clone();
                     Ok(FaceSelection::historical(state, selected, identity, ctx)?.ok())
                 })()?;
@@ -322,14 +320,12 @@ impl FaceAdmission<'_, '_, '_> {
             FeatureOperation::FullRoundFillet { groups } if edit_pair => {
                 let mut admitted = Vec::new();
                 for group in groups.as_slice() {
-                    let mut center = group
-                        .center_faces()
-                        .try_clone_for_decode(ctx, "copy F3D full round face selection")?;
+                    let mut center = group.center_faces().clone();
                     admit(&mut center, false)?;
                     let mut side = |value: &FullRoundSideSelection| -> Result<FullRoundSideSelection, CodecError> {
                         Ok(match value {
                             FullRoundSideSelection::Explicit(faces) => {
-                                let mut faces = faces.try_clone_for_decode(ctx, "copy F3D full round side selection")?;
+                                let mut faces = faces.clone();
                                 admit(&mut faces, false)?;
                                 FullRoundSideSelection::Explicit(faces)
                             }
@@ -348,24 +344,16 @@ impl FaceAdmission<'_, '_, '_> {
                     .map_err(CodecError::malformed)?;
             }
             FeatureOperation::FaceBlend { operands, .. } if edit_pair => {
-                let mut first = operands
-                    .first_faces()
-                    .try_clone_for_decode(ctx, "copy F3D face blend selection")?;
-                let mut second = operands
-                    .second_faces()
-                    .try_clone_for_decode(ctx, "copy F3D face blend selection")?;
+                let mut first = operands.first_faces().clone();
+                let mut second = operands.second_faces().clone();
                 admit(&mut first, false)?;
                 admit(&mut second, false)?;
                 *operands = cadmpeg_ir::features::FaceBlendOperands::new(first, second, ctx)?
                     .map_err(CodecError::malformed)?;
             }
             FeatureOperation::ReplaceFace { operands, .. } if edit_pair => {
-                let mut first = operands
-                    .targets()
-                    .try_clone_for_decode(ctx, "copy F3D replace face selection")?;
-                let mut second = operands
-                    .replacements()
-                    .try_clone_for_decode(ctx, "copy F3D replace face selection")?;
+                let mut first = operands.targets().clone();
+                let mut second = operands.replacements().clone();
                 admit(&mut first, false)?;
                 admit(&mut second, false)?;
                 *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(first, second, ctx)?

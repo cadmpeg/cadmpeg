@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
@@ -171,7 +170,6 @@ pub(crate) fn project_derived_instance_features(
 /// occurrence in the product graph lets the feature retain its operation and
 /// transform while native storage retains the exact external-reference role.
 pub(crate) fn project_unresolved_component_insert_occurrences(
-    ctx: &DecodeContext<'_>,
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     ordinal_start: usize,
@@ -195,8 +193,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
         }
 
         let occurrence_id = crate::design::identity::neutral_component_insert_occurrence_id(scope)?;
-        let feature_occurrence_id = occurrence_id
-            .try_clone_for_decode(ctx, "f3d unresolved component feature occurrence id")?;
+        let feature_occurrence_id = occurrence_id.clone();
         let name = construction.neutron_role.clone();
         let native_ref = scope.id.clone();
         feature

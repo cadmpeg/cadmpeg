@@ -49,27 +49,24 @@ struct SketchArrangementFace {
 }
 
 fn copy_arrangement_boundary(
-    ctx: &DecodeContext<'_>,
     boundary: &cadmpeg_ir::features::SketchProfileBoundaryUse,
-) -> Result<cadmpeg_ir::features::SketchProfileBoundaryUse, CodecError> {
-    Ok(cadmpeg_ir::features::SketchProfileBoundaryUse {
-        entity: (boundary.entity)
-            .try_clone_for_decode(ctx, "f3d arrangement boundary entity id")?,
+) -> cadmpeg_ir::features::SketchProfileBoundaryUse {
+    cadmpeg_ir::features::SketchProfileBoundaryUse {
+        entity: (boundary.entity).clone(),
         parameter_range: boundary.parameter_range,
         reversed: boundary.reversed,
-    })
+    }
 }
 
 fn copy_arrangement_boundary_run(
-    ctx: &DecodeContext<'_>,
     boundaries: &[cadmpeg_ir::features::SketchProfileBoundaryUse],
-) -> Result<Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>, CodecError> {
+) -> Vec<cadmpeg_ir::features::SketchProfileBoundaryUse> {
     let mut copy = Vec::new();
     for boundary in boundaries {
-        let boundary = copy_arrangement_boundary(ctx, boundary)?;
+        let boundary = copy_arrangement_boundary(boundary);
         copy.push(boundary);
     }
-    Ok(copy)
+    copy
 }
 
 pub(super) fn arrangement_region_containing_points(
@@ -77,7 +74,7 @@ pub(super) fn arrangement_region_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point2],
     tolerance: f64,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
@@ -112,7 +109,7 @@ pub(super) fn arrangement_region_containing_points(
     }
     if boundary_count == 1 {
         let face = geometric!(boundary);
-        let boundary = copy_arrangement_boundary_run(ctx, &face.boundary)?;
+        let boundary = copy_arrangement_boundary_run(&face.boundary);
         return Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok());
     }
     let mut interior = None;
@@ -144,7 +141,7 @@ pub(super) fn arrangement_region_containing_points(
         return Ok(None);
     }
     let face = geometric!(interior);
-    let boundary = copy_arrangement_boundary_run(ctx, &face.boundary)?;
+    let boundary = copy_arrangement_boundary_run(&face.boundary);
     Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok())
 }
 
@@ -152,7 +149,7 @@ fn sketch_arrangement_faces(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
@@ -173,8 +170,7 @@ fn sketch_arrangement_faces(
                 ) || sketch_geometry_parameter_range(&entity.geometry).is_some()
             })
         {
-            let entity =
-                (entity.id()).try_clone_for_decode(ctx, "f3d arrangement candidate entity id")?;
+            let entity = (entity.id()).clone();
             candidate_uses.push(SketchEntityUse {
                 entity,
                 reversed: false,
@@ -182,8 +178,7 @@ fn sketch_arrangement_faces(
         }
     } else {
         for use_ in sketch.profiles.iter().flat_map(|profile| profile.iter()) {
-            let entity =
-                (use_.entity).try_clone_for_decode(ctx, "f3d arrangement candidate entity id")?;
+            let entity = (use_.entity).clone();
             candidate_uses.push(SketchEntityUse {
                 entity,
                 reversed: use_.reversed,
@@ -203,7 +198,7 @@ fn sketch_arrangement_faces(
         ] {
             arrangement_node(&mut nodes, point, tolerance);
         }
-        let id = (entity.id()).try_clone_for_decode(ctx, "f3d arrangement pending entity id")?;
+        let id = (entity.id()).clone();
         pending.push(SketchProfileBoundaryUse {
             entity: id,
             parameter_range: geometric!(
@@ -245,8 +240,7 @@ fn sketch_arrangement_faces(
                 end += std::f64::consts::TAU;
             }
             let range = [start, end];
-            let id =
-                (use_.entity).try_clone_for_decode(ctx, "f3d arrangement pending entity id")?;
+            let id = (use_.entity).clone();
             pending.push(SketchProfileBoundaryUse {
                 entity: id,
                 parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
@@ -266,13 +260,11 @@ fn sketch_arrangement_faces(
             &entity.geometry,
             boundary.parameter_range.endpoints(),
             &nodes,
-            tolerance,
-            ctx,
+            tolerance
         )?);
         for parameters in parameters.windows(2) {
             let range = [parameters[0], parameters[1]];
-            let id =
-                (boundary.entity).try_clone_for_decode(ctx, "f3d arrangement split entity id")?;
+            let id = (boundary.entity).clone();
             let parameter_range =
                 geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok());
             let polyline = geometric!(profile_use_polyline(
@@ -434,7 +426,7 @@ fn sketch_arrangement_faces(
                 }
                 visited[index][usize::from(reverse)] = true;
                 let edge = &edges[index];
-                let mut use_ = copy_arrangement_boundary(ctx, &edge.boundary)?;
+                let mut use_ = copy_arrangement_boundary(&edge.boundary);
                 if reverse {
                     use_.reversed = !use_.reversed;
                 }
@@ -878,7 +870,6 @@ fn arrangement_split_parameters(
     range: [f64; 2],
     nodes: &[Point2],
     tolerance: f64,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<f64>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
@@ -924,7 +915,7 @@ fn arrangement_split_parameters(
             .total_cmp(&((right - range[0]) / (range[1] - range[0])))
     });
     let parameter_tolerance =
-        tolerance / geometric!(sketch_geometry_speed_bound(ctx, geometry, range)?).max(tolerance);
+        tolerance / geometric!(sketch_geometry_speed_bound(geometry, range)).max(tolerance);
     parameters.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
     Ok((parameters.len() >= 2).then_some(parameters))
 }
@@ -984,7 +975,7 @@ fn arrangement_cycle_work(edge_count: usize, node_count: usize) -> Option<usize>
 fn arrangement_retain_cycle_edges(
     edges: &mut Vec<SketchArrangementEdge>,
     node_count: usize,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     loop {
@@ -1302,7 +1293,7 @@ fn profile_use_polyline(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point2>>, CodecError> {
-    let travel = geometric!(sketch_geometry_speed_bound(ctx, &entity.geometry, range)?)
+    let travel = geometric!(sketch_geometry_speed_bound(&entity.geometry, range))
         * (range[1] - range[0]).abs();
     let ordinary_midpoint = (range[0] + range[1]) * 0.5;
     let midpoint = if ordinary_midpoint.is_finite() {
@@ -1348,13 +1339,12 @@ fn profile_use_polyline(
 }
 
 fn sketch_geometry_speed_bound(
-    ctx: &DecodeContext<'_>,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     range: [f64; 2],
-) -> Result<Option<f64>, CodecError> {
+) -> Option<f64> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    Ok(match geometry.definition() {
+    match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             Some(point_distance(start.get(), end.get()))
         }
@@ -1363,12 +1353,10 @@ fn sketch_geometry_speed_bound(
         SketchGeometryDefinition::Ellipse { radii, .. } => {
             Some(radii.major().get().max(radii.minor().get()))
         }
-        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            nurbs_speed_bound(ctx, curve)?
-        }
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
         _ if range[0] == range[1] => None,
         _ => None,
-    })
+    }
 }
 
 fn sketch_geometry_point(
@@ -1404,12 +1392,7 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let lanes = PcurveEvaluatorLanes::new(
-                ctx,
-                curve.pole_rows(),
-                "f3d nurbs evaluator poles",
-                "f3d nurbs evaluator weights",
-            )?;
+            let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
             cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 ctx,
                 curve.degree(),
@@ -2013,15 +1996,10 @@ fn certified_nurbs_tubes(
     target_error: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
-    let speed = geometric!(nurbs_speed_bound(ctx, curve)?);
+    let speed = geometric!(nurbs_speed_bound(curve));
     let degree = index_from_u32(curve.degree());
     let knots = curve.knots();
-    let lanes = PcurveEvaluatorLanes::new(
-        ctx,
-        curve.pole_rows(),
-        "f3d nurbs tube points",
-        "f3d nurbs tube weights",
-    )?;
+    let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
     let count = lanes.points().len();
     let mut tubes = Vec::new();
     for span in knots[degree..=count].windows(2) {
@@ -2094,12 +2072,8 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
         .flatten()
 }
 
-fn nurbs_speed_bound(
-    ctx: &DecodeContext<'_>,
-    curve: &PcurveNurbs,
-) -> Result<Option<f64>, CodecError> {
-    Ok(cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by(
-        ctx,
+fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
+    cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by(
         curve.degree(),
         curve.knots(),
         curve.pole_rows().count(),
@@ -2111,8 +2085,8 @@ fn nurbs_speed_bound(
         },
         |index| curve.pole_rows().weight_at(index).unwrap_or(1.0),
         [0.0, 0.0],
-    )?
-    .map(cadmpeg_ir::scalar::FiniteReal::get))
+    )
+    .map(cadmpeg_ir::scalar::FiniteReal::get)
 }
 
 fn circular_arc_profile_segments(
@@ -2802,12 +2776,7 @@ pub(super) fn point_on_sketch_entity(
         if curve.periodic() {
             return Ok(false);
         }
-        let lanes = PcurveEvaluatorLanes::new(
-            ctx,
-            curve.pole_rows(),
-            "f3d nurbs evaluator poles",
-            "f3d nurbs evaluator weights",
-        )?;
+        let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             ctx,
             curve.degree(),
@@ -2930,8 +2899,7 @@ pub(super) fn closed_sketch_profiles(
             SketchGeometryDefinition::Circle { .. }
                 | SketchGeometryDefinition::Ellipse { bounds: None, .. }
         ) {
-            let id =
-                (entity.id()).try_clone_for_decode(ctx, "f3d closed sketch profile entity id")?;
+            let id = (entity.id()).clone();
             let profile = vec![SketchEntityUse {
                 entity: id,
                 reversed: false,
@@ -3037,16 +3005,15 @@ pub(super) fn closed_sketch_profiles(
                 )
             }) {
                 let branched_profiles =
-                    branched_line_profiles(ctx, &component, &edges, &edge_nodes, linear_tolerance)?;
+                    branched_line_profiles(&component, &edges, &edge_nodes, linear_tolerance);
                 if branched_profiles.is_empty() {
                     if let Some(profile) = tangent_nested_line_profile(
-                        ctx,
                         &component,
                         &edges,
                         &edge_nodes,
                         &adjacency,
                         linear_tolerance,
-                    )? {
+                    ) {
                         profiles.push(profile);
                     }
                 } else {
@@ -3066,8 +3033,7 @@ pub(super) fn closed_sketch_profiles(
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
         let mut profile = Vec::new();
-        let first_id = (edges[first_edge].0.id())
-            .try_clone_for_decode(ctx, "f3d closed sketch component profile id")?;
+        let first_id = (edges[first_edge].0.id()).clone();
         profile.push(SketchEntityUse {
             entity: first_id,
             reversed: false,
@@ -3086,8 +3052,7 @@ pub(super) fn closed_sketch_profiles(
             let reversed = stored_end == current_node;
             current_node = if reversed { stored_start } else { stored_end };
             visited[next_edge] = true;
-            let id = (edges[next_edge].0.id())
-                .try_clone_for_decode(ctx, "f3d closed sketch component profile id")?;
+            let id = (edges[next_edge].0.id()).clone();
             profile.push(SketchEntityUse {
                 entity: id,
                 reversed,
@@ -3105,12 +3070,11 @@ pub(super) fn closed_sketch_profiles(
 /// is the only adjacency this walk needs: it is built here from `edge_nodes`,
 /// so every half-edge reaches its twin by construction.
 fn branched_line_profiles(
-    ctx: &DecodeContext<'_>,
     component: &[usize],
     edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
     edge_nodes: &[[usize; 2]],
     linear_tolerance: f64,
-) -> Result<Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>, CodecError> {
+) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
     use cadmpeg_ir::sketches::SketchEntityUse;
 
     let mut component_set = HashSet::new();
@@ -3185,8 +3149,7 @@ fn branched_line_profiles(
                 (stored_start, stored_end)
             };
             twice_area += from.u * to.v - from.v * to.u;
-            let id =
-                (edges[edge].0.id()).try_clone_for_decode(ctx, "f3d branched profile entity id")?;
+            let id = (edges[edge].0.id()).clone();
             profile.push(SketchEntityUse {
                 entity: id,
                 reversed,
@@ -3198,7 +3161,7 @@ fn branched_line_profiles(
         }
     }
 
-    Ok(profiles)
+    profiles
 }
 
 /// Resolve a tangent nested pair that has one shared corner.
@@ -3212,13 +3175,12 @@ fn branched_line_profiles(
 /// boundary with a tangent notch. Other tangent branch shapes remain
 /// unresolved rather than choosing a profile by geometry alone.
 fn tangent_nested_line_profile(
-    ctx: &DecodeContext<'_>,
     component: &[usize],
     edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
     edge_nodes: &[[usize; 2]],
     adjacency: &HashMap<usize, Vec<usize>>,
     tolerance: f64,
-) -> Result<Option<Vec<cadmpeg_ir::sketches::SketchEntityUse>>, CodecError> {
+) -> Option<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
     use cadmpeg_ir::sketches::SketchEntityUse;
 
     let mut junction = None;
@@ -3226,21 +3188,19 @@ fn tangent_nested_line_profile(
         for node in edge_nodes[*edge] {
             let degree = adjacency[&node].len();
             if !matches!(degree, 2 | 4) {
-                return Ok(None);
+                return None;
             }
             if degree > 2 {
                 if junction.is_some_and(|existing| existing != node) {
-                    return Ok(None);
+                    return None;
                 }
                 junction = Some(node);
             }
         }
     }
-    let Some(junction) = junction else {
-        return Ok(None);
-    };
+    let junction = junction?;
     if adjacency[&junction].len() != 4 {
-        return Ok(None);
+        return None;
     }
     let mut directions = [(0.0, 0.0); 4];
     for (index, edge) in adjacency[&junction].iter().enumerate() {
@@ -3253,7 +3213,7 @@ fn tangent_nested_line_profile(
         let (du, dv) = (to.u - from.u, to.v - from.v);
         let length = du.hypot(dv);
         if !length.is_finite() || length <= tolerance {
-            return Ok(None);
+            return None;
         }
         directions[index] = (du / length, dv / length);
     }
@@ -3272,7 +3232,7 @@ fn tangent_nested_line_profile(
             .count()
             != 1
     }) {
-        return Ok(None);
+        return None;
     }
 
     let mut cycles = Vec::new();
@@ -3291,13 +3251,11 @@ fn tangent_nested_line_profile(
                 .filter(|edge| !used.contains(edge) && edge_nodes[*edge][0] == current);
             let edge = if cycle.is_empty() {
                 if edge_nodes[first_edge][0] != current {
-                    return Ok(None);
+                    return None;
                 }
                 first_edge
             } else {
-                let Some(edge) = candidates.next() else {
-                    return Ok(None);
-                };
+                let edge = candidates.next()?;
                 if candidates.next().is_some() {
                     cycle.clear();
                     break;
@@ -3328,7 +3286,7 @@ fn tangent_nested_line_profile(
         || cycles[0].iter().any(|edge| cycles[1].contains(edge))
         || cycles.iter().flatten().count() != component.len()
     {
-        return Ok(None);
+        return None;
     }
 
     let cycle_points = |cycle: &[usize]| {
@@ -3348,7 +3306,7 @@ fn tangent_nested_line_profile(
         .any(|area| !area.is_finite() || area.abs() <= tolerance * tolerance)
         || areas[0].signum() == areas[1].signum()
     {
-        return Ok(None);
+        return None;
     }
 
     let probe = |cycle: &[usize]| {
@@ -3371,7 +3329,7 @@ fn tangent_nested_line_profile(
     } else if areas[1].abs() > areas[0].abs() && contains(1, 0) {
         1
     } else {
-        return Ok(None);
+        return None;
     };
     let inner = 1 - outer;
 
@@ -3385,8 +3343,7 @@ fn tangent_nested_line_profile(
                 position
             };
             let edge = cycles[index][offset];
-            let entity =
-                (edges[edge].0.id()).try_clone_for_decode(ctx, "f3d tangent profile entity id")?;
+            let entity = (edges[edge].0.id()).clone();
             profile.push(SketchEntityUse {
                 entity,
                 reversed: reverse,
@@ -3413,9 +3370,9 @@ fn tangent_nested_line_profile(
             profile_points.push(point);
         }
     }
-    Ok((profile_points.len() == profile.len()
+    (profile_points.len() == profile.len()
         && signed_polygon_area(&profile_points) > 2.0 * tolerance * tolerance)
-        .then_some(profile))
+        .then_some(profile)
 }
 
 pub(super) fn sketch_entity_endpoints(
@@ -3458,12 +3415,7 @@ pub(super) fn sketch_entity_endpoints(
             Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let lanes = PcurveEvaluatorLanes::new(
-                ctx,
-                curve.pole_rows(),
-                "f3d nurbs evaluator poles",
-                "f3d nurbs evaluator weights",
-            )?;
+            let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
             let start_parameter = curve.knots()[index_from_u32(curve.degree())];
             let end_parameter = curve.knots()[lanes.points().len()];
             let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
