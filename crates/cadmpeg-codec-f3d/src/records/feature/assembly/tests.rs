@@ -130,7 +130,8 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
     let base = serde_json::json!({
         "id": "occurrence", "class_tag": "327", "record_index": 7, "byte_offset": 0,
         "component_record_index": 8, "component_guid": "00000001-1111-4111-8111-111111111111", "component_guid_offset": 48,
-        "occurrence_guid": "00000002-1111-4111-8111-111111111111", "occurrence_guid_offset": 124, "occurrence_ordinal": 1
+        "occurrence_guid": "00000002-1111-4111-8111-111111111111", "occurrence_guid_offset": 124, "occurrence_ordinal": 1,
+        "owner_entity": 9, "owner_entity_offset": 219
     });
     assert_relaxed_guid_fields::<
         crate::records::feature::assembly_features::DesignComponentOccurrence,
@@ -146,6 +147,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
         if placed {
             wire["transform"] = transform.clone();
             wire["transform_offset"] = serde_json::json!(209);
+            wire["owner_entity_offset"] = serde_json::json!(347);
         }
         let record: crate::records::feature::assembly_features::DesignComponentOccurrence =
             serde_json::from_value(wire.clone()).unwrap();
@@ -655,9 +657,15 @@ fn component_insert_pairs_explicit_matrix_with_scope_and_carrier_locations() {
 fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal() {
     let prefix = r#"{"id":"occurrence","class_tag":"327","record_index":7,"byte_offset":0,"component_record_index":8,"component_guid":"00000001-1111-4111-8111-111111111111","component_guid_offset":48,"occurrence_guid":"00000002-1111-4111-8111-111111111111","occurrence_guid_offset":124,"occurrence_ordinal":"#;
     let matrix = r#","transform":[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":209"#;
+    let owner = |placed| {
+        format!(
+            r#","owner_entity":5,"owner_entity_offset":{}"#,
+            if placed { 347 } else { 219 }
+        )
+    };
     for (ordinal, placed) in [(1, false), (1, true), (2, true), (u32::MAX, true)] {
         let suffix = if placed { matrix } else { "" };
-        let wire = format!("{prefix}{ordinal}{suffix}}}");
+        let wire = format!("{prefix}{ordinal}{suffix}{}}}", owner(placed));
         let occurrence: crate::records::feature::assembly_features::DesignComponentOccurrence =
             serde_json::from_str(&wire).expect("component occurrence");
         assert_eq!(
@@ -668,7 +676,7 @@ fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal
     }
     for (ordinal, placed) in [(0, false), (0, true), (2, false), (u32::MAX, false)] {
         let suffix = if placed { matrix } else { "" };
-        let wire = format!("{prefix}{ordinal}{suffix}}}");
+        let wire = format!("{prefix}{ordinal}{suffix}{}}}", owner(placed));
         let error = serde_json::from_str::<
             crate::records::feature::assembly_features::DesignComponentOccurrence,
         >(&wire)
@@ -921,6 +929,7 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
             .try_into()
             .unwrap(),
         placement,
+        owner_entity: 9,
     };
     let matrix = [
         [1.0, 0.0, 0.0, 0.0],
@@ -929,19 +938,21 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     for (placement, last_offset) in [
-        (Placement::Base, 124),
+        (Placement::Base, 219),
         (
             Placement::Explicit {
                 ordinal: std::num::NonZeroU32::MIN,
                 transform: matrix.try_into().unwrap(),
             },
-            209,
+            347,
         ),
     ] {
         let occurrence = Occurrence::try_new(draft(100, placement)).unwrap();
         let wire = serde_json::to_value(&occurrence).unwrap();
         assert_eq!(wire["component_guid_offset"], 148);
         assert_eq!(wire["occurrence_guid_offset"], 224);
+        assert_eq!(wire["owner_entity"], 9);
+        assert_eq!(wire["owner_entity_offset"], 100 + last_offset);
         assert_eq!(
             serde_json::from_value::<Occurrence>(wire.clone()).unwrap(),
             occurrence
@@ -950,6 +961,7 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
             "component_guid_offset",
             "occurrence_guid_offset",
             "transform_offset",
+            "owner_entity_offset",
         ] {
             if field == "transform_offset" && matches!(placement, Placement::Base) {
                 continue;

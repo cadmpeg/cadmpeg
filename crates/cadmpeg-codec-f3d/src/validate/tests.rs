@@ -501,6 +501,7 @@ fn validation_accepts_carrier_local_component_references() {
                 component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
                 placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
+                owner_entity: 0,
             },
         )
         .unwrap()

@@ -17,7 +17,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, and the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
+(§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix, and the local component-occurrence frames and root-instance prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 """
@@ -16211,3 +16211,242 @@ offset = 25
 type = "bytes[5]"
 source = "spec"
 anchor = "The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25."
+
+# --- §3.1 local component occurrences ---------------------------------------
+
+[[record]]
+name = "local_component_occurrence_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A local component occurrence is an occurrence-placement record"
+size = 209
+note = "Offsets are relative to the carrier's indexed header. The identity tail or the matrix tail follows at offset 209."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "empty_instance_name"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "the frame stores u32 `0` and an empty LP-ASCII instance name"
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset 19"
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 path count `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "component_reference"
+offset = 24
+type = "bytes[9]"
+source = "spec"
+anchor = "Marked component-record references at offsets 24 and 197"
+
+[[record.gap]]
+offset = 33
+size = 7
+note = "Zero trailing field of the component-record reference."
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "the one-based occurrence ordinal at offset 40"
+
+[[record.field]]
+name = "carrier_guid"
+offset = 44
+type = "bytes[76]"
+source = "spec"
+anchor = "an LP-UTF16 carrier GUID at offset 44"
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 120
+type = "bytes[76]"
+source = "spec"
+anchor = "an LP-UTF16 occurrence GUID at offset 120"
+
+[[record.gap]]
+offset = 196
+size = 1
+note = "Zero separator."
+
+[[record.field]]
+name = "component_reference_repeat"
+offset = 197
+type = "bytes[9]"
+source = "spec"
+anchor = "Marked component-record references at offsets 24 and 197"
+
+[[record.gap]]
+offset = 206
+size = 2
+note = "Zero trailing field of the repeated component-record reference."
+
+[[record.field]]
+name = "identity_flag"
+offset = 208
+type = "u8"
+source = "spec"
+anchor = "Offset 208 is the identity flag."
+
+[[record]]
+name = "local_component_occurrence_identity_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The identity frame has flag `1`, ordinal one, and no matrix"
+size = 20
+note = "Offsets are relative to the end of the 209-byte prefix; the identity frame is 229 bytes."
+
+[[record.gap]]
+offset = 0
+size = 9
+note = "Nine zero bytes."
+
+[[record.field]]
+name = "owner_marker"
+offset = 9
+type = "u8"
+source = "spec"
+anchor = "Nine zero bytes and the marker `u8 1` follow the flag or the matrix."
+value = 1
+
+[[record.field]]
+name = "owner_entity"
+offset = 10
+type = "u64"
+source = "spec"
+anchor = "The u64 owner entity is at offset 219 of the identity frame"
+
+[[record.gap]]
+offset = 18
+size = 2
+note = "Two zero bytes close the frame."
+
+[[record]]
+name = "local_component_occurrence_matrix_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The matrix frame has flag `0` and a row-major rigid local-to-container transform at offset 209."
+size = 148
+note = "Offsets are relative to the end of the 209-byte prefix; the matrix frame is 357 bytes."
+
+[[record.field]]
+name = "transform"
+offset = 0
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid local-to-container transform at offset 209"
+
+[[record.gap]]
+offset = 128
+size = 9
+note = "Nine zero bytes."
+
+[[record.field]]
+name = "owner_marker"
+offset = 137
+type = "u8"
+source = "spec"
+anchor = "Nine zero bytes and the marker `u8 1` follow the flag or the matrix."
+value = 1
+
+[[record.field]]
+name = "owner_entity"
+offset = 138
+type = "u64"
+source = "spec"
+anchor = "offset 347 of the matrix frame"
+
+[[record.gap]]
+offset = 146
+size = 2
+note = "Two zero bytes close the frame."
+
+[[record]]
+name = "root_instance_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "whose instance name is `rootInstance`"
+size = 45
+note = "Offsets are relative to the root-instance record's indexed header. The record continues after the component-definition reference."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "leading_zero"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "After its indexed header that record stores u32 `0`"
+value = 0
+
+[[record.field]]
+name = "instance_name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "LP-ASCII `rootInstance`"
+value = 12
+
+[[record.field]]
+name = "instance_name"
+offset = 19
+type = "bytes[12]"
+source = "spec"
+anchor = "LP-ASCII `rootInstance`"
+
+[[record.field]]
+name = "path_marker"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "`u8 1`, u32 path count `1`"
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "`u8 1`, u32 path count `1`"
+value = 1
+
+[[record.field]]
+name = "component_marker"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "a marked u64 component-definition reference"
+value = 1
+
+[[record.field]]
+name = "component_reference"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "a marked u64 component-definition reference"
