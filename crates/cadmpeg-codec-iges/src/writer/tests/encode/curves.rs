@@ -54,7 +54,7 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
         "5.0"
     );
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

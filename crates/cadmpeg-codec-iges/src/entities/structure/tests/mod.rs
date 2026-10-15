@@ -1426,7 +1426,7 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
         }));
         assert!(
             cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok(),
             "IGES {version} legacy hole topology is invalid"
         );

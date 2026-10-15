@@ -137,8 +137,8 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
         Some([0.0, 2.0])
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -229,8 +229,8 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
     };
     assert_eq!(path.control_points()[0], path.control_points()[1]);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -287,7 +287,7 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
             );
             assert!(result.report().losses.is_empty());
             let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail");
+                .expect("validate the neutral model");
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         } else {
             assert!(result.report().losses.iter().any(|loss| loss
@@ -498,8 +498,8 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .as_deref(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
-    let validation = cadmpeg_ir::validate_neutral(witness.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(witness.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

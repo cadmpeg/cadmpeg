@@ -568,8 +568,8 @@ fn decode_concatenates_ordered_composite_curve_children() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -623,7 +623,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         outside_resolution.ir(),
         outside_resolution.report().losses.clone(),
     )
-    .expect("resource allocation did not fail");
+    .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let at_or_beyond_resolution = IgesCodec
@@ -703,8 +703,8 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -734,8 +734,8 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -793,8 +793,8 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -841,8 +841,8 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
             .count(),
         1
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
