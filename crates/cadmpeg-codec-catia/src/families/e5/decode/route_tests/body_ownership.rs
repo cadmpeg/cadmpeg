@@ -13,7 +13,7 @@ use crate::families::e5::graph::E5Edge;
 use crate::families::e5::graph::E5Topology;
 
 #[test]
-fn e5_ownership_result() {
+fn faces_sharing_an_edge_form_one_body_component() {
     use cadmpeg_core::decode::DecodeArena;
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::DecodePolicy;

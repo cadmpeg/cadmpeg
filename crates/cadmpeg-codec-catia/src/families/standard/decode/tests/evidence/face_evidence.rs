@@ -531,7 +531,7 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
 }
 
 #[test]
-fn standard_free_vertex_members_result() {
+fn free_vertices_attach_to_a_shell() {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
         id: VertexId::mint("catia:test:vertex#limit").expect("identity grammar"),
@@ -547,7 +547,7 @@ fn standard_free_vertex_members_result() {
 }
 
 #[test]
-fn standard_extrusion_support_result() {
+fn extrusion_support_adds_one_surface_and_support_entry() {
     use std::collections::HashMap;
     let mut surfaces = Vec::new();
     let mut supports = HashMap::new();
@@ -569,7 +569,7 @@ fn standard_extrusion_support_result() {
 }
 
 #[test]
-fn standard_native_edge_face_carrier_and_candidate_limits_result() {
+fn native_edge_faces_take_the_surface_owning_the_support_tag() {
     use std::collections::HashMap;
     use std::collections::HashSet;
     let supports = [StandardCurveSupport {
@@ -594,7 +594,7 @@ fn standard_native_edge_face_carrier_and_candidate_limits_result() {
 }
 
 #[test]
-fn standard_face_attachment_result() {
+fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
     let brep = crate::test_support::test_topology::standard_quad_topology_stream();
     let bindings = [(
         SurfaceId::mint("catia:test:surface#face").expect("identity grammar"),
@@ -622,7 +622,7 @@ fn standard_face_attachment_result() {
 }
 
 #[test]
-fn standard_face_partition_result() {
+fn face_partition_splits_components_into_separate_regions_and_shells() {
     let brep = crate::test_support::test_topology::standard_quad_topology_stream();
     let bindings = [(
         SurfaceId::mint("catia:test:surface#partition").expect("identity grammar"),
@@ -685,7 +685,7 @@ fn standard_face_partition_result() {
 }
 
 #[test]
-fn standard_extrusion_definition_copy_result() {
+fn extrusion_definition_copy_equals_the_source_definition() {
     let directrix =
         cadmpeg_ir::ids::CurveId::mint("catia:test:directrix#7").expect("identity grammar");
     let direction =

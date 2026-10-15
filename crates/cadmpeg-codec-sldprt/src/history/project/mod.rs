@@ -228,7 +228,6 @@ pub(crate) fn project_feature_model(
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.as_deref().map(str::to_owned),
                     source_content: project_feature_content(feature, &by_native)?,
-
                     evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                         project_definition(
                             feature,

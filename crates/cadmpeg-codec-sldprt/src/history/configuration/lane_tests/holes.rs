@@ -27,7 +27,6 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
@@ -53,7 +52,6 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
                     Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
                 )
                 .unwrap(),
-
                 extent: Some(LinearTermination::Blind {
                     length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
                 }),
@@ -79,7 +77,6 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
                 None,
             )
             .unwrap(),
-
             extent: None,
             bottom: None,
             taper_angle: None,
@@ -137,7 +134,6 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
             Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
         )
         .unwrap(),
-
         extent: Some(LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
         }),
@@ -157,7 +153,6 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
             None,
         )
         .unwrap(),
-
         extent: None,
         bottom: None,
         taper_angle: None,
@@ -169,7 +164,6 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
         shape,
-
         extent,
         ..
     }) = local
@@ -233,7 +227,6 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
             Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
         )
         .unwrap(),
-
         extent: Some(LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
         }),
@@ -253,7 +246,6 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
             None,
         )
         .unwrap(),
-
         extent: None,
         bottom: None,
         taper_angle: None,
@@ -270,7 +262,6 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             base_definition,
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -307,7 +298,6 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     &ir.model.configurations[0].feature_states[&id].definition, FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,
         shape,
-
         extent: None,
         ..
     }) if matches!((shape.construction(), &shape.diameter(),), (construction, None,) if placements.is_none()

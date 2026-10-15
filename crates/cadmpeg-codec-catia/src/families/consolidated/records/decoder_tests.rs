@@ -1347,7 +1347,7 @@ fn edge_use_resolution_ignores_unmatched_nodes() {
 }
 
 #[test]
-fn object_stream_vertex_ranges_rows_and_points_result() {
+fn object_stream_vertex_record_reads_one_xyz_point() {
     let mut bytes = vec![0xb2, 0x03, 0x06, 0x00, 0x05, 0x05, 0x08, 0x01];
     for value in [1.0_f32, 2.0, 3.0] {
         bytes.extend_from_slice(&value.to_le_bytes());

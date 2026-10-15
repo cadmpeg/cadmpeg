@@ -528,7 +528,7 @@ impl AnnotationState {
         &self.annotations
     }
 
-    /// Record provenance and entity exactness under the decode budget.
+    /// Record provenance and entity exactness for one stream offset.
     fn annotate(
         &mut self,
         id: impl Display,

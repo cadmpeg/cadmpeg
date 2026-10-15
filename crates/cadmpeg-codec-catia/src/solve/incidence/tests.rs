@@ -1327,12 +1327,12 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
         .all(|domain| domain.len() == 1));
 }
 
-mod allocation_limits;
 mod components;
 mod face_configuration;
+mod search_primitives;
 
 #[test]
-fn incidence_factor_checkpoint_result() {
+fn face_factor_refinement_without_assignments_stays_tracked() {
     use crate::solve::incidence::{FaceFactorRefinement, PreparedFaceFactors};
 
     let run = || {
@@ -1349,7 +1349,7 @@ fn incidence_factor_checkpoint_result() {
 }
 
 #[test]
-fn incidence_choice_pruning_result() {
+fn incidence_pruning_keeps_two_edges_closing_one_face() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [0, 0]];
     catia_test_context!(service_ctx);

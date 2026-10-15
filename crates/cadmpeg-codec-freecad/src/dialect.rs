@@ -10,7 +10,7 @@
 //! [`crate::container::parse_document`] before any element vocabulary is
 //! chosen. Schema 2 selects `Features`/`FeatureData`/`Feature` and schemas 3
 //! and 4 select `Objects`/`ObjectData`/`Object`
-//! ([`crate::persistence::parse`]), so identity has three declared
+//! ([`crate::persistence::parse_document`]), so identity has three declared
 //! rows and the grammar has two classes. Schemas 3 and 4 are one grammar class
 //! and two rows, and both are `Admitted` because a strategy is declared for each.
 //!

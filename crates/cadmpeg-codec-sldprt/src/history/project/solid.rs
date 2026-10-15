@@ -311,7 +311,6 @@ pub(super) fn project_hole(
                 }])
             }),
         shape,
-
         extent,
         bottom: profile.as_ref().and_then(|profile| profile.bottom),
         taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),

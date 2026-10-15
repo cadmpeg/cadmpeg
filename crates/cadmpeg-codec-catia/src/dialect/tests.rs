@@ -218,7 +218,7 @@ fn an_absent_declaration_leaves_the_identity_intact() {
 }
 
 #[test]
-fn declared_version_result() {
+fn outer_body_catpart_declares_version_5() {
     let bytes = outer_body_catpart(&summary_preview_segment());
     let scan = crate::test_support::with_service_context(|ctx| {
         container::scan_bytes(ctx, bytes.as_slice())
@@ -229,7 +229,7 @@ fn declared_version_result() {
 }
 
 #[test]
-fn residual_dialect_loss_result() {
+fn unknown_variant_reports_a_dialect_loss() {
     let matched = matched(Variant::Unknown);
     assert!(dialect_loss(&matched).is_some());
 }

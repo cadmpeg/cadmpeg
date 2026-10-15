@@ -231,7 +231,7 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
 }
 
 #[test]
-fn relation_program_output_wire_result() {
+fn relation_program_output_entity_serializes_its_class_name() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
     );
@@ -348,6 +348,38 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
+}
+
+#[test]
+fn relation_input_index_matches_parameter_with_optional_ordinal() {
+    let input = |parameter: &str| crate::native::CatiaRelationTypeInput {
+        parameter: parameter.to_string(),
+        input_type: "Real".to_string(),
+    };
+    let inputs = [input("#1_"), input("#12_"), input("#1_"), input("#3_ ")];
+    let index = crate::native::RelationInputIndex::new(&inputs);
+    let matches = |symbol: &str| {
+        let dependency = crate::native::CatiaRelationParameterDependency {
+            source_offset: 0,
+            symbol: symbol.to_string(),
+            candidates: Vec::new(),
+        };
+        let mut matched = index.matches(&dependency).collect::<Vec<_>>();
+        matched.sort_unstable();
+        matched
+    };
+    assert_eq!(matches("#1_"), [0, 2]);
+    assert_eq!(matches("#1_  "), [0, 2]);
+    assert_eq!(matches("#1_/2"), [0, 2]);
+    assert_eq!(matches("#1_ \t/27"), [0, 2]);
+    assert_eq!(matches("#12_ /3"), [1]);
+    assert_eq!(matches("#3_ "), [3]);
+    assert_eq!(matches("#3_  /4"), [3]);
+    assert!(matches("#1_/").is_empty());
+    assert!(matches("#1_ /2x").is_empty());
+    assert!(matches("#1_x").is_empty());
+    assert!(matches("#1").is_empty());
+    assert!(matches("#3_").is_empty());
 }
 
 #[test]
@@ -1151,7 +1183,7 @@ fn native_load_validates_relation_program_instances() {
 }
 
 #[test]
-fn native_relation_symbols_and_candidates_result() {
+fn relation_symbols_and_dependencies_bind_parameter_candidates() {
     let service_symbols = crate::native::relation_symbols("#1_ + #2_");
     assert_eq!(
         service_symbols,
@@ -1172,7 +1204,7 @@ fn native_relation_symbols_and_candidates_result() {
 }
 
 #[test]
-fn native_resolved_input_result() {
+fn resolved_relation_input_binds_the_dependency_entity() {
     let signature = crate::native::CatiaRelationTypeSignature {
         inputs: vec![crate::native::CatiaRelationTypeInput {
             parameter: "#1_".to_string(),
@@ -1196,7 +1228,7 @@ fn native_resolved_input_result() {
 }
 
 #[test]
-fn native_entity_reference_result() {
+fn entity_reference_resolves_entity_and_class_name() {
     let entities =
         std::collections::HashMap::from([(("graph".to_string(), 10_u32), "entity-10".to_string())]);
     let classes =

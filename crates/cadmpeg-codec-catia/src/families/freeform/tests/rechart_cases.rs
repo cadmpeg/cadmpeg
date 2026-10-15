@@ -525,7 +525,7 @@ fn standard_carrier_endpoints_refuse_caller_depth() {
 }
 
 #[test]
-fn freeform_surface_carrier_result() {
+fn b2_sphere_stream_yields_one_freeform_surface_carrier() {
     let bytes = crate::test_support::test_b2::b2_sphere_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let service =
@@ -535,7 +535,7 @@ fn freeform_surface_carrier_result() {
 }
 
 #[test]
-fn freeform_fallback_carrier_identity_result() {
+fn freeform_fallback_decodes_an_outer_body_sphere() {
     let file = crate::test_support::test_container::outer_body_catpart(
         &crate::test_support::test_b2::b2_sphere_stream(),
     );

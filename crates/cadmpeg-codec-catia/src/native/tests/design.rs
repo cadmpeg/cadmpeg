@@ -882,14 +882,14 @@ fn decode_links_design_objects_through_their_owner_record_group() {
 }
 
 #[test]
-fn native_design_objects_result() {
+fn design_objects_rederive_to_the_decoded_objects() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_nested_design_objects());
     let admitted = super::super::design_objects(&native.object_graphs, &native.entity_records);
     assert_eq!(admitted, native.design_objects);
 }
 
 #[test]
-fn parallel_reference_table_result() {
+fn parallel_reference_table_rederives_to_the_decoded_table() {
     use std::collections::HashMap;
     let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x84, 0x85, 0xfe];
     let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
@@ -923,6 +923,11 @@ fn parallel_reference_table_result() {
         .enumerate()
         .filter_map(|(index, record)| Some((record.entity_id()?, index)))
         .collect::<HashMap<_, _>>();
-    let admitted = super::super::design_parallel_reference_table(&fields, graph, &indices);
+    let admitted = super::super::design_parallel_reference_table(
+        &fields,
+        graph,
+        &indices,
+        super::super::terminal_null_entity_id(&indices),
+    );
     assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
 }

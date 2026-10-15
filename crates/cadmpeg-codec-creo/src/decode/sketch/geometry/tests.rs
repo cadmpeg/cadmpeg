@@ -62,16 +62,6 @@ fn saved_profile_collections_preserve_circle_and_line_order() {
 }
 
 #[test]
-fn saved_profile_entity_identity_matches_the_unchecked_identity() {
-    let (sketch, _) = saved_profile_fixture();
-    let checked = crate::decode::sketch_ids::sketch_entity_id_admitted(&sketch, 30);
-    assert_eq!(
-        checked,
-        crate::decode::sketch_ids::sketch_entity_id(&sketch, 30)
-    );
-}
-
-#[test]
 fn numerical_ranges_section_arc_radius_agreement_has_no_length_floor() {
     let segment = FeatureSegment {
         kind: FeatureSegmentKind::Arc([1, 2]),

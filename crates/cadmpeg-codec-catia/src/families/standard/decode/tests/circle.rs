@@ -1,5 +1,4 @@
 use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
-use crate::families::standard::decode::edge_geometry::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::records::StandardCurveSupport;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
@@ -26,7 +25,7 @@ fn standard_pcurve_geometry(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(cadmpeg_ir::geometry::pcurve::PcurveGeometry, [f64; 2])> {
     crate::test_support::with_service_context(|ctx| {
-        charged_standard_pcurve_geometry(
+        crate::families::standard::decode::edge_geometry::standard_pcurve_geometry(
             ctx,
             surface,
             support,
@@ -277,7 +276,7 @@ fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
 }
 
 #[test]
-fn standard_attached_circle_axes_result() {
+fn sphere_section_circle_attaches_one_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
@@ -315,7 +314,7 @@ fn standard_attached_circle_axes_result() {
 }
 
 #[test]
-fn standard_edge_circle_axes_result() {
+fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {

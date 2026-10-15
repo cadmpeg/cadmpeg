@@ -1195,7 +1195,7 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
 mod incidence_loci;
 
 #[test]
-fn topology_binding_result() {
+fn native_vertex_binding_accepts_an_edge_with_no_loops() {
     let point = crate::test_support::test_b5::point([0.0, 0.0, 0.0]);
     let loops = BTreeMap::new();
     let pcurves = BTreeMap::new();
@@ -1229,7 +1229,7 @@ fn topology_binding_result() {
 }
 
 #[test]
-fn targeted_surface_records_and_resolution_result() {
+fn targeted_surface_resolution_returns_a_cached_surface() {
     let surface = B5Surface::Unknown {
         family: 0xb5,
         class: 0x27,
@@ -1253,7 +1253,7 @@ fn targeted_surface_records_and_resolution_result() {
 }
 
 #[test]
-fn loop_record_nested_collections_result() {
+fn typed_loop_record_parses_one_member() {
     let record = B5Record {
         offset: 0,
         family: 0xb5,
@@ -1269,7 +1269,7 @@ fn loop_record_nested_collections_result() {
 }
 
 #[test]
-fn b5_candidate_indexes_and_alias_walk_result() {
+fn surface_candidate_merge_admits_a_first_plane() {
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
@@ -1287,7 +1287,7 @@ fn b5_candidate_indexes_and_alias_walk_result() {
 }
 
 #[test]
-fn loop_sense_vectors_result() {
+fn loop_senses_have_one_entry_per_member() {
     let loop_ = B5Loop {
         object_id: 1,
         members: test_loop_members(&[2, 3], &[4, 5]),
@@ -1299,7 +1299,7 @@ fn loop_sense_vectors_result() {
 }
 
 #[test]
-fn class21_pcurve_lanes_and_typed_index_result() {
+fn class21_linear_pcurve_record_indexes_one_pcurve() {
     let record = B5Record {
         offset: 0,
         family: 0xb5,
@@ -1314,7 +1314,7 @@ fn class21_pcurve_lanes_and_typed_index_result() {
 }
 
 #[test]
-fn counted_face_reference_list_result() {
+fn face_record_parses_a_counted_reference_list() {
     let record = B5Record {
         offset: 0,
         family: 0xb5,
@@ -1330,7 +1330,7 @@ fn counted_face_reference_list_result() {
 }
 
 #[test]
-fn typed_face_record_index_result() {
+fn typed_face_records_index_faces_by_object_id() {
     let records = [B5Record {
         offset: 0,
         family: 0xb5,

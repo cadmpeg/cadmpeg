@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
 
+use crate::grouping::group_pairs;
 use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -62,15 +63,6 @@ use feature_projection::{
 
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
 const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
-
-/// Groups pairs by key, keeping source order within each group.
-fn group_pairs<K: Ord, V>(pairs: impl IntoIterator<Item = (K, V)>) -> BTreeMap<K, Vec<V>> {
-    let mut groups = BTreeMap::<K, Vec<V>>::new();
-    for (key, value) in pairs {
-        groups.entry(key).or_default().push(value);
-    }
-    groups
-}
 
 fn push_native_unknown(
     ctx: &DecodeContext<'_>,
@@ -291,6 +283,7 @@ pub(super) fn attach(
             materials: &model.display_jt.material_attributes,
             compressed_elements: model.display_jt.graph.compressed_elements(),
         },
+        losses,
     )?;
     for (tessellation, source_offset) in display_jt_tessellations {
         annotations.note(

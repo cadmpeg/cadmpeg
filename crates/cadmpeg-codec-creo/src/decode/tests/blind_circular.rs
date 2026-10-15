@@ -32,16 +32,6 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
-fn service_round_support_radius(
-    scan: &crate::container::ContainerScan<'_>,
-    ir: &CadIr,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-    feature_id: u32,
-) -> Option<f64> {
-    { round_support_radius(scan, ir, source_carriers, feature_id) }
-        .expect("service round support admitted")
-}
-
 #[test]
 fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     let entry =
@@ -966,12 +956,13 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
 
     assert_eq!(round_observed_radii(&scan, 5), [15.0, 1.0]);
     assert_eq!(
-        service_round_support_radius(
+        round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        ),
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
     assert_eq!(
@@ -1068,12 +1059,13 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         [15.0, 1.0]
     );
     assert_eq!(
-        service_round_support_radius(
+        round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        ),
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
     assert_eq!(
@@ -1174,12 +1166,13 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         [15.0, 1.0]
     );
     assert_eq!(
-        service_round_support_radius(
+        round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        ),
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
     assert_eq!(

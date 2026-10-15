@@ -385,7 +385,7 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
 }
 
 #[test]
-fn reversed_nurbs_copies_result() {
+fn reversed_line_starts_at_the_original_end_point() {
     let curve = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -407,7 +407,7 @@ fn reversed_nurbs_copies_result() {
 }
 
 #[test]
-fn quintic_jet_result() {
+fn two_sample_quintic_jet_builds_a_bspline() {
     let run = || {
         quintic_jet_bspline(
             5,

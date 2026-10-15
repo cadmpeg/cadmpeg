@@ -1476,7 +1476,7 @@ fn dependency_closure_admits_each_identity_once_through_back_references() {
 }
 
 #[test]
-fn retained_object_frames_result() {
+fn collected_object_frames_match_the_frame_scan() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let admitted = collect_object_stream_frames(&bytes);
     let scanned = object_stream_frames(&bytes).collect::<Vec<_>>();
@@ -1499,7 +1499,7 @@ fn retained_object_frames_result() {
 }
 
 #[test]
-fn object_population_selection_result() {
+fn single_closed_triangle_stream_is_selected_as_the_population() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let selected = select_object_stream_population(std::slice::from_ref(&bytes), None);
     assert!(selected.selected());
@@ -1507,14 +1507,14 @@ fn object_population_selection_result() {
 }
 
 #[test]
-fn topology_run_ranges_result() {
+fn closed_triangle_stream_is_one_topology_root_run() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let ranges = topology_root_run_ranges(&bytes);
     assert_eq!(ranges, vec![0..bytes.len()]);
 }
 
 #[test]
-fn a8_class21_jet_result() {
+fn a8_class21_pcurve_parse_admits_the_test_payload() {
     let payload = a8_class21_test_payload();
     assert!(
         crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
@@ -1524,7 +1524,7 @@ fn a8_class21_jet_result() {
 }
 
 #[test]
-fn typed_edge_record_index_result() {
+fn class_5e_record_yields_a_typed_edge_record() {
     let records = [B5Record {
         offset: 0,
         family: 0xb5,
@@ -1537,7 +1537,7 @@ fn typed_edge_record_index_result() {
 }
 
 #[test]
-fn typed_vertex_incidence_link_index_result() {
+fn class_5d_record_yields_a_typed_vertex_incidence_link() {
     let records = [B5Record {
         offset: 0,
         family: 0xb5,
@@ -1550,7 +1550,7 @@ fn typed_vertex_incidence_link_index_result() {
 }
 
 #[test]
-fn b5_record_payload_and_dependency_closure_result() {
+fn surface_reference_pulls_its_frame_into_the_dependency_closure() {
     let bytes = [0u8; 9];
     let frame = ObjectFrame {
         start: 0,

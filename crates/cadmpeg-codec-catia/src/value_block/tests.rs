@@ -230,7 +230,7 @@ fn inline_bytes_serialization_refuses_wrapped_length() {
 }
 
 #[test]
-fn value_block_payload_result() {
+fn value_block_with_trailing_bytes_parses_as_one_block() {
     let mut bytes = value_block_stream(&[0x81]);
     bytes.extend_from_slice(&[0x7c, 0x02]);
     assert_eq!(parse(&bytes).len(), 1);

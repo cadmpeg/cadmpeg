@@ -605,7 +605,7 @@ pub(crate) fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
 /// be shortened to fit it: [`SourceExtent::within`] refuses to build one, and
 /// the type has no other constructor from parsed values. The complete image is
 /// always its own extent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct SourceExtent(Range<usize>);
 
 impl SourceExtent {
@@ -1254,7 +1254,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_record_inventory_result() {
+    fn single_frame_source_inventories_one_record_of_its_class() {
         let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
         let records = super::consolidated_records_in_sources(
             &bytes,
@@ -1266,7 +1266,7 @@ mod tests {
     }
 
     #[test]
-    fn pcurve_late_nonfinite_scalar_result() {
+    fn pcurve_with_a_nan_in_its_last_site_is_dropped() {
         let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let records = consolidated_records(&bytes);
         let record = &records[0];
@@ -1281,7 +1281,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_pcurve_sites_tail_and_outer_collection_result() {
+    fn a5_pcurve_reads_two_sites_and_a_one_byte_tail() {
         let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let records = consolidated_records(&bytes);
         let pcurves = super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A);
@@ -1291,7 +1291,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_pcurve_native_lanes_result() {
+    fn a5_pcurve_exposes_two_values_per_native_lane() {
         let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let records = consolidated_records(&bytes);
         let pcurves = super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A);

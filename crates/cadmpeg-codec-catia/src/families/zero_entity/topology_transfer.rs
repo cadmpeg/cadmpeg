@@ -25,9 +25,7 @@ use crate::families::FamilyEntityAdmission;
 use crate::nurbs::canonical_model_curve_range;
 
 use super::records::{ZeroEntityLoopClass, ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
-use super::topology::{
-    endpoint_locus_candidates_with_budget, zero_entity_endpoint_pair_candidates_with_budget,
-};
+use super::topology::{endpoint_locus_candidates, zero_entity_endpoint_pair_candidates};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const MODEL_POINT_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
@@ -385,7 +383,7 @@ pub(super) fn transfer_closed_face_topology(
             return None;
         }
 
-        let edge_candidates = match zero_entity_endpoint_pair_candidates_with_budget(
+        let edge_candidates = match zero_entity_endpoint_pair_candidates(
             admission.context(),
             support_runs,
             topology_budget,
@@ -413,15 +411,13 @@ pub(super) fn transfer_closed_face_topology(
             return None;
         }
 
-        let endpoint_loci = match endpoint_locus_candidates_with_budget(
-            admission.context(),
-            &edge_candidates,
-            topology_budget,
-        ) {
-            Ok(Some(candidates)) => candidates,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let endpoint_loci =
+            match endpoint_locus_candidates(admission.context(), &edge_candidates, topology_budget)
+            {
+                Ok(Some(candidates)) => candidates,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         let mut vertex_for_endpoint = HashMap::<(usize, usize), usize>::new();
         for (vertex_index, locus) in endpoint_loci.iter().enumerate() {
             for &(edge_index, endpoint_index) in &locus.incident_endpoint_pair_endpoints {
@@ -1482,7 +1478,7 @@ mod tests {
     }
 
     #[test]
-    fn closed_topology_face_ids_result() {
+    fn face_without_support_curve_ids_transfers_no_topology() {
         use cadmpeg_core::decode::DecodeArena;
         use cadmpeg_core::decode::DecodeContext;
         use cadmpeg_core::decode::DecodePolicy;
@@ -1536,7 +1532,7 @@ mod tests {
     }
 
     #[test]
-    fn closed_topology_face_identity_result() {
+    fn missing_support_curve_ids_leave_the_face_untransferred() {
         use cadmpeg_core::decode::DecodeContext;
         let points = [
             Point3::new(0.0, 0.0, 0.0),

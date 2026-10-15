@@ -13,8 +13,6 @@ use crate::geometry::nurbs::NurbsError;
 /// A condition that scaling checked sketch geometry can break.
 #[derive(Debug)]
 pub enum SketchLengthScaleError {
-    /// Storage or work exceeded its operation limit.
-    Resource(cadmpeg_core::decode::ResourceLimit),
     /// A source length product overflowed before geometry admission.
     LengthOverflow,
     /// A changed coordinate, positive length, or bound failed its field contract.
@@ -23,15 +21,6 @@ pub enum SketchLengthScaleError {
     CurveControlPoints(NurbsError),
     /// A spatial surface control point failed admission.
     SurfaceControlPoints(NurbsError),
-}
-
-impl From<cadmpeg_core::CodecError> for SketchLengthScaleError {
-    fn from(error: cadmpeg_core::CodecError) -> Self {
-        match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => Self::Resource(limit),
-            error => Self::CurveControlPoints(NurbsError::Structure(error.to_string())),
-        }
-    }
 }
 
 /// A condition that scaling a stored sketch constraint distance can break.

@@ -48,7 +48,7 @@ fn b5_topology_entity_limit_refuses_before_first_model_append() {
 }
 
 #[test]
-fn b5_emit_points_result() {
+fn b5_closed_triangle_emits_its_vertex_points() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
@@ -84,7 +84,7 @@ fn b5_emit_points_result() {
 }
 
 #[test]
-fn b5_pcurve_occurrence_groups_result() {
+fn b5_closed_triangle_emits_its_pcurves() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
@@ -119,7 +119,7 @@ fn b5_pcurve_occurrence_groups_result() {
 }
 
 #[test]
-fn b5_surface_id_map_result() {
+fn b5_closed_triangle_emits_its_surfaces() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
@@ -157,7 +157,7 @@ fn b5_surface_id_map_result() {
 }
 
 #[test]
-fn b5_edge_id_map_result() {
+fn b5_triangle_edges_emit_without_exact_support_plans() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
@@ -201,7 +201,7 @@ fn b5_edge_id_map_result() {
 }
 
 #[test]
-fn b5_region_id_map_result() {
+fn b5_closed_triangle_transfers_into_an_empty_model() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
@@ -227,7 +227,7 @@ fn b5_region_id_map_result() {
 }
 
 #[test]
-fn b5_ownership_result() {
+fn b5_closed_triangle_has_a_face_ownership_plan() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
@@ -242,7 +242,7 @@ fn b5_ownership_result() {
 }
 
 #[test]
-fn b5_loop_orientation_result() {
+fn b5_closed_triangle_loops_orient_from_their_edge_senses() {
     use std::collections::BTreeMap;
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let graph = crate::test_support::with_service_context(|ctx| {

@@ -990,7 +990,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
 }
 
 #[test]
-fn suffix_schema_selection_result() {
+fn suffix_schema_selection_matches_the_decoded_record() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
         0x81, 0x92, 0x82, 0x32, 4, 0, 0, 0, 0x81, 0x81, 0x49,
     ]));
@@ -1001,7 +1001,7 @@ fn suffix_schema_selection_result() {
 }
 
 #[test]
-fn nested_suffix_schema_resolution_result() {
+fn nested_suffix_schema_selection_matches_the_decoded_record() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
         0x84, 0x93, 0x82, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0x81, 0x49,
     ]));

@@ -1415,6 +1415,7 @@ fn resolved_feature_payload(
         &lane.id,
         &lane.classes,
         &expected_lane.scalars,
+        &[],
     )?;
     expected_lane.references = crate::resolved_features::markers::reference_cells(
         &expected_lane.scalars,

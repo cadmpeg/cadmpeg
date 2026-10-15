@@ -137,7 +137,7 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
             .collect();
         directory.insert(sequence, &target);
         let record = integer_parameter_record(sequence, values);
-        let candidates = { structural_pointer_group_candidates(&record) };
+        let candidates = structural_pointer_group_candidates(&record);
         assert!(
             candidates.iter().any(|candidate| {
                 candidate.token_start < expected_end && {
@@ -148,13 +148,11 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
             "Type {entity_type} Form {form}"
         );
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(
                 &record,

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use super::{
     append_regeneration_edge, commit_regeneration_edges, compose_feature_id, emit_model_features,
-    merge_feature_source_properties, ordered_row_feature_ids, refresh_feature_outputs,
+    ordered_row_feature_ids, refresh_feature_outputs,
 };
 
 #[test]
@@ -73,29 +73,6 @@ fn feature_output_refresh_preserves_feature_order() {
         .expect("output update");
     assert_eq!(ir.model.features[0].ordinal, 3);
     assert!(ir.model.features[0].evaluation.outputs().is_empty());
-}
-
-fn property_key(value: &str) -> cadmpeg_core::text::NonBlankString {
-    cadmpeg_core::text::NonBlankString::new(value).expect("fixture property key is nonblank")
-}
-
-#[test]
-fn existing_feature_property_merge_keeps_order_and_replacement() {
-    let mut target = BTreeMap::from([(property_key("recipe"), "Native".to_string())]);
-    let incoming = BTreeMap::from([
-        (property_key("featdefs_schema_state"), "absent".to_string()),
-        (property_key("recipe"), "Extrude".to_string()),
-    ]);
-    merge_feature_source_properties(&mut target, incoming);
-    assert_eq!(target["recipe"], "Extrude");
-    assert_eq!(target["featdefs_schema_state"], "absent");
-    assert_eq!(
-        target
-            .keys()
-            .next()
-            .map(cadmpeg_core::text::NonBlankString::as_str),
-        Some("featdefs_schema_state")
-    );
 }
 
 #[test]

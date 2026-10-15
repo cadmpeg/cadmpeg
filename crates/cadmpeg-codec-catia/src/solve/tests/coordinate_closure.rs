@@ -1421,7 +1421,7 @@ fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
 mod endpoint_ports;
 
 #[test]
-fn layered_endpoint_relations_and_support_maps_result() {
+fn endpoint_cycle_support_keeps_only_the_closing_pair() {
     let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]], vec![[0, 3]]];
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..3)
@@ -1450,7 +1450,7 @@ fn layered_endpoint_relations_and_support_maps_result() {
 }
 
 #[test]
-fn mesh_assignment_endpoint_cycle_support_result() {
+fn endpoint_cycle_support_is_empty_for_one_open_edge() {
     let candidates = [vec![[0, 1]]];
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
@@ -1476,7 +1476,7 @@ fn mesh_assignment_endpoint_cycle_support_result() {
 }
 
 #[test]
-fn implicit_ordered_face_pruning_result() {
+fn ordered_face_pruning_uses_implicit_coordinate_candidates() {
     catia_test_context!(service_ctx);
     let choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
@@ -1515,7 +1515,7 @@ fn implicit_ordered_face_pruning_result() {
 }
 
 #[test]
-fn mesh_endpoint_pair_support_result() {
+fn mesh_endpoint_pair_support_accepts_consistent_alternate_faces() {
     let assignment = |edges: &[usize]| MeshFaceBoundaryAssignment {
         boundaries: vec![edges
             .iter()

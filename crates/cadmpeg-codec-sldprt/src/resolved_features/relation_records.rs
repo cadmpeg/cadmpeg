@@ -1552,7 +1552,6 @@ mod relation_records_tests {
             name: "dimension".into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role,
-
             operands,
         }
     }
@@ -1573,7 +1572,6 @@ mod relation_records_tests {
             name: name.into(),
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role,
-
             operands: vec![FeatureInputOperand {
                 offset: offset + 1,
                 reference_ref: format!("reference-{offset}"),

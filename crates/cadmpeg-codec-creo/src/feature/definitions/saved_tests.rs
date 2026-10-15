@@ -197,18 +197,9 @@ fn saved_section_collects_spline_entity() {
         1
     );
 }
-
-fn operation_states(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperationState> {
-    crate::feature::operations::operation_states(payload)
-}
-
-fn operations(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperation> {
-    crate::feature::operations::operations(payload)
-}
-
-fn field_value(payload: &[u8]) -> crate::feature::rows::FeatureFieldValue {
-    crate::feature::rows::field_value(payload)
-}
+use crate::feature::operations::operation_states;
+use crate::feature::operations::operations;
+use crate::feature::rows::field_value;
 
 #[test]
 fn saved_line_accepts_bare_entity_reference_before_coordinates() {

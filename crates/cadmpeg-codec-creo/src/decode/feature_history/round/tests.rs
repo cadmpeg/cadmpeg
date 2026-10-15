@@ -4,37 +4,6 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::PositiveLength;
 // SPDX-License-Identifier: Apache-2.0
 
-fn service_round_support_radius(
-    scan: &crate::container::ContainerScan<'_>,
-    ir: &cadmpeg_ir::document::CadIr,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-    feature_id: u32,
-) -> Option<f64> {
-    { super::round_support_radius(scan, ir, source_carriers, feature_id) }
-        .expect("service round support admitted")
-}
-
-fn service_round_support_envelope_cylinder(
-    scan: &crate::container::ContainerScan<'_>,
-    ir: &cadmpeg_ir::document::CadIr,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-    feature_id: u32,
-    envelope: crate::surface::Type24RoundEnvelope,
-) -> Option<crate::surface::PositionalCylinderFrame> {
-    { super::round_support_envelope_cylinder(scan, ir, source_carriers, feature_id, envelope) }
-        .expect("service round envelope admitted")
-}
-
-fn chamfer_distance_with_service_ctx(
-    scan: &crate::container::ContainerScan<'_>,
-    ir: &cadmpeg_ir::document::CadIr,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-    feature_id: u32,
-) -> Option<f64> {
-    { super::chamfer_constant_distance(scan, ir, source_carriers, feature_id) }
-        .expect("service profile admits chamfer witnesses")
-}
-
 fn round_sample_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
@@ -242,12 +211,13 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         });
 
     assert_eq!(
-        chamfer_distance_with_service_ctx(
+        super::chamfer_constant_distance(
             &scan,
             &cadmpeg_ir::document::CadIr::empty(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             4
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         None
     );
 }
@@ -324,23 +294,25 @@ fn chamfer_uses_transferred_model_plane_carrier() {
     });
 
     assert_eq!(
-        chamfer_distance_with_service_ctx(
+        super::chamfer_constant_distance(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         Some(0.5)
     );
 
     let transferred_plane_row = scan.surfaces.rows.pop().expect("support plane row");
     assert_eq!(
-        chamfer_distance_with_service_ctx(
+        super::chamfer_constant_distance(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         Some(0.5)
     );
     scan.surfaces.rows.push(transferred_plane_row);
@@ -353,12 +325,13 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         offset: 31,
     });
     assert_eq!(
-        chamfer_distance_with_service_ctx(
+        super::chamfer_constant_distance(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         Some(0.5)
     );
 
@@ -379,12 +352,13 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         _ => panic!("transferred plane geometry"),
     }
     assert_eq!(
-        chamfer_distance_with_service_ctx(
+        super::chamfer_constant_distance(
             &scan,
             &conflicting_ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         None
     );
 }
@@ -518,24 +492,26 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
     ]);
 
     assert_eq!(
-        chamfer_distance_with_service_ctx(
+        super::chamfer_constant_distance(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         Some(0.5)
     );
 
     let duplicate = scan.surfaces.parameters[0].clone();
     scan.surfaces.parameters.push(duplicate);
     assert_eq!(
-        chamfer_distance_with_service_ctx(
+        super::chamfer_constant_distance(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             914
-        ),
+        )
+        .expect("chamfer witnesses admitted"),
         None
     );
 }
@@ -583,12 +559,13 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     ]);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        service_round_support_radius(
+        super::round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        ),
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
 
@@ -608,12 +585,13 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         });
     }
     assert_eq!(
-        service_round_support_radius(
+        super::round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        ),
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
 
@@ -633,12 +611,13 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         _ => panic!("transferred support plane"),
     }
     assert_eq!(
-        service_round_support_radius(
+        super::round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        ),
+        )
+        .expect("round support admitted"),
         None
     );
 
@@ -659,15 +638,16 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     }
     scan.features.affected_ids[0].ids.insert(3, 99);
     assert_eq!(
-        service_round_support_radius(
+        super::round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        ),
+        )
+        .expect("round support admitted"),
         None
     );
-    let frame = service_round_support_envelope_cylinder(
+    let frame = super::round_support_envelope_cylinder(
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -677,13 +657,14 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             extent_endpoints: [[-9.0, 0.0, -3.0], [-8.0, 2.0, -2.5]],
         },
     )
+    .expect("round envelope admitted")
     .expect("resolved support and envelope cylinder");
     assert_eq!(frame.frame().origin(), [-8.5, 0.0, -3.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius().get(), 0.5);
     assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
-    assert!(service_round_support_envelope_cylinder(
+    assert!(super::round_support_envelope_cylinder(
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -693,6 +674,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             extent_endpoints: [[-9.0, 0.0, -3.0], [-7.0, 2.0, -2.5]],
         },
     )
+    .expect("round envelope admitted")
     .is_none());
 }
 
@@ -740,46 +722,50 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
     let ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        service_round_support_radius(
+        super::round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        ),
+        )
+        .expect("round support admitted"),
         Some(0.5)
     );
 
     scan.planes.positional_frames[2].normal = cadmpeg_ir::units::UnitVector3::Y_AXIS;
     scan.planes.positional_frames[3].normal = cadmpeg_ir::units::UnitVector3::Y_AXIS;
     assert_eq!(
-        service_round_support_radius(
+        super::round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        ),
+        )
+        .expect("round support admitted"),
         None
     );
 
     scan.features.affected_ids[0].ids[0] = 3;
     assert_eq!(
-        service_round_support_radius(
+        super::round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        ),
+        )
+        .expect("round support admitted"),
         None
     );
 
     scan.features.affected_ids[0].ids = vec![1, 1, 3, 4];
     assert_eq!(
-        service_round_support_radius(
+        super::round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        ),
+        )
+        .expect("round support admitted"),
         None
     );
 }

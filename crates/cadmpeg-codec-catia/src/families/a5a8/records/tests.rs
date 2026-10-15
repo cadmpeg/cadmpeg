@@ -650,7 +650,7 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
 }
 
 #[test]
-fn a8_pcurve_bspline_result() {
+fn a8_pcurve_jet_exposes_a_bspline() {
     let [jet] = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream())
         .try_into()
         .expect("one A8 pcurve jet");
@@ -1306,7 +1306,7 @@ mod decode_transfer;
 mod curve_and_guide_records;
 
 #[test]
-fn a8_external_grid_range_result() {
+fn a8_external_grid_range_lies_inside_the_stream() {
     let bytes = a8_elided_surface_stream();
     let ranges = crate::families::a5a8::records::a8_external_grid_ranges(&bytes);
     assert_eq!(ranges.len(), 1);
@@ -1315,7 +1315,7 @@ fn a8_external_grid_range_result() {
 }
 
 #[test]
-fn a8_external_grid_poles_result() {
+fn a8_external_grid_surface_reads_nine_poles() {
     let bytes = a8_elided_surface_stream();
     let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
         .collect::<Vec<_>>()
@@ -1332,7 +1332,7 @@ fn a8_external_grid_poles_result() {
 }
 
 #[test]
-fn a8_inline_poles_result() {
+fn a8_inline_pole_stream_decodes_one_surface() {
     let bytes = a8_surface_stream();
     let surfaces =
         crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
@@ -1341,7 +1341,7 @@ fn a8_inline_poles_result() {
 }
 
 #[test]
-fn a8_header_lanes_result() {
+fn a8_surface_header_reads_the_frame_object_id() {
     let bytes = a8_surface_stream();
     let object_id = cadmpeg_core::decode::View::u32_le_at(&bytes, 7).expect("fixture object id");
     let header = crate::families::a5a8::records::a8_surface_header_from_object_frame(

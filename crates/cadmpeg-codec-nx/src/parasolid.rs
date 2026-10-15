@@ -40,6 +40,7 @@ use crate::container::Container;
 use crate::framing::node_kind::NodeKind;
 use crate::framing::read_and_advance as read_xmt;
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
+use crate::grouping::group_pairs;
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -293,17 +294,13 @@ fn referenced_value_offsets(bytes: &[u8], multiplicity: ValueMultiplicity) -> Ve
     offsets
 }
 
-fn group_by_xmt<T>(records: Vec<T>, xmt: impl Fn(&T) -> u32) -> BTreeMap<u32, Vec<T>> {
-    let mut groups = BTreeMap::<u32, Vec<T>>::new();
-    for record in records {
-        groups.entry(xmt(&record)).or_default().push(record);
-    }
-    groups
-}
-
 fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTreeSet<u32> {
     let mut referenced = BTreeSet::new();
-    let entities = group_by_xmt(entity_51_records(bytes), |record| u32::from(record.xmt));
+    let entities = group_pairs(
+        entity_51_records(bytes)
+            .into_iter()
+            .map(|record| (u32::from(record.xmt), record)),
+    );
     for records in entities.into_values() {
         if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
             continue;
@@ -312,12 +309,19 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
             referenced.extend(record.trailing_references.into_values());
         }
     }
-    let field_names = group_by_xmt(field_names_records(bytes), |record| u32::from(record.xmt));
+    let field_names = group_pairs(
+        field_names_records(bytes)
+            .into_iter()
+            .map(|record| (u32::from(record.xmt), record)),
+    );
     // A bounded definition scan references no field-name lists; the native
     // attribute-definition extraction reports the skip for the same stream.
-    let definitions = group_by_xmt(attribute_definitions(bytes).unwrap_or_default(), |record| {
-        u32::from(record.xmt)
-    });
+    let definitions = group_pairs(
+        attribute_definitions(bytes)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|record| (u32::from(record.xmt), record)),
+    );
     let mut referenced_lists = BTreeSet::new();
     for records in definitions.into_values() {
         if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {

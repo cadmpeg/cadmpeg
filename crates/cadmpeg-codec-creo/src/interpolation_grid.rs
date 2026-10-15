@@ -151,48 +151,8 @@ impl InterpolationGrid {
 mod tests {
     use super::InterpolationGrid;
 
-    fn try_new(
-        points: Vec<[f64; 3]>,
-        u_parameters: Vec<f64>,
-        v_parameters: Vec<f64>,
-        u_derivatives: Vec<[f64; 3]>,
-        v_derivatives: Vec<[f64; 3]>,
-        mixed_derivatives: [[f64; 3]; 4],
-    ) -> Option<InterpolationGrid> {
-        {
-            InterpolationGrid::try_new(
-                points,
-                u_parameters,
-                v_parameters,
-                u_derivatives,
-                v_derivatives,
-                mixed_derivatives,
-            )
-        }
-        .expect("grid work admission")
-    }
-
-    fn from_full_tangent_grid(
-        points: Vec<[f64; 3]>,
-        u_parameters: Vec<f64>,
-        v_parameters: Vec<f64>,
-        u_tangents: &[[f64; 3]],
-        v_tangents: &[[f64; 3]],
-        mixed_derivatives: &[[f64; 3]],
-    ) -> Option<InterpolationGrid> {
-        InterpolationGrid::from_full_tangent_grid(
-            points,
-            u_parameters,
-            v_parameters,
-            u_tangents,
-            v_tangents,
-            mixed_derivatives,
-        )
-        .expect("service admits grid derivatives")
-    }
-
     fn valid_grid() -> InterpolationGrid {
-        try_new(
+        InterpolationGrid::try_new(
             vec![[0.0; 3]; 4],
             vec![0.0, 1.0],
             vec![0.0, 1.0],
@@ -200,11 +160,12 @@ mod tests {
             vec![[0.0; 3]; 4],
             [[0.0; 3]; 4],
         )
+        .expect("grid fields admitted")
         .expect("valid grid fixture")
     }
 
     fn readmit(grid: InterpolationGrid) -> Option<InterpolationGrid> {
-        try_new(
+        InterpolationGrid::try_new(
             grid.points,
             grid.u_parameters,
             grid.v_parameters,
@@ -212,6 +173,7 @@ mod tests {
             grid.v_derivatives,
             grid.mixed_derivatives,
         )
+        .expect("grid fields admitted")
     }
 
     #[test]
@@ -281,7 +243,7 @@ mod tests {
             ];
             grids[missing].pop();
             let [points, u_tangents, v_tangents, mixed] = grids;
-            assert!(from_full_tangent_grid(
+            assert!(InterpolationGrid::from_full_tangent_grid(
                 points,
                 u.clone(),
                 v.clone(),
@@ -289,9 +251,10 @@ mod tests {
                 &v_tangents,
                 &mixed
             )
+            .expect("grid derivatives admitted")
             .is_none());
         }
-        assert!(from_full_tangent_grid(
+        assert!(InterpolationGrid::from_full_tangent_grid(
             points.clone(),
             vec![0.0, 1.0, 0.5],
             v,
@@ -299,6 +262,7 @@ mod tests {
             &points,
             &points
         )
+        .expect("grid derivatives admitted")
         .is_none());
     }
 
@@ -309,7 +273,7 @@ mod tests {
         let v = vec![0.0, 1.0];
         let u_derivatives = vec![[0.0; 3]; 4];
         let v_derivatives = vec![[0.0; 3]; 6];
-        assert!(try_new(
+        assert!(InterpolationGrid::try_new(
             points.clone(),
             u.clone(),
             v.clone(),
@@ -317,39 +281,43 @@ mod tests {
             v_derivatives.clone(),
             [[0.0; 3]; 4],
         )
+        .expect("grid fields admitted")
         .is_some());
         for grid in [
-            try_new(
+            InterpolationGrid::try_new(
                 vec![[0.0; 3]; 5],
                 u.clone(),
                 v.clone(),
                 u_derivatives.clone(),
                 v_derivatives.clone(),
                 [[0.0; 3]; 4],
-            ),
-            try_new(
+            )
+            .expect("grid fields admitted"),
+            InterpolationGrid::try_new(
                 points.clone(),
                 u.clone(),
                 v.clone(),
                 vec![[0.0; 3]; 3],
                 v_derivatives,
                 [[0.0; 3]; 4],
-            ),
-            try_new(
+            )
+            .expect("grid fields admitted"),
+            InterpolationGrid::try_new(
                 points,
                 u,
                 v,
                 u_derivatives,
                 vec![[0.0; 3]; 5],
                 [[0.0; 3]; 4],
-            ),
+            )
+            .expect("grid fields admitted"),
         ] {
             assert!(grid.is_none());
         }
     }
     #[test]
     fn full_tangent_grid_accepts_zero_derivatives() {
-        assert!(from_full_tangent_grid(
+        assert!(InterpolationGrid::from_full_tangent_grid(
             vec![[0.0; 3]; 4],
             vec![0.0, 1.0],
             vec![0.0, 1.0],
@@ -357,6 +325,7 @@ mod tests {
             &[[0.0; 3]; 4],
             &[[0.0; 3]; 4],
         )
+        .expect("grid derivatives admitted")
         .is_some());
     }
 }

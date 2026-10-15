@@ -298,13 +298,11 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         comment: Vec::new(),
     };
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &BTreeMap::new(),
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &BTreeMap::new(),
+        crate::global::GlobalTable::V5Later,
+    );
     assert!(analysis.groups().is_none());
 }
 
@@ -349,13 +347,11 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
         comment: Vec::new(),
     };
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &BTreeMap::new(),
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &BTreeMap::new(),
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &BTreeMap::new())),
         1
@@ -390,13 +386,11 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
         comment: Vec::new(),
     };
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1

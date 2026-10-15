@@ -3,7 +3,6 @@
 
 use std::io::Write;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
@@ -34,11 +33,8 @@ pub fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
             "NX seed record needs a two-byte header".into(),
         ));
     }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    let mut r = ctx.alloc_filled(len, 0_u8, "NX seed record")?;
-    r[0] = 0x00;
-    r[1] = tag;
+    let mut r = vec![0x00, tag];
+    r.extend((2..len).map(|_| 0_u8));
     Ok(r)
 }
 
