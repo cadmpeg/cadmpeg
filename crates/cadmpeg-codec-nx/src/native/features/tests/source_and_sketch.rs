@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod data_block_object_frames;
-mod offset_block_view;
 
 use crate::native::features::canonical_feature_history_links;
 use crate::native::features::construction_records::data_block_object_frame_id;
@@ -26,7 +25,6 @@ use crate::native::features::construction_records::unique_offset_data_store;
 use crate::native::features::feature_sketch_construction_inputs;
 use crate::native::features::feature_sketch_datum_csys_dependencies;
 use crate::native::features::feature_sketch_records;
-use crate::native::features::offset_data_block_bytes_for_section;
 use crate::native::features::parse_sketch_point_name;
 use crate::native::features::FeatureBodyReference;
 use crate::native::features::FeatureBooleanKind;
@@ -422,51 +420,6 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         ))
         .unwrap()
         .is_empty()
-    );
-}
-
-#[test]
-fn nx_offset_store_block_bytes_follow_catalog_identity() {
-    let control = crate::om::EntityRecord {
-        offset: 5,
-        bytes: &[0xaa],
-    };
-    let first = crate::om::EntityRecord {
-        offset: 6,
-        bytes: &[0xbb],
-    };
-    let second = crate::om::EntityRecord {
-        offset: 7,
-        bytes: &[0xcc],
-    };
-    let controlled = crate::test_support::with_decode_context(|ctx| {
-        let mut reservation = ctx
-            .reserve_scoped(0, "NX offset block view storage")
-            .unwrap();
-        let mut blocks = std::collections::BTreeMap::new();
-        offset_data_block_bytes_for_section(
-            ctx,
-            &mut reservation,
-            &mut blocks,
-            3,
-            100,
-            &control,
-            &[first, second],
-        )
-        .unwrap();
-        blocks
-    });
-    assert_eq!(
-        controlled["nx:om-data-blocks-3:block#0"],
-        (&[0xaa][..], 105)
-    );
-    assert_eq!(
-        controlled["nx:om-data-blocks-3:block#1"],
-        (&[0xbb][..], 106)
-    );
-    assert_eq!(
-        controlled["nx:om-data-blocks-3:block#2"],
-        (&[0xcc][..], 107)
     );
 }
 

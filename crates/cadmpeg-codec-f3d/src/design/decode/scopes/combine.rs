@@ -23,6 +23,16 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::BooleanKind;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 pub(super) fn exact_combine_operation(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -45,7 +55,7 @@ pub(super) fn exact_combine_operation(
     let extended_reference = scope.class_tag.as_str() == "329"
         && scope.paired_class_tag.as_str() == "261"
         && scope.frame_length() == 363;
-    let Some(prefix) = combine_prefix(bytes, start, compact, extended_reference) else {
+    let Some(prefix) = combine_prefix(ctx, bytes, start, compact, extended_reference)? else {
         return Ok(None);
     };
     let mut target = None;
@@ -143,11 +153,12 @@ struct CombinePrefix {
 }
 
 fn combine_prefix(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     compact: bool,
     extended_reference: bool,
-) -> Option<CombinePrefix> {
+) -> Result<Option<CombinePrefix>, CodecError> {
     let (form, operation_offset, keep_tools_offset) = if compact {
         if !zeros_at::<10>(bytes, start + combine_compact::ZERO_RUN_10)
             || !zeros_at::<3>(bytes, start + combine_compact::ZERO_RUN_3)
@@ -160,7 +171,7 @@ fn combine_prefix(
                 start + combine_compact::REFERENCE_TAIL,
             )
         {
-            return None;
+            return Ok(None);
         }
         (
             DesignCombineForm::Compact,
@@ -168,14 +179,14 @@ fn combine_prefix(
             start + combine_compact::KEEP_TOOLS,
         )
     } else if extended_reference {
-        let mut reference_at = start.checked_add(combine_extended::REFERENCE_MARKER)?;
-        let reference = take_reference(bytes, &mut reference_at)?;
+        let mut reference_at = try_some!(start.checked_add(combine_extended::REFERENCE_MARKER));
+        let reference = try_some!(take_reference(ctx, bytes, &mut reference_at)?);
         if !zeros_at::<18>(bytes, start + combine_extended::ZERO_RUN_18)
             || bytes.get(start + combine_extended::FORM_MARKER) != Some(&1)
             || reference.local().is_none_or(|(target, _)| target == 0)
-            || reference_at != start.checked_add(combine_extended::LEN)?
+            || reference_at != try_some!(start.checked_add(combine_extended::LEN))
         {
-            return None;
+            return Ok(None);
         }
         (
             DesignCombineForm::ExtendedReference,
@@ -190,7 +201,7 @@ fn combine_prefix(
                 start + combine_standard::ZERO_RUN_7,
             )
         {
-            return None;
+            return Ok(None);
         }
         (
             DesignCombineForm::Standard,
@@ -198,24 +209,24 @@ fn combine_prefix(
             start + combine_standard::KEEP_TOOLS,
         )
     };
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
+    let operation = match try_some!(View::u32_le_at(bytes, operation_offset)) {
         1 => BooleanKind::Join,
         2 => BooleanKind::Cut,
         3 => BooleanKind::Intersect,
-        _ => return None,
+        _ => return Ok(None),
     };
-    let keep_tools = match bytes.get(keep_tools_offset)? {
+    let keep_tools = match try_some!(bytes.get(keep_tools_offset)) {
         0 => false,
         1 => true,
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(CombinePrefix {
+    Ok(Some(CombinePrefix {
         form,
         operation,
-        operation_offset: u64::try_from(operation_offset).ok()?,
+        operation_offset: try_some!(u64::try_from(operation_offset).ok()),
         keep_tools,
-        keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
-    })
+        keep_tools_offset: try_some!(u64::try_from(keep_tools_offset).ok()),
+    }))
 }
 
 /// The role of the selection named by one operation/selection reference
@@ -378,7 +389,7 @@ fn exact_combine_external_body_identity(
     scope_record_index: u32,
     record_index: u32,
 ) -> Result<Option<DesignCombineExternalBodyIdentity>, CodecError> {
-    let Some(selector_asset_at) = external_selector_prefix(bytes, start, record_index) else {
+    let Some(selector_asset_at) = external_selector_prefix(ctx, bytes, start, record_index)? else {
         return Ok(None);
     };
     let Some((selector_asset_id, selector_context_at)) = lp_utf16_bounded_charged(
@@ -408,14 +419,21 @@ fn exact_combine_external_body_identity(
         return Ok(None);
     };
     let Some((occurrence_reference, occurrence_reference_at, mut cursor)) =
-        external_occurrence(bytes, after_selector_context_id)
+        external_occurrence(ctx, bytes, after_selector_context_id)?
     else {
         return Ok(None);
     };
     let Some(external) = take_external_reference_identity(ctx, bytes, &mut cursor)? else {
         return Ok(None);
     };
-    let Some(tail) = external_body_tail(bytes, cursor, paired_at, scope_record_index, record_index)
+    let Some(tail) = external_body_tail(
+        ctx,
+        bytes,
+        cursor,
+        paired_at,
+        scope_record_index,
+        record_index,
+    )?
     else {
         return Ok(None);
     };
@@ -463,41 +481,50 @@ fn exact_combine_external_body_identity(
 /// The selector asset-ID offset after the fixed selector prefix of a Combine
 /// tool selection frame at `start`, whose nested reference names the record
 /// three past `record_index`.
-fn external_selector_prefix(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
+fn external_selector_prefix(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+) -> Result<Option<usize>, CodecError> {
     if !zeros_at::<14>(bytes, start + combine_external::ZERO_RUN_14) {
-        return None;
+        return Ok(None);
     }
-    let mut cursor = start.checked_add(combine_external::NESTED_REFERENCE_MARKER)?;
-    let nested = take_reference(bytes, &mut cursor)?;
-    if nested.local()?.0 != u64::from(record_index.checked_add(3)?)
-        || View::u32_le_at(bytes, cursor)? != 1
+    let mut cursor = try_some!(start.checked_add(combine_external::NESTED_REFERENCE_MARKER));
+    let nested = try_some!(take_reference(ctx, bytes, &mut cursor)?);
+    if try_some!(nested.local()).0 != u64::from(try_some!(record_index.checked_add(3)))
+        || try_some!(View::u32_le_at(bytes, cursor)) != 1
     {
-        return None;
+        return Ok(None);
     }
-    cursor.checked_add(4)
+    Ok(cursor.checked_add(4))
 }
 
 /// The nonzero occurrence reference after the selector GUIDs at `at`, its
 /// offset, and the offset of the external reference that follows it.
-fn external_occurrence(bytes: &[u8], at: usize) -> Option<(u64, usize, usize)> {
-    if View::u32_le_at(bytes, at)? != 2
-        || View::u32_le_at(bytes, at.checked_add(4)?)? != 0
-        || View::u32_le_at(bytes, at.checked_add(8)?)? != 1
+fn external_occurrence(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+) -> Result<Option<(u64, usize, usize)>, CodecError> {
+    if try_some!(View::u32_le_at(bytes, at)) != 2
+        || try_some!(View::u32_le_at(bytes, try_some!(at.checked_add(4)))) != 0
+        || try_some!(View::u32_le_at(bytes, try_some!(at.checked_add(8)))) != 1
     {
-        return None;
+        return Ok(None);
     }
-    let mut cursor = at.checked_add(12)?;
-    let occurrence_reference_at = cursor.checked_add(1)?;
-    let occurrence = take_reference(bytes, &mut cursor)?;
-    let (occurrence_reference, _) = occurrence.local()?;
-    if occurrence_reference == 0 || View::u32_le_at(bytes, cursor)? != 1 {
-        return None;
+    let mut cursor = try_some!(at.checked_add(12));
+    let occurrence_reference_at = try_some!(cursor.checked_add(1));
+    let occurrence = try_some!(take_reference(ctx, bytes, &mut cursor)?);
+    let (occurrence_reference, _) = try_some!(occurrence.local());
+    if occurrence_reference == 0 || try_some!(View::u32_le_at(bytes, cursor)) != 1 {
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         occurrence_reference,
         occurrence_reference_at,
-        cursor.checked_add(4)?,
-    ))
+        try_some!(cursor.checked_add(4)),
+    )))
 }
 
 struct ExternalBodyTail {
@@ -508,42 +535,51 @@ struct ExternalBodyTail {
 /// The two tail values after the external reference at `at` and the closing
 /// local references, which end exactly at `paired_at`.
 fn external_body_tail(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     paired_at: usize,
     scope_record_index: u32,
     record_index: u32,
-) -> Option<ExternalBodyTail> {
-    if View::u32_le_at(bytes, at)? != 9 || View::u16_le_at(bytes, at.checked_add(4)?)? != 2 {
-        return None;
+) -> Result<Option<ExternalBodyTail>, CodecError> {
+    if try_some!(View::u32_le_at(bytes, at)) != 9
+        || try_some!(View::u16_le_at(bytes, try_some!(at.checked_add(4)))) != 2
+    {
+        return Ok(None);
     }
-    let first_at = at.checked_add(6)?;
-    let first = View::u64_le_at(bytes, first_at)?;
-    if View::u32_le_at(bytes, first_at.checked_add(8)?)? != 48 {
-        return None;
+    let first_at = try_some!(at.checked_add(6));
+    let first = try_some!(View::u64_le_at(bytes, first_at));
+    if try_some!(View::u32_le_at(bytes, try_some!(first_at.checked_add(8)))) != 48 {
+        return Ok(None);
     }
-    let second_at = first_at.checked_add(12)?;
-    let second = View::u64_le_at(bytes, second_at)?;
-    let mut cursor = second_at.checked_add(8)?;
-    let take_local = |cursor: &mut usize, expected| {
-        let reference = take_reference(bytes, cursor)?;
-        (reference.local()?.0 == u64::from(expected)).then_some(())
+    let second_at = try_some!(first_at.checked_add(12));
+    let second = try_some!(View::u64_le_at(bytes, second_at));
+    let mut cursor = try_some!(second_at.checked_add(8));
+    let take_local = |cursor: &mut usize, expected| -> Result<Option<()>, CodecError> {
+        let reference = try_some!(take_reference(ctx, bytes, cursor)?);
+        Ok((try_some!(reference.local()).0 == u64::from(expected)).then_some(()))
     };
-    take_local(&mut cursor, record_index.checked_add(2)?)?;
+    try_some!(take_local(
+        &mut cursor,
+        try_some!(record_index.checked_add(2))
+    )?);
     if !zeros_at::<2>(bytes, cursor) {
-        return None;
+        return Ok(None);
     }
-    cursor = cursor.checked_add(2)?;
-    take_local(&mut cursor, record_index.checked_add(1)?)?;
+    cursor = try_some!(cursor.checked_add(2));
+    try_some!(take_local(
+        &mut cursor,
+        try_some!(record_index.checked_add(1))
+    )?);
     if bytes.get(cursor) != Some(&0) {
-        return None;
+        return Ok(None);
     }
-    cursor = cursor.checked_add(1)?;
-    take_local(&mut cursor, scope_record_index)?;
-    (cursor == paired_at).then_some(ExternalBodyTail {
+    cursor = try_some!(cursor.checked_add(1));
+    try_some!(take_local(&mut cursor, scope_record_index)?);
+    Ok((cursor == paired_at).then_some(ExternalBodyTail {
         values: [first, second],
         offsets: [u64_from_index(first_at), u64_from_index(second_at)],
-    })
+    }))
 }
 
 #[derive(Clone, Copy)]

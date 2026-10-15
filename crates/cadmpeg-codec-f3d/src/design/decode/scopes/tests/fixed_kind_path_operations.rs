@@ -116,10 +116,14 @@ pub(super) fn fixed_kind_path_operations(
             .map(|group| (group.role(), group.members().len()))
             .collect::<Vec<_>>()
     };
-    assert!(crate::validate::loft_operand_roles_are_valid(
-        DesignExtrudeOperation::NewBody,
-        &role_shape(&guided_role_41),
-    ));
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::validate::loft_operand_roles_are_valid(
+            decode_ctx,
+            DesignExtrudeOperation::NewBody,
+            &role_shape(&guided_role_41),
+        )
+    })
+    .unwrap());
     {
         let value = Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
@@ -147,10 +151,14 @@ pub(super) fn fixed_kind_path_operations(
             ..
         })) if sections.len() == 2
     ));
-    assert!(crate::validate::loft_operand_roles_are_valid(
-        DesignExtrudeOperation::Cut,
-        &role_shape(&cut),
-    ));
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::validate::loft_operand_roles_are_valid(
+            decode_ctx,
+            DesignExtrudeOperation::Cut,
+            &role_shape(&cut),
+        )
+    })
+    .unwrap());
     let legacy_carrier = DesignLoftLegacyBodyCarrier {
         id: "stream:legacy-loft-carrier".into(),
         scope_record_index: loft_scope.record_index,
@@ -267,10 +275,14 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap(),
         None
     );
-    assert!(!crate::validate::loft_operand_roles_are_valid(
-        DesignExtrudeOperation::NewBody,
-        &role_shape(&mixed),
-    ));
+    assert!(!crate::test_support::with_decode_context(|decode_ctx| {
+        crate::validate::loft_operand_roles_are_valid(
+            decode_ctx,
+            DesignExtrudeOperation::NewBody,
+            &role_shape(&mixed),
+        )
+    })
+    .unwrap());
     let mut point = loft_group(0, DesignOperandRole::ROLE_0X5);
     point
         .try_set_members(
@@ -312,10 +324,14 @@ pub(super) fn fixed_kind_path_operations(
             cadmpeg_ir::features::LoftSection::Profile(_),
         ]) && guides.is_empty()
     ));
-    assert!(crate::validate::loft_operand_roles_are_valid(
-        DesignExtrudeOperation::NewBody,
-        &role_shape(&[point, profile, boundary]),
-    ));
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::validate::loft_operand_roles_are_valid(
+            decode_ctx,
+            DesignExtrudeOperation::NewBody,
+            &role_shape(&[point, profile, boundary]),
+        )
+    })
+    .unwrap());
 
     let sweep_start = bytes.len();
     let mut sweep = vec![0; 499];

@@ -127,7 +127,7 @@ pub(crate) fn transfer<'ctx>(
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
-    bind_element_maps: bool,
+    element_maps: &[crate::native::element_map::ElementMapRecord],
 ) -> Result<TopologyOccurrences<'ctx>, CodecError> {
     let mut payloads = payloads.iter();
     let first = loop {
@@ -150,6 +150,28 @@ pub(crate) fn transfer<'ctx>(
         storage: ctx.reserve_scoped(0, "FreeCAD pcurve candidates")?,
     };
     if let Some(first) = first {
+        let mut consumer_storage = ctx.reserve_scoped(0, "FreeCAD topology consumer properties")?;
+        let mut consumer_properties = BTreeSet::new();
+        let mut maps = element_maps.iter();
+        while maps.len() != 0 {
+            let Some(map) = ctx.next_charged(&mut maps, "FreeCAD element topology consumers")?
+            else {
+                break;
+            };
+            if map.maps.has_topology_names(ctx)? {
+                consumer_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut consumer_properties,
+                        map.property.as_str(),
+                        "FreeCAD topology consumer properties",
+                    )
+                })?;
+            }
+        }
+        let consumers = ScopedData {
+            data: consumer_properties,
+            storage: consumer_storage,
+        };
         let (data, storage) = ctx.collect_scoped_btree_map(
             properties
                 .iter()
@@ -201,13 +223,18 @@ pub(crate) fn transfer<'ctx>(
                     .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
                 })?;
             let source_object = ScopedData { data, storage };
+            let bind_element_map = ctx.contains_btree_set(
+                &consumers.data,
+                payload.property.as_str(),
+                "FreeCAD topology consumer lookup",
+            )?;
             let mut builder = Builder::new(
                 ctx,
                 payload,
                 tables,
                 source_object,
                 geometry,
-                bind_element_maps.then_some(&mut occurrences),
+                bind_element_map.then_some(&mut occurrences),
             )?;
             builder.emit_pcurves()?;
             let (values, storage) =
@@ -904,14 +931,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             )?;
             let ordinal_storage = ordinal_result.1;
             let ordinal = ordinal_result.0;
-            let id =
-                cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id_charged(
+            let id = cadmpeg_ir::tessellation::TessellationId::mint_for_decode(
+                self.ctx,
+                crate::native::model_id_charged(
                     self.ctx,
                     "tessellation",
                     &self.payload.id,
                     &ordinal,
-                )?)
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
+                )?,
+                "FreeCAD model identity grammar",
+            )?
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
             drop((ordinal, ordinal_storage));
             ir.model.tessellations.push(
                 Tessellation::from_parts(
@@ -961,13 +991,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             "FreeCAD pcurve key",
         )?;
         let key = ScopedData { data, storage };
-        PcurveId::mint(crate::native::model_id_charged_at(
+        PcurveId::mint_for_decode(
             self.ctx,
-            "pcurve",
-            &self.payload.id,
-            &key.data,
-            "FreeCAD pcurve identity",
-        )?)
+            crate::native::model_id_charged_at(
+                self.ctx,
+                "pcurve",
+                &self.payload.id,
+                &key.data,
+                "FreeCAD pcurve identity",
+            )?,
+            "FreeCAD model identity grammar",
+        )?
         .map_err(CodecError::malformed)
     }
 
@@ -977,13 +1011,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             "FreeCAD shell component key",
         )?;
         let child = ScopedData { data, storage };
-        ShellId::mint(crate::native::model_id_charged_at(
+        ShellId::mint_for_decode(
             self.ctx,
-            "shell",
-            &self.payload.id,
-            &child.data,
-            "FreeCAD shell component identity",
-        )?)
+            crate::native::model_id_charged_at(
+                self.ctx,
+                "shell",
+                &self.payload.id,
+                &child.data,
+                "FreeCAD shell component identity",
+            )?,
+            "FreeCAD model identity grammar",
+        )?
         .map_err(CodecError::malformed)
     }
 
@@ -1057,13 +1095,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         }
         let body_key = self.topology_label(root.shape, Transform::identity())?;
         let (data, storage) = ctx.with_scoped_storage("FreeCAD body identity scratch", || {
-            BodyId::mint(crate::native::model_id_charged_at(
+            BodyId::mint_for_decode(
                 self.ctx,
-                "body",
-                &self.payload.id,
-                &body_key.data,
-                "FreeCAD body identity",
-            )?)
+                crate::native::model_id_charged_at(
+                    self.ctx,
+                    "body",
+                    &self.payload.id,
+                    &body_key.data,
+                    "FreeCAD body identity",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)
         })?;
         let body_id = ScopedData { data, storage };
@@ -1169,13 +1211,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         }
         let key = self.topology_label(shape_index, transform)?;
         let (data, storage) = ctx.with_scoped_storage("FreeCAD region identity", || {
-            RegionId::mint(crate::native::model_id_charged_at(
+            RegionId::mint_for_decode(
                 self.ctx,
-                "region",
-                &self.payload.id,
-                &key.data,
-                "FreeCAD region identity",
-            )?)
+                crate::native::model_id_charged_at(
+                    self.ctx,
+                    "region",
+                    &self.payload.id,
+                    &key.data,
+                    "FreeCAD region identity",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)
         })?;
         let region_id = ScopedData { data, storage };
@@ -1246,13 +1292,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         let shape = self.shape(shape_index)?;
         let key = self.topology_label(shape_index, transform)?;
         let (data, storage) = ctx.with_scoped_storage("FreeCAD shell identity", || {
-            ShellId::mint(crate::native::model_id_charged_at(
+            ShellId::mint_for_decode(
                 self.ctx,
-                "shell",
-                &self.payload.id,
-                &key.data,
-                "FreeCAD shell identity",
-            )?)
+                crate::native::model_id_charged_at(
+                    self.ctx,
+                    "shell",
+                    &self.payload.id,
+                    &key.data,
+                    "FreeCAD shell identity",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)
         })?;
         let shell_id = ScopedData { data, storage };
@@ -1629,13 +1679,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             return Ok(None);
         }
         let face_key = self.topology_label(face_use.shape, face_transform)?;
-        let face_id = FaceId::mint(crate::native::model_id_charged_at(
+        let face_id = FaceId::mint_for_decode(
             self.ctx,
-            "face",
-            &self.payload.id,
-            &face_key.data,
-            "FreeCAD face identity",
-        )?)
+            crate::native::model_id_charged_at(
+                self.ctx,
+                "face",
+                &self.payload.id,
+                &face_key.data,
+                "FreeCAD face identity",
+            )?,
+            "FreeCAD model identity grammar",
+        )?
         .map_err(CodecError::malformed)?;
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
         // Only the owning topological face placement remains to be applied here.
@@ -1678,13 +1732,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 data: key,
                 storage: key_storage,
             };
-            let id = SurfaceId::mint(crate::native::model_id_charged_at(
+            let id = SurfaceId::mint_for_decode(
                 self.ctx,
-                "surface",
-                &self.payload.id,
-                &key.data,
-                "FreeCAD triangulation surface identity",
-            )?)
+                crate::native::model_id_charged_at(
+                    self.ctx,
+                    "surface",
+                    &self.payload.id,
+                    &key.data,
+                    "FreeCAD triangulation surface identity",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)?;
             let new_surface = !self.ctx.contains_hash_set(
                 &self.emitted_surfaces,
@@ -1781,8 +1839,8 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             )?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id_charged_at(self.ctx, "tessellation",
-                        &self.payload.id, &tessellation_key.data, "FreeCAD tessellation identity")?)
+                    cadmpeg_ir::tessellation::TessellationId::mint_for_decode(self.ctx, crate::native::model_id_charged_at(self.ctx, "tessellation",
+                        &self.payload.id, &tessellation_key.data, "FreeCAD tessellation identity")?, "FreeCAD model identity grammar")?
                         .map_err(|error| CodecError::malformed(error.to_string()))?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices, triangles, normals,
@@ -1863,13 +1921,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 "FreeCAD face loop key",
             )?;
             let loop_key = ScopedData { data, storage };
-            let loop_id = LoopId::mint(crate::native::model_id_charged_at(
+            let loop_id = LoopId::mint_for_decode(
                 self.ctx,
-                "loop",
-                &self.payload.id,
-                &loop_key.data,
-                "FreeCAD face loop identity",
-            )?)
+                crate::native::model_id_charged_at(
+                    self.ctx,
+                    "loop",
+                    &self.payload.id,
+                    &loop_key.data,
+                    "FreeCAD face loop identity",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)?;
             let mut coedge_ids = self
                 .ctx
@@ -1888,13 +1950,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 )?;
                 let key = ScopedData { data, storage };
                 coedge_ids.push(
-                    CoedgeId::mint(crate::native::model_id_charged_at(
+                    CoedgeId::mint_for_decode(
                         self.ctx,
-                        "coedge",
-                        &self.payload.id,
-                        &key.data,
-                        "FreeCAD face coedge identity",
-                    )?)
+                        crate::native::model_id_charged_at(
+                            self.ctx,
+                            "coedge",
+                            &self.payload.id,
+                            &key.data,
+                            "FreeCAD face coedge identity",
+                        )?,
+                        "FreeCAD model identity grammar",
+                    )?
                     .map_err(CodecError::malformed)?,
                 );
             }
@@ -2033,13 +2099,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         let start = self.ensure_vertex(ir, start_use, transform)?;
         let end = self.ensure_vertex(ir, end_use, transform)?;
         let label = self.topology_label(edge_use.shape, transform)?;
-        let id = EdgeId::mint(crate::native::model_id_charged_at(
+        let id = EdgeId::mint_for_decode(
             self.ctx,
-            "edge",
-            &self.payload.id,
-            &label.data,
-            "FreeCAD edge identity",
-        )?)
+            crate::native::model_id_charged_at(
+                self.ctx,
+                "edge",
+                &self.payload.id,
+                &label.data,
+                "FreeCAD edge identity",
+            )?,
+            "FreeCAD model identity grammar",
+        )?
         .map_err(CodecError::malformed)?;
         let curve_representation = select_exact_curve_representation(
             self.ctx,
@@ -2238,7 +2308,8 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 "FreeCAD polygon curve identity",
             )?
         };
-        CurveId::mint(id).map_err(CodecError::malformed)
+        CurveId::mint_for_decode(self.ctx, id, "FreeCAD model identity grammar")?
+            .map_err(CodecError::malformed)
     }
 
     fn indexed_polygon(
@@ -2355,21 +2426,29 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             )));
         };
         let label = self.topology_label(vertex_use.shape, transform)?;
-        let point_id = PointId::mint(crate::native::model_id_charged_at(
+        let point_id = PointId::mint_for_decode(
             self.ctx,
-            "point",
-            &self.payload.id,
-            &label.data,
-            "FreeCAD point identity",
-        )?)
+            crate::native::model_id_charged_at(
+                self.ctx,
+                "point",
+                &self.payload.id,
+                &label.data,
+                "FreeCAD point identity",
+            )?,
+            "FreeCAD model identity grammar",
+        )?
         .map_err(CodecError::malformed)?;
-        let vertex_id = VertexId::mint(crate::native::model_id_charged_at(
+        let vertex_id = VertexId::mint_for_decode(
             self.ctx,
-            "vertex",
-            &self.payload.id,
-            &label.data,
-            "FreeCAD vertex identity",
-        )?)
+            crate::native::model_id_charged_at(
+                self.ctx,
+                "vertex",
+                &self.payload.id,
+                &label.data,
+                "FreeCAD vertex identity",
+            )?,
+            "FreeCAD model identity grammar",
+        )?
         .map_err(CodecError::malformed)?;
         // A finite point and a finite location still multiply and add to a
         // non-finite coordinate, which states no position.
@@ -2425,13 +2504,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 .ctx
                 .format_scoped(format_args!("{source}"), "FreeCAD base curve key")?;
             let base_key = ScopedData { data, storage };
-            CurveId::mint(crate::native::model_id_charged_at(
+            CurveId::mint_for_decode(
                 self.ctx,
-                "curve",
-                &self.payload.id,
-                &base_key.data,
-                "FreeCAD base curve identity",
-            )?)
+                crate::native::model_id_charged_at(
+                    self.ctx,
+                    "curve",
+                    &self.payload.id,
+                    &base_key.data,
+                    "FreeCAD base curve identity",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)
         };
         if is_identity(transform) {
@@ -2442,13 +2525,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             "FreeCAD located curve key",
         )?;
         let key = ScopedData { data, storage };
-        let id = CurveId::mint(crate::native::model_id_charged_at(
+        let id = CurveId::mint_for_decode(
             self.ctx,
-            "curve",
-            &self.payload.id,
-            &key.data,
-            "FreeCAD located curve identity",
-        )?)
+            crate::native::model_id_charged_at(
+                self.ctx,
+                "curve",
+                &self.payload.id,
+                &key.data,
+                "FreeCAD located curve identity",
+            )?,
+            "FreeCAD model identity grammar",
+        )?
         .map_err(CodecError::malformed)?;
         if !self
             .ctx
@@ -2510,13 +2597,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 .ctx
                 .format_scoped(format_args!("{source}"), "FreeCAD base surface key")?;
             let base_key = ScopedData { data, storage };
-            SurfaceId::mint(crate::native::model_id_charged_at(
+            SurfaceId::mint_for_decode(
                 self.ctx,
-                "surface",
-                &self.payload.id,
-                &base_key.data,
-                "FreeCAD base surface identity",
-            )?)
+                crate::native::model_id_charged_at(
+                    self.ctx,
+                    "surface",
+                    &self.payload.id,
+                    &base_key.data,
+                    "FreeCAD base surface identity",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)
         };
         if is_identity(transform) {
@@ -2527,13 +2618,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             "FreeCAD located surface key",
         )?;
         let key = ScopedData { data, storage };
-        let id = SurfaceId::mint(crate::native::model_id_charged_at(
+        let id = SurfaceId::mint_for_decode(
             self.ctx,
-            "surface",
-            &self.payload.id,
-            &key.data,
-            "FreeCAD located surface identity",
-        )?)
+            crate::native::model_id_charged_at(
+                self.ctx,
+                "surface",
+                &self.payload.id,
+                &key.data,
+                "FreeCAD located surface identity",
+            )?,
+            "FreeCAD model identity grammar",
+        )?
         .map_err(CodecError::malformed)?;
         if !self.ctx.contains_hash_set(
             &self.emitted_surfaces,
@@ -2611,10 +2706,14 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                         self.ctx,
                         &id,
                         ProceduralSurface::new(
-                            ProceduralSurfaceId::mint(self.ctx.format_retained(
-                                format_args!("{id}:construction"),
-                                "FreeCAD procedural construction identity",
-                            )?)
+                            ProceduralSurfaceId::mint_for_decode(
+                                self.ctx,
+                                self.ctx.format_retained(
+                                    format_args!("{id}:construction"),
+                                    "FreeCAD procedural construction identity",
+                                )?,
+                                "FreeCAD model identity grammar",
+                            )?
                             .map_err(CodecError::malformed)?,
                             ProceduralSurfaceDefinition::Replica {
                                 source: base_id.data.try_clone_for_decode(

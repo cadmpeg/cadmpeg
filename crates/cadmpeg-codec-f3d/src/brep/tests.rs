@@ -12,7 +12,7 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::{FaceId, RegionId};
 use cadmpeg_ir::topology::{Body, BodyKind, Region};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 mod structural_budget;
 
 fn with_limits<T>(
@@ -433,7 +433,7 @@ fn brep_qualification_rebuild_refuses_materialized_limit() {
 fn brep_retention_projection_refuses_materialized_limit() {
     let mut brep = Brep::default();
     let error = with_materialized_limit(0, |ctx| {
-        brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
+        brep.retain_body_keys(ctx, &BTreeSet::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -446,7 +446,7 @@ fn brep_retention_rebuild_refuses_materialized_limit() {
     let mut brep = Brep::default();
     let first_projection = structural_budget::projection_bytes(&brep);
     let error = with_materialized_limit(first_projection, |ctx| {
-        brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
+        brep.retain_body_keys(ctx, &BTreeSet::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -459,7 +459,7 @@ fn brep_adjacency_reference_refuses_retained_limit() {
     let value = serde_value::Value::String("f3d:brep:entity#1".to_owned());
     let error = with_limits(u64::MAX, 0, |ctx| {
         let owned = vec!["f3d:brep:entity#1".to_owned()];
-        collect_brep_references(ctx, &value, &owned, &mut Vec::new()).unwrap_err()
+        collect_brep_references(ctx, &value, &owned, None, &mut Vec::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -525,7 +525,7 @@ fn brep_retained_sketch_links_refuse_collection_limit() {
         ..Brep::default()
     };
     let error = with_limits(empty_retention_projection_items(), u64::MAX, |ctx| {
-        brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
+        brep.retain_body_keys(ctx, &BTreeSet::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -546,7 +546,7 @@ fn brep_retained_design_links_refuse_collection_limit() {
         ..Brep::default()
     };
     let error = with_limits(empty_retention_projection_items(), u64::MAX, |ctx| {
-        brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
+        brep.retain_body_keys(ctx, &BTreeSet::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -568,7 +568,7 @@ fn brep_retained_subentity_tags_refuse_collection_limit() {
         ..Brep::default()
     };
     let error = with_limits(empty_retention_projection_items(), u64::MAX, |ctx| {
-        brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
+        brep.retain_body_keys(ctx, &BTreeSet::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -588,7 +588,7 @@ fn brep_retained_timestamps_refuse_collection_limit() {
         ..Brep::default()
     };
     let error = with_limits(empty_retention_projection_items(), u64::MAX, |ctx| {
-        brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
+        brep.retain_body_keys(ctx, &BTreeSet::new()).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -641,7 +641,7 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
         ..Brep::default()
     };
 
-    with_context(|ctx| brep.retain_body_keys(ctx, &HashSet::from([20])))
+    with_context(|ctx| brep.retain_body_keys(ctx, &BTreeSet::from([20])))
         .expect("retain body graph");
 
     assert_eq!(brep.asm.bodies.len(), 1);
@@ -764,7 +764,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
         ],
     };
 
-    with_context(|ctx| brep.retain_body_keys(ctx, &HashSet::from([10])))
+    with_context(|ctx| brep.retain_body_keys(ctx, &BTreeSet::from([10])))
         .expect("retain body graph");
 
     assert_eq!(brep.sketch_curve_links.len(), 1);
@@ -816,7 +816,7 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
         ..Brep::default()
     };
 
-    with_context(|ctx| brep.retain_body_keys(ctx, &HashSet::from([10])))
+    with_context(|ctx| brep.retain_body_keys(ctx, &BTreeSet::from([10])))
         .expect("retain body graph");
 
     assert_eq!(brep.asm.bodies.len(), 2);
@@ -844,19 +844,19 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
     };
 
     assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap()).len(),
+        with_context(|ctx| brep.body_selectors(ctx).unwrap().0).len(),
         2
     );
     assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap())
+        with_context(|ctx| brep.body_selectors(ctx).unwrap().0)
             [&BodyId::mint("f3d:brep:entity#1").expect("identity grammar")],
         1
     );
 
     brep.asm.body_native_keys[1].asm_body_key = Some(7);
     assert_eq!(
-        with_context(|ctx| brep.body_selectors(ctx).unwrap()),
-        HashMap::from([(
+        with_context(|ctx| brep.body_selectors(ctx).unwrap().0),
+        BTreeMap::from([(
             BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
             7
         )])
@@ -864,7 +864,7 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
 }
 
 #[test]
-fn body_selector_id_copy_refuses_retained_limit() {
+fn body_selector_id_copy_refuses_scratch_limit() {
     let brep = Brep {
         asm: AsmBrep {
             body_native_keys: vec![BodyNativeKey {
@@ -881,7 +881,12 @@ fn body_selector_id_copy_refuses_retained_limit() {
         },
         ..Brep::default()
     };
-    let error = with_limits(u64::MAX, 0, |ctx| brep.body_selectors(ctx).unwrap_err());
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "copy F3D BREP body ID",
+        0,
+        |ctx| brep.body_selectors(ctx).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D BREP body ID")
@@ -934,8 +939,11 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
     };
 
     assert_eq!(
-        with_context(|ctx| brep.body_selectors_for(ctx, &HashSet::from([0])).unwrap()),
-        HashMap::from([(
+        with_context(|ctx| brep
+            .body_selectors_for(ctx, &BTreeSet::from([0]))
+            .unwrap()
+            .0),
+        BTreeMap::from([(
             BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
             0
         )])
@@ -943,8 +951,11 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
 
     brep.asm.body_native_keys = vec![native_key(0, 436)];
     assert_eq!(
-        with_context(|ctx| brep.body_selectors_for(ctx, &HashSet::from([0])).unwrap()),
-        HashMap::from([(
+        with_context(|ctx| brep
+            .body_selectors_for(ctx, &BTreeSet::from([0]))
+            .unwrap()
+            .0),
+        BTreeMap::from([(
             BodyId::mint("f3d:brep:entity#0").expect("identity grammar"),
             0
         )])
@@ -969,14 +980,131 @@ fn selected_body_index_refuses_collection_limit() {
         },
         ..Brep::default()
     };
-    let error = with_limits(0, u64::MAX, |ctx| {
-        brep.body_selectors_for(ctx, &HashSet::from([7]))
-            .unwrap_err()
-    });
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D selected BREP bodies",
+        0,
+        |ctx| {
+            brep.body_selectors_for(ctx, &BTreeSet::from([7]))
+                .map(|_| ())
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D selected BREP bodies")
     );
+}
+
+fn selector_graph(keys: &[(u32, u32, Option<u64>)]) -> Brep {
+    Brep {
+        asm: AsmBrep {
+            body_native_keys: keys
+                .iter()
+                .map(|&(body, ordinal, key)| BodyNativeKey {
+                    source_namespace:
+                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                            crate::ids::ID_FORMAT,
+                        ),
+                    body: BodyId::mint(format!("f3d:brep:entity#{body}")).unwrap(),
+                    record_index: body,
+                    body_ordinal: ordinal,
+                    source_brep: None,
+                    asm_body_key: key,
+                })
+                .collect(),
+            ..AsmBrep::default()
+        },
+        ..Brep::default()
+    }
+}
+
+#[test]
+fn indexed_body_selectors_keep_repeated_keys_ambiguous() {
+    for (keys, selector, domain) in [
+        ([(1, 0, Some(7)); 3], 7, "native body keys"),
+        (
+            [(1, 0, Some(7)), (1, 0, Some(8)), (1, 0, Some(9))],
+            0,
+            "body ordinals",
+        ),
+    ] {
+        let brep = selector_graph(&keys);
+        let error = with_context(|ctx| {
+            brep.body_selectors_for(ctx, &BTreeSet::from([selector]))
+                .unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+            if message == format!("F3D body selector {selector} matches multiple {domain}")));
+    }
+}
+
+#[test]
+fn indexed_body_selectors_preserve_precedence_and_conflicts() {
+    let brep = selector_graph(&[(1, 0, Some(0)), (2, 0, Some(7)), (3, 1, Some(u64::MAX))]);
+    let selected = with_context(|ctx| {
+        brep.body_selectors_for(ctx, &BTreeSet::from([0, u64::MAX - 1, u64::MAX]))
+            .unwrap()
+            .0
+    });
+    assert_eq!(
+        selected,
+        BTreeMap::from([
+            (BodyId::mint("f3d:brep:entity#1").unwrap(), 0),
+            (BodyId::mint("f3d:brep:entity#3").unwrap(), u64::MAX),
+        ])
+    );
+
+    let brep = selector_graph(&[(1, 0, Some(7))]);
+    let error = with_context(|ctx| {
+        brep.body_selectors_for(ctx, &BTreeSet::from([0, 7]))
+            .unwrap_err()
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+        if message == "F3D body f3d:brep:entity#1 is selected by both 0 and 7"));
+}
+
+#[test]
+fn indexed_body_selectors_preserve_index_and_lookup_refusals() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let brep = selector_graph(&[(1, 0, Some(7))]);
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            dimension,
+            "index F3D native body selectors",
+            0,
+            |ctx| {
+                brep.body_selectors_for(ctx, &BTreeSet::from([7]))
+                    .map(|_| ())
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == "index F3D native body selectors")
+        );
+    }
+    for (selector, operation) in [
+        (7, "match F3D native body selector"),
+        (0, "match F3D ordinal body selector"),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                brep.body_selectors_for(ctx, &BTreeSet::from([selector]))
+                    .map(|_| ())
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
+    }
 }
 
 #[test]
@@ -1049,12 +1177,65 @@ fn fusion_attribute_family_scan_preserves_work_refusal() {
     let mut asm = AsmBrep::default();
     asm.attributes.push(attribute);
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // Counts the one outer attribute visit before the first family-value scan.
+    policy.limits.max_work_units = 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let error = super::Brep::from_asm(ctx, asm).err().expect("scan refusal");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "scan Fusion attribute family" && ctx.resource_refusal() == Some(limit))
         );
+    });
+}
+
+#[test]
+fn sketch_link_text_parse_preserves_resource_refusal() {
+    let values = [
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(3),
+        AttributeValue::String("7 18446744073709551615 -1 0 2 0".into()),
+    ];
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "parse F3D sketch link sketch_curve_id",
+        0,
+        |ctx| super::sketch_link_payload(ctx, &values),
+    );
+    let parsed = with_context(|ctx| super::sketch_link_payload(ctx, &values))
+        .unwrap()
+        .unwrap();
+    assert_eq!(parsed.sketch_curve_id, 7);
+    assert_eq!(parsed.ref_b, u64::MAX);
+    assert_eq!(parsed.sense, -1);
+    assert_eq!(parsed.role, 2);
+    assert_eq!(parsed.closure, 0);
+}
+
+#[test]
+fn sketch_link_invalid_text_remains_absent() {
+    let values = [
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(3),
+        AttributeValue::String("invalid 9 -1 0 2 0".into()),
+    ];
+    assert!(with_context(|ctx| super::sketch_link_payload(ctx, &values))
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn brep_statistic_count_overflow_preserves_resource_refusal() {
+    crate::test_support::with_decode_context(|ctx| {
+        let mut target = std::collections::BTreeMap::from([("body".to_owned(), usize::MAX)]);
+        let source = std::collections::BTreeMap::from([("body".to_owned(), 1)]);
+        let error = super::merge_brep_counts(ctx, &mut target, source).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = &error else {
+            panic!("expected resource refusal: {error}");
+        };
+        assert_eq!(limit.operation, "merge F3D BREP statistic counts");
+        assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        assert_eq!(target.get("body"), Some(&usize::MAX));
     });
 }

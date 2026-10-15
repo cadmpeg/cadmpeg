@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, HashMap, ParameterId, Point2,
-    SketchCurveIdentity, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
-    SketchId,
+    BTreeMap, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, ParameterId,
+    Point2, SketchCurveIdentity, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
 };
 use cadmpeg_core::decode::ResourceDimension;
 const EPS_REFUSAL_LINEAR: f64 = 1.0e-6;
@@ -126,7 +126,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     .unwrap();
     let parameter_id =
         ParameterId::mint("generated:test:parameter#offset").expect("identity grammar");
-    let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
+    let projected = BTreeMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
         crate::design::dimensions::annotation_offset_dimension_definition(
@@ -144,9 +144,17 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
 }
 
 #[test]
-fn annotation_offset_index_refuses_collection_limit() {
+fn annotation_offset_curve_source_refuses_work_limit() {
     fixture(
-        "f3d annotation offset index",
+        "f3d annotation offset curve source",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn annotation_offset_pair_refuses_collection_limit() {
+    fixture(
+        "f3d annotation offset pair",
         ResourceDimension::CollectionItems,
     );
 }
@@ -172,5 +180,29 @@ fn annotation_offset_parameter_id_refuses_retained_limit() {
     fixture(
         "f3d annotation offset parameter id",
         ResourceDimension::RetainedBytes,
+    );
+}
+
+#[test]
+fn annotation_offset_curve_stream_refuses_work_limit() {
+    fixture(
+        "f3d annotation offset curve stream",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn annotation_offset_entity_lookup_refuses_work_limit() {
+    fixture(
+        "f3d annotation offset entity lookup",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn annotation_offset_result_source_refuses_work_limit() {
+    fixture(
+        "f3d annotation offset result source",
+        ResourceDimension::WorkUnits,
     );
 }

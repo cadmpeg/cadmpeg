@@ -47,7 +47,7 @@ fn variable_law_parameters() -> Vec<DesignParameter> {
 }
 
 fn assert_variable_law_limit(operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
     let parameters = variable_law_parameters();
@@ -56,23 +56,22 @@ fn assert_variable_law_limit(operation: &'static str) {
         .enumerate()
         .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
         .collect::<Vec<_>>();
-    let mut found = false;
-    for limit in 0..32 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::feature_project::variable_fillet_law(&ctx, &controls),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "no collection refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (crate::design::feature_project::variable_fillet_law(&ctx, &controls)).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 macro_rules! variable_law_limit_test {
@@ -119,7 +118,7 @@ fn variable_assignment() -> DesignFilletRadiusGroup {
 }
 
 fn assert_resolved_assignment_limit(operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
     let parameters = variable_law_parameters();
@@ -129,26 +128,31 @@ fn assert_resolved_assignment_limit(operation: &'static str) {
         .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
         .collect::<Vec<_>>();
     let assignment = variable_assignment();
-    let mut found = false;
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut row_storage = ctx
-            .reserve_scoped(0, "test Fillet assignment rows")
-            .unwrap();
-        if matches!(crate::design::feature_project::resolved_fillet_assignments(&ctx, &mut row_storage, &[&assignment], &controls),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "no collection refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut row_storage = ctx
+                .reserve_scoped(0, "test Fillet assignment rows")
+                .unwrap();
+
+            (crate::design::feature_project::resolved_fillet_assignments(
+                &ctx,
+                &mut row_storage,
+                &[&assignment],
+                &controls,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 macro_rules! resolved_assignment_limit_test {
@@ -181,7 +185,7 @@ fn assert_projected_fillet_limit(
     operation: &'static str,
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
     use cadmpeg_core::CodecError;
 
     let scope = localized_fillet_scope();
@@ -199,72 +203,37 @@ fn assert_projected_fillet_limit(
         fillet_radius_groups: std::slice::from_ref(&assignment),
         ..Default::default()
     };
-    let mut found = false;
-    for limit in 0..128 {
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => unreachable!(),
-        }
-        let refusal_cap =
-            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (crate::design::feature_project::project_fillet_arm(
-                    &ctx,
-                    &inputs,
-                    &scope,
-                    &controls,
-                    native_scope,
-                ))
-                .map(|_| ())
-            }) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-                error => panic!("unexpected refusal: {error:?}"),
-            };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         match dimension {
             cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
+                policy.limits.max_retained_bytes = cap;
             }
             cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
+                policy.limits.max_collection_items = cap;
             }
             cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
+                policy.limits.max_materialized_bytes = cap;
             }
             cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
+                policy.limits.max_work_units = cap;
             }
             dimension => panic!("unsupported refusal dimension: {dimension:?}"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::feature_project::project_fillet_arm(&ctx, &inputs, &scope, &controls, native_scope),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "no resource refusal at {operation}");
+        (crate::design::feature_project::project_fillet_arm(
+            &ctx,
+            &inputs,
+            &scope,
+            &controls,
+            native_scope,
+        ))
+        .map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]
@@ -414,29 +383,21 @@ fn fillet_radius_group_collections_and_ids_refuse_limits() {
             ],
         ),
     ];
-    let mut refused = std::collections::HashSet::new();
     for (parameters, owners) in &scenarios {
-        for limit in 0..32 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match decode_fillet_radius_groups_charged(
-                &ctx,
-                std::slice::from_ref(&scope),
-                &groups[..1],
-                owners,
-                parameters,
-            ) {
-                Err(CodecError::ResourceLimit(failure)) => {
-                    assert_eq!(failure.dimension, ResourceDimension::CollectionItems);
-                    refused.insert(failure.operation);
-                }
-                Ok(assignments) => assert_eq!(assignments.len(), 1),
-                Err(error) => panic!("unexpected Fillet decode error: {error}"),
-            }
-        }
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let assignments = decode_fillet_radius_groups_charged(
+            &ctx,
+            std::slice::from_ref(&scope),
+            &groups[..1],
+            owners,
+            parameters,
+        )
+        .unwrap();
+        assert_eq!(assignments.len(), 1);
     }
+    let (parameters, owners) = &scenarios[3];
     for operation in [
         "f3d Fillet parameter index",
         "f3d Fillet scope groups",
@@ -446,9 +407,26 @@ fn fillet_radius_group_collections_and_ids_refuse_limits() {
         "f3d Fillet edge operand indices",
         "f3d Fillet group output",
     ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_collection_items = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                decode_fillet_radius_groups_charged(
+                    &ctx,
+                    std::slice::from_ref(&scope),
+                    &groups[..1],
+                    owners,
+                    parameters,
+                )
+                .map(|_| ())
+            },
+        );
         assert!(
-            refused.contains(operation),
-            "no limit refusal at {operation}"
+            matches!(error, CodecError::ResourceLimit(failure) if failure.dimension == ResourceDimension::CollectionItems && failure.operation == operation)
         );
     }
 

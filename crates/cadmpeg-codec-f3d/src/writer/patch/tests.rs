@@ -45,26 +45,29 @@ fn sketch_relation_state_encoding_requires_the_stored_width_discriminator() {
         bytes
     };
 
-    assert_eq!(
-        encode_sketch_relation_state("relation-u32", &record(0), 0x8000_0000).unwrap(),
-        0x8000_0000u32.to_le_bytes()
-    );
-    assert_eq!(
-        encode_sketch_relation_state("relation-u64", &record(1), 0x0020_0000_0000).unwrap(),
-        0x0020_0000_0000_u64.to_le_bytes()
-    );
-    assert!(
-        encode_sketch_relation_state("relation-unknown", &record(2), 1)
-            .unwrap_err()
-            .to_string()
-            .contains("mask-width discriminator")
-    );
-    assert!(
-        encode_sketch_relation_state("relation-u32", &record(0), 0x1_0000_0000)
-            .unwrap_err()
-            .to_string()
-            .contains("cannot carry")
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            encode_sketch_relation_state(ctx, "relation-u32", &record(0), 0x8000_0000).unwrap(),
+            0x8000_0000u32.to_le_bytes()
+        );
+        assert_eq!(
+            encode_sketch_relation_state(ctx, "relation-u64", &record(1), 0x0020_0000_0000)
+                .unwrap(),
+            0x0020_0000_0000_u64.to_le_bytes()
+        );
+        assert!(
+            encode_sketch_relation_state(ctx, "relation-unknown", &record(2), 1)
+                .unwrap_err()
+                .to_string()
+                .contains("mask-width discriminator")
+        );
+        assert!(
+            encode_sketch_relation_state(ctx, "relation-u32", &record(0), 0x1_0000_0000)
+                .unwrap_err()
+                .to_string()
+                .contains("cannot carry")
+        );
+    });
 }
 
 #[test]

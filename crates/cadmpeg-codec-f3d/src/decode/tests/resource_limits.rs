@@ -9,10 +9,44 @@ fn context(arena: &DecodeArena, max_collection_items: u64) -> DecodeContext<'_> 
 }
 
 #[test]
+fn unresolved_mesh_attribute_source_scan_refuses_work_after_valid_loss() {
+    let unresolved =
+        std::collections::BTreeMap::from([(crate::paramesh::MeshAttributeDomain::Vertex, 1)]);
+    crate::test_support::with_decode_context(|ctx| {
+        let mut report = cadmpeg_ir::codec::DecodeBody::new(
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+        );
+        super::super::report_unresolved_mesh_attributes(ctx, &mut report, &unresolved)
+            .expect("valid unresolved mesh attribute");
+        assert_eq!(report.losses.len(), 1);
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D unresolved mesh attributes",
+        0,
+        |ctx| {
+            let mut report = cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            );
+            super::super::report_unresolved_mesh_attributes(ctx, &mut report, &unresolved)
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D unresolved mesh attributes")
+    );
+}
+
+#[test]
 fn related_record_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let error = super::super::collect_related_indices(&ctx, [("f3d:Design", 1)]).unwrap_err();
+    let error = super::super::collect_related_indices(
+        &ctx,
+        super::super::RelatedRecordIndexSource::Explicit(&[("f3d:Design", 1)]),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D related record indices")
@@ -25,7 +59,11 @@ fn related_record_stream_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::collect_related_indices(&ctx, [("f3d:Design", 1)]).unwrap_err();
+    let error = super::super::collect_related_indices(
+        &ctx,
+        super::super::RelatedRecordIndexSource::Explicit(&[("f3d:Design", 1)]),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D related record stream")
@@ -192,13 +230,23 @@ fn face_assignment_ir() -> cadmpeg_ir::document::CadIr {
 }
 
 macro_rules! face_join_refuses_collection_limit {
-    ($name:ident, $limit:expr, $operation:literal) => {
+    ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            let arena = DecodeArena::new();
-            let ctx = context(&arena, $limit);
-            let mut ir = face_assignment_ir();
-            let error = super::super::resolve_face_appearance_bindings(&ctx, &mut ir, &[face_assignment()]).unwrap_err();
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                $operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let ctx = context(&arena, cap);
+                    let mut ir = face_assignment_ir();
+                    super::super::resolve_face_appearance_bindings(
+                        &ctx,
+                        &mut ir,
+                        &[face_assignment()],
+                    )
+                },
+            );
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }
@@ -207,32 +255,26 @@ macro_rules! face_join_refuses_collection_limit {
 
 face_join_refuses_collection_limit!(
     face_material_guid_index_refuses_collection_limit,
-    1,
     "index F3D face material GUIDs"
 );
 face_join_refuses_collection_limit!(
     faces_by_material_guid_index_refuses_collection_limit,
-    2,
     "index F3D faces by material GUID"
 );
 face_join_refuses_collection_limit!(
     face_material_group_refuses_collection_limit,
-    3,
     "collect F3D faces by material GUID"
 );
 face_join_refuses_collection_limit!(
     new_face_binding_index_refuses_collection_limit,
-    4,
     "index F3D new appearance faces"
 );
 face_join_refuses_collection_limit!(
     face_binding_collection_refuses_collection_limit,
-    5,
     "collect F3D face appearance bindings"
 );
 face_join_refuses_collection_limit!(
     face_binding_append_refuses_collection_limit,
-    6,
     "append F3D face appearance bindings"
 );
 
@@ -257,7 +299,7 @@ fn face_appearance_binding_id_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let assignment = face_assignment();
     let face = cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap();
-    let error = crate::ids::face_appearance_binding_id_charged(
+    let error = crate::ids::face_appearance_binding_id(
         &ctx,
         &assignment.face_guid,
         &assignment.visual_guid,
@@ -273,20 +315,17 @@ fn face_appearance_binding_id_preserves_identity_text() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let assignment = face_assignment();
     let face = cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap();
-    let charged = crate::ids::face_appearance_binding_id_charged(
+    let charged = crate::ids::face_appearance_binding_id(
         &ctx,
         &assignment.face_guid,
         &assignment.visual_guid,
         &face,
     )
     .unwrap();
-    let original = crate::ids::face_appearance_binding_id(
-        &assignment.face_guid,
-        assignment.visual_guid.identity_key(),
-        &face,
-    )
-    .unwrap();
-    assert_eq!(charged, original);
+    assert_eq!(
+        charged.as_str(),
+        "f3d:appearance:face#aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb:11111111-2222-3333-4444-555555555555_Post2015:23:f3d%3Atest%3Aface%23one"
+    );
 }
 
 #[test]
@@ -528,12 +567,21 @@ fn model_brep_candidate_index_refuses_collection_limit() {
     let (scan_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
-    let blob_names: Vec<String> = crate::container::design_breps(&scan)
-        .map(|brep| brep.name.rsplit('/').next().unwrap().to_owned())
-        .collect();
+    let blob_names: Vec<String> = crate::container::design_breps(&scan_ctx, &scan)
+        .unwrap()
+        .map(|brep| brep.map(|brep| brep.name.rsplit('/').next().unwrap().to_owned()))
+        .collect::<Result<_, _>>()
+        .unwrap();
     assert!(!blob_names.is_empty());
-    let limited = context(&arena, 0);
-    let error = super::super::model_brep_candidates(&limited, &scan, &blob_names).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D model BREP candidates",
+        |cap| {
+            let limited_arena = DecodeArena::new();
+            let limited = context(&limited_arena, cap);
+            super::super::model_brep_candidates(&limited, &scan, &blob_names).map(|_| ())
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D model BREP candidates")
@@ -611,8 +659,6 @@ fn source_image_copy_refuses_retained_limit() {
 
 #[test]
 fn unique_asset_append_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let ctx = context(&arena, 0);
     let asset = cadmpeg_ir::assets::Asset::try_new(
         &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
@@ -625,7 +671,17 @@ fn unique_asset_append_refuses_collection_limit() {
     )
     .unwrap();
     let mut assets = Vec::new();
-    let error = super::super::extend_unique_assets(&ctx, &mut assets, vec![asset]).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "append F3D unique assets",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                super::super::extend_unique_assets(ctx, &mut assets, vec![asset.clone()])
+            })
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "append F3D unique assets")
@@ -724,6 +780,7 @@ macro_rules! mesh_outcome_loss_refuses_collection_limit {
         fn $name() {
             let arena = DecodeArena::new();
             let ctx = context(&arena, 0);
+            let mut bodies_storage = ctx.reserve_scoped(0, "test joined mesh bodies").unwrap();
             let mut bodies = Vec::new();
             let mut report = cadmpeg_ir::codec::DecodeBody::new(
                 cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
@@ -733,6 +790,7 @@ macro_rules! mesh_outcome_loss_refuses_collection_limit {
                 &mut bodies,
                 &mut report,
                 $outcome,
+                &mut bodies_storage,
             )
             .unwrap_err();
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -769,6 +827,7 @@ mesh_outcome_loss_refuses_collection_limit!(
 fn failed_mesh_resource_limit_propagates() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
+    let mut bodies_storage = ctx.reserve_scoped(0, "test joined mesh bodies").unwrap();
     let mut bodies = Vec::new();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
@@ -781,6 +840,7 @@ fn failed_mesh_resource_limit_propagates() {
             entry_name: "mesh.paramesh".into(),
             error: ctx.refuse_codec_limit("synthetic mesh refusal", 0, 1),
         },
+        &mut bodies_storage,
     )
     .unwrap_err();
     assert!(
@@ -798,7 +858,7 @@ fn mesh_texture_asset_bytes_refuse_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let entry_name = &scan.entries.first().unwrap().name;
-    assert!(!scan.entry_bytes(entry_name).unwrap().is_empty());
+    assert!(!scan.entry_bytes(&scan_ctx, entry_name).unwrap().is_empty());
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -844,7 +904,8 @@ fn mesh_texture_table_copy_refuses_collection_limit() {
 #[test]
 fn mesh_texture_table_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
-    let ctx = context(&arena, 0);
+    // One copied texture row precedes the texture-table map slot.
+    let ctx = context(&arena, 1);
     let mut tables = std::collections::HashMap::new();
     let error = super::super::insert_mesh_texture_table(
         &ctx,
@@ -937,7 +998,9 @@ fn mesh_scope_tessellation_index_refuses_collection_limit() {
         &mut index,
         "f3d:Design/BulkStream.dat",
         10,
-        ["tessellation:one"],
+        ctx.admit_iter(&["tessellation:one"], "scan F3D mesh scope body bindings")
+            .unwrap(),
+        |id| Some(*id),
     )
     .unwrap_err();
     assert!(
@@ -957,7 +1020,9 @@ fn mesh_feature_scope_index_refuses_collection_limit() {
         &mut index,
         "f3d:Design/BulkStream.dat",
         10,
-        ["tessellation:one"],
+        ctx.admit_iter(&["tessellation:one"], "scan F3D mesh scope body bindings")
+            .unwrap(),
+        |id| Some(*id),
     )
     .unwrap_err();
     assert!(
@@ -1123,11 +1188,16 @@ fn geometry_loss_text_refuses_retained_limit() {
 
 #[test]
 fn geometry_kind_counts_keep_sorted_report_text() {
-    let counts = std::collections::BTreeMap::from([("plane".into(), 2), ("spline".into(), 3)]);
-    assert_eq!(
-        super::super::KindCounts(&counts).to_string(),
-        "plane=2, spline=3"
-    );
+    let counts = std::collections::BTreeMap::<String, usize>::from([
+        ("plane".into(), 2),
+        ("spline".into(), 3),
+    ]);
+    crate::test_support::with_decode_context(|ctx| {
+        let _storage;
+        let (text, held_storage) = super::super::format_kind_counts(ctx, &counts).unwrap();
+        _storage = held_storage;
+        assert_eq!(text, "plane=2, spline=3");
+    });
 }
 
 #[test]
@@ -1137,7 +1207,9 @@ fn metadata_unknown_collection_refuses_limit() {
     let (scan_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
-    let brep = crate::container::select_fallback_brep(&scan).unwrap();
+    let brep = crate::container::select_fallback_brep(&scan_ctx, &scan)
+        .unwrap()
+        .unwrap();
     let limited = context(&arena, 0);
     let mut unknowns = Vec::new();
     let error = super::super::append_metadata_unknown(&limited, &mut unknowns, brep).unwrap_err();
@@ -1155,7 +1227,9 @@ fn metadata_unknown_id_refuses_retained_limit() {
     let (scan_ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_ctx, root).unwrap();
-    let brep = crate::container::select_fallback_brep(&scan).unwrap();
+    let brep = crate::container::select_fallback_brep(&scan_ctx, &scan)
+        .unwrap()
+        .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -1367,15 +1441,21 @@ fn dimension_owner_index_refuses_collection_limit() {
 
 #[test]
 fn unresolved_dimension_loss_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let ctx = context(&arena, 2);
     let native = dimension_native();
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut report =
         cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
-    let error =
-        super::super::report_unresolved_dimension_companions(&ctx, &mut report, &native, &ir)
-            .unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "report unresolved F3D dimensions",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                super::super::report_unresolved_dimension_companions(ctx, &mut report, &native, &ir)
+            })
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1451,4 +1531,70 @@ fn archive_entries_do_not_hide_new_model_entities() {
             assert_eq!(Some(limit), ctx.resource_refusal());
         });
     });
+}
+
+#[test]
+fn mesh_texture_table_scan_preserves_work_refusal() {
+    let table = one_texture_table();
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D mesh texture table",
+        0,
+        |ctx| super::super::clone_mesh_texture_table(ctx, &table),
+    );
+}
+
+#[test]
+fn missing_geometry_loss_growth_preserves_collection_refusal() {
+    let bytes = crate::test_support::assembly_test::f3d_without_brep("Design", "Own", &[]);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let policy = DecodePolicy::service();
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let losses = super::super::container_losses(&decode, &scan).unwrap();
+    assert_eq!(losses.len(), 4);
+    assert!(losses[3].message.contains("no ASM BREP stream"));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D container losses",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::super::container_losses(&decode, &scan);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(decode.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D container losses")
+    );
+}
+
+mod searches;
+mod text_and_records;
+
+#[test]
+fn geometry_kind_counts_preserve_scan_and_storage_refusals() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let counts = std::collections::BTreeMap::<String, usize>::from([
+        ("plane".into(), 2),
+        ("spline".into(), 3),
+    ]);
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "scan F3D kind counts"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "format F3D kind counts",
+        ),
+    ] {
+        crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            super::super::format_kind_counts(ctx, &counts).map(|_| ())
+        });
+    }
 }

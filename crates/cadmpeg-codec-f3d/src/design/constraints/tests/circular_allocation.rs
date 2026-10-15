@@ -101,21 +101,22 @@ fn assert_circular_refusal(dimension: Limit, operation: &'static str) {
     let (relation, [center, seed, middle, last]) = circular_fixture();
     let members = [&center, &seed, &middle, &last];
     let returned = [&seed, &middle, &last, &center];
-    for limit in 0..1024 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            Limit::Collection => policy.limits.max_collection_items = limit,
-            Limit::Retained => policy.limits.max_retained_bytes = limit,
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match exact_circular_pattern(&relation, "native", &[], &members, &returned, &ctx) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no refusal at {operation}");
+    let dimension = match dimension {
+        Limit::Collection => cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Limit::Retained => cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    };
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        exact_circular_pattern(
+            &relation,
+            "native",
+            &mut crate::design::constraints::PatternParameters::new(ctx, &[]),
+            &members,
+            &returned,
+            ctx,
+        )
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]

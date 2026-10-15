@@ -12,39 +12,33 @@
 )]
 
 mod limits;
-mod treatment;
 
 use crate::history::bind_scope_histories;
-use crate::history::bodies_intersecting;
+
 use crate::history::bound_history_state_pair;
 use crate::history::bound_scope_history;
 use crate::history::edge_changes_across_state_chain;
-use crate::history::edge_recipe_reference_context;
+
 use crate::history::effective_scope_previous_history_state_id;
 use crate::history::face_changes_across_state_chain;
-use crate::history::historical_edge_axis;
-use crate::history::historical_face_support_contexts;
-use crate::history::historical_loop_boundary;
-use crate::history::historical_topology;
-use crate::history::preceding_support_face_slots;
+
 use crate::history::resolve_pattern_face_by_surface_radius;
 use crate::history::selection::boundary_edges_in_changes;
-use crate::history::selection::faces_in_topology;
-use crate::history::selection::historical_edge_context;
+
 use crate::history::selection::historical_identity_edge;
 use crate::history::selection::historical_pattern_identity_axes;
 use crate::history::selection::historical_pattern_identity_axes_for_selection;
 use crate::history::selection::incident_loop_counts_satisfy_sides;
-use crate::history::selection::recipe_selector_candidates;
+
 use crate::history::selection::snapshot_edge_identity_revision;
 use crate::history::selection::HistoricalIdentityIndex;
 use crate::history::terminal_edge_recipe_faces;
 use crate::history::terminal_edge_recipe_reference_faces;
 use crate::history::unique_history_state;
 use crate::history::unique_history_state_pair;
-use crate::history::EdgeBoundaryContext;
+
 use crate::history_records::AsmDeltaState;
-use crate::history_records::AsmHistoricalEdge;
+
 use crate::history_records::AsmHistoricalEntityDelta;
 use crate::history_records::AsmHistoricalTopology;
 use crate::history_records::AsmHistoricalTopologyDelta;
@@ -52,7 +46,7 @@ use crate::history_records::AsmHistoricalTransition;
 use crate::history_records::AsmHistory;
 use crate::history_records::AsmHistoryRecord;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 fn scoped_history_with_limits(
     max_items: u64,
@@ -168,15 +162,26 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         states: vec![state(id, current, Some(2)), state(id, 2, None)],
     };
     let histories = [history("first", 7), history("second", 9)];
-    let (resolved, current, previous) =
-        unique_history_state_pair(&histories, 9, 2).expect("state-local pair");
+    let (resolved, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 9, 2)
+    })
+    .unwrap()
+    .expect("state-local pair");
     assert_eq!(resolved.id, "second");
     assert_eq!(current.state_id, 9);
     assert_eq!(previous.state_id, 2);
-    assert!(unique_history_state(&histories, 2).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state(decode_ctx, &histories, 2)
+    })
+    .unwrap()
+    .is_none());
 
     let duplicate_pair = [history("first", 9), history("second", 9)];
-    assert!(unique_history_state_pair(&duplicate_pair, 9, 2).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &duplicate_pair, 9, 2)
+    })
+    .unwrap()
+    .is_none());
 
     let indirect = AsmHistory {
         id: "indirect".into(),
@@ -193,8 +198,11 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         ..history("direct", 23)
     };
     let histories = [indirect, direct];
-    let (resolved, _, _) = unique_history_state_pair(&histories, 23, 11)
-        .expect("direct transition takes precedence over a reachable pair");
+    let (resolved, _, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 23, 11)
+    })
+    .unwrap()
+    .expect("direct transition takes precedence over a reachable pair");
     assert_eq!(resolved.id, "direct");
 }
 
@@ -292,9 +300,12 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     .unwrap();
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
-        bound_scope_history(&scope.id, &bindings, &histories)
-            .expect("scope binding resolves one history")
-            .id,
+        crate::test_support::with_decode_context(|decode_ctx| {
+            bound_scope_history(decode_ctx, &scope.id, &bindings, &histories)
+        })
+        .unwrap()
+        .expect("scope binding resolves one history")
+        .id,
         histories[1].id
     );
 
@@ -355,6 +366,33 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     })
     .unwrap();
     assert_eq!(bindings[&scope.id], histories[1].id);
+
+    let unmatched_binding =
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
+            id: format!("{stream}:design-body-binding#0"),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: 0,
+            entity_suffix: 150,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.unmatched.smbh".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap();
+    let bindings = crate::test_support::with_decode_context(|decode_ctx| {
+        bind_scope_histories(
+            decode_ctx,
+            &scopes,
+            std::slice::from_ref(&unmatched_binding),
+            std::slice::from_ref(&operand),
+            &histories,
+        )
+    })
+    .unwrap();
+    assert_eq!(bindings[&scope.id], histories[1].id);
 }
 
 #[test]
@@ -390,13 +428,19 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         ],
     };
     let histories = [history];
-    let (resolved, current, previous) =
-        unique_history_state_pair(&histories, 10, 6).expect("raw direct state pair");
+    let (resolved, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 10, 6)
+    })
+    .unwrap()
+    .expect("raw direct state pair");
     assert_eq!(resolved.id, "history");
     assert_eq!(current.state_id, 10);
     assert_eq!(previous.state_id, 6);
-    let (_, current, previous) =
-        unique_history_state_pair(&histories, 10, 4).expect("raw reachable state pair");
+    let (_, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 10, 4)
+    })
+    .unwrap()
+    .expect("raw reachable state pair");
     assert_eq!(current.state_id, 10);
     assert_eq!(previous.state_id, 4);
     let mut omitted_predecessor = crate::records::feature::scope::DesignParameterScope::empty(
@@ -410,7 +454,10 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     assert_eq!(
-        effective_scope_previous_history_state_id(&omitted_predecessor, &histories),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            effective_scope_previous_history_state_id(decode_ctx, &omitted_predecessor, &histories)
+        })
+        .unwrap(),
         Some(6)
     );
 
@@ -450,13 +497,13 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         records: Default::default(),
         topology: Default::default(),
     });
-    assert!(unique_history_state_pair(&[inconsistent], 10, 6).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &[inconsistent], 10, 6).map(|pair| pair.is_none())
+    })
+    .unwrap());
 }
 
-use crate::history_records::{
-    AsmHistoricalCarrierBinding, AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding,
-    AsmHistoricalSurfaceRadius,
-};
+use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalSurfaceRadius};
 
 #[test]
 fn circular_pattern_face_uses_unique_rigid_surface_radius() {
@@ -536,140 +583,6 @@ fn circular_pattern_face_uses_unique_rigid_surface_radius() {
                 &HashSet::from([11, 12]),
             )
         })
-        .unwrap(),
-        None
-    );
-}
-
-#[test]
-fn historical_edge_axis_uses_the_state_specific_curve_carrier() {
-    let topology = AsmHistoricalTopology {
-        edge_curves: vec![AsmHistoricalOptionalCarrierBinding {
-            entity: 7,
-            carrier: Some(27),
-        }],
-        curve_axes: vec![AsmHistoricalCurveAxis {
-            curve: 27,
-            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        }],
-        ..AsmHistoricalTopology::default()
-    };
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
-        Some((
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        ))
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 8, &topology
-        ))
-        .unwrap(),
-        None
-    );
-}
-
-#[test]
-fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
-    let surface_axis =
-        |surface, origin, direction| crate::history_records::AsmHistoricalSurfaceAxis {
-            surface,
-            origin,
-            direction,
-        };
-    let mut topology = AsmHistoricalTopology {
-        face_loops: vec![crate::history_records::AsmHistoricalRelation {
-            owner_ref: 11,
-            member_refs: vec![21],
-        }],
-        loop_coedges: vec![crate::history_records::AsmHistoricalRelation {
-            owner_ref: 21,
-            member_refs: vec![31],
-        }],
-        coedge_topology: vec![crate::history_records::AsmHistoricalCoedge {
-            coedge: 31,
-            owner_loop: 21,
-            edge: 7,
-            next: 31,
-            previous: 31,
-            radial_next: 31,
-        }],
-        face_surfaces: vec![AsmHistoricalCarrierBinding {
-            entity: 11,
-            carrier: 41,
-        }],
-        surface_axes: vec![surface_axis(
-            41,
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        )],
-        ..AsmHistoricalTopology::default()
-    };
-    let expected = Some((
-        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-    ));
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
-        expected
-    );
-
-    topology.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 11,
-        carrier: 42,
-    });
-    topology.surface_axes.push(surface_axis(
-        42,
-        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-    ));
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
-        None
-    );
-
-    topology.face_surfaces.pop();
-    topology
-        .face_loops
-        .push(crate::history_records::AsmHistoricalRelation {
-            owner_ref: 12,
-            member_refs: vec![22],
-        });
-    topology
-        .loop_coedges
-        .push(crate::history_records::AsmHistoricalRelation {
-            owner_ref: 22,
-            member_refs: vec![32],
-        });
-    topology
-        .coedge_topology
-        .push(crate::history_records::AsmHistoricalCoedge {
-            coedge: 32,
-            owner_loop: 22,
-            edge: 7,
-            next: 32,
-            previous: 32,
-            radial_next: 32,
-        });
-    topology.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 12,
-        carrier: 42,
-    });
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_axis(
-            decode_ctx, 7, &topology
-        ))
         .unwrap(),
         None
     );
@@ -800,7 +713,14 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
     .unwrap()
     .is_empty());
     let identities = crate::test_support::with_decode_context(|decode_ctx| {
-        HistoricalIdentityIndex::build(decode_ctx, std::slice::from_ref(&missing_carrier), [11])
+        HistoricalIdentityIndex::build(
+            decode_ctx,
+            std::slice::from_ref(&missing_carrier),
+            decode_ctx
+                .admit_iter(&[11], "scan F3D identity local IDs")
+                .expect("test identity local ID admission"),
+            |local_id| std::iter::once(*local_id).chain(None),
+        )
     })
     .unwrap();
     assert_eq!(
@@ -865,25 +785,42 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
     };
 
     assert_eq!(
-        snapshot_edge_identity_revision(3, &history(vec![record(3, "edge", Some(17))])),
+        crate::test_support::with_decode_context(|decode| snapshot_edge_identity_revision(
+            decode,
+            3,
+            &history(vec![record(3, "edge", Some(17))])
+        ))
+        .unwrap(),
         Some(17)
     );
     assert_eq!(
-        snapshot_edge_identity_revision(3, &history(vec![record(3, "face", Some(17))])),
+        crate::test_support::with_decode_context(|decode| snapshot_edge_identity_revision(
+            decode,
+            3,
+            &history(vec![record(3, "face", Some(17))])
+        ))
+        .unwrap(),
         None
     );
     assert_eq!(
-        snapshot_edge_identity_revision(
+        crate::test_support::with_decode_context(|decode| snapshot_edge_identity_revision(
+            decode,
             3,
             &history(vec![
                 record(3, "edge", Some(17)),
                 record(3, "face", Some(18))
             ]),
-        ),
+        ))
+        .unwrap(),
         None
     );
     assert_eq!(
-        snapshot_edge_identity_revision(3, &history(vec![record(3, "edge", Some(0))])),
+        crate::test_support::with_decode_context(|decode| snapshot_edge_identity_revision(
+            decode,
+            3,
+            &history(vec![record(3, "edge", Some(0))])
+        ))
+        .unwrap(),
         None
     );
 }
@@ -1104,9 +1041,11 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
     let histories = [history("history-a"), history("history-b")];
     let bindings = HashMap::from([("scope".into(), "history-b".into())]);
 
-    let (selected, state, previous) =
-        bound_history_state_pair("scope", 11, 9, &bindings, &histories)
-            .expect("scope-bound repeated state pair");
+    let (selected, state, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        bound_history_state_pair(decode_ctx, "scope", 11, 9, &bindings, &histories)
+    })
+    .unwrap()
+    .expect("scope-bound repeated state pair");
     assert_eq!(selected.id, "history-b");
     assert_eq!(state.parent, "history-b");
     assert_eq!(previous.parent, "history-b");
@@ -1132,182 +1071,6 @@ fn boundary_edge_change_partition_preserves_boundary_order() {
         .unwrap()
         .is_empty()
     );
-}
-
-#[test]
-fn result_face_support_maps_only_to_one_preceding_owner() {
-    use cadmpeg_ir::ids::FaceId;
-
-    let result_faces = [FaceId::mint("f3d:brep:entity#40").expect("identity grammar")];
-    let result = AsmHistoricalTopology {
-        faces: vec![40],
-        face_surfaces: vec![AsmHistoricalCarrierBinding {
-            entity: 40,
-            carrier: 20,
-        }],
-        ..AsmHistoricalTopology::default()
-    };
-    let preceding = AsmHistoricalTopology {
-        faces: vec![4, 5],
-        face_surfaces: vec![
-            AsmHistoricalCarrierBinding {
-                entity: 4,
-                carrier: 20,
-            },
-            AsmHistoricalCarrierBinding {
-                entity: 5,
-                carrier: 21,
-            },
-        ],
-        ..AsmHistoricalTopology::default()
-    };
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| preceding_support_face_slots(
-            decode_ctx,
-            &result_faces,
-            &result,
-            &preceding
-        ))
-        .unwrap(),
-        [4]
-    );
-
-    let mut ambiguous = preceding.clone();
-    ambiguous.face_surfaces[1].carrier = 20;
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| preceding_support_face_slots(
-            decode_ctx,
-            &result_faces,
-            &result,
-            &ambiguous
-        ))
-        .unwrap()
-        .is_empty()
-    );
-
-    let mut ambiguous_result = result.clone();
-    ambiguous_result
-        .face_surfaces
-        .push(AsmHistoricalCarrierBinding {
-            entity: 40,
-            carrier: 21,
-        });
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| preceding_support_face_slots(
-            decode_ctx,
-            &result_faces,
-            &ambiguous_result,
-            &preceding
-        ))
-        .unwrap()
-        .is_empty()
-    );
-}
-
-#[test]
-fn active_face_support_retains_invariant_preceding_owners() {
-    use cadmpeg_ir::ids::FaceId;
-
-    let state = |state_id, topology| AsmDeltaState {
-        id: format!("state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition: None,
-    };
-    let active = AsmHistoricalTopology {
-        faces: vec![40],
-        face_surfaces: vec![AsmHistoricalCarrierBinding {
-            entity: 40,
-            carrier: 20,
-        }],
-        ..AsmHistoricalTopology::default()
-    };
-    let history = AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state(2, active.clone()), state(3, active)],
-    };
-    let preceding = AsmHistoricalTopology {
-        faces: vec![4, 5],
-        face_surfaces: vec![
-            AsmHistoricalCarrierBinding {
-                entity: 4,
-                carrier: 20,
-            },
-            AsmHistoricalCarrierBinding {
-                entity: 5,
-                carrier: 20,
-            },
-        ],
-        ..AsmHistoricalTopology::default()
-    };
-    let changed_faces = HashSet::from([5]);
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_face_support_contexts(
-            decode_ctx,
-            &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
-            &history,
-            &preceding,
-            &changed_faces
-        ))
-        .unwrap(),
-        [
-            crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
-                active_face_slot: 40,
-                surface_slot: 20,
-                preceding_face_slots: vec![4, 5],
-                preceding_face_boundaries: Vec::new(),
-                changed_preceding_face_slots: vec![5],
-            }
-        ]
-    );
-
-    let mut variant = history;
-    variant.states[1].topology_mut().unwrap().face_surfaces[0].carrier = 21;
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_face_support_contexts(
-            decode_ctx,
-            &[FaceId::mint("f3d:brep:entity#4").expect("identity grammar")],
-            &variant,
-            &preceding,
-            &changed_faces
-        ))
-        .unwrap(),
-        [
-            crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
-                active_face_slot: 4,
-                surface_slot: 20,
-                preceding_face_slots: vec![4, 5],
-                preceding_face_boundaries: Vec::new(),
-                changed_preceding_face_slots: vec![5],
-            }
-        ]
-    );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        historical_face_support_contexts(
-            decode_ctx,
-            &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
-            &variant,
-            &preceding,
-            &changed_faces,
-        )
-    })
-    .unwrap()
-    .is_empty());
 }
 
 #[test]
@@ -1400,434 +1163,23 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
     );
 }
 
+mod identity;
+
 #[test]
-fn historical_topology_retains_ordered_ownership_and_incidence() {
-    use cadmpeg_ir::ids::{
-        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
-        VertexId,
-    };
-    use cadmpeg_ir::topology::{
-        Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell, Vertex,
-    };
-
-    let id = |slot| format!("f3d:brep:entity#{slot}");
-    let mut brep = cadmpeg_asm::brep::AsmBrep::default();
-    brep.bodies.push(Body {
-        id: BodyId::mint(id(1)).expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(id(2)).expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    brep.regions.push(Region {
-        id: RegionId::mint(id(2)).expect("identity grammar"),
-        body: BodyId::mint(id(1)).expect("identity grammar"),
-        shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
-    });
-    brep.shells.push(Shell::with_face(
-        ShellId::mint(id(3)).expect("identity grammar"),
-        RegionId::mint(id(2)).expect("identity grammar"),
-        FaceId::mint(id(4)).expect("identity grammar"),
+fn recipe_selector_side_count_scan_refuses_work_limit() {
+    let operation = "scan F3D recipe selector required sides";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| incident_loop_counts_satisfy_sides(decode, &[5], &[Some(5)]),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
-    brep.faces.push(Face {
-        id: FaceId::mint(id(4)).expect("identity grammar"),
-        shell: ShellId::mint(id(3)).expect("identity grammar"),
-        surface: SurfaceId::mint(id(20)).expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
-            LoopId::mint(id(5)).expect("identity grammar")
-        ]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
-    brep.loops.push(Loop {
-        id: LoopId::mint(id(5)).expect("identity grammar"),
-        face: FaceId::mint(id(4)).expect("identity grammar"),
-        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                vec![CoedgeId::mint(id(6)).expect("identity grammar")],
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
-        ),
-    });
-    brep.coedges.push(Coedge {
-        id: CoedgeId::mint(id(6)).expect("identity grammar"),
-        owner_loop: LoopId::mint(id(5)).expect("identity grammar"),
-        edge: EdgeId::mint(id(7)).expect("identity grammar"),
-        radial_next: CoedgeId::mint(id(6)).expect("identity grammar"),
-        sense: Sense::Forward,
-        pcurves: Vec::new(),
-        use_curve: None,
-    });
-    brep.edges.push(Edge {
-        id: EdgeId::mint(id(7)).expect("identity grammar"),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
-            CurveId::mint(id(21)).expect("identity grammar"),
-        )),
-        start: VertexId::mint(id(8)).expect("identity grammar"),
-        end: VertexId::mint(id(9)).expect("identity grammar"),
-        tolerance: None,
-    });
-    for slot in [8, 9] {
-        brep.vertices.push(Vertex {
-            id: VertexId::mint(id(slot)).expect("identity grammar"),
-            point: PointId::mint(id(slot + 20)).expect("identity grammar"),
-            tolerance: None,
-        });
-    }
-
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let topology = historical_topology(&ctx, &brep)
-        .expect("topology budget")
-        .expect("stable historical topology");
-    assert_eq!(topology.body_regions[0].member_refs, [2]);
-    assert_eq!(topology.region_shells[0].member_refs, [3]);
-    assert_eq!(topology.shell_faces[0].member_refs, [4]);
-    assert_eq!(topology.face_loops[0].member_refs, [5]);
-    assert_eq!(topology.loop_coedges[0].member_refs, [6]);
-    assert_eq!(topology.coedge_topology[0].edge, 7);
-    assert_eq!(topology.coedge_topology[0].radial_next, 6);
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_edge_context(
-            decode_ctx, 7, &topology
-        ))
-        .unwrap(),
-        crate::records::topology::historical_context::DesignHistoricalEdgeContext {
-            edge_slot: 7,
-            incident_loops: vec![
-                crate::records::topology::historical_context::DesignHistoricalEdgeLoopContext {
-                    coedge_slot: 6,
-                    loop_slot: 5,
-                    face_slot: 4,
-                    boundary_edge_count: 1,
-                    coedge_ordinal: 0,
-                    previous_edge_slot: 7,
-                    next_edge_slot: 7,
-                }
-            ],
-        }
-    );
-    let entry = |selector, boundary_edge_count| {
-        crate::records::topology::edge_recipe::DesignTopologyRecipeEntry {
-            selector,
-            boundary_edge_count: std::num::NonZeroU32::new(boundary_edge_count).unwrap(),
-            topology_triplets: [
-                crate::records::topology::edge_recipe::DesignTopologyRecipeTriplet {
-                    outer: std::num::NonZeroU32::new(1).unwrap(),
-                    middle: 0,
-                    incident: Some(crate::records::topology::edge_recipe::DesignTopologyIncident {
-                        ordinal: boundary_edge_count - 1,
-                        side: crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Preceding,
-                    }),
-                },
-                crate::records::topology::edge_recipe::DesignTopologyRecipeTriplet {
-                    outer: std::num::NonZeroU32::new(1).unwrap(),
-                    middle: 1,
-                    incident: Some(crate::records::topology::edge_recipe::DesignTopologyIncident {
-                        ordinal: 0,
-                        side: crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Following,
-                    }),
-                },
-            ],
-        }
-    };
-    let side = |entries: Vec<crate::records::topology::edge_recipe::DesignTopologyRecipeEntry>| {
-        crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
-            header_value: 0,
-            scalars: vec![0, 0],
-            payload_prefix: vec![0],
-
-            entries,
-        }
-    };
-    let structure = crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
-        root: 2,
-        sides: vec![
-            side(vec![entry(1, 1), entry(2, 1)]),
-            side(vec![entry(1, 2)]),
-        ],
-    };
-    let loop_context = |coedge_slot, boundary_edge_count| {
-        crate::records::topology::historical_context::DesignHistoricalEdgeLoopContext {
-            coedge_slot,
-            loop_slot: coedge_slot + 10,
-            face_slot: coedge_slot + 20,
-            boundary_edge_count,
-            coedge_ordinal: 0,
-            previous_edge_slot: coedge_slot + 30,
-            next_edge_slot: coedge_slot + 40,
-        }
-    };
-    let contexts = [
-        crate::records::topology::historical_context::DesignHistoricalEdgeContext {
-            edge_slot: 7,
-            incident_loops: vec![loop_context(70, 1)],
-        },
-        crate::records::topology::historical_context::DesignHistoricalEdgeContext {
-            edge_slot: 8,
-            incident_loops: vec![
-                loop_context(80, 1),
-                loop_context(81, 2),
-                crate::records::topology::historical_context::DesignHistoricalEdgeLoopContext {
-                    coedge_ordinal: 1,
-                    ..loop_context(82, 2)
-                },
-            ],
-        },
-    ];
-    let selectors = crate::test_support::with_decode_context(|decode_ctx| {
-        recipe_selector_candidates(decode_ctx, Some(&structure), &contexts)
-    })
-    .unwrap();
-    assert_eq!(selectors.len(), 2);
-    assert_eq!(selectors[0].selector, 1);
-    assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);
-    assert_eq!(
-        selectors[0]
-            .clauses
-            .iter()
-            .map(|clause| clause
-                .as_ref()
-                .map(|clause| clause.triplet_edge_slots.clone()))
-            .collect::<Vec<_>>(),
-        [Some([vec![7, 8], vec![7, 8]]), Some([vec![8], vec![8]])]
-    );
-    assert_eq!(selectors[0].incidence_matching_edge_slots, [8]);
-    assert_eq!(selectors[0].unique_incidence_edge_slot(), Some(8));
-    assert_eq!(selectors[1].selector, 2);
-    assert_eq!(selectors[1].boundary_count_matching_edge_slots, [7, 8]);
-    assert_eq!(selectors[1].incidence_matching_edge_slots, [7, 8]);
-    assert_eq!(selectors[1].unique_incidence_edge_slot(), None);
-    assert_eq!(
-        selectors[1]
-            .clauses
-            .iter()
-            .map(|clause| clause
-                .as_ref()
-                .map(|clause| clause.triplet_edge_slots.clone()))
-            .collect::<Vec<_>>(),
-        [Some([vec![7, 8], vec![7, 8]]), None]
-    );
-    assert!(incident_loop_counts_satisfy_sides(
-        &[4, 5],
-        &[Some(5), Some(4)]
-    ));
-    assert!(!incident_loop_counts_satisfy_sides(
-        &[5, 6],
-        &[Some(5), Some(5)]
-    ));
-    assert!(incident_loop_counts_satisfy_sides(
-        &[5, 5],
-        &[Some(5), Some(5)]
-    ));
-    assert!(incident_loop_counts_satisfy_sides(&[5], &[None, Some(5)]));
-    assert_eq!(topology.edge_vertices[0].start_vertex, 8);
-    assert_eq!(topology.edge_vertices[0].end_vertex, 9);
-    assert_eq!(topology.face_surfaces[0].carrier, 20);
-    assert_eq!(topology.edge_curves[0].carrier, Some(21));
-    assert_eq!(topology.coedge_pcurves[0].carrier, None);
-    assert_eq!(topology.vertex_points[0].carrier, 28);
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| bodies_intersecting(
-            decode_ctx,
-            &topology,
-            &BTreeSet::from([20])
-        ))
-        .unwrap()
-        .unwrap(),
-        BTreeSet::from([1])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| bodies_intersecting(
-            decode_ctx,
-            &topology,
-            &BTreeSet::from([28])
-        ))
-        .unwrap()
-        .unwrap(),
-        BTreeSet::from([1])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| faces_in_topology(
-            decode_ctx,
-            &[
-                FaceId::mint(id(4)).expect("identity grammar"),
-                FaceId::mint(id(99)).expect("identity grammar"),
-                FaceId::mint("test:model:face#foreign").expect("identity grammar")
-            ],
-            &topology
-        ))
-        .unwrap(),
-        [FaceId::mint(id(4)).expect("identity grammar")]
-    );
-    let mut reference = crate::records::dimensions::DesignRecipeReference {
-        selector: 1,
-        selector_offset: 0,
-        token: "1".into(),
-        token_offset: 0,
-        design_reference: 1,
-        design_reference_offset: 1,
-        candidate_faces: vec![FaceId::mint(id(4)).expect("identity grammar")],
-        candidate_edges: Vec::new(),
-        alternate_selector_faces: Vec::new(),
-        alternate_selector_edges: Vec::new(),
-    };
-    let context = crate::test_support::with_decode_context(|decode_ctx| {
-        edge_recipe_reference_context(
-            decode_ctx,
-            2,
-            &reference,
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[7, 99],
-            },
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[7, 98],
-            },
-            &HashSet::from([7]),
-        )
-    })
-    .unwrap();
-    assert_eq!(context.reference_ordinal, 2);
-    assert_eq!(
-        context.result_faces,
-        [FaceId::mint(id(4)).expect("identity grammar")]
-    );
-    let boundary = crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext {
-        face_slot: 4,
-        loops: vec![crate::records::topology::historical_context::DesignHistoricalFaceLoopContext {
-            loop_slot: 5,
-            boundary: crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Coedges(vec![
-                crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
-                    coedge_slot: 6,
-                    edge_slot: 7,
-                },
-            ]),
-        }],
-    };
-    assert_eq!(context.result_face_boundaries, [boundary.clone()]);
-    assert_eq!(context.result_shared_edge_slots, [7]);
-    assert_eq!(
-        context.preceding_faces,
-        [FaceId::mint(id(4)).expect("identity grammar")]
-    );
-    assert_eq!(context.preceding_face_boundaries, [boundary]);
-    assert_eq!(context.preceding_support_face_slots, [4]);
-    assert_eq!(context.preceding_support_face_boundaries.len(), 1);
-    assert_eq!(context.shared_edge_slots, [7]);
-    assert_eq!(context.changed_shared_edge_slots, [7]);
-    assert_eq!(context.changed_reference_edge_slots, [7]);
-    reference.candidate_faces.clear();
-    reference.alternate_selector_faces = vec![FaceId::mint(id(4)).expect("identity grammar")];
-    let alternate_context = crate::test_support::with_decode_context(|decode_ctx| {
-        edge_recipe_reference_context(
-            decode_ctx,
-            2,
-            &reference,
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[7, 99],
-            },
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[7, 98],
-            },
-            &HashSet::from([7]),
-        )
-    })
-    .unwrap();
-    assert_eq!(
-        alternate_context.result_faces,
-        [FaceId::mint(id(4)).expect("identity grammar")]
-    );
-    assert_eq!(
-        alternate_context.preceding_faces,
-        [FaceId::mint(id(4)).expect("identity grammar")]
-    );
-    assert_eq!(alternate_context.changed_reference_edge_slots, [7]);
-    let support_only_context = crate::test_support::with_decode_context(|decode_ctx| {
-        edge_recipe_reference_context(
-            decode_ctx,
-            2,
-            &reference,
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[99],
-            },
-            EdgeBoundaryContext {
-                topology: &topology,
-                boundary_edges: &[98],
-            },
-            &HashSet::from([7]),
-        )
-    })
-    .unwrap();
-    assert!(support_only_context.shared_edge_slots.is_empty());
-    assert_eq!(support_only_context.changed_reference_edge_slots, [7]);
-    let cyclic = AsmHistoricalTopology {
-        edge_vertices: vec![
-            AsmHistoricalEdge {
-                edge: 7,
-                start_vertex: 1,
-                end_vertex: 2,
-            },
-            AsmHistoricalEdge {
-                edge: 8,
-                start_vertex: 3,
-                end_vertex: 2,
-            },
-            AsmHistoricalEdge {
-                edge: 9,
-                start_vertex: 1,
-                end_vertex: 3,
-            },
-        ],
-        ..AsmHistoricalTopology::default()
-    };
-    let ordered_vertices = |edges: &[i64], topology: &AsmHistoricalTopology| {
-        let coedges = edges
-            .iter()
-            .enumerate()
-            .map(|(ordinal, edge_slot)| {
-                crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
-                    coedge_slot: i64::try_from(ordinal).expect("fixture value fits i64"),
-                    edge_slot: *edge_slot,
-                }
-            })
-            .collect();
-        match crate::test_support::with_decode_context(|decode_ctx| historical_loop_boundary(decode_ctx, coedges, topology)).unwrap() {
-            crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
-                rows.into_iter()
-                    .map(|row| row.vertex_slot)
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        }
-    };
-    assert_eq!(ordered_vertices(&[7, 8, 9], &cyclic), Some(vec![1, 2, 3]));
-    let disconnected = AsmHistoricalTopology {
-        edge_vertices: vec![
-            AsmHistoricalEdge {
-                edge: 7,
-                start_vertex: 1,
-                end_vertex: 2,
-            },
-            AsmHistoricalEdge {
-                edge: 8,
-                start_vertex: 3,
-                end_vertex: 4,
-            },
-        ],
-        ..AsmHistoricalTopology::default()
-    };
-    assert_eq!(ordered_vertices(&[7, 8], &disconnected), None);
 }
 
-mod identity;
+mod global_state;
+
+mod borrowed_queries;

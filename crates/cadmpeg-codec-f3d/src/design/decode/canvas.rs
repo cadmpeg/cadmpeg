@@ -341,7 +341,7 @@ fn parse_canvas_image(
     let paired_geometry_class_tag =
         paired.retain_class_tag(ctx, "f3d Canvas paired geometry class tag")?;
     let asset_class_tag = retain_class_tag(ctx, *asset_class_tag, "f3d Canvas asset class tag")?;
-    let id = ids::native_scoped_id_charged(ctx, stream, "design-canvas-image", geometry_at)?;
+    let id = ids::native_scoped_id(ctx, stream, "design-canvas-image", geometry_at)?;
 
     let Ok(geometry) = DesignCanvasGeometry::new(
         [

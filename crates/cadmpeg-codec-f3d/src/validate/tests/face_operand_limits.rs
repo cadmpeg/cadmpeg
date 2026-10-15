@@ -2,7 +2,6 @@
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Case {
-    Group,
     Expected,
     Faces,
     Unreferenced,
@@ -15,7 +14,11 @@ enum Case {
     OverflowNodeOffset,
 }
 
-fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn face_result(
+    case: Case,
+    max_items: u64,
+    max_retained: u64,
+) -> Result<(), cadmpeg_core::CodecError> {
     crate::test_support::with_decode_context(|service_ctx| {
         use crate::records::{
             decal::DesignRecordHeader,
@@ -105,11 +108,6 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
             design_face_operands: vec![operand.clone()],
             ..Default::default()
         };
-        if case == Case::Group {
-            native.design_construction_operand_groups =
-                super::construction_group_limits::native(false, false)
-                    .design_construction_operand_groups;
-        }
         if case == Case::Record {
             let mut scope = DesignParameterScope::empty(
                 &format!("{stream}:design-parameter-scope#10"),
@@ -198,20 +196,27 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
         policy.limits.max_collection_items = max_items;
         policy.limits.max_retained_bytes = max_retained;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_face_operands(&ctx, &mut Vec::new(), &expected).unwrap_err()
+        super::super::validate_face_operands(&ctx, &mut Vec::new(), &expected).map(|_| ())
     })
 }
 
+fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    face_result(case, max_items, max_retained).unwrap_err()
+}
+
 macro_rules! refuse_items {
-    ($name:ident, $case:expr, $limit:expr, $operation:literal) => {
+    ($name:ident, $case:expr, $operation:literal) => {
         #[test]
         fn $name() {
-            let error = face_error($case, $limit, u64::MAX);
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                $operation, |cap| face_result($case, cap, u64::MAX));
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }
@@ -219,69 +224,58 @@ macro_rules! refuse_items {
 }
 
 refuse_items!(
-    face_operand_group_index_refuses_collection_limit,
-    Case::Group,
-    0,
-    "index F3D face operand groups"
-);
-refuse_items!(
     face_operand_expected_index_refuses_collection_limit,
     Case::Expected,
-    0,
     "index F3D expected face operands"
 );
 refuse_items!(
     face_operand_expected_faces_refuse_collection_limit,
     Case::Faces,
-    0,
     "collect F3D expected operand faces"
 );
 refuse_items!(
     face_operand_unreferenced_faces_refuse_collection_limit,
     Case::Unreferenced,
-    1,
     "collect F3D unreferenced operand faces"
 );
 refuse_items!(
     face_operand_referenced_faces_refuse_collection_limit,
     Case::Referenced,
-    3,
     "index F3D referenced operand faces"
 );
 refuse_items!(
     face_operand_alternate_faces_refuse_collection_limit,
     Case::Alternate,
-    7,
     "collect F3D alternate selector operand faces"
 );
 refuse_items!(
     face_operand_node_offsets_refuse_collection_limit,
     Case::NodeOffsets,
-    0,
     "collect F3D face recipe node offsets"
 );
 refuse_items!(
     face_operand_nodes_refuse_collection_limit,
     Case::Nodes,
-    1,
     "collect F3D face recipe nodes"
 );
 refuse_items!(
     face_operand_record_refuses_collection_limit,
     Case::Record,
-    1,
     "index F3D face operand records"
 );
 refuse_items!(
     face_operand_invalid_finding_refuses_collection_limit,
     Case::Invalid,
-    0,
     "collect F3D native validation findings"
 );
 
 #[test]
 fn face_operand_invalid_entity_refuses_retained_limit() {
-    let error = face_error(Case::Invalid, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(face_error(Case::Invalid, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -295,4 +289,194 @@ fn face_operand_rejects_overflowed_node_offset() {
         matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
         if message == "F3D face recipe node offset overflows")
     );
+}
+
+#[test]
+fn thread_face_group_membership_refuses_work_limit() {
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::{
+            scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload},
+            thread::{
+                DesignThreadConstruction, DesignThreadDiameters, DesignThreadForm,
+                DesignThreadNominalSize,
+            },
+        },
+        identity::{Located, ReferenceRun},
+        recipes::{ConstructionRecipe, ConstructionRecipeKind},
+        references::DesignClassTag,
+        topology::{
+            body_recipe::DesignOperandGroup,
+            construction::{
+                DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+                DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+                DesignConstructionOperandRole,
+            },
+            extrude_selection::DesignOperandRole,
+            face::{DesignFaceOperand, DesignFaceOperandDraft},
+        },
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let recipe_id = format!("{stream}:construction-recipe#0");
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#10"),
+        DesignFeatureKind::Thread,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.payload = DesignScopePayload::Thread(Some(DesignThreadConstruction {
+                form: DesignThreadForm::Standard,
+                designation_offset: 38,
+                designation: cadmpeg_core::text::NonBlankString::try_from("M30x3.5").unwrap(),
+                nominal_size: DesignThreadNominalSize::try_from("30.0".to_owned()).unwrap(),
+                profile: cadmpeg_core::text::NonBlankString::try_from("ISO Metric profile")
+                    .unwrap(),
+                pitch: cadmpeg_ir::scalar::PositiveReal::new(0.35).unwrap(),
+                face_group_record_indices: vec![100],
+                diameters: DesignThreadDiameters::new(3.0, 2.5, 2.75).unwrap(),
+            }));
+            draft.reference_members = ReferenceRun::unlocated(vec![100, 101]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: format!("{stream}:design-construction-operand-group#100"),
+        scope_record_index: 10,
+        scope_reference_ordinal: 0,
+        record_index: 100,
+        byte_offset: 1_000,
+        class_tag: DesignClassTag::try_from("277".to_owned()).unwrap(),
+        members: vec![Located {
+            value: 101,
+            offset: 1_026,
+        }],
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1_021,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 1_058,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1_062,
+                variant: false,
+            },
+        )
+        .unwrap(),
+        operand_role: DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10),
+        role_offset: 1_040,
+        paired_class_tag: DesignClassTag::try_from("258".to_owned()).unwrap(),
+        paired_byte_offset: 1_080,
+    })
+    .unwrap();
+    let recipe_byte_offset = 1_147;
+    let recipe_program_offset = recipe_byte_offset + 24;
+    let operand = DesignFaceOperand::try_new(DesignFaceOperandDraft {
+        id: format!("{stream}:design-face-operand#101"),
+        scope_record_index: 10,
+        scope_reference_ordinal: 0,
+        group: Some(DesignOperandGroup {
+            group_record_index: 100,
+            group_member_ordinal: 0,
+        }),
+        record_index: 101,
+        byte_offset: 1_100,
+        class_tag: DesignClassTag::try_from("365".to_owned()).unwrap(),
+        paired_byte_offset: 1_116,
+        paired_class_tag: DesignClassTag::try_from("366".to_owned()).unwrap(),
+        recipe_record_index: 104,
+        recipe_record_byte_offset: recipe_byte_offset - 15,
+        recipe_id: recipe_id.clone(),
+        recipe_prefix_offset: recipe_byte_offset - 4,
+        recipe_references: Vec::new(),
+        recipe_prefix_bytes: Vec::new(),
+        recipe_kind: ConstructionRecipeKind::BoundedFace,
+        recipe_program_offset,
+        recipe_program: vec![0, -1],
+        recipe_nodes: Vec::new(),
+        candidate_faces: Vec::new(),
+        unreferenced_candidate_faces: Vec::new(),
+        alternate_selector_candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
+        historical_support_contexts: Vec::new(),
+        resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
+        next_record_index: 106,
+        next_byte_offset: recipe_program_offset + 8,
+    })
+    .unwrap();
+    let native = crate::native::F3dNative {
+        design_construction_operand_groups: vec![group],
+        design_face_operands: vec![operand.clone()],
+        design_parameter_scopes: vec![scope],
+        design_record_headers: vec![DesignRecordHeader {
+            id: format!("{stream}:design-record-header#101"),
+            record_index: 101,
+            class_tag: DesignClassTag::try_from("365".to_owned()).unwrap(),
+            byte_offset: 1_100,
+        }],
+        construction_recipes: vec![ConstructionRecipe {
+            id: recipe_id,
+            byte_offset: recipe_byte_offset,
+            kind: ConstructionRecipeKind::BoundedFace,
+            design: None,
+            recipe_index: 0,
+            record_index: None,
+        }],
+        ..Default::default()
+    };
+    let expected = [operand];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D thread face operand group",
+        0,
+        |decode| {
+            let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, decode)?;
+            super::super::validate_face_operands(&ctx, &mut Vec::new(), &expected).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "find F3D thread face operand group"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
+}
+
+#[test]
+fn face_recipe_marker_skips_comparison_admission() {
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D face recipe node marker",
+        None,
+    );
+    assert!(face_result(Case::NodeOffsets, u64::MAX, u64::MAX).is_ok());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        let error = decode
+            .equal(
+                &[-1_i32, -1, 2][..],
+                &[-1_i32, -1, 2][..],
+                "compare F3D face recipe node marker",
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare F3D face recipe node marker")
+        );
+    });
 }

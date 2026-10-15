@@ -224,7 +224,7 @@ mod tests {
         };
         let indexed_section_layouts = OnceLock::new();
         indexed_section_layouts
-            .set(IndexedSectionCache::Borrowed {
+            .set(IndexedSectionCache {
                 sections: vec![(0, section)],
                 blocks: BTreeMap::new(),
             })

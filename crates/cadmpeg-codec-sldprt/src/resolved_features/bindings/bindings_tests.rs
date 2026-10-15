@@ -1173,3 +1173,5 @@ fn scalar_binding_skips_dissected_offset_sort_without_feature_pair() {
 
 mod candidate_lifetime;
 mod spatial_ranges;
+
+mod lazy_indexes;

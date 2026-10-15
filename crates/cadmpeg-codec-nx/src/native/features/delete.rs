@@ -224,7 +224,7 @@ pub(in crate::native) fn feature_delete_construction_payloads(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
     for field in ctx.admit_iter(fields, "scan NX DELETE reference fields")? {
-        let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
+        let Some(payload) = delete_construction_payload_from_field(ctx, field, blocks)? else {
             continue;
         };
         ctx.reserve_vec(&mut output, 1, "NX DELETE construction payloads")?;
@@ -239,7 +239,7 @@ fn delete_construction_payload_from_field(
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
     let slots = field.references.slots();
-    let Some((data_blocks, _source_reservation)) = copy_block_ids(
+    let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
         ctx,
         slots
             .iter()
@@ -252,7 +252,10 @@ fn delete_construction_payload_from_field(
     if shared_block_store(ctx, &data_blocks, "validate NX DELETE source block owners")?.is_none() {
         return Ok(None);
     }
-    let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+    let Some(content) = source_text_storage.with_storage(|| {
+        FeaturePayloadContent::from_scoped_source_array(ctx, data_blocks, blocks, source_id_storage)
+    })?
+    else {
         return Ok(None);
     };
     let Some(operation_key) = field
@@ -261,6 +264,7 @@ fn delete_construction_payload_from_field(
     else {
         return Ok(None);
     };
+    let content = source_text_storage.commit_value(content)?;
     let id = ctx.format_retained(
         format_args!("nx:feature-history:delete-construction-payload#{operation_key}"),
         "NX DELETE construction identity",
@@ -295,6 +299,49 @@ mod tests {
             })
             .collect();
         (field, blocks)
+    }
+
+    #[test]
+    fn delete_missing_source_block_releases_candidate_copies() {
+        let (field, mut blocks) = delete_construction_fixture();
+        blocks.remove("nx:om-data-blocks-0:block#36");
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = 65_536;
+            },
+            |ctx| {
+                assert!(
+                    super::delete_construction_payload_from_field(ctx, &field, &blocks)?.is_none()
+                );
+                let _checkpoint =
+                    ctx.reserve_scoped(65_536, "test delete rejected source scratch")?;
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn delete_missing_operation_key_releases_candidate_content() {
+        let (mut field, blocks) = delete_construction_fixture();
+        field.operation_label = "unkeyed".into();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = 65_536;
+            },
+            |ctx| {
+                assert!(
+                    super::delete_construction_payload_from_field(ctx, &field, &blocks)?.is_none()
+                );
+                let _checkpoint = ctx.reserve_scoped(65_536, "test delete rejected key scratch")?;
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
     }
 
     fn delete_construction_limit_error(
