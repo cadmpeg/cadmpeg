@@ -9,14 +9,7 @@ pub fn check_ir_canonical_roundtrip(
     mut original: cadmpeg_ir::CadIr,
     canonical: &str,
 ) -> Result<(), String> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .map_err(|error| error.to_string())?;
-    original.finalize(&ctx).map_err(|error| error.to_string())?;
+    original.finalize();
     let reparsed = cadmpeg_ir::CadIr::from_json(canonical)
         .map_err(|error| format!("canonical JSON cannot be reparsed: {error}"))?;
     if reparsed != original {
