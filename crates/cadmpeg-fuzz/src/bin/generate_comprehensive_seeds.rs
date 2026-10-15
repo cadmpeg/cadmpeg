@@ -531,7 +531,7 @@ mod sldprt {
                 &DecodePolicy::default(),
             )
             .expect("root");
-            let (material, _storage) = ctx
+            let material = ctx
                 .inflate_probe(root, payload_len, false)
                 .expect("probe")
                 .expect("material block");
