@@ -235,10 +235,13 @@ pub(crate) fn decode(
         });
     }
     bind_snapshot_revision_ids(&mut states)?;
-    let record_table_binding_budget_exceeded = bind_historical_entity_versions(&mut states)?
-        == TableBindingCost::Exceeded
-        || bind_complete_record_tables(ctx, &mut states, bytes, width)?
-            == TableBindingCost::Exceeded;
+    let record_table_binding_budget_exceeded = bind_historical_entity_versions(
+        &mut states,
+        history_binding_max_state_records(ctx.policy()),
+    )? == TableBindingCost::Exceeded;
+    if !record_table_binding_budget_exceeded {
+        bind_complete_record_tables(ctx, &mut states, bytes, width)?;
+    }
     if states.is_empty() {
         return Ok(None);
     }
@@ -372,13 +375,44 @@ fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
         .and_then(|count| usize::try_from(count).ok())
 }
 
+/// Native text that binding retains for one state-record entry: the
+/// entity-version pair and the plane-selection topology that each
+/// `asm_delta_states` record keeps for the entry, and the Design operands that
+/// the bound history resolves. User designs with 1 to 20 million entries
+/// retain 110 to 124 bytes for each entry. The value is rounded up.
+const HISTORY_RETAINED_BYTES_PER_STATE_RECORD: u64 = 128;
+
+/// Largest number of state-record entries that one history stream binds.
+///
+/// One entry is one record of one state's record table. The per-state
+/// topology decode, the projected snapshots, and the retained native text all
+/// grow linearly with the entry count. At this count the binding alone retains
+/// the policy's complete `max_retained_bytes`, so a larger binding cannot
+/// complete in the session. A history past this count skips historical
+/// topology and reports the skip.
+fn history_binding_max_state_records(policy: &cadmpeg_core::decode::DecodePolicy) -> u64 {
+    policy.limits.max_retained_bytes / HISTORY_RETAINED_BYTES_PER_STATE_RECORD
+}
+
+/// Whether one history stream's state-record entries fit the binding bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TableBindingCost {
+    /// The entries fit; the history is bound.
+    Admitted,
+    /// The entries exceed the bound; historical topology is skipped.
+    Exceeded,
+}
+
 /// Project the entity-to-record version map onto every state.
 ///
-/// The projection holds one map of the active record count per state. A
-/// history whose estimate exceeds [`HISTORY_BINDING_MAX_WORK_UNITS`] is not
-/// projected and reports [`TableBindingCost::Exceeded`].
+/// The walk is done twice. The first walk validates the chain and counts the
+/// state-record entries without a projection. A history with more than
+/// `max_state_records` entries is not projected and reports
+/// [`TableBindingCost::Exceeded`]. The second walk stores one version map for
+/// each state.
 fn bind_historical_entity_versions(
     states: &mut [AsmDeltaState],
+    max_state_records: u64,
 ) -> Result<TableBindingCost, cadmpeg_core::CodecError> {
     let mut archived_ids = Vec::new();
     for revision_id in states
@@ -394,20 +428,51 @@ fn bind_historical_entity_versions(
     else {
         return Ok(TableBindingCost::Admitted);
     };
-    if complete_table_binding_cost(states.iter().map(|_| active_count))
-        == TableBindingCost::Exceeded
-    {
-        return Ok(TableBindingCost::Exceeded);
-    }
     let Ok(active_count) = i64::try_from(active_count) else {
         return Ok(TableBindingCost::Admitted);
     };
+    let mut state_records = Some(0_u64);
+    if !walk_entity_versions(states, active_count, &archived_ids, |_, versions| {
+        state_records =
+            state_records.and_then(|total| total.checked_add(u64_from_index(versions.len())));
+    }) {
+        return Ok(TableBindingCost::Admitted);
+    }
+    if state_records.is_none_or(|count| count > max_state_records) {
+        return Ok(TableBindingCost::Exceeded);
+    }
+    let mut projected = Vec::new();
+    walk_entity_versions(states, active_count, &archived_ids, |ordinal, versions| {
+        let mut state_versions = Vec::new();
+        for (&entity_ref, &record_ref) in versions {
+            state_versions.push(AsmEntityVersion {
+                entity_ref,
+                record_ref,
+            });
+        }
+        projected.push((ordinal, state_versions));
+    });
+    for (ordinal, versions) in projected {
+        states[ordinal].entity_versions = versions;
+    }
+    Ok(TableBindingCost::Admitted)
+}
+
+/// Walk the state chain from its head and give each state's entity-to-record
+/// version map to `visit`. Returns false, after a partial walk, when the chain
+/// or a bulletin-board change is inconsistent with the archived revisions.
+fn walk_entity_versions(
+    states: &[AsmDeltaState],
+    active_count: i64,
+    archived_ids: &[i64],
+    mut visit: impl FnMut(usize, &BTreeMap<i64, i64>),
+) -> bool {
     let mut by_node = HashMap::new();
     for (ordinal, state) in states.iter().enumerate() {
         by_node.insert(state.node_index, ordinal);
     }
     if by_node.len() != states.len() {
-        return Ok(TableBindingCost::Admitted);
+        return false;
     }
     let mut heads = states
         .iter()
@@ -415,37 +480,23 @@ fn bind_historical_entity_versions(
         .filter(|(_, state)| state.previous_ref.is_none())
         .map(|(ordinal, _)| ordinal);
     let Some(mut ordinal) = heads.next() else {
-        return Ok(TableBindingCost::Admitted);
+        return false;
     };
     if heads.next().is_some() {
-        return Ok(TableBindingCost::Admitted);
+        return false;
     }
 
     let mut versions = BTreeMap::new();
     for id in 0..active_count {
         versions.insert(id, id);
     }
-    let mut projected = HashMap::new();
     let mut visited = HashSet::new();
     loop {
         let state = &states[ordinal];
-
-        if visited.contains(&state.node_index) {
-            return Ok(TableBindingCost::Admitted);
+        if !visited.insert(state.node_index) {
+            return false;
         }
-
-        visited.insert(state.node_index);
-
-        let mut state_versions = Vec::new();
-
-        for (&entity_ref, &record_ref) in &versions {
-            state_versions.push(AsmEntityVersion {
-                entity_ref,
-                record_ref,
-            });
-        }
-
-        projected.insert(state.node_index, state_versions);
+        visit(ordinal, &versions);
         for change in state
             .bulletin_boards
             .iter()
@@ -454,18 +505,18 @@ fn bind_historical_entity_versions(
             match change.kind {
                 AsmEntityChangeKind::Update { old, new } => {
                     if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
-                        return Ok(TableBindingCost::Admitted);
+                        return false;
                     }
                     versions.insert(new, old);
                 }
                 AsmEntityChangeKind::Insert { new } => {
                     if versions.remove(&new).is_none() {
-                        return Ok(TableBindingCost::Admitted);
+                        return false;
                     }
                 }
                 AsmEntityChangeKind::Delete { old } => {
                     if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
-                        return Ok(TableBindingCost::Admitted);
+                        return false;
                     }
                     versions.insert(old, old);
                 }
@@ -475,56 +526,11 @@ fn bind_historical_entity_versions(
             break;
         };
         let Some(&next_ordinal) = by_node.get(&next) else {
-            return Ok(TableBindingCost::Admitted);
+            return false;
         };
         ordinal = next_ordinal;
     }
-    if visited.len() != states.len() || versions.len() != 1 || versions.get(&0) != Some(&0) {
-        return Ok(TableBindingCost::Admitted);
-    }
-    for state in states {
-        state.entity_versions = projected.remove(&state.node_index).unwrap_or_default();
-    }
-    Ok(TableBindingCost::Admitted)
-}
-
-/// Estimated work for decoding one record in one historical state. A state
-/// snapshot traverses the record table repeatedly to build topology,
-/// incidence, and carrier projections, so the estimate is proportional to the
-/// state-by-record cross product.
-const HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY: u64 = 4096;
-/// Codec-local bound on the complete-history binding estimate. The binding is
-/// optional enrichment; a deep history past this bound skips historical
-/// topology and reports the skip.
-const HISTORY_BINDING_MAX_WORK_UNITS: u64 = 4_000_000_000;
-
-/// Whether binding every historical record table fits the decode policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TableBindingCost {
-    /// The estimated cache and work fit the policy ceilings.
-    Admitted,
-    /// The estimate exceeds a policy ceiling; historical topology is skipped.
-    Exceeded,
-}
-
-/// Estimate the complete-history binding from the per-state table lengths.
-///
-/// The estimate is compared with the codec-local bound before any cache is
-/// built. Exceeding it skips the optional historical topology; the decode
-/// continues and reports the skip.
-fn complete_table_binding_cost(table_lengths: impl IntoIterator<Item = usize>) -> TableBindingCost {
-    let fits = table_lengths
-        .into_iter()
-        .try_fold(0_u64, |total, length| {
-            total.checked_add(u64_from_index(length))
-        })
-        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY))
-        .is_some_and(|work| work <= HISTORY_BINDING_MAX_WORK_UNITS);
-    if fits {
-        TableBindingCost::Admitted
-    } else {
-        TableBindingCost::Exceeded
-    }
+    visited.len() == states.len() && versions.len() == 1 && versions.get(&0) == Some(&0)
 }
 
 fn bind_complete_record_tables(
@@ -532,9 +538,9 @@ fn bind_complete_record_tables(
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: RefWidth,
-) -> Result<TableBindingCost, cadmpeg_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(());
     };
     let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
     let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
@@ -543,24 +549,19 @@ fn bind_complete_record_tables(
         Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
             return Err(error.into_codec_error())
         }
-        Err(_) => return Ok(TableBindingCost::Admitted),
+        Err(_) => return Ok(()),
     };
 
-    if complete_table_binding_cost(states.iter().map(|state| state.entity_versions.len()))
-        == TableBindingCost::Exceeded
-    {
-        return Ok(TableBindingCost::Exceeded);
-    }
     let insert_only = insert_only_active_record_count(states);
     let archived_count = archived_active_record_count(states)?;
     let Some(active_count) = archived_count.or(insert_only) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(());
     };
     if insert_only.is_some() && framed.len() != active_count {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(());
     }
     let Some(active_records) = framed.get(..active_count) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(());
     };
     let mut archived_frames = HashMap::new();
     for record in states
@@ -569,16 +570,16 @@ fn bind_complete_record_tables(
         .filter(|record| record.revision_id.is_some())
     {
         let Some(revision_id) = record.revision_id else {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(());
         };
         let Some(offset) = usize::try_from(record.byte_offset).ok() else {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(());
         };
         let Some(limit) = offset.checked_add(record.raw_bytes.len()) else {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(());
         };
         if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(());
         }
         let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
             Ok(records) => records,
@@ -588,24 +589,24 @@ fn bind_complete_record_tables(
             Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
                 return Err(error.into_codec_error())
             }
-            Err(_) => return Ok(TableBindingCost::Admitted),
+            Err(_) => return Ok(()),
         };
         if framed.len() != 1 {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(());
         }
         let Some(framed) = framed.pop() else {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(());
         };
         if framed.name != record.name() {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(());
         }
 
         if archived_frames.insert(revision_id, framed).is_some() {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(());
         }
     }
     let Some(archive) = historical_record_archive(states, active_records, archived_frames) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(());
     };
     let mut complete = true;
     for state in states.iter_mut() {
@@ -649,7 +650,7 @@ fn bind_complete_record_tables(
             state.topology_cache = crate::history_records::AsmTopologyCache::Absent;
         }
     }
-    Ok(TableBindingCost::Admitted)
+    Ok(())
 }
 
 fn topology_entity_slots(topology: &AsmHistoricalTopology) -> HashSet<i64> {

@@ -22,7 +22,7 @@ pub(crate) struct AsmHistory {
     pub(crate) byte_offset: u64,
     pub(crate) preamble: Option<AsmPreamble>,
     /// True when historical topology binding was not attempted because its
-    /// state-by-record work estimate exceeded the decoder safety budget.
+    /// state-record entry count exceeded the binding bound.
     pub(crate) record_table_binding_budget_exceeded: bool,
     pub(crate) states: Vec<AsmDeltaState>,
 }

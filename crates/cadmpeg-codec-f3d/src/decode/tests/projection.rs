@@ -93,6 +93,43 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
 }
 
 #[test]
+fn history_past_its_binding_bound_reports_a_loss() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native
+        .asm_histories
+        .push(crate::history_records::AsmHistory {
+            id: "f3d:test:asm-history#0".into(),
+            byte_offset: 0,
+            preamble: None,
+            record_table_binding_budget_exceeded: true,
+            states: Vec::new(),
+        });
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::HistoryBindingBudgetExceeded.kind())
+        .expect("history binding loss");
+    assert_eq!(loss.message, "1 ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget.");
+}
+
+#[test]
 fn recipe_side_search_past_its_work_cap_reports_a_loss() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
