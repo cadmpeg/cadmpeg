@@ -318,9 +318,7 @@ mod tests {
             DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default())
                 .expect("root");
         assert_eq!(
-            ctx.inflate_probe(root, 12, true)
-                .expect("probe")
-                .as_deref(),
+            ctx.inflate_probe(root, 12, true).expect("probe").as_deref(),
             Some(b"Document.xml".as_slice())
         );
         assert!(ctx.inflate_probe(root, 11, true).expect("probe").is_none());
