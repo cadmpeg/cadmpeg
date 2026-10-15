@@ -846,14 +846,18 @@ fn kernel_layer_refuses_work_limit_before_classification() {
     let container = InventorContainer::open(&setup_ctx, root).expect("primary container");
     let primary = DialectMatch::admitted(InventorDialect::Unknown.id());
     let mut policy = DecodePolicy::service();
+    // classify validates the first character of save_format_major before
+    // copying its key or formatting its value: 0 used + 1 work unit > 0.
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let error = layers(&ctx, &primary, &container.rse.active_carrier)
-        .expect_err("kernel declaration measurement still requires shared output admission");
+        .expect_err("kernel declaration key validation requires work admission");
     assert!(matches!(&error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "retain Inventor kernel save major"
+                && limit.operation == "validate nonblank text"
+                && limit.used == 0
+                && limit.additional == 1
     ));
     assert!(
         matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -876,22 +880,37 @@ fn kernel_layer_refuses_retained_limit_before_recovery_grammar() {
             .expect("service context");
     let container = InventorContainer::open(&setup_ctx, root).expect("primary container");
     let primary = DialectMatch::admitted(InventorDialect::Unknown.id());
-    // The recovery grammar retains the fifteen-byte local dialect id.
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "copy dialect grammar",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-            layers(&ctx, &primary, &container.rse.active_carrier).map(|_| ())
-        },
+    // classify retains keys of 17 + 17 + 15 bytes and values of 3 + 1 + 1
+    // bytes. insert_btree_map charges three items and one node for three
+    // entries: 11 * (key size + value size) + 16 pointer slots + 2 alignments.
+    // The static, empty primary adds no retained bytes. The next copy needs
+    // the 15 bytes of save-format-218 after exactly these declarations.
+    let node_alignment = std::mem::align_of::<cadmpeg_core::text::NonBlankString>()
+        .max(std::mem::align_of::<String>())
+        .max(std::mem::align_of::<usize>());
+    let declaration_bytes = cadmpeg_core::decode::u64_from_index(
+        17 + 17
+            + 15
+            + 3
+            + 1
+            + 1
+            + 11 * (std::mem::size_of::<cadmpeg_core::text::NonBlankString>()
+                + std::mem::size_of::<String>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * node_alignment,
     );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = declaration_bytes;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let error = layers(&ctx, &primary, &container.rse.active_carrier)
+        .expect_err("recovery grammar exceeds the paid declaration bytes");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 15
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "copy dialect grammar"
+                && limit.used == declaration_bytes
+                && limit.additional == 15
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
