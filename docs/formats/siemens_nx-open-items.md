@@ -294,16 +294,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** Preserve the payload without assigning a Hvec layout from a broad plain-stream classification.
 
-### PS-34. B-spline form-code semantics
-
-**Question.** What does each B-spline form code mean?
-
-**Known.** `siemens_nx.md` §9.3 "A type-126 B-surface descriptor stores U/V periodic logical flags" names the descriptor fields and assigns the former form-code positions as knot types. `siemens_nx.md` §9.3 "The B-spline knot type does not determine whether a control grid is rational or periodic." excludes one interpretation. The specification does not provide independent evidence for the value meanings.
-
-**Need.** We must know the meaning of each code. The decoder admits the codes `1`, `4`, `5`, and `6`, and transfers the single code `6` as the periodic flag of the surface, curve, or pcurve. A periodic carrier whose code is not `6` transfers as open, so its seam trims as a boundary. Periodicity also gates the offset-surface cache relation, so a wrong flag admits or discards that relation.
-
-**Note.** The closure moves periodicity to logical bytes and relabels the former form bytes as knot types, but the value meanings are asserted by the changed specification and synthetic descriptor tests. The current parser retains knot types only as an admission gate; their semantics remain unverified against corpus records.
-
 ### PS-35. Escaped and direct fixed-record disambiguation
 
 **Question.** Which test separates a direct large-index fixed record from an escaped record when the byte after the type is `ff`?

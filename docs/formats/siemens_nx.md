@@ -2972,6 +2972,24 @@ Type 127 stores `00 7f [ff], 0000, count:u16 BE, xmt, value[count]:u16 BE`. Type
 
 The B-spline knot type does not determine whether a control grid is rational or periodic. The control-grid stride determines the representation: stride 3 stores xyz and stride 4 stores xyzw.
 
+The knot-type byte is `SCH_knot_type_t` metadata. The order is the degree plus one.
+
+| Value | Name | Declared knot property |
+| ---: | --- | --- |
+| 1 | `SCH_unset` | Unknown or not classified. |
+| 2 | `SCH_non_uniform` | Non-uniform; not classified as a special knot set. |
+| 3 | `SCH_uniform` | Equally spaced distinct knots, each with multiplicity one. |
+| 4 | `SCH_quasi_uniform` | Equally spaced distinct knots, end multiplicities equal to the order, and interior multiplicities one. |
+| 5 | `SCH_piecewise_bezier` | Interior multiplicities equal to the degree. |
+| 6 | `SCH_bezier_ends` | End multiplicities equal to the order; no other property declared. |
+
+These classifications can overlap. Preserve the transmitted value rather than
+derive a replacement from the knot vector. The code does not replace the stored
+knots, multiplicities, or periodic, closed, and rational logical fields. A periodic
+vector can store imaginary knots outside its valid parameter interval. Its outer
+stored multiplicities do not supply an additional admission rule from the
+knot-type code.
+
 ### 9.4 Attributes and expressions
 
 Parasolid type-79 attribute identifiers are `00 4f [ff], name_len:u32 BE, xmt, name[name_len]`. The name is non-empty printable ASCII. Type-79 records are independent nodes and need not be adjacent to the type-80 definition that references them.
