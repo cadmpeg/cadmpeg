@@ -923,6 +923,11 @@ fn parallel_reference_table_result() {
         .enumerate()
         .filter_map(|(index, record)| Some((record.entity_id()?, index)))
         .collect::<HashMap<_, _>>();
-    let admitted = super::super::design_parallel_reference_table(&fields, graph, &indices);
+    let admitted = super::super::design_parallel_reference_table(
+        &fields,
+        graph,
+        &indices,
+        super::super::terminal_null_entity_id(&indices),
+    );
     assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
 }

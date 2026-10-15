@@ -852,3 +852,32 @@ fn native_alias_graph_link_result() {
     .expect("service decode");
     assert!(native.alias_rows[0].object_graph.is_some());
 }
+
+#[test]
+fn extent_owners_agree_with_pairwise_containment() {
+    let extents = [
+        (0, 10),
+        (2, 3),
+        (5, 0),
+        (5, 5),
+        (9, 1),
+        (usize::MAX - 1, 4),
+        (usize::MAX, 0),
+    ];
+    for owners_len in 0..=extents.len() {
+        let owners = &extents[..owners_len];
+        let index = super::super::ExtentOwners::new(owners.iter().copied());
+        for start in (0..12).chain([usize::MAX - 1, usize::MAX]) {
+            for len in [0, 1, 3, 5, 8, usize::MAX] {
+                let pairwise = owners.iter().any(|&(owner, owner_len)| {
+                    crate::object_graph::extent_contains(owner, owner_len, start, len)
+                });
+                assert_eq!(
+                    index.contains(start, len),
+                    pairwise,
+                    "{owners:?} {start} {len}"
+                );
+            }
+        }
+    }
+}

@@ -1170,7 +1170,7 @@ fn native_incoming_incidences_result() {
     let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);
     let graph = &native.object_graphs[0];
-    let admitted = super::super::entity_incidences(&graph.records, &graph.id, 5);
+    let admitted = super::super::EntityIncidenceIndex::new(&graph.records, &graph.id).incidences(5);
     assert!(!admitted.0.is_empty());
 }
 

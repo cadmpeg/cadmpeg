@@ -915,8 +915,10 @@ fn native_constraint_and_range_values_result() {
         range_entity.value_payload(),
         &range_entity.value_schema_selections,
         range_entity.suffix_value(),
-        &range_native.object_graphs[0].records,
-        &range_entity.object_graph,
+        &super::super::EntityIncidenceIndex::new(
+            &range_native.object_graphs[0].records,
+            &range_entity.object_graph,
+        ),
         range_entity.entity_id,
     );
     assert_eq!(service, range_entity.range_interval);

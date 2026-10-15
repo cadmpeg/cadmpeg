@@ -605,7 +605,7 @@ pub(crate) fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
 /// be shortened to fit it: [`SourceExtent::within`] refuses to build one, and
 /// the type has no other constructor from parsed values. The complete image is
 /// always its own extent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct SourceExtent(Range<usize>);
 
 impl SourceExtent {
