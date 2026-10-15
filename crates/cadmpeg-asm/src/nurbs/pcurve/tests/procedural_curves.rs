@@ -37,8 +37,13 @@ fn extrusion_layout_walks_modern_and_legacy_names_at_both_widths() {
             bytes.extend_from_slice(&surface_block(int_width));
             bytes.push(0x10);
 
-            let layout = extrusion_patch_layout(&bytes, int_width)
-                .unwrap_or_else(|| panic!("extrusion layout {name} at width {int_width}"));
+            let layout = extrusion_patch_layout(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                int_width,
+            )
+            .expect("decode work admission")
+            .unwrap_or_else(|| panic!("extrusion layout {name} at width {int_width}"));
             let interval = layout
                 .parameter_interval
                 .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
@@ -140,8 +145,13 @@ fn helix_layout_walks_optional_range_flags_at_both_widths() {
         .transpose()
         .unwrap()
         .is_some());
-        let layout = helix_patch_layout(&bytes, int_width)
-            .unwrap_or_else(|| panic!("helix layout at width {int_width}"));
+        let layout = helix_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            int_width,
+        )
+        .expect("decode work admission")
+        .unwrap_or_else(|| panic!("helix layout at width {int_width}"));
         let range = layout
             .angle_range
             .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
@@ -274,8 +284,13 @@ fn vector_offset_layout_ignores_outer_vectors_at_both_widths() {
         bytes.extend_from_slice(&curve_block(int_width));
         bytes.push(0x10);
 
-        let layout = vector_offset_patch_layout(&bytes, int_width)
-            .unwrap_or_else(|| panic!("vector-offset layout at width {int_width}"));
+        let layout = vector_offset_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            int_width,
+        )
+        .expect("decode work admission")
+        .unwrap_or_else(|| panic!("vector-offset layout at width {int_width}"));
         let range = layout
             .parameter_range
             .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
@@ -300,8 +315,13 @@ fn subset_layout_ignores_outer_curve_cache_at_both_widths() {
         bytes.extend_from_slice(&curve_block(int_width));
         bytes.push(0x10);
 
-        let layout = subset_patch_layout(&bytes, int_width)
-            .unwrap_or_else(|| panic!("subset layout at width {int_width}"));
+        let layout = subset_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            int_width,
+        )
+        .expect("decode work admission")
+        .unwrap_or_else(|| panic!("subset layout at width {int_width}"));
         let range = layout
             .parameter_range
             .map(|offset| f64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()));
@@ -331,8 +351,13 @@ fn compound_layout_requires_framed_subtype_at_both_widths() {
         bytes.extend_from_slice(&curve_block(int_width));
         bytes.push(0x10);
 
-        let layout = compound_patch_layout(&bytes, int_width)
-            .unwrap_or_else(|| panic!("compound layout at width {int_width}"));
+        let layout = compound_patch_layout(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            int_width,
+        )
+        .expect("decode work admission")
+        .unwrap_or_else(|| panic!("compound layout at width {int_width}"));
         let parameters = layout
             .parameters
             .iter()

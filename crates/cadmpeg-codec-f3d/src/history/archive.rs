@@ -432,7 +432,7 @@ pub(super) fn bind_complete_record_tables(
     let mut cache_storage =
         ctx.reserve_scoped(0, "collect F3D complete historical topology caches")?;
     let mut states = states;
-    let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
+    let Some(start) = cadmpeg_asm::asm_header::record_stream_start(ctx, bytes)? else {
         return Ok(states);
     };
     // An archive and an insert-only chain state their active count before
@@ -625,7 +625,7 @@ pub(super) fn bind_complete_record_tables(
 
 #[derive(Debug)]
 struct HistoricalRecordArchive<'ctx> {
-    records: BTreeMap<i64, cadmpeg_asm::sab::Record>,
+    records: BTreeMap<i64, cadmpeg_asm::sab::Record<'ctx>>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     _token_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
@@ -633,8 +633,8 @@ struct HistoricalRecordArchive<'ctx> {
 fn historical_record_archive<'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     states: &[AsmDeltaState],
-    active_records: &[cadmpeg_asm::sab::Record],
-    archived_frames: BTreeMap<i64, cadmpeg_asm::sab::Record>,
+    active_records: &[cadmpeg_asm::sab::Record<'ctx>],
+    archived_frames: BTreeMap<i64, cadmpeg_asm::sab::Record<'ctx>>,
 ) -> Result<Option<HistoricalRecordArchive<'ctx>>, cadmpeg_core::CodecError> {
     if ctx.any_by(
         active_records.iter().enumerate(),
@@ -810,18 +810,11 @@ fn historical_record_archive<'ctx>(
     }))
 }
 
-fn clone_historical_record(
+fn clone_historical_record<'r>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    record: &cadmpeg_asm::sab::Record,
-) -> Result<cadmpeg_asm::sab::Record, cadmpeg_core::CodecError> {
-    let name = ctx.copy_retained_text(&record.name, "copy F3D historical record text")?;
-    Ok(cadmpeg_asm::sab::Record {
-        index: record.index,
-        name,
-        tokens: record.tokens.clone(),
-        offset: record.offset,
-        len: record.len,
-    })
+    record: &cadmpeg_asm::sab::Record<'r>,
+) -> Result<cadmpeg_asm::sab::Record<'r>, cadmpeg_core::CodecError> {
+    record.try_clone_for_decode(ctx, "copy F3D historical record text")
 }
 
 fn clone_historical_token(
@@ -1112,14 +1105,14 @@ fn entity_delta(
 
 #[derive(Debug)]
 struct MaterializedRecordTable<'ctx> {
-    records: Vec<cadmpeg_asm::sab::Record>,
+    records: Vec<cadmpeg_asm::sab::Record<'ctx>>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 fn materialize_record_table<'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     state: &AsmDeltaState,
-    archive: &HistoricalRecordArchive<'_>,
+    archive: &HistoricalRecordArchive<'ctx>,
 ) -> Result<Option<MaterializedRecordTable<'ctx>>, cadmpeg_core::CodecError> {
     if state.entity_versions.is_empty() {
         return Ok(None);

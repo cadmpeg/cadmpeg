@@ -125,14 +125,16 @@ fn one_archived_state_with_delete() -> crate::history_records::AsmHistory {
     history
 }
 
-fn archive_record() -> cadmpeg_asm::sab::Record {
-    cadmpeg_asm::sab::Record {
-        index: 0,
-        name: "edge".into(),
-        tokens: vec![cadmpeg_asm::sab::Token::Ref(-1)].into(),
-        offset: 0,
-        len: 0,
-    }
+fn archive_record() -> cadmpeg_asm::sab::Record<'static> {
+    archive_fixture("edge".into(), vec![cadmpeg_asm::sab::Token::Ref(-1)])
+}
+
+fn archive_fixture(
+    name: String,
+    tokens: Vec<cadmpeg_asm::sab::Token>,
+) -> cadmpeg_asm::sab::Record<'static> {
+    cadmpeg_asm::test_support::sab::record(0, name, tokens.into(), 0, 0)
+        .expect("indexed record fixture")
 }
 
 fn archive_error(max_items: u64) -> cadmpeg_core::CodecError {
@@ -253,10 +255,7 @@ fn history_record_name_copy_refuses_retained_limit() {
     // The name outgrows the temporary peak left by the revision index, so
     // the copy itself raises the materialized usage.
     let operation = "copy F3D historical record text";
-    let record = cadmpeg_asm::sab::Record {
-        name: "e".repeat(4096),
-        ..archive_record()
-    };
+    let record = archive_fixture("e".repeat(4096), vec![cadmpeg_asm::sab::Token::Ref(-1)]);
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         operation,
@@ -286,11 +285,10 @@ fn history_token_text_copy_refuses_retained_limit() {
         operation,
         0,
         |ctx| {
-            let record = cadmpeg_asm::sab::Record {
-                name: String::new(),
-                tokens: vec![cadmpeg_asm::sab::Token::Str("x".into())].into(),
-                ..archive_record()
-            };
+            let record = archive_fixture(
+                String::new(),
+                vec![cadmpeg_asm::sab::Token::Str("x".into())],
+            );
             crate::history::archive::historical_record_archive(
                 ctx,
                 &[],
@@ -728,9 +726,15 @@ fn history_snapshot_old_references_refuse_collection_limit() {
 #[test]
 fn history_record_references_refuse_collection_limit() {
     let bytes = one_framed_history_record();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let error = history_record_with_limits(&bytes, &policy);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "frame F3D history references",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&bytes, &policy))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "frame F3D history references")
@@ -740,9 +744,15 @@ fn history_record_references_refuse_collection_limit() {
 #[test]
 fn history_record_vector_refuses_collection_limit() {
     let bytes = one_framed_history_record();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let error = history_record_with_limits(&bytes, &policy);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "frame F3D history record",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            Err::<(), cadmpeg_core::CodecError>(history_record_with_limits(&bytes, &policy))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "frame F3D history record")

@@ -3,7 +3,9 @@
 
 use crate::kernel_header::RefWidth;
 use crate::sab::int_le_at;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 /// Modern and legacy spellings of the same intcurve construction.
 pub(super) const INTCURVE_ALIASES: &[(&str, &str)] = &[
@@ -23,17 +25,25 @@ pub(super) const INTCURVE_ALIASES: &[(&str, &str)] = &[
     ("subset_int_cur", "subsetintcur"),
 ];
 
+/// Ordered byte offsets and borrowed names of owned subtype definitions.
+pub(super) type OwnedSubtypeDefinitions<'bytes> = Vec<(usize, &'bytes [u8])>;
+
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
 /// included. A definition inside a nested scope belongs to that scope's
 /// construction, not to `bytes`.
 ///
 /// A `0x10` with no open scope is a malformed stream and is refused.
-pub(super) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Vec<(usize, &[u8])>> {
+pub(super) fn owned_subtype_defs<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
+    int_width: RefWidth,
+) -> Result<Option<OwnedSubtypeDefinitions<'bytes>>, CodecError> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     let mut pos = 0usize;
     while pos < bytes.len() {
+        ctx.charge_work(1, "scan ASM owned subtype token")?;
         match bytes[pos] {
             0x0f => {
                 if depth == 0 && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
@@ -41,13 +51,18 @@ pub(super) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Ve
                     // name at all, which is not a name of zero bytes.
                     if let Some(&len) = bytes.get(pos + 2) {
                         if let Some(name) = bytes.get(pos + 3..pos + 3 + usize::from(len)) {
-                            owned.push((pos, name));
+                            ctx.push_vec(&mut owned, (pos, name), "ASM owned subtype definitions")?;
                         }
                     }
                 }
                 depth += 1;
             }
-            0x10 => depth = depth.checked_sub(1)?,
+            0x10 => {
+                let Some(next) = depth.checked_sub(1) else {
+                    return Ok(None);
+                };
+                depth = next;
+            }
             _ => {}
         }
         match next_token(bytes, pos, int_width) {
@@ -55,7 +70,7 @@ pub(super) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Ve
             None => break,
         }
     }
-    Some(owned)
+    Ok(Some(owned))
 }
 
 /// Byte offset of the first subtype definition `bytes` owns whose name matches
@@ -68,38 +83,125 @@ pub(super) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Ve
 /// that accepted any matching marker anywhere in the record would claim records
 /// belonging to the construction that encloses it.
 pub(super) fn find_owned_subtype_marker<'n>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     names: &[&'n [u8]],
     int_width: RefWidth,
-) -> Option<(usize, &'n [u8])> {
-    let owned = owned_subtype_defs(bytes, int_width)?;
-    names.iter().copied().find_map(|name| {
-        owned
-            .iter()
-            .find(|(_, owned_name)| *owned_name == name)
-            .map(|(start, _)| (*start, name))
-    })
+) -> Result<Option<(usize, &'n [u8])>, CodecError> {
+    let (owned, _storage) = ctx.with_scoped_storage("ASM owned subtype search", || {
+        owned_subtype_defs(ctx, bytes, int_width)
+    })?;
+    let Some(owned) = owned else {
+        return Ok(None);
+    };
+    for &name in names {
+        if let Some((start, _)) = ctx.find_by(
+            &owned,
+            |(_, owned_name)| Ok(*owned_name == name),
+            "ASM owned subtype name search",
+        )? {
+            return Ok(Some((*start, name)));
+        }
+    }
+    Ok(None)
 }
 
 /// Byte offset and name length of the `intcurve` subtype definition `bytes`
 /// owns, given the subtype's modern name. The legacy spelling of the same
 /// construction is accepted as a second candidate.
 pub(super) fn find_owned_intcurve_subtype(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     modern: &[u8],
     int_width: RefWidth,
-) -> Option<(usize, usize)> {
+) -> Result<Option<(usize, usize)>, CodecError> {
     if modern.is_empty() {
-        return None;
+        return Ok(None);
     }
     let legacy = INTCURVE_ALIASES
         .iter()
         .find_map(|(name, alias)| (name.as_bytes() == modern).then_some(alias.as_bytes()));
     let found = match legacy {
-        Some(legacy) => find_owned_subtype_marker(bytes, &[modern, legacy], int_width),
-        None => find_owned_subtype_marker(bytes, &[modern], int_width),
+        Some(legacy) => find_owned_subtype_marker(ctx, bytes, &[modern, legacy], int_width)?,
+        None => find_owned_subtype_marker(ctx, bytes, &[modern], int_width)?,
     };
-    found.map(|(marker, name)| (marker, name.len()))
+    Ok(found.map(|(marker, name)| (marker, name.len())))
+}
+
+/// Read the next compact or named subtype reference in token order.
+/// The cursor advances only over tokens the search actually visits.
+pub(super) fn next_subtype_reference(
+    ctx: &DecodeContext<'_>,
+    tokens: &[crate::sab::Token],
+    position: &mut usize,
+) -> Result<Option<usize>, CodecError> {
+    use crate::sab::Token;
+
+    let start = *position;
+    let Some(remaining) = tokens.get(start..) else {
+        return Ok(None);
+    };
+    ctx.find_map(
+        remaining.iter().enumerate(),
+        |(offset, token)| {
+            let pos = start + offset;
+            *position = pos + 1;
+            if !matches!(token, Token::SubtypeOpen) {
+                return Ok(None);
+            }
+            let index = match (tokens.get(pos + 1), tokens.get(pos + 2)) {
+                (Some(Token::Ident(name)), Some(Token::Long(index)))
+                    if name == "ref" && *index >= 0 =>
+                {
+                    usize::try_from(*index).ok()
+                }
+                (Some(Token::Long(index)), Some(Token::SubtypeClose)) if *index >= 0 => {
+                    usize::try_from(*index).ok()
+                }
+                _ => None,
+            };
+            Ok(index)
+        },
+        "ASM subtype reference search",
+    )
+}
+
+/// Whether an outer subtype definition names a construction other than `ref`.
+/// A close without an opening invalidates the complete ownership walk.
+pub(super) fn has_owned_construction(
+    ctx: &DecodeContext<'_>,
+    tokens: &[crate::sab::Token],
+) -> Result<bool, CodecError> {
+    use crate::sab::Token;
+    let mut depth = 0usize;
+    let mut owns = false;
+    let valid = ctx.all_by(
+        tokens.iter().enumerate(),
+        |(position, token)| {
+            match token {
+                Token::SubtypeOpen => {
+                    if depth == 0 {
+                        if let Some(Token::Ident(name) | Token::SubIdent(name)) =
+                            tokens.get(position + 1)
+                        {
+                            owns |= name != "ref";
+                        }
+                    }
+                    depth += 1;
+                }
+                Token::SubtypeClose => {
+                    let Some(next) = depth.checked_sub(1) else {
+                        return Ok(false);
+                    };
+                    depth = next;
+                }
+                _ => {}
+            }
+            Ok(true)
+        },
+        "ASM construction ownership tokens",
+    )?;
+    Ok(valid && owns)
 }
 
 /// A balanced subtype scope in byte space.
@@ -134,24 +236,38 @@ impl<'a> SubtypeScope<'a> {
 ///
 /// `None` unless the byte at `start` is `0x0f`. A definition opens at its own
 /// `0x0f`, so a `start` that names another byte names no definition.
-pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<SubtypeScope<'_>> {
-    (bytes.get(start) == Some(&0x0f)).then_some(())?;
+pub fn subtype_span<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
+    start: usize,
+    int_width: RefWidth,
+) -> Result<Option<SubtypeScope<'bytes>>, CodecError> {
+    if bytes.get(start) != Some(&0x0f) {
+        return Ok(None);
+    }
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
+        ctx.charge_work(1, "scan ASM subtype scope token")?;
         match bytes[pos] {
             0x0f => depth += 1,
             0x10 => {
-                depth = depth.checked_sub(1)?;
+                let Some(next) = depth.checked_sub(1) else {
+                    return Ok(None);
+                };
+                depth = next;
                 if depth == 0 {
-                    return bytes.get(start..=pos).map(SubtypeScope);
+                    return Ok(bytes.get(start..=pos).map(SubtypeScope));
                 }
             }
             _ => {}
         }
-        pos = next_token(bytes, pos, int_width)?;
+        let Some(next) = next_token(bytes, pos, int_width) else {
+            return Ok(None);
+        };
+        pos = next;
     }
-    None
+    Ok(None)
 }
 
 /// Offset of the token after the one at `pos`, or `None` when the tag is
@@ -183,8 +299,61 @@ pub(super) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Optio
 
 #[cfg(test)]
 mod ownership_tests {
-    use super::{find_owned_intcurve_subtype, subtype_span};
+
+    use super::{find_owned_intcurve_subtype, owned_subtype_defs, subtype_span};
     use crate::kernel_header::RefWidth;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn subtype_reference_scanner_preserves_named_and_compact_stream_order() {
+        use crate::sab::Token;
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let tokens = [
+            Token::Double(9.0),
+            Token::SubtypeOpen,
+            Token::Ident("ref".into()),
+            Token::Long(7),
+            Token::SubtypeClose,
+            Token::Double(8.0),
+            Token::SubtypeOpen,
+            Token::Long(3),
+            Token::SubtypeClose,
+        ];
+        let mut position = 0;
+        assert_eq!(
+            super::next_subtype_reference(&ctx, &tokens, &mut position).unwrap(),
+            Some(7)
+        );
+        assert_eq!(
+            super::next_subtype_reference(&ctx, &tokens, &mut position).unwrap(),
+            Some(3)
+        );
+        assert_eq!(
+            super::next_subtype_reference(&ctx, &tokens, &mut position).unwrap(),
+            None
+        );
+        assert_eq!(position, tokens.len());
+    }
+
+    #[test]
+    fn construction_presence_has_no_owned_storage_and_rejects_unmatched_closes() {
+        use crate::sab::Token;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [
+            Token::SubtypeOpen,
+            Token::Ident("construction".into()),
+            Token::SubtypeClose,
+        ];
+        assert!(super::has_owned_construction(&ctx, &tokens).unwrap());
+        assert!(!super::has_owned_construction(&ctx, &[Token::SubtypeClose]).unwrap());
+        ctx.finish_session().unwrap();
+    }
 
     /// A subtype definition opening: `0x0f`, name token, length, name bytes.
     fn open(bytes: &mut Vec<u8>, name: &[u8]) {
@@ -213,11 +382,11 @@ mod ownership_tests {
             bytes.push(0x10);
 
             assert_eq!(
-                find_owned_intcurve_subtype(&bytes, b"defm_int_cur", int_width),
+                find_owned_intcurve_subtype(&ctx, &bytes, b"defm_int_cur", int_width).unwrap(),
                 Some((0, b"defm_int_cur".len()))
             );
             assert_eq!(
-                find_owned_intcurve_subtype(&bytes, b"int_int_cur", int_width),
+                find_owned_intcurve_subtype(&ctx, &bytes, b"int_int_cur", int_width).unwrap(),
                 None
             );
             assert_eq!(
@@ -227,8 +396,7 @@ mod ownership_tests {
                         .expect("valid single-record byte fixture")
                 )
                 .transpose()
-                .unwrap()
-                .as_deref(),
+                .unwrap(),
                 Some("defm_int_cur")
             );
         }
@@ -239,6 +407,9 @@ mod ownership_tests {
     /// proven the balance the raw-stream walk refuses.
     #[test]
     fn a_byte_scope_yields_its_owned_markers_with_no_refusal_to_answer() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty test input fits input limit");
         for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             open(&mut bytes, b"exact_int_cur");
@@ -249,8 +420,10 @@ mod ownership_tests {
             bytes.push(0x10);
             bytes.push(0x10);
 
-            let scope = subtype_span(&bytes, 0, int_width).expect("balanced scope");
-            let owned: Vec<usize> = scope.owned_marker_positions(int_width);
+            let scope = subtype_span(&ctx, &bytes, 0, int_width)
+                .unwrap()
+                .expect("balanced scope");
+            let owned: Vec<usize> = scope.owned_marker_positions(&ctx, int_width).unwrap();
             assert_eq!(owned, vec![owned_marker]);
             assert_eq!(scope.bytes(), bytes.as_slice());
         }
@@ -260,17 +433,96 @@ mod ownership_tests {
     /// names no definition.
     #[test]
     fn a_byte_span_that_does_not_open_at_start_is_not_a_scope() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty test input fits input limit");
         for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = vec![0x0du8, 0x01, b'x'];
             let open_at = bytes.len();
             open(&mut bytes, b"exact_int_cur");
             bytes.push(0x10);
 
-            assert_eq!(subtype_span(&bytes, 0, int_width), None);
-            assert_eq!(subtype_span(&bytes, 1, int_width), None);
-            assert_eq!(subtype_span(&bytes, bytes.len(), int_width), None);
-            let scope = subtype_span(&bytes, open_at, int_width).expect("balanced scope");
+            assert_eq!(subtype_span(&ctx, &bytes, 0, int_width).unwrap(), None);
+            assert_eq!(subtype_span(&ctx, &bytes, 1, int_width).unwrap(), None);
+            assert_eq!(
+                subtype_span(&ctx, &bytes, bytes.len(), int_width).unwrap(),
+                None
+            );
+            let scope = subtype_span(&ctx, &bytes, open_at, int_width)
+                .unwrap()
+                .expect("balanced scope");
             assert_eq!(scope.bytes(), &bytes[open_at..]);
         }
+    }
+
+    #[test]
+    fn owned_subtype_walk_refuses_unadmitted_work_before_first_token() {
+        let bytes = [0x0f, 0x10];
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "scan ASM owned subtype token",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+                owned_subtype_defs(&ctx, &bytes, RefWidth::Four)
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "scan ASM owned subtype token");
+    }
+
+    #[test]
+    fn subtype_span_refuses_unadmitted_work_before_first_token() {
+        let bytes = [0x0f, 0x10];
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "scan ASM subtype scope token",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+                subtype_span(&ctx, &bytes, 0, RefWidth::Four)
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "scan ASM subtype scope token");
+    }
+
+    #[test]
+    fn owned_byte_subtypes_empty_and_invalid_routes_are_free() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            assert!(owned_subtype_defs(&ctx, &[], RefWidth::Four)
+                .unwrap()
+                .unwrap()
+                .is_empty());
+            for (input, start) in [
+                (b"".as_slice(), 0),
+                (b"\x0b".as_slice(), 0),
+                (b"\x0f".as_slice(), 1),
+            ] {
+                assert!(subtype_span(&ctx, input, start, RefWidth::Four)
+                    .unwrap()
+                    .is_none());
+            }
+        }
+        ctx.finish_session().unwrap();
     }
 }

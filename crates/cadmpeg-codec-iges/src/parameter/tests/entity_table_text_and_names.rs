@@ -35,6 +35,7 @@ fn type406_form34_and_form35_entity_table_boundary_follows_text_score_ranges() {
                 .collect(),
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
             analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -81,6 +82,7 @@ fn type406_form34_and_form35_entity_table_boundary_follows_text_score_ranges() {
             .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
         analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -129,6 +131,7 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
                 .collect(),
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
             analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -179,6 +182,7 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
         ],
         parameter_end: 6,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
         analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -244,6 +248,7 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
         parameter_end: values.len(),
         tokens: values.into_iter().collect(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
         analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -288,6 +293,7 @@ fn type406_form30_entity_table_boundary_follows_fixed_np_and_note_count() {
             tokens,
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         }
     };
     let cases = [
@@ -378,6 +384,7 @@ fn type406_form30_complete_counted_span_keeps_boundary_with_wrong_note_type() {
         parameter_end: tokens.len(),
         tokens,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -446,6 +453,7 @@ fn type406_form30_malformed_np_or_note_count_does_not_enable_generic_recovery() 
             parameter_end: tokens.len(),
             tokens,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
             analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -531,6 +539,7 @@ fn type406_form11_entity_table_boundary_follows_nested_value_counts() {
             parameter_end: tokens.len(),
             tokens,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         if expected_start == 20 {
             let generic_valid_candidate_count =
@@ -600,6 +609,7 @@ fn type406_form11_complete_nested_span_keeps_boundary_with_invalid_value() {
         parameter_end: tokens.len(),
         tokens,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -762,6 +772,7 @@ fn type406_form11_malformed_nested_counts_do_not_enable_generic_recovery() {
             parameter_end: tokens.len(),
             tokens,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
             analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -827,6 +838,7 @@ fn type406_form12_entity_table_boundary_follows_name_count() {
             parameter_end: tokens.len(),
             tokens,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
             analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -875,6 +887,7 @@ fn type406_form12_table_boundary_beats_generic_alternatives() {
         parameter_end: tokens.len(),
         tokens,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
     let generic_valid_candidate_count = crate::test_support::with_service_context(&[], |ctx| {
         structural_pointer_group_candidates_with_context(&record, ctx)
@@ -975,6 +988,7 @@ fn type406_form12_malformed_count_or_name_list_do_not_enable_generic_recovery() 
             parameter_end: tokens.len(),
             tokens,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
             analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -1047,6 +1061,7 @@ fn type406_form27_entity_table_boundary_follows_np_and_value_pair_count() {
             parameter_end: tokens.len(),
             tokens,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
             analyze_trailing_pointer_groups_for_global_table_with_context(

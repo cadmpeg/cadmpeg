@@ -10,6 +10,7 @@ pub(crate) mod test_procedural_surfaces;
 pub(crate) mod test_solids_and_structure;
 pub(crate) mod test_surface_fixtures;
 pub(crate) mod test_tabulated_surfaces;
+pub(crate) mod sequence_index;
 
 /// Parses a scanned Global section with a test-owned decode session.
 pub(crate) fn parse_global(
@@ -21,7 +22,10 @@ pub(crate) fn parse_global(
     ),
     cadmpeg_core::CodecError,
 > {
-    with_service_context(&[], |ctx| crate::global::parse(scan, ctx))
+    with_service_context(&[], |ctx| {
+        crate::global::parse(scan, ctx)
+            .map(|(global, (losses, _loss_storage), _storage)| (global, losses))
+    })
 }
 
 /// Plans a write at one Fixed ASCII target, the request the command line
@@ -165,3 +169,4 @@ pub(crate) fn with_policy_context<T>(
         .expect("test input is within policy limits");
     use_context(&ctx)
 }
+

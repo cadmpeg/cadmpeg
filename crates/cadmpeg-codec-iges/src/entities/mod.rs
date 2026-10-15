@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed IGES entity accessors and neutral projection.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -15,6 +15,77 @@ use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 
+/// Equality identity for property text within one projection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PropertyTextId(usize);
+
+/// Keys borrow immutable parameter text. Equal byte strings have one identity.
+/// Record identities prevent repeated comparisons of the same parameter text.
+struct PropertyTextIndex<'text, 'budget> {
+    records: BTreeMap<u32, PropertyTextId>,
+    values: BTreeMap<&'text [u8], PropertyTextId>,
+    storage: ScopedReservation<'budget>,
+}
+
+impl<'text, 'budget> PropertyTextIndex<'text, 'budget> {
+    fn new(ctx: &'budget DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            records: BTreeMap::new(),
+            values: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "iges property text index")?,
+        })
+    }
+
+    fn id(
+        &mut self,
+        sequence: u32,
+        text: &'text [u8],
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<PropertyTextId, CodecError> {
+        if let Some(id) =
+            ctx.get_btree_map(&self.records, &sequence, "iges property text record lookup")?
+        {
+            return Ok(*id);
+        }
+        let id = if let Some(id) = ctx.get_btree_map(&self.values, text, operation)? {
+            *id
+        } else {
+            let id = PropertyTextId(self.values.len());
+            self.storage
+                .with_storage(|| ctx.insert_btree_map(&mut self.values, text, id, operation))?;
+            id
+        };
+        self.storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut self.records,
+                sequence,
+                id,
+                "iges property text record identities",
+            )
+        })?;
+        Ok(id)
+    }
+}
+
+fn attributed_loss_payload(
+    ctx: &DecodeContext<'_>,
+    entry: &DirectoryEntry,
+    code: IgesLossCode,
+    message: fmt::Arguments<'_>,
+    message_operation: &'static str,
+    kind_operation: &'static str,
+) -> Result<LossNote, CodecError> {
+    let message = ctx.format_retained(message, message_operation)?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        kind_operation,
+    )?;
+    Ok(code
+        .note(message)
+        .with_provenance(entry.admitted_loss_provenance(ctx)?))
+}
+
 fn push_attributed_loss(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
@@ -23,15 +94,14 @@ fn push_attributed_loss(
     message: fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(losses, 1, "iges entity loss slots")?;
-    let message = ctx.format_retained(message, "iges entity loss message")?;
-    ctx.charge_retained(
-        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+    losses.push(attributed_loss_payload(
+        ctx,
+        entry,
+        code,
+        message,
+        "iges entity loss message",
         "iges entity loss kind",
-    )?;
-    losses.push(
-        code.note(message)
-            .with_provenance(entry.admitted_loss_provenance(ctx)?),
-    );
+    )?);
     Ok(())
 }
 
@@ -53,6 +123,69 @@ fn push_entity_loss(
     )
 }
 
+fn push_attributed_loss_with_scoped_slots(
+    ctx: &DecodeContext<'_>,
+    slots: &mut ScopedReservation<'_>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    code: IgesLossCode,
+    message: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.reserve_scoped_vec(slots, losses, 1, "iges entity loss slots")?;
+    losses.push(attributed_loss_payload(
+        ctx,
+        entry,
+        code,
+        message,
+        "iges entity loss message",
+        "iges entity loss kind",
+    )?);
+    Ok(())
+}
+
+fn push_entity_loss_with_scoped_slots(
+    ctx: &DecodeContext<'_>,
+    slots: &mut ScopedReservation<'_>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    push_attributed_loss_with_scoped_slots(
+        ctx,
+        slots,
+        losses,
+        entry,
+        IgesLossCode::EntityNotProjected,
+        format_args!(
+            "IGES entity type {} form {} was not projected: {reason}",
+            entry.entity_type, entry.form
+        ),
+    )
+}
+
+/// Records an entity loss with scoped slots when geometry admission fails.
+fn admit_with_scoped_loss_slots<T>(
+    result: Result<T, &str>,
+    entry: &DirectoryEntry,
+    slots: &mut ScopedReservation<'_>,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<T>, CodecError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(message) => {
+            push_entity_loss_with_scoped_slots(
+                ctx,
+                slots,
+                losses,
+                entry,
+                format_args!("{message}"),
+            )?;
+            Ok(None)
+        }
+    }
+}
+
 fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),
@@ -60,13 +193,13 @@ fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<Stri
     }
 }
 
-fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
+fn directed_cycle<I: DoubleEndedIterator<Item = u32> + ExactSizeIterator>(
     sequence: u32,
     visited: &mut BTreeSet<u32>,
     ctx: &DecodeContext<'_>,
-    successors: impl Fn(u32) -> I,
+    successors: impl Fn(u32) -> Result<I, CodecError>,
 ) -> Result<bool, CodecError> {
-    if visited.contains(&sequence) {
+    if ctx.contains_btree_set(visited, &sequence, "iges cycle visited lookup")? {
         return Ok(false);
     }
     let mut search_storage = ctx.reserve_scoped(0, "IGES directed cycle search")?;
@@ -74,14 +207,18 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     let mut stack = Vec::new();
     search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
     stack.push((sequence, false));
-    while let Some((current, expanded)) = stack.pop() {
-        ctx.charge_work(1, "iges cycle work")?;
+    while !stack.is_empty() {
+        let Some((current, expanded)) =
+            ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")?
+        else {
+            break;
+        };
         if expanded {
-            active.remove(&current);
+            ctx.remove_btree_set(&mut active, &current, "iges cycle active removal")?;
             ctx.insert_btree_set(visited, current, "iges cycle visited")?;
             continue;
         }
-        if visited.contains(&current) {
+        if ctx.contains_btree_set(visited, &current, "iges cycle visited lookup")? {
             continue;
         }
         if !search_storage
@@ -91,12 +228,15 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         }
         search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
         stack.push((current, true));
-        for target in successors(current).rev() {
-            ctx.charge_work(1, "iges cycle work")?;
-            if active.contains(&target) {
+        let mut targets = successors(current)?.rev();
+        while targets.len() != 0 {
+            let Some(target) = ctx.next_charged(&mut targets, "iges cycle work")? else {
+                break;
+            };
+            if ctx.contains_btree_set(&active, &target, "iges cycle active lookup")? {
                 return Ok(true);
             }
-            if !visited.contains(&target) {
+            if !ctx.contains_btree_set(visited, &target, "iges cycle visited lookup")? {
                 search_storage
                     .with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
                 stack.push((target, false));
@@ -155,8 +295,11 @@ pub(crate) mod copious;
 mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
+mod evaluation_copy;
+mod evaluation_sources;
 pub(crate) mod geometry;
 mod offsets;
+mod plane_proof;
 mod presentation;
 mod splines;
 pub(crate) mod structure;

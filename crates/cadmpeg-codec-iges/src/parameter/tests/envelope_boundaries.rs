@@ -296,6 +296,7 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         tokens,
         parameter_end: token_count,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -325,6 +326,7 @@ fn field_defaults_do_not_cross_the_selected_parameter_boundary() {
             .collect(),
         parameter_end: 4,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     assert_eq!(record.integer_or(3, 7), Some(1));
@@ -349,6 +351,7 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
             .collect(),
         parameter_end: 4,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -392,6 +395,7 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
             .collect(),
         parameter_end: 7,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {

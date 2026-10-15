@@ -13,7 +13,8 @@
 
 use crate::kernel_header::RefWidth;
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use std::rc::Rc;
 use std::sync::Arc;
 
 pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
@@ -49,7 +50,7 @@ pub(crate) fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bo
 }
 
 /// Scan record boundaries and exact names without constructing a record table.
-/// The caller admits the complete token walk before scanning.
+/// Each record, token and text validation is admitted before it runs.
 pub(crate) fn scan_history_boundary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -57,66 +58,72 @@ pub(crate) fn scan_history_boundary(
     ref_width: RefWidth,
     preamble: Option<&[&str]>,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let Some(remaining) = bytes.get(start..) else {
+    if bytes.get(start..).is_none() {
         return Ok(None);
-    };
-    // Token decoding validates UTF-8 and compares names against fixed markers.
-    // Three walks cover decoding and both marker comparisons for every byte.
-    for _ in 0..3 {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(remaining.len()),
-            "SAB history boundary scan",
-        )?;
     }
-    let _errors = ctx.reserve_scoped(128, "SAB history scanner error text")?;
-    Ok((|| {
-        let mut pos = start;
-        while pos < bytes.len() {
-            let rec_start = pos;
-            let mut name_index = 0usize;
-            let mut preamble_matches = preamble.is_some();
-            let mut delta_matches = true;
-            let mut preamble_candidate = false;
-            let mut name_done = false;
-            let mut depth = 0usize;
-            loop {
-                let (lexed, next) = lex(bytes, pos, ref_width).ok()?;
-                pos = next;
-                let terminal_name = matches!(lexed, Lexed::Ident(_));
-                match lexed {
-                    Lexed::SubIdent(part) | Lexed::Ident(part) if !name_done => {
-                        preamble_matches &= preamble
-                            .and_then(|parts| parts.get(name_index))
-                            .is_some_and(|expected| *expected == part);
-                        delta_matches &= name_index == 0 && part == "delta_state";
-                        name_index += 1;
-                        if terminal_name {
-                            name_done = true;
-                            preamble_candidate = (preamble_matches
-                                && preamble.is_some_and(|parts| parts.len() == name_index))
-                                || (preamble.is_some()
-                                    && name_index == 1
-                                    && part == "Begin-of-ASM-History-Data");
-                            if delta_matches && name_index == 1 {
-                                return Some(rec_start);
-                            }
+    // Token validation and loop work are charged at each operation.
+    let mut pos = start;
+    while pos < bytes.len() {
+        ctx.charge_work(1, "scan SAB history record")?;
+        let rec_start = pos;
+        let mut name_index = 0usize;
+        let mut preamble_matches = preamble.is_some();
+        let mut delta_matches = true;
+        let mut preamble_candidate = false;
+        let mut name_done = false;
+        let mut depth = 0usize;
+        loop {
+            if pos < bytes.len() {
+                ctx.charge_work(1, "scan SAB history token")?;
+            }
+            let Ok((lexed, next)) = lex(ctx, bytes, pos, ref_width)? else {
+                return Ok(None);
+            };
+            pos = next;
+            let terminal_name = matches!(lexed, Lexed::Ident(_));
+            match lexed {
+                Lexed::SubIdent(part) | Lexed::Ident(part) if !name_done => {
+                    preamble_matches &= preamble
+                        .and_then(|parts| parts.get(name_index))
+                        .is_some_and(|expected| *expected == part);
+                    delta_matches &= name_index == 0 && part == "delta_state";
+                    name_index += 1;
+                    if terminal_name {
+                        name_done = true;
+                        preamble_candidate = (preamble_matches
+                            && preamble.is_some_and(|parts| parts.len() == name_index))
+                            || (preamble.is_some()
+                                && name_index == 1
+                                && part == "Begin-of-ASM-History-Data");
+                        if delta_matches && name_index == 1 {
+                            return Ok(Some(rec_start));
                         }
                     }
-                    Lexed::Value(Token::SubtypeOpen) => depth = depth.checked_add(1)?,
-                    Lexed::Value(Token::SubtypeClose) => depth = depth.checked_sub(1)?,
-                    Lexed::Terminator if depth == 0 => {
-                        if preamble_candidate {
-                            return Some(rec_start);
-                        }
-                        break;
-                    }
-                    Lexed::Terminator => return None,
-                    _ => {}
                 }
+                Lexed::Value(Token::SubtypeOpen) => {
+                    let Some(next_depth) = depth.checked_add(1) else {
+                        return Ok(None);
+                    };
+                    depth = next_depth;
+                }
+                Lexed::Value(Token::SubtypeClose) => {
+                    let Some(next_depth) = depth.checked_sub(1) else {
+                        return Ok(None);
+                    };
+                    depth = next_depth;
+                }
+                Lexed::Terminator if depth == 0 => {
+                    if preamble_candidate {
+                        return Ok(Some(rec_start));
+                    }
+                    break;
+                }
+                Lexed::Terminator => return Ok(None),
+                _ => {}
             }
         }
-        None
-    })())
+    }
+    Ok(None)
 }
 
 /// A decoded SAB token. The codec assigns typed values to the payload it
@@ -180,8 +187,8 @@ impl Token {
 /// One framed record: its `RecordTable` index, assembled name, payload tokens
 /// (the tokens after the name chain), and byte extent within the stream.
 #[derive(Debug, Clone)]
-pub struct Record {
-    /// `RecordTable` index. `asmheader` is index 0.
+pub struct Record<'ctx> {
+    /// `RecordTable` index. The first framed record has index 0.
     pub index: usize,
     /// Full `-`-joined record name, e.g. `cone-surface`, `body`.
     pub name: String,
@@ -192,63 +199,163 @@ pub struct Record {
     pub offset: usize,
     /// Byte length of the record including its terminator.
     pub len: usize,
+    head_end: usize,
+    // The last shared owner releases the scoped index storage.
+    // Trusted fixtures have no live decode session.
+    chunk_positions: Rc<(Vec<usize>, Option<ScopedReservation<'ctx>>)>,
 }
 
-impl Record {
+impl<'ctx> Record<'ctx> {
+    /// Build the dispatch and value-token indices once. Replacing the name or
+    /// changing payload token kinds or order requires constructing a new record.
+    pub fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        index: usize,
+        name: String,
+        tokens: Arc<[Token]>,
+        offset: usize,
+        len: usize,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let head_end = ctx
+            .position_by(
+                name.as_bytes(),
+                |byte| Ok(*byte == b'-'),
+                "index ASM record head",
+            )?
+            .unwrap_or(name.len());
+        Self::with_head_end(ctx, index, name, tokens, offset, len, head_end)
+    }
+
+    pub(crate) fn with_head_end(
+        ctx: &'ctx DecodeContext<'_>,
+        index: usize,
+        name: String,
+        tokens: Arc<[Token]>,
+        offset: usize,
+        len: usize,
+        head_end: usize,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "ASM record chunk index")?;
+        let mut chunk_positions = Vec::new();
+        let mut source = tokens.iter().enumerate();
+        while source.len() != 0 {
+            let Some((position, token)) =
+                ctx.next_charged(&mut source, "index ASM record chunks")?
+            else {
+                break;
+            };
+            if !token.is_payload_ident() {
+                ctx.push_scoped_vec(
+                    &mut storage,
+                    &mut chunk_positions,
+                    position,
+                    "ASM record chunk positions",
+                )?;
+            }
+        }
+        // Share the vector without copying its file-controlled payload.
+        storage.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(Vec<usize>, Option<ScopedReservation<'ctx>>)>()
+                + 2 * std::mem::size_of::<usize>(),
+        ))?;
+        Ok(Self {
+            index,
+            name,
+            tokens,
+            offset,
+            len,
+            head_end,
+            chunk_positions: Rc::new((chunk_positions, Some(storage))),
+        })
+    }
+
+    /// Copy the name under the decode budget and share the immutable token index.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            index: self.index,
+            name: ctx.copy_retained_text(&self.name, operation)?,
+            tokens: self.tokens.clone(),
+            offset: self.offset,
+            len: self.len,
+            head_end: self.head_end,
+            chunk_positions: self.chunk_positions.clone(),
+        })
+    }
+
+    /// Detach an admitted fixture index from its temporary test session.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn into_fixture(self) -> Record<'static> {
+        Record {
+            index: self.index,
+            name: self.name,
+            tokens: self.tokens,
+            offset: self.offset,
+            len: self.len,
+            head_end: self.head_end,
+            chunk_positions: Rc::new((self.chunk_positions.0.clone(), None)),
+        }
+    }
+
     /// Leading name component used for dispatch, such as `cone` or `body`.
     #[must_use]
     pub fn head(&self) -> &str {
-        self.name
-            .split_once('-')
-            .map_or(self.name.as_str(), |(head, _)| head)
+        &self.name[..self.head_end]
     }
 
-    /// Returns the `i`th payload value token. Payload identifiers leave field
-    /// positions unchanged, so `chunk[i]` has the same meaning in records with
-    /// and without named subtypes.
+    /// The `i`th payload value token. Payload identifiers leave field positions unchanged.
     pub fn chunk(&self, i: usize) -> Option<&Token> {
-        self.chunks().nth(i)
+        self.tokens.get(*self.chunk_positions.0.get(i)?)
     }
 
-    /// The `chunk[i]` as a non-null entity reference index. Returns `None` for a
-    /// null reference (`-1`) or a non-reference token.
+    /// The `chunk[i]` as a non-null entity reference index.
     pub fn ref_at(&self, i: usize) -> Option<i64> {
         match self.chunk(i) {
-            Some(Token::Ref(v)) if *v >= 0 => Some(*v),
+            Some(Token::Ref(value)) if *value >= 0 => Some(*value),
             _ => None,
         }
     }
 
-    /// The payload value tokens in order, payload identifiers skipped: the
-    /// stream that `chunk[i]` indexes.
-    pub fn chunks(&self) -> impl DoubleEndedIterator<Item = &Token> {
-        self.tokens.iter().filter(|t| !t.is_payload_ident())
+    /// Payload value tokens in order. Each iterator step reads one indexed token.
+    pub fn chunks(&self) -> impl DoubleEndedIterator<Item = &Token> + ExactSizeIterator {
+        self.chunk_positions
+            .0
+            .iter()
+            .map(|position| &self.tokens[*position])
     }
 
-    /// Number of payload value tokens: the length of the stream that
-    /// `chunk[i]` indexes.
+    /// Number of indexed payload value tokens.
     pub fn chunk_len(&self) -> usize {
-        self.chunks().count()
+        self.chunk_positions.0.len()
     }
 }
 
 /// Return the absolute byte range inside payload subtype `token_index` when
 /// its immediately following identifier is `expected`.
 pub fn payload_subtype_range(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
     token_index: usize,
     ref_width: RefWidth,
     expected: &str,
-) -> Option<std::ops::Range<usize>> {
-    let limit = record.offset.checked_add(record.len)?;
-    let bytes = bytes.get(..limit)?;
+) -> Result<Option<std::ops::Range<usize>>, cadmpeg_core::CodecError> {
+    let Some(limit) = record.offset.checked_add(record.len) else {
+        return Ok(None);
+    };
+    let Some(bytes) = bytes.get(..limit) else {
+        return Ok(None);
+    };
     let mut pos = record.offset;
     let mut name_done = false;
     let mut payload_index = 0usize;
     while pos < limit {
-        let Ok((lexed, next)) = lex(bytes, pos, ref_width) else {
-            return None;
+        ctx.charge_work(1, "scan SAB payload subtype token")?;
+        let Ok((lexed, next)) = lex(ctx, bytes, pos, ref_width)? else {
+            return Ok(None);
         };
         pos = next;
         match lexed {
@@ -258,22 +365,27 @@ pub fn payload_subtype_range(
                 name_done = true;
                 if payload_index == token_index {
                     if !matches!(token, Token::SubtypeOpen) {
-                        return None;
+                        return Ok(None);
                     }
                     let Ok((Lexed::Ident(name) | Lexed::SubIdent(name), start)) =
-                        lex(bytes, pos, ref_width)
+                        lex(ctx, bytes, pos, ref_width)?
                     else {
-                        return None;
+                        return Ok(None);
                     };
-                    if name != expected {
-                        return None;
+                    if !ctx.equal_bytes(
+                        name.as_bytes(),
+                        expected.as_bytes(),
+                        "match SAB payload subtype name",
+                    )? {
+                        return Ok(None);
                     }
                     pos = start;
                     let mut depth = 1usize;
                     while pos < limit {
+                        ctx.charge_work(1, "scan SAB nested payload token")?;
                         let token_start = pos;
-                        let Ok((nested, next)) = lex(bytes, pos, ref_width) else {
-                            return None;
+                        let Ok((nested, next)) = lex(ctx, bytes, pos, ref_width)? else {
+                            return Ok(None);
                         };
                         pos = next;
                         match nested {
@@ -281,14 +393,14 @@ pub fn payload_subtype_range(
                             Lexed::Value(Token::SubtypeClose) => {
                                 depth -= 1;
                                 if depth == 0 {
-                                    return Some(start..token_start);
+                                    return Ok(Some(start..token_start));
                                 }
                             }
-                            Lexed::Terminator => return None,
+                            Lexed::Terminator => return Ok(None),
                             _ => {}
                         }
                     }
-                    return None;
+                    return Ok(None);
                 }
                 payload_index += 1;
             }
@@ -296,28 +408,36 @@ pub fn payload_subtype_range(
                 name_done = true;
                 payload_index += 1;
             }
-            Lexed::Terminator => return None,
+            Lexed::Terminator => return Ok(None),
             Lexed::Ident(_) | Lexed::SubIdent(_) => {}
         }
     }
-    None
+    Ok(None)
 }
 
 /// Return one payload token and its absolute byte offset by its framed index.
 pub fn payload_token(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
     ref_width: RefWidth,
     token_index: usize,
-) -> Option<(usize, Token)> {
-    let limit = record.offset.checked_add(record.len)?;
-    let bytes = bytes.get(..limit)?;
+) -> Result<Option<(usize, Token)>, cadmpeg_core::CodecError> {
+    let Some(limit) = record.offset.checked_add(record.len) else {
+        return Ok(None);
+    };
+    let Some(bytes) = bytes.get(..limit) else {
+        return Ok(None);
+    };
     let mut position = record.offset;
     let mut name_done = false;
     let mut payload_index = 0usize;
     while position < limit {
+        ctx.charge_work(1, "scan SAB payload token")?;
         let token_offset = position;
-        let (lexed, next) = lex(bytes, position, ref_width).ok()?;
+        let Ok((lexed, next)) = lex(ctx, bytes, position, ref_width)? else {
+            return Ok(None);
+        };
         position = next;
         match lexed {
             Lexed::SubIdent(_) if !name_done => {}
@@ -325,22 +445,27 @@ pub fn payload_token(
             Lexed::Value(token) => {
                 name_done = true;
                 if payload_index == token_index {
-                    return Some((token_offset, token));
+                    return Ok(Some((token_offset, token)));
                 }
                 payload_index += 1;
             }
             Lexed::Str(value) => {
                 name_done = true;
                 if payload_index == token_index {
-                    return Some((token_offset, Token::Str(value.to_owned())));
+                    return Ok(Some((
+                        token_offset,
+                        Token::Str(
+                            ctx.copy_retained_text(value, "retain SAB payload token string")?,
+                        ),
+                    )));
                 }
                 payload_index += 1;
             }
-            Lexed::Terminator => return None,
+            Lexed::Terminator => return Ok(None),
             Lexed::Ident(_) | Lexed::SubIdent(_) => {}
         }
     }
-    None
+    Ok(None)
 }
 
 /// Read one token starting at `pos`. Returns the token (or a control marker) and
@@ -359,122 +484,139 @@ pub(crate) enum Lexed<'a> {
     Terminator,
 }
 
-pub(crate) fn lex(
-    bytes: &[u8],
+pub(crate) fn lex<'bytes>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'bytes [u8],
     pos: usize,
     ref_width: RefWidth,
-) -> Result<(Lexed<'_>, usize), StreamError> {
-    let err = |reason: &str| StreamError {
-        format: StreamFormat::Binary,
-        offset: pos,
-        reason: reason.to_string(),
-    };
-    let tag = *bytes.get(pos).ok_or_else(|| err("end of stream"))?;
-    let p = pos + 1;
-    let truncated = || StreamError {
-        format: StreamFormat::Binary,
-        offset: pos,
-        reason: format!("truncated payload for tag {tag:#04x}"),
-    };
-    let string = |start: usize, len: usize| {
-        let end = start.checked_add(len).ok_or_else(truncated)?;
-        let slice = bytes.get(start..end).ok_or_else(truncated)?;
-        std::str::from_utf8(slice).map_err(|error| StreamError {
+) -> Result<Result<(Lexed<'bytes>, usize), StreamError>, cadmpeg_core::CodecError> {
+    let parsed = (|| -> Result<(Lexed<'bytes>, usize), StreamFailure> {
+        let err = |reason: &str| StreamError {
             format: StreamFormat::Binary,
-            offset: start + error.valid_up_to(),
-            reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
-        })
-    };
-    let out = match tag {
-        0x02 => (
-            Lexed::Value(Token::Char(*bytes.get(p).ok_or_else(truncated)?)),
-            p + 1,
-        ),
-        0x03 => (
-            Lexed::Value(Token::Short(
-                View::i16_le_at(bytes, p).ok_or_else(truncated)?,
-            )),
-            p + 2,
-        ),
-        0x04 => {
-            let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
-            (Lexed::Value(Token::Long(v)), p + ref_width.bytes())
-        }
-        0x05 => (
-            Lexed::Value(Token::Float(
-                View::f32_le_at(bytes, p).ok_or_else(truncated)?,
-            )),
-            p + 4,
-        ),
-        0x06 => (
-            Lexed::Value(Token::Double(
-                View::f64_le_at(bytes, p).ok_or_else(truncated)?,
-            )),
-            p + 8,
-        ),
-        0x07 => {
-            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
-            (Lexed::Str(string(p + 1, len)?), p + 1 + len)
-        }
-        0x08 => {
-            let len = usize::from(View::u16_le_at(bytes, p).ok_or_else(truncated)?);
-            (Lexed::Str(string(p + 2, len)?), p + 2 + len)
-        }
-        0x09 | 0x12 => {
-            let len = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
-            let len = usize::try_from(len).map_err(|_| err("negative string length"))?;
-            (
-                Lexed::Str(string(p + ref_width.bytes(), len)?),
-                p + ref_width.bytes() + len,
-            )
-        }
-        0x0a => (Lexed::Value(Token::True), p),
-        0x0b => (Lexed::Value(Token::False), p),
-        0x0c => {
-            let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
-            (Lexed::Value(Token::Ref(v)), p + ref_width.bytes())
-        }
-        0x0d => {
-            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
-            (Lexed::Ident(string(p + 1, len)?), p + 1 + len)
-        }
-        0x0e => {
-            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
-            (Lexed::SubIdent(string(p + 1, len)?), p + 1 + len)
-        }
-        0x0f => (Lexed::Value(Token::SubtypeOpen), p),
-        0x10 => (Lexed::Value(Token::SubtypeClose), p),
-        0x11 => (Lexed::Terminator, p),
-        0x13 => (
-            Lexed::Value(Token::Position(vec3_le_at(bytes, p).ok_or_else(truncated)?)),
-            p + 24,
-        ),
-        0x14 => (
-            Lexed::Value(Token::Vector3(vec3_le_at(bytes, p).ok_or_else(truncated)?)),
-            p + 24,
-        ),
-        0x15 => {
-            let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
-            (Lexed::Value(Token::Enum(v)), p + ref_width.bytes())
-        }
-        0x16 => {
-            let u = View::f64_le_at(bytes, p).ok_or_else(truncated)?;
-            let v = View::f64_le_at(bytes, p + 8).ok_or_else(truncated)?;
-            (Lexed::Value(Token::Vector2([u, v])), p + 16)
-        }
-        0x17 => {
-            let v = int_le_at(bytes, p, RefWidth::Eight).ok_or_else(truncated)?;
-            (Lexed::Value(Token::Int64(v)), p + 8)
-        }
-        other => {
-            return Err(StreamError {
-                format: StreamFormat::Binary,
-                offset: pos,
-                reason: format!("unrecognized tag {other:#04x}"),
-            })
-        }
-    };
-    Ok(out)
+            offset: pos,
+            reason: reason.to_string(),
+        };
+        let tag = *bytes.get(pos).ok_or_else(|| err("end of stream"))?;
+        let p = pos + 1;
+        let truncated = || StreamError {
+            format: StreamFormat::Binary,
+            offset: pos,
+            reason: format!("truncated payload for tag {tag:#04x}"),
+        };
+        let string = |start: usize, len: usize| -> Result<&'bytes str, StreamFailure> {
+            let end = start.checked_add(len).ok_or_else(truncated)?;
+            let slice = bytes.get(start..end).ok_or_else(truncated)?;
+            ctx.validate_utf8(slice, "validate SAB token text")
+                .map_err(StreamFailure::from_operation)?
+                .map_err(|error| {
+                    StreamFailure::from(StreamError {
+                        format: StreamFormat::Binary,
+                        offset: start + error.valid_up_to(),
+                        reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
+                    })
+                })
+        };
+        let out = match tag {
+            0x02 => (
+                Lexed::Value(Token::Char(*bytes.get(p).ok_or_else(truncated)?)),
+                p + 1,
+            ),
+            0x03 => (
+                Lexed::Value(Token::Short(
+                    View::i16_le_at(bytes, p).ok_or_else(truncated)?,
+                )),
+                p + 2,
+            ),
+            0x04 => {
+                let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
+                (Lexed::Value(Token::Long(v)), p + ref_width.bytes())
+            }
+            0x05 => (
+                Lexed::Value(Token::Float(
+                    View::f32_le_at(bytes, p).ok_or_else(truncated)?,
+                )),
+                p + 4,
+            ),
+            0x06 => (
+                Lexed::Value(Token::Double(
+                    View::f64_le_at(bytes, p).ok_or_else(truncated)?,
+                )),
+                p + 8,
+            ),
+            0x07 => {
+                let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
+                (Lexed::Str(string(p + 1, len)?), p + 1 + len)
+            }
+            0x08 => {
+                let len = usize::from(View::u16_le_at(bytes, p).ok_or_else(truncated)?);
+                (Lexed::Str(string(p + 2, len)?), p + 2 + len)
+            }
+            0x09 | 0x12 => {
+                let len = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
+                let len = usize::try_from(len).map_err(|_| err("negative string length"))?;
+                (
+                    Lexed::Str(string(p + ref_width.bytes(), len)?),
+                    p + ref_width.bytes() + len,
+                )
+            }
+            0x0a => (Lexed::Value(Token::True), p),
+            0x0b => (Lexed::Value(Token::False), p),
+            0x0c => {
+                let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
+                (Lexed::Value(Token::Ref(v)), p + ref_width.bytes())
+            }
+            0x0d => {
+                let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
+                (Lexed::Ident(string(p + 1, len)?), p + 1 + len)
+            }
+            0x0e => {
+                let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
+                (Lexed::SubIdent(string(p + 1, len)?), p + 1 + len)
+            }
+            0x0f => (Lexed::Value(Token::SubtypeOpen), p),
+            0x10 => (Lexed::Value(Token::SubtypeClose), p),
+            0x11 => (Lexed::Terminator, p),
+            0x13 => (
+                Lexed::Value(Token::Position(vec3_le_at(bytes, p).ok_or_else(truncated)?)),
+                p + 24,
+            ),
+            0x14 => (
+                Lexed::Value(Token::Vector3(vec3_le_at(bytes, p).ok_or_else(truncated)?)),
+                p + 24,
+            ),
+            0x15 => {
+                let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
+                (Lexed::Value(Token::Enum(v)), p + ref_width.bytes())
+            }
+            0x16 => {
+                let u = View::f64_le_at(bytes, p).ok_or_else(truncated)?;
+                let v = View::f64_le_at(bytes, p + 8).ok_or_else(truncated)?;
+                (Lexed::Value(Token::Vector2([u, v])), p + 16)
+            }
+            0x17 => {
+                let v = int_le_at(bytes, p, RefWidth::Eight).ok_or_else(truncated)?;
+                (Lexed::Value(Token::Int64(v)), p + 8)
+            }
+            other => {
+                return Err(StreamFailure::from(StreamError {
+                    format: StreamFormat::Binary,
+                    offset: pos,
+                    reason: format!("unrecognized tag {other:#04x}"),
+                }));
+            }
+        };
+        Ok(out)
+    })();
+    match parsed {
+        Ok(out) => Ok(Ok(out)),
+        Err(
+            StreamFailure::Parse(error)
+            | StreamFailure::Malformed(error)
+            | StreamFailure::NotImplemented(error),
+        ) => Ok(Err(error)),
+        Err(StreamFailure::Resource(refusal)) => Err(refusal.into()),
+        Err(StreamFailure::Operation(error)) => Err(error.into_codec_error()),
+    }
 }
 
 /// Frame `bytes[start..limit]` into an indexed record table.
@@ -484,14 +626,14 @@ pub(crate) fn lex(
 /// entity population is admitted once; actual records charge only its excess. A `limit` past
 /// the end of `bytes` is a truncated stream, and it is refused with both the
 /// declared end and the available length.
-pub fn frame(
-    ctx: &DecodeContext<'_>,
+pub fn frame<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
     declared_entities: Option<u64>,
-) -> Result<Vec<Record>, StreamFailure> {
+) -> Result<Vec<Record<'ctx>>, StreamFailure> {
     frame_impl(
         ctx,
         bytes,
@@ -505,26 +647,26 @@ pub fn frame(
 
 /// Frame a history-section slice whose final record ends at the enclosing
 /// stream boundary without an explicit `0x11` terminator.
-pub fn frame_history(
-    ctx: &DecodeContext<'_>,
+pub fn frame_history<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
     declared_entities: Option<u64>,
-) -> Result<Vec<Record>, StreamFailure> {
+) -> Result<Vec<Record<'ctx>>, StreamFailure> {
     frame_impl(ctx, bytes, start, limit, ref_width, declared_entities, true)
 }
 
-fn frame_impl(
-    ctx: &DecodeContext<'_>,
+fn frame_impl<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
     declared_entities: Option<u64>,
     eof_terminates_final_record: bool,
-) -> Result<Vec<Record>, StreamFailure> {
+) -> Result<Vec<Record<'ctx>>, StreamFailure> {
     let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
             format: StreamFormat::Binary,
@@ -554,11 +696,13 @@ fn frame_impl(
     let mut index = 0usize;
 
     while pos < limit {
+        ctx.charge_work(1, "frame SAB record")
+            .map_err(StreamFailure::from_operation)?;
         let rec_start = pos;
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAB record")
             .map_err(StreamFailure::from_operation)?;
-        let mut name_parts: Vec<String> = Vec::new();
+        let mut name_parts: Vec<&str> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
         let mut depth_guards = Vec::new();
         let mut name_done = false;
@@ -567,6 +711,10 @@ fn frame_impl(
         let mut payload_start = true;
 
         loop {
+            if pos < limit {
+                ctx.charge_work(1, "lex SAB token")
+                    .map_err(StreamFailure::from_operation)?;
+            }
             if eof_terminates_final_record
                 && pos == limit
                 && depth_guards.is_empty()
@@ -575,9 +723,9 @@ fn frame_impl(
                 break;
             }
             let token_offset = pos;
-            ctx.charge_work(1, "lex SAB token")
-                .map_err(StreamFailure::from_operation)?;
-            let (lexed, next) = lex(bytes, pos, ref_width)?;
+            let (lexed, next) = lex(ctx, bytes, pos, ref_width)
+                .map_err(StreamFailure::from_operation)?
+                .map_err(StreamFailure::from)?;
             pos = next;
             match lexed {
                 Lexed::Terminator if depth_guards.is_empty() => break,
@@ -592,22 +740,16 @@ fn frame_impl(
                 Lexed::SubIdent(s) if !name_done => {
                     ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")
                         .map_err(StreamFailure::from_operation)?;
-                    let part = ctx
-                        .copy_scoped_text(s, &mut scratch, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
-                    name_parts.push(part);
+                    name_parts.push(s);
                 }
                 Lexed::Ident(s) if !name_done => {
                     ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")
                         .map_err(StreamFailure::from_operation)?;
-                    let part = ctx
-                        .copy_scoped_text(s, &mut scratch, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
-                    name_parts.push(part);
+                    name_parts.push(s);
                     name_done = true;
                     // The history partition opens with the delta_state record.
                     // Stop at its name; the active slice ends before its payload.
-                    if name_parts.first().is_some_and(|n| n == "delta_state") {
+                    if name_parts.first().is_some_and(|n| *n == "delta_state") {
                         is_delta = true;
                         break;
                     }
@@ -620,10 +762,7 @@ fn frame_impl(
                     // marker chain; its following identifier is the wrapped
                     // record's dispatch name.
                     if payload_start
-                        && name_parts
-                            .iter()
-                            .map(String::as_str)
-                            .eq(["End", "of", "ASM", "History", "Section"])
+                        && name_parts.as_slice() == ["End", "of", "ASM", "History", "Section"]
                         && identifier == "edge"
                     {
                         embedded_history_edge = true;
@@ -738,14 +877,11 @@ fn frame_impl(
         }
         ctx.reserve_vec(&mut records, 1, "frame SAB record")
             .map_err(StreamFailure::from_operation)?;
-        records.push(Record {
-            index,
-            name,
+        records.push(
+            Record::new(ctx, index, name, tokens.into(), rec_start, pos - rec_start)
+                .map_err(StreamFailure::from_operation)?,
+        );
 
-            tokens: tokens.into(),
-            offset: rec_start,
-            len: pos - rec_start,
-        });
         index += 1;
     }
 
@@ -754,6 +890,8 @@ fn frame_impl(
 
 #[cfg(test)]
 mod tests {
+    mod manual_scans;
+    mod record_index;
     use super::{
         exact_identifier_at, frame as frame_stream, frame_history as frame_history_stream,
         payload_token, Record,
@@ -761,7 +899,6 @@ mod tests {
     use crate::kernel_header::RefWidth;
     use crate::stream_error::{StreamError, StreamFailure};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     #[test]
     fn sab_history_boundary_refuses_caller_work_before_lexing() {
@@ -789,25 +926,24 @@ mod tests {
                 .expect("binary header");
                 let boundary = bytes.len() - 13;
                 for with_header in [false, true] {
-                    let mut policy = *service.policy();
-                    policy.limits.max_work_units = 0;
-                    let arena = DecodeArena::new();
-                    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                        .expect("source fits policy");
-                    let result = match (acis, with_header) {
-                        (false, false) => crate::asm_header::solved_record_limit(&ctx, &bytes),
-                        (false, true) => crate::asm_header::solved_record_limit_with_header(
-                            &ctx, &bytes, &header,
-                        ),
-                        (true, false) => crate::acis_header::solved_record_limit(&ctx, &bytes),
-                        (true, true) => crate::acis_header::solved_record_limit_with_header(
-                            &ctx, &bytes, &header,
-                        ),
-                    };
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                        if limit.dimension == ResourceDimension::WorkUnits
-                            && limit.operation == "SAB history boundary scan"
-                            && limit.used == 0));
+                    let refusal = crate::test_support::resource_limit_at(
+                        &bytes,
+                        ResourceDimension::WorkUnits,
+                        "scan SAB history record",
+                        |ctx| match (acis, with_header) {
+                            (false, false) => crate::asm_header::solved_record_limit(ctx, &bytes),
+                            (false, true) => crate::asm_header::solved_record_limit_with_header(
+                                ctx, &bytes, &header,
+                            ),
+                            (true, false) => crate::acis_header::solved_record_limit(ctx, &bytes),
+                            (true, true) => crate::acis_header::solved_record_limit_with_header(
+                                ctx, &bytes, &header,
+                            ),
+                        },
+                    );
+                    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(refusal.operation, "scan SAB history record");
+                    assert_eq!(refusal.additional, 1);
                 }
                 let result = if acis {
                     crate::acis_header::solved_record_limit_with_header(service, &bytes, &header)
@@ -820,39 +956,121 @@ mod tests {
         }
     }
 
-    fn assert_framed_collection_limit(max_items: u64, operation: &str) {
+    #[test]
+    fn sab_payload_scans_refuse_work_before_lexing() {
+        let bytes = b"\x0d\x01x\x0f\x0d\x01y\x0a\x10\x11";
+        let records = frame(bytes, 0, bytes.len(), RefWidth::Eight).expect("complete record");
+        for operation in [
+            "scan SAB payload subtype token",
+            "scan SAB nested payload token",
+        ] {
+            let limit = crate::test_support::resource_limit_at(
+                bytes,
+                ResourceDimension::WorkUnits,
+                operation,
+                |ctx| {
+                    super::payload_subtype_range(ctx, bytes, &records[0], 0, RefWidth::Eight, "y")
+                },
+            );
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.used, limit.limit);
+            assert_eq!(limit.additional, 1);
+        }
+        let limit = crate::test_support::resource_limit_at(
+            bytes,
+            ResourceDimension::WorkUnits,
+            "scan SAB payload token",
+            |ctx| payload_token(ctx, bytes, &records[0], RefWidth::Eight, 0),
+        );
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "scan SAB payload token");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+    }
+
+    #[test]
+    fn sab_history_boundary_refuses_token_loop_work() {
+        let bytes = b"\x0d\x01x\x11";
+        let refusal = crate::test_support::resource_limit_at(
+            bytes,
+            ResourceDimension::WorkUnits,
+            "scan SAB history token",
+            |ctx| super::scan_history_boundary(ctx, bytes, 0, RefWidth::Eight, None),
+        );
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, "scan SAB history token");
+        assert_eq!(refusal.used, refusal.limit);
+    }
+
+    #[test]
+    fn sab_lex_refuses_utf8_validation_work() {
+        let bytes = b"\x0d\x05point";
+        let refusal = crate::test_support::resource_limit_at(
+            bytes,
+            ResourceDimension::WorkUnits,
+            "validate SAB token text",
+            |ctx| super::lex(ctx, bytes, 0, RefWidth::Eight),
+        );
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, "validate SAB token text");
+        // The identifier contains five bytes to validate.
+        assert_eq!(refusal.additional, 5);
+    }
+
+    #[test]
+    fn sab_framing_refuses_record_and_token_loop_work() {
         let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
-            .expect_err("collection refusal");
-        let StreamFailure::Resource(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
+        for operation in ["frame SAB record", "lex SAB token"] {
+            let refusal = crate::test_support::resource_limit_at(
+                bytes,
+                ResourceDimension::WorkUnits,
+                operation,
+                |ctx| {
+                    frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
+                        .map(|_| ())
+                        .map_err(|error| error.into_malformed(ctx))
+                },
+            );
+            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(refusal.operation, operation);
+        }
+    }
+
+    fn assert_framed_collection_limit(operation: &str) {
+        let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
+        let limit = crate::test_support::resource_limit_at(
+            bytes,
+            ResourceDimension::CollectionItems,
+            operation,
+            |ctx| {
+                frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
+                    .map(|_| ())
+                    .map_err(|error| error.into_malformed(ctx))
+            },
+        );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, operation);
     }
 
     #[test]
     fn sab_name_parts_refuse_collection_limit() {
-        assert_framed_collection_limit(0, "frame SAB name part");
+        assert_framed_collection_limit("frame SAB name part");
     }
 
     #[test]
     fn sab_subtype_guards_refuse_collection_limit() {
-        assert_framed_collection_limit(1, "frame SAB subtype guards");
+        assert_framed_collection_limit("frame SAB subtype guards");
     }
 
     #[test]
     fn sab_tokens_refuse_collection_limit() {
-        assert_framed_collection_limit(2, "frame SAB token");
+        assert_framed_collection_limit("frame SAB token");
     }
 
     #[test]
     fn sab_records_refuse_collection_limit() {
-        assert_framed_collection_limit(5, "frame SAB record");
+        assert_framed_collection_limit("frame SAB record");
     }
 
     #[test]
@@ -904,7 +1122,7 @@ mod tests {
         limit: usize,
         width: RefWidth,
         history: bool,
-    ) -> Result<Vec<Record>, StreamError> {
+    ) -> Result<Vec<Record<'static>>, StreamError> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("test stream fits the service input limit");
@@ -914,7 +1132,7 @@ mod tests {
             frame_stream(&ctx, bytes, start, limit, width, None)
         };
         match outcome {
-            Ok(records) => Ok(records),
+            Ok(records) => Ok(records.into_iter().map(Record::into_fixture).collect()),
             Err(
                 StreamFailure::Parse(error)
                 | StreamFailure::Malformed(error)
@@ -937,7 +1155,7 @@ mod tests {
         start: usize,
         limit: usize,
         width: RefWidth,
-    ) -> Result<Vec<Record>, StreamError> {
+    ) -> Result<Vec<Record<'static>>, StreamError> {
         framed(bytes, start, limit, width, false)
     }
 
@@ -946,7 +1164,7 @@ mod tests {
         start: usize,
         limit: usize,
         width: RefWidth,
-    ) -> Result<Vec<Record>, StreamError> {
+    ) -> Result<Vec<Record<'static>>, StreamError> {
         framed(bytes, start, limit, width, true)
     }
 
@@ -956,12 +1174,29 @@ mod tests {
             let mut bytes = b"\x0d\x01x\x0f\x0d\x01y\x0a\x10\x11".to_vec();
             let records = frame(&bytes, 0, bytes.len(), width).unwrap();
             assert_eq!(
-                super::payload_subtype_range(&bytes, &records[0], 0, width, "y"),
+                super::payload_subtype_range(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    &records[0],
+                    0,
+                    width,
+                    "y"
+                )
+                .expect("service context"),
                 Some(7..8)
             );
             bytes[7] = 0x11;
             assert!(frame(&bytes, 0, bytes.len(), width).is_err());
-            assert!(super::payload_subtype_range(&bytes, &records[0], 0, width, "y").is_none());
+            assert!(super::payload_subtype_range(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                &records[0],
+                0,
+                width,
+                "y"
+            )
+            .expect("service context")
+            .is_none());
         }
     }
 
@@ -994,11 +1229,23 @@ mod tests {
             bytes.push(0x11);
             let mut record = frame(&bytes, 0, bytes.len(), width).unwrap().remove(0);
             record.len = 11;
-            assert!(payload_token(&bytes, &record, width, 0).is_none());
-            assert!(
-                crate::test_support::sab::payload_token_offsets(&bytes, &record, width, 0x06)
-                    .is_err()
-            );
+            assert!(payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                &record,
+                width,
+                0
+            )
+            .expect("service context")
+            .is_none());
+            assert!(crate::test_support::sab::payload_token_offsets(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                &record,
+                width,
+                0x06,
+            )
+            .is_err());
         }
     }
 
@@ -1011,15 +1258,33 @@ mod tests {
             .remove(0);
         record.offset = usize::MAX;
         record.len = 1;
-        assert!(payload_token(bytes, &record, RefWidth::Eight, 0).is_none());
+        assert!(payload_token(
+            &cadmpeg_test_support::service_decode_context(),
+            bytes,
+            &record,
+            RefWidth::Eight,
+            0
+        )
+        .expect("service context")
+        .is_none());
         assert!(crate::test_support::sab::payload_token_offsets(
+            &cadmpeg_test_support::service_decode_context(),
             bytes,
             &record,
             RefWidth::Eight,
             0x06
         )
         .is_err());
-        assert!(super::payload_subtype_range(bytes, &record, 0, RefWidth::Eight, "x").is_none());
+        assert!(super::payload_subtype_range(
+            &cadmpeg_test_support::service_decode_context(),
+            bytes,
+            &record,
+            0,
+            RefWidth::Eight,
+            "x"
+        )
+        .expect("service context")
+        .is_none());
     }
 
     #[test]
@@ -1638,18 +1903,40 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated record");
             let record = records.first().expect("generated pcurve");
             assert_eq!(
-                bytes[payload_token(&bytes, record, ref_width, 4)
-                    .expect("required invariant")
-                    .0],
+                bytes[payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    4
+                )
+                .expect("service context")
+                .expect("required invariant")
+                .0],
                 0x0b
             );
             assert_eq!(
-                bytes[payload_token(&bytes, record, ref_width, 5)
-                    .expect("required invariant")
-                    .0],
+                bytes[payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    5
+                )
+                .expect("service context")
+                .expect("required invariant")
+                .0],
                 0x0f
             );
-            assert!(payload_token(&bytes, record, ref_width, 8).is_none());
+            assert!(payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                record,
+                ref_width,
+                8
+            )
+            .expect("service context")
+            .is_none());
         }
     }
 
@@ -1660,8 +1947,15 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated ref pcurve");
             let record = &records[0];
             for (index, expected) in [(5usize, -2.0f64), (6, 4.0)] {
-                let (offset, _) =
-                    payload_token(&bytes, record, ref_width, index).expect("range field offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("range field offset");
                 assert_eq!(bytes[offset], 0x06);
                 assert_eq!(
                     f64::from_le_bytes(
@@ -1690,8 +1984,15 @@ mod tests {
                 (10, 0x06),
                 (11, 0x06),
             ] {
-                let (offset, _) =
-                    payload_token(&bytes, record, ref_width, index).expect("cone field offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("cone field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1704,8 +2005,15 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated sphere");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x06), (5, 0x14), (6, 0x14)] {
-                let (offset, _) =
-                    payload_token(&bytes, record, ref_width, index).expect("sphere field offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("sphere field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1718,8 +2026,15 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated torus");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x06), (6, 0x06), (7, 0x14)] {
-                let (offset, _) =
-                    payload_token(&bytes, record, ref_width, index).expect("torus field offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("torus field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1732,8 +2047,15 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated plane");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x14)] {
-                let (offset, _) =
-                    payload_token(&bytes, record, ref_width, index).expect("plane field offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("plane field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1746,8 +2068,15 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated ellipse");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x14), (6, 0x06)] {
-                let (offset, _) =
-                    payload_token(&bytes, record, ref_width, index).expect("ellipse field offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("ellipse field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1760,8 +2089,15 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated straight");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x14)] {
-                let (offset, _) =
-                    payload_token(&bytes, record, ref_width, index).expect("straight field offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("straight field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1774,8 +2110,15 @@ mod tests {
             let records =
                 frame(&bytes, 0, bytes.len(), ref_width).expect("generated degenerate curve");
             let record = &records[0];
-            let (offset, _) =
-                payload_token(&bytes, record, ref_width, 3).expect("degenerate point offset");
+            let (offset, _) = payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                record,
+                ref_width,
+                3,
+            )
+            .expect("service context")
+            .expect("degenerate point offset");
             assert_eq!(bytes[offset], 0x13);
         }
     }
@@ -1786,8 +2129,15 @@ mod tests {
             let bytes = generated_point_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated point");
             let record = &records[0];
-            let (offset, _) =
-                payload_token(&bytes, record, ref_width, 3).expect("point position offset");
+            let (offset, _) = payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                record,
+                ref_width,
+                3,
+            )
+            .expect("service context")
+            .expect("point position offset");
             assert_eq!(bytes[offset], 0x13);
         }
     }
@@ -1798,8 +2148,15 @@ mod tests {
             let edge = generated_edge_record(ref_width);
             let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
             for index in [4usize, 6] {
-                let (offset, _) =
-                    payload_token(&edge, &records[0], ref_width, index).expect("edge range offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &edge,
+                    &records[0],
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("edge range offset");
                 assert_eq!(edge[offset], 0x06);
             }
 
@@ -1818,8 +2175,15 @@ mod tests {
             let records =
                 frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
             for index in [11usize, 12] {
-                let (offset, _) = payload_token(&coedge, &records[0], ref_width, index)
-                    .expect("tolerant coedge parameter offset");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &coedge,
+                    &records[0],
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("tolerant coedge parameter offset");
                 assert_eq!(coedge[offset], 0x06);
             }
             assert!(matches!(records[0].chunk(13), Some(super::Token::Ref(-1))));
@@ -1834,24 +2198,52 @@ mod tests {
             let face = generated_face_record(ref_width);
             let records = frame(&face, 0, face.len(), ref_width).expect("generated face");
             for index in [8usize, 9, 10] {
-                let (offset, _) =
-                    payload_token(&face, &records[0], ref_width, index).expect("face sense field");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &face,
+                    &records[0],
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("face sense field");
                 assert!(matches!(face[offset], 0x0a | 0x0b));
             }
 
             let coedge = generated_tcoedge_record(ref_width);
             let records =
                 frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
-            let (offset, _) =
-                payload_token(&coedge, &records[0], ref_width, 7).expect("coedge sense field");
+            let (offset, _) = payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &coedge,
+                &records[0],
+                ref_width,
+                7,
+            )
+            .expect("service context")
+            .expect("coedge sense field");
             assert_eq!(coedge[offset], 0x0b);
 
             let edge = generated_edge_record(ref_width);
             let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
-            let (sense, _) =
-                payload_token(&edge, &records[0], ref_width, 9).expect("edge sense field");
-            let (continuity, _) =
-                payload_token(&edge, &records[0], ref_width, 10).expect("edge continuity field");
+            let (sense, _) = payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &edge,
+                &records[0],
+                ref_width,
+                9,
+            )
+            .expect("service context")
+            .expect("edge sense field");
+            let (continuity, _) = payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &edge,
+                &records[0],
+                ref_width,
+                10,
+            )
+            .expect("service context")
+            .expect("edge continuity field");
             assert_eq!(edge[sense], 0x0b);
             assert_eq!(edge[continuity], 0x07);
         }
@@ -1873,8 +2265,15 @@ mod tests {
                 (8, 0x06),
                 (9, 0x04),
             ] {
-                let (offset, _) = payload_token(&bytes, record, ref_width, index)
-                    .expect("tolerant vertex metadata field");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("tolerant vertex metadata field");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1885,13 +2284,28 @@ mod tests {
         for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let body = generated_body_record(ref_width);
             let records = frame(&body, 0, body.len(), ref_width).expect("generated body");
-            let (key, _) = payload_token(&body, &records[0], ref_width, 1).expect("body key field");
+            let (key, _) = payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &body,
+                &records[0],
+                ref_width,
+                1,
+            )
+            .expect("service context")
+            .expect("body key field");
             assert_eq!(body[key], 0x04);
 
             let edge = generated_edge_record(ref_width);
             let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
-            let (owner, _) =
-                payload_token(&edge, &records[0], ref_width, 7).expect("edge owner field");
+            let (owner, _) = payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &edge,
+                &records[0],
+                ref_width,
+                7,
+            )
+            .expect("service context")
+            .expect("edge owner field");
             assert_eq!(edge[owner], 0x0c);
         }
     }
@@ -1903,13 +2317,27 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated transform");
             let record = &records[0];
             for (index, tag) in [(0usize, 0x14), (1, 0x14), (2, 0x14), (3, 0x14), (4, 0x06)] {
-                let (offset, _) = payload_token(&bytes, record, ref_width, index)
-                    .expect("transform numeric field");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("transform numeric field");
                 assert_eq!(bytes[offset], tag);
             }
             for index in 5..=7 {
-                let (offset, _) =
-                    payload_token(&bytes, record, ref_width, index).expect("transform hint field");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    record,
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("transform hint field");
                 assert!(matches!(bytes[offset], 0x0a | 0x0b));
             }
         }
@@ -1920,8 +2348,15 @@ mod tests {
         for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_wire_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated wire");
-            let (offset, _) =
-                payload_token(&bytes, &records[0], ref_width, 7).expect("wire side field");
+            let (offset, _) = payload_token(
+                &cadmpeg_test_support::service_decode_context(),
+                &bytes,
+                &records[0],
+                ref_width,
+                7,
+            )
+            .expect("service context")
+            .expect("wire side field");
             assert_eq!(bytes[offset], 0x0b);
         }
     }
@@ -1933,8 +2368,15 @@ mod tests {
             let records =
                 frame(&color, 0, color.len(), ref_width).expect("generated RGB attribute");
             for index in 1..=3 {
-                let (offset, _) = payload_token(&color, &records[0], ref_width, index)
-                    .expect("RGB channel field");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &color,
+                    &records[0],
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("RGB channel field");
                 assert_eq!(color[offset], 0x06);
             }
 
@@ -1942,8 +2384,15 @@ mod tests {
             let records = frame(&timestamp, 0, timestamp.len(), ref_width)
                 .expect("generated timestamp attribute");
             for (index, tag) in [(1usize, 0x07), (2, 0x04), (3, 0x06)] {
-                let (offset, _) = payload_token(&timestamp, &records[0], ref_width, index)
-                    .expect("timestamp semantic field");
+                let (offset, _) = payload_token(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &timestamp,
+                    &records[0],
+                    ref_width,
+                    index,
+                )
+                .expect("service context")
+                .expect("timestamp semantic field");
                 assert_eq!(timestamp[offset], tag);
             }
         }

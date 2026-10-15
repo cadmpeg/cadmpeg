@@ -94,7 +94,7 @@ pub(crate) fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh() -> Vec<u8> {
     let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -121,7 +121,7 @@ pub(crate) fn synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh() -> Vec<
 /// fit tolerance.
 pub(crate) fn synthetic_versioned_cyl_spl_sur_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -172,7 +172,7 @@ pub(crate) fn synthetic_cacheless_cyl_spl_sur_smbh() -> Vec<u8> {
 
 fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -211,7 +211,7 @@ fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
 
 pub(crate) fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -257,7 +257,7 @@ pub(crate) fn synthetic_exact_spl_sur_with_decoy_sense_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -292,7 +292,7 @@ pub(crate) fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> V
 
 pub(crate) fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -328,7 +328,7 @@ pub(crate) fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec
 
 pub(crate) fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -362,7 +362,7 @@ pub(crate) fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
 
 pub(crate) fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -406,7 +406,7 @@ pub(crate) fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
 
 pub(crate) fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -447,7 +447,7 @@ pub(crate) fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -533,7 +533,7 @@ fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64, direction:
 
 pub(crate) fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -579,7 +579,7 @@ pub(crate) fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
 
 pub(crate) fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -630,7 +630,7 @@ pub(crate) fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -686,7 +686,7 @@ pub(crate) fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -734,7 +734,7 @@ pub(crate) fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -792,7 +792,7 @@ pub(crate) fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
 
 pub(crate) fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -841,7 +841,7 @@ pub(crate) fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -907,7 +907,7 @@ pub(crate) fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
 
 pub(crate) fn synthetic_revision_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -979,7 +979,7 @@ pub(crate) fn synthetic_revision_deformable_surface_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1043,7 +1043,7 @@ pub(crate) fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1120,7 +1120,7 @@ pub(crate) fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>)
 
 pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1167,7 +1167,7 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     bytes.splice(old_offset..old_offset + old_len, surface);
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
-        asm_header::record_stream_start(&bytes).unwrap(),
+        asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap(),
         asm_header::solved_record_limit(&service_decode_context(), &bytes)
             .expect("history scan")
             .unwrap(),
@@ -1204,7 +1204,7 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1260,7 +1260,7 @@ pub(crate) fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1321,7 +1321,7 @@ pub(crate) fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
 
 pub(crate) fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1402,7 +1402,7 @@ pub(crate) fn synthetic_cacheless_revision_text_law_sweep_smbh() -> Vec<u8> {
 
 fn synthetic_revision_text_law_sweep_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1487,7 +1487,7 @@ fn synthetic_law_driven_sweep_smbh_with_law_slots(
     second_law_text: Option<&str>,
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1582,7 +1582,7 @@ fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
 
 pub(crate) fn synthetic_compound_loft_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1629,7 +1629,7 @@ pub(super) fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) 
 
 pub(crate) fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1689,7 +1689,7 @@ pub(crate) fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
 
 pub(crate) fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1810,7 +1810,7 @@ pub(crate) fn synthetic_law_spl_sur_smbh(
     tail_selector: i64,
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();
@@ -1895,7 +1895,7 @@ pub(crate) fn synthetic_law_spl_sur_smbh(
 
 pub(crate) fn synthetic_sub_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();

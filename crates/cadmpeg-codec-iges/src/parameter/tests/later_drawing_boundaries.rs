@@ -359,6 +359,7 @@ fn type141_entity_table_boundary_uses_nested_curve_counts() {
                 .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -402,6 +403,7 @@ fn type141_entity_table_boundary_precedes_valid_generic_alternative() {
             .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -450,6 +452,7 @@ fn type141_malformed_boundary_counts_do_not_enable_generic_recovery() {
                 .collect(),
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
