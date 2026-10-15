@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
-use super::push_entity_loss;
+use super::{admit_with_scoped_loss_slots, push_entity_loss_with_scoped_slots};
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -15,7 +15,6 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
@@ -26,21 +25,6 @@ const EPS_CONIC_DEGENERATE: f64 = 1.0e-10;
 const EPS_CONIC_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = EPS_CONIC_EXACT_GEOMETRY;
-
-fn admit_conic<T>(
-    result: Result<T, &str>,
-    entry: &DirectoryEntry,
-    losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<T>, CodecError> {
-    match result {
-        Ok(value) => Ok(Some(value)),
-        Err(message) => {
-            push_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
-            Ok(None)
-        }
-    }
-}
 
 /// The bounded span one conic carrier is projected over.
 #[derive(Clone, Copy)]
@@ -56,7 +40,7 @@ fn add_bounded_curve(
     entry: &DirectoryEntry,
     geometry: CurveGeometry,
     span: BoundedSpan,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<EdgeId, cadmpeg_core::CodecError> {
     let BoundedSpan {
@@ -132,44 +116,43 @@ fn endpoint_agrees_with_coefficient_carrier(
     distance == 0.0 || distance < resolution
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    source: (
+        &BTreeMap<u32, &DirectoryEntry>,
+        &BTreeMap<u32, &ParameterRecord>,
+    ),
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
-) -> Result<WireProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges conic parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges conic directory index",
-        )?;
-    }
+    ctx: &'ctx DecodeContext<'_>,
+    sequences: &mut super::geometry::SourceSequences<'_>,
+) -> Result<WireProjectionOutcome<'ctx>, CodecError> {
+    let (entries, records) = source;
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges curve family membership storage")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
+    let mut wire_slots_storage = ctx.reserve_scoped(0, "iges conics wire slots")?;
     let mut wire_edges = Vec::new();
 
-    for entry in directory
-        .iter()
-        .filter(|entry| entry.entity_type == 104 && (0..=3).contains(&entry.form))
-    {
+    let mut directory_entries = directory.iter();
+    while directory_entries.len() != 0 {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges conic directory traversal")?
+        else {
+            break;
+        };
+        if entry.entity_type != 104 || !(0..=3).contains(&entry.form) {
+            continue;
+        }
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
-            push_entity_loss(
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges conic parameter lookup")?
+            .copied()
+        else {
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -181,8 +164,9 @@ pub(super) fn project(
         let [Some(coeff_a), Some(coeff_b), Some(coeff_c), Some(coeff_d), Some(coeff_e), Some(coeff_f), Some(plane_z), Some(start_x), Some(start_y), Some(end_x), Some(end_y)] =
             values
         else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("conic coefficients or endpoints are invalid"),
@@ -206,8 +190,9 @@ pub(super) fn project(
             value.abs() <= coefficient_scale * CONIC_STANDARD_POSITION_RELATIVE_EPSILON
         };
         if !zero(coeff_b) || (!zero(coeff_d) && !zero(coeff_e)) {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("conic axes or center are not in the required standard position"),
@@ -216,8 +201,8 @@ pub(super) fn project(
         }
         let transform = match resolve_transform(
             entry.transform,
-            &entries,
-            &records,
+            entries,
+            records,
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
@@ -226,7 +211,13 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
@@ -239,8 +230,9 @@ pub(super) fn project(
                 Some((UnitVector3::normalized_nonzero(v)?, n))
             })
         else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("conic placement collapses the x axis"),
@@ -256,8 +248,9 @@ pub(super) fn project(
                 Some((UnitVector3::normalized_nonzero(v)?, n))
             })
         else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("conic placement collapses the y axis"),
@@ -265,8 +258,9 @@ pub(super) fn project(
             continue;
         };
         if basis_x.as_raw().dot(*basis_y.as_raw()).abs() > EPS_CONIC_DEGENERATE {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("conic placement produces non-orthogonal principal axes"),
@@ -279,8 +273,9 @@ pub(super) fn project(
             (n.is_finite() && n > 0.0)
                 .then(|| (UnitVector3::normalized_by_reciprocal(v), v.scale(1.0 / n)))
         }) else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("conic placement collapses its plane"),
@@ -289,8 +284,9 @@ pub(super) fn project(
         };
         let Some(plane_origin) = transform.apply_point(Point3::new(0.0, 0.0, plane_z * factor))
         else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("placement produces a non-finite point"),
@@ -302,8 +298,9 @@ pub(super) fn project(
             start_y * factor,
             plane_z * factor,
         )) else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("placement produces a non-finite point"),
@@ -315,8 +312,9 @@ pub(super) fn project(
             end_y * factor,
             plane_z * factor,
         )) else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("placement produces a non-finite point"),
@@ -371,7 +369,7 @@ pub(super) fn project(
                 } else {
                     raw_start_parameter
                 };
-                let Some(payload) = admit_conic(
+                let Some(payload) = admit_with_scoped_loss_slots(
                     axis.and_then(|axis| OrthonormalFrame3::from_units(axis, major_direction))
                         .ok_or("EllipseCurve.axis/major_direction must form an orthonormal frame")
                         .and_then(|frame| {
@@ -387,6 +385,7 @@ pub(super) fn project(
                             )
                         }),
                     entry,
+                    &mut loss_slots_storage,
                     &mut losses,
                     ctx,
                 )?
@@ -457,7 +456,7 @@ pub(super) fn project(
                     start_parameter = parameter(start, axis_raw);
                     end_parameter = parameter(end, axis_raw);
                 }
-                let Some(payload) = admit_conic(
+                let Some(payload) = admit_with_scoped_loss_slots(
                     axis.and_then(|axis| OrthonormalFrame3::from_units(axis, major_direction))
                         .ok_or("HyperbolaCurve.axis/major_direction must form an orthonormal frame")
                         .and_then(|frame| {
@@ -473,6 +472,7 @@ pub(super) fn project(
                             ))
                         }),
                     entry,
+                    &mut loss_slots_storage,
                     &mut losses,
                     ctx,
                 )?
@@ -496,8 +496,9 @@ pub(super) fn project(
                 [4.0, coeff_a, scale_y],
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
-                push_entity_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("parabola focal distance is not representable"),
@@ -520,8 +521,9 @@ pub(super) fn project(
             let (Some(mut start_parameter), Some(mut end_parameter)) =
                 (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
-                push_entity_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("parabola endpoint parameter is not representable"),
@@ -533,7 +535,7 @@ pub(super) fn project(
                 start_parameter = -start_parameter;
                 end_parameter = -end_parameter;
             }
-            let Some(payload) = admit_conic(
+            let Some(payload) = admit_with_scoped_loss_slots(
                 axis.and_then(|axis| OrthonormalFrame3::from_units(axis, major_direction))
                     .ok_or("ParabolaCurve.axis/major_direction must form an orthonormal frame")
                     .and_then(|frame| {
@@ -546,6 +548,7 @@ pub(super) fn project(
                         ))
                     }),
                 entry,
+                &mut loss_slots_storage,
                 &mut losses,
                 ctx,
             )?
@@ -568,8 +571,9 @@ pub(super) fn project(
                 [4.0, coeff_c, scale_x],
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
-                push_entity_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("parabola focal distance is not representable"),
@@ -592,8 +596,9 @@ pub(super) fn project(
             let (Some(mut start_parameter), Some(mut end_parameter)) =
                 (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
-                push_entity_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("parabola endpoint parameter is not representable"),
@@ -605,7 +610,7 @@ pub(super) fn project(
                 start_parameter = -start_parameter;
                 end_parameter = -end_parameter;
             }
-            let Some(payload) = admit_conic(
+            let Some(payload) = admit_with_scoped_loss_slots(
                 axis.and_then(|axis| OrthonormalFrame3::from_units(axis, major_direction))
                     .ok_or("ParabolaCurve.axis/major_direction must form an orthonormal frame")
                     .and_then(|frame| {
@@ -618,6 +623,7 @@ pub(super) fn project(
                         ))
                     }),
                 entry,
+                &mut loss_slots_storage,
                 &mut losses,
                 ctx,
             )?
@@ -633,8 +639,9 @@ pub(super) fn project(
         };
 
         let Some((geometry, parameter_range)) = geometry_and_range else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -647,8 +654,9 @@ pub(super) fn project(
             cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[0]),
         )?)?
         else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("conic start point cannot be evaluated"),
@@ -659,8 +667,9 @@ pub(super) fn project(
             cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[1]),
         )?)?
         else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("conic terminate point cannot be evaluated"),
@@ -671,17 +680,18 @@ pub(super) fn project(
         // does not prescribe an endpoint-consistency test or receiver action.
         let resolution = global.minimum_resolution_mm();
         if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start.get(), resolution) {
-            push_entity_loss(ctx, &mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"))?;
+            push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"))?;
             continue;
         }
         if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end.get(), resolution) {
-            push_entity_loss(ctx, &mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"))?;
+            push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"))?;
             continue;
         }
         let tolerance = if resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
-                push_entity_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("conic tolerance must be finite"),
@@ -708,19 +718,35 @@ pub(super) fn project(
             Ok(edge) => edge,
             Err(error) => {
                 let message = super::non_resource_error(error, ctx)?;
-                push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
-        ctx.reserve_vec(&mut wire_edges, 1, "iges conic wire edges")?;
+        ctx.reserve_scoped_vec(
+            &mut wire_slots_storage,
+            &mut wire_edges,
+            1,
+            "iges conic wire edges",
+        )?;
         wire_edges.push(edge);
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges conic decoded sequences")?;
+        decoded_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut decoded, entry.sequence, "iges conic decoded sequences")
+        })?;
     }
 
     Ok(WireProjectionOutcome {
         decoded,
+        decoded_storage,
         losses,
+        loss_slots_storage,
         wire_edges,
+        wire_slots_storage,
     })
 }
 

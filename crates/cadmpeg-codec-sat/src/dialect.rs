@@ -105,15 +105,14 @@ impl RecordStreamStart {
 
 /// The record-stream boundary the family's header grammar finds, if any.
 pub(crate) fn record_stream_start(
-    bytes: &[u8],
     family: Family,
     header: &BinaryHeader,
 ) -> Option<RecordStreamStart> {
     let start = match family {
-        Family::Asm => asm_header::record_stream_start_with_header(bytes, header),
-        Family::Acis => acis_header::record_stream_start_with_header(bytes, header),
-    }?;
-    Some(RecordStreamStart(start))
+        Family::Asm => asm_header::record_stream_start_with_header(header),
+        Family::Acis => acis_header::record_stream_start_with_header(header),
+    };
+    start.map(RecordStreamStart)
 }
 
 /// Stream family, parsed header, and framing admission from the source bytes.

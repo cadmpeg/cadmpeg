@@ -24,7 +24,7 @@ pub(crate) fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
     }
 
     let mut bytes = synthetic_geometry_bf4_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
         .expect("history scan")
         .unwrap();

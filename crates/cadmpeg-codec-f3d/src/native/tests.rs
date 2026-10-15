@@ -888,10 +888,12 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     .expect("regenerate stamped law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
     let span = cadmpeg_asm::nurbs::subtypes::subtype_span(
+        &cadmpeg_test_support::service_decode_context(),
         &regenerated,
         inner,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
+    .expect("decode work admission")
     .unwrap()
     .bytes();
     assert_eq!(span, subtype.as_slice());
@@ -927,10 +929,12 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
             .unwrap()
             - 3;
         cadmpeg_asm::nurbs::subtypes::subtype_span(
+            &cadmpeg_test_support::service_decode_context(),
             &smbh,
             marker,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
         )
+        .expect("decode work admission")
         .unwrap()
         .bytes()
         .to_vec()
@@ -961,10 +965,12 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
     .expect("regenerate legacy law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
     let span = cadmpeg_asm::nurbs::subtypes::subtype_span(
+        &cadmpeg_test_support::service_decode_context(),
         &regenerated,
         inner,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
+    .expect("decode work admission")
     .unwrap()
     .bytes();
     assert_eq!(span, original.as_slice());

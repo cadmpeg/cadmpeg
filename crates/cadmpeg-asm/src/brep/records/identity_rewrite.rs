@@ -12,8 +12,12 @@ use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 macro_rules! scalar {
     ($($owner:ty),*) => {$(
         impl RewriteIdentities for $owner {
-            fn visit_identity_references(&self, ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> { ctx.charge_work(1, "walk ASM scalar reference") }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> { ctx.charge_work(1, "rewrite ASM scalar")?; Ok(self) }
+            fn visit_identity_references(&self, _ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+                Ok(())
+            }
+            fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, _ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
+                Ok(self)
+            }
         }
     )*};
 }
@@ -81,9 +85,104 @@ impl RewriteIdentities for FaceSidedness {
 
 #[cfg(test)]
 mod tests {
+    use super::{
+        EndpointSlot, EvaluatedToleranceSlot, FaceContainment, TolerantCoedgeExtension, WireSide,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+
+    macro_rules! scalar_cases {
+        ($check:ident) => {
+            for value in [EndpointSlot::Start, EndpointSlot::End] {
+                $check(&value);
+            }
+            for value in [FaceContainment::In, FaceContainment::Out] {
+                $check(&value);
+            }
+            for value in [WireSide::In, WireSide::Out] {
+                $check(&value);
+            }
+            for value in [
+                EvaluatedToleranceSlot::Absent {},
+                EvaluatedToleranceSlot::Unset { trailing: None },
+                EvaluatedToleranceSlot::Unset {
+                    trailing: Some(i64::MAX),
+                },
+                EvaluatedToleranceSlot::Evaluated { trailing: None },
+                EvaluatedToleranceSlot::Evaluated {
+                    trailing: Some(i64::MAX),
+                },
+            ] {
+                $check(&value);
+            }
+            for value in [
+                TolerantCoedgeExtension::None {},
+                TolerantCoedgeExtension::Reference { target: None },
+                TolerantCoedgeExtension::Reference {
+                    target: Some(i64::MAX),
+                },
+                TolerantCoedgeExtension::Empty { target: None },
+                TolerantCoedgeExtension::Empty {
+                    target: Some(i64::MAX),
+                },
+                TolerantCoedgeExtension::EmbeddedCurve {
+                    target: None,
+                    curve_reversed: false,
+                    payload_token_count: 0,
+                    parameter_range: None,
+                },
+                TolerantCoedgeExtension::EmbeddedCurve {
+                    target: Some(i64::MAX),
+                    curve_reversed: true,
+                    payload_token_count: u32::MAX,
+                    parameter_range: None,
+                },
+            ] {
+                $check(&value);
+            }
+        };
+    }
+
+    fn zero_policy() -> DecodePolicy {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
+        policy
+    }
+
+    fn check_free_scalar<T: RewriteIdentities + Clone + serde::Serialize>(value: &T) {
+        let wire = serde_json::to_value(value).unwrap();
+        for count in [1, 64] {
+            let arena = DecodeArena::new();
+            let policy = zero_policy();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut map = IdentityMap::new(&ctx, "test unused ASM scalar map", |_source: &str| {
+                panic!("a fixed scalar must not map an identity");
+            })
+            .unwrap();
+            for _ in 0..count {
+                value
+                    .visit_identity_references(&ctx, &mut |_source| {
+                        panic!("a fixed scalar must not visit an identity");
+                    })
+                    .unwrap();
+                let rewritten = value.clone().rewrite_identities(&ctx, &mut map).unwrap();
+                assert_eq!(serde_json::to_value(rewritten).unwrap(), wire);
+            }
+            drop(map);
+            ctx.finish_session().unwrap();
+        }
+    }
+
+    #[test]
+    fn fixed_asm_scalars_visit_and_rewrite_with_zero_budgets() {
+        scalar_cases!(check_free_scalar);
+    }
 
     fn record() -> super::super::EdgeContinuity {
         serde_json::from_value(serde_json::json!({"id":"f3d:asm:edge-continuity#1","record_index":1,"edge":"f3d:brep:entity#1","sense":"forward","continuity":"tangent"})).unwrap()

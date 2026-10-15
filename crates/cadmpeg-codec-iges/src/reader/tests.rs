@@ -20,6 +20,8 @@ use crate::test_support::test_curves_and_surfaces::{
 use crate::test_support::test_drawing_and_trimming::test_surface_domains::transform_chain_overflow_file;
 use crate::IgesCodec;
 
+mod storage_lifetimes;
+
 #[test]
 fn normalized_inspection_notes_refuse_text_and_slot_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -88,11 +90,11 @@ fn quarantined_placement_rejections_refuse_node_limit() {
     directory[0].entity_type = 408;
     directory[0].form = 0;
     let quarantined = std::collections::BTreeSet::from([directory[0].sequence]);
-    let mut projection = crate::entities::geometry::Projection::default();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut projection = crate::entities::geometry::Projection::default();
     assert!(matches!(
         super::mark_quarantined_placements(&ctx, &mut projection, &directory, &quarantined),
         Err(CodecError::ResourceLimit(limit))
@@ -100,8 +102,11 @@ fn quarantined_placement_rejections_refuse_node_limit() {
                 && limit.operation == "iges quarantined placement rejections"
     ));
 
+    assert!(projection.placement_rejections.is_empty());
+    drop(projection);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut projection = crate::entities::geometry::Projection::default();
     super::mark_quarantined_placements(&ctx, &mut projection, &directory, &quarantined).unwrap();
     assert_eq!(
         projection.placement_rejections.get(&directory[0].sequence),
@@ -164,7 +169,7 @@ fn directory_fixture() -> (
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let (global, _, _global_storage) = crate::global::parse(&scan, &ctx).unwrap();
     let table = global.global_table();
     let (directory, _) = crate::directory::parse(&scan, table, &ctx).unwrap();
     (directory, table)
@@ -227,14 +232,15 @@ fn reader_generic_loss_refuses_slot_and_message_limits() {
 
     let (directory, table) = directory_fixture();
     let projection = crate::entities::geometry::Projection::default();
-    let attributed = std::collections::BTreeSet::new();
+    let mut attributed = std::collections::BTreeSet::new();
     let mut losses = Vec::new();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "test attribution storage").unwrap();
     assert!(matches!(
-        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
+        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &mut attributed, table, &mut storage),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "iges generic loss slots"
@@ -246,8 +252,9 @@ fn reader_generic_loss_refuses_slot_and_message_limits() {
         4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "test attribution storage").unwrap();
     assert!(matches!(
-        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
+        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &mut attributed, table, &mut storage),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "iges generic loss message"
@@ -255,13 +262,15 @@ fn reader_generic_loss_refuses_slot_and_message_limits() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "test attribution storage").unwrap();
     super::append_generic_losses(
         &ctx,
         &mut losses,
         &directory,
         &projection,
-        &attributed,
+        &mut attributed,
         table,
+        &mut storage,
     )
     .unwrap();
     assert_eq!(losses.len(), 1);
@@ -385,7 +394,14 @@ fn combined_summary_refuses_collection_limit_before_append() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut notes = Vec::new();
-    let result = super::append_summary_notes(&ctx, &mut notes, vec!["a".into()]);
+    let result = super::append_summary_notes(
+        &ctx,
+        &mut notes,
+        (
+            vec!["a".into()],
+            ctx.reserve_scoped(0, "test summary input").unwrap(),
+        ),
+    );
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(limit))
@@ -398,7 +414,15 @@ fn combined_summary_refuses_collection_limit_before_append() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    super::append_summary_notes(&ctx, &mut notes, vec!["a".into()]).unwrap();
+    super::append_summary_notes(
+        &ctx,
+        &mut notes,
+        (
+            vec!["a".into()],
+            ctx.reserve_scoped(0, "test summary input").unwrap(),
+        ),
+    )
+    .unwrap();
     assert_eq!(notes, ["a"]);
 }
 
@@ -412,7 +436,7 @@ fn source_metadata_admits_formatted_values_before_building_attributes() {
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let (global, _) = global::parse(&scan, &parse_ctx).unwrap();
+    let (global, _, _global_storage) = global::parse(&scan, &parse_ctx).unwrap();
     let representation = Representation::FixedAscii;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -680,46 +704,43 @@ fn decode_publishes_global_minimum_resolution_to_neutral_tolerance() {
 
 #[test]
 fn decode_enforces_each_iges_session_resource_dimension() {
-    fn assert_refusal(
-        edit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
-        expected: ResourceDimension,
-        operation: &'static str,
-    ) {
+    fn assert_refusal(expected: ResourceDimension, operation: &'static str) {
         let bytes = point_file();
-        let mut options = DecodeOptions::default();
-        edit(&mut options.policy.limits);
-        let error =
-            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &options.policy).unwrap_err();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(expected, operation, |cap| {
+            let mut options = DecodeOptions::default();
+            match expected {
+                ResourceDimension::MaterializedBytes => {
+                    options.policy.limits.max_materialized_bytes = cap;
+                }
+                ResourceDimension::RetainedBytes => options.policy.limits.max_retained_bytes = cap,
+                ResourceDimension::Entities => options.policy.limits.max_entities = cap,
+                ResourceDimension::CollectionItems => {
+                    options.policy.limits.max_collection_items = cap;
+                }
+                other => panic!("unexpected test dimension: {other:?}"),
+            }
+            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &options.policy).map_err(
+                |failure| match failure {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("{other:#?}"),
+                },
+            )
+        });
         assert!(
             matches!(
                 error,
-                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
+                CodecError::ResourceLimit(limit)
                     if limit.dimension == expected && limit.operation == operation
             ),
             "{error:#?}"
         );
     }
 
-    assert_refusal(
-        |limits| limits.max_materialized_bytes = 1,
-        ResourceDimension::MaterializedBytes,
-        "iges_card_storage",
-    );
-    assert_refusal(
-        |limits| limits.max_retained_bytes = 1,
-        ResourceDimension::RetainedBytes,
-        "iges physical card payload",
-    );
-    assert_refusal(
-        |limits| limits.max_entities = 0,
-        ResourceDimension::Entities,
-        "iges_directory_entries",
-    );
-    assert_refusal(
-        |limits| limits.max_entities = 1,
-        ResourceDimension::Entities,
-        "iges_geometry_primitives",
-    );
+    assert_refusal(ResourceDimension::MaterializedBytes, "iges_cards");
+    assert_refusal(ResourceDimension::MaterializedBytes, "iges_global_stream");
+    assert_refusal(ResourceDimension::RetainedBytes, "iges_source_image");
+    assert_refusal(ResourceDimension::Entities, "iges_directory_entries");
+    assert_refusal(ResourceDimension::Entities, "iges_geometry_primitives");
     let mut options = DecodeOptions {
         container_only: true,
         ..DecodeOptions::default()
@@ -734,16 +755,27 @@ fn decode_enforces_each_iges_session_resource_dimension() {
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "iges_native_entities"
     ));
-    assert_refusal(
-        |limits| limits.max_collection_items = 0,
-        ResourceDimension::CollectionItems,
-        "iges_cards",
-    );
-    assert_refusal(
-        |limits| limits.max_work_units = 1,
+    assert_refusal(ResourceDimension::CollectionItems, "iges_cards");
+    let bytes = point_file();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "iges_card_scan",
+        "iges physical line endings",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_work_units = cap;
+            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &options.policy)
+                .map(|_| ())
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("{other:#?}"),
+                })
+        },
     );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.additional == cadmpeg_core::decode::u64_from_index(bytes.len())
+    ));
 }
 
 #[test]
@@ -777,7 +809,11 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
         tolerance: None,
     });
 
-    let error = crate::reader::reject_invalid_semantic_ir(&ir).unwrap_err();
+    let error = crate::reader::reject_invalid_semantic_ir(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+    )
+    .unwrap_err();
 
     assert!(error.to_string().contains("referential_integrity"));
     assert!(error.to_string().contains("iges:model:vertex#invalid"));
@@ -788,10 +824,18 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
 #[test]
 fn phase5_freeze_shared_admissibility_fixtures() {
     let accepted = cadmpeg_test_support::admissibility::accepted_empty();
-    assert!(crate::reader::reject_invalid_semantic_ir(&accepted).is_ok());
+    assert!(crate::reader::reject_invalid_semantic_ir(
+        &cadmpeg_test_support::service_decode_context(),
+        &accepted
+    )
+    .is_ok());
     let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("iges:model")
         .expect("fixture identities are valid");
-    let error = crate::reader::reject_invalid_semantic_ir(&rejected).unwrap_err();
+    let error = crate::reader::reject_invalid_semantic_ir(
+        &cadmpeg_test_support::service_decode_context(),
+        &rejected,
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("referential_integrity"));
 }
 
@@ -830,6 +874,29 @@ fn attributed_loss_index_refuses_node_limit() {
 }
 
 #[test]
+fn attributed_loss_sequence_parse_refusal_propagates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    // The tag contains one sequence digit.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges attributed loss sequence",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::attributed_sequences(&[tagged_loss("D7:parameter")], &ctx).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 1
+    ));
+}
+
+#[test]
 fn projected_directory_refuses_entry_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -838,7 +905,7 @@ fn projected_directory_refuses_entry_limit() {
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, _) = crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let quarantined = std::collections::BTreeSet::from([99]);
 
@@ -855,7 +922,7 @@ fn projected_directory_refuses_entry_limit() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let projected = super::projection_directory(&directory, &quarantined, &ctx)
+    let (projected, _storage) = super::projection_directory(&directory, &quarantined, &ctx)
         .unwrap()
         .unwrap();
     assert_eq!(projected.len(), directory.len());
@@ -932,4 +999,261 @@ fn attribution_ignores_tags_that_do_not_render_a_sequence() {
     ]);
 
     assert!(index.is_empty(), "{index:?}");
+}
+
+#[test]
+fn reader_filter_lookups_refuse_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::collections::BTreeSet;
+
+    let (directory, table) = directory_fixture();
+    let quarantined = BTreeSet::from([99_u32]);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges projected directory quarantine lookup",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                super::projection_directory(&directory, &quarantined, ctx).map(|_| ())
+            })
+        },
+    );
+    let mut projection = crate::entities::geometry::Projection::default();
+    projection.decoded.insert(99);
+    projection.consumed.insert(99);
+    for operation in [
+        "iges generic loss decoded lookup",
+        "iges generic loss consumed lookup",
+        "iges generic loss attributed lookup",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut storage = ctx.reserve_scoped(0, "test attribution storage")?;
+                let mut attributed = BTreeSet::from([99]);
+                let result = super::append_generic_losses(
+                    &ctx,
+                    &mut Vec::new(),
+                    &directory,
+                    &projection,
+                    &mut attributed,
+                    table,
+                    &mut storage,
+                );
+                drop(storage);
+                if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
+                        if actual == *limit)
+                    );
+                } else {
+                    ctx.finish_session().unwrap();
+                }
+                result
+            },
+        );
+    }
+}
+
+#[test]
+fn attributed_loss_index_uses_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "test attribution storage").unwrap();
+    let index = storage
+        .with_storage(|| {
+            super::attributed_sequences(
+                &[
+                    tagged_loss("D7:parameter"),
+                    tagged_loss("directory_entry:D9"),
+                ],
+                &ctx,
+            )
+        })
+        .unwrap();
+    assert_eq!(index, [7, 9].into());
+    drop(index);
+    drop(storage);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn decode_quarantine_index_does_not_retain_temporary_nodes() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00000000",
+        parameters: "116,1,2,3x4,0;".into(),
+    }]);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = u64::MAX;
+    let probe = RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "iges quarantined parameter sequence index",
+        None,
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .unwrap();
+    drop(probe);
+    assert!(result.ir().model.points.is_empty());
+    assert!(!result.report().losses.is_empty());
+}
+
+#[test]
+fn semantic_decode_barrier_charges_the_live_session() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = CadIr::empty();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "IR neutral validation",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::reject_invalid_semantic_ir(&ctx, &ir)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected validation refusal");
+    };
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn decode_transfer_verification_charges_the_live_session() {
+    let bytes = point_file();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "decode transfer verification",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_work_units = cap;
+            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &policy).map_err(|failure| {
+                match failure {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode refusal: {other:?}"),
+                }
+            })
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected ledger refusal");
+    };
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn semantic_decode_barrier_keeps_every_full_validation_check() {
+    use cadmpeg_ir::report::check::{Check, Finding, ValidationReport};
+    use cadmpeg_ir::report::Severity;
+    // Each serialized variant has the same full-validation admission rule.
+    let variants: Vec<Check> = [
+        "identity",
+        "pmi",
+        "presentation",
+        "arena_order",
+        "referential_integrity",
+        "coedge_pairing",
+        "wire_topology",
+        "shell_topology",
+        "carrier_reachability",
+        "annotations",
+        "native_links",
+        "parameter_domain",
+        "tolerances",
+        "payload_integrity",
+        "tessellation",
+        "geometric_consistency",
+        "counts",
+    ]
+    .into_iter()
+    .map(|name| serde_json::from_value(serde_json::json!(name)).unwrap())
+    .collect();
+    let report = ValidationReport {
+        entity_counts: std::collections::BTreeMap::default(),
+        findings: variants
+            .into_iter()
+            .map(|check| Finding {
+                check,
+                severity: Severity::Error,
+                message: "invalid".into(),
+                entity: None,
+            })
+            .collect(),
+        losses: Vec::new(),
+    };
+    let expected = report.findings.clone();
+    let filtered = cadmpeg_ir::validate::admit::filter_checks(
+        &cadmpeg_test_support::service_decode_context(),
+        report,
+        super::IGES_SEMANTIC_CHECKS,
+    )
+    .unwrap();
+    assert_eq!(filtered.findings, expected);
+    assert_eq!(super::IGES_SEMANTIC_CHECKS.len(), expected.len());
+}
+
+#[test]
+fn semantic_decode_barrier_preserves_full_noncore_findings() {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::report::check::Check;
+    use cadmpeg_ir::report::Severity;
+    use cadmpeg_ir::topology::Point;
+    let mut unsorted = CadIr::empty();
+    for key in ["z", "a"] {
+        unsorted.model.points.push(Point::new(
+            PointId::mint(format!("iges:model:point#{key}")).unwrap(),
+            FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            None,
+        ));
+    }
+    let full = cadmpeg_ir::validate_neutral(&unsorted, Vec::new()).unwrap();
+    let first = full
+        .findings
+        .iter()
+        .find(|finding| finding.severity >= Severity::Error)
+        .unwrap();
+    assert_eq!(first.check, Check::ArenaOrder);
+    let entity = first
+        .entity
+        .as_deref()
+        .map_or(String::new(), |id| format!(" for {id}"));
+    let expected = CodecError::malformed(format_args!(
+        "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
+        first.check, first.message,
+    ));
+    let actual = super::reject_invalid_semantic_ir(
+        &cadmpeg_test_support::service_decode_context(),
+        &unsorted,
+    )
+    .unwrap_err();
+    assert_eq!(actual.to_string(), expected.to_string());
+
+    let mut warned = CadIr::empty();
+    warned.tolerances.linear = cadmpeg_ir::scalar::PositiveLength::new(2_000_000.0).unwrap();
+    let full = cadmpeg_ir::validate_neutral(&warned, Vec::new()).unwrap();
+    assert!(full
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::Tolerances));
+    assert!(full.is_ok());
+    super::reject_invalid_semantic_ir(&cadmpeg_test_support::service_decode_context(), &warned)
+        .unwrap();
 }

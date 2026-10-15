@@ -594,7 +594,10 @@ fn sketch_curve_link(
     };
     Ok(Some(SketchCurveLink {
         id: ctx.format_retained(
-            format_args!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
+            format_args!(
+                "f3d:design:sketch-curve-link#{}",
+                attribute_key(ctx, attribute)?
+            ),
             "retain F3D sketch curve link ID",
         )?,
         target: copy_attribute_target(ctx, &attribute.target)?,
@@ -654,7 +657,7 @@ fn persistent_design_links(
             id: ctx.format_retained(
                 format_args!(
                     "f3d:design:persistent-design-link#{}:{ordinal}",
-                    attribute_key(attribute)
+                    attribute_key(ctx, attribute)?
                 ),
                 "retain F3D persistent design link ID",
             )?,
@@ -752,7 +755,7 @@ fn persistent_subentity_tags(
             id: ctx.format_retained(
                 format_args!(
                     "f3d:design:persistent-subentity-tag#{}:{ordinal}",
-                    attribute_key(attribute)
+                    attribute_key(ctx, attribute)?
                 ),
                 "retain F3D persistent subentity tag ID",
             )?,
@@ -845,14 +848,20 @@ fn creation_timestamp(
         return Ok(None);
     };
     let Some(record_index) = ctx
-        .parse_text(attribute_key(attribute), "parse F3D timestamp record key")?
+        .parse_text(
+            attribute_key(ctx, attribute)?,
+            "parse F3D timestamp record key",
+        )?
         .ok()
     else {
         return Ok(None);
     };
     Ok(Some(CreationTimestamp {
         id: ctx.format_retained(
-            format_args!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
+            format_args!(
+                "f3d:design:creation-timestamp#{}",
+                attribute_key(ctx, attribute)?
+            ),
             "retain F3D creation timestamp ID",
         )?,
         target: copy_attribute_target(ctx, &attribute.target)?,

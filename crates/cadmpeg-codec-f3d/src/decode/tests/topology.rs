@@ -134,7 +134,7 @@ fn history_topology_decode_matches_full_brep_graph() {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("fixture is within the service input limit");
-        let start = asm_header::record_stream_start(&bytes).expect("record stream start");
+        let start = asm_header::record_stream_start(&service_decode_context(), &bytes).unwrap().expect("record stream start");
         let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
             .expect("history scan")
             .expect("solved record limit");
@@ -972,15 +972,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     use cadmpeg_asm::sab::{Record, Token};
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-    fn rec(head: &str, tokens: Vec<Token>) -> Record {
-        Record {
-            index: 0,
-            name: head.to_string(),
-
-            tokens: tokens.into(),
-            offset: 0,
-            len: 0,
-        }
+    fn rec(head: &str, tokens: Vec<Token>) -> Record<'static> {
+        cadmpeg_asm::test_support::sab::record(0, head.to_string(), tokens.into(), 0, 0)
+            .expect("indexed record fixture")
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1326,7 +1320,7 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
 fn decode_reports_faces_with_missing_surface_references() {
     for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
         let mut smbh = synthetic_mixed_smbh();
-        let start = asm_header::record_stream_start(&smbh).unwrap();
+        let start = asm_header::record_stream_start(&service_decode_context(), &smbh).unwrap().unwrap();
         let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
             .expect("history scan")
             .unwrap();
@@ -1401,7 +1395,7 @@ fn decode_reports_undecoded_edge_curve_kinds() {
 #[test]
 fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
-    let start = asm_header::record_stream_start(&smbh).unwrap();
+    let start = asm_header::record_stream_start(&service_decode_context(), &smbh).unwrap().unwrap();
     let limit = asm_header::solved_record_limit(&service_decode_context(), &smbh)
         .expect("history scan")
         .unwrap();

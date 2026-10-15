@@ -47,7 +47,7 @@ fn parameter_quarantine_identity_refuses_retained_limit() {
 }
 
 #[test]
-fn parameter_quarantine_loss_refuses_owned_range_limit() {
+fn parameter_quarantine_loss_refuses_final_message_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -69,7 +69,7 @@ fn parameter_quarantine_loss_refuses_owned_range_limit() {
         record.loss_note(&ctx),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges parameter quarantine owned card range"
+                && limit.operation == "iges parameter quarantine loss message"
     ));
 
     let arena = DecodeArena::new();

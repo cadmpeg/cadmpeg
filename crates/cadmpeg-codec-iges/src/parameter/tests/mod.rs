@@ -12,6 +12,7 @@ use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 mod advanced_entity_boundaries;
 mod advanced_geometry_boundaries;
+mod attribute_widths;
 mod curve_surface_boundaries;
 mod curve_surface_segment_boundaries;
 mod drawing_associativity;
@@ -19,6 +20,7 @@ mod drawing_property_boundaries;
 mod entity_table_boundaries;
 mod entity_table_forms;
 mod entity_table_text_and_names;
+mod entry_refusal;
 mod envelope_boundaries;
 mod envelope_counted_entity_boundaries;
 mod envelope_fixed_field_boundaries;
@@ -33,7 +35,9 @@ mod lexical;
 mod macros;
 mod presentation_forms;
 mod presentation_string_forms;
+mod queries;
 mod solid_entity_boundaries;
+mod storage_lifetimes;
 mod type_fem;
 
 #[test]
@@ -65,15 +69,14 @@ fn parameter_summary_refuses_note_slot_and_text_limits() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        (cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len()) - 1)
-            + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
+        cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::summary_notes(&records, &ctx);
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>())
+                && limit.used == 0
                 && limit.additional == cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len())
                 && limit.operation == "iges parameter summary text"
     ));
@@ -81,13 +84,92 @@ fn parameter_summary_refuses_note_slot_and_text_limits() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::summary_notes(&records, &ctx).unwrap(),
+        super::summary_notes(&records, &ctx).unwrap().0,
         [
             "parameter_records=0",
             "parameter_tokens=0",
             "external_references=0"
         ]
     );
+}
+
+#[test]
+fn parameter_summary_slots_are_scoped_and_note_text_is_retained() {
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+
+    let records = [];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (notes, storage) = super::summary_notes(&records, &ctx).unwrap();
+    let slots = u64_from_index(
+        notes
+            .capacity()
+            .checked_mul(std::mem::size_of::<String>())
+            .expect("summary vector size fits"),
+    );
+    let text_bytes = u64_from_index(
+        notes
+            .iter()
+            .try_fold(0_usize, |total, note| total.checked_add(note.len()))
+            .expect("summary text size fits"),
+    );
+    assert_eq!(notes.len(), 3);
+    drop(notes);
+    drop(storage);
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = slots;
+    policy.limits.max_retained_bytes = text_bytes;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (notes, storage) = super::summary_notes(&records, &ctx).unwrap();
+    let error = ctx
+        .reserve_scoped(1, "test after live parameter summary slots")
+        .expect_err("the returned note slots remain live");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.used == slots
+                && limit.additional == 1
+                && limit.operation == "test after live parameter summary slots"
+    ));
+    drop(notes);
+    drop(storage);
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = slots;
+    policy.limits.max_retained_bytes = text_bytes;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (notes, storage) = super::summary_notes(&records, &ctx).unwrap();
+    drop(notes);
+    drop(storage);
+    let released = ctx
+        .reserve_scoped(slots, "test after released parameter summary slots")
+        .expect("dropping the returned vector releases its backing");
+    drop(released);
+    let retained = ctx
+        .charge_retained(1, "test after retained parameter summary text")
+        .expect_err("dropping the slots does not release note text");
+    assert!(matches!(
+        retained,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == text_bytes
+                && limit.additional == 1
+                && limit.operation == "test after retained parameter summary text"
+    ));
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
 }
 
 #[test]
@@ -210,12 +292,14 @@ fn resolved_pointer_groups_refuse_collection_limit_before_allocation() {
 #[test]
 fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use std::collections::BTreeMap;
 
     let bytes = crate::test_support::test_curves_and_surfaces::point_file();
     let scan = scan(&bytes).unwrap();
-    let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
-    let cards = [*lines.keys().next().unwrap()];
+    let lines = crate::test_support::with_service_context(&[], |ctx| {
+        super::ParameterCards::new(scan.section(Section::Parameter), ctx)
+    })
+    .unwrap();
+    let cards = [1];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 63;
@@ -239,12 +323,12 @@ fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
 fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use std::collections::BTreeMap;
 
         let bytes = crate::test_support::test_curves_and_surfaces::point_file();
         let scan = scan(&bytes).unwrap();
-        let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
-        let cards = [*lines.keys().next().unwrap()];
+        let lines =
+            super::ParameterCards::new(scan.section(Section::Parameter), decode_ctx).unwrap();
+        let cards = [1];
         let (directory, _) =
             crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx)
                 .unwrap();
@@ -288,36 +372,36 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
 fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use std::collections::BTreeMap;
 
         let bytes = crate::test_support::test_curves_and_surfaces::point_file();
         let scan = scan(&bytes).unwrap();
         let (directory, _) =
             crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx)
                 .unwrap();
-        let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
-        let back_pointers = lines
-            .iter()
-            .map(|(sequence, line)| (*sequence, super::back_pointer(line)))
-            .collect::<BTreeMap<_, _>>();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let result = super::resolve_ownership(
-            &directory,
-            &lines,
-            &back_pointers,
-            &mut crate::card::FramingRecoveries::default(),
-            &ctx,
+        let lines =
+            super::ParameterCards::new(scan.section(Section::Parameter), decode_ctx).unwrap();
+        let result = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "iges named parameter owners",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                super::resolve_ownership(
+                    &directory,
+                    &lines,
+                    &mut crate::card::FramingRecoveries::default(),
+                    &ctx,
+                )
+                .map(|_| ())
+            },
         );
         assert!(matches!(
             result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == 2
                     && limit.additional == 1
-                    && limit.operation == "iges named parameter owners"
         ));
 
         let arena = DecodeArena::new();
@@ -326,7 +410,6 @@ fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
         assert!(super::resolve_ownership(
             &directory,
             &lines,
-            &back_pointers,
             &mut crate::card::FramingRecoveries::default(),
             &ctx,
         )
@@ -349,12 +432,11 @@ fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     let card_start = marker - 72;
     bytes[card_start + 64..card_start + 72].copy_from_slice(&field);
     let scan = scan(&bytes).unwrap();
-    let line = scan
+    let card = scan
         .section(Section::Parameter)
-        .map(|(_, line)| line)
-        .next()
+        .first()
         .expect("Parameter Data line");
-    super::back_pointer(line)
+    super::back_pointer(&card.line)
 }
 
 impl From<i64> for TokenValue {
@@ -408,6 +490,7 @@ fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
             .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     }
 }
 
@@ -435,6 +518,7 @@ fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRe
             .collect(),
         parameter_end,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     }
 }
 

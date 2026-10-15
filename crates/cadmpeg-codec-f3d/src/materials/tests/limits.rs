@@ -662,7 +662,7 @@ fn material_stream_archive() -> Vec<u8> {
 }
 
 fn scan_material_archive<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'a>,
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
     archive: &'a [u8],
 ) -> Result<crate::container::ContainerScan<'a>, cadmpeg_core::CodecError> {
     crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(archive))

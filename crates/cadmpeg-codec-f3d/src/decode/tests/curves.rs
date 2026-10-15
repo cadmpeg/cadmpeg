@@ -47,13 +47,12 @@ const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn transform_decodes_column_major_basis_and_scaled_translation() {
-    use cadmpeg_asm::sab::{Record, Token};
+    use cadmpeg_asm::sab::Token;
 
-    let record = Record {
-        index: 0,
-        name: "transform".into(),
-
-        tokens: vec![
+    let record = cadmpeg_asm::test_support::sab::record(
+        0,
+        "transform".into(),
+        vec![
             Token::Vector3([1.0, 0.0, 0.0]),
             Token::Vector3([0.0, 1.0, 0.0]),
             Token::Vector3([0.0, 0.0, 1.0]),
@@ -61,10 +60,20 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
             Token::Double(1.0),
         ]
         .into(),
-        offset: 0,
-        len: 0,
-    };
-    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record, 60.0).unwrap();
+        0,
+        0,
+    )
+    .expect("indexed record fixture");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let transform = cadmpeg_asm::brep::attributes::decode_transform(&ctx, &record, 60.0)
+        .unwrap()
+        .unwrap();
     assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 600.0]);
     assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 1200.0]);
     assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 1800.0]);

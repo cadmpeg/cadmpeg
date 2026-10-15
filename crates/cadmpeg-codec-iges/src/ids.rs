@@ -28,7 +28,8 @@ pub(crate) fn directory_lookup_key<'a>(
     let mut start = digits.len();
     loop {
         start -= 1;
-        digits[start] = b'0' + u8::try_from(value % 10).ok()?;
+        let digit = u8::try_from(value % 10).ok()?;
+        digits[start] = b'0' + digit;
         value /= 10;
         if value == 0 {
             break;
@@ -117,7 +118,12 @@ impl Word {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Piece {
-    Text(&'static str),
+    Word(Word),
+    Directory,
+    WordDirectory,
+    ChildDirectory,
+    Colon,
+    Dash,
     Unsigned(u64),
     Index(usize),
     Signed(i64),
@@ -126,7 +132,12 @@ pub(crate) enum Piece {
 impl fmt::Display for Piece {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Text(text) => formatter.write_str(text),
+            Self::Word(word) => formatter.write_str(word.text()),
+            Self::Directory => formatter.write_str("D"),
+            Self::WordDirectory => formatter.write_str("-D"),
+            Self::ChildDirectory => formatter.write_str(":D"),
+            Self::Colon => formatter.write_str(":"),
+            Self::Dash => formatter.write_str("-"),
             Self::Unsigned(value) => value.fmt(formatter),
             Self::Index(value) => value.fmt(formatter),
             Self::Signed(value) => value.fmt(formatter),
@@ -134,7 +145,7 @@ impl fmt::Display for Piece {
     }
 }
 
-const INLINE_PIECES: usize = 8;
+const INLINE_PIECES: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StemPieces {
@@ -147,7 +158,7 @@ enum StemPieces {
 
 impl StemPieces {
     fn new(first: Piece) -> Self {
-        let mut items = [Piece::Text(""); INLINE_PIECES];
+        let mut items = [Piece::Colon; INLINE_PIECES];
         items[0] = first;
         Self::Inline { items, len: 1 }
     }
@@ -191,7 +202,7 @@ impl Stem {
     /// The key of one Directory entry: `D{sequence}`.
     pub(crate) fn directory(sequence: impl Ordinal) -> Self {
         let mut stem = Self {
-            pieces: StemPieces::new(Piece::Text("D")),
+            pieces: StemPieces::new(Piece::Directory),
             origin: sequence.sequence(),
         };
         stem.pieces.push(sequence.piece());
@@ -201,7 +212,7 @@ impl Stem {
     /// A key that is one fixed word.
     pub(crate) fn word(word: Word) -> Self {
         Self {
-            pieces: StemPieces::new(Piece::Text(word.text())),
+            pieces: StemPieces::new(Piece::Word(word)),
             origin: None,
         }
     }
@@ -212,7 +223,7 @@ impl Stem {
     /// such a record is a derivation of the entry, not its whole neutral form.
     pub(crate) fn word_directory(word: Word, sequence: impl Ordinal) -> Self {
         let mut stem = Self::word(word);
-        stem.pieces.push(Piece::Text("-D"));
+        stem.pieces.push(Piece::WordDirectory);
         stem.pieces.push(sequence.piece());
         stem
     }
@@ -237,27 +248,27 @@ impl Stem {
 
     /// A child keyed by a Directory sequence: `{self}:D{sequence}`.
     pub(crate) fn child(&self, sequence: impl Ordinal) -> Self {
-        self.derive(Piece::Text(":D"), sequence.piece())
+        self.derive(Piece::ChildDirectory, sequence.piece())
     }
 
     /// A child keyed by an ordinal: `{self}:{index}`.
     pub(crate) fn slot(&self, index: impl Ordinal) -> Self {
-        self.derive(Piece::Text(":"), index.piece())
+        self.derive(Piece::Colon, index.piece())
     }
 
     /// A named part of this key: `{self}:{word}`.
     pub(crate) fn part(&self, word: Word) -> Self {
-        self.derive(Piece::Text(":"), Piece::Text(word.text()))
+        self.derive(Piece::Colon, Piece::Word(word))
     }
 
     /// A named derivation of this key: `{self}-{word}`.
     pub(crate) fn tail(&self, word: Word) -> Self {
-        self.derive(Piece::Text("-"), Piece::Text(word.text()))
+        self.derive(Piece::Dash, Piece::Word(word))
     }
 
     /// A numbered derivation of this key: `{self}-{index}`.
     pub(crate) fn tail_index(&self, index: impl Ordinal) -> Self {
-        self.derive(Piece::Text("-"), index.piece())
+        self.derive(Piece::Dash, index.piece())
     }
 
     fn derive(&self, separator: Piece, value: Piece) -> Self {
@@ -490,18 +501,20 @@ mod tests {
     #[test]
     fn generated_identity_minters_charge_before_rendering_each_kind() {
         let stem = Stem::directory(1_u32);
-        let mut low_policy = DecodePolicy::service();
-        low_policy.limits.max_retained_bytes = 0;
-        let low_arena = DecodeArena::new();
-        let (low_ctx, _) =
-            DecodeContext::from_root_bytes(&[], &low_arena, &low_policy).expect("test setup");
         let service_arena = DecodeArena::new();
         let service_policy = DecodePolicy::service();
         let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &service_arena, &service_policy)
             .expect("test setup");
         macro_rules! check {
             ($old:ident, $admitted:ident) => {
-                assert!(matches!(super::$admitted(&stem, &low_ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges generated identity"));
+                let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges generated identity", |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_retained_bytes = cap;
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    super::$admitted(&stem, &ctx)
+                });
+                assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges generated identity"));
                 assert_eq!(super::$admitted(&stem, &service_ctx).expect("test setup").as_str(), super::$old(&stem).as_str());
             };
         }
@@ -545,5 +558,19 @@ mod tests {
             "face-D1"
         );
         assert_eq!(Stem::number(-1_i64).to_string(), "-1");
+    }
+    #[test]
+    fn decoded_brep_pcurve_stem_uses_inline_parts() {
+        let stem = Stem::directory(u32::MAX)
+            .child(u32::MAX)
+            .child(u32::MAX)
+            .slot(usize::MAX)
+            .slot(usize::MAX);
+        assert!(matches!(stem.pieces, StemPieces::Inline { .. }));
+        assert_eq!(stem.origin(), Some(u32::MAX));
+        assert_eq!(
+            stem.to_string(),
+            format!("D4294967295:D4294967295:D4294967295:{0}:{0}", usize::MAX)
+        );
     }
 }

@@ -156,7 +156,7 @@ impl CodecBackend for IgesCodec {
             cadmpeg_core::decode::u64_from_index(prefix.len()),
             "detect input",
         )?;
-        Ok(representation::confidence(prefix))
+        representation::confidence(prefix, ctx)
     }
 
     fn inspect_impl(
@@ -165,18 +165,25 @@ impl CodecBackend for IgesCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
-        let representation = representation::classify(&mut reader)?
+        let representation = representation::classify(&mut reader, ctx)?
             .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         match representation {
             representation::Representation::FixedAscii => {
                 reader::inspect(ctx, root.window(), representation, root.window().len())
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), ctx)?;
+                // The normalized card image is dropped with this call.
+                let mut normalized_storage =
+                    ctx.reserve_scoped(0, "iges compressed ASCII normalization")?;
+                let normalized = normalized_storage
+                    .with_storage(|| compressed::normalize(root.window(), ctx))?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), ctx)?;
+                // The normalized card image is dropped with this call.
+                let mut normalized_storage = ctx.reserve_scoped(0, "iges Binary normalization")?;
+                let normalized =
+                    normalized_storage.with_storage(|| binary::normalize(root.window(), ctx))?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
         }
@@ -184,18 +191,25 @@ impl CodecBackend for IgesCodec {
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut source = Cursor::new(root.window());
-        let representation = representation::classify(&mut source)?
+        let representation = representation::classify(&mut source, ctx)?
             .ok_or_else(|| CodecError::WrongFormat("unrecognized IGES representation".into()))?;
         match representation {
             representation::Representation::FixedAscii => {
                 reader::decode(root.window(), root.window(), representation, ctx)
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), ctx)?;
+                // The normalized card image is dropped with this call.
+                let mut normalized_storage =
+                    ctx.reserve_scoped(0, "iges compressed ASCII normalization")?;
+                let normalized = normalized_storage
+                    .with_storage(|| compressed::normalize(root.window(), ctx))?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), ctx)?;
+                // The normalized card image is dropped with this call.
+                let mut normalized_storage = ctx.reserve_scoped(0, "iges Binary normalization")?;
+                let normalized =
+                    normalized_storage.with_storage(|| binary::normalize(root.window(), ctx))?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
         }

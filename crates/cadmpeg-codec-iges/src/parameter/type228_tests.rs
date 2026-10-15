@@ -27,6 +27,7 @@ fn type228_standard_and_implementor_forms_share_entity_table_boundary() {
                 .collect(),
             parameter_end: values.len(),
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         assert_eq!(entity_primary_end(&record, &directory), Some(6));
