@@ -213,11 +213,11 @@ the record grammar does not identify one construction.
 
 ### GC-38. Reversed-sense pcurve charts
 
-**Question.** Does a `TRUE` v-sense logical (`reverse_v`) negate the second pcurve chart coordinate of a plane?
+**Question.** Does a `TRUE` v-sense logical (`reverse_v`) negate the second pcurve chart coordinate of a plane, sphere, or torus?
 
-**Known.** `asm.md` §6.2 states the negation. The `forward_v` plane chart reaches its edge vertices. No stream contains a pcurve on a `reverse_v` plane. `SupportChart::from_fields` in `nurbs/support_chart.rs` implements the stated rule.
+**Known.** `asm.md` §6.2 states the negation. The `forward_v` plane, sphere, and torus charts reach their edge vertices. No stream contains a pcurve on a `reverse_v` plane, sphere, or torus, on a sphere with a negative radius, or on a torus with a negative minor radius. `SupportChart::from_fields` in `nurbs/support_chart.rs` implements the stated rule.
 
-**Need.** A pcurve with known edge vertices on a `reverse_v` plane confirms the rule. A wrong sign mirrors the pcurve in the support chart, and `cadmpeg check` reports the miss at the edge vertices.
+**Need.** A pcurve with known edge vertices on each of these supports confirms the rule. A wrong sign mirrors the pcurve in the support chart, and `cadmpeg check` reports the miss at the edge vertices.
 
 ## 2. Topology
 

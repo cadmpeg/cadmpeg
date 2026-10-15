@@ -161,6 +161,97 @@ fn outward_cylinder_generator_runs_along_its_axis() {
     cone_case(0.0, 1.0, 1.0, false);
 }
 
+/// A sphere record and its native point at latitude `first` and longitude
+/// `second`, negated by `reverse_v`.
+fn sphere_case(radius: f64, reverse_v: bool) {
+    let center = [1.0, 2.0, 3.0];
+    let reference = [0.0, 1.0, 0.0];
+    let pole = [0.0, 0.0, 1.0];
+    let surface = record(
+        "sphere",
+        vec![
+            Token::Position(center),
+            Token::Double(radius),
+            Token::Vector3(reference),
+            Token::Vector3(pole),
+            sense(reverse_v),
+            Token::False,
+            Token::False,
+            Token::False,
+            Token::False,
+        ],
+    );
+    let (z, x) = (unit(pole), unit(reference));
+    let y = z.cross(x);
+    let v_sign = if reverse_v { -1.0 } else { 1.0 };
+    let ends = [Point2::new(0.3, 1.1), Point2::new(-1.2, -2.4)];
+    let vertices = ends.map(|end| {
+        let (latitude, longitude) = (end.u, v_sign * end.v);
+        mm(Vector3::from(center)
+            + (x.scale(longitude.cos()) + y.scale(longitude.sin())).scale(radius * latitude.cos())
+            + z.scale(radius * latitude.sin()))
+    });
+    assert_endpoints_hit_vertices(&surface, ends, vertices);
+}
+
+#[test]
+fn sphere_pcurve_is_latitude_first() {
+    sphere_case(2.5, false);
+    sphere_case(-2.5, false);
+}
+
+#[test]
+fn reverse_v_sphere_negates_the_longitude() {
+    sphere_case(2.5, true);
+}
+
+/// A torus record and its native point at minor angle `first` and major
+/// angle `second`, negated by `reverse_v`.
+fn torus_case(minor: f64, reverse_v: bool) {
+    let center = [-1.0, 0.5, 2.0];
+    let axis = [0.0, 1.0, 0.0];
+    let reference = [1.0, 0.0, 0.0];
+    let major = 4.0;
+    let surface = record(
+        "torus",
+        vec![
+            Token::Position(center),
+            Token::Vector3(axis),
+            Token::Double(major),
+            Token::Double(minor),
+            Token::Vector3(reference),
+            sense(reverse_v),
+            Token::False,
+            Token::False,
+            Token::False,
+            Token::False,
+        ],
+    );
+    let (z, x) = (unit(axis), unit(reference));
+    let y = z.cross(x);
+    let v_sign = if reverse_v { -1.0 } else { 1.0 };
+    let ends = [Point2::new(0.7, 0.2), Point2::new(-2.1, 2.9)];
+    let vertices = ends.map(|end| {
+        let (minor_angle, major_angle) = (end.u, v_sign * end.v);
+        mm(Vector3::from(center)
+            + (x.scale(major_angle.cos()) + y.scale(major_angle.sin()))
+                .scale(major + minor * minor_angle.cos())
+            + z.scale(minor * minor_angle.sin()))
+    });
+    assert_endpoints_hit_vertices(&surface, ends, vertices);
+}
+
+#[test]
+fn torus_pcurve_is_latitude_first() {
+    torus_case(1.5, false);
+    torus_case(-1.5, false);
+}
+
+#[test]
+fn reverse_v_torus_negates_the_major_angle() {
+    torus_case(1.5, true);
+}
+
 #[test]
 fn embedded_support_chart_reads_the_same_fields_as_the_record() {
     let fields = vec![
@@ -194,6 +285,8 @@ fn native_point_inverts_frame_point() {
         NativeChart::Plane { reverse_v: false },
         NativeChart::Plane { reverse_v: true },
         NativeChart::cone(0.5, 0.75_f64.sqrt(), 1.75).expect("nonzero scale"),
+        NativeChart::LatitudeFirst { reverse_v: false },
+        NativeChart::LatitudeFirst { reverse_v: true },
     ] {
         let back = chart.native_point(chart.frame_point(native));
         let miss = (back.u - native.u).abs().max((back.v - native.v).abs());
