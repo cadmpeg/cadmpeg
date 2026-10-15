@@ -65,7 +65,10 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
+            },
+            ..
         }])
     ));
 

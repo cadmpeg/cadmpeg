@@ -1251,9 +1251,12 @@ mod tests {
         .expect("valid finite regression fixture");
         let geometry = ({ super::scale_sketch_geometry(geometry, positive(10.)) })
             .expect("valid finite regression fixture");
-        assert!(
-            matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some(bounds),focal_length,..} if cadmpeg_ir::scalar::FiniteReal::raw_array(*bounds) == [10., 20.] && focal_length.get()==20.)
-        );
+        assert!(matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Parabola{bounds:Some(bounds),focal_length,..}
+                if cadmpeg_ir::scalar::FiniteReal::raw_array(*bounds) == [10., 20.]
+                && focal_length.get()==20.
+        ));
     }
 
     use super::{
@@ -2390,9 +2393,11 @@ mod tests {
         else {
             panic!("fixture");
         };
-        assert!(
-            matches!(shape.generated_sections_mut().next(), Some(cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region }) if region.outer_radius().get() == 2.0)
-        );
+        assert!(matches!(
+            shape.generated_sections_mut().next(),
+            Some(cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region })
+                if region.outer_radius().get() == 2.0
+        ));
     }
 
     #[test]
@@ -2499,8 +2504,10 @@ mod tests {
             scale_feature_definition(ctx, &mut result, positive(2.0))
         })
         .expect("service");
-        assert!(
-            matches!(result, FeatureDefinition::Operation(FeatureOperation::Polyline { chain }) if chain.points()[0].get().x == 2.0 && chain.points()[1].get().x == 4.0)
-        );
+        assert!(matches!(
+            result,
+            FeatureDefinition::Operation(FeatureOperation::Polyline { chain })
+                if chain.points()[0].get().x == 2.0 && chain.points()[1].get().x == 4.0
+        ));
     }
 }

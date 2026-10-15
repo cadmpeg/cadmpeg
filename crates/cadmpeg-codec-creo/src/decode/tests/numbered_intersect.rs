@@ -1421,19 +1421,21 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         .expect("valid test fixture")
     };
 
-    assert!(
-        matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
-                if {
-                    let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-        let radius = circle_curve.radius().get();
-                    center == Point3::new(0.0, 3.0, 0.0)
-                        && *axis == Vector3::new(0.0, 1.0, 0.0)
-                        && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
-                        && radius == 2.0
-                })
-    );
+    assert!(matches!(
+        revolved_section_circle(&transform, [2.0, 3.0], &axis).map(
+            |circle| CurveGeometry::try_from(circle).expect("valid revolved circle")
+        ),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+            if {
+                let center = circle_curve.center().get();
+    let axis = circle_curve.frame().axis().as_raw();
+    let ref_direction = circle_curve.frame().reference().as_raw();
+    let radius = circle_curve.radius().get();
+                center == Point3::new(0.0, 3.0, 0.0)
+                    && *axis == Vector3::new(0.0, 1.0, 0.0)
+                    && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                    && radius == 2.0
+            }));
     assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
     assert!(
         matches!(extruded_section_line(&transform, [2.0, 3.0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
@@ -1444,39 +1446,39 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
                 })
     );
 
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
-        if {
-            let radius = cylinder_surface.radius().get();
-            radius == 2.0
-        })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
-        if {
-            let origin = plane_surface.origin();
-            origin.y == 3.0
-        })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
-                if {
-                    let radius = cone_surface.radius().get();
-        let half_angle = cone_surface.half_angle().get();
-                    radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
-                })
-    );
-    assert!(
-        matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
-                if {
-                    let axis = cone_surface.frame().axis().as_raw();
-        let radius = cone_surface.radius().get();
-        let half_angle = cone_surface.half_angle().get();
-                    axis.y == -1.0
-                        && radius == 4.0
-                        && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
-                })
-    );
+    assert!(matches!(
+        revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
+    if {
+        let radius = cylinder_surface.radius().get();
+        radius == 2.0
+    }));
+    assert!(matches!(
+        revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
+    if {
+        let origin = plane_surface.origin();
+        origin.y == 3.0
+    }));
+    assert!(matches!(
+        revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+            if {
+                let radius = cone_surface.radius().get();
+    let half_angle = cone_surface.half_angle().get();
+                radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+            }));
+    assert!(matches!(
+        revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
+            if {
+                let axis = cone_surface.frame().axis().as_raw();
+    let radius = cone_surface.radius().get();
+    let half_angle = cone_surface.half_angle().get();
+                axis.y == -1.0
+                    && radius == 4.0
+                    && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
+            }));
     let centered_arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
         radius: Length::new(2.0).expect("finite length fixture"),

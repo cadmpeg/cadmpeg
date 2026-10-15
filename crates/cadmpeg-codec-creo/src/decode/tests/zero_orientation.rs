@@ -1117,11 +1117,16 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         assert!((derivative[0] - 1.0).abs() < 1.0e-12);
         assert!(derivative[1].abs() < 1.0e-12 && derivative[2].abs() < 1.0e-12);
     }
-    assert!(
-        matches!(crate::decode::with_test_decode_ctx(|ctx| saved_spline_sketch_geometry(ctx, &spline, &mut crate::lane_refusal::LaneRefusals::new())).expect("test spline allocation").map(cadmpeg_ir::sketches::SketchGeometry::into_definition),
-            Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
-        )
-    );
+    assert!(matches!(
+        crate::decode::with_test_decode_ctx(
+            |ctx| saved_spline_sketch_geometry(
+                ctx, &spline, &mut crate::lane_refusal::LaneRefusals::new()
+            )
+        ) .expect("test spline allocation").map(
+            cadmpeg_ir::sketches::SketchGeometry::into_definition
+        ),
+        Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
+    ));
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(917),

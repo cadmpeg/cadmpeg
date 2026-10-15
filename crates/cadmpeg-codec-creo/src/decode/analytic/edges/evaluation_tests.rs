@@ -76,9 +76,13 @@ fn degree_one_parameter_search_propagates_evaluator_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(
-        matches!(super::degree_one_nurbs_point_parameter(&ctx, &geometry, nurbs, [0.5, 0.0, 0.0], [0.0, 1.0], super::EPS_AGREE), Err(CodecError::ResourceLimit(resource)) if resource.operation == "geometry evaluation nesting")
-    );
+    assert!(matches!(
+        super::degree_one_nurbs_point_parameter(
+            &ctx, &geometry, nurbs, [0.5, 0.0, 0.0], [0.0, 1.0], super::EPS_AGREE
+        ),
+        Err(CodecError::ResourceLimit(resource))
+            if resource.operation == "geometry evaluation nesting"
+    ));
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| super::degree_one_nurbs_point_parameter(
             ctx,
