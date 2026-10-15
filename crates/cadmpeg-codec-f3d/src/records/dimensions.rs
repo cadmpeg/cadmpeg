@@ -658,7 +658,7 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
 }
 
 impl DesignDimensionAnnotationFrame {
-    /// Admit an annotation frame using the source decode budget.
+    /// Admit an annotation frame whose offsets agree with its frame layout.
     pub(crate) fn try_new(
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, cadmpeg_core::CodecError> {
