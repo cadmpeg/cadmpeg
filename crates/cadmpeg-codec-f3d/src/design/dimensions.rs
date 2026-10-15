@@ -24,7 +24,9 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-macro_rules! dimension_resource {
+/// Unwrap `Ok`, or return `Some(Err)` from a function that returns
+/// `Option<Result<_, CodecError>>`.
+macro_rules! ok_or_some_err {
     ($result:expr) => {
         match $result {
             Ok(value) => value,
@@ -587,7 +589,7 @@ fn project_all_dimension_constraints(
             }
         }
         if group.state == 0 {
-            let counted_definition = dimension_resource!(counted_role_relation_at_tolerance(
+            let counted_definition = ok_or_some_err!(counted_role_relation_at_tolerance(
                 &locus_entities,
                 &group.owner_kinds(),
                 linear_tolerance
@@ -601,7 +603,7 @@ fn project_all_dimension_constraints(
                 return Some(definition);
             }
         }
-        if let Some(definition) = dimension_resource!(radial_locus_dimension_definition(
+        if let Some(definition) = ok_or_some_err!(radial_locus_dimension_definition(
             &locus_entities,
             entities,
             parameter.source_kind(),
@@ -646,7 +648,7 @@ fn project_all_dimension_constraints(
                 }));
             }
             let copied = parameter_id.clone();
-            if let Some(definition) = dimension_resource!(directional_point_dimension(
+            if let Some(definition) = ok_or_some_err!(directional_point_dimension(
                 &locus_entities,
                 parameter.evaluated_value().get() * 10.0,
                 copied,
@@ -657,7 +659,7 @@ fn project_all_dimension_constraints(
                 return Some(Ok(definition));
             }
             if group.state == 0 {
-                return dimension_resource!(two_locus_distance_dimension(
+                return ok_or_some_err!(two_locus_distance_dimension(
                     &locus_entities,
                     parameter_id
                 )
@@ -675,7 +677,7 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let (parameter, parameter_id) =
-                dimension_resource!(parameter_for(scope, group.companion_record_index)?);
+                ok_or_some_err!(parameter_for(scope, group.companion_record_index)?);
             let copied = parameter_id.clone();
             match exact_group_definition(scope, group, parameter, copied) {
                 Some(Ok(_)) => return None,
@@ -698,7 +700,7 @@ fn project_all_dimension_constraints(
             }
             let sketch =
                 sketch_for_owner_or_geometry(scope, group.owner_reference, &locus_indices)?;
-            dimension_resource!(owner_scoped_radial_dimension_definition(
+            ok_or_some_err!(owner_scoped_radial_dimension_definition(
                 entities,
                 &sketch,
                 parameter,
@@ -798,7 +800,7 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let (parameter, parameter_id) =
-                dimension_resource!(parameter_for(scope, group.companion_record_index)?);
+                ok_or_some_err!(parameter_for(scope, group.companion_record_index)?);
             let mut locus_indices = Vec::new();
             for locus in &group.loci {
                 locus_indices.push(locus.geometry_record_index);
@@ -851,7 +853,7 @@ fn project_all_dimension_constraints(
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = group.id.clone();
             Some(Ok(SketchConstraint {
-                id: dimension_resource!(crate::design::identity::neutral_sketch_constraint_id(
+                id: ok_or_some_err!(crate::design::identity::neutral_sketch_constraint_id(
                     &group.id,
                     group.record_index
                 )),
@@ -957,7 +959,7 @@ fn project_all_dimension_constraints(
         .map(Ok)
         .chain(annotation_frames.iter().filter_map(|frame| {
             let scope = native_stream(&frame.id)?;
-            let (parameter, parameter_id) = dimension_resource!(parameter_for(
+            let (parameter, parameter_id) = ok_or_some_err!(parameter_for(
                 scope,
                 frame.governing_companion_record_index
             )?);
@@ -969,7 +971,7 @@ fn project_all_dimension_constraints(
             }
             let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
             let constraint_id =
-                dimension_resource!(crate::design::identity::neutral_dimension_constraint_id(
+                ok_or_some_err!(crate::design::identity::neutral_dimension_constraint_id(
                     &parameter_id,
                     "annotation"
                 ));
@@ -989,7 +991,7 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             });
-            let exact = dimension_resource!(exact.transpose());
+            let exact = ok_or_some_err!(exact.transpose());
             let definition = if let Some(definition) = exact {
                 definition
             } else {
@@ -1066,18 +1068,18 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let (parameter, parameter_id) =
-                dimension_resource!(parameter_for(scope, pair.governing_companion_record_index)?);
+                ok_or_some_err!(parameter_for(scope, pair.governing_companion_record_index)?);
             let indices = [pair.loci()[1].geometry_index()];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id =
-                dimension_resource!(crate::design::identity::neutral_dimension_constraint_id(
+                ok_or_some_err!(crate::design::identity::neutral_dimension_constraint_id(
                     &parameter_id,
                     "null-pair"
                 ));
             if design_dimension_unit(parameter) {
                 if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {
                     let copied = parameter_id.clone();
-                    if let Some(definition) = dimension_resource!(null_locus_dimension_definition(
+                    if let Some(definition) = ok_or_some_err!(null_locus_dimension_definition(
                         pair,
                         entity,
                         parameter.source_kind(),
@@ -1328,7 +1330,7 @@ fn project_all_dimension_constraints(
             let scope = native_stream(companion.id())?;
             let owner = owners_by_companion.get(&(scope, companion.record_index()))?;
             let (parameter, parameter_id) =
-                dimension_resource!(parameter_for(scope, companion.record_index())?);
+                ok_or_some_err!(parameter_for(scope, companion.record_index())?);
             if parameter.kind() != DesignParameterKind::Dimension
                 || projected_parameters.contains(&parameter_id)
                 || container_only_payload_companions.contains(&(scope, companion.record_index()))
@@ -1366,7 +1368,7 @@ fn project_all_dimension_constraints(
                 ) else {
                     continue;
                 };
-                let definition = dimension_resource!(definition);
+                let definition = ok_or_some_err!(definition);
                 if saw_parallel_axis_angle {
                     multiple_parallel_axis_angles = true;
                     parallel_axis_angle = None;
@@ -1457,7 +1459,7 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             });
-            let owner_scoped_definition = dimension_resource!(owner_scoped_definition.transpose());
+            let owner_scoped_definition = ok_or_some_err!(owner_scoped_definition.transpose());
             let presentation_definition = presentation_for_owner(scope, owner.record_index())
                 .and_then(|frame| {
                     presentation_dimension_definition(
@@ -1469,7 +1471,7 @@ fn project_all_dimension_constraints(
                         linear_tolerance,
                     )
                 });
-            let presentation_definition = dimension_resource!(presentation_definition.transpose());
+            let presentation_definition = ok_or_some_err!(presentation_definition.transpose());
             let exact_definition = presentation_definition
                 .or(parallel_axis_angle)
                 .or(owner_scoped_definition);
@@ -1513,7 +1515,7 @@ fn project_all_dimension_constraints(
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = companion.id().to_owned();
             Some(Ok(SketchConstraint {
-                id: dimension_resource!(crate::design::identity::neutral_dimension_constraint_id(
+                id: ok_or_some_err!(crate::design::identity::neutral_dimension_constraint_id(
                     &parameter_id,
                     "companion-payload"
                 )),
@@ -2470,7 +2472,7 @@ fn owner_scoped_radial_dimension_definition(
             parameter_id.clone(),
             linear_tolerance,
         ) {
-            definitions.push(dimension_resource!(result));
+            definitions.push(ok_or_some_err!(result));
         }
     }
     if definitions.len() < 2 {
@@ -4042,7 +4044,7 @@ fn radial_locus_dimension_definition(
         if let Some(result) =
             radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
         {
-            direct.push(dimension_resource!(result));
+            direct.push(ok_or_some_err!(result));
         }
     }
     if direct.len() == 1 {
@@ -4127,7 +4129,7 @@ fn radial_locus_dimension_definition(
         if let Some(result) =
             radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
         {
-            let definition = dimension_resource!(result);
+            let definition = ok_or_some_err!(result);
             if matched.is_some() {
                 multiple = true;
             }
