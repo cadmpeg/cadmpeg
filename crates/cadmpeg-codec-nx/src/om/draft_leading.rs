@@ -5,8 +5,6 @@ use super::compact::{
     CompactIndexTarget, CountedIndexMembers, LocatedCompactIndex, PositionedIndex,
 };
 use super::operation_record::OperationPayload;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use std::ops::Add;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,20 +69,14 @@ impl DraftLeadingLane<(), usize> {
 }
 
 impl<O> DraftLeadingLane<(), O> {
-    pub(crate) fn resolve<T>(
-        self,
-        ctx: &DecodeContext<'_>,
-        mut resolve: impl FnMut(u32) -> Result<T, CodecError>,
-    ) -> Result<DraftLeadingLane<T, O>, CodecError> {
-        Ok(DraftLeadingLane {
+    pub(crate) fn resolve<T>(self, mut resolve: impl FnMut(u32) -> T) -> DraftLeadingLane<T, O> {
+        DraftLeadingLane {
             offset: self.offset,
-            indices: self.indices.map_charged(ctx, |token| {
-                Ok(CompactIndexTarget {
-                    atom: token.atom,
-                    target: resolve(token.atom.value())?,
-                })
-            })?,
-        })
+            indices: self.indices.map(|token| CompactIndexTarget {
+                atom: token.atom,
+                target: resolve(token.atom.value()),
+            }),
+        }
     }
 
     pub(crate) fn try_resolve<T>(
@@ -104,109 +96,47 @@ impl<O> DraftLeadingLane<(), O> {
 }
 
 /// Decode the exactly positioned counted compact-index lane preceding a `DRAFT` graph.
-pub(crate) fn scan(
-    ctx: &DecodeContext<'_>,
-    record: OperationPayload<'_>,
-) -> Result<Option<DraftLeadingLane>, CodecError> {
+pub(crate) fn scan(record: OperationPayload<'_>) -> Option<DraftLeadingLane> {
     const PREFIX: [u8; 22] = [
         0x67, 0x00, 0x00, 0x01, 0x00, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03, 0xff,
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     ];
     if record.name() != "DRAFT" || record.payload().get(..PREFIX.len()) != Some(&PREFIX) {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX draft leading indices",
-    )?;
     let mut at = PREFIX.len();
     if record.payload().get(at) != Some(&0x01) {
-        return Ok(None);
+        return None;
     }
-    let Some(&declared_count) = record.payload().get(at + 1) else {
-        return Ok(None);
-    };
+    let &declared_count = record.payload().get(at + 1)?;
     if declared_count < 2 {
-        return Ok(None);
+        return None;
     }
     at += 2;
-    let member_count = usize::from(declared_count - 1);
     let mut scan_at = at;
     for _ in 1..declared_count {
-        let Some(token) = LocatedCompactIndex::read(record.payload(), scan_at) else {
-            return Ok(None);
-        };
+        let token = LocatedCompactIndex::read(record.payload(), scan_at)?;
         scan_at += token.atom.raw().len();
     }
     if record.payload().get(scan_at..scan_at + 2) != Some(&[0x01, 0x02]) {
-        return Ok(None);
+        return None;
     }
-    let operation = "NX draft leading index members";
-    let mut indices = ctx.collection_vec(member_count, operation)?;
+    let mut indices = Vec::new();
     for _ in 1..declared_count {
-        let Some(token) = LocatedCompactIndex::read(record.payload(), at) else {
-            return Ok(None);
-        };
+        let token = LocatedCompactIndex::read(record.payload(), at)?;
         at += token.atom.raw().len();
         indices.push(token.atom.into());
     }
 
-    Ok(CountedIndexMembers::new(indices)
+    CountedIndexMembers::new(indices)
         .ok()
-        .and_then(|indices| DraftLeadingLane::<(), usize>::new(indices, record.payload_offset())))
+        .and_then(|indices| DraftLeadingLane::<(), usize>::new(indices, record.payload_offset()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::operation_record::OperationPayload;
     use super::scan;
-
-    fn draft_leading_limit_error(
-        adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    ) -> cadmpeg_core::CodecError {
-        let bytes = [
-            0x67, 0, 0, 1, 0, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 3, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 1, 2, 8, 1, 2,
-        ];
-
-        crate::test_support::with_decode_context_over(&bytes, adjust, |ctx| {
-            scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())
-                .expect_err("draft leading resource refusal")
-        })
-    }
-
-    #[test]
-    fn om_draft_leading_route_refuses_collection_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_collection_items = 0;
-        };
-        assert!(
-            matches!(draft_leading_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-        );
-    }
-
-    #[test]
-    fn om_draft_leading_route_refuses_retained_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_retained_bytes = 0;
-        };
-        assert!(
-            matches!(draft_leading_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-        );
-    }
-
-    #[test]
-    fn om_draft_leading_route_refuses_work_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_work_units = 0;
-        };
-        assert!(
-            matches!(draft_leading_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
-    }
 
     #[test]
     fn draft_leading_positions_follow_token_widths_and_checked_frame_extent() {
@@ -247,11 +177,7 @@ mod tests {
                 }
             }
             bytes.extend_from_slice(&[1, 2]);
-            let frame = crate::test_support::with_decode_context(|ctx| {
-                scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())
-            })
-            .unwrap()
-            .unwrap();
+            let frame = scan(OperationPayload::new(&bytes, 100, "DRAFT").unwrap()).unwrap();
             assert_eq!(usize::from(frame.declared_count()), count + 1);
             assert_eq!(
                 frame

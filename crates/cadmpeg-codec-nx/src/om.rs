@@ -43,7 +43,7 @@ use std::num::NonZeroU8;
 use std::sync::Arc;
 
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -369,15 +369,8 @@ fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
 }
 
 /// Decode every complete NX part color table in a bounded byte region.
-pub(crate) fn color_tables<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Vec<ColorTable<'a>>, CodecError> {
+pub(crate) fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
     let mut tables = Vec::new();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX part color tables",
-    )?;
     let mut start = 0;
     while start + COLOR_TABLE_NAME_HEADER.len() <= bytes.len() {
         if bytes.get(start..start + COLOR_TABLE_NAME_HEADER.len()) != Some(&COLOR_TABLE_NAME_HEADER)
@@ -390,12 +383,11 @@ pub(crate) fn color_tables<'a>(
             continue;
         };
         if let Some(table) = color_table_at(bytes, start) {
-            ctx.reserve_vec(&mut tables, 1, "nx part color tables")?;
             tables.push(table);
         }
         start = end;
     }
-    Ok(tables)
+    tables
 }
 
 /// One exact shifted-IEEE scalar field in a reconstructed construction payload.
@@ -413,14 +405,9 @@ const SHIFTED_BINARY64_SCALAR_FRAME_LEN: usize = 13;
 
 /// Decode exact `50 59 66, field_code, 00, shifted-f64` construction fields.
 pub(crate) fn construction_payload_scalar_fields(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Vec<ConstructionPayloadScalarField>, CodecError> {
+) -> Vec<ConstructionPayloadScalarField> {
     let mut fields = Vec::new();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX construction scalars",
-    )?;
     for start in bytes
         .len()
         .checked_sub(12)
@@ -436,14 +423,13 @@ pub(crate) fn construction_payload_scalar_fields(
         else {
             continue;
         };
-        ctx.reserve_vec(&mut fields, 1, "NX construction scalar fields")?;
         fields.push(ConstructionPayloadScalarField {
             offset: start,
             field_code: bytes[start + 3],
             scalar,
         });
     }
-    Ok(fields)
+    fields
 }
 
 /// Exact type-free named point record spanning consecutive store blocks.
@@ -459,43 +445,30 @@ pub(crate) struct OffsetStoreNamedPoint {
 
 /// Decode a named two-scalar point from a streaming block sequence.
 pub(crate) fn offset_store_named_point<'a>(
-    ctx: &DecodeContext<'_>,
     blocks: impl IntoIterator<Item = &'a [u8]>,
-) -> Result<Option<OffsetStoreNamedPoint>, CodecError> {
+) -> Option<OffsetStoreNamedPoint> {
     let mut bytes = Vec::new();
-    let mut byte_reservation = None;
     let mut candidate = None;
     for (block_ordinal, block) in blocks.into_iter().enumerate() {
         // A later type-free name starts the next bounded data-block object.
         if !bytes.is_empty()
-            && name_field::scan(ctx, block)?
+            && name_field::scan(block)
                 .first()
                 .is_some_and(|name| name.code().is_none())
         {
-            return Ok(candidate);
+            return candidate;
         }
-        let length = bytes.len().checked_add(block.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("NX named point block bytes", u64::MAX, u64::MAX)
-        })?;
-        drop(byte_reservation.take());
-        byte_reservation = Some(ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(length),
-            "NX named point block bytes",
-        )?);
-        ctx.reserve_vec(&mut bytes, block.len(), "NX named point block bytes")?;
         bytes.extend_from_slice(block);
-        let names = name_field::scan(ctx, &bytes)?;
-        let Some(name) = names.first() else {
-            return Ok(None);
-        };
+        let names = name_field::scan(&bytes);
+        let name = names.first()?;
         if name.code().is_some() || parse_positive_decimal_suffix(name.value(), "Point").is_none() {
-            return Ok(None);
+            return None;
         }
         let next_name = names
             .iter()
             .find(|next| next.code().is_some() && next.offset() > name.offset());
         let interval_end = next_name.map_or(bytes.len(), name_field::NameField::offset);
-        let mut scalars = construction_payload_scalar_fields(ctx, &bytes)?
+        let mut scalars = construction_payload_scalar_fields(&bytes)
             .into_iter()
             .filter(|scalar| {
                 scalar.offset > name.offset()
@@ -507,11 +480,8 @@ pub(crate) fn offset_store_named_point<'a>(
         match (scalars.next(), scalars.next(), scalars.next()) {
             (Some(first_scalar), Some(second_scalar), None) => {
                 if candidate.is_none() {
-                    let value = name.value();
-                    let mut owned = ctx.retained_string(value.len(), "NX named point name")?;
-                    owned.push_str(value);
                     candidate = Some(OffsetStoreNamedPoint {
-                        name: owned,
+                        name: name.value().to_owned(),
                         values: [first_scalar, second_scalar].map(|field| LocatedBinary64 {
                             scalar: field.scalar,
                             offset: field.offset,
@@ -521,13 +491,13 @@ pub(crate) fn offset_store_named_point<'a>(
                 }
             }
             (None, _, _) | (Some(_), None, _) => {}
-            _ => return Ok(None),
+            _ => return None,
         }
         if next_name.is_some() {
-            return Ok(candidate);
+            return candidate;
         }
     }
-    Ok(candidate)
+    candidate
 }
 
 fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {
@@ -569,11 +539,8 @@ pub(crate) struct NumericExpression<'a> {
 
 impl NumericExpression<'_> {
     /// Finite value when the expression is context-free arithmetic.
-    pub(crate) fn constant_value(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<FiniteReal>, CodecError> {
-        evaluate_constant_expression(ctx, self.expression)
+    pub(crate) fn constant_value(&self) -> Option<FiniteReal> {
+        evaluate_constant_expression(self.expression)
     }
 }
 
@@ -1012,97 +979,65 @@ impl<'a> IndexedSection<'a> {
     }
 
     /// Decode explicit numeric-expression text within bounded entity records.
-    pub(crate) fn numeric_expressions(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<NumericExpression<'a>>, CodecError> {
-        let records = self.numeric_expression_records(ctx)?;
-        let mut expressions = Vec::new();
-        for (_, expression) in records {
-            ctx.reserve_vec(&mut expressions, 1, "nx indexed numeric expressions")?;
-            expressions.push(expression);
-        }
-        Ok(expressions)
+    pub(crate) fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
+        self.numeric_expression_records()
+            .into_iter()
+            .map(|(_, expression)| expression)
+            .collect()
     }
 
     /// Decode expressions together with their owning record ordinal.
-    pub(crate) fn numeric_expression_records(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(usize, NumericExpression<'a>)>, CodecError> {
-        let mut temporary = ctx.reserve_scoped(0, "nx indexed numeric record scan")?;
-        let mut records: Vec<(usize, &'a [u8], Option<u32>)> = Vec::new();
-        match &self.store {
-            IndexedStore::Fixed { records: source } => {
-                for record in source.iter() {
-                    ctx.reserve_scoped_vec(
-                        &mut temporary,
-                        &mut records,
-                        1,
-                        "nx indexed numeric record scan",
-                    )?;
-                    records.push((record.offset, record.bytes, Some(record.object_id.0)));
-                }
-            }
+    pub(crate) fn numeric_expression_records(&self) -> Vec<(usize, NumericExpression<'a>)> {
+        let records: Vec<(usize, &'a [u8], Option<u32>)> = match &self.store {
+            IndexedStore::Fixed { records: source } => source
+                .iter()
+                .map(|record| (record.offset, record.bytes, Some(record.object_id.0)))
+                .collect(),
             IndexedStore::OffsetOnly {
                 records: source, ..
-            } => {
-                for record in source.iter() {
-                    ctx.reserve_scoped_vec(
-                        &mut temporary,
-                        &mut records,
-                        1,
-                        "nx indexed numeric record scan",
-                    )?;
-                    records.push((record.offset, record.bytes, None));
-                }
-            }
-        }
+            } => source
+                .iter()
+                .map(|record| (record.offset, record.bytes, None))
+                .collect(),
+        };
         if !records.iter().any(|(_, bytes, _)| {
             bytes
                 .windows(b"hostglobalvariables".len())
                 .any(|window| window == b"hostglobalvariables")
         }) {
-            return Ok(Vec::new());
+            return Vec::new();
         }
         let mut expressions = Vec::new();
         for (record_ordinal, (offset, bytes, object_id)) in records.into_iter().enumerate() {
             if let Some(expression) = numeric_expression_at(bytes, offset, object_id) {
-                ctx.reserve_vec(&mut expressions, 1, "nx indexed numeric expression records")?;
                 expressions.push((record_ordinal, expression));
             }
         }
-        Ok(expressions)
+        expressions
     }
 }
 
 impl<'a> FixedEntityRecord<'a> {
     /// Decode every strictly framed printable string in this bounded record.
-    pub(crate) fn string_values(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<StringValue<'a>>, CodecError> {
-        string_values(ctx, self.bytes, self.offset)
+    pub(crate) fn string_values(&self) -> Vec<StringValue<'a>> {
+        string_values(self.bytes, self.offset)
     }
 
     /// Decode tagged references within this fixed-record table.
     pub(crate) fn references(
         &self,
-        ctx: &DecodeContext<'_>,
         record_count: usize,
-    ) -> Result<Vec<LocatedReference<RecordReference<()>>>, CodecError> {
-        let direct = record_references(ctx, self.bytes, self.offset)?;
-        let counted = counted_record_references(ctx, self.bytes, self.offset, record_count)?;
+    ) -> Vec<LocatedReference<RecordReference<()>>> {
+        let direct = record_references(self.bytes, self.offset);
+        let counted = counted_record_references(self.bytes, self.offset, record_count);
         let mut references = Vec::new();
         for reference in direct {
-            ctx.reserve_vec(&mut references, 1, "NX fixed entity references")?;
             references.push(LocatedReference {
                 offset: reference.offset,
                 value: RecordReference::Direct(reference.value),
             });
         }
         for reference in counted {
-            ctx.reserve_vec(&mut references, 1, "NX fixed entity references")?;
             references.push(LocatedReference {
                 offset: reference.offset,
                 value: RecordReference::RecordOrdinal16 {
@@ -1111,13 +1046,8 @@ impl<'a> FixedEntityRecord<'a> {
                 },
             });
         }
-        ctx.stable_sort_by(
-            &mut references,
-            |left, right| left.offset.cmp(&right.offset),
-            |_| 0,
-            "sort NX record references",
-        )?;
-        Ok(references)
+        references.sort_by_key(|item| item.offset);
+        references
     }
 }
 
@@ -1154,26 +1084,21 @@ impl<'a> Section<'a> {
     }
 
     /// Decode fully framed Boolean operations from the pointed record area.
-    pub(crate) fn boolean_operations(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<BooleanOperation>, CodecError> {
+    pub(crate) fn boolean_operations(&self) -> Vec<BooleanOperation> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
-        boolean_operations_with_labels(ctx, bytes, base_offset, &self.cached_operation_labels)
+        boolean_operations_with_labels(bytes, base_offset, &self.cached_operation_labels)
     }
 
     /// Bound operation records and retain their ordinal in the complete label sequence.
     pub(crate) fn operation_records_with_label_ordinals(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(usize, OperationRecord<'a>)>, CodecError> {
+    ) -> Vec<(usize, OperationRecord<'a>)> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
         operation_records_with_labels_and_ordinals(
-            ctx,
             bytes,
             base_offset,
             &self.cached_operation_labels,
@@ -1183,27 +1108,18 @@ impl<'a> Section<'a> {
     /// Bound validated operation headers that have no complete label frame.
     pub(crate) fn unlabeled_operation_records_with_ordinals(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(usize, UnlabeledOperationRecord<'a>)>, CodecError> {
+    ) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
-        unlabeled_operation_records_with_ordinals(
-            ctx,
-            bytes,
-            base_offset,
-            &self.cached_operation_labels,
-        )
+        unlabeled_operation_records_with_ordinals(bytes, base_offset, &self.cached_operation_labels)
     }
 
     /// Decode the bounded state-counter map of a feature-history record area.
     ///
     /// The section-role check is intentional. The same byte patterns occur in
     /// ordinary model-store payloads, where they do not carry operation state.
-    pub(crate) fn operation_state_counter_map(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<StateCounterMap>, CodecError> {
+    pub(crate) fn operation_state_counter_map(&self) -> Option<StateCounterMap> {
         let is_feature_history = self
             .types
             .iter()
@@ -1213,12 +1129,10 @@ impl<'a> Section<'a> {
                 .iter()
                 .any(|definition| definition.name == "m_rollForwardStates");
         if !is_feature_history {
-            return Ok(None);
+            return None;
         }
-        let Some((base_offset, bytes)) = self.record_area_parts() else {
-            return Ok(None);
-        };
-        StateCounterMap::read(ctx, bytes, base_offset)
+        let (base_offset, bytes) = self.record_area_parts()?;
+        StateCounterMap::read(bytes, base_offset)
     }
 
     /// Decode the field-declared `m_rollForwardStates` group table before the
@@ -1234,7 +1148,7 @@ impl<'a> Section<'a> {
         {
             return Ok(None);
         }
-        let Some(map) = self.operation_state_counter_map(ctx)? else {
+        let Some(map) = self.operation_state_counter_map() else {
             return Ok(None);
         };
         let Some((base_offset, bytes)) = self.record_area_parts() else {
@@ -1253,18 +1167,15 @@ impl<'a> Section<'a> {
     /// separator form may be skipped when it leads to another complete group.
     /// Any other byte stops the journal so later record-region data cannot
     /// become state.
-    pub(crate) fn operation_state_journal_groups(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<Vec<JournalGroup<usize>>>, CodecError> {
+    pub(crate) fn operation_state_journal_groups(&self) -> Option<Vec<JournalGroup<usize>>> {
         let is_feature_history = self
             .types
             .iter()
             .any(|definition| definition.name == "UGS::FEATURE_RECORD");
         if !is_feature_history {
-            return Ok(None);
+            return None;
         }
-        let Some((base_offset, bytes, start, end)) = (|| {
+        let (base_offset, bytes, start, end) = (|| {
             let (base_offset, bytes) = self.record_area_parts()?;
             let header = self.record_area_header()?;
             let product = header.product.offset.checked_sub(base_offset)?;
@@ -1276,24 +1187,22 @@ impl<'a> Section<'a> {
                 .and_then(|label| label.header.offset().checked_sub(base_offset))
                 .unwrap_or(bytes.len());
             Some((base_offset, bytes, start, end))
-        })() else {
-            return Ok(None);
-        };
-        operation_state_journal_groups_before_boundary(ctx, bytes, start, end, base_offset)
+        })()?;
+        operation_state_journal_groups_before_boundary(bytes, start, end, base_offset)
     }
 
     fn operation_state_block(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<OperationStateBlock<'a>>, CodecError> {
-        let Some(map) = self.operation_state_counter_map(ctx)? else {
+        let Some(map) = self.operation_state_counter_map() else {
             return Ok(None);
         };
         let Some((base_offset, bytes)) = self.record_area_parts() else {
             return Ok(None);
         };
         let Some((_, last_record)) = self
-            .operation_records_with_label_ordinals(ctx)?
+            .operation_records_with_label_ordinals()
             .into_iter()
             .last()
         else {
@@ -1311,7 +1220,7 @@ impl<'a> Section<'a> {
         else {
             return Ok(None);
         };
-        let mut ends = ctx.vector_storage(2, "NX operation state boundaries")?;
+        let mut ends = Vec::new();
         if let Some(table) = &group {
             let Some(overlap_end) =
                 terminal.checked_add(table.groups().first().opener().bytes().len())
@@ -1323,7 +1232,7 @@ impl<'a> Section<'a> {
         ends.push(terminal);
         for end in ends {
             if let Some(block) =
-                operation_state_block_before_boundary(ctx, bytes, start, end, base_offset)?
+                operation_state_block_before_boundary(bytes, start, end, base_offset)
             {
                 return Ok(Some(block));
             }
@@ -1350,7 +1259,7 @@ impl<'a> Section<'a> {
         let Some(block) = self.operation_state_block(ctx)? else {
             return Ok(None);
         };
-        block.into_messages(ctx)
+        Ok(block.into_messages())
     }
 
     /// Decode complete rows in an audit-trail record area.
@@ -1359,10 +1268,7 @@ impl<'a> Section<'a> {
     /// feature-history and model areas from being interpreted as audit data.
     /// Unknown bytes before, between, and after complete rows remain outside
     /// this typed view.
-    pub(crate) fn audit_trail_rows(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<Vec<AuditTrailRow>>, CodecError> {
+    pub(crate) fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow>> {
         let has_audit_marker = self
             .types
             .iter()
@@ -1374,9 +1280,9 @@ impl<'a> Section<'a> {
             )
         });
         if !has_audit_marker || has_specialized_marker {
-            return Ok(None);
+            return None;
         }
-        let Some((base_offset, bytes, start)) = (|| {
+        let (base_offset, bytes, start) = (|| {
             let (base_offset, bytes) = self.record_area_parts()?;
             let header = self.record_area_header()?;
             let product = header.product.offset.checked_sub(base_offset)?;
@@ -1387,55 +1293,37 @@ impl<'a> Section<'a> {
                 .position(|window| window == [0x41, 0x00])?
                 .checked_add(product_end + 2)?;
             Some((base_offset, bytes, start))
-        })() else {
-            return Ok(None);
-        };
-        audit_trail_rows(ctx, bytes, start, bytes.len(), base_offset)
+        })()?;
+        audit_trail_rows(bytes, start, bytes.len(), base_offset)
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
-    pub(crate) fn operation_body_references(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<(usize, OperationBodyReference)>, CodecError> {
+    pub(crate) fn operation_body_references(&self) -> Vec<(usize, OperationBodyReference)> {
         let mut references = Vec::new();
-        for (ordinal, record) in self.operation_records_with_label_ordinals(ctx)? {
+        for (ordinal, record) in self.operation_records_with_label_ordinals() {
             if let Some(reference) = operation_body_reference(record.body_view()) {
-                ctx.reserve_vec(&mut references, 1, "nx section operation body references")?;
                 references.push((ordinal, reference));
             }
         }
-        Ok(references)
+        references
     }
 }
 
 /// Decode complete feature-operation headers and their label frames.
-fn operation_labels<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-    base_offset: usize,
-) -> Result<Vec<OperationLabel<'a>>, CodecError> {
+fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
     let mut labels = Vec::new();
-    for header in validated_operation_headers(ctx, bytes, base_offset)? {
+    for header in validated_operation_headers(bytes, base_offset) {
         if let Some(label) = operation_label_at(bytes, base_offset, header) {
-            ctx.reserve_vec(&mut labels, 1, "nx operation labels")?;
             labels.push(label);
         }
     }
-    Ok(labels)
+    labels
 }
 
-fn validated_operation_headers(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    base_offset: usize,
-) -> Result<Vec<OperationHeader>, CodecError> {
+fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeader> {
     const PREFIX: &[u8] = &[0x80, 0xcd, 0x01, 0x04, 0x01];
     const SCALAR_LEN: usize = 8;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX operation headers",
-    )?;
+
     let mut headers = Vec::new();
     for marker in bytes
         .windows(PREFIX.len())
@@ -1460,10 +1348,9 @@ fn validated_operation_headers(
         else {
             continue;
         };
-        ctx.reserve_vec(&mut headers, 1, "nx operation headers")?;
         headers.push(header);
     }
-    Ok(headers)
+    headers
 }
 
 fn operation_label_at(
@@ -1497,12 +1384,11 @@ fn operation_label_at(
 }
 
 fn operation_records_with_labels_and_ordinals<'a>(
-    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     base_offset: usize,
     labels: &[OperationLabel<'a>],
-) -> Result<Vec<(usize, OperationRecord<'a>)>, CodecError> {
-    let headers = validated_operation_headers(ctx, bytes, base_offset)?;
+) -> Vec<(usize, OperationRecord<'a>)> {
+    let headers = validated_operation_headers(bytes, base_offset);
     let mut records = Vec::new();
     for (ordinal, header) in headers.iter().enumerate() {
         let record = (|| {
@@ -1516,20 +1402,18 @@ fn operation_records_with_labels_and_ordinals<'a>(
             OperationRecord::new(bytes.get(start..end)?, *label)
         })();
         if let Some(record) = record {
-            ctx.reserve_vec(&mut records, 1, "nx labeled operation records")?;
             records.push((ordinal, record));
         }
     }
-    Ok(records)
+    records
 }
 
 fn unlabeled_operation_records_with_ordinals<'a>(
-    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     base_offset: usize,
     labels: &[OperationLabel<'a>],
-) -> Result<Vec<(usize, UnlabeledOperationRecord<'a>)>, CodecError> {
-    let headers = validated_operation_headers(ctx, bytes, base_offset)?;
+) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
+    let headers = validated_operation_headers(bytes, base_offset);
     let mut records = Vec::new();
     for (ordinal, header) in headers.iter().enumerate() {
         let record = (|| {
@@ -1546,22 +1430,16 @@ fn unlabeled_operation_records_with_ordinals<'a>(
             UnlabeledOperationRecord::new(*header, bytes.get(start..end)?)
         })();
         if let Some(record) = record {
-            ctx.reserve_vec(&mut records, 1, "nx unlabeled operation records")?;
             records.push((ordinal, record));
         }
     }
-    Ok(records)
+    records
 }
 
 /// Decode ordered `03|04, length, text, 00` frames from one operation payload.
-pub(crate) fn operation_payload_text_frames<'a>(
-    ctx: &DecodeContext<'_>,
-    record: OperationPayload<'a>,
-) -> Result<Vec<OperationPayloadTextFrame<'a>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.payload().len()),
-        "scan NX operation payload text",
-    )?;
+pub(crate) fn operation_payload_text_frames(
+    record: OperationPayload<'_>,
+) -> Vec<OperationPayloadTextFrame<'_>> {
     let mut frames = Vec::new();
     let mut at = 0usize;
     while at + 4 <= record.payload().len() {
@@ -1593,7 +1471,6 @@ pub(crate) fn operation_payload_text_frames<'a>(
             at += 1;
             continue;
         }
-        ctx.reserve_vec(&mut frames, 1, "nx operation payload text frames")?;
         frames.push(OperationPayloadTextFrame {
             marker,
             offset: record.payload_offset() + at,
@@ -1601,60 +1478,46 @@ pub(crate) fn operation_payload_text_frames<'a>(
         });
         at = end + 1;
     }
-    Ok(frames)
+    frames
 }
 
 /// Decode ordered `04, length, text, 00` strings from one operation payload.
-pub(crate) fn operation_payload_strings<'a>(
-    ctx: &DecodeContext<'_>,
-    record: OperationPayload<'a>,
-) -> Result<Vec<OperationPayloadString<'a>>, CodecError> {
+pub(crate) fn operation_payload_strings(
+    record: OperationPayload<'_>,
+) -> Vec<OperationPayloadString<'_>> {
     let mut strings = Vec::new();
-    for frame in operation_payload_text_frames(ctx, record)? {
+    for frame in operation_payload_text_frames(record) {
         if frame.marker == OperationTextMarker::String {
-            ctx.reserve_vec(&mut strings, 1, "nx operation payload strings")?;
             strings.push(OperationPayloadString {
                 offset: frame.offset,
                 value: frame.value,
             });
         }
     }
-    Ok(strings)
+    strings
 }
 
 /// Decode an exact nonempty duplicated shifted-binary64 lane before a hole template.
 pub(crate) fn simple_hole_repeated_scalar_lane(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<NonEmpty<RepeatedScalar<usize>>>, CodecError> {
+) -> Option<NonEmpty<RepeatedScalar<usize>>> {
     if record.name() != "SIMPLE HOLE" {
-        return Ok(None);
+        return None;
     }
-    let mut templates = operation_payload_strings(ctx, record)?
+    let mut templates = operation_payload_strings(record)
         .into_iter()
         .filter(|value| value.value.as_str().starts_with("Hole_"));
-    let Some(template) = templates.next() else {
-        return Ok(None);
-    };
+    let template = templates.next()?;
     if templates.next().is_some() {
-        return Ok(None);
+        return None;
     }
-    let Some(boundary) = template.offset.checked_sub(record.payload_offset()) else {
-        return Ok(None);
-    };
-    let Some(prefix) = record.payload().get(..boundary) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(prefix.len()),
-        "scan NX simple hole scalars",
-    )?;
+    let boundary = template.offset.checked_sub(record.payload_offset())?;
+    let prefix = record.payload().get(..boundary)?;
     let mut scalars = Vec::new();
     let mut at = 0usize;
     while at + 8 <= prefix.len() {
         if prefix[at] == 0x30 {
             if let Some(scalar) = ShiftedBinary64::read(&prefix[at..at + 8]) {
-                ctx.reserve_vec(&mut scalars, 1, "nx simple hole scalar witnesses")?;
                 scalars.push((scalar, record.payload_offset() + at));
                 at += 8;
                 continue;
@@ -1664,7 +1527,7 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
     }
     let half = scalars.len() / 2;
     if scalars.len() != half * 2 {
-        return Ok(None);
+        return None;
     }
     let (first, second) = scalars.split_at(half);
     if first
@@ -1672,17 +1535,16 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
         .zip(second)
         .any(|(left, right)| left.0 != right.0)
     {
-        return Ok(None);
+        return None;
     }
     let mut repeated = Vec::new();
     for (left, right) in first.iter().zip(second) {
-        ctx.reserve_vec(&mut repeated, 1, "nx simple hole repeated scalars")?;
         repeated.push(RepeatedScalar {
             scalar: left.0,
             witness_offsets: [left.1, right.1],
         });
     }
-    Ok(NonEmpty::from_admitted_vec(repeated))
+    NonEmpty::from_admitted_vec(repeated)
 }
 
 /// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
@@ -1756,18 +1618,12 @@ pub(crate) fn hole_package_construction_group_lane(
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
 pub(crate) fn sketch_payload_references(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<SketchReferenceField>, CodecError> {
+) -> Option<SketchReferenceField> {
     if record.name() != "SKETCH" {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.payload().len()),
-        "scan NX sketch reference fields",
-    )?;
-    let mut failure = None;
-    let field = unique_candidate(
+    unique_candidate(
         record
             .payload()
             .len()
@@ -1775,25 +1631,12 @@ pub(crate) fn sketch_payload_references(
             .into_iter()
             .flat_map(|last| 0..last)
             .filter_map(|start| {
-                if failure.is_some() {
-                    return None;
-                }
                 if record.payload().get(start..start + 2) != Some(&[0x01, 0x00]) {
                     return None;
                 }
-                match SketchReferenceField::read(ctx, record, start) {
-                    Ok(field) => field,
-                    Err(error) => {
-                        failure = Some(error);
-                        None
-                    }
-                }
+                SketchReferenceField::read(record, start)
             }),
-    );
-    if let Some(error) = failure {
-        return Err(error);
-    }
-    Ok(field)
+    )
 }
 
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
@@ -1803,9 +1646,8 @@ fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
 
 /// Decode the unique exactly counted transform lane in a bounded pattern payload.
 pub(crate) fn pattern_payload_transform_lane(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<PatternPayloadTransformLane>, CodecError> {
+) -> Option<PatternPayloadTransformLane> {
     const FEATURE_PREFIX_TAIL: [u8; 3] = [0x01, 0x00, 0x00];
     const FEATURE_SCALAR_SUFFIX: [u8; 14] = [
         0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03,
@@ -1823,17 +1665,9 @@ pub(crate) fn pattern_payload_transform_lane(
             GEOMETRY_PREFIX_TAIL.as_slice(),
             GEOMETRY_SCALAR_SUFFIX.as_slice(),
         ),
-        _ => return Ok(None),
+        _ => return None,
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.payload().len()),
-        "scan NX pattern transform lanes",
-    )?;
-    let failure = std::cell::RefCell::new(None);
     let decode = |start: usize| {
-        if failure.borrow().is_some() {
-            return None;
-        }
         (record.payload().get(start) == Some(&0x01)).then_some(())?;
         let declared_count @ 2.. = *record.payload().get(start + 1)? else {
             return None;
@@ -1863,10 +1697,6 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
-            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx pattern transform rows") {
-                *failure.borrow_mut() = Some(error);
-                return None;
-            }
             rows.push(PatternRow {
                 values: value,
                 selector,
@@ -1889,9 +1719,6 @@ pub(crate) fn pattern_payload_transform_lane(
         })
     };
     let decode_wide = |start: usize| {
-        if failure.borrow().is_some() {
-            return None;
-        }
         (record.name() == "Pattern Feature").then_some(())?;
         (record.payload().get(start) == Some(&0x01)).then_some(())?;
         let declared_count @ 2.. = *record.payload().get(start + 1)? else {
@@ -1943,10 +1770,6 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
-            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx pattern wide transform rows") {
-                *failure.borrow_mut() = Some(error);
-                return None;
-            }
             rows.push(PatternRow {
                 values: PatternWideValues { first, terminal },
                 selector,
@@ -1985,34 +1808,22 @@ pub(crate) fn pattern_payload_transform_lane(
                     .filter_map(decode_wide),
             ),
     );
-    if let Some(error) = failure.into_inner() {
-        return Err(error);
-    }
-    Ok(candidate)
+    candidate
 }
 
 /// Decode the unique exactly counted instance-output lane in a bounded payload.
 pub(crate) fn multi_instance_output_payload_lane(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<MultiInstanceOutputPayloadLane>, CodecError> {
+) -> Option<MultiInstanceOutputPayloadLane> {
     const ENVELOPE: [u8; 10] = [0x3a, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x25, 0x01];
     const ROW_PREFIX: [u8; 7] = [0x26, 0x27, 0x01, 0x02, 0x65, 0x01, 0x02];
     const ROW_ORDINAL_MARKER: u8 = 0x28;
     const REFERENCE_PREFIX: [u8; 2] = [0x00, 0x3b];
 
     if record.name() != "Multi Instance Output" {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.payload().len()),
-        "scan NX multi-instance output lanes",
-    )?;
-    let mut failure = None;
-    let mut decode = |start: usize| {
-        if failure.is_some() {
-            return None;
-        }
+    let decode = |start: usize| {
         (record.payload().get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
         let declared_count = *record.payload().get(start + ENVELOPE.len())?;
         (declared_count >= 2).then_some(())?;
@@ -2034,10 +1845,6 @@ pub(crate) fn multi_instance_output_payload_lane(
             let ordinal = *record.payload().get(at + 1)?;
             instance_count = instance_count.max(ordinal);
             (record.payload().get(at + 2) == Some(&expected_row_index)).then_some(())?;
-            if let Err(error) = ctx.reserve_vec(&mut rows, 1, "nx multi-instance selector rows") {
-                failure = Some(error);
-                return None;
-            }
             rows.push((selector, ordinal));
             at += 3;
         }
@@ -2055,14 +1862,6 @@ pub(crate) fn multi_instance_output_payload_lane(
             let object_index =
                 reference_index::FeatureReferenceToken::read(record.payload().get(at..)?)?;
             let end = at + object_index.raw().len();
-            if let Err(error) = ctx.reserve_vec(
-                &mut trailing_references,
-                1,
-                "nx multi-instance trailing references",
-            ) {
-                failure = Some(error);
-                return None;
-            }
             trailing_references.push(PayloadObjectReference {
                 offset: record.payload_offset() + reference_offset,
                 token: object_index,
@@ -2070,15 +1869,7 @@ pub(crate) fn multi_instance_output_payload_lane(
             at = end;
         }
         (record.payload().get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
-        let outputs =
-            match instances::MultiInstanceOutputs::new_charged(ctx, rows, trailing_references) {
-                Ok(Some(outputs)) => outputs,
-                Ok(None) => return None,
-                Err(error) => {
-                    failure = Some(error);
-                    return None;
-                }
-            };
+        let outputs = instances::MultiInstanceOutputs::new(rows, trailing_references).ok()?;
         Some(MultiInstanceOutputPayloadLane {
             offset: record.payload_offset() + start + 8,
             outputs,
@@ -2091,30 +1882,22 @@ pub(crate) fn multi_instance_output_payload_lane(
             .checked_sub(ENVELOPE.len())
             .into_iter()
             .flat_map(|last| 0..=last)
-            .filter_map(&mut decode),
+            .filter_map(decode),
     );
-    if let Some(error) = failure {
-        return Err(error);
-    }
-    Ok(candidate)
+    candidate
 }
 
 /// Decode the unique exactly counted selector lane in an
 /// `IDENTICAL INSTANCE OUTPUT` payload.
 pub(crate) fn identical_instance_output_payload_lane(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<IdenticalInstanceOutputPayloadLane>, CodecError> {
+) -> Option<IdenticalInstanceOutputPayloadLane> {
     const ROW_MIDDLE: [u8; 2] = [0x01, 0x02];
     const SENTINEL: [u8; 7] = [0xe0, 0x7f, 0xff, 0xff, 0xff, 0x00, 0x00];
 
     if record.name() != "IDENTICAL INSTANCE OUTPUT" {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.payload().len()),
-        "scan NX identical-instance selectors",
-    )?;
     let decode = |start: usize| {
         let leading_schema_index = *record.payload().get(start)?;
         let count_schema_index =
@@ -2149,7 +1932,7 @@ pub(crate) fn identical_instance_output_payload_lane(
             declared_count,
         ))
     };
-    let Some((start, leading_schema_index, count_schema_index, declared_count)) = unique_candidate(
+    let (start, leading_schema_index, count_schema_index, declared_count) = unique_candidate(
         record
             .payload()
             .len()
@@ -2157,32 +1940,29 @@ pub(crate) fn identical_instance_output_payload_lane(
             .into_iter()
             .flat_map(|last| 0..last)
             .filter_map(decode),
-    ) else {
-        return Ok(None);
-    };
-    let selector_count = usize::from(declared_count - 1);
-    let operation = "NX identical-instance selectors";
-    let mut selectors = ctx.collection_vec(selector_count, operation)?;
+    )?;
+    let mut selectors = Vec::new();
     let mut at = start + 4;
     for _ in 2..=declared_count {
         at += 5;
-        let Some(atom) = record.payload().get(at..).and_then(CompactIndexAtom::read) else {
-            return Ok(None);
-        };
+        let atom = record
+            .payload()
+            .get(at..)
+            .and_then(CompactIndexAtom::read)?;
         selectors.push(LocatedCompactIndex {
             atom,
             offset: record.payload_offset() + at,
         });
         at += atom.raw().len() + 2;
     }
-    Ok(compact::CountedIndexMembers::new(selectors)
+    compact::CountedIndexMembers::new(selectors)
         .ok()
         .map(|selectors| IdenticalInstanceOutputPayloadLane {
             offset: record.payload_offset() + start,
             leading_schema_index,
             count_schema_index,
             selectors,
-        }))
+        })
 }
 
 /// Decode the exact leading construction header in a bounded `POINT` payload.
@@ -2253,17 +2033,12 @@ pub(crate) fn point_feature_scalar_lane(
 /// Decode the exact leading construction branch in a bounded `SWP104`
 /// payload.
 pub(crate) fn swp104_payload_leading_branch(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
 ) -> Result<Option<Swp104PayloadLeadingBranch>, CodecError> {
     const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
     if record.name() != "SWP104" {
         return Ok(None);
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.payload().len()),
-        "scan NX SWP104 leading branch",
-    )?;
     let Some((discriminator, scalars, leading_zero, mode, declared_count, mut at)) = (|| {
         let discriminator = NonZeroU8::new(*record.payload().first()?)?;
         (record.payload().get(1..5) == Some(&HEADER)).then_some(())?;
@@ -2291,9 +2066,7 @@ pub(crate) fn swp104_payload_leading_branch(
     })() else {
         return Ok(None);
     };
-    let len = usize::from(declared_count) - 1;
-    let operation = "NX SWP104 members";
-    let mut members = ctx.collection_vec(len, operation)?;
+    let mut members = Vec::new();
     for _ in 1..declared_count {
         let Some(object_index) = record
             .payload()
@@ -2324,7 +2097,7 @@ pub(crate) fn swp104_payload_leading_branch(
     let state_lane = Swp104StateLane::from_parts(
         witnessed_count,
         match record.payload().get(at..at + state_len) {
-            Some(bytes) => ctx.copy_retained(bytes, "NX SWP104 state lane")?,
+            Some(bytes) => bytes.to_vec(),
             None => return Ok(None),
         },
     )
@@ -2383,16 +2156,10 @@ pub(crate) fn extrude_payload_header(record: OperationPayload<'_>) -> Option<Ext
 
 /// Decode wrapped member lanes following branch-`11` body scalar clauses.
 pub(crate) fn operation_body_members(
-    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Result<Vec<OperationBodyMemberGroup>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.bytes().len()),
-        "scan NX operation body members",
-    )?;
+) -> Vec<OperationBodyMemberGroup> {
     let mut groups = Vec::new();
     for (body_ordinal, reference) in operation_body_reference_candidates(record).enumerate() {
-        let mut failure = None;
         let group = (|| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
@@ -2425,10 +2192,6 @@ pub(crate) fn operation_body_members(
                     return None;
                 }
                 at += 1;
-                if let Err(error) = ctx.reserve_vec(&mut members, 1, "NX operation body members") {
-                    failure = Some(error);
-                    return None;
-                }
                 members.push(LocatedCompactIndex {
                     atom,
                     offset: record.offset() + member_at,
@@ -2440,29 +2203,20 @@ pub(crate) fn operation_body_members(
                 members,
             })
         })();
-        if let Some(error) = failure {
-            return Err(error);
-        }
         if let Some(group) = group {
-            ctx.reserve_vec(&mut groups, 1, "NX operation body member groups")?;
             groups.push(group);
         }
     }
-    Ok(groups)
+    groups
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
 pub(crate) fn operation_body_11_continuations(
-    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Result<Vec<OperationBody11Continuation>, CodecError> {
+) -> Vec<OperationBody11Continuation> {
     if record.name() != "TRIM BODY" {
-        return Ok(Vec::new());
+        return Vec::new();
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.bytes().len()),
-        "scan NX operation body continuations",
-    )?;
     let mut continuations = Vec::new();
     for (body_ordinal, reference) in operation_body_reference_candidates(record).enumerate() {
         let continuation = (|| {
@@ -2527,25 +2281,18 @@ pub(crate) fn operation_body_11_continuations(
             })
         })();
         if let Some(continuation) = continuation {
-            ctx.reserve_vec(&mut continuations, 1, "NX operation body continuations")?;
             continuations.push(continuation);
         }
     }
-    Ok(continuations)
+    continuations
 }
 
 /// Decode complete unwrapped counted reference lanes following body scalar clauses.
 pub(crate) fn operation_body_reference_lanes(
-    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Result<Vec<OperationBodyReferenceLane>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.bytes().len()),
-        "scan NX operation body reference lanes",
-    )?;
+) -> Vec<OperationBodyReferenceLane> {
     let mut lanes = Vec::new();
     for (body_ordinal, reference) in operation_body_reference_candidates(record).enumerate() {
-        let mut failure = None;
         let lane = (|| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
@@ -2568,40 +2315,18 @@ pub(crate) fn operation_body_reference_lanes(
                 return None;
             }
             at += 2;
-            let compact = match operation_body_reference_lane_values(
-                ctx,
-                record,
-                at,
-                count - 1,
-                |bytes, offset| {
+            let compact =
+                operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
                     let atom = CompactIndexAtom::read(bytes)?;
                     let width = atom.raw().len();
                     Some((LocatedCompactIndex { atom, offset }, width))
-                },
-            ) {
-                Ok(values) => values,
-                Err(error) => {
-                    failure = Some(error);
-                    return None;
-                }
-            };
-            let objects = match operation_body_reference_lane_values(
-                ctx,
-                record,
-                at,
-                count - 1,
-                |bytes, offset| {
+                });
+            let objects =
+                operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
                     let token = reference_index::PayloadIndexToken::read(bytes)?;
                     let width = token.raw().len();
                     Some((PayloadObjectReference { offset, token }, width))
-                },
-            ) {
-                Ok(values) => values,
-                Err(error) => {
-                    failure = Some(error);
-                    return None;
-                }
-            };
+                });
             let values = match (compact, objects) {
                 (Some(values), None) => OperationBodyReferenceLaneValues::CompactIndex(values),
                 (None, Some(values)) => {
@@ -2616,64 +2341,40 @@ pub(crate) fn operation_body_reference_lanes(
                 values,
             })
         })();
-        if let Some(error) = failure {
-            return Err(error);
-        }
         if let Some(lane) = lane {
-            ctx.reserve_vec(&mut lanes, 1, "NX operation body reference lanes")?;
             lanes.push(lane);
         }
     }
-    Ok(lanes)
+    lanes
 }
 
 fn operation_body_reference_lane_values<T>(
-    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
     mut at: usize,
     count: usize,
     read: impl Fn(&[u8], usize) -> Option<(T, usize)>,
-) -> Result<Option<Vec<T>>, CodecError> {
+) -> Option<Vec<T>> {
     let mut values = Vec::new();
     for _ in 0..count {
-        let Some((value, width)) = record
-            .bytes()
-            .get(at..)
-            .and_then(|bytes| read(bytes, record.offset() + at))
-        else {
-            return Ok(None);
-        };
+        let (value, width) = read(record.bytes().get(at..)?, record.offset() + at)?;
         at += width;
-        ctx.reserve_vec(&mut values, 1, "NX operation body lane values")?;
         values.push(value);
     }
-    Ok((record.bytes().get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values))
+    (record.bytes().get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values)
 }
 
 /// Decode one complete datum-plane descriptor block.
 pub(crate) fn datum_plane_descriptor_block(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Option<plane_descriptor::PlaneDescriptor>, CodecError> {
-    plane_descriptor::PlaneDescriptor::read_charged(ctx, bytes)
+) -> Option<crate::om::plane_descriptor::PlaneDescriptor> {
+    plane_descriptor::PlaneDescriptor::read(bytes)
 }
 
 /// Decode every complete scalar-vector frame in a reconstructed sketch
 /// payload.
 pub(crate) fn sketch_payload_scalar_lanes(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Vec<FramedScalarRun<SketchScalarLaneForm, ()>>, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(bytes.len())
-        .checked_mul(2)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "scan NX sketch scalar lanes",
-                0,
-                cadmpeg_core::decode::u64_from_index(bytes.len()),
-            )
-        })?;
-    ctx.charge_work(work, "scan NX sketch scalar lanes")?;
+) -> Vec<FramedScalarRun<SketchScalarLaneForm, ()>> {
     let mut lanes = Vec::new();
     for form in [SketchScalarLaneForm::Form03, SketchScalarLaneForm::Form07] {
         let discriminator = form.discriminator();
@@ -2684,7 +2385,6 @@ pub(crate) fn sketch_payload_scalar_lanes(
             let mut at = offset + discriminator.len();
             let mut values = Vec::new();
             let complete = loop {
-                ctx.charge_work(1, "scan NX sketch scalar atoms")?;
                 if bytes.get(at) == Some(&0x00) {
                     break true;
                 }
@@ -2692,7 +2392,6 @@ pub(crate) fn sketch_payload_scalar_lanes(
                     break false;
                 };
                 at += scalar.raw().len();
-                ctx.reserve_vec(&mut values, 1, "NX sketch scalar atoms")?;
                 values.push((scalar, ()));
             };
             if !complete {
@@ -2706,36 +2405,15 @@ pub(crate) fn sketch_payload_scalar_lanes(
             else {
                 continue;
             };
-            ctx.reserve_vec(&mut lanes, 1, "NX sketch scalar lanes")?;
             lanes.push(lane);
         }
     }
-    ctx.stable_sort_by(
-        &mut lanes,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
-        "sort NX sketch payload scalar lanes",
-    )?;
-    Ok(lanes)
+    lanes.sort_by_key(FramedScalarRun::offset);
+    lanes
 }
 
 /// Decode every exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
-pub(crate) fn sketch_payload_fixed_pairs(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<SketchPayloadFixedPair>, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(bytes.len())
-        .checked_mul(cadmpeg_core::decode::u64_from_index(
-            SketchPairForm::ALL.len(),
-        ))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "scan NX sketch fixed pairs",
-                0,
-                cadmpeg_core::decode::u64_from_index(bytes.len()),
-            )
-        })?;
-    ctx.charge_work(work, "scan NX sketch fixed pairs")?;
+pub(crate) fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
     let mut pairs = Vec::new();
     for form in SketchPairForm::ALL {
         let discriminator = form.discriminator();
@@ -2758,7 +2436,6 @@ pub(crate) fn sketch_payload_fixed_pairs(
             let Some(second_value) = sketch_fixed_atom(bytes, second) else {
                 continue;
             };
-            ctx.reserve_vec(&mut pairs, 1, "NX sketch fixed pairs")?;
             pairs.push(SketchPayloadFixedPair {
                 offset,
                 values: [first_value, second_value],
@@ -2766,24 +2443,12 @@ pub(crate) fn sketch_payload_fixed_pairs(
             });
         }
     }
-    ctx.stable_sort_by(
-        &mut pairs,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "sort NX sketch payload pairs",
-    )?;
-    Ok(pairs)
+    pairs.sort_by_key(|item| item.offset);
+    pairs
 }
 
 /// Decode every exactly framed mixed scaled shifted-binary64/binary32 pair in a sketch payload.
-pub(crate) fn sketch_payload_mixed_pairs(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<SketchPayloadMixedPair>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX sketch mixed pairs",
-    )?;
+pub(crate) fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
     let discriminator = SketchPairForm::Legacy.discriminator();
     let mut pairs = Vec::new();
     for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
@@ -2807,7 +2472,6 @@ pub(crate) fn sketch_payload_mixed_pairs(
         let Some(fixed) = sketch_fixed_atom(bytes, fixed_offset) else {
             continue;
         };
-        ctx.reserve_vec(&mut pairs, 1, "NX sketch mixed pairs")?;
         pairs.push(SketchPayloadMixedPair {
             offset,
             scalars: SketchMixedScalars {
@@ -2816,7 +2480,7 @@ pub(crate) fn sketch_payload_mixed_pairs(
             },
         });
     }
-    Ok(pairs)
+    pairs
 }
 
 fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<SketchScaledAtom> {
@@ -2826,22 +2490,7 @@ fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<SketchScaledAtom> {
 }
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
-pub(crate) fn datum_csys_payload_fixed_pairs(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<DatumCsysPayloadFixedPair>, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(bytes.len())
-        .checked_mul(cadmpeg_core::decode::u64_from_index(
-            DatumPairForm::ALL.len(),
-        ))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "scan NX datum CSYS pairs",
-                0,
-                cadmpeg_core::decode::u64_from_index(bytes.len()),
-            )
-        })?;
-    ctx.charge_work(work, "scan NX datum CSYS pairs")?;
+pub(crate) fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixedPair> {
     let mut pairs = Vec::new();
     for form in DatumPairForm::ALL {
         let discriminator = form.discriminator();
@@ -2874,7 +2523,6 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
             else {
                 continue;
             };
-            ctx.reserve_vec(&mut pairs, 1, "NX datum CSYS pairs")?;
             pairs.push(DatumCsysPayloadFixedPair {
                 offset,
                 values: [first_value, second_value],
@@ -2882,24 +2530,14 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
             });
         }
     }
-    ctx.stable_sort_by(
-        &mut pairs,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "sort NX datum csys payload pairs",
-    )?;
-    Ok(pairs)
+    pairs.sort_by_key(|item| item.offset);
+    pairs
 }
 
 /// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
 pub(crate) fn draft_construction_fixed_lanes(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Vec<FramedScalarRun<Q155LaneFrame, ()>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX draft fixed lanes",
-    )?;
+) -> Vec<FramedScalarRun<Q155LaneFrame, ()>> {
     let mut lanes = Vec::new();
     for (offset, window) in bytes
         .windows(Q155LaneFrame::DISCRIMINATOR.len())
@@ -2911,7 +2549,6 @@ pub(crate) fn draft_construction_fixed_lanes(
         let mut at = offset + Q155LaneFrame::DISCRIMINATOR.len();
         let mut values = Vec::new();
         let complete = loop {
-            ctx.charge_work(1, "scan NX draft fixed atoms")?;
             let Some(marker) = bytes.get(at).copied().and_then(Q155Marker::read) else {
                 break bytes.get(at) == Some(&0x00);
             };
@@ -2924,7 +2561,6 @@ pub(crate) fn draft_construction_fixed_lanes(
             let Some(scalar) = Q155::from_raw(raw) else {
                 break false;
             };
-            ctx.reserve_vec(&mut values, 1, "NX draft fixed atoms")?;
             values.push((Q155Atom { marker, scalar }, ()));
             at += 8;
         };
@@ -2941,27 +2577,15 @@ pub(crate) fn draft_construction_fixed_lanes(
         ) else {
             continue;
         };
-        ctx.reserve_vec(&mut lanes, 1, "NX draft fixed lanes")?;
         lanes.push(lane);
     }
-    Ok(lanes)
+    lanes
 }
 
 /// Decode every complete shifted-binary32 lane in a reconstructed draft graph payload.
 pub(crate) fn draft_construction_binary32_lanes(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Vec<FramedScalarRun<DraftBinary32Branch, ()>>, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(bytes.len())
-        .checked_mul(2)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "scan NX draft binary32 lanes",
-                0,
-                cadmpeg_core::decode::u64_from_index(bytes.len()),
-            )
-        })?;
-    ctx.charge_work(work, "scan NX draft binary32 lanes")?;
+) -> Vec<FramedScalarRun<DraftBinary32Branch, ()>> {
     let mut lanes = Vec::new();
     for branch in [DraftBinary32Branch::Form04, DraftBinary32Branch::Form03] {
         let discriminator = branch.discriminator();
@@ -2972,14 +2596,12 @@ pub(crate) fn draft_construction_binary32_lanes(
             let mut at = offset + discriminator.len();
             let mut values = Vec::new();
             let complete = loop {
-                ctx.charge_work(1, "scan NX draft binary32 atoms")?;
                 if !matches!(bytes.get(at), Some(0x40..=0x5f | 0xc0..=0xdf)) {
                     break bytes.get(at) == Some(&0x00);
                 }
                 let Some(scalar) = bytes.get(at..at + 4).and_then(ShiftedBinary32::read) else {
                     break false;
                 };
-                ctx.reserve_vec(&mut values, 1, "NX draft binary32 atoms")?;
                 values.push((scalar, ()));
                 at += 4;
             };
@@ -2994,59 +2616,39 @@ pub(crate) fn draft_construction_binary32_lanes(
             else {
                 continue;
             };
-            ctx.reserve_vec(&mut lanes, 1, "NX draft binary32 lanes")?;
             lanes.push(lane);
         }
     }
-    ctx.stable_sort_by(
-        &mut lanes,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
-        "sort NX draft construction lanes",
-    )?;
-    Ok(lanes)
+    lanes.sort_by_key(FramedScalarRun::offset);
+    lanes
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
 pub(crate) fn datum_csys_descriptor_block(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Option<csys_descriptor::CsysDescriptor>, CodecError> {
-    csys_descriptor::CsysDescriptor::read_charged(ctx, bytes)
+) -> Option<crate::om::csys_descriptor::CsysDescriptor> {
+    csys_descriptor::CsysDescriptor::read(bytes)
 }
 
 /// Decode every complete identity frame in a reconstructed draft construction payload.
 pub(crate) fn draft_construction_identity_frames(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Vec<draft_identity::DraftIdentityFrame>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX draft identity frames",
-    )?;
+) -> Vec<crate::om::draft_identity::DraftIdentityFrame> {
     let mut frames = Vec::new();
     for offset in 0..bytes.len() {
-        if let Some(frame) = draft_identity::DraftIdentityFrame::read(ctx, bytes, offset)? {
-            ctx.reserve_vec(&mut frames, 1, "NX draft identity frames")?;
+        if let Some(frame) = draft_identity::DraftIdentityFrame::read(bytes, offset) {
             frames.push(frame);
         }
     }
-    Ok(frames)
+    frames
 }
 
 /// Decode compact object IDs followed by their complete frame discriminator.
-pub(crate) fn data_block_object_frames(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<LocatedCompactIndex>, CodecError> {
+pub(crate) fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
     const DISCRIMINATOR: [u8; 18] = [
         0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
         0x02, 0x80, 0xa4,
     ];
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX data-block object frames",
-    )?;
     let mut references = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -3059,18 +2661,14 @@ pub(crate) fn data_block_object_frames(
             offset += 1;
             continue;
         }
-        ctx.reserve_vec(&mut references, 1, "NX data-block object frames")?;
         references.push(LocatedCompactIndex { atom, offset });
         offset += width + DISCRIMINATOR.len();
     }
-    Ok(references)
+    references
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
-pub(crate) fn expression_declaration_name<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Option<ExpressionDeclarationName<'a>>, CodecError> {
+pub(crate) fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclarationName<'_>> {
     let mut declaration = None;
     let mut literal = None;
     let mut multiple_literals = false;
@@ -3100,26 +2698,22 @@ pub(crate) fn expression_declaration_name<'a>(
             continue;
         };
         let Some(name) = ParameterName::<_, u32>::parse(value) else {
-            if evaluate_constant_expression(ctx, value)?.is_some()
-                && literal.replace(value).is_some()
-            {
+            if evaluate_constant_expression(value).is_some() && literal.replace(value).is_some() {
                 multiple_literals = true;
             }
             continue;
         };
         if declaration.replace((at, name)).is_some() {
-            return Ok(None);
+            return None;
         }
     }
-    let Some((offset, name)) = declaration else {
-        return Ok(None);
-    };
+    let (offset, name) = declaration?;
     let literal = (!multiple_literals).then_some(literal).flatten();
-    Ok(Some(ExpressionDeclarationName {
+    Some(ExpressionDeclarationName {
         offset,
         name,
         literal,
-    }))
+    })
 }
 
 /// Decode the unique direct primary-body field in one operation.
@@ -3172,19 +2766,13 @@ fn operation_body_reference_candidates(
 
 /// Decode every ordered direct primary-body field in one operation.
 pub(crate) fn operation_body_references(
-    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Result<Vec<OperationBodyReference>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.bytes().len()),
-        "scan NX operation body references",
-    )?;
+) -> Vec<OperationBodyReference> {
     let mut references = Vec::new();
     for reference in operation_body_reference_candidates(record) {
-        ctx.reserve_vec(&mut references, 1, "NX operation body references")?;
         references.push(reference);
     }
-    Ok(references)
+    references
 }
 
 /// Decode every exact nested `01 02 tag index 97 75 01 02 endpoint_tag index ff` frame.
@@ -3192,29 +2780,19 @@ pub(crate) fn operation_body_references(
 /// Both indices are non-null and canonical. Endpoint tags `10`, `12`, and
 /// `15` select the body-image field across the supported schema generations.
 pub(crate) fn operation_body_write_frames(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
-    body_write_frames(ctx, record.payload(), record.payload_offset())
+) -> Vec<BodyWriteFrame<usize>> {
+    body_write_frames(record.payload(), record.payload_offset())
 }
 
 /// Decode body-write frames from one independently bounded unlabeled record.
 pub(crate) fn unlabeled_operation_body_write_frames(
-    ctx: &DecodeContext<'_>,
     record: UnlabeledOperationRecord<'_>,
-) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
-    body_write_frames(ctx, record.payload(), record.header().end_offset())
+) -> Vec<BodyWriteFrame<usize>> {
+    body_write_frames(record.payload(), record.header().end_offset())
 }
 
-fn body_write_frames(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    payload_offset: usize,
-) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(payload.len()),
-        "scan NX body-write frames",
-    )?;
+fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<BodyWriteFrame<usize>> {
     let mut relations = Vec::new();
     for marker in payload
         .windows(2)
@@ -3222,11 +2800,10 @@ fn body_write_frames(
         .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
     {
         if let Some(write) = operation_body_write_frame_at(payload, payload_offset, marker) {
-            ctx.reserve_vec(&mut relations, 1, "nx body-write frames")?;
             relations.push(write);
         }
     }
-    Ok(relations)
+    relations
 }
 
 fn operation_body_write_frame_at(
@@ -3303,40 +2880,18 @@ fn operation_state_group_table_before_counter_map(
         .into_iter()
         .flat_map(|last| 0..last)
     {
-        ctx.charge_work(1, "nx operation-state group scan")?;
         if !matches!(bytes.get(at..at + 2), Some([0x01, 0x00 | 0x01])) {
             continue;
         }
         let Some(end) = operation_state_group_end_at(bytes, at, map_start, base_offset) else {
             continue;
         };
-        ctx.charge_collection_items(1, "nx operation-state group candidates")?;
-        ctx.reserve_capacity(&mut candidates, 1, "nx operation-state group candidates")?;
         candidates.push((at, end));
     }
-    ctx.stable_sort_by(
-        &mut candidates,
-        |(left_start, left_end), (right_start, right_end)| {
-            (left_end, left_start).cmp(&(right_end, right_start))
-        },
-        |_| 0,
-        "sort NX operation state group candidates",
-    )?;
+    candidates.sort_by(|(left_start, left_end), (right_start, right_end)| {
+        (left_end, left_start).cmp(&(right_end, right_start))
+    });
 
-    let predecessor_bytes = candidates
-        .len()
-        .checked_mul(std::mem::size_of::<Option<usize>>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "nx operation-state group predecessors",
-                0,
-                cadmpeg_core::decode::u64_from_index(candidates.len()),
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(predecessor_bytes),
-        "nx operation-state group predecessors",
-    )?;
     let mut predecessors = ctx.alloc_filled(
         candidates.len(),
         None,
@@ -3344,7 +2899,6 @@ fn operation_state_group_table_before_counter_map(
     )?;
     let mut best_by_end = BTreeMap::<usize, GroupPath>::new();
     for (candidate_index, (start, end)) in candidates.iter().enumerate() {
-        ctx.charge_work(1, "nx operation-state group paths")?;
         let previous = best_by_end.get(start).copied();
         let path = GroupPath {
             last_candidate: candidate_index,
@@ -3357,18 +2911,7 @@ fn operation_state_group_table_before_counter_map(
                 || (path.length == current.length && path.first_start < current.first_start)
         });
         if replace {
-            if !best_by_end.contains_key(end) {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, GroupPath)>()),
-                    "nx operation-state group paths",
-                )?;
-            }
-            ctx.insert_btree_map(
-                &mut best_by_end,
-                *end,
-                path,
-                "nx operation-state group paths",
-            )?;
+            best_by_end.insert(*end, path);
         }
     }
 
@@ -3381,12 +2924,7 @@ fn operation_state_group_table_before_counter_map(
     let Some(terminal) = best_by_end.get(&trailing_start).copied() else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(terminal.length),
-        "nx operation-state group path",
-    )?;
     let mut path = Vec::new();
-    ctx.reserve_capacity(&mut path, terminal.length, "nx operation-state group path")?;
     let mut candidate = Some(terminal.last_candidate);
     while let Some(candidate_index) = candidate {
         path.push(candidate_index);
@@ -3396,15 +2934,10 @@ fn operation_state_group_table_before_counter_map(
     let Some(&last) = path.last() else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(path.len()),
-        "nx operation-state groups",
-    )?;
     let mut groups = Vec::new();
-    ctx.reserve_capacity(&mut groups, path.len(), "nx operation-state groups")?;
     for candidate in path {
         let Some(group) =
-            operation_state_group_at(ctx, bytes, candidates[candidate].0, map_start, base_offset)?
+            operation_state_group_at(bytes, candidates[candidate].0, map_start, base_offset)
         else {
             return Ok(None);
         };
@@ -3424,36 +2957,28 @@ fn operation_state_group_table(
     end: usize,
     base_offset: usize,
 ) -> Option<OperationStateGroupTable> {
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |_| {},
-        |ctx| {
-            if start >= end || end > bytes.len() {
-                return None;
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut groups = Vec::new();
+    let mut at = start;
+    let mut trailing_start = end;
+    while at < end {
+        let Some(group) = operation_state_group_at(bytes, at, end, base_offset) else {
+            if bytes.get(at..end) == Some(&[0x01, 0x01]) {
+                trailing_start = at;
+                at = end;
+                break;
             }
-            let mut groups = Vec::new();
-            let mut at = start;
-            let mut trailing_start = end;
-            while at < end {
-                let Some(group) = operation_state_group_at(ctx, bytes, at, end, base_offset)
-                    .expect("test group allocation is admitted")
-                else {
-                    if bytes.get(at..end) == Some(&[0x01, 0x01]) {
-                        trailing_start = at;
-                        at = end;
-                        break;
-                    }
-                    return None;
-                };
-                at = group.end_offset().checked_sub(base_offset)?;
-                groups.push(group);
-            }
-            if at != end {
-                return None;
-            }
-            OperationStateGroupTable::new(groups, bytes.get(trailing_start..end)?)
-        },
-    )
+            return None;
+        };
+        at = group.end_offset().checked_sub(base_offset)?;
+        groups.push(group);
+    }
+    if at != end {
+        return None;
+    }
+    OperationStateGroupTable::new(groups, bytes.get(trailing_start..end)?)
 }
 
 fn audit_trail_row_at(
@@ -3509,19 +3034,14 @@ fn audit_trail_row_at(
 /// assigning a second interpretation to a row sequence. Bytes that do not
 /// complete the row grammar are left untyped.
 fn audit_trail_rows(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Result<Option<Vec<AuditTrailRow>>, CodecError> {
+) -> Option<Vec<AuditTrailRow>> {
     if start >= end || end > bytes.len() {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(end - start),
-        "scan NX audit-trail rows",
-    )?;
     let mut rows = Vec::new();
     let mut at = start;
     let mut previous_ordinal = None;
@@ -3532,14 +3052,13 @@ fn audit_trail_rows(
         };
         let ordinal = row.record().ordinal.value();
         if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
-            return Ok(None);
+            return None;
         }
         previous_ordinal = Some(ordinal);
         at = row.local_end();
-        ctx.reserve_vec(&mut rows, 1, "NX audit-trail rows")?;
         rows.push(row);
     }
-    Ok(Some(rows))
+    Some(rows)
 }
 
 fn operation_state_journal_start(bytes: &[u8], product_end: usize) -> Option<usize> {
@@ -3575,29 +3094,24 @@ fn operation_state_journal_start(bytes: &[u8], product_end: usize) -> Option<usi
 }
 
 fn operation_state_journal_groups_before_boundary(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Result<Option<Vec<JournalGroup<usize>>>, CodecError> {
+) -> Option<Vec<JournalGroup<usize>>> {
     if start >= end || end > bytes.len() {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(end - start),
-        "scan NX state-journal groups",
-    )?;
     let mut groups = Vec::new();
     let mut at = start;
     let mut previous_ordinal = None;
     loop {
-        let Some(group) = JournalGroup::read(ctx, bytes, at, end, base_offset)? else {
+        let Some(group) = JournalGroup::read(bytes, at, end, base_offset) else {
             let mut next = at;
             while bytes.get(next..next + 2) == Some(&[0x04, 0x00]) {
                 next += 2;
             }
-            if next == at || JournalGroup::read(ctx, bytes, next, end, base_offset)?.is_none() {
+            if next == at || JournalGroup::read(bytes, next, end, base_offset).is_none() {
                 break;
             }
             at = next;
@@ -3606,18 +3120,15 @@ fn operation_state_journal_groups_before_boundary(
         for row in group.rows().iter() {
             let ordinal = row.ordinal().value();
             if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
-                return Ok(None);
+                return None;
             }
             previous_ordinal = Some(ordinal);
         }
-        let Some(next) = group.end_offset().checked_sub(base_offset) else {
-            return Ok(None);
-        };
+        let next = group.end_offset().checked_sub(base_offset)?;
         at = next;
-        ctx.reserve_vec(&mut groups, 1, "NX state-journal groups")?;
         groups.push(group);
     }
-    Ok((!groups.is_empty()).then_some(groups))
+    (!groups.is_empty()).then_some(groups)
 }
 
 /// Decode a complete bounded state journal.
@@ -3634,10 +3145,7 @@ fn operation_state_journal(
     let mut groups = Vec::new();
     let mut at = start;
     while at < end {
-        let group = crate::test_support::with_decode_context(|ctx| {
-            JournalGroup::read(ctx, bytes, at, end, base_offset)
-        })
-        .ok()??;
+        let group = JournalGroup::read(bytes, at, end, base_offset)?;
         at = group.end_offset().checked_sub(base_offset)?;
         groups.push(group);
     }
@@ -3663,14 +3171,7 @@ fn unique_candidate<T>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
 }
 
 /// Decode every exact common frame in one bounded operation payload.
-pub(crate) fn operation_common_frames(
-    ctx: &DecodeContext<'_>,
-    record: OperationPayload<'_>,
-) -> Result<Vec<CommonFrame<usize>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.payload().len()),
-        "scan NX common frames",
-    )?;
+pub(crate) fn operation_common_frames(record: OperationPayload<'_>) -> Vec<CommonFrame<usize>> {
     let decode = |start: usize, marker| {
         if marker == [1, 1, 1] && record.name() != "DELETE" {
             return None;
@@ -3690,65 +3191,46 @@ pub(crate) fn operation_common_frames(
     let mut frames = Vec::new();
     for start in 0..record.payload().len() {
         if let Some(frame) = decode(start, [1, 3, 2]) {
-            ctx.reserve_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
         if let Some(frame) = decode(start, [1, 1, 1]) {
-            ctx.reserve_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
     }
-    ctx.stable_sort_by(
-        &mut frames,
-        |left, right| left.offset().cmp(&right.offset()),
-        |_| 0,
-        "sort NX common frames",
-    )?;
-    Ok(frames)
+    frames.sort_by_key(CommonFrame::<usize>::offset);
+    frames
 }
 
 /// Decode the unique terminal common-frame suffix and its exact immediate common frame.
 pub(crate) fn operation_terminal_frame(
-    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<OperationTerminalFrame>, CodecError> {
-    let Some(terminator) = record.payload().len().checked_sub(1) else {
-        return Ok(None);
-    };
+) -> Option<OperationTerminalFrame> {
+    let terminator = record.payload().len().checked_sub(1)?;
     if record.payload().get(terminator) != Some(&0) {
-        return Ok(None);
+        return None;
     }
-    let common_frames = operation_common_frames(ctx, record)?;
-    Ok(unique_candidate((0..terminator).rev().take(9).filter_map(
-        |start| {
-            let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
-            (start + suffix.byte_len() == record.payload().len()).then_some(())?;
-            let frame =
-                TerminalFrame::<usize>::new(suffix, record.payload_offset().checked_add(start)?)?;
-            let immediate_common_frame_offset = common_frames
-                .iter()
-                .find(|common| {
-                    common.local_ordinal_offset() == frame.offset()
-                        && common.end_offset() == frame.end_offset()
-                })
-                .map(CommonFrame::<usize>::offset);
-            Some(OperationTerminalFrame {
-                immediate_common_frame_offset,
-                frame,
+    let common_frames = operation_common_frames(record);
+    unique_candidate((0..terminator).rev().take(9).filter_map(|start| {
+        let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
+        (start + suffix.byte_len() == record.payload().len()).then_some(())?;
+        let frame =
+            TerminalFrame::<usize>::new(suffix, record.payload_offset().checked_add(start)?)?;
+        let immediate_common_frame_offset = common_frames
+            .iter()
+            .find(|common| {
+                common.local_ordinal_offset() == frame.offset()
+                    && common.end_offset() == frame.end_offset()
             })
-        },
-    )))
+            .map(CommonFrame::<usize>::offset);
+        Some(OperationTerminalFrame {
+            immediate_common_frame_offset,
+            frame,
+        })
+    }))
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.
-pub(crate) fn data_block_object_references(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<DataBlockObjectReference>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX data-block object references",
-    )?;
+pub(crate) fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReference> {
     let mut references = Vec::new();
     let mut at = 0usize;
     while at + 5 <= bytes.len() {
@@ -3767,33 +3249,26 @@ pub(crate) fn data_block_object_references(
             at += 1;
             continue;
         }
-        ctx.reserve_vec(&mut references, 1, "nx data-block object references")?;
         references.push(DataBlockObjectReference {
             offset: token,
             object_index,
         });
         at = end + 2;
     }
-    Ok(references)
+    references
 }
 
 fn boolean_operations_with_labels(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     base_offset: usize,
     labels: &[OperationLabel<'_>],
-) -> Result<Vec<BooleanOperation>, CodecError> {
+) -> Vec<BooleanOperation> {
     const BODY_HEADER: &[u8] = &[
         0x31, 0x00, 0x00, 0x01, 0x00, 0x14, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03,
         0x00, 0x00, 0xe0, 0x7f, 0xff, 0xff, 0xff, 0x01, 0x01,
     ];
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(labels.len()),
-        "scan NX Boolean operation labels",
-    )?;
     let mut operations = Vec::new();
     for label in labels.iter().copied() {
-        let mut failure = None;
         let operation = (|| {
             let kind = match label.value {
                 "UNITE" => BooleanOperationKind::Unite,
@@ -3806,31 +3281,12 @@ fn boolean_operations_with_labels(
             if bytes.get(label_end..label_end + BODY_HEADER.len()) != Some(BODY_HEADER) {
                 return None;
             }
-            let (targets, next) = match counted_feature_object_indices(
-                ctx,
-                bytes,
-                base_offset,
-                label_end + BODY_HEADER.len(),
-            ) {
-                Ok(Some(values)) => values,
-                Ok(None) => return None,
-                Err(error) => {
-                    failure = Some(error);
-                    return None;
-                }
-            };
+            let (targets, next) =
+                counted_feature_object_indices(bytes, base_offset, label_end + BODY_HEADER.len())?;
             if targets.len() != 1 || bytes.get(next) != Some(&0) {
                 return None;
             }
-            let (tools, end) =
-                match counted_feature_object_indices(ctx, bytes, base_offset, next + 1) {
-                    Ok(Some(values)) => values,
-                    Ok(None) => return None,
-                    Err(error) => {
-                        failure = Some(error);
-                        return None;
-                    }
-                };
+            let (tools, end) = counted_feature_object_indices(bytes, base_offset, next + 1)?;
             if tools.is_empty() || bytes.get(end) != Some(&0) {
                 return None;
             }
@@ -3842,41 +3298,29 @@ fn boolean_operations_with_labels(
                 tools,
             })
         })();
-        if let Some(error) = failure {
-            return Err(error);
-        }
         if let Some(operation) = operation {
-            ctx.reserve_vec(&mut operations, 1, "NX Boolean operations")?;
             operations.push(operation);
         }
     }
-    Ok(operations)
+    operations
 }
 
 fn counted_feature_object_indices(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     base_offset: usize,
     at: usize,
-) -> Result<Option<(Vec<PayloadObjectReference>, usize)>, CodecError> {
+) -> Option<(Vec<PayloadObjectReference>, usize)> {
     if bytes.get(at) != Some(&0x01) {
-        return Ok(None);
+        return None;
     }
-    let Some(count) = bytes
+    let count = bytes
         .get(at + 1)
-        .and_then(|value| usize::from(*value).checked_sub(1))
-    else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "scan NX Boolean reference count",
-    )?;
+        .and_then(|value| usize::from(*value).checked_sub(1))?;
     let values_start = at + 2;
     let mut scan_cursor = values_start;
     for _ in 0..count {
         let Some((Some(_), next)) = feature_object_index(bytes, scan_cursor) else {
-            return Ok(None);
+            return None;
         };
         scan_cursor = next;
     }
@@ -3884,34 +3328,25 @@ fn counted_feature_object_indices(
     let mut cursor = values_start;
     let mut values = Vec::new();
     for _ in 0..count {
-        let Some(value) = bytes
+        let value = bytes
             .get(cursor..)
-            .and_then(ReferenceIndexToken::read_feature)
-        else {
-            return Ok(None);
-        };
+            .and_then(ReferenceIndexToken::read_feature)?;
         let next = cursor + value.raw().len();
-        ctx.reserve_vec(&mut values, 1, "NX Boolean references")?;
         values.push(PayloadObjectReference {
             offset: base_offset + cursor,
             token: value,
         });
         cursor = next;
     }
-    Ok(Some((values, cursor)))
+    Some((values, cursor))
 }
 
 /// Decode count-framed runs of same-section record references.
 pub(crate) fn counted_record_references(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     base_offset: usize,
     record_count: usize,
-) -> Result<Vec<LocatedReference<u16>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX counted record references",
-    )?;
+) -> Vec<LocatedReference<u16>> {
     let mut references = Vec::new();
     let mut at = 0usize;
     while at + 5 <= bytes.len() {
@@ -3928,10 +3363,6 @@ pub(crate) fn counted_record_references(
             at += 1;
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "validate NX counted record references",
-        )?;
         if (0..count).any(|index| {
             let token = at + 2 + index * 3;
             View::u16_be_at(bytes, token + 1).is_none_or(|value| usize::from(value) >= record_count)
@@ -3944,7 +3375,6 @@ pub(crate) fn counted_record_references(
             let Some(value) = View::u16_be_at(bytes, token + 1) else {
                 break;
             };
-            ctx.reserve_vec(&mut references, 1, "NX counted record references")?;
             references.push(LocatedReference {
                 offset: base_offset + token,
                 value,
@@ -3952,27 +3382,18 @@ pub(crate) fn counted_record_references(
         }
         at = end;
     }
-    Ok(references)
+    references
 }
 
 /// Decode self-identifying persistent handles and exact adjacent handle pairs.
-fn record_references(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    base_offset: usize,
-) -> Result<Vec<LocatedReference<DirectReference>>, CodecError> {
-    let parsed = references(ctx, bytes, base_offset)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(parsed.len()),
-        "scan NX paired record references",
-    )?;
+fn record_references(bytes: &[u8], base_offset: usize) -> Vec<LocatedReference<DirectReference>> {
+    let parsed = references(bytes, base_offset);
     let mut out = Vec::new();
     for reference in parsed
         .iter()
         .copied()
         .filter(|reference| matches!(reference.value, DirectReference::PersistentHandle(_)))
     {
-        ctx.reserve_vec(&mut out, 1, "NX record references")?;
         out.push(reference);
     }
     for (persistent, tagged) in parsed.iter().zip(parsed.iter().skip(1)) {
@@ -3984,35 +3405,23 @@ fn record_references(
             && matches!(tagged.value, DirectReference::Tagged28(_))
             && adjacent
         {
-            ctx.reserve_vec(&mut out, 1, "NX record references")?;
             out.push(*tagged);
         }
     }
-    ctx.stable_sort_by(
-        &mut out,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "sort NX direct references",
-    )?;
-    Ok(out)
+    out.sort_by_key(|item| item.offset);
+    out
 }
 
 /// Decode tagged references wholly contained in `bytes`.
 pub(crate) fn references(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     base_offset: usize,
-) -> Result<Vec<LocatedReference<DirectReference>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX tagged references",
-    )?;
+) -> Vec<LocatedReference<DirectReference>> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
         if bytes[at] == 0xe0 {
             if let Some(value) = View::u32_be_at(bytes, at + 1) {
-                ctx.reserve_vec(&mut out, 1, "NX tagged references")?;
                 out.push(LocatedReference {
                     offset: base_offset + at,
                     value: DirectReference::PersistentHandle(value),
@@ -4022,7 +3431,6 @@ pub(crate) fn references(
             }
         } else if bytes[at] & 0xf0 == 0xc0 {
             if let Some(value) = View::u32_be_at(bytes, at) {
-                ctx.reserve_vec(&mut out, 1, "NX tagged references")?;
                 out.push(LocatedReference {
                     offset: base_offset + at,
                     value: DirectReference::Tagged28(Tagged28::from_word(value)),
@@ -4033,20 +3441,13 @@ pub(crate) fn references(
         }
         at += 1;
     }
-    Ok(out)
+    out
 }
 
 /// Decode `66 32 03` printable-string values wholly contained in `bytes`.
-pub(crate) fn string_values<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-    base_offset: usize,
-) -> Result<Vec<StringValue<'a>>, CodecError> {
+pub(crate) fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
     const MARKER: &[u8] = &[0x66, 0x32, 0x03];
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX printable strings",
-    )?;
+
     let mut values = Vec::new();
     for (offset, _) in bytes
         .windows(MARKER.len())
@@ -4067,25 +3468,17 @@ pub(crate) fn string_values<'a>(
             })
         })();
         if let Some(value) = value {
-            ctx.reserve_vec(&mut values, 1, "NX printable strings")?;
             values.push(value);
         }
     }
-    Ok(values)
+    values
 }
 
 /// Decode complete `03 26, canonical UUID text, 00` values in `bytes`.
-pub(crate) fn uuid_string_values<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-    base_offset: usize,
-) -> Result<Vec<UuidStringValue<'a>>, CodecError> {
+pub(crate) fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringValue<'_>> {
     const MARKER: &[u8] = &[0x03, 0x26];
     const TEXT_LEN: usize = 36;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX UUID strings",
-    )?;
+
     let mut values = Vec::new();
     for (offset, _) in bytes
         .windows(MARKER.len())
@@ -4101,10 +3494,6 @@ pub(crate) fn uuid_string_values<'a>(
         let Some(raw) = bytes.get(start..end) else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(TEXT_LEN),
-            "parse NX UUID string",
-        )?;
         let Ok(text) = std::str::from_utf8(raw) else {
             continue;
         };
@@ -4117,13 +3506,12 @@ pub(crate) fn uuid_string_values<'a>(
         let Some(absolute_offset) = base_offset.checked_add(offset) else {
             continue;
         };
-        ctx.reserve_vec(&mut values, 1, "nx UUID strings")?;
         values.push(UuidStringValue {
             offset: absolute_offset,
             value,
         });
     }
-    Ok(values)
+    values
 }
 
 #[cfg(test)]
@@ -4132,116 +3520,45 @@ mod uuid_string_value_tests {
 
     #[test]
     fn decodes_only_complete_canonical_uuid_frames() {
-        crate::test_support::with_decode_context(|ctx| {
-            let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
-            let values = uuid_string_values(ctx, &bytes, 100).unwrap();
-            assert_eq!(values.len(), 1);
-            assert_eq!(values[0].offset, 106);
-            assert_eq!(
-                values[0].value.as_str(),
-                "01234567-89ab-cdef-0123-456789abcdef"
-            );
-
-            bytes[6 + 2 + 9] = b'A';
-            assert!(uuid_string_values(ctx, &bytes, 0).unwrap().is_empty());
-            assert!(crate::canonical_uuid::CanonicalUuid::new(
-                "01234567-89ab-cdef-0123-456789abcde"
-            )
-            .is_err());
-            assert!(crate::canonical_uuid::CanonicalUuid::new(
-                "01234567-89ab-cdef-0123_456789abcdef"
-            )
-            .is_err());
-            assert!(crate::canonical_uuid::CanonicalUuid::new(
-                "01234567-89ab-cdef-0123-456789abcdeg"
-            )
-            .is_err());
-        });
-    }
-
-    #[test]
-    fn uuid_frames_refuse_collection_limit() {
-        let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-
-        crate::test_support::with_decode_context_over(
-            bytes,
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
-            },
+        let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
+        let values = uuid_string_values(&bytes, 100);
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].offset, 106);
+        assert_eq!(
+            values[0].value.as_str(),
+            "01234567-89ab-cdef-0123-456789abcdef"
         );
-    }
 
-    #[test]
-    fn uuid_frames_refuse_retained_limit() {
-        let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-
-        crate::test_support::with_decode_context_over(
-            bytes,
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-                );
-            },
+        bytes[6 + 2 + 9] = b'A';
+        assert!(uuid_string_values(&bytes, 0).is_empty());
+        assert!(
+            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcde")
+                .is_err()
         );
-    }
-
-    #[test]
-    fn uuid_frames_refuse_work_limit() {
-        let bytes = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-
-        crate::test_support::with_decode_context_over(
-            bytes,
-            |policy| {
-                policy.limits.max_work_units = 0;
-            },
-            |ctx| {
-                let error = uuid_string_values(ctx, bytes, 0).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-                );
-            },
+        assert!(
+            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123_456789abcdef")
+                .is_err()
+        );
+        assert!(
+            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcdeg")
+                .is_err()
         );
     }
 
     #[test]
     fn rejects_truncated_or_unterminated_uuid_frames() {
-        crate::test_support::with_decode_context(|ctx| {
-            let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
-            assert!(uuid_string_values(ctx, &frame[..frame.len() - 1], 0)
-                .unwrap()
-                .is_empty());
-            let mut unterminated = frame.to_vec();
-            *unterminated.last_mut().expect("nonempty frame") = 1;
-            assert!(uuid_string_values(ctx, &unterminated, 0)
-                .unwrap()
-                .is_empty());
-        });
+        let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
+        assert!(uuid_string_values(&frame[..frame.len() - 1], 0).is_empty());
+        let mut unterminated = frame.to_vec();
+        *unterminated.last_mut().expect("nonempty frame") = 1;
+        assert!(uuid_string_values(&unterminated, 0).is_empty());
     }
 }
 
 /// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.
-pub(crate) fn surface_payload_strings<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Vec<SurfacePayloadString<'a>>, CodecError> {
+pub(crate) fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
     const MARKER: &[u8] = &[0x66, 0x1b, 0x03];
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX surface payload strings",
-    )?;
+
     let mut strings = Vec::new();
     for (offset, _) in bytes
         .windows(MARKER.len())
@@ -4260,10 +3577,6 @@ pub(crate) fn surface_payload_strings<'a>(
         let Some(raw) = bytes.get(start..end) else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(raw.len()),
-            "parse NX surface payload string",
-        )?;
         let Ok(text) = std::str::from_utf8(raw) else {
             continue;
         };
@@ -4274,10 +3587,9 @@ pub(crate) fn surface_payload_strings<'a>(
             continue;
         }
         let value = SurfacePayloadString { offset, value };
-        ctx.reserve_vec(&mut strings, 1, "nx surface payload strings")?;
         strings.push(value);
     }
-    Ok(strings)
+    strings
 }
 
 /// Decode every strictly length-framed numeric expression in an OM payload.
@@ -4286,19 +3598,12 @@ pub(crate) fn surface_payload_strings<'a>(
 /// records are self-framed as `handle, 04, length, text, 00`, so expression
 /// decoding does not depend on an object-id table having the same cardinality
 /// as an external entity-index array.
-pub(crate) fn numeric_expressions<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Vec<NumericExpression<'a>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX numeric expressions",
-    )?;
+pub(crate) fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
     if !bytes
         .windows(b"hostglobalvariables".len())
         .any(|window| window == b"hostglobalvariables")
     {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let mut expressions = Vec::new();
     for (offset, _) in bytes
@@ -4312,21 +3617,13 @@ pub(crate) fn numeric_expressions<'a>(
         let Some(expression) = numeric_expression_at(&bytes[start..], start, None) else {
             continue;
         };
-        ctx.reserve_vec(&mut expressions, 1, "nx numeric expressions")?;
         expressions.push(expression);
     }
-    Ok(expressions)
+    expressions
 }
 
 /// Locate independently size-framed OM sections and their type registries.
-pub(crate) fn sections<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Vec<Section<'a>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "nx framed OM section scan",
-    )?;
+pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 16 <= bytes.len() {
@@ -4360,7 +3657,7 @@ pub(crate) fn sections<'a>(
             at = offset + 4;
             continue;
         }
-        let type_registry = registry::type_registry(ctx, bytes, offset + 16, end)?;
+        let type_registry = registry::type_registry(bytes, offset + 16, end);
         let types = type_registry.definitions;
         let field_start = type_registry.field_start;
         let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end)
@@ -4370,24 +3667,20 @@ pub(crate) fn sections<'a>(
         let (fields, record_area_offset) =
             if let Some((record_area_offset, pointer_offset)) = record_area_pointer {
                 (
-                    registry::all_field_definitions(ctx, bytes, field_start, pointer_offset)?,
+                    registry::all_field_definitions(bytes, field_start, pointer_offset),
                     Some(record_area_offset),
                 )
             } else {
-                (
-                    registry::field_definitions(ctx, bytes, field_start, end)?,
-                    None,
-                )
+                (registry::field_definitions(bytes, field_start, end)?, None)
             };
         let record_area = record_area_offset.map(|start| RecordArea {
             offset: start,
             bytes: &bytes[start..end],
         });
         let cached_operation_labels = match record_area {
-            Some(area) => operation_labels(ctx, area.bytes, area.offset)?,
+            Some(area) => operation_labels(area.bytes, area.offset),
             None => Vec::new(),
         };
-        ctx.reserve_vec(&mut out, 1, "nx framed OM sections")?;
         out.push(Section {
             offset,
             byte_len: end - offset,
@@ -4488,7 +3781,27 @@ impl<'a> IndexedCandidate<'a> {
             IndexedCandidateKind::OffsetOnly(index) => index.source(),
         }
     }
+
+    fn base(&self) -> usize {
+        match &self.kind {
+            IndexedCandidateKind::Fixed(index) => index.base(),
+            IndexedCandidateKind::OffsetOnly(_) => 0,
+        }
+    }
+
+    /// Bytes the type and field registry scans read before the entity index;
+    /// an entity index before the base leaves no registry to scan.
+    fn registry_span(&self) -> Option<usize> {
+        self.start().checked_sub(self.base())
+    }
 }
+
+/// Registry bytes [`indexed_sections`] may scan while materializing the
+/// candidates of one payload. Every candidate scans the bytes between its base
+/// and its entity index, and candidates of one payload share those bytes, so
+/// the total is quadratic in the payload without a bound. The sections NX
+/// writes scan each payload byte about once.
+pub(crate) const MAX_INDEXED_SECTION_REGISTRY_WORK: usize = 1 << 28;
 
 fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {
     let suffix = bytes.get(offset..)?;
@@ -4533,20 +3846,14 @@ fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, uppe
 /// admitted candidates sufficient to recognize every nested candidate. This
 /// keeps the admission pass linear after sorting and, more importantly, keeps
 /// rejected candidates as layout metadata rather than allocated records.
-fn select_outer_indexed_candidates<'a>(
-    ctx: &DecodeContext<'_>,
-    mut candidates: Vec<IndexedCandidate<'a>>,
-) -> Result<Vec<IndexedCandidate<'a>>, CodecError> {
-    ctx.stable_sort_by(
-        &mut candidates,
-        |left, right| {
-            left.start()
-                .cmp(&right.start())
-                .then_with(|| right.source().len().cmp(&left.source().len()))
-        },
-        |_| 0,
-        "nx indexed OM candidates outer sort",
-    )?;
+fn select_outer_indexed_candidates(
+    mut candidates: Vec<IndexedCandidate<'_>>,
+) -> Vec<IndexedCandidate<'_>> {
+    candidates.sort_by(|left, right| {
+        left.start()
+            .cmp(&right.start())
+            .then_with(|| right.source().len().cmp(&left.source().len()))
+    });
     let mut furthest_end = 0;
     candidates.retain(|candidate| {
         if candidate.source().len() <= furthest_end {
@@ -4555,32 +3862,17 @@ fn select_outer_indexed_candidates<'a>(
         furthest_end = candidate.source().len();
         true
     });
-    ctx.stable_sort_by(
-        &mut candidates,
-        |left, right| left.discovery_order.cmp(&right.discovery_order),
-        |_| 0,
-        "nx indexed OM candidates discovery sort",
-    )?;
-    Ok(candidates)
+    candidates.sort_by_key(|candidate| candidate.discovery_order);
+    candidates
 }
 
-fn materialize_indexed_candidate<'a>(
-    ctx: &DecodeContext<'_>,
-    candidate: IndexedCandidate<'a>,
-) -> Result<IndexedSection<'a>, CodecError> {
+fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSection<'_> {
     let bytes = candidate.source();
     let entity_index_offset = candidate.start();
-    let base = match &candidate.kind {
-        IndexedCandidateKind::Fixed(index) => index.base(),
-        IndexedCandidateKind::OffsetOnly(_) => 0,
-    };
-    let type_registry = registry::type_registry(ctx, bytes, base, entity_index_offset)?;
-    let fields = registry::all_field_definitions(
-        ctx,
-        bytes,
-        type_registry.field_start,
-        entity_index_offset,
-    )?;
+    let base = candidate.base();
+    let type_registry = registry::type_registry(bytes, base, entity_index_offset);
+    let fields =
+        registry::all_field_definitions(bytes, type_registry.field_start, entity_index_offset);
     let (object_id_table_offset, store) = match candidate.kind {
         IndexedCandidateKind::Fixed(index) => (
             index.object_id_table_offset(),
@@ -4588,7 +3880,6 @@ fn materialize_indexed_candidate<'a>(
                 records: {
                     let mut records = Vec::new();
                     for record in index.records() {
-                        ctx.reserve_vec(&mut records, 1, "nx fixed OM records")?;
                         records.push(record);
                     }
                     records.into()
@@ -4605,7 +3896,6 @@ fn materialize_indexed_candidate<'a>(
                     records: {
                         let mut records = Vec::new();
                         for record in index.records() {
-                            ctx.reserve_vec(&mut records, 1, "nx offset OM records")?;
                             records.push(record);
                         }
                         records.into()
@@ -4614,14 +3904,14 @@ fn materialize_indexed_candidate<'a>(
             )
         }
     };
-    Ok(IndexedSection {
+    IndexedSection {
         base,
         entity_index_offset,
         object_id_table_offset,
         types: type_registry.definitions.into(),
         fields: fields.into(),
         store,
-    })
+    }
 }
 
 /// Locate validated NX OM entity-index/object-id-table pairs.
@@ -4629,31 +3919,21 @@ fn materialize_indexed_candidate<'a>(
 /// A candidate is accepted only when the arrays are adjacent, the index is
 /// monotone, its first offset is zero, its second offset self-anchors the first
 /// entity exactly at the end of the object-id table, and that entity carries the
-/// NX root marker.
+/// NX root marker. Each candidate charges its registry span to `budget`; once
+/// the budget is exhausted the remaining candidates are skipped.
 pub(crate) fn indexed_sections<'a>(
-    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
+    budget: &WorkBudget<'_>,
 ) -> Result<Vec<IndexedSection<'a>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "nx indexed OM section scan",
-    )?;
-    let mut temporary = ctx.reserve_scoped(0, "nx indexed OM candidate scan")?;
     let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
     let mut product_record_ranges = Vec::new();
     for offset in 0..bytes.len() {
         if let Some(range) = product_record_range_at(bytes, offset) {
-            ctx.reserve_scoped_vec(
-                &mut temporary,
-                &mut product_record_ranges,
-                1,
-                "nx product record ranges",
-            )?;
             product_record_ranges.push(range);
         }
     }
-    let descending_u32_edges = DescendingU32Edges::new(ctx, &mut temporary, bytes)?;
+    let descending_u32_edges = DescendingU32Edges::new(bytes);
     for table in bytes
         .len()
         .checked_sub(4)
@@ -4697,23 +3977,9 @@ pub(crate) fn indexed_sections<'a>(
         else {
             continue;
         };
-        if seen_record_starts.contains(&table_end) {
+        if !seen_record_starts.insert(table_end) {
             continue;
         }
-        temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            usize,
-        >()))?;
-        ctx.insert_btree_set(
-            &mut seen_record_starts,
-            table_end,
-            "nx OM seen record starts",
-        )?;
-        ctx.reserve_scoped_vec(
-            &mut temporary,
-            &mut candidates,
-            1,
-            "nx indexed OM candidates",
-        )?;
         candidates.push(IndexedCandidate {
             discovery_order: candidates.len(),
             kind: IndexedCandidateKind::Fixed(index),
@@ -4791,29 +4057,23 @@ pub(crate) fn indexed_sections<'a>(
         ) else {
             continue;
         };
-        if seen_record_starts.contains(&second) {
+        if !seen_record_starts.insert(second) {
             continue;
         }
-        temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            usize,
-        >()))?;
-        ctx.insert_btree_set(&mut seen_record_starts, second, "nx OM seen record starts")?;
-        ctx.reserve_scoped_vec(
-            &mut temporary,
-            &mut candidates,
-            1,
-            "nx indexed OM candidates",
-        )?;
         candidates.push(IndexedCandidate {
             discovery_order: candidates.len(),
             kind: IndexedCandidateKind::OffsetOnly(index),
         });
     }
     let mut sections = Vec::new();
-    for candidate in select_outer_indexed_candidates(ctx, candidates)? {
-        let section = materialize_indexed_candidate(ctx, candidate)?;
-        ctx.reserve_vec(&mut sections, 1, "nx indexed OM sections")?;
-        sections.push(section);
+    for candidate in select_outer_indexed_candidates(candidates) {
+        if candidate
+            .registry_span()
+            .is_some_and(|span| !budget.charge_by(span))
+        {
+            break;
+        }
+        sections.push(materialize_indexed_candidate(candidate));
     }
     Ok(sections)
 }
@@ -4837,23 +4097,16 @@ pub(crate) fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVer
 /// Decode the zero-prefixed offset-store control form as ordered 24-bit values.
 ///
 /// Each word is serialized `00, value:u24 LE`. The complete form is atomic.
-fn offset_store_control_values(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Option<NonEmpty<ControlWord24>>, CodecError> {
+fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord24>> {
     if !bytes.len().is_multiple_of(4) {
-        return Ok(None);
+        return None;
     }
-    let Some(values) = NonEmpty::new_charged(
-        ctx,
+    NonEmpty::new(
         bytes
             .chunks_exact(4)
             .map(|word| (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]))),
     )?
-    else {
-        return Ok(None);
-    };
-    values.transpose_charged(ctx)
+    .transpose()
 }
 
 /// Decode the distinct leading class-registry identities in an offset-store
@@ -4877,17 +4130,10 @@ pub(crate) fn offset_store_control_class_ordinals(
         (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]).value())
     };
     let count = bytes.len() / 4;
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
-    ctx.charge_work(count_u64, "nx offset-store control validation")?;
     if (0..count).any(|index| value_at(index).is_none()) {
         return Ok(None);
     }
-    let scratch_bytes = count_u64
-        .checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("nx offset-store suffix minima", 0, count_u64))?;
-    let _suffix_reservation = ctx.reserve_scoped(scratch_bytes, "nx offset-store suffix minima")?;
     let mut suffix_minima = ctx.alloc_filled(count, u32::MAX, "nx offset-store suffix minima")?;
-    ctx.charge_work(count_u64, "nx offset-store suffix scan")?;
     for index in (0..count - 1).rev() {
         let Some(next) = value_at(index + 1) else {
             return Ok(None);
@@ -4897,7 +4143,6 @@ pub(crate) fn offset_store_control_class_ordinals(
     let mut identities = BTreeSet::new();
     let mut maximum_identity = 0;
     let mut boundary = None;
-    ctx.charge_work(count_u64, "nx offset-store identity scan")?;
     for (index, minimum) in suffix_minima.iter().take(count - 1).enumerate() {
         let Some(identity) = value_at(index) else {
             return Ok(None);
@@ -4905,11 +4150,7 @@ pub(crate) fn offset_store_control_class_ordinals(
         if identities.contains(&identity) {
             break;
         }
-        ctx.insert_btree_set(
-            &mut identities,
-            identity,
-            "nx offset-store class identities",
-        )?;
+        identities.insert(identity);
         maximum_identity = maximum_identity.max(identity);
         if maximum_identity < *minimum && boundary.replace(index + 1).is_some() {
             return Ok(None);
@@ -4918,7 +4159,7 @@ pub(crate) fn offset_store_control_class_ordinals(
     let Some(boundary) = boundary else {
         return Ok(None);
     };
-    let mut ordinals = ctx.collection_vec(boundary, "nx offset-store class ordinals")?;
+    let mut ordinals = Vec::new();
     for index in 0..boundary {
         let Some(identity) = value_at(index) else {
             return Ok(None);
@@ -4946,11 +4187,10 @@ fn joined_control_u32_le(control: &[u8], first_record: &[u8], offset: usize) -> 
 }
 
 fn offset_store_product_anchored_form(
-    ctx: &DecodeContext<'_>,
     control: &[u8],
     first_record: &[u8],
-) -> Result<Option<OffsetStoreControlForm>, CodecError> {
-    let Some((product_offset, leading_width, leading_value)) = (|| {
+) -> Option<OffsetStoreControlForm> {
+    let (product_offset, leading_width, leading_value) = (|| {
         let product_offset = unique_candidate(
             (0..control.len())
                 .filter(|offset| {
@@ -4979,24 +4219,16 @@ fn offset_store_product_anchored_form(
             )?)
         };
         Some((product_offset, leading_width, leading_value))
-    })() else {
-        return Ok(None);
-    };
-    let Some(values) = NonEmpty::new_charged(
-        ctx,
+    })()?;
+    let values = NonEmpty::new(
         (0..(product_offset - leading_width) / 4)
             .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4)),
     )?
-    else {
-        return Ok(None);
-    };
-    let Some(values) = values.transpose_charged(ctx)? else {
-        return Ok(None);
-    };
-    Ok(Some(OffsetStoreControlForm::ProductAnchored {
+    .transpose()?;
+    Some(OffsetStoreControlForm::ProductAnchored {
         leading_value,
         values,
-    }))
+    })
 }
 
 /// One complete admitted offset-only store control-block form.
@@ -5023,17 +4255,15 @@ pub(crate) enum OffsetStoreControlForm {
 /// control block and the first column block. Exactly one admitted grammar must
 /// accept the complete control envelope.
 pub(crate) fn offset_store_control_form(
-    ctx: &DecodeContext<'_>,
     control: &[u8],
     first_record: Option<&[u8]>,
-) -> Result<Option<OffsetStoreControlForm>, CodecError> {
-    let zero = offset_store_control_values(ctx, control)?;
-    let product =
-        offset_store_product_anchored_form(ctx, control, first_record.unwrap_or_default())?;
+) -> Option<OffsetStoreControlForm> {
+    let zero = offset_store_control_values(control);
+    let product = offset_store_product_anchored_form(control, first_record.unwrap_or_default());
     match (zero, product) {
-        (Some(values), None) => Ok(Some(OffsetStoreControlForm::ZeroPrefixed { values })),
-        (_, Some(form)) => Ok(Some(form)),
-        (None, None) => Ok(None),
+        (Some(values), None) => Some(OffsetStoreControlForm::ZeroPrefixed { values }),
+        (_, Some(form)) => Some(form),
+        (None, None) => None,
     }
 }
 
@@ -5087,10 +4317,7 @@ fn numeric_expression_comment_is_valid(comment: &str) -> bool {
 
 /// Evaluate the context-free arithmetic subset of NX numeric formulas.
 /// Names and function calls fail; they need the parameter graph.
-pub(crate) fn evaluate_constant_expression(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-) -> Result<Option<FiniteReal>, CodecError> {
+pub(crate) fn evaluate_constant_expression(text: &str) -> Option<cadmpeg_ir::scalar::FiniteReal> {
     // This is the expression grammar's explicit operator stack. Do not turn
     // nested parentheses or unary signs back into recursive descent: formula
     // text is untrusted input, and a valid bounded record must not consume the
@@ -5119,70 +4346,15 @@ pub(crate) fn evaluate_constant_expression(
         }
     }
 
-    struct Parser<'a, 'b, 'c> {
+    struct Parser<'a> {
         bytes: &'a [u8],
-        ctx: &'b DecodeContext<'c>,
-        failure: Option<CodecError>,
         at: usize,
         values: Vec<FiniteReal>,
-        values_reservation: cadmpeg_core::decode::ScopedReservation<'b>,
-        charged_values_len: usize,
         operators: Vec<Operator>,
-        operators_reservation: cadmpeg_core::decode::ScopedReservation<'b>,
-        charged_operators_len: usize,
         expect_operand: bool,
     }
 
-    impl Parser<'_, '_, '_> {
-        fn push_value(&mut self, value: FiniteReal) -> Option<()> {
-            let charged = (|| -> Result<(), CodecError> {
-                if self.values.len() >= self.charged_values_len {
-                    self.values_reservation
-                        .grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FiniteReal,
-                        >(
-                        )))?;
-                    self.charged_values_len =
-                        self.charged_values_len.checked_add(1).ok_or_else(|| {
-                            self.ctx
-                                .refuse_codec_limit("NX expression value stack", 0, u64::MAX)
-                        })?;
-                }
-                self.ctx
-                    .reserve_vec(&mut self.values, 1, "NX expression value stack")
-            })();
-            if let Err(error) = charged {
-                self.failure = Some(error);
-                return None;
-            }
-            self.values.push(value);
-            Some(())
-        }
-
-        fn push_operator(&mut self, operator: Operator) -> Option<()> {
-            let charged = (|| -> Result<(), CodecError> {
-                if self.operators.len() >= self.charged_operators_len {
-                    self.operators_reservation
-                        .grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            Operator,
-                        >(
-                        )))?;
-                    self.charged_operators_len =
-                        self.charged_operators_len.checked_add(1).ok_or_else(|| {
-                            self.ctx
-                                .refuse_codec_limit("NX expression operator stack", 0, u64::MAX)
-                        })?;
-                }
-                self.ctx
-                    .reserve_vec(&mut self.operators, 1, "NX expression operator stack")
-            })();
-            if let Err(error) = charged {
-                self.failure = Some(error);
-                return None;
-            }
-            self.operators.push(operator);
-            Some(())
-        }
+    impl Parser<'_> {
         fn spaces(&mut self) {
             while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
                 self.at += 1;
@@ -5253,7 +4425,7 @@ pub(crate) fn evaluate_constant_expression(
                     FiniteReal::new(raw)?
                 }
             };
-            self.push_value(value)?;
+            self.values.push(value);
             Some(())
         }
 
@@ -5267,7 +4439,7 @@ pub(crate) fn evaluate_constant_expression(
             }) {
                 self.apply_top()?;
             }
-            self.push_operator(incoming)?;
+            self.operators.push(incoming);
             self.expect_operand = true;
             Some(())
         }
@@ -5293,16 +4465,16 @@ pub(crate) fn evaluate_constant_expression(
                 if self.expect_operand {
                     match byte {
                         b'+' | b'-' => {
-                            self.push_operator(Operator::Unary(byte))?;
+                            self.operators.push(Operator::Unary(byte));
                             self.at += 1;
                         }
                         b'(' => {
-                            self.push_operator(Operator::OpenParen)?;
+                            self.operators.push(Operator::OpenParen);
                             self.at += 1;
                         }
                         _ => {
                             let value = self.number()?;
-                            self.push_value(value)?;
+                            self.values.push(value);
                             self.expect_operand = false;
                         }
                     }
@@ -5331,36 +4503,16 @@ pub(crate) fn evaluate_constant_expression(
             }
             (self.values.len() == 1).then(|| self.values[0])
         }
-
-        fn parse_with_refusal(mut self) -> Result<Option<FiniteReal>, CodecError> {
-            let value = self.parse();
-            if let Some(error) = self.failure {
-                return Err(error);
-            }
-            Ok(value)
-        }
     }
 
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(text.len()),
-        "NX numeric expression scan",
-    )?;
-    let values_reservation = ctx.reserve_scoped(0, "NX expression value stack")?;
-    let operators_reservation = ctx.reserve_scoped(0, "NX expression operator stack")?;
     Parser {
         bytes: text.as_bytes(),
-        ctx,
-        failure: None,
         at: 0,
         values: Vec::new(),
-        values_reservation,
-        charged_values_len: 0,
         operators: Vec::new(),
-        operators_reservation,
-        charged_operators_len: 0,
         expect_operand: true,
     }
-    .parse_with_refusal()
+    .parse()
 }
 
 #[cfg(test)]

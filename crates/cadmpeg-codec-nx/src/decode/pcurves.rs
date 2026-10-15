@@ -100,11 +100,7 @@ fn vertex_point_positions(
     let mut point_positions = BTreeMap::new();
     for point in &ir.model.points {
         let point_key = &point.id;
-        ctx.admit_btree_entry(
-            &point_positions,
-            &point_key,
-            "nx pcurve point position index",
-        )?;
+
         point_positions
             .entry(point_key)
             .or_insert(point.position().get());
@@ -114,14 +110,12 @@ fn vertex_point_positions(
         let Some(position) = point_positions.get(&vertex.point).copied() else {
             continue;
         };
-        ctx.insert_btree_map(
-            &mut vertices,
+        vertices.insert(
             vertex
                 .id
                 .try_clone_for_decode(ctx, "nx pcurve vertex identity")?,
             position,
-            "nx pcurve vertex position index",
-        )?;
+        );
     }
     Ok(vertices)
 }
@@ -136,9 +130,9 @@ fn edge_indices_by_curve(
             continue;
         };
         let curve_key = curve.try_clone_for_decode(ctx, "nx pcurve edge curve identity")?;
-        ctx.admit_btree_entry(&indices, &curve_key, "nx pcurve edge curve index")?;
+
         let group = indices.entry(curve_key).or_insert_with(Vec::new);
-        ctx.reserve_vec(group, 1, "nx pcurve edge indices")?;
+
         group.push(index);
     }
     Ok(indices)
@@ -173,38 +167,32 @@ impl IntersectionIncidenceIndex {
         starts: IntersectionEntityStarts,
     ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
         for loop_ in ir.model.loops.iter().skip(starts.loops) {
-            ctx.insert_btree_map(
-                &mut self.loop_faces,
+            self.loop_faces.insert(
                 loop_
                     .id
                     .try_clone_for_decode(ctx, "nx incidence loop identity")?,
                 loop_
                     .face
                     .try_clone_for_decode(ctx, "nx incidence face identity")?,
-                "nx incidence loop faces",
-            )?;
+            );
         }
         for face in ir.model.faces.iter().skip(starts.faces) {
-            ctx.insert_btree_map(
-                &mut self.face_surfaces,
+            self.face_surfaces.insert(
                 face.id
                     .try_clone_for_decode(ctx, "nx incidence face identity")?,
                 face.surface
                     .try_clone_for_decode(ctx, "nx incidence surface identity")?,
-                "nx incidence face surfaces",
-            )?;
+            );
         }
         for edge in ir.model.edges.iter().skip(starts.edges) {
             let Some(curve) = edge.curve() else {
                 continue;
             };
-            ctx.insert_btree_map(
-                &mut self.edge_curves,
+            self.edge_curves.insert(
                 edge.id
                     .try_clone_for_decode(ctx, "nx incidence edge identity")?,
                 curve.try_clone_for_decode(ctx, "nx incidence curve identity")?,
-                "nx incidence edge curves",
-            )?;
+            );
         }
         self.index_new_pcurves(ctx, ir, starts.pcurves)?;
 
@@ -220,19 +208,11 @@ impl IntersectionIncidenceIndex {
                 continue;
             };
             let owner_key = owner.try_clone_for_decode(ctx, "nx incidence owner identity")?;
-            ctx.admit_btree_entry(
-                &self.procedural_by_curve,
-                &owner_key,
-                "nx incidence procedural owners",
-            )?;
+
             let indices = self.procedural_by_curve.entry(owner_key).or_default();
-            ctx.reserve_vec(indices, 1, "nx incidence procedural indices")?;
+
             indices.push(index);
-            ctx.insert_btree_set(
-                &mut affected_curves,
-                owner.try_clone_for_decode(ctx, "nx affected curve identity")?,
-                "nx affected incidence curves",
-            )?;
+            affected_curves.insert(owner.try_clone_for_decode(ctx, "nx affected curve identity")?);
         }
         for coedge in ir.model.coedges.iter().skip(starts.coedges) {
             let Some(curve) = self.edge_curves.get(&coedge.edge) else {
@@ -246,29 +226,19 @@ impl IntersectionIncidenceIndex {
                 continue;
             };
             let curve_key = curve.try_clone_for_decode(ctx, "nx incident curve identity")?;
-            ctx.admit_btree_entry(
-                &self.incident_surfaces,
-                &curve_key,
-                "nx incident surface owners",
-            )?;
+
             let surfaces = self.incident_surfaces.entry(curve_key).or_default();
             if !surfaces.contains(surface) {
-                ctx.reserve_vec(surfaces, 1, "nx incident surfaces")?;
                 surfaces.push(surface.try_clone_for_decode(ctx, "nx incident surface identity")?);
             }
             let pair_key = (
                 curve.try_clone_for_decode(ctx, "nx pcurve curve identity")?,
                 surface.try_clone_for_decode(ctx, "nx pcurve surface identity")?,
             );
-            ctx.admit_btree_entry(
-                &self.incident_pcurves,
-                &pair_key,
-                "nx incident pcurve owners",
-            )?;
+
             let pcurves = self.incident_pcurves.entry(pair_key).or_default();
             for pcurve in &coedge.pcurves {
                 if !pcurves.contains(&pcurve.pcurve) {
-                    ctx.reserve_vec(pcurves, 1, "nx incident pcurves")?;
                     pcurves.push(
                         pcurve
                             .pcurve
@@ -276,11 +246,7 @@ impl IntersectionIncidenceIndex {
                     );
                 }
             }
-            ctx.insert_btree_set(
-                &mut affected_curves,
-                curve.try_clone_for_decode(ctx, "nx affected curve identity")?,
-                "nx affected incidence curves",
-            )?;
+            affected_curves.insert(curve.try_clone_for_decode(ctx, "nx affected curve identity")?);
         }
         Ok(affected_curves)
     }
@@ -295,11 +261,7 @@ impl IntersectionIncidenceIndex {
             let pcurve_key = pcurve
                 .id
                 .try_clone_for_decode(ctx, "nx incidence pcurve identity")?;
-            ctx.admit_btree_entry(
-                &self.pcurves_by_id,
-                &pcurve_key,
-                "nx incidence pcurve index",
-            )?;
+
             self.pcurves_by_id.entry(pcurve_key).or_insert(index);
         }
         Ok(())
@@ -486,10 +448,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     annotations: &mut AnnotationBuilder,
 ) {
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
         ctx,
         ir,
@@ -530,33 +489,18 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut loop_faces = BTreeMap::new();
     for loop_ in &ir.model.loops {
-        ctx.insert_btree_map(
-            &mut loop_faces,
-            &loop_.id,
-            &loop_.face,
-            "nx serialized branch loop faces",
-        )?;
+        loop_faces.insert(&loop_.id, &loop_.face);
     }
     let mut face_surfaces = BTreeMap::new();
     for face in &ir.model.faces {
-        ctx.insert_btree_map(
-            &mut face_surfaces,
-            &face.id,
-            &face.surface,
-            "nx serialized branch face surfaces",
-        )?;
+        face_surfaces.insert(&face.id, &face.surface);
     }
     let mut edge_curves = BTreeMap::new();
     for edge in &ir.model.edges {
         let Some(curve) = edge.curve() else {
             continue;
         };
-        ctx.insert_btree_map(
-            &mut edge_curves,
-            &edge.id,
-            curve,
-            "nx serialized branch edge curves",
-        )?;
+        edge_curves.insert(&edge.id, curve);
     }
     let mut incident = BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveId, Option<[f64; 2]>)>>::new();
     for coedge in ir.model.coedges.iter().skip(coedge_start) {
@@ -583,7 +527,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 curve.try_clone_for_decode(ctx, "nx branch incidence curve")?,
                 surface.try_clone_for_decode(ctx, "nx branch incidence surface")?,
             );
-            ctx.admit_btree_entry(&incident, &incident_key, "nx serialized branch incidence")?;
+
             let candidates = incident.entry(incident_key).or_default();
             let candidate = (
                 use_.pcurve
@@ -592,7 +536,6 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
             );
             if !candidates.contains(&candidate) {
-                ctx.reserve_vec(candidates, 1, "nx serialized branch candidates")?;
                 candidates.push(candidate);
             }
         }
@@ -606,11 +549,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let pcurve_key = pcurve
                 .id
                 .try_clone_for_decode(ctx, "nx branch pcurve identity")?;
-            ctx.admit_btree_entry(
-                &pcurves_by_id,
-                &pcurve_key,
-                "nx serialized branch pcurve index",
-            )?;
+
             pcurves_by_id.entry(pcurve_key).or_insert(index);
         }
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
@@ -748,7 +687,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 else {
                     continue;
                 };
-                ctx.reserve_vec(&mut replacements, 1, "nx serialized branch replacements")?;
+
                 replacements.push((
                     procedural
                         .id
@@ -814,10 +753,7 @@ pub(super) fn orient_tolerant_intersection_pcurve(
     tolerance: f64,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     orient_tolerant_intersection_pcurve_with_index_and_budget(
         ctx,
         &index,
@@ -893,20 +829,18 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
             // the owning curve selects between them. A missing tangent, a
             // missing surface chart or a tie states no selection.
             let selected_forward = (|| -> Result<Option<bool>, cadmpeg_core::CodecError> {
-                let Some(curve) = index.curves(curve.as_str(), geometry_budget.charges)? else {
+                let Some(curve) = index.curves(curve.as_str(), geometry_budget.ctx)? else {
                     return Ok(None);
                 };
                 let Some(curve_tangent) = finite_or_refusal(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(
-                        geometry_budget.charges,
-                    )
-                    .within_work_slice(geometry_budget, |admission| {
-                        cadmpeg_ir::eval::decode::curve_tangent(
-                            admission,
-                            &curve.geometry,
-                            range[0],
-                        )
-                    }),
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
+                        .within_work_slice(geometry_budget, |admission| {
+                            cadmpeg_ir::eval::decode::curve_tangent(
+                                admission,
+                                &curve.geometry,
+                                range[0],
+                            )
+                        }),
                 )?
                 else {
                     return Ok(None);
@@ -929,7 +863,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                         };
                         let Some(partials) = finite_or_refusal(
                             cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(
-                                geometry_budget.charges,
+                                geometry_budget.ctx,
                             )
                             .within_work_slice(
                                 geometry_budget,
@@ -980,30 +914,21 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     }
 }
 
-/// Copy pole rows in reverse order after admitting the retained lane.
-fn reversed_pole_rows<T: Copy>(
-    ctx: &DecodeContext<'_>,
-    rows: &[T],
-) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let mut reversed = ctx.copy_slice(rows, "nx reversed pcurve poles")?;
-    reversed.reverse();
-    Ok(reversed)
+/// Copy pole rows in reverse order.
+fn reversed_pole_rows<T: Copy>(rows: &[T]) -> Vec<T> {
+    rows.iter().rev().copied().collect()
 }
 
 fn reflected_pcurve_knots(
-    ctx: &DecodeContext<'_>,
     knots: &cadmpeg_ir::geometry::nurbs::KnotVector,
     lower: FiniteReal,
     upper: FiniteReal,
-) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    let mut reversed = ctx.collection_vec(knots.len(), "nx reversed pcurve knots")?;
-    for knot in knots.finite_knots().rev() {
-        let Some(reflected) = cadmpeg_ir::math::reflect_parameter(knot, lower, upper) else {
-            return Ok(None);
-        };
-        reversed.push(reflected.get());
-    }
-    Ok(Some(reversed))
+) -> Option<Vec<f64>> {
+    knots
+        .finite_knots()
+        .rev()
+        .map(|knot| cadmpeg_ir::math::reflect_parameter(knot, lower, upper).map(FiniteReal::get))
+        .collect()
 }
 
 /// Reverse a pcurve over `[start, end]`. `Ok(None)` states a pcurve family the
@@ -1023,16 +948,15 @@ fn reverse_pcurve_over_range(
     }
     match pcurve {
         PcurveGeometry::PolarNurbs { nurbs } => {
-            let Some(reversed_knots) = reflected_pcurve_knots(ctx, nurbs.knots(), lower, upper)?
-            else {
+            let Some(reversed_knots) = reflected_pcurve_knots(nurbs.knots(), lower, upper) else {
                 return Ok(None);
             };
             let poles = match nurbs.pole_rows() {
                 PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
-                    poles: reversed_pole_rows(ctx, poles)?,
+                    poles: reversed_pole_rows(poles),
                 },
                 PolarNurbsPoles::Rational { poles } => PolarNurbsPoles::Rational {
-                    poles: reversed_pole_rows(ctx, poles)?,
+                    poles: reversed_pole_rows(poles),
                 },
             };
             let reversed = PolarPcurveNurbs::new(
@@ -1045,16 +969,15 @@ fn reverse_pcurve_over_range(
             Ok(Some(PcurveGeometry::PolarNurbs { nurbs: reversed }))
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            let Some(reversed_knots) = reflected_pcurve_knots(ctx, nurbs.knots(), lower, upper)?
-            else {
+            let Some(reversed_knots) = reflected_pcurve_knots(nurbs.knots(), lower, upper) else {
                 return Ok(None);
             };
             let poles = match nurbs.pole_rows() {
                 PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
-                    points: reversed_pole_rows(ctx, points)?,
+                    points: reversed_pole_rows(points),
                 },
                 PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
-                    points: reversed_pole_rows(ctx, points)?,
+                    points: reversed_pole_rows(points),
                 },
             };
             let reversed =
@@ -1068,7 +991,7 @@ fn reverse_pcurve_over_range(
             else {
                 return Ok(None);
             };
-            ctx.charge_collection_items(1, "nx reversed trimmed pcurve basis")?;
+
             Ok(cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
                 parameter_range.endpoints(),
                 same_sense,
@@ -1082,7 +1005,7 @@ fn reverse_pcurve_over_range(
             else {
                 return Ok(None);
             };
-            ctx.charge_collection_items(1, "nx reversed transformed pcurve basis")?;
+
             Ok(cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
                 Box::new(reversed),
                 *placed.transform(),
@@ -1096,7 +1019,7 @@ fn reverse_pcurve_over_range(
             else {
                 return Ok(None);
             };
-            ctx.charge_collection_items(1, "nx reversed offset pcurve basis")?;
+
             Ok(
                 cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(-distance, Box::new(basis))
                     .ok()
@@ -1342,10 +1265,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts(
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let transfer_budget = new_transfer_budget();
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_intersection_pcurves_from_opposite_charts_with_budget(
         ctx,
         ir,
@@ -1383,11 +1303,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             continue;
         };
         let curve_key = curve.try_clone_for_decode(ctx, "nx opposite chart curve identity")?;
-        ctx.admit_btree_entry(
-            &edge_tolerances,
-            &curve_key,
-            "nx opposite chart edge tolerances",
-        )?;
+
         edge_tolerances
             .entry(curve_key)
             .and_modify(|current| *current = current.min(tolerance))
@@ -1430,35 +1346,27 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             &model_index,
             source_surface,
             target_surface,
-            geometry_budget.charges,
+            geometry_budget.ctx,
         )?;
-        ctx.reserve_vec(&mut candidates, 1, "nx opposite chart candidates")?;
+
         candidates.push((priority, procedural.id.as_str(), procedural_index));
     }
-    ctx.stable_sort_by(
-        &mut candidates,
-        |first, second| {
-            first
-                .0
-                .cmp(&second.0)
-                .then_with(|| first.1.cmp(second.1))
-                .then_with(|| first.2.cmp(&second.2))
-        },
-        |(_, id, _)| id.len(),
-        "sort NX opposite chart candidates",
-    )?;
+    candidates.sort_by(|first, second| {
+        first
+            .0
+            .cmp(&second.0)
+            .then_with(|| first.1.cmp(second.1))
+            .then_with(|| first.2.cmp(&second.2))
+    });
     let candidate_count = candidates.len();
     let mut replacements = Vec::new();
     for (candidate_index, (_, _, procedural_index)) in candidates.into_iter().enumerate() {
         // Plain `-`: `candidate_index` enumerates the vector `candidate_count`
         // counted, so it is below that count on every iteration.
         let candidates_remaining = candidate_count - candidate_index;
-        let candidate_geometry_budget =
-            geometry_budget.child_slice(opposite_chart_geometry_work_limit(
-                ctx,
-                candidates_remaining,
-                geometry_budget.remaining(),
-            )?);
+        let candidate_geometry_budget = geometry_budget.child_slice(
+            opposite_chart_geometry_work_limit(candidates_remaining, geometry_budget.remaining()),
+        );
         let replacement =
             (|| -> Result<Option<OppositeChartReplacement>, cadmpeg_core::CodecError> {
                 let Some(procedural) = ir.model.procedural_curves.get(procedural_index) else {
@@ -1503,14 +1411,10 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     &model_index,
                     target_surface,
                     tolerance,
-                    geometry_budget.charges,
+                    geometry_budget.ctx,
                 )?;
                 let contact_key = (source_surface, target_surface);
-                ctx.admit_btree_entry(
-                    &blend_contacts,
-                    &contact_key,
-                    "nx opposite chart blend contacts",
-                )?;
+
                 let blend_contact = match blend_contacts.entry(contact_key) {
                     std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
                     std::collections::btree_map::Entry::Vacant(entry) => {
@@ -1518,7 +1422,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                             &model_index,
                             source_surface,
                             target_surface,
-                            geometry_budget.charges,
+                            geometry_budget.ctx,
                         )?)
                     }
                 };
@@ -1549,7 +1453,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     target,
                     pcurve,
                     fit_tolerance,
-                    curve_is_cache_backed_with_index(&model_index, owner, geometry_budget.charges)?,
+                    curve_is_cache_backed_with_index(&model_index, owner, geometry_budget.ctx)?,
                 )))
             })()?;
         // The candidate's completed replacement is admitted only when its
@@ -1558,13 +1462,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             .consume_child(&candidate_geometry_budget)
             .is_err()
         {
-            if let Some(limit) = geometry_budget.resource_refusal() {
-                return Err(limit.into());
-            }
             continue;
         }
         if let Some(replacement) = replacement {
-            ctx.reserve_vec(&mut replacements, 1, "nx opposite chart replacements")?;
             replacements.push(replacement);
         }
     }
@@ -1680,10 +1580,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
     annotations: &mut AnnotationBuilder,
 ) {
     let transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_exact_boundary_intersection_pcurves_with_budget(
         ctx,
         ir,
@@ -1711,11 +1608,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let procedural_key = procedural
             .id
             .try_clone_for_decode(ctx, "nx exact boundary procedural identity")?;
-        ctx.admit_btree_entry(
-            &procedural_indices,
-            &procedural_key,
-            "nx exact boundary procedural index",
-        )?;
+
         procedural_indices.entry(procedural_key).or_insert(index);
     }
     let mut blend_parameter_grids = BlendParameterGridCache::new();
@@ -1774,7 +1667,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
 
                 let range = if edge.start == edge.end
                     && model_index
-                        .curves(owner.as_str(), geometry_budget.charges)?
+                        .curves(owner.as_str(), geometry_budget.ctx)?
                         .is_some_and(|curve| {
                             matches!(
                                 curve.geometry.solved(),
@@ -1922,14 +1815,14 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             [None, None] => continue,
         };
         let fit_tolerance = cadmpeg_ir::geometry::FitTolerance::from(admitted_tolerance);
-        ctx.reserve_vec(&mut replacements, 1, "nx exact boundary replacements")?;
+
         replacements.push((
             procedural
                 .id
                 .try_clone_for_decode(ctx, "nx exact boundary procedural identity")?,
             pcurves,
             fit_tolerance,
-            curve_is_cache_backed_with_index(&model_index, owner, geometry_budget.charges)?,
+            curve_is_cache_backed_with_index(&model_index, owner, geometry_budget.ctx)?,
             owner.try_clone_for_decode(ctx, "nx exact boundary owner identity")?,
             range,
         ));
@@ -1975,11 +1868,6 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             procedural.require_cache_fit_tolerance(tolerance)?;
         }
         if let Some(range) = tolerant_range {
-            ctx.reserve_vec(
-                &mut bounded_tolerant_curves,
-                1,
-                "nx bounded tolerant curves",
-            )?;
             bounded_tolerant_curves.push((curve, range));
         }
     }
@@ -2022,10 +1910,7 @@ pub(super) fn exact_boundary_pcurve(
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     exact_boundary_pcurve_with_index(
         &index,
         curve,
@@ -2086,7 +1971,7 @@ fn exact_boundary_pcurve_with_index(
     }
     let nonnegative_tolerance = tolerance;
     let tolerance = tolerance.get();
-    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.charges)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.ctx)? else {
         return Ok(None);
     };
     if let Some(candidate) = exact_analytic_isocurve_pcurve_with_index_and_budget(
@@ -2099,15 +1984,13 @@ fn exact_boundary_pcurve_with_index(
     )? {
         return Ok(Some(candidate));
     }
-    let Some(curve_carrier) = index.curves(curve.as_str(), geometry_budget.charges)? else {
+    let Some(curve_carrier) = index.curves(curve.as_str(), geometry_budget.ctx)? else {
         return Ok(None);
     };
     let Some(solved_curve) = curve_carrier.geometry.solved() else {
         return Ok(None);
     };
-    let Some((curve_breaks, _curve_storage)) =
-        exact_boundary_curve_breaks(solved_curve, range, geometry_budget)?
-    else {
+    let Some(curve_breaks) = exact_boundary_curve_breaks(solved_curve, range) else {
         return Ok(None);
     };
     if matches!(
@@ -2122,7 +2005,7 @@ fn exact_boundary_pcurve_with_index(
         let [first, second] = [first, second].map(Point2::from);
         for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
             if !geometry_budget.charge() {
-                return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+                return Ok(None);
             }
             let Some(mapped) = decoded_surface_point_inner_with_budget(
                 index,
@@ -2159,7 +2042,7 @@ fn exact_boundary_pcurve_with_index(
             Ok(line) => PcurveGeometry::Line(line),
             Err(_) => {
                 let Ok(nurbs) = (match PcurveNurbs::from_lanes(
-                    geometry_budget.charges,
+                    geometry_budget.ctx,
                     1,
                     vec![range[0], range[0], range[1], range[1]],
                     vec![first, second],
@@ -2227,7 +2110,7 @@ fn exact_boundary_pcurve_with_index(
                     return Ok(None);
                 }
                 let Ok(nurbs) = (match PcurveNurbs::from_lanes(
-                    geometry_budget.charges,
+                    geometry_budget.ctx,
                     1,
                     vec![range[0], range[0], range[1], range[1]],
                     vec![first, second],
@@ -2245,7 +2128,7 @@ fn exact_boundary_pcurve_with_index(
         };
         for (endpoint, parameter) in endpoints.into_iter().zip(range) {
             let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                geometry_budget.charges,
+                geometry_budget.ctx,
                 &candidate,
                 parameter,
             ))?
@@ -2253,7 +2136,7 @@ fn exact_boundary_pcurve_with_index(
                 return Ok(None);
             };
             if !geometry_budget.charge() {
-                return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+                return Ok(None);
             }
             let Some(mapped) = decoded_surface_point_inner_with_budget(
                 index,
@@ -2288,8 +2171,7 @@ fn exact_boundary_pcurve_with_index(
     let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = carrier.geometry.solved() else {
         return Ok(None);
     };
-    let Some(domain) =
-        surface_parameter_domain_with_index(index, surface, geometry_budget.charges)?
+    let Some(domain) = surface_parameter_domain_with_index(index, surface, geometry_budget.ctx)?
     else {
         return Ok(None);
     };
@@ -2303,7 +2185,7 @@ fn exact_boundary_pcurve_with_index(
         };
         for boundary in boundaries.iter().copied() {
             if piecewise_linear_nurbs_surface_isocurve(
-                geometry_budget.charges,
+                geometry_budget.ctx,
                 nurbs,
                 fixed_axis,
                 boundary,
@@ -2322,7 +2204,7 @@ fn exact_boundary_pcurve_with_index(
         return Ok(None);
     }
     let first_parameters = nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
-        geometry_budget.charges,
+        geometry_budget.ctx,
         nurbs,
         endpoints[0],
         None,
@@ -2330,7 +2212,7 @@ fn exact_boundary_pcurve_with_index(
         geometry_budget,
     )?;
     let second_parameters = nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
-        geometry_budget.charges,
+        geometry_budget.ctx,
         nurbs,
         endpoints[1],
         None,
@@ -2344,10 +2226,10 @@ fn exact_boundary_pcurve_with_index(
     let parameters = [first_parameters, second_parameters];
     for index in 0..2 {
         if !geometry_budget.charge() {
-            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+            return Ok(None);
         }
         let Some(point) = finite_or_refusal(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
                 .within_work_slice(geometry_budget, |admission| {
                     cadmpeg_ir::eval::decode::nurbs_surface_point(
                         admission,
@@ -2398,7 +2280,7 @@ fn exact_boundary_pcurve_with_index(
                     Ok(line) => PcurveGeometry::Line(line),
                     Err(_) => {
                         let Ok(nurbs) = (match PcurveNurbs::from_lanes(
-                            geometry_budget.charges,
+                            geometry_budget.ctx,
                             1,
                             vec![range[0], range[0], range[1], range[1]],
                             controls.to_vec(),
@@ -2461,43 +2343,22 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         tolerance,
     } = boundary_carrier_fit;
 
-    let Some((surface_breaks, _surface_storage)) =
+    let Some(surface_breaks) =
         boundary_curve_affine_breaks_with_index(index, surface, pcurve, range, geometry_budget)?
     else {
         return Ok(false);
     };
     let mut breaks = Vec::new();
-    let _curve_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut breaks,
-        curve_breaks.len(),
-        "nx boundary curve breaks",
-    )?;
     breaks.extend_from_slice(curve_breaks);
-    let _surface_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut breaks,
-        surface_breaks.len(),
-        "nx boundary surface breaks",
-    )?;
     breaks.extend(surface_breaks);
-    if geometry_budget
-        .charges
-        .stable_sort_by(
-            &mut breaks,
-            f64::total_cmp,
-            |_| 0,
-            "nx boundary pcurve breaks sort",
-        )
-        .is_err()
-    {
-        return geometry_budget.resource_refusal().map_or(Ok(false), Err);
-    }
+    breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
     for parameter in breaks {
         if !geometry_budget.charge() {
-            return geometry_budget.resource_refusal().map_or(Ok(false), Err);
+            return Ok(false);
         }
         let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-            geometry_budget.charges,
+            geometry_budget.ctx,
             pcurve,
             parameter,
         ))?
@@ -2516,7 +2377,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
             return Ok(false);
         };
         let Some(actual) = finite_or_refusal(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
                 .within_work_slice(geometry_budget, |admission| {
                     model_curve_point_by_id(admission, index, curve, parameter)
                 }),
@@ -2532,18 +2393,12 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     Ok(true)
 }
 
-fn exact_boundary_curve_breaks<'a>(
+fn exact_boundary_curve_breaks(
     geometry: &SolvedCurveGeometry,
     range: [f64; 2],
-    geometry_budget: &GeometryWorkBudget<'a>,
-) -> Result<
-    Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>)>,
-    cadmpeg_core::decode::ResourceLimit,
-> {
-    let (mut breaks, mut storage) = match geometry {
-        SolvedCurveGeometry::Line(_) => geometry_budget
-            .charges
-            .copy_temporary_slice(&range, "nx boundary breaks")?,
+) -> Option<Vec<f64>> {
+    let mut breaks = match geometry {
+        SolvedCurveGeometry::Line(_) => range.to_vec(),
         SolvedCurveGeometry::Nurbs(nurbs)
             if nurbs.degree() == 1
                 && !nurbs.periodic()
@@ -2553,46 +2408,23 @@ fn exact_boundary_curve_breaks<'a>(
                         .any(|pair| pair[0].get().to_bits() != pair[1].get().to_bits())
                 }) =>
         {
-            let Some(degree) = usize::try_from(nurbs.degree()).ok() else {
-                return Ok(None);
-            };
+            let degree = usize::try_from(nurbs.degree()).ok()?;
             let count = nurbs.pole_rows().count();
             if degree > count {
-                return Ok(None);
+                return None;
             }
-            let Some(knots) = nurbs.knots().get(degree..=count) else {
-                return Ok(None);
-            };
-            geometry_budget
-                .charges
-                .copy_temporary_slice(knots, "nx boundary breaks")?
+            let knots = nurbs.knots().get(degree..=count)?;
+            knots.to_vec()
         }
-        _ => return Ok(None),
+        _ => return None,
     };
     breaks.retain(|parameter| {
         parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
     });
-    geometry_budget.charges.reserve_scoped_vec_limit(
-        &mut storage,
-        &mut breaks,
-        2,
-        "nx boundary range breaks",
-    )?;
     breaks.extend(range);
-    if geometry_budget
-        .charges
-        .stable_sort_by(
-            &mut breaks,
-            f64::total_cmp,
-            |_| 0,
-            "nx boundary curve breaks sort",
-        )
-        .is_err()
-    {
-        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
-    }
+    breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
-    Ok(Some((breaks, storage)))
+    Some(breaks)
 }
 
 #[cfg(test)]
@@ -2606,10 +2438,7 @@ pub(super) fn exact_analytic_isocurve_pcurve(
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)
         .expect("decode index allocation succeeds");
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     exact_analytic_isocurve_pcurve_with_index_and_budget(
         &index,
         curve,
@@ -2632,7 +2461,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     (|| -> Option<Result<PcurveGeometry, cadmpeg_core::decode::ResourceLimit>> {
         const SAMPLE_INTERVALS: usize = 8;
 
-        let curve_carrier = (match index.curves(curve.as_str(), geometry_budget.charges) {
+        let curve_carrier = (match index.curves(curve.as_str(), geometry_budget.ctx) {
             Ok(value) => value,
             Err(limit) => return Some(Err(limit)),
         })?;
@@ -2648,7 +2477,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             }
             _ => return None,
         };
-        let surface_carrier = (match index.surfaces(surface.as_str(), geometry_budget.charges) {
+        let surface_carrier = (match index.surfaces(surface.as_str(), geometry_budget.ctx) {
             Ok(value) => value,
             Err(limit) => return Some(Err(limit)),
         })?;
@@ -2663,23 +2492,15 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         )
         .then_some(())?;
         let periods =
-            match surface_parameter_periods_with_index(index, surface, geometry_budget.charges) {
+            match surface_parameter_periods_with_index(index, surface, geometry_budget.ctx) {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             };
         let mut samples = Vec::new();
-        let _samples_reservation = match geometry_budget.charges.reserve_temporary_vec(
-            &mut samples,
-            SAMPLE_INTERVALS + 1,
-            "nx analytic pcurve samples",
-        ) {
-            Ok(reservation) => reservation,
-            Err(limit) => return Some(Err(limit)),
-        };
         for index in 0..=SAMPLE_INTERVALS {
             let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS)?;
             let point = match finite_or_refusal(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
                     .within_work_slice(geometry_budget, |admission| {
                         cadmpeg_ir::eval::decode::curve_point(
                             admission,
@@ -2745,7 +2566,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         );
         let parameter = range[0];
         let uv = match finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-            geometry_budget.charges,
+            geometry_budget.ctx,
             &candidate,
             parameter,
         )) {
@@ -2754,10 +2575,10 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             Err(limit) => return Some(Err(limit)),
         };
         if !geometry_budget.charge() {
-            return geometry_budget.resource_refusal().map(Err);
+            return None;
         }
         let surface_jet = match finite_or_refusal(surface_second_partials(
-            geometry_budget.charges,
+            geometry_budget.ctx,
             &surface_carrier.geometry,
             uv.u,
             uv.v,
@@ -2767,7 +2588,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             Err(limit) => return Some(Err(limit)),
         };
         let curve_position = match finite_or_refusal(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
                 .within_work_slice(geometry_budget, |admission| {
                     cadmpeg_ir::eval::decode::curve_point(
                         admission,
@@ -2781,7 +2602,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             Err(limit) => return Some(Err(limit)),
         };
         let curve_tangent = match finite_or_refusal(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
                 .within_work_slice(geometry_budget, |admission| {
                     cadmpeg_ir::eval::decode::curve_tangent(
                         admission,
@@ -2795,7 +2616,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             Err(limit) => return Some(Err(limit)),
         };
         let curve_acceleration = match finite_or_refusal(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
                 .within_work_slice(geometry_budget, |admission| {
                     cadmpeg_ir::eval::curve_second_derivative(
                         admission,
@@ -2849,10 +2670,7 @@ pub(super) fn coincident_pcurve_pair(
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     coincident_pcurve_pair_with_index(
         &index,
         surfaces,
@@ -2877,11 +2695,11 @@ fn coincident_pcurve_pair_with_index(
     let tolerance = tolerance.get();
     let separation = |parameter| -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
         if !geometry_budget.charge() {
-            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+            return Ok(None);
         }
         let evaluate = |side| -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
             let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                geometry_budget.charges,
+                geometry_budget.ctx,
                 pcurves[side],
                 parameter,
             ))?
@@ -2919,26 +2737,9 @@ fn coincident_pcurve_pair_with_index(
             geometry_budget,
         )?,
     ];
-    if let [Some((mut breaks, mut storage)), Some((second, _second_storage))] = affine_breaks {
-        geometry_budget.charges.reserve_scoped_vec_limit(
-            &mut storage,
-            &mut breaks,
-            second.len(),
-            "nx coincident pcurve breaks",
-        )?;
+    if let [Some(mut breaks), Some(second)] = affine_breaks {
         breaks.extend(second);
-        if geometry_budget
-            .charges
-            .stable_sort_by(
-                &mut breaks,
-                f64::total_cmp,
-                |_| 0,
-                "nx coincident pcurve breaks sort",
-            )
-            .is_err()
-        {
-            return geometry_budget.resource_refusal().map_or(Ok(false), Err);
-        }
+        breaks.sort_by(f64::total_cmp);
         breaks.dedup();
         for parameter in breaks {
             if !separation(parameter)?.is_some_and(|value| value <= tolerance) {
@@ -2961,15 +2762,10 @@ fn coincident_pcurve_pair_with_index(
         }
     }
     let mut intervals = Vec::new();
-    let _initial_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut intervals,
-        1,
-        "nx coincident pcurve intervals",
-    )?;
     intervals.push(range);
     while let Some([start, end]) = intervals.pop() {
         if !geometry_budget.charge() {
-            return geometry_budget.resource_refusal().map_or(Ok(false), Err);
+            return Ok(false);
         }
         let Some(middle) = finite_parameter_sample([start, end], 1, 2) else {
             return Ok(false);
@@ -2993,38 +2789,29 @@ fn coincident_pcurve_pair_with_index(
         if middle == start || middle == end {
             return Ok(false);
         }
-        let _child_reservation = geometry_budget.charges.reserve_temporary_vec(
-            &mut intervals,
-            2,
-            "nx coincident pcurve intervals",
-        )?;
         intervals.push([middle, end]);
         intervals.push([start, middle]);
     }
     Ok(true)
 }
 
-fn boundary_curve_affine_breaks_with_index<'a>(
+fn boundary_curve_affine_breaks_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
-    geometry_budget: &GeometryWorkBudget<'a>,
-) -> Result<
-    Option<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>)>,
-    cadmpeg_core::decode::ResourceLimit,
-> {
-    (|| -> Option<Result<(Vec<f64>, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::decode::ResourceLimit>> {
-        let carrier = (match index.surfaces(surface.as_str(), geometry_budget.charges) { Ok(value) => value, Err(limit) => return Some(Err(limit)), })?;
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit>> {
+        let carrier = (match index.surfaces(surface.as_str(), geometry_budget.ctx) {
+            Ok(value) => value,
+            Err(limit) => return Some(Err(limit)),
+        })?;
         if matches!(
             carrier.geometry.solved(),
             Some(SolvedSurfaceGeometry::Plane(_))
         ) {
-            return Some(
-                geometry_budget
-                    .charges
-                    .copy_temporary_slice(&range, "nx boundary breaks"),
-            );
+            return Some(Ok(range.to_vec()));
         }
         if matches!(
             carrier.geometry.solved(),
@@ -3041,11 +2828,7 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                     && points[0].u == points[1].u
                     && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
                 {
-                    return Some(
-                        geometry_budget
-                            .charges
-                            .copy_temporary_slice(&range, "nx boundary breaks"),
-                    );
+                    return Some(Ok(range.to_vec()));
                 }
             }
         }
@@ -3076,14 +2859,18 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                 } else {
                     return None;
                 };
-                let isocurve = match piecewise_linear_nurbs_surface_isocurve(geometry_budget.charges, surface, axis, fixed) {
+                let isocurve = match piecewise_linear_nurbs_surface_isocurve(
+                    geometry_budget.ctx,
+                    surface,
+                    axis,
+                    fixed,
+                ) {
                     Ok(Some(isocurve)) => isocurve,
                     Ok(None) => return None,
                     Err(limit) => return Some(Err(limit)),
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.pole_rows().count();
-                let mut storage = match geometry_budget.charges.reserve_scoped_limit(0, "nx affine pcurve breaks") { Ok(storage) => storage, Err(limit) => return Some(Err(limit)), };
                 let mut breaks = Vec::new();
                 for parameter in isocurve.knots().get(degree..=count)? {
                     let Some(fraction) =
@@ -3097,26 +2884,10 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                     else {
                         continue;
                     };
-                    if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
-                        &mut storage,
-                        &mut breaks,
-                        1,
-                        "nx affine pcurve breaks",
-                    ) {
-                        return Some(Err(limit));
-                    }
                     breaks.push(mapped);
                 }
-                if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
-                    &mut storage,
-                    &mut breaks,
-                    2,
-                    "nx affine pcurve range",
-                ) {
-                    return Some(Err(limit));
-                }
                 breaks.extend(range);
-                return Some(Ok((breaks, storage)));
+                return Some(Ok(breaks));
             }
         }
         let PcurveGeometry::Line(line_pcurve) = pcurve else {
@@ -3128,20 +2899,12 @@ fn boundary_curve_affine_breaks_with_index<'a>(
             Some(SolvedSurfaceGeometry::Cylinder(_))
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
-                return Some(
-                    geometry_budget
-                        .charges
-                        .copy_temporary_slice(&range, "nx boundary breaks"),
-                );
+                return Some(Ok(range.to_vec()));
             }
             Some(SolvedSurfaceGeometry::Cone(_))
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
-                return Some(
-                    geometry_budget
-                        .charges
-                        .copy_temporary_slice(&range, "nx boundary breaks"),
-                );
+                return Some(Ok(range.to_vec()));
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
@@ -3152,7 +2915,8 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                     } else {
                         return None;
                     };
-                let isocurve = match piecewise_linear_nurbs_surface_isocurve(geometry_budget.charges,
+                let isocurve = match piecewise_linear_nurbs_surface_isocurve(
+                    geometry_budget.ctx,
                     nurbs,
                     fixed_axis,
                     fixed_parameter,
@@ -3163,32 +2927,15 @@ fn boundary_curve_affine_breaks_with_index<'a>(
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.pole_rows().count();
-                let (mut breaks, mut storage) = match geometry_budget
-                    .charges
-                    .copy_temporary_slice(
-                        isocurve.knots().get(degree..=count)?,
-                        "nx boundary breaks",
-                    )
-                {
-                    Ok(breaks) => breaks,
-                    Err(limit) => return Some(Err(limit)),
-                };
+                let mut breaks = isocurve.knots().get(degree..=count)?.to_vec();
                 for parameter in &mut breaks {
                     *parameter = (*parameter - varying_origin) / varying_scale;
                 }
                 breaks.retain(|parameter| {
                     parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
                 });
-                if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
-                    &mut storage,
-                    &mut breaks,
-                    2,
-                    "nx affine pcurve range",
-                ) {
-                    return Some(Err(limit));
-                }
                 breaks.extend(range);
-                Some((breaks, storage))
+                Some(breaks)
             }
             _ => None,
         }
@@ -3211,7 +2958,6 @@ fn piecewise_linear_nurbs_surface_isocurve(
     }
     let poles = isocurve.pole_rows();
     for index in 1..poles.count() {
-        ctx.charge_work_limit(1, "nx isocurve weight comparison")?;
         if poles.weight_at(index - 1).map(f64::to_bits) != poles.weight_at(index).map(f64::to_bits)
         {
             return Ok(None);
@@ -3226,7 +2972,7 @@ fn boundary_curve_speed_bound_with_index(
     pcurve: &PcurveGeometry,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.charges)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.ctx)? else {
         return Ok(None);
     };
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
@@ -3326,16 +3072,12 @@ fn boundary_curve_speed_bound_with_index(
                 } else {
                     return Ok(None);
                 };
-            let Some(isocurve) = nurbs_surface_isocurve(
-                geometry_budget.charges,
-                nurbs,
-                fixed_axis,
-                fixed_parameter,
-            )?
+            let Some(isocurve) =
+                nurbs_surface_isocurve(geometry_budget.ctx, nurbs, fixed_axis, fixed_parameter)?
             else {
                 return Ok(None);
             };
-            let Some(bound) = nurbs_curve_speed_bound(geometry_budget.charges, &isocurve)? else {
+            let Some(bound) = nurbs_curve_speed_bound(geometry_budget.ctx, &isocurve)? else {
                 return Ok(None);
             };
             let bound = bound.get() * varying_scale.abs();
@@ -3360,27 +3102,15 @@ const COMPLETION_TRANSFER_SAMPLES_PER_CHART: usize = 8;
 /// models whose charts or adaptive subdivisions are pathological.
 pub(super) const MAX_COMPLETION_TRANSFER_SAMPLES: usize = 65_536;
 
-pub(super) fn completion_transfer_budget_limit(
-    ctx: &DecodeContext<'_>,
-    chart_count: usize,
-) -> Result<usize, cadmpeg_core::CodecError> {
-    let requested = chart_count
+pub(super) fn completion_transfer_budget_limit(chart_count: usize) -> usize {
+    chart_count
         .checked_mul(COMPLETION_TRANSFER_SAMPLES_PER_CHART)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "nx completion transfer samples",
-                u64::MAX,
-                cadmpeg_core::decode::u64_from_index(chart_count),
+        .map_or(MAX_COMPLETION_TRANSFER_SAMPLES, |samples| {
+            samples.clamp(
+                MIN_COMPLETION_TRANSFER_SAMPLES,
+                MAX_COMPLETION_TRANSFER_SAMPLES,
             )
-        })?;
-    // These bounds set the admitted work slice after its size is checked.
-    if requested < MIN_COMPLETION_TRANSFER_SAMPLES {
-        return Ok(MIN_COMPLETION_TRANSFER_SAMPLES);
-    }
-    if requested > MAX_COMPLETION_TRANSFER_SAMPLES {
-        return Ok(MAX_COMPLETION_TRANSFER_SAMPLES);
-    }
-    Ok(requested)
+        })
 }
 
 /// Total inverse-surface samples admitted while completing exact-boundary
@@ -3457,24 +3187,11 @@ pub(super) fn transfer_budget_exhausted(budget: &TransferBudget<'_>) -> bool {
 /// the deterministic transfer order. A failed candidate cannot consume the
 /// whole model slice and starve later candidates, while unused work remains
 /// available to later candidates through the parent budget.
-fn opposite_chart_geometry_work_limit(
-    ctx: &DecodeContext<'_>,
-    candidates_remaining: usize,
-    remaining: usize,
-) -> Result<usize, cadmpeg_core::CodecError> {
+fn opposite_chart_geometry_work_limit(candidates_remaining: usize, remaining: usize) -> usize {
     if candidates_remaining == 0 {
-        return Ok(0);
+        return 0;
     }
-    let rounded = remaining
-        .checked_add(candidates_remaining - 1)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "nx opposite chart geometry work",
-                u64::MAX,
-                cadmpeg_core::decode::u64_from_index(remaining),
-            )
-        })?;
-    Ok(rounded / candidates_remaining)
+    remaining.div_ceil(candidates_remaining)
 }
 
 struct PcurveTransfer<'inputs, 'a> {
@@ -3499,12 +3216,8 @@ fn transfer_intersection_pcurve<'a>(
         ..
     } = pcurve_transfer;
 
-    let blend_contact = blend_transfer_contact(
-        index,
-        source_surface,
-        target_surface,
-        geometry_budget.charges,
-    )?;
+    let blend_contact =
+        blend_transfer_contact(index, source_surface, target_surface, geometry_budget.ctx)?;
     transfer_intersection_pcurve_with_contact_and_budget(
         index,
         pcurve_transfer,
@@ -3530,10 +3243,10 @@ fn transfer_intersection_pcurve_with_contact_and_budget<'a>(
     } = pcurve_transfer;
 
     let source_geometry = index
-        .surfaces(source_surface.as_str(), geometry_budget.charges)?
+        .surfaces(source_surface.as_str(), geometry_budget.ctx)?
         .and_then(|surface| surface.geometry.solved());
     let target_geometry = index
-        .surfaces(target_surface.as_str(), geometry_budget.charges)?
+        .surfaces(target_surface.as_str(), geometry_budget.ctx)?
         .and_then(|surface| surface.geometry.solved());
     transfer_intersection_pcurve_with_budget(
         index,
@@ -3589,12 +3302,12 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         index,
         source_surface,
         target_surface,
-        geometry_budget.charges,
+        geometry_budget.ctx,
     )? || reverse_blend_boundary_transfer_available(
         index,
         source_surface,
         target_surface,
-        geometry_budget.charges,
+        geometry_budget.ctx,
     )?;
     let continuation_steps = if blend_boundary_transfer {
         BLEND_BOUNDARY_CONTINUATION_STEPS
@@ -3636,11 +3349,6 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         return Ok(None);
     };
     let mut coarse = Vec::new();
-    let _coarse_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut coarse,
-        continuation_steps + 1,
-        "nx transferred pcurve continuation samples",
-    )?;
     coarse.push(first);
     for sample_index in 1..=continuation_steps {
         let Some(parameter) =
@@ -3706,25 +3414,15 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         };
     }
     let mut sample_parameters = Vec::new();
-    let _parameter_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut sample_parameters,
-        samples.len(),
-        "nx transferred pcurve parameters",
-    )?;
     let mut control_points = Vec::new();
-    let _control_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut control_points,
-        samples.len(),
-        "nx transferred pcurve controls",
-    )?;
     for sample in &samples {
         sample_parameters.push(sample.0);
         control_points.push(sample.1);
     }
     let nurbs = PcurveNurbs::from_lanes(
-        geometry_budget.charges,
+        geometry_budget.ctx,
         1,
-        linear_knots(&sample_parameters, geometry_budget)?,
+        linear_knots(&sample_parameters),
         control_points,
         None,
         false,
@@ -3747,12 +3445,12 @@ fn decoded_solved_surface_point_with_budget(
         return Ok(None);
     }
     let evaluated =
-        match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+        match cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
             .within_work_slice(geometry_budget, |admission| {
                 cadmpeg_ir::eval::decode::surface_point_solved(admission, geometry, u, v)
             }) {
             Err(EvaluationFailure::NoValue) => {
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
                     .within_work_slice(geometry_budget, |admission| {
                         model_surface_point_by_id(admission, index, surface, u, v)
                     })
@@ -3817,7 +3515,7 @@ fn transferred_pcurve_sample_with_budget<'a>(
         return Ok(None);
     }
     let Some(source_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-        geometry_budget.charges,
+        geometry_budget.ctx,
         source_pcurve,
         parameter,
     ))?
@@ -3849,7 +3547,7 @@ fn transferred_pcurve_sample_with_budget<'a>(
     }
     if point.is_none() {
         point = finite_or_refusal(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
                 .within_work_slice(geometry_budget, |admission| {
                     model_curve_point_by_id(admission, index, curve, parameter)
                 }),
@@ -3986,7 +3684,7 @@ fn blend_transfer_point_with_index(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-        geometry_budget.charges,
+        geometry_budget.ctx,
         contact.pcurve,
         parameter,
     ))?
@@ -4030,10 +3728,7 @@ fn blend_boundary_parameter_from_support_spine_with_index(
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_boundary_parameter_from_support_spine_with_index_and_budget(
         index,
         blend,
@@ -4056,7 +3751,7 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let Some(CircularBlendDefinition {
         supports, spine, ..
-    }) = blend_surface_definition_with_index(index, blend, geometry_budget.charges)?
+    }) = blend_surface_definition_with_index(index, blend, geometry_budget.ctx)?
     else {
         return Ok(None);
     };
@@ -4066,7 +3761,7 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
             index,
             candidate,
             support,
-            geometry_budget.charges,
+            geometry_budget.ctx,
         )? && match_boundary.replace(boundary).is_some()
         {
             return Ok(None);
@@ -4131,12 +3826,12 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
         return Ok(false);
     }
     let Some(CircularBlendDefinition { spine, radius, .. }) =
-        blend_surface_definition_with_index(index, blend, geometry_budget.charges)?
+        blend_surface_definition_with_index(index, blend, geometry_budget.ctx)?
     else {
         return Ok(false);
     };
     let Some(center) = finite_or_refusal(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
             .within_work_slice(geometry_budget, |admission| {
                 model_curve_point_by_id(admission, index, spine, parameters.u)
             }),
@@ -4158,11 +3853,11 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     let Some(radial) = radial.unit_nonzero() else {
         return Ok(false);
     };
-    let Some(curve) = index.curves(spine.as_str(), geometry_budget.charges)? else {
+    let Some(curve) = index.curves(spine.as_str(), geometry_budget.ctx)? else {
         return Ok(false);
     };
     let Some(tangent) = finite_or_refusal(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.ctx)
             .within_work_slice(geometry_budget, |admission| {
                 cadmpeg_ir::eval::decode::curve_tangent(admission, &curve.geometry, parameters.u)
             }),
@@ -4249,7 +3944,7 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
                 midpoint.2
             } else {
                 let Some(source_uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                    geometry_budget.charges,
+                    geometry_budget.ctx,
                     source_pcurve,
                     parameter,
                 ))?
@@ -4282,7 +3977,7 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
                 if source_point.is_none() {
                     source_point = finite_or_refusal(
                         cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(
-                            geometry_budget.charges,
+                            geometry_budget.ctx,
                         )
                         .within_work_slice(geometry_budget, |admission| {
                             model_curve_point_by_id(admission, index, curve, parameter)
@@ -4355,11 +4050,6 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
         Ok(true)
     })()?;
     if fits {
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            samples,
-            1,
-            "nx transferred pcurve samples",
-        )?;
         samples.push(last);
         return Ok(Some(()));
     }
@@ -4432,12 +4122,12 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache<'a>(
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.charges)? else {
+    let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.ctx)? else {
         return Ok(None);
     };
     match carrier.geometry.solved() {
         Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => fit_nurbs_surface_parameter(
-            geometry_budget.charges,
+            geometry_budget.ctx,
             nurbs,
             point,
             seed,
@@ -4491,10 +4181,7 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache<'a>(
                     0,
                     geometry_budget,
                 )?;
-                geometry_budget.charges.charge_collection_items_limit(
-                    cadmpeg_core::decode::u64_from_index(1),
-                    "nx blend parameter grid cache",
-                )?;
+
                 blend_parameter_grids.insert(surface.as_str(), grid);
             }
             let grid = blend_parameter_grids
@@ -4572,10 +4259,7 @@ pub(super) fn attach_tolerant_edge_intersections(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     attach_tolerant_edge_intersections_with_budget(
         ctx,
         ir,
@@ -4636,7 +4320,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             if second_fin.other != edge_fields.fin || second_fin.edge.map(u32::from) != Some(xmt) {
                 continue;
             }
-            let Some(edge) = model_index.edges(edge_id.as_str(), geometry_budget.charges)? else {
+            let Some(edge) = model_index.edges(edge_id.as_str(), geometry_budget.ctx)? else {
                 continue;
             };
             let Some(edge_tolerance) = edge.tolerance else {
@@ -4650,17 +4334,17 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                 let Some(fin_xmt) = fin_xmt else {
                     return Ok(None);
                 };
-                let coedge_id: CoedgeId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("fin"), u32::from(fin_xmt))?;
-                let Some(coedge) = model_index.coedges(coedge_id.as_str(), geometry_budget.charges)? else {
+                let coedge_id: CoedgeId = scope.id_from_display(&cadmpeg_ir::identity_component!("fin"), u32::from(fin_xmt))?;
+                let Some(coedge) = model_index.coedges(coedge_id.as_str(), geometry_budget.ctx)? else {
                     return Ok(None);
                 };
                 if &coedge.edge != edge_id {
                     return Ok(None);
                 }
-                let Some(loop_) = model_index.loops(coedge.owner_loop.as_str(), geometry_budget.charges)? else {
+                let Some(loop_) = model_index.loops(coedge.owner_loop.as_str(), geometry_budget.ctx)? else {
                     return Ok(None);
                 };
-                Ok(model_index.faces(loop_.face.as_str(), geometry_budget.charges)?.map(|face| &face.surface))
+                Ok(model_index.faces(loop_.face.as_str(), geometry_budget.ctx)?.map(|face| &face.surface))
             };
             let Some(first_support) = support(edge_fields.fin)? else {
                 continue;
@@ -4674,12 +4358,12 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             let endpoint =
                 |vertex_id: &VertexId| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
                     let Some(vertex) =
-                        model_index.vertices(vertex_id.as_str(), geometry_budget.charges)?
+                        model_index.vertices(vertex_id.as_str(), geometry_budget.ctx)?
                     else {
                         return Ok(None);
                     };
                     Ok(model_index
-                        .points(vertex.point.as_str(), geometry_budget.charges)?
+                        .points(vertex.point.as_str(), geometry_budget.ctx)?
                         .map(|point| point.position().get()))
                 };
             let (Some(start), Some(end)) = (endpoint(&edge.start)?, endpoint(&edge.end)?) else {
@@ -4704,15 +4388,11 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                     }
                     let outside_nurbs_bounds = if let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) =
                         model_index
-                            .surfaces(surface.as_str(), geometry_budget.charges)?
+                            .surfaces(surface.as_str(), geometry_budget.ctx)?
                             .and_then(|carrier| carrier.geometry.solved())
                     {
                         let bounds_key = *surface;
-                        ctx.admit_btree_entry(
-                            &nurbs_surface_bounds,
-                            &bounds_key,
-                            "nx tolerant edge NURBS bounds",
-                        )?;
+
                         let bounds = nurbs_surface_bounds
                             .entry(bounds_key)
                             .or_insert_with(|| nurbs_surface_control_bounds(nurbs));
@@ -4751,12 +4431,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                             Point3::distance(*point, support_point) <= tolerance
                         })
                     };
-                    ctx.insert_btree_map(
-                        &mut endpoint_surface_fits,
-                        key,
-                        fits,
-                        "nx tolerant edge endpoint fits",
-                    )?;
+                    endpoint_surface_fits.insert(key, fits);
                     if !fits {
                         endpoints_bound_supports = false;
                         break 'supports;
@@ -4766,7 +4441,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             if !endpoints_bound_supports {
                 continue;
             }
-            ctx.reserve_vec(&mut candidates, 1, "nx tolerant edge candidates")?;
+
             candidates.push((
                 xmt,
                 edge_id.try_clone_for_decode(ctx, "nx tolerant edge candidate identity")?,
@@ -4790,9 +4465,8 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             continue;
         };
         let curve_id: CurveId =
-            scope.id_charged(ctx, &cadmpeg_ir::identity_component!("tolerant-curve"), xmt)?;
-        let procedural_id: ProceduralCurveId = scope.id_charged(
-            ctx,
+            scope.id_from_display(&cadmpeg_ir::identity_component!("tolerant-curve"), xmt)?;
+        let procedural_id: ProceduralCurveId = scope.id_from_display(
             &cadmpeg_ir::identity_component!("tolerant-intersection"),
             xmt,
         )?;
@@ -4841,7 +4515,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         annotations
             .derived(ctx, &procedural_id, "definition")
             .map_err(cadmpeg_core::CodecError::from)?;
-        ctx.reserve_vec(&mut ir.model.curves, 1, "nx tolerant edge curves")?;
+
         ir.model.curves.push(Curve {
             parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "nx tolerant carrier identity")?,
@@ -4882,10 +4556,7 @@ fn pcurve_matches_edge_range(
 ) -> bool {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)
         .expect("decode index allocation succeeds");
-    let geometry_budget = GeometryWorkBudget::from_context(
-        ctx,
-        cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-    );
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     pcurve_matches_edge_range_with_index_and_budget(
         &index,
         edge_id,
@@ -4924,7 +4595,7 @@ pub(super) fn pcurve_matches_edge_range_with_index_and_budget(
         edge_id,
         coincident_surface,
         fit_tolerance,
-        geometry_budget.charges,
+        geometry_budget.ctx,
     )
 }
 
@@ -4954,7 +4625,7 @@ pub(super) fn pcurve_endpoint_witness_with_index_and_budget(
         edge_id,
         coincident_surface,
         fit_tolerance,
-        geometry_budget.charges,
+        geometry_budget.ctx,
     )?
     .then_some(coincident_surface))
 }
@@ -4971,12 +4642,12 @@ pub(super) fn pcurve_surface_endpoints_with_index_and_budget(
     };
     let (Some(first_uv), Some(second_uv)) = (
         finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-            geometry_budget.charges,
+            geometry_budget.ctx,
             geometry,
             t0,
         ))?,
         finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-            geometry_budget.charges,
+            geometry_budget.ctx,
             geometry,
             t1,
         ))?,
@@ -5131,128 +4802,6 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Sense};
 
     #[test]
-    fn intersection_incidence_route_refuses_collection_limit() {
-        let mut ir = CadIr::empty();
-        ir.model.loops.push(Loop {
-            id: LoopId::mint("nx:test:loop#0").expect("identity grammar"),
-            face: FaceId::mint("nx:test:face#0").expect("identity grammar"),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
-                vertex: VertexId::mint("nx:test:vertex#0").expect("identity grammar"),
-                pcurves: Vec::new(),
-            },
-        });
-
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let mut index = super::IntersectionIncidenceIndex::default();
-                let error = index
-                    .complete_from_stream(ctx, &mut ir, super::IntersectionEntityStarts::default())
-                    .expect_err("incidence collection refusal");
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-            },
-        );
-    }
-
-    #[test]
-    fn serialized_branch_completion_route_refuses_retained_limit() {
-        let mut ir = CadIr::empty();
-        let point = cadmpeg_ir::ids::PointId::mint("nx:test:point#0").expect("identity grammar");
-        ir.model.points.push(cadmpeg_ir::topology::Point::new(
-            point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
-                .expect("finite point"),
-            None,
-        ));
-        ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
-            id: VertexId::mint("nx:test:vertex#0").expect("identity grammar"),
-            point,
-            tolerance: None,
-        });
-
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let geometry_budget = super::GeometryWorkBudget::from_context(ctx, 100);
-                let error = super::complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
-            ctx,
-            &mut ir,
-            &std::collections::BTreeSet::new(),
-            0,
-            0,
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &geometry_budget,
-        )
-        .expect_err("branch completion retained refusal");
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-            },
-        );
-    }
-
-    fn tolerant_edge_attachment_limit_error(
-        adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    ) -> cadmpeg_core::CodecError {
-        let mut ir = CadIr::empty();
-        ir.model.points.push(cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("nx:test:point#0").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
-                .expect("finite point"),
-            None,
-        ));
-
-        crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-            let geometry_budget = super::GeometryWorkBudget::from_context(ctx, 100);
-            super::attach_tolerant_edge_intersections_with_budget(
-                ctx,
-                &mut ir,
-                &crate::topology::Graph::default(),
-                &std::collections::BTreeMap::new(),
-                (
-                    &crate::decode::ids::IdScope::stream(0),
-                    &cadmpeg_ir::annotations::StreamHandle::new(
-                        &cadmpeg_test_support::service_decode_context(),
-                        cadmpeg_ir::stream_name!("nx:test"),
-                        "fixture stream handle",
-                    )
-                    .unwrap(),
-                ),
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                &geometry_budget,
-            )
-            .expect_err("tolerant edge attachment limit refusal")
-        })
-    }
-
-    #[test]
-    fn tolerant_edge_attachment_route_refuses_collection_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_collection_items = 0;
-        };
-        assert!(matches!(
-            tolerant_edge_attachment_limit_error(adjust_policy),
-            cadmpeg_core::CodecError::ResourceLimit(_)
-        ));
-    }
-
-    #[test]
-    fn tolerant_edge_attachment_route_refuses_scoped_point_index_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_materialized_bytes = 0;
-        };
-        assert!(matches!(
-            tolerant_edge_attachment_limit_error(adjust_policy),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-        ));
-    }
-
-    #[test]
     #[cfg(target_pointer_width = "64")]
     fn pcurve_sample_refuses_inexact_ordinal_and_count() {
         fn assert_refused(value: impl Into<Option<f64>>) {
@@ -5303,32 +4852,26 @@ mod tests {
 
     #[test]
     fn opposite_chart_geometry_work_limit_reallocates_unused_remainder() {
-        crate::test_support::with_decode_context(|ctx| {
-            assert_eq!(opposite_chart_geometry_work_limit(ctx, 0, 10).unwrap(), 0);
-            assert_eq!(opposite_chart_geometry_work_limit(ctx, 3, 10).unwrap(), 4);
-            assert_eq!(opposite_chart_geometry_work_limit(ctx, 2, 6).unwrap(), 3);
-            assert_eq!(opposite_chart_geometry_work_limit(ctx, 1, 3).unwrap(), 3);
-        });
+        assert_eq!(opposite_chart_geometry_work_limit(0, 10), 0);
+        assert_eq!(opposite_chart_geometry_work_limit(3, 10), 4);
+        assert_eq!(opposite_chart_geometry_work_limit(2, 6), 3);
+        assert_eq!(opposite_chart_geometry_work_limit(1, 3), 3);
     }
 
     #[test]
-    fn completion_transfer_count_overflow_refuses_work() {
-        crate::test_support::with_decode_context(|ctx| {
-            assert!(matches!(
-                super::completion_transfer_budget_limit(ctx, usize::MAX),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-        });
+    fn completion_transfer_count_overflow_caps_at_the_model_ceiling() {
+        assert_eq!(
+            super::completion_transfer_budget_limit(usize::MAX),
+            super::MAX_COMPLETION_TRANSFER_SAMPLES
+        );
     }
 
     #[test]
-    fn opposite_chart_rounding_overflow_refuses_work() {
-        crate::test_support::with_decode_context(|ctx| {
-            assert!(matches!(
-                opposite_chart_geometry_work_limit(ctx, 2, usize::MAX),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-        });
+    fn opposite_chart_rounding_does_not_overflow() {
+        assert_eq!(
+            opposite_chart_geometry_work_limit(2, usize::MAX),
+            usize::MAX / 2 + 1
+        );
     }
 
     #[test]

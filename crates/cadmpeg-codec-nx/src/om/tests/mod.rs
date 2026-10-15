@@ -14,6 +14,11 @@ fn unique_candidate_stops_after_second_hit() {
     assert_eq!(yielded, 2);
 }
 
+/// The registry budget the container gives one payload's section search.
+pub(super) fn section_budget() -> cadmpeg_core::decode::WorkBudget<'static> {
+    cadmpeg_core::decode::WorkBudget::new(super::MAX_INDEXED_SECTION_REGISTRY_WORK)
+}
+
 pub(super) fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2]) -> Vec<u8> {
     let declared_length = u8::try_from(text.len() + 2).expect("short synthesized message");
     let mut bytes = vec![0x03, declared_length];

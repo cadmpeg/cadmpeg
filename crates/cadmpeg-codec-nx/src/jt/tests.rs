@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use super::{decode_arithmetic, parse_probability_context};
 use cadmpeg_ir::scalar::FiniteBinary32;
 
 fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, usize)> {
@@ -14,51 +15,11 @@ fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, usize)> {
 }
 
 #[test]
-fn jt_int32_cdp2_refuses_counted_vector_at_caller_limit() {
+fn jt_int32_cdp2_decodes_counted_vector() {
     let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
     assert_eq!(
         decode_int32_cdp2(&packet, 0),
         Some((vec![1, -1], packet.len()))
-    );
-
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| {
-            policy.limits.max_collection_items = 1;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("two decoded integers exceed one collection item");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                        && limit.operation == "nx JT decoded vector"
-            ));
-        },
-    );
-}
-
-#[test]
-fn jt_int32_cdp2_refuses_retained_vector_at_caller_limit() {
-    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
-
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| {
-            policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(2 * std::mem::size_of::<i32>()) - 1;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("two decoded integers exceed retained storage");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && limit.operation == "nx JT decoded vector"
-            ));
-        },
     );
 }
 
@@ -79,28 +40,6 @@ fn jt_int32_cdp2_refuses_nesting_at_caller_limit() {
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
                         && limit.operation == "decode JT integer packet"
-            ));
-        },
-    );
-}
-
-#[test]
-fn jt_int32_cdp2_refuses_symbol_work_at_caller_limit() {
-    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
-
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| {
-            policy.limits.max_work_units = 1;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("two decoded integers exceed one work unit");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                        && limit.operation == "decode JT bitlength symbols"
             ));
         },
     );
@@ -171,44 +110,10 @@ fn decode_vertex_flags(bytes: &[u8], count: usize) -> Option<(Vec<u32>, usize)> 
     )
 }
 
-fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<super::ProbabilityEntry>, usize)> {
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |_| {},
-        |ctx| {
-            super::parse_probability_context(ctx, bytes)
-                .expect("service decode budget")
-                .map(|(entries, length, _reservation)| (entries, length))
-        },
-    )
-}
-
-fn decode_arithmetic(
-    bytes: &[u8],
-    bits: usize,
-    count: usize,
-    entries: &[super::ProbabilityEntry],
-) -> Option<Vec<Option<i32>>> {
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |_| {},
-        |ctx| {
-            super::decode_arithmetic(ctx, bytes, bits, count, entries)
-                .expect("service decode budget")
-                .map(|symbols| symbols.values)
-        },
-    )
-}
-
 fn unpack_predictor_residuals(residuals: &[i32], predictor: super::Predictor) -> Vec<i32> {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |_| {},
-        |ctx| {
-            super::unpack_predictor_residuals(ctx, residuals, predictor)
-                .expect("service predictor budget")
-        },
-    )
+    {
+        super::unpack_predictor_residuals(residuals, predictor)
+    }
 }
 
 const EPS_JT_NORMAL_RECONSTRUCTION: f32 = 1.0e-6;
@@ -322,59 +227,6 @@ fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
 }
 
 #[test]
-fn jt_int32_cdp2_refuses_scoped_probability_table_at_caller_limit() {
-    let mut context_bits = Vec::<bool>::new();
-    let mut push = |value: u32, width: u8| {
-        for shift in (0..width).rev() {
-            context_bits.push((value >> shift) & 1 != 0);
-        }
-    };
-    push(2, 6);
-    push(1, 6);
-    push(1, 6);
-    push(7, 32);
-    push(0, 2);
-    push(0, 1);
-    push(0, 1);
-    push(1, 2);
-    push(1, 1);
-    push(0, 1);
-    let mut context = vec![0, 2];
-    for chunk in context_bits.chunks(8) {
-        let mut byte = 0u8;
-        for bit in chunk {
-            byte = (byte << 1) | u8::from(*bit);
-        }
-        byte <<= 8 - chunk.len();
-        context.push(byte);
-    }
-    let mut packet = Vec::new();
-    packet.extend_from_slice(&3_u32.to_le_bytes());
-    packet.push(3);
-    packet.extend_from_slice(&16_u32.to_le_bytes());
-    packet.extend_from_slice(&0_u32.to_le_bytes());
-    packet.extend_from_slice(&context);
-    packet.extend_from_slice(&0_u32.to_le_bytes());
-
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("probability table needs scoped storage");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx JT decoded vector"
-            ));
-        },
-    );
-}
-
-#[test]
 fn jt_arithmetic_context_rejects_count_without_serialized_entry_span() {
     let mut context_bits = Vec::<bool>::new();
     let mut push = |value: u32, width: u8| {
@@ -451,17 +303,7 @@ fn jt_arithmetic_decode_bounds_table_lookup_work() {
         };
         65
     ];
-    crate::test_support::with_decode_context_over(
-        &[],
-        |_| {},
-        |ctx| {
-            let lane =
-                super::decode_arithmetic(ctx, &[], 0, super::MAX_ARITHMETIC_VALUES, &entries)
-                    .expect("local work limit skips the lane");
-            assert!(lane.is_none());
-            assert!(ctx.resource_refusal().is_none());
-        },
-    );
+    assert!(decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries).is_none());
 }
 
 #[test]
@@ -626,62 +468,6 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
     assert_eq!(consumed, array.len());
     assert_eq!(points[0].map(FiniteBinary32::get), [8.333_333; 3]);
     assert_eq!(points[3].map(FiniteBinary32::get), [18.333_334; 3]);
-}
-
-#[test]
-fn jt_coordinate_array_refuses_scoped_component_storage() {
-    let mut code = Vec::new();
-    let mut push = |value: u32, width: u8| {
-        code.extend(
-            (0..width)
-                .rev()
-                .map(|shift| u8::try_from((value >> shift) & 1).expect("fixture value fits u8")),
-        );
-    };
-    push(0, 1);
-    push(0, 6);
-    push(3, 6);
-    push(3, 3);
-    for value in 0..4 {
-        push(value, 2);
-    }
-    let mut word = 0u32;
-    for bit in &code {
-        word = (word << 1) | u32::from(*bit);
-    }
-    word <<= 32 - code.len();
-    let mut packet = 4_u32.to_le_bytes().to_vec();
-    packet.push(1);
-    packet.extend_from_slice(
-        &(u32::try_from(code.len()).expect("fixture value fits u32")).to_le_bytes(),
-    );
-    packet.extend_from_slice(&word.to_le_bytes());
-    let mut array = Vec::new();
-    for _ in 0..3 {
-        array.extend_from_slice(&packet);
-    }
-    array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
-
-    crate::test_support::with_decode_context_over(
-        &array,
-        |policy| {
-            policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
-                3 * std::mem::size_of::<Vec<FiniteBinary32>>(),
-            ) - 1;
-        },
-        |ctx| {
-            let error =
-                super::decode_vertex_coordinates(ctx, &array, 4, [range(10.0, 20.0); 3], [2; 3])
-                    .err()
-                    .expect("the component vector exceeds scoped storage");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx JT decoded vector"
-            ));
-        },
-    );
 }
 
 #[test]
@@ -917,37 +703,10 @@ fn jt_probability_context_biases_unsigned_symbols_before_range_admission() {
 }
 
 #[test]
-fn jt_integer_scratch_requires_retained_commit() {
-    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| policy.limits.max_retained_bytes = 0,
-        |ctx| {
-            let (lane, length) = super::decode_int32_cdp2_inner(ctx, &packet, 0)
-                .unwrap()
-                .unwrap();
-            assert_eq!(&*lane, &[1, -1]);
-            assert_eq!(length, packet.len());
-            assert!(
-                matches!(lane.into_retained(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
-        },
-    );
-}
-
-#[test]
-fn jt_lossless_component_uses_scoped_storage() {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_retained_bytes = 0,
-        |ctx| {
-            let lane = super::lossless_coordinate_component(ctx, &[0, 0], &[0, 0])
-                .unwrap()
-                .unwrap();
-            assert_eq!(lane.len(), 2);
-            assert!(lane.iter().all(|value| value.get() == 0.0));
-        },
-    );
+fn jt_lossless_component_decodes_zero_words() {
+    let lane = super::lossless_coordinate_component(&[0, 0], &[0, 0]).unwrap();
+    assert_eq!(lane.len(), 2);
+    assert!(lane.iter().all(|value| value.get() == 0.0));
 }
 
 #[test]
@@ -960,58 +719,7 @@ fn jt_arithmetic_local_work_limit_skips_the_lane() {
         };
         100
     ];
-    crate::test_support::with_decode_context_over(
-        &[],
-        |_| {},
-        |ctx| {
-            let lane = super::decode_arithmetic(ctx, &[], 0, 700_000, &entries)
-                .expect("the lookup ceiling skips the lane");
-            assert!(lane.is_none());
-            assert!(ctx.resource_refusal().is_none());
-        },
-    );
-}
-
-#[test]
-fn jt_arithmetic_admitted_lane_charges_session_work() {
-    let entries = vec![
-        super::ProbabilityEntry {
-            symbol: 0,
-            occurrence_count: 1,
-            value: 0
-        };
-        2
-    ];
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let error = super::decode_arithmetic(ctx, &[], 0, 1, &entries)
-                .err()
-                .expect("session work ceiling refuses the lookups");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-            );
-        },
-    );
-}
-
-#[test]
-fn jt_component_owner_keeps_scratch_reservation_live() {
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_materialized_bytes = 8,
-        |ctx| {
-            let component = super::lossless_coordinate_component(ctx, &[0, 0], &[0, 0])
-                .unwrap()
-                .unwrap();
-            assert_eq!(component.len(), 2);
-            assert!(ctx
-                .reserve_scoped(1, "overlapping JT component copy")
-                .is_err());
-            assert_eq!(component[0].get(), 0.0);
-        },
-    );
+    assert!(decode_arithmetic(&[], 0, 700_000, &entries).is_none());
 }
 
 fn single_symbol_probability_packet(raw: u32) -> (Vec<u8>, Vec<u8>) {
@@ -1034,22 +742,7 @@ fn single_symbol_probability_packet(raw: u32) -> (Vec<u8>, Vec<u8>) {
 }
 
 #[test]
-fn jt_arithmetic_output_copy_refuses_work_before_formation() {
-    let (_, packet) = single_symbol_probability_packet(2);
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| policy.limits.max_work_units = 3,
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "form JT arithmetic values")
-            );
-        },
-    );
-}
-
-#[test]
-fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
+fn jt_variable_bitlength_delta_cycles_decode() {
     let mut bits = vec![1_u8];
     bits.extend([0; 32]);
     bits.extend([0, 1, 0, 0, 0, 1]); // delta width 2, run width 1
@@ -1069,18 +762,5 @@ fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
         word <<= 32 - chunk.len();
         packet.extend_from_slice(&word.to_le_bytes());
     }
-    crate::test_support::with_decode_context_over(
-        &packet,
-        |policy| policy.limits.max_work_units = u64::from(bit_len),
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "decode JT bitlength code bits"
-                    && limit.additional == u64::from(bit_len))
-            );
-        },
-    );
     assert_eq!(decode_int32_cdp2(&packet, 0), Some((vec![0], packet.len())));
 }

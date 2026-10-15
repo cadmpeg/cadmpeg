@@ -6,9 +6,8 @@ use crate::native::features::{
     FeatureSketchPointUseReference, OffsetStoreNamedPoint,
 };
 
-fn dependency_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn dependency_admits_fixture() {
     let label = |id: &str, ordinal| FeatureOperationLabel {
         id: id.into(),
         section_link: "section".into(),
@@ -61,9 +60,8 @@ fn dependency_refusal(
         )
         .expect("datum frame"),
     };
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+    let decode = || {
         feature_sketch_datum_csys_dependencies(
-            ctx,
             &labels,
             std::slice::from_ref(&point),
             std::slice::from_ref(&point_use),
@@ -71,54 +69,5 @@ fn dependency_refusal(
             &[],
         )
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| decode(ctx))
-            .expect("admitted datum dependency")
-            .len(),
-        1
-    );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| decode(ctx).expect_err("datum dependency resource limit"),
-    )
-}
-
-#[test]
-fn sketch_datum_dependency_refuses_collection_limit() {
-    let error = dependency_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn sketch_datum_dependency_refuses_retained_limit() {
-    let error = dependency_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn sketch_datum_dependency_refuses_scoped_limit() {
-    let error = dependency_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn sketch_datum_dependency_refuses_work_limit() {
-    let error = dependency_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
+    assert_eq!(decode().expect("admitted datum dependency").len(), 1);
 }

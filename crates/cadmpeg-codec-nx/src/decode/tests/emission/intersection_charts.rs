@@ -68,10 +68,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .position(|window| window == [0, 17])
             .expect("fin record");
         put_ref(&mut stream, fin + 18, 1);
-        let graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
-        .unwrap();
+        let graph = crate::topology::Graph::parse(&stream);
         let mut off_support_ir = ir.clone();
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         let stream = StreamHandle::new(
@@ -206,10 +203,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
             .position(|window| window == [0, 16])
             .expect("edge record");
         put_ref(&mut stream, edge + 24, 1);
-        let graph = crate::test_support::with_decode_context(|ctx| {
-            crate::topology::Graph::parse(ctx, &stream)
-        })
-        .unwrap();
+        let graph = crate::topology::Graph::parse(&stream);
         let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
         let source_stream = StreamHandle::new(
             &cadmpeg_test_support::service_decode_context(),
@@ -486,9 +480,7 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     crate::test_support::with_decode_context(|ctx| {
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
 
         crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
@@ -513,54 +505,6 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         };
         assert!(later.sides()[1].pcurve.is_some());
     });
-}
-
-fn opposite_chart_completion_limit_error(
-    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
-
-    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-        let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
-            crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
-        );
-        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
-        );
-        crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
-            ctx,
-            &mut ir,
-            0,
-            &transfer_budget,
-            &geometry_budget,
-        )
-        .expect_err("opposite chart limit refusal")
-    })
-}
-
-#[test]
-fn opposite_chart_completion_route_refuses_collection_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_collection_items = 0;
-    };
-    assert!(matches!(
-        opposite_chart_completion_limit_error(adjust_policy),
-        cadmpeg_core::CodecError::ResourceLimit(_)
-    ));
-}
-
-#[test]
-fn opposite_chart_completion_route_refuses_retained_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 0;
-    };
-    assert!(matches!(
-        opposite_chart_completion_limit_error(adjust_policy),
-        cadmpeg_core::CodecError::ResourceLimit(_)
-    ));
 }
 
 fn cylinder_plane_transfer_fixture(

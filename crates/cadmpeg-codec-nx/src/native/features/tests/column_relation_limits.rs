@@ -18,10 +18,7 @@ enum ColumnRoute {
     Target,
 }
 
-fn column_relation_refusal(
-    route_kind: ColumnRoute,
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+fn assert_column_relation_admits(route_kind: ColumnRoute) {
     let input = FeatureInputBlock {
         id: "input#0".into(),
         operation_label: "operation#0".into(),
@@ -81,36 +78,32 @@ fn column_relation_refusal(
         data_block: input.data_block.clone(),
         source_offset: 100,
     };
-    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route_kind {
+    let route = || match route_kind {
         ColumnRoute::DatumUse => feature_datum_csys_column_row_uses(
-            ctx,
             std::slice::from_ref(&construction),
             &[],
             &[],
             std::slice::from_ref(&row),
             &[],
         )
-        .map(|uses| uses.len()),
+        .len(),
         ColumnRoute::InputUse => feature_input_column_row_uses(
-            ctx,
             std::slice::from_ref(&input),
             &[],
             &[],
             std::slice::from_ref(&row),
             &[],
         )
-        .map(|uses| uses.len()),
+        .len(),
         ColumnRoute::Target => feature_input_column_targets(
-            ctx,
             std::slice::from_ref(&input),
             std::slice::from_ref(&target_use),
             &[],
             std::slice::from_ref(&row),
         )
-        .map(|targets| targets.len()),
+        .len(),
     };
-    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
-        .expect("admitted column relation");
+    let admitted = route();
     assert_eq!(
         admitted,
         if matches!(route_kind, ColumnRoute::DatumUse) {
@@ -119,57 +112,17 @@ fn column_relation_refusal(
             1
         }
     );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| route(ctx).expect_err("column relation resource limit"),
-    )
 }
 
-macro_rules! column_relation_limit_tests {
-    ($collection:ident, $retained:ident, $work:ident, $route:expr) => {
+macro_rules! column_relation_admit_test {
+    ($name:ident, $route:expr) => {
         #[test]
-        fn $collection() {
-            let error = column_relation_refusal($route,
-                |policy| policy.limits.max_collection_items = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-        }
-        #[test]
-        fn $retained() {
-            let error = column_relation_refusal($route,
-                |policy| policy.limits.max_retained_bytes = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-        }
-        #[test]
-        fn $work() {
-            let error = column_relation_refusal($route,
-                |policy| policy.limits.max_work_units = 0);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        fn $name() {
+            assert_column_relation_admits($route);
         }
     };
 }
 
-column_relation_limit_tests!(
-    input_column_join_refuses_collection_limit,
-    input_column_join_refuses_retained_limit,
-    input_column_join_refuses_work_limit,
-    ColumnRoute::InputUse
-);
-column_relation_limit_tests!(
-    datum_column_join_refuses_collection_limit,
-    datum_column_join_refuses_retained_limit,
-    datum_column_join_refuses_work_limit,
-    ColumnRoute::DatumUse
-);
-column_relation_limit_tests!(
-    input_column_target_refuses_collection_limit,
-    input_column_target_refuses_retained_limit,
-    input_column_target_refuses_work_limit,
-    ColumnRoute::Target
-);
+column_relation_admit_test!(input_column_join_admits_fixture, ColumnRoute::InputUse);
+column_relation_admit_test!(datum_column_join_admits_fixture, ColumnRoute::DatumUse);
+column_relation_admit_test!(input_column_target_admits_fixture, ColumnRoute::Target);

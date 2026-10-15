@@ -9,10 +9,7 @@ fn block_dimensions_for_test(
     declarations: &[crate::native::om::ExpressionDeclaration],
     expressions: &[crate::native::om::ParameterFormula],
 ) -> Vec<crate::native::features::FeatureBlockDimensions> {
-    crate::test_support::with_decode_context(|ctx| {
-        feature_block_dimensions(ctx, constructions, bindings, declarations, expressions)
-    })
-    .expect("admitted block dimensions")
+    feature_block_dimensions(constructions, bindings, declarations, expressions)
 }
 
 #[test]
@@ -218,9 +215,8 @@ fn nx_block_dimensions_refuse_an_inch_length_that_overflows_millimeters() {
     .is_empty());
 }
 
-fn block_dimension_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn block_dimension_admits_fixture() {
     use crate::native::features::{FeatureBlockConstruction, FeatureParameterBinding};
     use crate::native::om::{ExpressionDeclaration, ExpressionUnit, ParameterFormula};
 
@@ -278,63 +274,13 @@ fn block_dimension_refusal(
             source_offset: u64::from(index),
         }
     });
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+    let decode = || {
         feature_block_dimensions(
-            ctx,
             std::slice::from_ref(&construction),
             std::slice::from_ref(&binding),
             &declarations,
             &expressions,
         )
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| decode(ctx))
-            .expect("admitted block dimension")
-            .len(),
-        1
-    );
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| decode(ctx).expect_err("block dimension resource limit"),
-    )
-}
-
-#[test]
-fn block_dimension_refuses_collection_limit() {
-    let error = block_dimension_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn block_dimension_refuses_retained_limit() {
-    let error = block_dimension_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn block_dimension_refuses_scoped_limit() {
-    let error = block_dimension_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn block_dimension_refuses_work_limit() {
-    let error = block_dimension_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
+    assert_eq!(decode().len(), 1);
 }
