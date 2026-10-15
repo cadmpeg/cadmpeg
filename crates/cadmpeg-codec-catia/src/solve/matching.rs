@@ -18,7 +18,7 @@ pub(super) fn domains_have_distinct_matching<'a>(
 ///
 /// Returns `false` when the caller's slice is used up; the search then ends
 /// without a matching.
-fn charge_matching_work(budget: Option<&WorkBudget<'_>>) -> bool {
+fn charge_matching_work(budget: Option<&WorkBudget>) -> bool {
     budget.is_none_or(|budget| !budget.exhausted() && budget.remaining() != 0 && budget.charge())
 }
 
@@ -32,7 +32,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
     ctx: &DecodeContext<'_>,
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
     edge_constraint: Option<MatchingEdgeConstraint>,
 ) -> Result<Option<Vec<usize>>, CodecError> {
     let mut admitted_domains = Vec::new();
@@ -189,7 +189,7 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
     matching: &[usize],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Result<Option<Vec<usize>>, CodecError> {
     let mut admitted_domains = Vec::new();
     for domain in domains {
@@ -280,7 +280,7 @@ pub(crate) fn retain_distinct_matching_supports(
     domains: &mut [Vec<usize>],
     point_count: usize,
     matching: &[usize],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Result<Option<bool>, CodecError> {
     if domains.len() != matching.len()
         || domains.len() > point_count

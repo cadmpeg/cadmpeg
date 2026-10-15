@@ -97,7 +97,7 @@ pub(super) fn transfer_closed_face_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     solved: ZeroEntityClosedTopology<'_>,
-    topology_budget: &WorkBudget<'_>,
+    topology_budget: &WorkBudget,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<ZeroEntityTopologyCounts>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<ZeroEntityTopologyCounts, cadmpeg_core::CodecError>> {

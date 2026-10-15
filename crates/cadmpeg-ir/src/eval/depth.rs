@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 
 use cadmpeg_core::decode::{
-    DecodeContext, DepthGuard, ResourceDimension, ResourceFailure, ResourceLimit,
+    DecodeContext, DepthGuard, ResourceDimension, ResourceFailure, ResourceLimit, WorkBudget,
     WorkBudgetRecursionGuard,
 };
 
@@ -36,7 +36,7 @@ enum FrameDepth<'a> {
         _guard: DepthGuard<'a>,
     },
     Slice {
-        _guard: WorkBudgetRecursionGuard<'a, 'a>,
+        _guard: WorkBudgetRecursionGuard<'a>,
     },
     Independent,
 }
@@ -56,7 +56,14 @@ impl<'a> ModelEvaluationDepthGuard<'a> {
                     _guard: context.enter_nested_limit("model evaluation recursion")?,
                 },
                 (None, Some(budget)) => FrameDepth::Slice {
-                    _guard: budget.recursion_guard()?,
+                    _guard: budget.recursion_guard().map_err(|_| ResourceLimit {
+                        dimension: ResourceDimension::RecursionDepth,
+                        reason: ResourceFailure::BudgetExceeded,
+                        limit: cadmpeg_core::decode::u64_from_index(WorkBudget::RECURSION_DEPTH),
+                        used: cadmpeg_core::decode::u64_from_index(WorkBudget::RECURSION_DEPTH),
+                        additional: 1,
+                        operation: "work_budget_recursion",
+                    })?,
                 },
                 (None, None) => {
                     if identities.len() >= INDEPENDENT_MODEL_EVALUATION_DEPTH {

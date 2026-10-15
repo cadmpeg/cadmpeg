@@ -231,7 +231,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         domains: &[Vec<usize>],
         assigned: &[Option<usize>],
         candidate: Option<(usize, usize)>,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> bool {
         let directions = |use_: MeshBoundaryEdgeCandidate| match use_.reversed {
             Some(reversed) => [Some(reversed), None],
@@ -316,7 +316,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     fn complete_ordered_assignment_viable(
         assignment: &MeshFaceBoundaryAssignment,
         edge_points: &[Option<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> bool {
         let directions = |use_: MeshBoundaryEdgeCandidate| match use_.reversed {
             Some(reversed) => [Some(reversed), None],
@@ -606,7 +606,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         let viable_values = |root: usize,
                              assigned: &[Option<usize>],
                              base_degrees: &HashMap<(usize, usize), usize>,
-                             work_budget: Option<&WorkBudget<'_>>|
+                             work_budget: Option<&WorkBudget>|
          -> Result<Vec<usize>, CodecError> {
             domains[root]
                 .iter()

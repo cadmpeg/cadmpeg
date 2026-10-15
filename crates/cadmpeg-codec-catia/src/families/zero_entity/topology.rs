@@ -94,7 +94,7 @@ pub(crate) fn zero_entity_endpoint_pair_candidates(
 pub(super) fn zero_entity_endpoint_pair_candidates_with_budget(
     ctx: &DecodeContext<'_>,
     runs: &[ZeroEntitySupportRun],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<ZeroEntityEndpointPairCandidate>>, CodecError> {
     endpoint_pair_candidates_with_budget(ctx, &zero_entity_oriented_occurrences(runs), budget)
 }
@@ -146,7 +146,7 @@ pub(crate) fn endpoint_pair_candidates(
 fn endpoint_pair_candidates_with_budget(
     ctx: &DecodeContext<'_>,
     occurrences: &[ZeroEntityOrientedOccurrence],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<ZeroEntityEndpointPairCandidate>>, CodecError> {
     let Some(endpoint_matches) = endpoint_match_graph(ctx, occurrences, budget)? else {
         return Ok(None);
@@ -265,7 +265,7 @@ pub(crate) fn endpoint_locus_candidates(
 pub(super) fn endpoint_locus_candidates_with_budget(
     ctx: &DecodeContext<'_>,
     endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<ZeroEntityEndpointLocusCandidate>>, CodecError> {
     let mut endpoints = Vec::new();
     for (endpoint_pair, candidate) in endpoint_pairs.iter().enumerate() {
@@ -374,7 +374,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
 fn endpoint_match_graph(
     ctx: &DecodeContext<'_>,
     occurrences: &[ZeroEntityOrientedOccurrence],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
     for (index, occurrence) in occurrences.iter().enumerate() {

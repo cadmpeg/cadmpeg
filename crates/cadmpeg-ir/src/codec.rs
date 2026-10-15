@@ -234,7 +234,7 @@ impl DecodeResult {
         let classification = match ir.source.as_ref() {
             Some(source) => match source.classification() {
                 FormatIdentity::Classified { dialects } => FormatIdentity::classified(
-                    dialects.try_clone_for_decode(ctx, "decode result classification")?,
+                    dialects.clone(),
                 ),
                 FormatIdentity::Unclassified { format } => {
                     FormatIdentity::unclassified(format.to_owned())

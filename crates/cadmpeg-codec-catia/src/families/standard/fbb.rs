@@ -470,7 +470,7 @@ pub(super) fn parse_standard_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<StandardTopologyDraft>, cadmpeg_core::CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
@@ -518,7 +518,7 @@ pub(super) fn parse_standard_port_endpoint_candidates(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_ports: &[[u32; 2]],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<StandardTopologyDraft>, cadmpeg_core::CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);

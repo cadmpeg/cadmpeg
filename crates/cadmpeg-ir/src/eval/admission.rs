@@ -69,10 +69,10 @@ pub struct EvaluationWorkSlice<'ctx, 'arena> {
 /// the stored representation's evaluation cost.
 #[derive(Clone, Copy)]
 enum WorkSlicePolicy<'ctx, 'arena> {
-    Independent(&'ctx WorkBudget<'ctx>),
+    Independent(&'ctx WorkBudget),
     Session {
         context: &'ctx DecodeContext<'arena>,
-        work: &'ctx WorkBudget<'ctx>,
+        work: &'ctx WorkBudget,
     },
 }
 
@@ -108,7 +108,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
         }
     }
 
-    pub(super) fn work_slice(self) -> Option<&'ctx WorkBudget<'ctx>> {
+    pub(super) fn work_slice(self) -> Option<&'ctx WorkBudget> {
         match self {
             Self::WorkSlice(EvaluationWorkSlice {
                 policy: WorkSlicePolicy::Independent(work) | WorkSlicePolicy::Session { work, .. },
@@ -136,7 +136,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     /// after the evaluation is its result.
     pub fn within_work_slice<T, R>(
         self,
-        parent: &WorkBudget<'_>,
+        parent: &WorkBudget,
         run: impl for<'slice> FnOnce(
             EvaluationAdmission<'slice, 'slice>,
         ) -> Result<T, EvaluationFailure<R>>,

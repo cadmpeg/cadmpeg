@@ -16,7 +16,7 @@ pub(super) fn fit_nurbs_surface_parameter(
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let local = fit_nurbs_surface_parameter_locally(ctx, surface, point, seed, tolerance, budget)?;
     if local.is_some() {
@@ -35,7 +35,7 @@ pub(super) fn fit_nurbs_surface_parameter_locally(
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     if !tolerance.is_finite() || tolerance < 0.0 {
         return Ok(None);

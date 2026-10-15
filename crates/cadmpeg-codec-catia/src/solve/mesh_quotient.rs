@@ -262,7 +262,7 @@ fn enforce_edge_arc_consistency(
     edge_ids: &[usize],
     root_edges: &[Vec<usize>],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Result<bool, CodecError> {
     let Some(support_work) = edge_ids.iter().try_fold(0usize, |work, edge| {
         work.checked_add(edge_candidates[*edge].len().checked_mul(2)?)
@@ -335,7 +335,7 @@ fn enforce_edge_arc_consistency_from(
     root_edges: &[Vec<usize>],
     edge_candidates: &[Vec<[usize; 2]>],
     initial_edges: &[usize],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Result<bool, CodecError> {
     let mut queued = ctx.alloc_filled(edges.len(), [true; 2], "catia_arc_from_queued")?;
     let mut queue = VecDeque::new();
@@ -393,7 +393,7 @@ fn enforce_sparse_endpoint_membership(
     edges: &[[usize; 2]],
     edge_ids: &[usize],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> bool {
     let mut ordered = Vec::new();
     for edge in 0..edges.len() {
@@ -706,7 +706,7 @@ impl MeshCoordinateRootDomains {
         &self,
         edge: usize,
         required: usize,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
         mut valid: impl FnMut([usize; 2]) -> bool,
     ) -> Option<[usize; 2]> {
         self.edge_candidates.get(edge)?.is_empty().then_some(())?;
@@ -756,7 +756,7 @@ impl MeshCoordinateRootDomains {
         ctx: &DecodeContext<'_>,
         domains: &[Vec<usize>],
         point_count: usize,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<Vec<usize>>, CodecError> {
         let mut roots_by_point =
             ctx.alloc_filled(point_count, Vec::new(), "catia_quotient_roots_by_point")?;
@@ -784,7 +784,7 @@ impl MeshCoordinateRootDomains {
         edge_candidates: &[Vec<[usize; 2]>],
         initial_edges: &[usize],
         mut propagate_all_different: bool,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<RefinedCoordinateDomains>, CodecError> {
         let mut affected_edges = initial_edges.to_vec();
         let mut coverage_matching = self.coverage_matching.clone();
@@ -948,7 +948,7 @@ impl MeshCoordinateRootDomains {
         ctx: &DecodeContext<'_>,
         edge: usize,
         pair: [usize; 2],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<Self>, CodecError> {
         let Some(candidates) = self.edge_candidates.get(edge) else {
             return Ok(None);
@@ -992,7 +992,7 @@ impl MeshCoordinateRootDomains {
         &self,
         ctx: &DecodeContext<'_>,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<Self>, CodecError> {
         if edge_candidates.len() != self.edge_candidates.len() {
             return Ok(None);
@@ -1360,7 +1360,7 @@ impl MeshQuotient {
         ctx: &DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<MeshCoordinateRootDomains>, CodecError> {
         if edge_candidates.len().checked_mul(2) != Some(self.union.len()) {
             return Ok(None);
@@ -1517,7 +1517,7 @@ impl MeshQuotient {
         &mut self,
         root: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<bool, CodecError> {
         let mut edges = HashSet::new();
         for edge in self.members(root).iter().map(|node| node / 2) {
@@ -1549,7 +1549,7 @@ impl MeshQuotient {
         &mut self,
         edges: impl IntoIterator<Item = usize>,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<bool, CodecError> {
         fn enqueue_component_edges(
             members: &[usize],
@@ -1703,7 +1703,7 @@ impl MeshQuotient {
         ctx: &DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
         Ok(self
             .coordinate_root_closure_outcome(ctx, point_count, edge_candidates, None, budget)?
@@ -1717,7 +1717,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: MeshIncidenceBoundary<'_>,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
         let MeshIncidenceBoundary {
             edge_faces,
@@ -1747,7 +1747,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: MeshIncidenceBoundary<'_>,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<CoordinateRootClosure, CodecError> {
         let MeshIncidenceBoundary {
             edge_faces,
@@ -1776,7 +1776,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<CoordinateRootClosure, CodecError> {
         self.coordinate_root_closure_outcome_with_component_budget(
             ctx,
@@ -1794,7 +1794,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
         component_search_budget: Option<usize>,
     ) -> Result<CoordinateRootClosure, CodecError> {
         let ambiguous = Cell::new(false);
@@ -1814,7 +1814,7 @@ impl MeshQuotient {
         &self,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<bool, CodecError> {
         struct State {
             boundary_index: usize,
@@ -2085,7 +2085,7 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         oriented_edges: &HashSet<usize>,
         limit: usize,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Vec<MeshOrientationOption>, CodecError> {
         struct BoundaryOrientationSearch<
             'input0,
@@ -2408,7 +2408,7 @@ impl MeshQuotient {
         assignment: &MeshFaceBoundaryAssignment,
         direction_options: &MeshFaceDirectionOptions,
         limit: usize,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Vec<MeshOrientationOption>, CodecError> {
         if limit == 0
             || assignment.boundaries.len() != direction_options.first().map_or(0, Vec::len)
@@ -2479,7 +2479,7 @@ impl MeshQuotient {
         assignment: &MeshFaceBoundaryAssignment,
         label_directions: &[Vec<bool>],
         edge_orientations: &[Option<bool>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<Vec<Vec<bool>>>, CodecError> {
         if assignment.boundaries.len() != label_directions.len()
             || label_directions
@@ -2546,7 +2546,7 @@ impl MeshQuotient {
         assignment: &MeshFaceBoundaryAssignment,
         label_directions: &[Vec<bool>],
         edge_orientations: &[Option<bool>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<MeshOrientationOption>, CodecError> {
         let mut quotient = self.clone();
         let directions = quotient.merge_label_directions_in_place(
@@ -2563,7 +2563,7 @@ impl MeshQuotient {
         ctx: &DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
         Ok(
             match self.point_assignments_with_budget(
@@ -2586,7 +2586,7 @@ impl MeshQuotient {
         ctx: &DecodeContext<'_>,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<bool, CodecError> {
         Ok(matches!(
             self.point_assignments_with_budget(ctx, point_count, edge_candidates, 1, budget)?,
@@ -2600,7 +2600,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         solution_limit: usize,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Result<PointAssignmentOutcome, CodecError> {
         type PointNeighbors = HashMap<usize, HashSet<usize>>;
 
@@ -2976,7 +2976,7 @@ fn materialize_deferred_quotient_option(
     base_nodes: &[usize],
     affected_edges: impl IntoIterator<Item = usize>,
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<MeshQuotient>, CodecError> {
     let mut materialized = base.clone();
     for local_node in 0..base_nodes.len() {
@@ -3000,7 +3000,7 @@ fn deferred_face_quotient_options_limited(
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &MeshQuotient,
     limit: usize,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<DeferredFaceQuotientOptions>, CodecError> {
     #[derive(Clone, Copy)]
     struct Gap {
@@ -3404,7 +3404,7 @@ fn propagate_common_deferred_quotients(
     mut options: DeferredFaceQuotientOptions,
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<()>, CodecError> {
     let node_count = options.base_nodes.len();
     let mut equivalence_classes = HashMap::<Vec<usize>, Vec<usize>>::new();
@@ -3469,7 +3469,7 @@ fn common_supported_corner_equations(
     ctx: &DecodeContext<'_>,
     quotient: &mut MeshQuotient,
     assignments: &[MeshFaceBoundaryAssignment],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<HashSet<[usize; 2]>>, CodecError> {
     fn compatible(quotient: &MeshQuotient, left: usize, right: usize) -> Result<bool, CodecError> {
         let left = quotient.union.root(left)?;
@@ -3739,7 +3739,7 @@ pub(super) fn propagate_common_ordered_face_quotients(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<()>, CodecError> {
     (|| -> Option<Result<(), CodecError>> {
         const MAX_FACE_OPTIONS: usize = 4_096;
@@ -3936,14 +3936,14 @@ pub(super) fn bounded_unordered_cycle_assignments(
     edges: &[usize],
     quotient: &MeshQuotient,
     limit: usize,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<MeshFaceBoundaryAssignment>>, CodecError> {
     struct Search<'a, 'b, 'c> {
         edges: &'a [usize],
         compatible: &'a HashSet<(usize, usize)>,
         ctx: &'a DecodeContext<'b>,
         limit: usize,
-        budget: &'a WorkBudget<'c>,
+        budget: &'a WorkBudget,
         assignments: Vec<MeshFaceBoundaryAssignment>,
     }
 
@@ -4056,7 +4056,7 @@ fn advance_boundary_component_states(
     states: &[MeshQuotientGaugeState],
     edge_candidates: &[Vec<[usize; 2]>],
     limit: usize,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<Vec<MeshQuotientGaugeState>>, CodecError> {
     let outcome = (|| -> Result<Option<Vec<MeshQuotientGaugeState>>, CodecError> {
         let mut next = Vec::new();
@@ -4777,7 +4777,7 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 
 pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     assignment: &MeshFaceBoundaryAssignment,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<bool> {
@@ -4786,7 +4786,7 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     fn endpoint_adjacency(
         candidates: impl IntoIterator<Item = [usize; 2]>,
         allowed: impl Fn([usize; 2]) -> bool,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Option<HashMap<usize, Vec<usize>>> {
         let mut adjacency = HashMap::<usize, Vec<usize>>::new();
         let mut count = 0usize;
@@ -4880,7 +4880,7 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
 pub(super) fn mesh_assignment_endpoint_cycles_viable_where(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<bool> {
     mesh_assignment_endpoint_cycles_viable_by(
@@ -4903,7 +4903,7 @@ pub(super) struct MeshEndpointPairSupport {
 
 pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
     assignment: &MeshFaceBoundaryAssignment,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<MeshEndpointPairSupport> {
@@ -4914,7 +4914,7 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
     fn compose_relations(
         left: &EndpointRelation,
         right: &EndpointRelation,
-        budget: Option<&WorkBudget<'_>>,
+        budget: Option<&WorkBudget>,
     ) -> Option<EndpointRelation> {
         let mut composed = EndpointRelation::new();
         let mut state_count = 0usize;
@@ -5082,7 +5082,7 @@ fn mesh_assignment_endpoint_cycles_viable_with(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
     required: Option<(usize, [usize; 2])>,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget>,
 ) -> Option<bool> {
     mesh_assignment_endpoint_cycles_viable_where(
         assignment,
@@ -5109,7 +5109,7 @@ pub(super) fn mesh_face_endpoint_configurations(
     assignments: &[MeshFaceBoundaryAssignment],
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Option<MeshFaceEndpointConfigurations> {
     fn insert_pair(
         configuration: &mut MeshFaceEndpointConfiguration,
@@ -5131,7 +5131,7 @@ pub(super) fn mesh_face_endpoint_configurations(
         edge_candidates: &[Vec<[usize; 2]>],
         selected: &[Option<[usize; 2]>],
         work: &mut usize,
-        budget: &WorkBudget<'_>,
+        budget: &WorkBudget,
     ) -> Option<MeshFaceEndpointConfigurations> {
         let charge = |work: &mut usize| {
             *work = work.checked_add(1)?;
@@ -5685,7 +5685,7 @@ fn complete_endpoint_relation_keys<'a>(
 fn build_endpoint_relation_constraints(
     ctx: &DecodeContext<'_>,
     domains: &[Vec<MeshEndpointRelationChoice>],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<Option<MeshEndpointRelationConstraints>, CodecError> {
     let mut shared_edges = HashMap::<(usize, usize), Vec<usize>>::new();
     let mut edge_faces = HashMap::<usize, HashSet<usize>>::new();
@@ -5805,7 +5805,7 @@ fn propagate_endpoint_relation_domains(
     domains: &mut [Vec<MeshEndpointRelationChoice>],
     assigned: &mut [Option<[usize; 2]>],
     constraints: &MeshEndpointRelationConstraints,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
 ) -> Result<bool, CodecError> {
     let mut dirty_faces = Vec::new();
     for (face, choices) in domains.iter().enumerate() {
@@ -7019,7 +7019,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[MeshFaceBoundaryAssignment],
     port_identities: &[[u32; 2]],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Result<MeshEndpointResolve, CodecError> {
     let MeshEndpointGeometry {
@@ -7266,7 +7266,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
     edge_candidates: &[Vec<[usize; 2]>],
     assignment_domains: &[Vec<MeshFaceBoundaryAssignment>],
     port_identities: &[[u32; 2]],
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Result<MeshEndpointResolve, CodecError> {
     // Keep recursive search state explicit so budget, solution, and ambiguity
@@ -8399,11 +8399,11 @@ where
 pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_assignments<F>(
     ctx: &DecodeContext<'_>,
     candidates: MeshFaceAssignmentCandidates<'_>,
-    budget: &WorkBudget<'_>,
+    budget: &WorkBudget,
     mut solve: F,
 ) -> Result<MeshFaceDomainCandidateSolve, CodecError>
 where
-    F: FnMut(&[[usize; 2]], &WorkBudget<'_>) -> Result<MeshCandidateSolve, CodecError>,
+    F: FnMut(&[[usize; 2]], &WorkBudget) -> Result<MeshCandidateSolve, CodecError>,
 {
     let mut solution: Option<(Vec<[usize; 2]>, StandardTopologyDraft, Vec<usize>)> = None;
     let mut rejection = None;
