@@ -20,14 +20,22 @@ fn feature_parent_lookup_refuses_collection_limit() {
         .push(feature("one", "synthetic:test:object#one"));
     let transfer = DesignFeatureTransfer::default();
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
+        transfer.assign_feature_parents(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_feature_parent_objects")
+        if limit.operation == "catia_feature_transfer_objects")
     );
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
+        transfer.assign_feature_parents(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .expect("service profile admits parent indexes");
     assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
@@ -67,7 +75,11 @@ fn assigns_parent_from_an_exact_transferred_owner_chain() {
     };
 
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
+        transfer.assign_feature_parents(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 
@@ -116,7 +128,11 @@ fn assigns_parent_from_the_nearest_transferred_ancestor() {
     };
 
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
+        transfer.assign_feature_parents(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 
@@ -160,7 +176,11 @@ fn rejects_a_parent_that_does_not_precede_its_child() {
     };
 
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
+        transfer.assign_feature_parents(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 
@@ -193,7 +213,11 @@ fn does_not_assign_a_self_parent() {
     };
 
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
+        transfer.assign_feature_parents(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 
@@ -239,7 +263,11 @@ fn omits_all_parents_in_an_owner_cycle() {
     };
 
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_parents(ctx, &mut ir, &native)
+        transfer.assign_feature_parents(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 

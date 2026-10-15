@@ -1817,3 +1817,115 @@ fn payload_field_wire_rejects_a_table_count_disagreeing_with_the_rows() {
         .to_string();
     assert!(error.contains("table_count"), "{error}");
 }
+
+#[test]
+fn repeated_reference_suffix_searches_refuse_before_visits() {
+    use super::{ObjectPayload, PayloadField};
+    let payload = ObjectPayload {
+        size: 8,
+        fields: vec![
+            PayloadField::Atom {
+                value: 48,
+                offset: 0,
+            },
+            PayloadField::Atom {
+                value: 2,
+                offset: 1,
+            },
+            PayloadField::Reference {
+                value: 7,
+                offset: 2,
+            },
+            PayloadField::Reference {
+                value: 9,
+                offset: 3,
+            },
+            PayloadField::Atom {
+                value: 2,
+                offset: 4,
+            },
+            PayloadField::Reference {
+                value: 7,
+                offset: 5,
+            },
+            PayloadField::Atom {
+                value: 129,
+                offset: 6,
+            },
+            PayloadField::Terminator,
+        ],
+    };
+    for operation in [
+        "catia_repeated_reference_candidates",
+        "catia_repeated_reference_fields",
+        "catia_repeated_reference_copy",
+        "catia_reference_schema_preamble",
+    ] {
+        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+            super::repeated_reference_suffix_charged(ctx, &payload)
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation)
+        );
+    }
+    let suffix = crate::test_support::with_service_context(|ctx| {
+        super::repeated_reference_suffix_charged(ctx, &payload)
+    })
+    .expect("admission")
+    .expect("exact suffix");
+    assert_eq!(suffix.repeated_references, [7]);
+    assert_eq!(suffix.terminal_reference, 9);
+    assert!(crate::test_support::with_materialized_limit(0, |ctx| {
+        super::has_repeated_reference_suffix(ctx, &payload)
+    })
+    .expect("borrowed search"));
+}
+
+#[test]
+fn payload_classification_matches_the_structural_subtype_and_refuses_work() {
+    for bytes in [
+        object_graph_stream(),
+        object_graph_bulk_table_stream(),
+        object_graph_vm_stream(),
+    ] {
+        for record in parse(&bytes).expect("graph").records {
+            let fields = &record.payload().fields;
+            let result = crate::test_support::with_service_context(|ctx| {
+                super::classify_charged(ctx, fields)
+            })
+            .expect("classification");
+            assert_eq!(result, super::classify(fields));
+            let refusal = crate::test_support::with_work_refusal(
+                "catia_object_payload_classification",
+                |ctx| super::classify_charged(ctx, fields),
+            );
+            assert!(
+                matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_object_payload_classification")
+            );
+        }
+    }
+}
+
+#[test]
+fn final_terminator_suffix_is_scanned_once_for_nonfinal_fe_atoms() {
+    let mut bytes = vec![0xfe; 4096];
+    bytes.extend([0x82, 0xfe]);
+    let payload = crate::test_support::with_work_limit(
+        4 * (cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::PayloadField>()) + 2)
+            * cadmpeg_core::decode::u64_from_index(bytes.len()),
+        |ctx| super::decode_payload(ctx, &bytes),
+    )
+    .expect("linear payload walk fits")
+    .expect("payload");
+    assert_eq!(payload.fields.len(), 4098);
+    assert!(payload.fields[..4096]
+        .iter()
+        .all(|field| matches!(field, super::PayloadField::Atom { value: 0xfe, .. })));
+    assert!(matches!(
+        payload.fields.last(),
+        Some(super::PayloadField::Terminator)
+    ));
+}
+
+mod classification;
+mod extent_index;

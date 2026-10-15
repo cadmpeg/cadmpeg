@@ -3,10 +3,11 @@ use super::super::super::graph::{
     B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
     B5Surface,
 };
+use super::build_plan;
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::{
-    build_plan, resolved_surface_carrier_in_graph, transfer, CurvePlan, ResolvedPcurveSurface,
+    resolved_surface_carrier_in_graph, transfer, CurvePlan, ResolvedPcurveSurface,
 };
 const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
@@ -47,7 +48,13 @@ fn oriented_nurbs_range(
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::pcurves::oriented_nurbs_range(ctx, geometry, parameters, edge_start, edge_end)
+        super::super::pcurves::oriented_nurbs_range(
+            ctx,
+            &mut geometry.clone(),
+            parameters,
+            edge_start,
+            edge_end,
+        )
     })
     .expect("service budget")
 }
@@ -368,14 +375,18 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            vec![B5LogicalVertex {
-                object_id: 50,
-                point: crate::test_support::test_b5::point([2.0, 0.0, 0.5]),
-            }],
-            BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                vec![B5LogicalVertex {
+                    object_id: 50,
+                    point: crate::test_support::test_b5::point([2.0, 0.0, 0.5]),
+                }],
+                BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
@@ -653,19 +664,18 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         .expect("fixture constructor admission")
         .expect("valid affine lift curve"),
     ));
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+    let admitted = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::pcurves::oriented_nurbs_range(
             ctx,
-            &geometry,
+            &mut geometry.clone(),
             [2.0, 8.0],
             [2.0, 0.0, 2.0],
             [8.0, 0.0, 2.0],
         )
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_oriented_nurbs_curve")
-    );
+    })
+    .expect("forward orientation moves owned geometry")
+    .expect("forward trimmed range");
+    assert_eq!(admitted.geometry, geometry);
     let forward = oriented_nurbs_range(&geometry, [2.0, 8.0], [2.0, 0.0, 2.0], [8.0, 0.0, 2.0])
         .expect("forward trimmed range");
     assert_eq!(forward.geometry, geometry);
@@ -1301,18 +1311,22 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]]
-                .into_iter()
-                .map(crate::test_support::test_b5::point)
-                .collect(),
-            Vec::new(),
-            BTreeMap::from([
-                (5, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)]),
-                (6, [B5VertexRef::Raw(1), B5VertexRef::Raw(2)]),
-                (7, [B5VertexRef::Raw(2), B5VertexRef::Raw(0)]),
-            ]),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]]
+                    .into_iter()
+                    .map(crate::test_support::test_b5::point)
+                    .collect(),
+                Vec::new(),
+                BTreeMap::from([
+                    (5, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)]),
+                    (6, [B5VertexRef::Raw(1), B5VertexRef::Raw(2)]),
+                    (7, [B5VertexRef::Raw(2), B5VertexRef::Raw(0)]),
+                ]),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1324,7 +1338,9 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
     assert!(ownership_plan(&ctx, &graph)
         .expect("service decode")
         .is_some());
-    assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
+    assert!(
+        loop_chain_closes(&ctx, &graph.loops[&3], graph.vertices.edges()).expect("service budget")
+    );
     let senses = graph.loops[&3].edge_senses(&ctx).expect("service budget");
     assert!(
         orient_loop_members(&ctx, &graph, BTreeMap::from([(3, senses)]))
@@ -1423,11 +1439,15 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            Vec::new(),
-            BTreeMap::new(),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                Vec::new(),
+                BTreeMap::new(),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1837,3 +1857,6 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     assert_eq!(angle_range.get(), [0.0, tiny]);
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 }
+
+mod knot_admission;
+mod order_admission;

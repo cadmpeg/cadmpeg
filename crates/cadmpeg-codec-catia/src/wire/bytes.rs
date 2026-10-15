@@ -6,8 +6,8 @@
 //! allocation reference tokens; and fixed-size finite `f64` array reads.
 
 use super::cursor::Cursor;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -19,11 +19,8 @@ pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
         return None;
     }
     let mut view = View::over_retained(bytes);
-    let arena = DecodeArena::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
-    let mut values = ctx
-        .collection_vec(bytes.len() / 8, "catia_finite_f64_lane")
-        .ok()?;
+    let mut values = Vec::new();
+    values.try_reserve_exact(bytes.len() / 8).ok()?;
     while !view.is_empty() {
         values.push(FiniteReal::new(view.f64_le()?)?);
     }
@@ -40,15 +37,19 @@ pub(crate) fn finite_f64_lane_charged(
     if !bytes.len().is_multiple_of(8) {
         return Ok(None);
     }
-    let mut values = ctx.collection_vec(bytes.len() / 8, operation)?;
-    let mut view = View::over_retained(bytes);
-    while !view.is_empty() {
-        let Some(value) = view.f64_le().and_then(FiniteReal::new) else {
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let mut values = storage.with_storage(|| ctx.collection_vec(bytes.len() / 8, operation))?;
+    let mut windows = bytes.chunks_exact(8);
+    while windows.len() != 0 {
+        let Some(bytes) = ctx.next_charged(&mut windows, operation)? else {
+            return Ok(None);
+        };
+        let Some(value) = View::f64_le_at(bytes, 0).and_then(FiniteReal::new) else {
             return Ok(None);
         };
         values.push(value);
     }
-    Ok(Some(values))
+    storage.commit_value(values).map(Some)
 }
 
 /// Read `N` consecutive little-endian `f64` values, each finite.
@@ -184,6 +185,130 @@ pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{allocation_ref, allocation_reference, AllocationReferenceEncoding};
+
+    #[test]
+    fn finite_lane_preserves_values_and_rejects_nonfinite_scalars() {
+        let bytes = [1.0_f64.to_le_bytes(), (-2.0_f64).to_le_bytes()].concat();
+        let values = crate::test_support::with_service_context(|ctx| {
+            super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+        })
+        .expect("lane admission")
+        .expect("finite lane");
+        assert_eq!(
+            super::finite_f64_lane(&bytes).expect("pure finite lane"),
+            values
+        );
+        assert_eq!(
+            values.iter().map(|value| value.get()).collect::<Vec<_>>(),
+            [1.0, -2.0]
+        );
+        for bytes in [vec![0], f64::INFINITY.to_le_bytes().to_vec()] {
+            assert!(super::finite_f64_lane(&bytes).is_none());
+            assert!(crate::test_support::with_service_context(|ctx| {
+                super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+            })
+            .expect("lane admission")
+            .is_none());
+        }
+    }
+
+    #[test]
+    fn rejected_finite_lanes_release_storage_without_retaining_bytes() {
+        let rejected = [1.0_f64.to_le_bytes(), f64::NAN.to_le_bytes()].concat();
+        let accepted = 2.0_f64.to_le_bytes();
+        let values = crate::test_support::with_retained_limit(8, |ctx| {
+            for _ in 0..64 {
+                assert!(
+                    super::finite_f64_lane_charged(ctx, &rejected, "catia_lane_test")?.is_none()
+                );
+            }
+            super::finite_f64_lane_charged(ctx, &accepted, "catia_lane_test")
+        })
+        .expect("only the accepted scalar retains eight bytes")
+        .expect("finite lane");
+        assert_eq!(values[0].get(), 2.0);
+    }
+
+    #[test]
+    fn finite_lane_visits_only_read_scalars_and_skips_empty_lanes() {
+        let empty = crate::test_support::with_work_limit(0, |ctx| {
+            super::finite_f64_lane_charged(ctx, &[], "catia_lane_test")
+        })
+        .expect("empty lane has no scalar visits")
+        .expect("empty finite lane");
+        assert!(empty.is_empty());
+        let mut rejected = f64::NAN.to_le_bytes().to_vec();
+        for _ in 0..4096 {
+            rejected.extend_from_slice(&1.0_f64.to_le_bytes());
+        }
+        assert!(crate::test_support::with_work_limit(1, |ctx| {
+            super::finite_f64_lane_charged(ctx, &rejected, "catia_lane_test")
+        })
+        .expect("first rejected scalar leaves the tail unread")
+        .is_none());
+        let accepted = [1.0_f64.to_le_bytes(), (-0.0_f64).to_le_bytes()].concat();
+        let values = crate::test_support::with_work_limit(2, |ctx| {
+            super::finite_f64_lane_charged(ctx, &accepted, "catia_lane_test")
+        })
+        .expect("one core visit per scalar")
+        .expect("finite lane");
+        assert_eq!(values[0].get(), 1.0);
+        assert_eq!(values[1].get().to_bits(), (-0.0_f64).to_bits());
+    }
+
+    #[test]
+    fn finite_lane_refuses_work_and_collection_growth() {
+        let bytes = 1.0_f64.to_le_bytes();
+        let work = crate::test_support::with_work_limit(0, |ctx| {
+            super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+        });
+        assert!(
+            matches!(work, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_lane_test"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
+        let slots = crate::test_support::with_collection_limit(0, |ctx| {
+            super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
+        });
+        assert!(
+            matches!(slots, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_lane_test"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn finite_lane_promotion_preserves_refusal_and_parent_storage() {
+        use cadmpeg_core::{decode::ResourceDimension, CodecError};
+
+        let bytes = [1.0_f64.to_le_bytes(), (-0.0_f64).to_le_bytes()].concat();
+        let result = crate::test_support::with_retained_refusal(&bytes, "catia_lane_test", |ctx| {
+            let result = super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test");
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("actual finite lane promotion must refuse");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(limit.operation, "catia_lane_test");
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+            assert!(matches!(ctx.charge_work(0, "after lane promotion refusal"),
+                    Err(CodecError::ResourceLimit(later)) if later == *limit));
+            result
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+        crate::test_support::with_retained_limit(0, |ctx| -> Result<(), CodecError> {
+            let mut storage = ctx.reserve_scoped(0, "test finite lane parent")?;
+            let values = storage
+                .with_storage(|| super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test"))?
+                .expect("finite lane");
+            assert_eq!(values[0].get(), 1.0);
+            assert_eq!(values[1].get().to_bits(), (-0.0_f64).to_bits());
+            assert_eq!(ctx.resource_refusal(), None);
+            drop(values);
+            drop(storage);
+            Ok(())
+        })
+        .expect("actual lane backing remains under its live parent");
+    }
 
     #[test]
     fn allocation_refs_strip_single_byte_dialect_bits() {

@@ -6,10 +6,8 @@
 //! interval canonicalization, and exact circular-helix fitting.
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
-use cadmpeg_core::decode::u64_from_index;
 
-type QuinticJetOutput<const N: usize> =
-    Result<Option<(Vec<f64>, Vec<FiniteVector<N>>)>, cadmpeg_core::CodecError>;
+type QuinticJetOutput<T> = Result<Option<(Vec<f64>, Vec<T>)>, cadmpeg_core::CodecError>;
 
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::KnotVector;
@@ -20,7 +18,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::units::{FinitePoint2, FiniteVector, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
 
 const EPS_NURBS_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_NURBS_GEOMETRY: f64 = 1.0e-9;
@@ -32,12 +30,90 @@ const EPS_HELIX_ORTHO: f64 = EPS_NURBS_GEOMETRY;
 const EPS_HELIX_PITCH_ALIGNMENT: f64 = EPS_NURBS_GEOMETRY;
 const EPS_RELATIVE_TOLERANCE: f64 = EPS_NURBS_COARSE_GEOMETRY;
 
-fn pcurve_weights_are_positive(nurbs: &PcurveNurbs) -> bool {
-    match nurbs.pole_rows() {
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => true,
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
-            points.iter().all(|pole| pole.weight.get() > 0.0)
+/// Compare the variable NURBS lanes in source order and stop at disagreement.
+pub(crate) fn nurbs_surfaces_equal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    right: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
+    if left.u_degree() != right.u_degree()
+        || left.v_degree() != right.v_degree()
+        || left.u_periodic() != right.u_periodic()
+        || left.v_periodic() != right.v_periodic()
+        || left.normal_reversed() != right.normal_reversed()
+    {
+        return Ok(false);
+    }
+    for (left, right) in [
+        (left.u_knots().as_slice(), right.u_knots().as_slice()),
+        (left.v_knots().as_slice(), right.v_knots().as_slice()),
+    ] {
+        if left.len() != right.len()
+            || !ctx.all_by(
+                left.iter().zip(right),
+                |(left, right)| Ok(left == right),
+                operation,
+            )?
+        {
+            return Ok(false);
         }
+    }
+    match (left.pole_grid(), right.pole_grid()) {
+        (NurbsPoleGrid::Polynomial { rows: left }, NurbsPoleGrid::Polynomial { rows: right }) => {
+            if left.len() != right.len() {
+                return Ok(false);
+            }
+            ctx.all_by(
+                left.iter().zip(right),
+                |(left, right)| {
+                    if left.len() != right.len() {
+                        return Ok(false);
+                    }
+                    ctx.all_by(
+                        left.iter().zip(right),
+                        |(left, right)| Ok(left == right),
+                        operation,
+                    )
+                },
+                operation,
+            )
+        }
+        (NurbsPoleGrid::Rational { rows: left }, NurbsPoleGrid::Rational { rows: right }) => {
+            if left.len() != right.len() {
+                return Ok(false);
+            }
+            ctx.all_by(
+                left.iter().zip(right),
+                |(left, right)| {
+                    if left.len() != right.len() {
+                        return Ok(false);
+                    }
+                    ctx.all_by(
+                        left.iter().zip(right),
+                        |(left, right)| Ok(left == right),
+                        operation,
+                    )
+                },
+                operation,
+            )
+        }
+        _ => Ok(false),
+    }
+}
+
+fn pcurve_weights_are_positive(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    nurbs: &PcurveNurbs,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => Ok(true),
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => ctx.all_by(
+            points,
+            |pole| Ok(pole.weight.get() > 0.0),
+            "catia_reverse_pcurve_weights",
+        ),
     }
 }
 
@@ -80,13 +156,17 @@ impl LaneRefusals {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         error: &cadmpeg_ir::annotations::AnnotationIdentityCollision,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::SourceAnnotationCollision,
-            format_args!("{error}"),
-            "catia_annotation_collision_loss",
-        )
+        let mut storage = ctx.provisional_retained("catia_lane_refusal_notes")?;
+        storage.with_storage(|| {
+            crate::resource::push_loss(
+                ctx,
+                &mut self.notes,
+                crate::loss::CatiaLossCode::SourceAnnotationCollision,
+                format_args!("{error}"),
+                "catia_annotation_collision_loss",
+            )
+        })?;
+        storage.commit()
     }
 
     /// Record one refusal against the record that stated it.
@@ -96,11 +176,13 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(ctx, &mut self.notes,
+        let mut storage = ctx.provisional_retained("catia_lane_refusal_notes")?;
+        storage.with_storage(|| crate::resource::push_loss(ctx, &mut self.notes,
             crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
             format_args!(
                 "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
-            ), "catia_nurbs_refusal_loss")
+            ), "catia_nurbs_refusal_loss"))?;
+        storage.commit()
     }
 
     /// Record one refusal a lane solver stated, against the record that stated
@@ -115,15 +197,19 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         detail: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
-            format_args!(
+        let mut storage = ctx.provisional_retained("catia_lane_refusal_notes")?;
+        storage.with_storage(|| {
+            crate::resource::push_loss(
+                ctx,
+                &mut self.notes,
+                crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
+                format_args!(
                 "A CATIA carrier record states lanes the reader cannot lower: {record} {detail}"
             ),
-            "catia_solver_refusal_loss",
-        )
+                "catia_solver_refusal_loss",
+            )
+        })?;
+        storage.commit()
     }
 
     /// Record a refused source-stated parameter range against the record that
@@ -134,17 +220,21 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         range: [f64; 2],
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::GeometryParameterRangeInvalid,
-            format_args!(
-                "A CATIA record states a parameter range the reader refuses: \
+        let mut storage = ctx.provisional_retained("catia_lane_refusal_notes")?;
+        storage.with_storage(|| {
+            crate::resource::push_loss(
+                ctx,
+                &mut self.notes,
+                crate::loss::CatiaLossCode::GeometryParameterRangeInvalid,
+                format_args!(
+                    "A CATIA record states a parameter range the reader refuses: \
                  {record} states [{}, {}]",
-                range[0], range[1]
-            ),
-            "catia_range_refusal_loss",
-        )
+                    range[0], range[1]
+                ),
+                "catia_range_refusal_loss",
+            )
+        })?;
+        storage.commit()
     }
 }
 
@@ -206,6 +296,26 @@ pub(crate) fn reverse_pcurve_geometry(
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    reverse_pcurve_geometry_scoped(ctx, geometry, range, refusal, record)?
+        .map(|(geometry, storage)| storage.commit_value(geometry))
+        .transpose()
+}
+
+/// Build a reversal candidate whose backing remains temporary until selection.
+/// Refusal diagnostics belong to the caller and stay outside its output lease.
+pub(crate) fn reverse_pcurve_geometry_scoped<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Result<
+    Option<(
+        PcurveGeometry,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
+    cadmpeg_core::CodecError,
+> {
     if !readable_range(ctx, range, true, refusal, record)? {
         return Ok(None);
     }
@@ -217,43 +327,63 @@ pub(crate) fn reverse_pcurve_geometry(
                 range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
                 range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
             ));
-            Ok(origin.map(|origin| {
+            let Some(origin) = origin else {
+                return Ok(None);
+            };
+            let storage = ctx.reserve_scoped(0, "catia_reverse_pcurve_output")?;
+            Ok(Some((
                 PcurveGeometry::Line(cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                     origin,
                     line_pcurve.direction().reversed(),
-                ))
-            }))
+                )),
+                storage,
+            )))
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            if !pcurve_weights_are_positive(nurbs) {
+            if !pcurve_weights_are_positive(ctx, nurbs)? {
                 return Ok(None);
             }
-            let reversed_knots = reverse_knots(ctx, nurbs.knots(), range)?;
+            let mut output_storage = ctx.reserve_scoped(0, "catia_reverse_pcurve_output")?;
+            let reversed_knots =
+                output_storage.with_storage(|| reverse_knots(ctx, nurbs.knots(), range))?;
             let mut poles = match nurbs.pole_rows() {
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial {
-                        points: ctx.copy_slice(points, "catia_reverse_pcurve_poles")?,
+                        points: output_storage.with_storage(|| {
+                            ctx.copy_slice(points, "catia_reverse_pcurve_poles")
+                        })?,
                     }
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational {
-                        points: ctx.copy_slice(points, "catia_reverse_pcurve_poles")?,
+                        points: output_storage.with_storage(|| {
+                            ctx.copy_slice(points, "catia_reverse_pcurve_poles")
+                        })?,
                     }
                 }
             };
-            poles.reverse();
-            note_refusal(
-                ctx,
-                match KnotVector::new(ctx, reversed_knots)? {
+            match &mut poles {
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
+                    ctx.reverse(points, "catia_reverse_pcurve_pole_order")?;
+                }
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+                    ctx.reverse(points, "catia_reverse_pcurve_pole_order")?;
+                }
+            }
+            let (checked, _validation_storage) = ctx.with_scoped_storage(
+                "catia_reverse_pcurve_validation",
+                || match KnotVector::new(ctx, reversed_knots)? {
                     Ok(knots) => {
-                        PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?
+                        PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())
                     }
-                    Err(error) => Err(error),
+                    Err(error) => Ok(Err(error)),
                 },
-                refusal,
-                record,
-            )
-            .map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
+            )?;
+            let result = note_refusal(ctx, checked, refusal, record)?;
+            match result {
+                Some(nurbs) => Ok(Some((PcurveGeometry::Nurbs { nurbs }, output_storage))),
+                None => Ok(None),
+            }
         }
         _ => Ok(None),
     }
@@ -323,20 +453,22 @@ pub(crate) fn reverse_curve_geometry(
                 )
             }))
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => note_refusal(
-            ctx,
-            reverse_nurbs_curve(ctx, nurbs, range)?,
-            refusal,
-            record,
-        )
-        .map(|curve| {
-            curve.map(|curve| {
-                (
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                    range,
-                )
-            })
-        }),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            let (checked, output_storage) = ctx
+                .with_scoped_storage("catia_reversed_model_geometry", || {
+                    reverse_nurbs_curve(ctx, nurbs, range)
+                })?;
+            let curve = note_refusal(ctx, checked, refusal, record)?;
+            match curve {
+                Some(curve) => output_storage
+                    .commit_value((
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                        range,
+                    ))
+                    .map(Some),
+                None => Ok(None),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -349,8 +481,8 @@ fn reverse_knots(
     [lower, upper]: [f64; 2],
 ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
     let mut reversed = ctx.copy_slice(knots, "catia_reverse_knots")?;
-    reversed.reverse();
-    for knot in &mut reversed {
+    ctx.reverse(&mut reversed, "catia_reverse_knots_order")?;
+    for knot in ctx.admit_iter(&mut reversed, "catia_reverse_knots_reflect")? {
         let reflected = if (*knot - lower).abs() <= (upper - *knot).abs() {
             upper - (*knot - lower)
         } else {
@@ -374,24 +506,40 @@ pub(crate) fn reverse_nurbs_curve(
         )?;
         return Ok(Err(NurbsError::Structure(message)));
     }
+    let mut output_storage = ctx.reserve_scoped(0, "catia_reverse_curve_output")?;
     let mut poles = match curve.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
-                points: ctx.copy_slice(points, "catia_reverse_curve_poles")?,
+                points: output_storage
+                    .with_storage(|| ctx.copy_slice(points, "catia_reverse_curve_poles"))?,
             }
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
-                points: ctx.copy_slice(points, "catia_reverse_curve_poles")?,
+                points: output_storage
+                    .with_storage(|| ctx.copy_slice(points, "catia_reverse_curve_poles"))?,
             }
         }
     };
-    poles.reverse();
-    let knots = match KnotVector::new(ctx, reverse_knots(ctx, curve.knots(), range)?)? {
+    match &mut poles {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            ctx.reverse(points, "catia_reverse_curve_pole_order")?;
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+            ctx.reverse(points, "catia_reverse_curve_pole_order")?;
+        }
+    }
+    let reversed_knots =
+        output_storage.with_storage(|| reverse_knots(ctx, curve.knots(), range))?;
+    let knots = match KnotVector::new(ctx, reversed_knots)? {
         Ok(knots) => knots,
         Err(error) => return Ok(Err(error)),
     };
-    NurbsCurve::new(ctx, curve.degree(), knots, poles, curve.periodic())
+    let result = NurbsCurve::new(ctx, curve.degree(), knots, poles, curve.periodic())?;
+    match result {
+        Ok(curve) => output_storage.commit_value(curve).map(Ok),
+        Err(error) => Ok(Err(error)),
+    }
 }
 
 /// State one trim endpoint inside the carrier domain, or refuse it.
@@ -698,14 +846,9 @@ pub(crate) fn circular_helix_cache(
     let sample_count = segment_count
         .checked_add(1)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
-    let sample_bytes = sample_count
-        .checked_mul(std::mem::size_of::<(f64, Point3)>())
-        .map(u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
-    let _samples_reservation = ctx.reserve_scoped(sample_bytes, "catia_helix_samples")?;
-    let mut samples = Vec::new();
-    ctx.reserve_vec(&mut samples, sample_count, "catia_helix_samples")?;
-    for index in 0..=segment_count {
+    let mut samples = ctx.temporary_vec(sample_count, "catia_helix_samples")?;
+    let mut indices = 0..=segment_count;
+    while let Some(index) = ctx.next_charged(&mut indices, "catia_helix_sample_visits")? {
         let parameter = if index == segment_count {
             angle_range[1]
         } else {
@@ -721,12 +864,13 @@ pub(crate) fn circular_helix_cache(
         let Some(point) = circular_helix_point(construction, parameter) else {
             return Ok(None);
         };
-        samples.push((parameter, point));
+        samples.0.push((parameter, point));
     }
-    if !samples
-        .windows(2)
-        .all(|pair| pair[0].0.is_finite() && pair[0].0 < pair[1].0)
-    {
+    if !ctx.all_by(
+        samples.0.windows(2),
+        |pair| Ok(pair[0].0.is_finite() && pair[0].0 < pair[1].0),
+        "catia_helix_sample_order",
+    )? {
         return Ok(None);
     }
     let sine = (step * 0.25).sin();
@@ -734,36 +878,40 @@ pub(crate) fn circular_helix_cache(
     let knot_count = sample_count
         .checked_add(2)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
-    let knot_bytes = knot_count
-        .checked_mul(std::mem::size_of::<f64>())
-        .map(u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
-    ctx.charge_retained(knot_bytes, "catia_helix_knots")?;
-    let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, knot_count, "catia_helix_knots")?;
+    let mut input_storage = ctx.reserve_scoped(0, "catia_helix_output")?;
+    let mut knot_storage = ctx.reserve_scoped(0, "catia_helix_retained_knots")?;
+    let mut knots =
+        knot_storage.with_storage(|| ctx.collection_vec(knot_count, "catia_helix_knots"))?;
+    let mut controls =
+        input_storage.with_storage(|| ctx.collection_vec(sample_count, "catia_helix_controls"))?;
     knots.push(angle_range[0]);
-    knots.extend(samples.iter().map(|(parameter, _)| *parameter));
+    for (parameter, point) in ctx.admit_iter(samples.0, "catia_helix_output_samples")? {
+        knots.push(parameter);
+        controls.push(point);
+    }
+    drop(samples.1);
     knots.push(angle_range[1]);
-    let control_bytes = sample_count
-        .checked_mul(std::mem::size_of::<Point3>())
-        .map(u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_controls", u64::MAX, u64::MAX))?;
-    ctx.charge_retained(control_bytes, "catia_helix_controls")?;
-    let mut controls = Vec::new();
-    ctx.reserve_vec(&mut controls, sample_count, "catia_helix_controls")?;
-    controls.extend(samples.into_iter().map(|(_, point)| point));
-    let curve = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        ctx, 1, knots, controls, None, false,
-    )? {
+    let (curve, mut curve_storage) =
+        ctx.with_scoped_storage("catia_helix_checked_curve", || {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                ctx, 1, knots, controls, None, false,
+            )
+        })?;
+    drop(input_storage);
+    let curve = match curve {
         Ok(curve) => curve,
         Err(error) => return note_refusal(ctx, Err(error), refusal, record),
     };
-    Ok(FitTolerance::try_new(fit_tolerance)
-        .ok()
-        .map(|fit_tolerance| CircularHelixCache {
+    let Some(fit_tolerance) = FitTolerance::try_new(fit_tolerance).ok() else {
+        return Ok(None);
+    };
+    knot_storage.absorb(&mut curve_storage)?;
+    knot_storage
+        .commit_value(CircularHelixCache {
             curve,
             fit_tolerance,
-        }))
+        })
+        .map(Some)
 }
 
 fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
@@ -793,23 +941,71 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
 
 /// Convert degree-5 position/first/second-derivative knot jets into an exact
 /// piecewise Bézier B-spline control net, in any point dimension.
-pub(crate) fn quintic_jet_bspline<const N: usize>(
+pub(crate) fn quintic_jet_bspline<const N: usize, T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     points: &[[f64; N]],
     first: &[[f64; N]],
     second: &[[f64; N]],
-) -> QuinticJetOutput<N> {
+    convert: impl Fn([f64; N]) -> Option<T>,
+) -> QuinticJetOutput<T> {
+    let (controls, mut controls_storage) = ctx
+        .with_scoped_storage("catia quintic jet output", || {
+            quintic_jet_controls(ctx, degree, knots, points, first, second, convert)
+        })?;
+    let Some(controls) = controls else {
+        return Ok(None);
+    };
+    let count = knots
+        .len()
+        .checked_mul(6)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
+    let mut full_knots =
+        controls_storage.with_storage(|| ctx.collection_vec(count, "catia quintic jet knots"))?;
+    for knot in ctx.admit_iter(knots, "catia_quintic_knot_expansion")? {
+        full_knots.extend([*knot; 6]);
+    }
+    controls_storage
+        .commit_value((full_knots, controls))
+        .map(Some)
+}
+
+/// Lower a quintic jet without allocating a full knot lane.
+pub(crate) fn quintic_jet_controls<const N: usize, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    degree: u32,
+    knots: &[f64],
+    points: &[[f64; N]],
+    first: &[[f64; N]],
+    second: &[[f64; N]],
+    convert: impl Fn([f64; N]) -> Option<T>,
+) -> Result<Option<Vec<T>>, cadmpeg_core::CodecError> {
     if degree != 5
         || knots.len() < 2
         || points.len() != knots.len()
         || first.len() != knots.len()
         || second.len() != knots.len()
-        || !knots.iter().copied().all(f64::is_finite)
-        || !points.iter().flatten().copied().all(f64::is_finite)
-        || !first.iter().flatten().copied().all(f64::is_finite)
-        || !second.iter().flatten().copied().all(f64::is_finite)
+        || !ctx.all_by(
+            knots,
+            |value| Ok(value.is_finite()),
+            "catia_quintic_knot_finiteness",
+        )?
+        || !ctx.all_by(
+            points,
+            |row| Ok(row.iter().all(|value| value.is_finite())),
+            "catia_quintic_points_finiteness",
+        )?
+        || !ctx.all_by(
+            first,
+            |row| Ok(row.iter().all(|value| value.is_finite())),
+            "catia_quintic_first_finiteness",
+        )?
+        || !ctx.all_by(
+            second,
+            |row| Ok(row.iter().all(|value| value.is_finite())),
+            "catia_quintic_second_finiteness",
+        )?
     {
         return Ok(None);
     }
@@ -818,16 +1014,11 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         .checked_sub(1)
         .and_then(|count| count.checked_mul(6))
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet controls", u64::MAX, u64::MAX))?;
-    let full_knot_count = knots
-        .len()
-        .checked_mul(6)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
-    let (mut controls, _controls_reservation) =
-        ctx.temporary_vec(control_count, "catia quintic jet controls")?;
-    let mut full_knots = Vec::new();
-    ctx.reserve_vec(&mut full_knots, full_knot_count, "catia quintic jet knots")?;
-    full_knots.extend([knots[0]; 6]);
-    for index in 0..knots.len() - 1 {
+    let mut output_storage = ctx.reserve_scoped(0, "catia quintic jet output")?;
+    let mut finite_controls = output_storage
+        .with_storage(|| ctx.collection_vec(control_count, "catia quintic jet controls"))?;
+    let mut spans = 0..knots.len() - 1;
+    while let Some(index) = ctx.next_charged(&mut spans, "catia_quintic_span_visits")? {
         let h = knots[index + 1] - knots[index];
         if !h.is_finite() || h <= 0.0 {
             return Ok(None);
@@ -856,7 +1047,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
                 ((h / 20.0) * derivative) * h
             }
         };
-        controls.extend([
+        let controls = [
             p0,
             std::array::from_fn(|axis| p0[axis] + tangent(d0[axis])),
             std::array::from_fn(|axis| {
@@ -867,32 +1058,33 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
             }),
             std::array::from_fn(|axis| p1[axis] - tangent(d1[axis])),
             p1,
-        ]);
-        full_knots.extend([knots[index + 1]; 6]);
+        ];
+        for control in controls {
+            let Some(control) = convert(control) else {
+                return Ok(None);
+            };
+            finite_controls.push(control);
+        }
     }
-    if !full_knots.iter().copied().all(f64::is_finite) {
-        return Ok(None);
-    }
-    let mut finite_controls = Vec::new();
-    ctx.reserve_vec(
-        &mut finite_controls,
-        controls.len(),
-        "catia quintic jet finite controls",
-    )?;
-    for control in controls {
-        let Some(control) = FiniteVector::new(control) else {
-            return Ok(None);
-        };
-        finite_controls.push(control);
-    }
-    Ok(Some((full_knots, finite_controls)))
+    output_storage.commit_value(finite_controls).map(Some)
 }
 
-pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
-    multiplicities
-        .iter()
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(degree.checked_add(1)?)
+pub(crate) fn pole_count(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    multiplicities: &[u32],
+    degree: u32,
+) -> Result<Option<u32>, cadmpeg_core::CodecError> {
+    let mut values = multiplicities.iter();
+    let mut sum = 0u32;
+    while let Some(value) = ctx.next_charged(&mut values, "catia_a8_pole_count_scan")? {
+        let Some(next) = sum.checked_add(*value) else {
+            return Ok(None);
+        };
+        sum = next;
+    }
+    Ok(degree
+        .checked_add(1)
+        .and_then(|degree| sum.checked_sub(degree)))
 }
 
 #[cfg(test)]
@@ -925,6 +1117,7 @@ mod tests {
                 &[[0.0, 0.0], [1.0, 0.0]],
                 &[[1.0, 0.0], [1.0, 0.0]],
                 &[[0.0, 0.0], [0.0, 0.0]],
+                cadmpeg_ir::units::FiniteVector::new,
             )
         };
         assert!(crate::test_support::with_service_context(run)
@@ -935,6 +1128,39 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "catia quintic jet controls")
         );
+    }
+
+    #[test]
+    fn quintic_controls_only_retains_the_selected_representation() {
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::quintic_jet_controls(
+                ctx,
+                5,
+                &[0.0, 1.0],
+                &[[0.0, 0.0], [1.0, 0.0]],
+                &[[1.0, 0.0]; 2],
+                &[[0.0, 0.0]; 2],
+                cadmpeg_ir::units::FiniteVector::new,
+            )
+        };
+        let controls = crate::test_support::with_retained_limit(6 * 16, run)
+            .expect("six two-coordinate controls retain 96 bytes")
+            .expect("valid jet");
+        let (knots, full_controls) = crate::test_support::with_service_context(|ctx| {
+            super::quintic_jet_bspline(
+                ctx,
+                5,
+                &[0.0, 1.0],
+                &[[0.0, 0.0], [1.0, 0.0]],
+                &[[1.0, 0.0]; 2],
+                &[[0.0, 0.0]; 2],
+                cadmpeg_ir::units::FiniteVector::new,
+            )
+        })
+        .expect("full jet admission")
+        .expect("valid jet");
+        assert_eq!(controls, full_controls);
+        assert_eq!(knots, [vec![0.0; 6], vec![1.0; 6]].concat());
     }
 
     #[test]
@@ -1730,6 +1956,7 @@ mod tests {
             &[[0.0, 0.0], [1.0, 0.0]],
             &[[f64::MAX, 0.0], [f64::MAX, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]],
+            cadmpeg_ir::units::FiniteVector::new,
         )
         .expect("service resource budget")
         .is_none());
@@ -1740,6 +1967,7 @@ mod tests {
             &[[f64::NAN, 0.0], [1.0, 0.0]],
             &[[1.0, 0.0], [1.0, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]],
+            cadmpeg_ir::units::FiniteVector::new,
         )
         .expect("service resource budget")
         .is_none());
