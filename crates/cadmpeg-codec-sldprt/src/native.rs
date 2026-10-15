@@ -15,6 +15,7 @@ use crate::records::{
     FeatureInputReference, FeatureInputRelationBinding, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputSurfaceSelection, PmiDimension,
 };
+use crate::resolved_features::component_paths::FeaturesBySource;
 
 const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
@@ -2209,7 +2210,11 @@ fn validate_lane_selections(
     let mut surface_selections = lane.surface_selections.iter();
     while let Some(record) = ctx.next_charged(&mut surface_selections, OPERATION)? {
         if surface_selection_disagrees_with_payload(
-            ctx, lane, record, &lane_features, &mut features_by_source,
+            ctx,
+            lane,
+            record,
+            &lane_features,
+            &mut features_by_source,
         )? {
             return Err(disagrees(&record.id, "surface")?);
         }
@@ -2372,24 +2377,24 @@ fn edge_selection_disagrees_with_payload(
 /// `true` when a surface selection disagrees with the compact reference in its lane payload.
 ///
 /// History features are enriched with this lane's object sources. Their shared
-/// source index is built only after a selection agrees with the payload.
+/// source index is built after the component path agrees with the payload.
 fn surface_selection_disagrees_with_payload<'feature, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     lane: &FeatureInputLane,
     record: &FeatureInputSurfaceSelection,
     features: &'feature [crate::records::Feature],
-    features_by_source: &mut Option<crate::resolved_features::component_paths::FeaturesBySource<'feature, 'ctx>>,
+    features_by_source: &mut Option<FeaturesBySource<'feature, 'ctx>>,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
-    let (disagrees, _workspace) = ctx.with_scoped_storage(
-        "SLDPRT surface-selection validation workspace",
-        || -> Result<bool, cadmpeg_ir::NativeConvertError> {
+    let (matched, producer_storage) = ctx.with_scoped_storage(
+        "SLDPRT surface-selection producer workspace",
+        move || -> Result<_, cadmpeg_ir::NativeConvertError> {
             // An offset no index can name names no byte of the payload in memory, so
             // the selection states nothing the payload agrees with.
             let Ok(offset) = usize::try_from(record.offset) else {
-                return Ok(true);
+                return Ok(None);
             };
             if offset >= lane.native_payload.len() {
-                return Ok(true);
+                return Ok(None);
             }
             if !crate::resolved_features::selections::surface_reference_matches_at(
                 ctx,
@@ -2397,24 +2402,37 @@ fn surface_selection_disagrees_with_payload<'feature, 'ctx>(
                 offset,
                 &record.components,
             )? {
-                return Ok(true);
+                return Ok(None);
             }
             let features_by_source = match features_by_source {
                 Some(index) => index,
-                slot @ None => slot.insert(
-                    crate::resolved_features::component_paths::FeaturesBySource::new(ctx, features)?,
-                ),
+                slot @ None => slot.insert(FeaturesBySource::new(ctx, features)?),
             };
-            Ok(!ctx.equal(
-                &crate::resolved_features::component_paths::surface_selection_producer_features(
+            let producers =
+                crate::resolved_features::component_paths::surface_selection_producer_features(
                     ctx,
                     &record.components,
                     record.terminal_feature_ref.as_deref(),
                     features_by_source,
-                )?,
+                )?;
+            if !ctx.equal(
+                &producers,
                 &record.producer_feature_refs,
                 PAYLOAD_AGREEMENT,
-            )? || !ctx.equal(
+            )? {
+                return Ok(None);
+            }
+            Ok(Some((offset, &*features_by_source)))
+        },
+    )?;
+    drop(producer_storage);
+    let Some((offset, features_by_source)) = matched else {
+        return Ok(true);
+    };
+    let (disagrees, _terminal_storage) = ctx.with_scoped_storage(
+        "SLDPRT surface-selection terminal workspace",
+        || -> Result<bool, cadmpeg_ir::NativeConvertError> {
+            Ok(!ctx.equal(
                 &crate::resolved_features::selections::surface_selection_terminal_feature_at(
                     ctx,
                     &lane.native_payload,
