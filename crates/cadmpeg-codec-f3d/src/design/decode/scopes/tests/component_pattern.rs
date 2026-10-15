@@ -34,6 +34,7 @@ fn component_pattern_keeps_seed_and_generated_instances() {
             component_guid: COMPONENT.to_owned().try_into().unwrap(),
             occurrence_guid: guid.to_owned().try_into().unwrap(),
             placement,
+            owner_entity: 0,
         })
         .unwrap()
     };

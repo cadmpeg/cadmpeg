@@ -69,6 +69,7 @@ fn copy_paste_matrices_keep_their_source_locations() {
                     .unwrap(),
                 occurrence_guid: guid.to_owned().try_into().unwrap(),
                 placement,
+                owner_entity: 0,
             })
             .unwrap()
         };
