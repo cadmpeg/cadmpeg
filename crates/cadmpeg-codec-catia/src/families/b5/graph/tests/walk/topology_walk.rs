@@ -2,13 +2,16 @@
 //! topology walk tests.
 
 use super::{
-    collect_object_stream_frames, edge_support_pcurve_references_from_frames,
-    edge_vertex_references, face_loop_owner_counts, face_surface_references_from_frames,
-    implicit_pcurve_bindings, parameter_incidence, parse, parse_edge, parse_vertex_incidence_link,
-    propagate_vertex_points, records, surface_node, typed_parameter_incidences_from_records,
-    typed_vertex_incidence_rosters_from_records, B5Edge, B5EdgeTerminalControl, B5IncidenceLane,
-    B5Record, B5Surface, B5VertexIncidenceControl, B5VertexIncidenceLink, BTreeMap, HashMap,
+    edge_vertex_references, face_loop_owner_counts, implicit_pcurve_bindings, parameter_incidence,
+    parse, parse_edge, parse_vertex_incidence_link, propagate_vertex_points, records, surface_node,
+    B5Edge, B5EdgeTerminalControl, B5IncidenceLane, B5Record, B5Surface, B5VertexIncidenceControl,
+    B5VertexIncidenceLink, BTreeMap, HashMap,
 };
+use crate::families::b5::graph::collect_object_stream_frames;
+use crate::families::b5::graph::edge_support_pcurve_references_from_frames;
+use crate::families::b5::graph::face_surface_references_from_frames;
+use crate::families::b5::graph::typed_parameter_incidences_from_records;
+use crate::families::b5::graph::typed_vertex_incidence_rosters_from_records;
 
 #[test]
 fn record_walk_includes_wide_header_loop_nodes() {
@@ -53,15 +56,8 @@ fn record_walk_retains_opaque_a8_surface_nodes() {
     assert_eq!(records[0].class, 0x34);
     assert_eq!(records[0].object_id, 7);
     assert_eq!(records[0].payload, [1, 2, 3]);
-    let limited =
-        crate::test_support::with_retained_limit(2, |ctx| surface_node(ctx, &records[0], None));
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_surface_node_payload")
-    );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| { surface_node(ctx, &records[0], None) })
-            .expect("service budget"),
+        surface_node(&records[0], None),
         Some(B5Surface::Unknown {
             family: 0xa8,
             class: 0x34,
@@ -254,8 +250,7 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
     bytes.extend_from_slice(&standard.object_id.to_le_bytes());
     bytes.extend_from_slice(&standard.payload);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| { edge_vertex_references(ctx, &bytes) })
-            .expect("service budget"),
+        edge_vertex_references(&bytes),
         BTreeMap::from([(17, [15, 21])])
     );
 }
@@ -294,116 +289,12 @@ fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
     );
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            graph.referenced_edge_vertex_references(ctx)
-        })
-        .expect("service budget"),
+        graph.referenced_edge_vertex_references(),
         Some(BTreeMap::from([(301, [10, 11])]))
     );
 
     graph.complete = false;
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            graph.referenced_edge_vertex_references(ctx)
-        })
-        .expect("service budget"),
-        None
-    );
-}
-
-#[test]
-fn b5_topology_reference_helpers_refuse_caller_limits() {
-    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let mut graph = crate::test_support::with_service_context(|ctx| {
-        parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
-    })
-    .expect("service budget")
-    .expect("closed graph");
-    graph.edges.insert(
-        301,
-        B5Edge {
-            object_id: 301,
-            support: 600,
-            vertices: [10, 11],
-            parameter_incidences: [20, 21],
-            terminal_control: B5EdgeTerminalControl::Control01,
-        },
-    );
-    let mut reference_bytes = Vec::new();
-    crate::test_support::test_b5::append_b5_record(
-        &mut reference_bytes,
-        0x5e,
-        17,
-        &[0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
-    );
-    crate::test_support::test_b5::append_b5_record(
-        &mut reference_bytes,
-        0x23,
-        18,
-        &[0x82, 0x89, 0x8a],
-    );
-    crate::test_support::test_b5::append_b5_record(&mut reference_bytes, 0x5f, 19, &[0x81, 0x89]);
-    let frames = crate::test_support::with_service_context(|ctx| {
-        collect_object_stream_frames(ctx, &reference_bytes)
-    })
-    .expect("service budget");
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        graph.referenced_edge_vertex_references(ctx)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_referenced_edge_vertices")
-    );
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        face_loop_owner_counts(ctx, &graph.faces)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_face_loop_owners")
-    );
-    let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        edge_vertex_references(ctx, &reference_bytes)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_edge_vertex_record_payload")
-    );
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        face_surface_references_from_frames(ctx, &reference_bytes, &frames)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_face_surface_references")
-    );
-    let edge_ids = std::collections::HashSet::from([17]);
-    let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        edge_support_pcurve_references_from_frames(ctx, &reference_bytes, &edge_ids, &frames)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_edge_support_record_payload")
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            edge_vertex_references(ctx, &reference_bytes)
-        })
-        .expect("service budget"),
-        BTreeMap::from([(17, [15, 21])])
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            face_surface_references_from_frames(ctx, &reference_bytes, &frames)
-        })
-        .expect("service budget"),
-        [(19, 9)]
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            edge_support_pcurve_references_from_frames(ctx, &reference_bytes, &edge_ids, &frames)
-        })
-        .expect("service budget"),
-        BTreeMap::from([(17, [9, 10])])
-    );
+    assert_eq!(graph.referenced_edge_vertex_references(), None);
 }
 
 #[test]
@@ -424,14 +315,7 @@ fn duplicate_face_loop_ownership_does_not_close_the_graph() {
     assert_eq!(graph.faces.len(), 2);
     assert_eq!(graph.loops.len(), 1);
     assert!(!graph.complete);
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            face_loop_owner_counts(ctx, &graph.faces)
-        })
-        .expect("service budget")
-        .get(&400),
-        Some(&2)
-    );
+    assert_eq!(face_loop_owner_counts(&graph.faces).get(&400), Some(&2));
 }
 
 #[test]
@@ -526,17 +410,13 @@ fn loop_and_endpoint_incidences_bind_an_unframed_pcurve_occurrence() {
     )]);
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            implicit_pcurve_bindings(
-                ctx,
-                &records,
-                &by_id,
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-                &surfaces,
-            )
-            .expect("service budget")
-        }),
+        implicit_pcurve_bindings(
+            &records,
+            &by_id,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &surfaces,
+        ),
         BTreeMap::from([(9, 11)])
     );
 }
@@ -548,19 +428,13 @@ fn parameter_incidence_retains_aligned_compact_controls() {
     payload.push(0x15);
     payload.extend_from_slice(&2.5f64.to_le_bytes());
     payload.push(0x2d);
-    let incidence = crate::test_support::with_service_context(|ctx| {
-        parameter_incidence(
-            ctx,
-            &B5Record {
-                offset: 0,
-                family: 0xb5,
-                class: 0x06,
-                object_id: 17,
-                payload,
-            },
-        )
+    let incidence = parameter_incidence(&B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x06,
+        object_id: 17,
+        payload,
     })
-    .expect("service budget")
     .expect("parameter incidence");
 
     assert_eq!(incidence.object_id, 17);
@@ -578,70 +452,6 @@ fn parameter_incidence_retains_aligned_compact_controls() {
                 control: 11,
             },
         ]
-    );
-}
-
-#[test]
-fn parameter_and_roster_incidence_refuse_each_collection_boundary() {
-    let roster = B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x05,
-        object_id: 18,
-        payload: vec![0x82, 0x89, 0x8a],
-    };
-    let mut payload = vec![0x82, 0x89, 0x8a, 0x82];
-    payload.extend_from_slice(&1.25f64.to_le_bytes());
-    payload.push(0x15);
-    payload.extend_from_slice(&2.5f64.to_le_bytes());
-    payload.push(0x2d);
-    let parameter = B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x06,
-        object_id: 17,
-        payload,
-    };
-    for (limit, operation) in [
-        (1, "catia_b5_parameter_incidence_references"),
-        (2, "catia_b5_parameter_incidence_lanes"),
-        (4, "catia_b5_typed_parameter_incidences"),
-    ] {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
-        });
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    for (limit, operation) in [
-        (1, "catia_wire_counted_references"),
-        (2, "catia_b5_typed_vertex_incidence_rosters"),
-    ] {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
-        });
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
-        })
-        .expect("service budget")[&17]
-            .lanes
-            .len(),
-        2
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
-        })
-        .expect("service budget")[&18],
-        [9, 10]
     );
 }
 
@@ -687,17 +497,78 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
     )]);
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            implicit_pcurve_bindings(
-                ctx,
-                &records,
-                &by_id,
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-                &surfaces,
-            )
-            .expect("service budget")
-        }),
+        implicit_pcurve_bindings(
+            &records,
+            &by_id,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &surfaces,
+        ),
         BTreeMap::from([(9, 11)])
+    );
+}
+
+#[test]
+fn b5_topology_reference_helpers_result() {
+    let mut reference_bytes = Vec::new();
+    crate::test_support::test_b5::append_b5_record(
+        &mut reference_bytes,
+        0x5e,
+        17,
+        &[0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
+    );
+    crate::test_support::test_b5::append_b5_record(
+        &mut reference_bytes,
+        0x23,
+        18,
+        &[0x82, 0x89, 0x8a],
+    );
+    crate::test_support::test_b5::append_b5_record(&mut reference_bytes, 0x5f, 19, &[0x81, 0x89]);
+    let frames = collect_object_stream_frames(&reference_bytes);
+    let edge_ids = std::collections::HashSet::from([17]);
+    assert_eq!(
+        edge_vertex_references(&reference_bytes),
+        BTreeMap::from([(17, [15, 21])])
+    );
+    assert_eq!(
+        face_surface_references_from_frames(&reference_bytes, &frames),
+        [(19, 9)]
+    );
+    assert_eq!(
+        edge_support_pcurve_references_from_frames(&reference_bytes, &edge_ids, &frames),
+        BTreeMap::from([(17, [9, 10])])
+    );
+}
+
+#[test]
+fn parameter_and_roster_incidence_result() {
+    let roster = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x05,
+        object_id: 18,
+        payload: vec![0x82, 0x89, 0x8a],
+    };
+    let mut payload = vec![0x82, 0x89, 0x8a, 0x82];
+    payload.extend_from_slice(&1.25f64.to_le_bytes());
+    payload.push(0x15);
+    payload.extend_from_slice(&2.5f64.to_le_bytes());
+    payload.push(0x2d);
+    let parameter = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x06,
+        object_id: 17,
+        payload,
+    };
+    assert_eq!(
+        typed_parameter_incidences_from_records(std::slice::from_ref(&parameter))[&17]
+            .lanes
+            .len(),
+        2
+    );
+    assert_eq!(
+        typed_vertex_incidence_rosters_from_records(std::slice::from_ref(&roster))[&18],
+        [9, 10]
     );
 }

@@ -417,7 +417,7 @@ fn consolidated_circle_retained_limit_refuses_json_record() {
     };
     let json_len = serde_json::to_vec(circle).expect("circle JSON").len();
     let arena_name = "consolidated_circles";
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(circle))
@@ -456,7 +456,7 @@ fn consolidated_parameter_point_retained_limit_refuses_json_record() {
     let json_len = serde_json::to_vec(point)
         .expect("parameter point JSON")
         .len();
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(point))
@@ -495,7 +495,7 @@ fn consolidated_plane_carrier_retained_limit_refuses_json_record() {
     let json_len = serde_json::to_vec(carrier)
         .expect("plane carrier JSON")
         .len();
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(carrier))
@@ -532,7 +532,7 @@ fn consolidated_cylinder_retained_limit_refuses_json_record() {
     let cylinder = native.consolidated_cylinders.first().expect("cylinder");
     let arena_name = "consolidated_cylinders";
     let json_len = serde_json::to_vec(cylinder).expect("cylinder JSON").len();
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(cylinder))
@@ -576,7 +576,7 @@ fn consolidated_owner_packet_retained_limit_refuses_json_record() {
         .expect("owner packet");
     let arena_name = "consolidated_owner_packets";
     let json_len = serde_json::to_vec(packet).expect("packet JSON").len();
-    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace.set_arena(ctx, arena_name, std::slice::from_ref(packet))
@@ -1096,57 +1096,6 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
     // range is refused before a native record can hold it.
     let [lower, upper] = native.consolidated_spheres[0].latitude_range.endpoints();
     assert!(cadmpeg_ir::topology::IncreasingParameterInterval::new([upper, lower]).is_none());
-}
-
-#[test]
-fn native_fixed_owner_packets_refuse_collection_limit() {
-    let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_fixed_owner_packets")
-    );
-    let packets = crate::test_support::with_service_context(|ctx| {
-        super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
-    })
-    .expect("service context admits the fixed owner packet");
-    assert_eq!(packets.len(), 1);
-}
-
-#[test]
-fn native_owner_indexes_and_nested_identity_targets_refuse_collection_limits() {
-    use std::collections::HashSet;
-
-    let mut refused = HashSet::new();
-    let fixtures = [
-        b2_owner_chart_stream(0x28),
-        b2_width_coded_owner_with_allocation_stream().0,
-        b2_fixed_owner_boundary_cycle_stream().0,
-        b2_adjacent_face_owner_stream(),
-    ];
-    for bytes in fixtures {
-        let records = crate::wire::records::consolidated_records(&bytes);
-        for limit in 0..256 {
-            let result = crate::test_support::with_collection_limit(limit, |ctx| {
-                super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
-            });
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-                refused.insert(error.operation);
-            }
-        }
-    }
-    for operation in [
-        "catia_native_owner_charts",
-        "catia_native_owner_identity_target_entries",
-        "catia_native_owner_identity_target_groups",
-        "catia_native_owner_boundary_cycles",
-        "catia_native_owner_face_nodes",
-    ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
 }
 
 #[test]
@@ -1843,3 +1792,14 @@ fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() 
 }
 
 mod admission;
+
+#[test]
+fn native_fixed_owner_packets_result() {
+    let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let packets = crate::test_support::with_service_context(|ctx| {
+        super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
+    })
+    .expect("service context admits the fixed owner packet");
+    assert_eq!(packets.len(), 1);
+}
