@@ -1,5 +1,6 @@
 use super::*;
-use crate::compound::{probe_directory_availability, DirectoryKind, PrefixDirectoryAvailability};
+use crate::compound::prefix_probe::{probe_directory_availability, PrefixDirectoryAvailability};
+use crate::compound::DirectoryKind;
 
 fn id_node_bytes() -> usize {
     11 * (std::mem::size_of::<u32>() + std::mem::size_of::<()>())
