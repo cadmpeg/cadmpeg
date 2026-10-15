@@ -1093,12 +1093,10 @@ mod tests {
     fn borrowed_source_extents_build_record_inventory() {
         let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
         let sources = [vec![super::SourceExtent::whole(&bytes)]];
-        let records = {
-            super::consolidated_records_in_sources(
-                &bytes,
-                sources.iter().map(|source| source.iter()),
-            )
-        }
+        let records = super::consolidated_records_in_sources(
+            &bytes,
+            sources.iter().map(|source| source.iter()),
+        )
         .expect("borrowed source inventory fits service profile");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].class, 0x06);
@@ -1262,9 +1260,8 @@ mod source_image_admission_tests {
     fn record_sources_reject_extents_from_a_larger_image() {
         let larger = [0_u8; 260];
         let short = [0xb2, 0x03, 0x24, 0xff, 0x01];
-        let result = {
-            super::consolidated_records_in_sources(&short, [[super::SourceExtent::whole(&larger)]])
-        };
+        let result =
+            super::consolidated_records_in_sources(&short, [[super::SourceExtent::whole(&larger)]]);
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::Malformed(_))

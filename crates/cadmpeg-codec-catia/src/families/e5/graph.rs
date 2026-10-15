@@ -2381,6 +2381,3 @@ mod tests {
         ));
     }
 }
-
-#[cfg(test)]
-mod knot_work_tests {}

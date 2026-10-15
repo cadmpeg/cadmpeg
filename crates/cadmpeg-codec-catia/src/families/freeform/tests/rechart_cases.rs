@@ -353,9 +353,8 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
         let records = crate::wire::records::consolidated_records(&bytes);
-        let resolved = {
-            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records)
-        };
+        let resolved =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
         assert_eq!(resolved.len(), 1);
         with_admission(|admission| {
             super::super::append_consolidated_revolutions(

@@ -173,7 +173,7 @@ mod tests {
             .expect("checked frame"),
             class: ConsolidatedEdgeDefinitionClass::Class24,
         };
-        let value = { CatiaConsolidatedEdgeDefinition::from_source(source) };
+        let value = CatiaConsolidatedEdgeDefinition::from_source(source);
         let data = value.data().expect("compact data");
         assert!(std::ptr::eq(data, value.data().expect("same data")));
         assert_eq!(

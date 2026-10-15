@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn duplicates_remain_ambiguous_after_further_insertions() {
-        let mut index = { UniqueIndex::collect([("one".to_string(), 1), ("two".to_string(), 2)]) };
+        let mut index = UniqueIndex::collect([("one".to_string(), 1), ("two".to_string(), 2)]);
         assert_eq!(index.get("one"), Some(&1));
         index.insert("one".to_string(), 3);
         assert_eq!(index.get("one"), None);

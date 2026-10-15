@@ -651,10 +651,10 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
         object_id: 7,
         point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
     }];
-    let ambiguous = { unique_native_identity_points(&vertices, 2, &tolerances, &points) };
+    let ambiguous = unique_native_identity_points(&vertices, 2, &tolerances, &points);
     assert!(ambiguous.is_empty());
 
-    let exact = { unique_native_identity_points(&vertices, 2, &BTreeMap::new(), &points) };
+    let exact = unique_native_identity_points(&vertices, 2, &BTreeMap::new(), &points);
     assert_eq!(exact.get(&7), Some(&0));
 }
 

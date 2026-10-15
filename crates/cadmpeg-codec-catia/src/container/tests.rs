@@ -26,45 +26,6 @@ fn summarize_service(scan: &ContainerScan<'_>) -> cadmpeg_ir::ContainerSummary {
     summarize(scan).expect("service budget admits container summary")
 }
 
-fn finjpl_service(body: &super::BodyExtent<'_>) -> Vec<super::FinjplSegment> {
-    super::finjpl_segments(body)
-}
-
-fn preview_service(data: &[u8]) -> Vec<super::PreviewImage> {
-    super::preview_images(data)
-}
-
-fn external_refs_service(data: &[u8]) -> Vec<super::ExternalReference> {
-    super::external_references(data)
-}
-
-fn last_save_version_service(data: &[u8]) -> Option<super::LastSaveVersion> {
-    super::last_save_version(data)
-}
-
-fn parse_extents_service(
-    dirbuf: &[u8],
-    o: usize,
-    k: usize,
-    physical_base: usize,
-    file_len: usize,
-) -> Option<(Vec<super::Extent>, usize)> {
-    parse_extents(dirbuf, o, k, physical_base, file_len)
-}
-
-fn parse_directory_region_service(
-    data: &[u8],
-    physical_base: usize,
-    dir_offset: usize,
-    dir_length: usize,
-) -> Option<super::InnerDir> {
-    parse_directory_region(data, physical_base, dir_offset, dir_length)
-}
-
-fn descriptor_name_service(dirbuf: &[u8], ds: usize) -> String {
-    super::descriptor_name(dirbuf, ds)
-}
-
 fn brep_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
     crate::test_support::with_service_context(|ctx| {
         super::brep_stream(ctx, data, dir).map(|streams| streams.0)
@@ -75,13 +36,6 @@ fn brep_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
 fn main_data_stream_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
     crate::test_support::with_service_context(|ctx| super::main_data_stream(ctx, data, dir))
         .expect("service budget admits main stream")
-}
-
-fn outer_declarations_service(
-    data: &[u8],
-    dir: &InnerDir,
-) -> Vec<super::OuterContainerDeclaration> {
-    outer_container_declarations(data, dir)
 }
 
 fn record_sources_service(
@@ -486,10 +440,10 @@ fn extent_parser_retains_the_raw_flags_word() {
         directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
     }
     let (extents, logical_length) =
-        parse_extents_service(&directory, 0, 1, 0, 64).expect("complete extent");
+        parse_extents(&directory, 0, 1, 0, 64).expect("complete extent");
     assert_eq!(logical_length, 8);
     assert_eq!(extents[0].flags, 0xa501_0080);
-    assert!(parse_extents_service(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+    assert!(parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
 }
 
 #[test]
@@ -503,7 +457,7 @@ fn descriptor_name_is_anchored_to_the_descriptor_tail() {
     }
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
 
-    assert_eq!(descriptor_name_service(&directory, ds), "MainDataStream");
+    assert_eq!(super::descriptor_name(&directory, ds), "MainDataStream");
 }
 
 #[test]
@@ -519,10 +473,10 @@ fn descriptor_name_ignores_unrelated_utf16_runs_and_requires_the_tail() {
         directory[name_start + index * 2] = *byte;
     }
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 1]);
-    assert!(descriptor_name_service(&directory, ds).is_empty());
+    assert!(super::descriptor_name(&directory, ds).is_empty());
 
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
-    assert_eq!(descriptor_name_service(&directory, ds), "Data");
+    assert_eq!(super::descriptor_name(&directory, ds), "Data");
 }
 
 #[test]
@@ -537,7 +491,7 @@ fn descriptor_name_accepts_the_legacy_fixed_header_form() {
     directory[name_start + name.len() * 2..name_start + name.len() * 2 + 2]
         .copy_from_slice(&[0, 0]);
 
-    assert_eq!(descriptor_name_service(&directory, ds), "RootStorage");
+    assert_eq!(super::descriptor_name(&directory, ds), "RootStorage");
 }
 
 #[test]
@@ -566,8 +520,8 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
         );
     }
 
-    let parsed = parse_directory_region_service(&directory, 0, 0, directory.len())
-        .expect("bounded extent roster");
+    let parsed =
+        parse_directory_region(&directory, 0, 0, directory.len()).expect("bounded extent roster");
     let descriptor = parsed
         .descriptors
         .iter()
@@ -705,7 +659,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
     };
     data.push(0);
 
-    let declarations = outer_declarations_service(&data, &outer);
+    let declarations = outer_container_declarations(&data, &outer);
 
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].data_offset, 0);
@@ -724,7 +678,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
 
     let mut prefixed_outer = outer.clone();
     prefixed_outer.descriptors[1].name = "_1048_62eb7b6f_1825".to_string();
-    let prefixed_declarations = outer_declarations_service(&data, &prefixed_outer);
+    let prefixed_declarations = outer_container_declarations(&data, &prefixed_outer);
     assert_eq!(prefixed_declarations.len(), 1);
     assert_eq!(prefixed_declarations[0].stream_name, "_1048_62eb7b6f_1825");
     assert_eq!(
@@ -748,7 +702,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
             flags: 0,
         }],
     });
-    assert!(outer_declarations_service(&data, &ambiguous_outer).is_empty());
+    assert!(outer_container_declarations(&data, &ambiguous_outer).is_empty());
 
     let scan = ContainerScan {
         data: data.into(),
@@ -821,7 +775,7 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
     };
     data.push(0);
 
-    let declarations = outer_declarations_service(&data, &outer);
+    let declarations = outer_container_declarations(&data, &outer);
 
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].class_name, long_class);
@@ -847,9 +801,9 @@ fn detect_high_on_outer_magic() {
 #[test]
 fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
     let bytes = summary_preview_segment();
-    let segments = finjpl_service(&crate::container::BodyExtent::whole(&bytes));
+    let segments = super::finjpl_segments(&crate::container::BodyExtent::whole(&bytes));
     assert_eq!(segments[0].name.as_deref(), Some("CATSummaryInformation"));
-    let previews = preview_service(&bytes);
+    let previews = super::preview_images(&bytes);
     assert_eq!(previews.len(), 1);
     assert_eq!(previews[0].width, 640);
     assert_eq!(previews[0].height, 288);
@@ -875,13 +829,13 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         .position(|value| value == [0xff, 0xd9])
         .unwrap();
     truncated.truncate(eoi + 1);
-    assert!(preview_service(&truncated).is_empty());
+    assert!(super::preview_images(&truncated).is_empty());
 }
 
 #[test]
 fn summary_version_parser_requires_one_consistent_tuple() {
     let bytes = summary_preview_segment();
-    let version = last_save_version_service(&bytes).unwrap();
+    let version = super::last_save_version(&bytes).unwrap();
     assert_eq!(version.version, 5);
     assert_eq!(version.release, 27);
     assert_eq!(version.service_pack, 2);
@@ -897,12 +851,12 @@ fn summary_version_parser_requires_one_consistent_tuple() {
     other[release + 9] = b'2';
     other[release + 10] = b'8';
     conflicting.extend_from_slice(&other);
-    assert!(last_save_version_service(&conflicting).is_none());
+    assert!(super::last_save_version(&conflicting).is_none());
 
     let mut non_summary = summary_preview_segment();
     non_summary[8..12].copy_from_slice(&0x0101_0002u32.to_be_bytes());
-    assert!(last_save_version_service(&non_summary).is_none());
-    assert!(preview_service(&non_summary).is_empty());
+    assert!(super::last_save_version(&non_summary).is_none());
+    assert!(super::preview_images(&non_summary).is_empty());
     let native = crate::native::CatiaNative::decode(&non_summary);
     assert!(native.preview_images.is_empty());
 }
@@ -912,7 +866,7 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     let mut bytes = external_reference_segment("Support.CATPart");
     bytes.extend_from_slice(&external_reference_segment("Assembly.CATProduct"));
     bytes.extend_from_slice(&external_reference_segment("notes.txt"));
-    let references = external_refs_service(&bytes);
+    let references = super::external_references(&bytes);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].target, "Support.CATPart");
     assert_eq!(references[1].target, "Assembly.CATProduct");
@@ -964,11 +918,11 @@ fn summary_preview_requires_a_coherent_frame_header() {
 
     let mut zero_height = valid.clone();
     zero_height[frame + 5..frame + 7].copy_from_slice(&0u16.to_be_bytes());
-    assert!(preview_service(&zero_height).is_empty());
+    assert!(super::preview_images(&zero_height).is_empty());
 
     let mut inconsistent_components = valid;
     inconsistent_components[frame + 9] = 2;
-    assert!(preview_service(&inconsistent_components).is_empty());
+    assert!(super::preview_images(&inconsistent_components).is_empty());
     assert!(crate::native::CatiaNative::decode(&inconsistent_components)
         .preview_images
         .is_empty());
@@ -984,7 +938,7 @@ fn summary_preview_requires_one_complete_jpeg_candidate() {
 
     let mut malformed_prefix = valid.clone();
     malformed_prefix.splice(image_start..image_start, [0xff, 0xd8, 0xff, 0xd9]);
-    let previews = preview_service(&malformed_prefix);
+    let previews = super::preview_images(&malformed_prefix);
     let [preview] = previews.as_slice() else {
         panic!("one complete preview after malformed SOI")
     };
@@ -999,7 +953,7 @@ fn summary_preview_requires_one_complete_jpeg_candidate() {
     let image = valid[image_start..image_end].to_vec();
     let mut duplicate = valid;
     duplicate.extend(image);
-    assert!(preview_service(&duplicate).is_empty());
+    assert!(super::preview_images(&duplicate).is_empty());
 }
 
 #[test]
@@ -1073,7 +1027,7 @@ fn finjpl_parser_splits_segments_and_classifies_type_words() {
     use crate::container::FinjplKind;
 
     let bytes = finjpl_stream();
-    let segments = finjpl_service(&crate::container::BodyExtent::whole(&bytes));
+    let segments = super::finjpl_segments(&crate::container::BodyExtent::whole(&bytes));
     assert_eq!(segments.len(), 2);
     assert_eq!(segments[0].kind(), FinjplKind::Storage);
     assert_eq!(segments[0].type_word, 0x0000_008e);

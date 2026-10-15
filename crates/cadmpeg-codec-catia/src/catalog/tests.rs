@@ -6,9 +6,7 @@
 use super::PREFIX;
 use crate::test_support::test_object_graph::catalog_stream;
 
-fn parse(bytes: &[u8]) -> Vec<super::Catalog> {
-    super::parse(bytes)
-}
+use super::parse;
 
 #[test]
 fn catalog_accepts_utf8_and_expression_line_feeds() {
