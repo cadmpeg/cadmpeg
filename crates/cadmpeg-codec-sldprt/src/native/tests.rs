@@ -1232,3 +1232,19 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
         &super::RecordIds::new(&[], &repeated, &names)
     ));
 }
+
+#[test]
+fn records_grouped_by_parent_keep_source_order() {
+    let records = [("lane-b", 1), ("lane-a", 2), ("lane-b", 3), ("lane-a", 4)];
+    let groups = super::group_by_parent(&records, |record| record.0);
+
+    assert_eq!(
+        super::children(&groups, "lane-a"),
+        [("lane-a", 2), ("lane-a", 4)]
+    );
+    assert_eq!(
+        super::children(&groups, "lane-b"),
+        [("lane-b", 1), ("lane-b", 3)]
+    );
+    assert!(super::children(&groups, "lane-c").is_empty());
+}
