@@ -31,6 +31,7 @@ mod construction_identity;
 mod edge_identity;
 mod edge_treatment_vertex;
 mod entity_bindings;
+mod extrude_extent;
 mod extrude_group;
 mod extrude_member;
 mod face_boundary;

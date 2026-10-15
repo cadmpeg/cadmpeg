@@ -24,6 +24,10 @@ use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 
+/// Fixed scalar lanes of a distance Extrude. A one-sided or symmetric Extrude
+/// uses lane zero for the first-side distance and lane one for its taper. A
+/// two-sided Extrude adds lane two for the second-side distance and lane three
+/// for the second-side taper.
 pub(super) fn exact_fixed_extrude_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -31,22 +35,25 @@ pub(super) fn exact_fixed_extrude_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Option<DesignFixedExtrudeParameters> {
-    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Extrude)
-        || scope
-            .extrude_prologue()
-            .and_then(DesignExtrudePrologue::extent)
-            != Some(DesignExtrudeExtent::OneSidedDistance)
-    {
+    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Extrude) {
         return None;
     }
-    let mut fixed_lanes = [None; 2];
+    let lane_count = match scope
+        .extrude_prologue()
+        .and_then(DesignExtrudePrologue::extent)?
+    {
+        DesignExtrudeExtent::OneSidedDistance | DesignExtrudeExtent::SymmetricDistance => 2,
+        DesignExtrudeExtent::TwoSidedDistance => 4,
+        _ => return None,
+    };
+    let mut fixed_lanes = [None; 4];
     let mut fixed_count = 0;
     let mut embedded_distance = None;
     for record_index in scope.reference_members().values() {
         if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
             .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
         {
-            let slot = fixed_lanes.get_mut(fixed_count)?;
+            let slot = fixed_lanes[..lane_count].get_mut(fixed_count)?;
             *slot = Some((*record_index, scalar));
             fixed_count += 1;
         }
@@ -66,10 +73,12 @@ pub(super) fn exact_fixed_extrude_parameters(
         })
     });
     let mut taper_angle = None;
-    let mut seen_fixed_ordinals = [false; 2];
+    let mut against_distance = None;
+    let mut side_two_taper_angle = None;
+    let mut seen_fixed_ordinals = [false; 4];
     for (record_index, lane) in fixed_lanes.into_iter().flatten() {
         let ordinal = usize::from(lane.ordinal);
-        if ordinal >= seen_fixed_ordinals.len() || seen_fixed_ordinals[ordinal] {
+        if ordinal >= lane_count || seen_fixed_ordinals[ordinal] {
             return None;
         }
         seen_fixed_ordinals[ordinal] = true;
@@ -89,55 +98,53 @@ pub(super) fn exact_fixed_extrude_parameters(
                     })
                     .map(crate::records::parameters::DesignParameter::source_kind)
             });
-        match source_kind {
-            Some("AlongDistance") if along_distance.is_none() => {
-                let value = NonZeroReal::new(lane.value.get())?;
-                along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(
-                    DesignFixedExtrudeScalar {
-                        value,
-                        record_index,
-                        value_offset: lane.value_offset,
-                    },
-                ));
-            }
-            Some("TaperAngle") if taper_angle.is_none() => {
-                taper_angle = Some(DesignFixedExtrudeScalar {
-                    value: lane.value,
-                    record_index,
-                    value_offset: lane.value_offset,
-                });
-            }
-            Some("AlongDistance") if along_distance.is_some() && lane.value.get() == 0.0 => {}
-            Some(_) => return None,
+        let scalar = DesignFixedExtrudeScalar {
+            value: lane.value,
+            record_index,
+            value_offset: lane.value_offset,
+        };
+        let nonzero = |scalar: DesignFixedExtrudeScalar| {
+            Some(DesignFixedExtrudeScalar {
+                value: NonZeroReal::new(scalar.value.get())?,
+                record_index: scalar.record_index,
+                value_offset: scalar.value_offset,
+            })
+        };
+        let lane_kind = match source_kind {
+            Some(kind) => kind,
             None => match lane.ordinal {
-                0 if along_distance.is_none() && lane.value.get() != 0.0 => {
-                    let value = NonZeroReal::new(lane.value.get())?;
-                    along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(
-                        DesignFixedExtrudeScalar {
-                            value,
-                            record_index,
-                            value_offset: lane.value_offset,
-                        },
-                    ));
-                }
-                0 if along_distance.is_some() && lane.value.get() == 0.0 => {}
-                1 if taper_angle.is_none() => {
-                    taper_angle = Some(DesignFixedExtrudeScalar {
-                        value: lane.value,
-                        record_index,
-                        value_offset: lane.value_offset,
-                    });
-                }
-                _ => return None,
+                0 => "AlongDistance",
+                1 => "TaperAngle",
+                2 => "AgainstDistance",
+                _ => "Side2TaperAngle",
             },
+        };
+        match lane_kind {
+            "AlongDistance" if along_distance.is_none() && lane.value.get() != 0.0 => {
+                along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(nonzero(scalar)?));
+            }
+            "AlongDistance" if along_distance.is_some() && lane.value.get() == 0.0 => {}
+            "TaperAngle" if taper_angle.is_none() => taper_angle = Some(scalar),
+            "AgainstDistance" if lane_count == 4 && against_distance.is_none() => {
+                against_distance = Some(nonzero(scalar)?);
+            }
+            "Side2TaperAngle" if lane_count == 4 && side_two_taper_angle.is_none() => {
+                side_two_taper_angle = Some(scalar);
+            }
+            _ => return None,
         }
     }
     if along_distance.is_none() && taper_angle.is_none() {
         return None;
     }
+    if lane_count == 4 && (along_distance.is_none() || against_distance.is_none()) {
+        return None;
+    }
     Some(DesignFixedExtrudeParameters {
         along_distance,
         taper_angle,
+        against_distance,
+        side_two_taper_angle,
     })
 }
 

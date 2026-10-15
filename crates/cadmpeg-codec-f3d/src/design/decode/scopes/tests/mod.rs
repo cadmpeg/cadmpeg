@@ -12,6 +12,7 @@ mod combine;
 mod component_pattern;
 mod copy_paste_bodies;
 mod derived_instance;
+mod fixed_extrude_lanes;
 mod fixed_kind_operations;
 mod fixed_kind_tail;
 mod fixed_scalar_frames;
