@@ -27,7 +27,6 @@ use crate::surface::OutlinePlane;
 use crate::surface::PlaneEnvelope;
 use crate::surface::PlaneEnvelopeRecord;
 use crate::surface::PlaneLocalSystem;
-use crate::surface::ScalarBodyRefusal;
 use crate::surface::SurfaceBodyBoundary;
 use crate::surface::SurfaceKind;
 use crate::surface::SurfaceNamedValue;
@@ -58,34 +57,13 @@ fn frame_bound_outline_planes(
     result.sort_by_key(|plane| plane.offset);
     result
 }
-
-fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
-    crate::surface::outline_planes(envelopes)
-}
+use crate::surface::outline_planes;
 
 fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
     super::with_decode_ctx(payload, |ctx| crate::surface::plane_envelopes(ctx, payload))
 }
-
-fn positional_frame_planes(
-    parameters: &[SurfaceParameterRecord],
-    rows: &[SurfaceRow],
-) -> Vec<OutlinePlane> {
-    {
-        crate::surface::positional_frame_planes(parameters, rows)
-    }
-}
-
-fn sequential_named_local_system_slots(
-    body: &[u8],
-    count: usize,
-    cache: &scalar::ScalarCache,
-    refusal: &mut ScalarBodyRefusal,
-) -> Option<Vec<Option<f64>>> {
-    {
-        crate::surface::sequential_named_local_system_slots(body, count, cache, refusal)
-    }
-}
+use crate::surface::positional_frame_planes;
+use crate::surface::sequential_named_local_system_slots;
 
 #[test]
 fn derives_one_held_coordinate_outline_plane() {

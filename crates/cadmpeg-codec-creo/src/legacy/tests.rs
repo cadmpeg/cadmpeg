@@ -7,7 +7,6 @@ use crate::test_support::build_prt;
 use crate::test_support::build_prt_raw;
 use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
-use std::ops::Range;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -55,13 +54,7 @@ fn serialized_offset_ids_preserve_legacy_wire_text() {
 
 mod numeric_admission;
 mod string_admission;
-
-fn scan(
-    data: &[u8],
-    ranges: impl IntoIterator<Item = Range<usize>>,
-) -> Result<super::Persistence, cadmpeg_core::CodecError> {
-    super::scan(data, ranges)
-}
+use super::scan;
 
 #[test]
 fn unknown_declaration_codes_retain_scope_identity() {

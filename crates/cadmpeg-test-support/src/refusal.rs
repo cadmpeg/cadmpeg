@@ -91,25 +91,6 @@ pub fn resource_limit_at_nth<T>(
     panic!("{operation}: no stable normal policy replay: {mismatch:?}")
 }
 
-/// Run a route that must succeed and must charge `dimension` under `operation`.
-///
-/// Use this where released storage keeps the named charge below an earlier
-/// peak, so [`resource_limit_at`] has no reachable boundary to refuse.
-///
-/// # Panics
-///
-/// Panics if the route fails or records no positive charge for `operation`.
-pub fn assert_charged<T>(
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    operation: &str,
-    run: impl FnOnce() -> Result<T, cadmpeg_core::CodecError>,
-) -> T {
-    let (result, charged) =
-        cadmpeg_core::decode::test_support::charged_at(dimension, operation, run);
-    assert!(charged > 0, "{operation}: no {dimension:?} charge");
-    result.unwrap_or_else(|error| panic!("{operation}: route failed: {error:?}"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::resource_limit_at;

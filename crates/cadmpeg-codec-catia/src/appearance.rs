@@ -973,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    fn appearance_packet_views_result() {
+    fn transfer_decodes_one_inline_appearance_packet() {
         let input = native(vec![inline(&[0x01, 1, 2, 3])]);
         let admitted = crate::test_support::with_service_context(|ctx| {
             transfer(

@@ -32,10 +32,7 @@ fn choice_fields(choices: &[FeatureChoice]) -> Vec<super::FeatureChoiceField> {
 fn geometry_tables(rows: &[FeatureRow]) -> Vec<super::FeatureGeometryTable> {
     super::geometry_tables(rows).expect("geometry tables are admitted")
 }
-
-fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<super::FeatureRoundReplayScalar> {
-    super::round_replay_scalars(rows)
-}
+use super::round_replay_scalars;
 
 fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<super::FeatureReplayAffectedIds> {
     super::replay_affected_ids(rows).expect("replay affected ids are admitted")

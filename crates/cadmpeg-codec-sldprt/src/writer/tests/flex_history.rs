@@ -268,7 +268,6 @@ fn encoder_writes_source_less_curved_sketches() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -946,7 +945,6 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
@@ -1024,7 +1022,6 @@ fn encoder_writes_source_less_native_features() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "BossExtrude".into(),
@@ -1104,7 +1101,6 @@ fn encoder_writes_source_less_native_features() {
                 BodySelection::Native("body-b,body-c".into()),
             )
             .unwrap(),
-
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         }),
@@ -1150,7 +1146,6 @@ fn encoder_writes_source_less_native_features() {
                 Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
             )
             .unwrap(),
-
             extent: Some(LinearTermination::Blind {
                 length: cadmpeg_ir::scalar::NonZeroLength::new(20.0).unwrap(),
             }),
@@ -1171,7 +1166,6 @@ fn encoder_writes_source_less_native_features() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -1223,7 +1217,6 @@ fn encoder_writes_source_less_native_features() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: vec![cadmpeg_ir::features::patterns::PatternSeed::Feature(

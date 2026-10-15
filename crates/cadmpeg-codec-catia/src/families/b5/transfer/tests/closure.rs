@@ -5,8 +5,8 @@ use super::super::super::graph::{
     B5PcurveParameterization, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
-    b5_edge_support_definition as charged_b5_edge_support_definition, b5_supports_follow_edge,
-    ordered_subrange, orient_b5_supports_to_edge,
+    b5_edge_support_definition, b5_supports_follow_edge, ordered_subrange,
+    orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::surfaces::{rational_arc, revolve_nurbs};
@@ -27,19 +27,6 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-fn b5_edge_support_definition(
-    supports: &[super::super::B5Support],
-    surface_ids: &HashMap<u32, SurfaceId>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
-    solved_parameter_range: Option<[f64; 2]>,
-) -> Option<(
-    cadmpeg_ir::ids::IdentityNamespace,
-    &'static str,
-    ProceduralCurveDefinition,
-)> {
-    charged_b5_edge_support_definition(supports, surface_ids, pcurves, solved_parameter_range)
-}
 
 fn transfer_vertex_tolerances(
     graph: &B5Graph,
@@ -1696,7 +1683,7 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
 }
 
 #[test]
-fn reparameterized_nurbs_knots_result() {
+fn nurbs_curve_reparameterizes_onto_a_new_range() {
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
             1,

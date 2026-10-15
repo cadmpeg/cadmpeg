@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    cap_coedge_ids_admitted, copy_extrusion_identity, copy_ring_coedges,
-    generated_extrusion_identity, push_rejected_extrusion, refused_lane_message,
-    sketch_profiles_cover_generated_extrusion_sides, JoinedLaneRecords,
+    cap_coedge_ids_admitted, copy_ring_coedges, generated_extrusion_identity,
+    push_rejected_extrusion, refused_lane_message, sketch_profiles_cover_generated_extrusion_sides,
+    JoinedLaneRecords,
 };
 use crate::decode::tests::surface_row;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -322,8 +322,8 @@ fn extrusion_entity_id_copy_preserves_identity() {
         &crate::identity::FEATURE_EXTRUSION,
         cadmpeg_ir::ids::IdentityKey::from(7).colon(cadmpeg_ir::identity_key!("body")),
     );
-    let copied =
-        copy_extrusion_identity::<cadmpeg_ir::ids::BodyId>(source.as_str()).expect("identity copy");
+    let copied = crate::identity::copy_checked_id::<cadmpeg_ir::ids::BodyId>(source.as_str())
+        .expect("identity copy");
     assert_eq!(copied, source);
 }
 

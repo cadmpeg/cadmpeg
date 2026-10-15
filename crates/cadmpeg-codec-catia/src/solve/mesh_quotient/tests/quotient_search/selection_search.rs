@@ -676,7 +676,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
 }
 
 #[test]
-fn completed_mesh_search_result() {
+fn single_selected_face_search_reaches_a_solved_outcome() {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::CodecError;
     let assignments = vec![vec![MeshFaceBoundaryAssignment {

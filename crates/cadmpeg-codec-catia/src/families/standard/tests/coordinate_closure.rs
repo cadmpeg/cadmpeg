@@ -319,7 +319,7 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
 }
 
 #[test]
-fn port_domain_pruning_result() {
+fn consistent_port_domains_keep_every_edge_candidate() {
     let ports = [[10, 11], [11, 12]];
     let candidates = [vec![[0, 1]], vec![[1, 2]]];
     for deferred in [&[][..], &[false, true][..]] {

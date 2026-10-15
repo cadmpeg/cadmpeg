@@ -52,10 +52,7 @@ fn row(id: u8, body: &[u8]) -> Vec<u8> {
     bytes.push(0xe3);
     bytes
 }
-
-fn scan(payload: &[u8]) -> super::LoopArrayScan {
-    super::scan(payload)
-}
+use super::scan;
 
 #[test]
 fn retains_bounded_rows_and_frame_header() {

@@ -60,6 +60,7 @@ pub(crate) struct Pcurve {
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
+#[cfg(test)]
 pub(crate) fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
@@ -317,6 +318,7 @@ fn decode_pcurves(
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
+#[cfg(test)]
 pub(crate) fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);

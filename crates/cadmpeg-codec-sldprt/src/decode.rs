@@ -338,10 +338,14 @@ fn append_design_losses(
     ir: &CadIr,
     report: &mut DecodeBody,
 ) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::edge_treatments::FullRoundSideSelection;
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
         LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
+    };
+    use cadmpeg_ir::features::{
+        ExtrusionDirectionSource, LoftPointSection, LoftSection, SurfaceBoundary,
     };
     use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
@@ -1091,157 +1095,159 @@ fn append_design_losses(
         .filter(|state| {
             let definition = state.definition.operation();
             match definition {
-            FeatureOperation::TreeNode { .. }
-            | FeatureOperation::DatumPrincipalPlane { .. }
-            | FeatureOperation::DatumPlane { .. }
-            | FeatureOperation::DatumThreePointPlane { .. }
-            | FeatureOperation::DatumAxis { .. }
-            | FeatureOperation::DatumPoint { .. }
-            | FeatureOperation::DatumCoordinateSystem { .. }
-            | FeatureOperation::EquationCurve { .. }
-            | FeatureOperation::Helix { .. } => false,
-            FeatureOperation::BaseFeature { bodies } => incomplete_body_selection(bodies),
-            FeatureOperation::InsertBodies { bodies } => !bodies.is_resolved(),
-            FeatureOperation::MeshImport { .. } => false,
-            FeatureOperation::InsertComponent { occurrence } => !ir
-                .model
-                .occurrences
-                .iter()
-                .any(|candidate| candidate.id == *occurrence),
-            FeatureOperation::AssemblyJoint { joint } => !ir
-                .model
-                .assembly_joints
-                .iter()
-                .any(|candidate| candidate.id == *joint),
-            FeatureOperation::ReferenceImage { asset, .. }
-            | FeatureOperation::Decal { asset, .. } => {
-                !ir.model.assets.iter().any(|candidate| candidate.id == *asset)
-            }
-            FeatureOperation::StoredGeometry {} => state.outputs.is_empty(),
-            FeatureOperation::ExtractBody { source } => incomplete_body_selection(source),
-            FeatureOperation::DerivedGeometry { source } => {
-                feature_positions
-                    .get(source)
-                    .is_none_or(|ordinal| *ordinal >= state.feature.ordinal)
-                    || !state.dependencies.contains(source)
-            }
-            FeatureOperation::ImportedGeometry { path, .. } => path.trim().is_empty(),
-            FeatureOperation::Form { cages } => cages.is_empty(),
-            FeatureOperation::PointGeometry { .. }
-            | FeatureOperation::LineSegment { .. }
-            | FeatureOperation::CircularArc { .. }
-            | FeatureOperation::EllipticArc { .. }
-            | FeatureOperation::PlanarPatch { .. } => false,
-            FeatureOperation::Polyline { .. } => false,
-            FeatureOperation::RegularPolygonCurve { .. } => false,
-            FeatureOperation::FaceFromShapes { sources, .. } => incomplete_body_selection(sources),
-            FeatureOperation::Block {
-                dimensions,
-                placement,
-                ..
-            } => dimensions.is_none() || placement.is_none(),
-            FeatureOperation::ProjectOnSurface {
-                sources,
-                support_face,
-                ..
-            } => incomplete_path(sources) || incomplete_face_selection(support_face),
-            FeatureOperation::Coil {
-                construction,
-                result,
-            } => {
-                matches!(
-                    construction.placement,
-                    cadmpeg_ir::features::CoilPlacement::Native { .. }
-                ) || match result {
-                    cadmpeg_ir::features::CoilResult::NewBody {} => false,
-                    cadmpeg_ir::features::CoilResult::Boolean { targets, .. } => {
-                        incomplete_body_selection(targets)
+                FeatureOperation::TreeNode { .. }
+                | FeatureOperation::DatumPrincipalPlane { .. }
+                | FeatureOperation::DatumPlane { .. }
+                | FeatureOperation::DatumThreePointPlane { .. }
+                | FeatureOperation::DatumAxis { .. }
+                | FeatureOperation::DatumPoint { .. }
+                | FeatureOperation::DatumCoordinateSystem { .. }
+                | FeatureOperation::EquationCurve { .. }
+                | FeatureOperation::Helix { .. } => false,
+                FeatureOperation::BaseFeature { bodies } => incomplete_body_selection(bodies),
+                FeatureOperation::InsertBodies { bodies } => !bodies.is_resolved(),
+                FeatureOperation::MeshImport { .. } => false,
+                FeatureOperation::InsertComponent { occurrence } => !ir
+                    .model
+                    .occurrences
+                    .iter()
+                    .any(|candidate| candidate.id == *occurrence),
+                FeatureOperation::AssemblyJoint { joint } => !ir
+                    .model
+                    .assembly_joints
+                    .iter()
+                    .any(|candidate| candidate.id == *joint),
+                FeatureOperation::ReferenceImage { asset, .. }
+                | FeatureOperation::Decal { asset, .. } => !ir
+                    .model
+                    .assets
+                    .iter()
+                    .any(|candidate| candidate.id == *asset),
+                FeatureOperation::StoredGeometry {} => state.outputs.is_empty(),
+                FeatureOperation::ExtractBody { source } => incomplete_body_selection(source),
+                FeatureOperation::DerivedGeometry { source } => {
+                    feature_positions
+                        .get(source)
+                        .is_none_or(|ordinal| *ordinal >= state.feature.ordinal)
+                        || !state.dependencies.contains(source)
+                }
+                FeatureOperation::ImportedGeometry { path, .. } => path.trim().is_empty(),
+                FeatureOperation::Form { cages } => cages.is_empty(),
+                FeatureOperation::PointGeometry { .. }
+                | FeatureOperation::LineSegment { .. }
+                | FeatureOperation::CircularArc { .. }
+                | FeatureOperation::EllipticArc { .. }
+                | FeatureOperation::PlanarPatch { .. } => false,
+                FeatureOperation::Polyline { .. } => false,
+                FeatureOperation::RegularPolygonCurve { .. } => false,
+                FeatureOperation::FaceFromShapes { sources, .. } => {
+                    incomplete_body_selection(sources)
+                }
+                FeatureOperation::Block {
+                    dimensions,
+                    placement,
+                    ..
+                } => dimensions.is_none() || placement.is_none(),
+                FeatureOperation::ProjectOnSurface {
+                    sources,
+                    support_face,
+                    ..
+                } => incomplete_path(sources) || incomplete_face_selection(support_face),
+                FeatureOperation::Coil {
+                    construction,
+                    result,
+                } => {
+                    matches!(
+                        construction.placement,
+                        cadmpeg_ir::features::CoilPlacement::Native { .. }
+                    ) || match result {
+                        cadmpeg_ir::features::CoilResult::NewBody {} => false,
+                        cadmpeg_ir::features::CoilResult::Boolean { targets, .. } => {
+                            incomplete_body_selection(targets)
+                        }
                     }
                 }
-            }
-            FeatureOperation::Sphere { op, .. }
-            | FeatureOperation::Torus { op, .. }
-            | FeatureOperation::Primitive { op, .. } => *op == BooleanOp::Unresolved,
-            FeatureOperation::CosmeticThread {
-                face,
-                diameter,
-                extent,
-            } => {
-                incomplete_face_selection(face)
-                    || diameter.is_none()
-                    || extent.is_none()
-            }
-            FeatureOperation::SketchBlockDefinition { sketch } => sketch.is_none(),
-            FeatureOperation::SketchBlockInstance { block, placement } => {
-                block.is_none() || placement.is_none()
-            }
-            FeatureOperation::DatumOffsetPlane { reference, .. } => reference
-                .as_ref()
-                .is_none_or(|reference| match reference {
-                    cadmpeg_ir::features::DatumPlaneReference::Feature { .. } => false,
-                    cadmpeg_ir::features::DatumPlaneReference::Face { face } => {
-                        incomplete_face_selection(face)
-                    }
-                    cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. } => false,
-                }),
-            FeatureOperation::ProjectedCurve {
-                source,
-                target_faces,
-                direction,
-                bidirectional,
-            } => {
-                incomplete_path(source)
-                    || incomplete_face_selection(target_faces)
-                    || matches!(
-                        direction,
-                        cadmpeg_ir::features::CurveProjectionDirection::State(
-                            cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved
-                        )
-                    )
-                    || bidirectional.is_none()
-            }
-            FeatureOperation::CompositeCurve { segments, .. } => {
-                segments.is_empty() || segments.iter().any(incomplete_path)
-            }
-            FeatureOperation::HelixNativeAxis { .. } => true,
-            FeatureOperation::Wrap {
-                profile, face, ..
-            } => {
-                incomplete_planar_profile(profile) || incomplete_face_selection(face)
-            }
-            FeatureOperation::Sketch { sketch, .. } => sketch.id().is_none(),
-            FeatureOperation::SpatialSketch { sketch } => sketch.is_none(),
-            FeatureOperation::Extrude {
-                profile,
-                direction,
-                start,
-                extent,
-                op,
-                ..
-            } => {
-                incomplete_profile(profile)
-                    || matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Unresolved {})
-                    || match start {
-                        cadmpeg_ir::features::ExtrudeStart::Unresolved {} => true,
-                        cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } => {
+                FeatureOperation::Sphere { op, .. }
+                | FeatureOperation::Torus { op, .. }
+                | FeatureOperation::Primitive { op, .. } => *op == BooleanOp::Unresolved,
+                FeatureOperation::CosmeticThread {
+                    face,
+                    diameter,
+                    extent,
+                } => incomplete_face_selection(face) || diameter.is_none() || extent.is_none(),
+                FeatureOperation::SketchBlockDefinition { sketch } => sketch.is_none(),
+                FeatureOperation::SketchBlockInstance { block, placement } => {
+                    block.is_none() || placement.is_none()
+                }
+                FeatureOperation::DatumOffsetPlane { reference, .. } => {
+                    reference.as_ref().is_none_or(|reference| match reference {
+                        cadmpeg_ir::features::DatumPlaneReference::Feature { .. } => false,
+                        cadmpeg_ir::features::DatumPlaneReference::Face { face } => {
                             incomplete_face_selection(face)
                         }
-                        cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
-                        | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => false,
-                    }
-                    || matches!(
-                        direction,
-                        cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                            source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }),
-                            ..
+                        cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. } => false,
+                    })
+                }
+                FeatureOperation::ProjectedCurve {
+                    source,
+                    target_faces,
+                    direction,
+                    bidirectional,
+                } => {
+                    incomplete_path(source)
+                        || incomplete_face_selection(target_faces)
+                        || matches!(
+                            direction,
+                            cadmpeg_ir::features::CurveProjectionDirection::State(
+                                cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved
+                            )
+                        )
+                        || bidirectional.is_none()
+                }
+                FeatureOperation::CompositeCurve { segments, .. } => {
+                    segments.is_empty() || segments.iter().any(incomplete_path)
+                }
+                FeatureOperation::HelixNativeAxis { .. } => true,
+                FeatureOperation::Wrap { profile, face, .. } => {
+                    incomplete_planar_profile(profile) || incomplete_face_selection(face)
+                }
+                FeatureOperation::Sketch { sketch, .. } => sketch.id().is_none(),
+                FeatureOperation::SpatialSketch { sketch } => sketch.is_none(),
+                FeatureOperation::Extrude {
+                    profile,
+                    direction,
+                    start,
+                    extent,
+                    op,
+                    ..
+                } => {
+                    incomplete_profile(profile)
+                        || matches!(
+                            direction,
+                            cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
+                        )
+                        || match start {
+                            cadmpeg_ir::features::ExtrudeStart::Unresolved {} => true,
+                            cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } => {
+                                incomplete_face_selection(face)
+                            }
+                            cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
+                            | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => {
+                                false
+                            }
                         }
-                            if incomplete_path(reference)
-                    )
-                    || incomplete_extrude_extent(extent)
-                    || *op == BooleanOp::Unresolved
-            }
-            FeatureOperation::Revolve { construction, op } => {
-                match construction {
+                        || matches!(
+                            direction,
+                            cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                                source: Some(ExtrusionDirectionSource::Edge { reference }),
+                                ..
+                            }
+                                if incomplete_path(reference)
+                        )
+                        || incomplete_extrude_extent(extent)
+                        || *op == BooleanOp::Unresolved
+                }
+                FeatureOperation::Revolve { construction, op } => match construction {
                     cadmpeg_ir::features::RevolveConstruction::Unresolved(_) => true,
                     cadmpeg_ir::features::RevolveConstruction::Resolved {
                         profile, extent, ..
@@ -1250,410 +1256,400 @@ fn append_design_losses(
                             || incomplete_revolve_extent(extent)
                             || *op == BooleanOp::Unresolved
                     }
-                }
-            }
-            FeatureOperation::Sweep {
-                shape,
-
-                path,
-
-                orientation,
-                ..
-            } => {
-                let mode = shape.mode();
-                shape.any_section_is_unresolved()
-                    || shape
-                        .referenced_profiles()
-                        .any(incomplete_planar_profile)
-                    || path.as_ref().is_none_or(incomplete_path)
-                    || matches!(
-                        orientation,
-                        Some(cadmpeg_ir::features::SweepOrientation::Auxiliary { path, .. })
-                            if incomplete_path(path)
-                    )
-                    || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved {})
-            }
-            FeatureOperation::HelicalSweep { construction, op } => {
-                incomplete_planar_profile(&construction.profile) || *op == BooleanOp::Unresolved
-            }
-            FeatureOperation::Binder {
-                sources,
-                construction,
-            } => {
-                sources.is_empty()
-                    || sources.iter().any(|source| {
-                        incomplete_binder_target(
-                            &source.target,
-                            feature_positions,
-                            state.feature.ordinal,
-                            state.dependencies,
-                        ) || source
-                            .subelements
-                            .iter()
-                            .any(|subelement| subelement.as_str().trim().is_empty())
-                    })
-                    || matches!(
-                        construction,
-                        cadmpeg_ir::features::BinderConstruction::Shape { .. }
-                            if sources.len() != 1
-                    )
-                    || matches!(
-                        construction,
-                        cadmpeg_ir::features::BinderConstruction::SubShape {
-                            context: Some(context),
-                            ..
-                        } if incomplete_binder_target(
-                            context,
-                            feature_positions,
-                            state.feature.ordinal,
-                            state.dependencies,
+                },
+                FeatureOperation::Sweep {
+                    shape,
+                    path,
+                    orientation,
+                    ..
+                } => {
+                    let mode = shape.mode();
+                    shape.any_section_is_unresolved()
+                        || shape.referenced_profiles().any(incomplete_planar_profile)
+                        || path.as_ref().is_none_or(incomplete_path)
+                        || matches!(
+                            orientation,
+                            Some(cadmpeg_ir::features::SweepOrientation::Auxiliary { path, .. })
+                                if incomplete_path(path)
                         )
-                    )
-            }
-            FeatureOperation::Loft {
-                sections,
-                guidance,
-                op,
-                ..
-            } => {
-                sections.len() < 2
-                    || sections.iter().any(|section| match section {
-                        cadmpeg_ir::features::LoftSection::Profile(profile) => incomplete_profile(profile),
-                        cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Native(_)) => true,
-                        cadmpeg_ir::features::LoftSection::Point(_) => false,
-                    })
-                    || match guidance {
-                        cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
-                            guides.iter().any(incomplete_path)
+                        || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved {})
+                }
+                FeatureOperation::HelicalSweep { construction, op } => {
+                    incomplete_planar_profile(&construction.profile) || *op == BooleanOp::Unresolved
+                }
+                FeatureOperation::Binder {
+                    sources,
+                    construction,
+                } => {
+                    sources.is_empty()
+                        || sources.iter().any(|source| {
+                            incomplete_binder_target(
+                                &source.target,
+                                feature_positions,
+                                state.feature.ordinal,
+                                state.dependencies,
+                            ) || source
+                                .subelements
+                                .iter()
+                                .any(|subelement| subelement.as_str().trim().is_empty())
+                        })
+                        || matches!(
+                            construction,
+                            cadmpeg_ir::features::BinderConstruction::Shape { .. }
+                                if sources.len() != 1
+                        )
+                        || matches!(
+                            construction,
+                            cadmpeg_ir::features::BinderConstruction::SubShape {
+                                context: Some(context),
+                                ..
+                            } if incomplete_binder_target(
+                                context,
+                                feature_positions,
+                                state.feature.ordinal,
+                                state.dependencies,
+                            )
+                        )
+                }
+                FeatureOperation::Loft {
+                    sections,
+                    guidance,
+                    op,
+                    ..
+                } => {
+                    sections.len() < 2
+                        || sections.iter().any(|section| match section {
+                            LoftSection::Profile(profile) => incomplete_profile(profile),
+                            LoftSection::Point(LoftPointSection::Native(_)) => true,
+                            LoftSection::Point(_) => false,
+                        })
+                        || match guidance {
+                            cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
+                                guides.iter().any(incomplete_path)
+                            }
+                            cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
+                                incomplete_path(centerline)
+                            }
                         }
-                        cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
-                            incomplete_path(centerline)
-                        }
-                    }
-                    || *op == BooleanOp::Unresolved
-            }
-            FeatureOperation::Rib { construction, op } => {
-                construction
-                    .profile
-                    .as_ref()
-                    .is_none_or(incomplete_planar_profile)
-                    || construction.direction.is_none()
-                    || construction.thickness.is_none()
-                    || construction.side.is_none()
-                    || matches!(construction.draft, cadmpeg_ir::features::RibDraft::Unresolved)
-                    || *op == BooleanOp::Unresolved
-            }
-            FeatureOperation::SheetMetalBaseFlange { profile, .. } => {
-                incomplete_planar_profile(profile)
-            }
-            FeatureOperation::SheetMetalEdgeFlange { edges, .. } => {
-                incomplete_edge_selection(edges)
-            }
-            FeatureOperation::SheetMetalHem { .. } => true,
-            FeatureOperation::Fillet { groups } => {
-                groups.is_empty()
-                    || groups.iter().any(|group| {
-                        incomplete_edge_selection(&group.edges)
-                            || group.radius.is_unresolved()
-                    })
-            }
-            FeatureOperation::FullRoundFillet { groups } => {
-                groups.is_empty()
-                    || groups.iter().any(|group| {
-                        incomplete_face_selection(group.center_faces())
-                            || matches!(
-                                group.side_one_faces(),
-                                cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Unresolved
-                            )
-                            || matches!(
-                                group.side_two_faces(),
-                                cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Unresolved
-                            )
-                            || matches!(
-                                group.side_one_faces(),
-                                cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
-                                    ref selection
-                                ) if incomplete_face_selection(selection)
-                            )
-                            || matches!(
-                                group.side_two_faces(),
-                                cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
-                                    ref selection
-                                ) if incomplete_face_selection(selection)
-                            )
-                    })
-            }
-            FeatureOperation::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
-                incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
-            }),
-            FeatureOperation::FaceBlend {
-                operands,
-
-                radius,
-            } => {
-                let first_faces = operands.first_faces();
-                let second_faces = operands.second_faces();
-                incomplete_face_selection(first_faces)
-                    || incomplete_face_selection(second_faces)
-                    || radius.is_unresolved()
-            }
-            FeatureOperation::Shell {
-                bodies,
-                removed_faces,
-                thickness,
-                outward,
-                mode,
-                join,
-                resolve_intersections,
-                allow_self_intersections,
-            } => {
-                bodies.as_ref().is_some_and(incomplete_body_selection)
-                    || incomplete_optional_face_selection(removed_faces)
-                    || thickness.is_none()
-                    || outward.is_none()
-                    || mode.is_none()
-                    || join.is_none()
-                    || resolve_intersections.is_none()
-                    || allow_self_intersections.is_none()
-            }
-            FeatureOperation::OffsetShape { source, .. }
-            | FeatureOperation::RefineShape { source }
-            | FeatureOperation::ReverseShape { source } => incomplete_body_selection(source),
-            FeatureOperation::Compound { members } => incomplete_body_selection(members),
-            FeatureOperation::RuledBetweenCurves { first, second, .. } => {
-                incomplete_path(first) || incomplete_path(second)
-            }
-            FeatureOperation::SectionShape {
-                operands,
-
-                approximate,
-            } => {
-                let first = operands.first();
-                let second = operands.second();
-                incomplete_body_selection(first)
-                    || incomplete_body_selection(second)
-                    || approximate.is_none()
-            }
-            FeatureOperation::MirrorShape {
-                source,
-                plane_reference,
-                ..
-            } => {
-                incomplete_body_selection(source)
-                    || plane_reference
+                        || *op == BooleanOp::Unresolved
+                }
+                FeatureOperation::Rib { construction, op } => {
+                    construction
+                        .profile
                         .as_ref()
-                        .is_some_and(incomplete_face_selection)
-            }
-            FeatureOperation::Thicken {
-                faces,
-                thickness,
-                side,
-            } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none(),
-            FeatureOperation::OffsetSurface { faces, distance } => {
-                incomplete_face_selection(faces) || distance.is_none()
-            }
-            FeatureOperation::KnitSurface {
-                faces,
-                merge_entities,
-                create_solid,
-                ..
-            } => {
-                incomplete_face_selection(faces)
-                    || merge_entities.is_none()
-                    || create_solid.is_none()
-            }
-            FeatureOperation::ExtendSurface {
-                faces,
-                distance,
-                method,
-            } => {
-                incomplete_face_selection(faces)
-                    || distance.is_none()
-                    || *method == cadmpeg_ir::features::SurfaceExtension::Unresolved
-            }
-            FeatureOperation::FilledSurface {
-                boundary,
-                support_faces,
-                continuity,
-                merge_result,
-                ..
-            } => {
-                (match boundary {
-                    cadmpeg_ir::features::SurfaceBoundary::Edges(edges) => incomplete_edge_selection(edges),
-                    cadmpeg_ir::features::SurfaceBoundary::Path(path) => incomplete_path(path),
-                })
-                    || if continuity.uniform_value()
+                        .is_none_or(incomplete_planar_profile)
+                        || construction.direction.is_none()
+                        || construction.thickness.is_none()
+                        || construction.side.is_none()
+                        || matches!(
+                            construction.draft,
+                            cadmpeg_ir::features::RibDraft::Unresolved
+                        )
+                        || *op == BooleanOp::Unresolved
+                }
+                FeatureOperation::SheetMetalBaseFlange { profile, .. } => {
+                    incomplete_planar_profile(profile)
+                }
+                FeatureOperation::SheetMetalEdgeFlange { edges, .. } => {
+                    incomplete_edge_selection(edges)
+                }
+                FeatureOperation::SheetMetalHem { .. } => true,
+                FeatureOperation::Fillet { groups } => {
+                    groups.is_empty()
+                        || groups.iter().any(|group| {
+                            incomplete_edge_selection(&group.edges) || group.radius.is_unresolved()
+                        })
+                }
+                FeatureOperation::FullRoundFillet { groups } => {
+                    groups.is_empty()
+                        || groups.iter().any(|group| {
+                            incomplete_face_selection(group.center_faces())
+                                || matches!(
+                                    group.side_one_faces(),
+                                    FullRoundSideSelection::Unresolved
+                                )
+                                || matches!(
+                                    group.side_two_faces(),
+                                    FullRoundSideSelection::Unresolved
+                                )
+                                || matches!(
+                                    group.side_one_faces(),
+                                    FullRoundSideSelection::Explicit(
+                                        ref selection
+                                    ) if incomplete_face_selection(selection)
+                                )
+                                || matches!(
+                                    group.side_two_faces(),
+                                    FullRoundSideSelection::Explicit(
+                                        ref selection
+                                    ) if incomplete_face_selection(selection)
+                                )
+                        })
+                }
+                FeatureOperation::Chamfer { groups, .. } => {
+                    groups.is_empty()
+                        || groups.iter().any(|group| {
+                            incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
+                        })
+                }
+                FeatureOperation::FaceBlend { operands, radius } => {
+                    let first_faces = operands.first_faces();
+                    let second_faces = operands.second_faces();
+                    incomplete_face_selection(first_faces)
+                        || incomplete_face_selection(second_faces)
+                        || radius.is_unresolved()
+                }
+                FeatureOperation::Shell {
+                    bodies,
+                    removed_faces,
+                    thickness,
+                    outward,
+                    mode,
+                    join,
+                    resolve_intersections,
+                    allow_self_intersections,
+                } => {
+                    bodies.as_ref().is_some_and(incomplete_body_selection)
+                        || incomplete_optional_face_selection(removed_faces)
+                        || thickness.is_none()
+                        || outward.is_none()
+                        || mode.is_none()
+                        || join.is_none()
+                        || resolve_intersections.is_none()
+                        || allow_self_intersections.is_none()
+                }
+                FeatureOperation::OffsetShape { source, .. }
+                | FeatureOperation::RefineShape { source }
+                | FeatureOperation::ReverseShape { source } => incomplete_body_selection(source),
+                FeatureOperation::Compound { members } => incomplete_body_selection(members),
+                FeatureOperation::RuledBetweenCurves { first, second, .. } => {
+                    incomplete_path(first) || incomplete_path(second)
+                }
+                FeatureOperation::SectionShape {
+                    operands,
+                    approximate,
+                } => {
+                    let first = operands.first();
+                    let second = operands.second();
+                    incomplete_body_selection(first)
+                        || incomplete_body_selection(second)
+                        || approximate.is_none()
+                }
+                FeatureOperation::MirrorShape {
+                    source,
+                    plane_reference,
+                    ..
+                } => {
+                    incomplete_body_selection(source)
+                        || plane_reference
+                            .as_ref()
+                            .is_some_and(incomplete_face_selection)
+                }
+                FeatureOperation::Thicken {
+                    faces,
+                    thickness,
+                    side,
+                } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none(),
+                FeatureOperation::OffsetSurface { faces, distance } => {
+                    incomplete_face_selection(faces) || distance.is_none()
+                }
+                FeatureOperation::KnitSurface {
+                    faces,
+                    merge_entities,
+                    create_solid,
+                    ..
+                } => {
+                    incomplete_face_selection(faces)
+                        || merge_entities.is_none()
+                        || create_solid.is_none()
+                }
+                FeatureOperation::ExtendSurface {
+                    faces,
+                    distance,
+                    method,
+                } => {
+                    incomplete_face_selection(faces)
+                        || distance.is_none()
+                        || *method == cadmpeg_ir::features::SurfaceExtension::Unresolved
+                }
+                FeatureOperation::FilledSurface {
+                    boundary,
+                    support_faces,
+                    continuity,
+                    merge_result,
+                    ..
+                } => {
+                    (match boundary {
+                        SurfaceBoundary::Edges(edges) => incomplete_edge_selection(edges),
+                        SurfaceBoundary::Path(path) => incomplete_path(path),
+                    }) || if continuity.uniform_value()
                         == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
                     {
                         incomplete_optional_face_selection(support_faces)
                     } else {
                         incomplete_face_selection(support_faces)
-                    }
-                    || continuity.is_unresolved()
-                    || merge_result.is_none()
-            }
-            FeatureOperation::TrimSurface {
-                faces,
-                tool,
-                keep,
-                ..
-            } => {
-                incomplete_face_selection(faces)
-                    || incomplete_path(tool)
-                    || *keep == cadmpeg_ir::features::TrimRegion::Unresolved
-            }
-            FeatureOperation::RuledSurface {
-                edges,
-                support_faces,
-                mode,
-                ..
-            } => {
-                incomplete_edge_selection(edges)
-                    || if matches!(mode, cadmpeg_ir::features::RuledSurfaceMode::Direction { .. }) {
-                        incomplete_optional_face_selection(support_faces)
-                    } else {
-                        incomplete_face_selection(support_faces)
-                    }
-            }
-            FeatureOperation::Draft {
-                faces,
-                anchor,
-                angle,
-                outward,
-            } => {
-                incomplete_face_selection(faces)
-                    || match anchor {
-                        cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
-                            incomplete_face_selection(plane)
+                    } || continuity.is_unresolved()
+                        || merge_result.is_none()
+                }
+                FeatureOperation::TrimSurface {
+                    faces, tool, keep, ..
+                } => {
+                    incomplete_face_selection(faces)
+                        || incomplete_path(tool)
+                        || *keep == cadmpeg_ir::features::TrimRegion::Unresolved
+                }
+                FeatureOperation::RuledSurface {
+                    edges,
+                    support_faces,
+                    mode,
+                    ..
+                } => {
+                    incomplete_edge_selection(edges)
+                        || if matches!(
+                            mode,
+                            cadmpeg_ir::features::RuledSurfaceMode::Direction { .. }
+                        ) {
+                            incomplete_optional_face_selection(support_faces)
+                        } else {
+                            incomplete_face_selection(support_faces)
                         }
-                        cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
-                            incomplete_face_selection(tool)
+                }
+                FeatureOperation::Draft {
+                    faces,
+                    anchor,
+                    angle,
+                    outward,
+                } => {
+                    incomplete_face_selection(faces)
+                        || match anchor {
+                            cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                                incomplete_face_selection(plane)
+                            }
+                            cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
+                                incomplete_face_selection(tool)
+                            }
                         }
-                    }
-                    || anchor.pull().is_none()
-                    || angle.is_none()
-                    || (matches!(
-                        anchor,
-                        cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
-                    ) && outward.is_none())
-            }
-            FeatureOperation::Combine { operands, .. } => {
-                let target = operands.target();
-                let tools = operands.tools();
-                incomplete_body_selection(target) || incomplete_body_selection(tools)
-            }
-            FeatureOperation::BoundaryFill { tools, cells } => {
-                incomplete_body_selection(tools)
-                    || cells.iter().any(incomplete_body_selection)
-            }
-            FeatureOperation::CutWithSurface { targets, tools, .. } => {
-                incomplete_body_selection(targets) || incomplete_face_selection(tools)
-            }
-            FeatureOperation::TrimBodies { operands, keep } => {
-                let targets = operands.targets();
-                let tools = operands.tools();
-                incomplete_body_selection(targets)
-                    || incomplete_body_selection(tools)
-                    || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
-            }
-            FeatureOperation::SplitBody { targets, tools } => {
-                incomplete_body_selection(targets) || incomplete_face_selection(tools)
-            }
-            FeatureOperation::SplitFace { targets, tool } => {
-                incomplete_face_selection(targets)
-                    || match tool {
-                        SplitFaceTool::Path(path) => incomplete_path(path),
-                        SplitFaceTool::Plane { .. } | SplitFaceTool::Planes { .. } => false,
-                    }
-            }
-            FeatureOperation::SewBodies {
-                bodies,
-                gap_tolerance,
-            } => incomplete_body_selection(bodies) || gap_tolerance.is_none(),
-            FeatureOperation::DeleteBody { bodies, mode } => {
-                incomplete_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
-            }
-            FeatureOperation::DeleteFace { faces, .. } => incomplete_face_selection(faces),
-            FeatureOperation::ReplaceFace { operands } => {
-                let targets = operands.targets();
-                let replacements = operands.replacements();
-                incomplete_face_selection(targets) || incomplete_face_selection(replacements)
-            }
-            FeatureOperation::MoveFace { faces, .. } => incomplete_face_selection(faces),
-            FeatureOperation::MoveBody { bodies, .. } => incomplete_body_selection(bodies),
-            FeatureOperation::Dome {
-                faces,
-                height,
-                elliptical,
-                reverse,
-            } => {
-                incomplete_face_selection(faces)
-                    || height.is_none()
-                    || elliptical.is_none()
-                    || reverse.is_none()
-            }
-            FeatureOperation::Flex { axis, mode } => {
-                axis.is_none()
-                || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved { .. })
-            }
-            FeatureOperation::Scale {
-                bodies,
-                center,
-                factors,
-            } => {
-                incomplete_body_selection(bodies)
-                    || center.as_ref().is_none_or(|center| {
-                        matches!(center, cadmpeg_ir::features::ScaleCenter::Native(_))
-                    })
-                    || factors.resolved().is_none()
-            }
-            FeatureOperation::Hole {
-                profile,
-                face,
-                placements,
-                shape,
-                extent,
-                ..
-            } => {
-                let construction = shape.construction();
-                let exit_kind = shape.exit_kind();
-                let diameter = shape.diameter();
-                let exit_kind_is_unresolved = exit_kind
-                    .as_ref()
-                    .is_some_and(cadmpeg_ir::features::holes::HoleKind::is_unresolved);
-                profile.as_ref().is_some_and(incomplete_planar_profile)
-                    || face.as_ref().is_some_and(incomplete_face_selection)
-                    || placements.is_none()
-                    || matches!(
-                        construction,
-                        cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
-                            if kind.is_unresolved()
-                    )
-                    || exit_kind_is_unresolved
-                    || diameter.is_none()
-                    || extent
+                        || anchor.pull().is_none()
+                        || angle.is_none()
+                        || (matches!(
+                            anchor,
+                            cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
+                        ) && outward.is_none())
+                }
+                FeatureOperation::Combine { operands, .. } => {
+                    let target = operands.target();
+                    let tools = operands.tools();
+                    incomplete_body_selection(target) || incomplete_body_selection(tools)
+                }
+                FeatureOperation::BoundaryFill { tools, cells } => {
+                    incomplete_body_selection(tools) || cells.iter().any(incomplete_body_selection)
+                }
+                FeatureOperation::CutWithSurface { targets, tools, .. } => {
+                    incomplete_body_selection(targets) || incomplete_face_selection(tools)
+                }
+                FeatureOperation::TrimBodies { operands, keep } => {
+                    let targets = operands.targets();
+                    let tools = operands.tools();
+                    incomplete_body_selection(targets)
+                        || incomplete_body_selection(tools)
+                        || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+                }
+                FeatureOperation::SplitBody { targets, tools } => {
+                    incomplete_body_selection(targets) || incomplete_face_selection(tools)
+                }
+                FeatureOperation::SplitFace { targets, tool } => {
+                    incomplete_face_selection(targets)
+                        || match tool {
+                            SplitFaceTool::Path(path) => incomplete_path(path),
+                            SplitFaceTool::Plane { .. } | SplitFaceTool::Planes { .. } => false,
+                        }
+                }
+                FeatureOperation::SewBodies {
+                    bodies,
+                    gap_tolerance,
+                } => incomplete_body_selection(bodies) || gap_tolerance.is_none(),
+                FeatureOperation::DeleteBody { bodies, mode } => {
+                    incomplete_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
+                }
+                FeatureOperation::DeleteFace { faces, .. } => incomplete_face_selection(faces),
+                FeatureOperation::ReplaceFace { operands } => {
+                    let targets = operands.targets();
+                    let replacements = operands.replacements();
+                    incomplete_face_selection(targets) || incomplete_face_selection(replacements)
+                }
+                FeatureOperation::MoveFace { faces, .. } => incomplete_face_selection(faces),
+                FeatureOperation::MoveBody { bodies, .. } => incomplete_body_selection(bodies),
+                FeatureOperation::Dome {
+                    faces,
+                    height,
+                    elliptical,
+                    reverse,
+                } => {
+                    incomplete_face_selection(faces)
+                        || height.is_none()
+                        || elliptical.is_none()
+                        || reverse.is_none()
+                }
+                FeatureOperation::Flex { axis, mode } => {
+                    axis.is_none()
+                        || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved { .. })
+                }
+                FeatureOperation::Scale {
+                    bodies,
+                    center,
+                    factors,
+                } => {
+                    incomplete_body_selection(bodies)
+                        || center.as_ref().is_none_or(|center| {
+                            matches!(center, cadmpeg_ir::features::ScaleCenter::Native(_))
+                        })
+                        || factors.resolved().is_none()
+                }
+                FeatureOperation::Hole {
+                    profile,
+                    face,
+                    placements,
+                    shape,
+                    extent,
+                    ..
+                } => {
+                    let construction = shape.construction();
+                    let exit_kind = shape.exit_kind();
+                    let diameter = shape.diameter();
+                    let exit_kind_is_unresolved = exit_kind
                         .as_ref()
-                        .is_none_or(incomplete_linear_termination)
-            }
-            FeatureOperation::Pattern { seeds, pattern } => {
-                seeds.is_empty()
-                    || seeds.iter().any(|seed| match seed {
-                        cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
-                        cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
-                            incomplete_face_selection(faces)
-                        }
-                        cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
-                            incomplete_body_selection(bodies)
-                        }
-                        cadmpeg_ir::features::patterns::PatternSeed::Occurrences(occurrences) => {
-                            occurrences.is_empty()
-                        }
-                    })
-                    || incomplete_pattern(pattern, &incomplete_path)
-            }
-            FeatureOperation::Native { .. } => false,
-            // Unresolved construction retained as native.
-            FeatureOperation::Unresolved { .. } => true,
+                        .is_some_and(cadmpeg_ir::features::holes::HoleKind::is_unresolved);
+                    profile.as_ref().is_some_and(incomplete_planar_profile)
+                        || face.as_ref().is_some_and(incomplete_face_selection)
+                        || placements.is_none()
+                        || matches!(
+                            construction,
+                            cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
+                                if kind.is_unresolved()
+                        )
+                        || exit_kind_is_unresolved
+                        || diameter.is_none()
+                        || extent.as_ref().is_none_or(incomplete_linear_termination)
+                }
+                FeatureOperation::Pattern { seeds, pattern } => {
+                    seeds.is_empty()
+                        || seeds.iter().any(|seed| match seed {
+                            cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
+                            cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
+                                incomplete_face_selection(faces)
+                            }
+                            cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
+                                incomplete_body_selection(bodies)
+                            }
+                            cadmpeg_ir::features::patterns::PatternSeed::Occurrences(
+                                occurrences,
+                            ) => occurrences.is_empty(),
+                        })
+                        || incomplete_pattern(pattern, &incomplete_path)
+                }
+                FeatureOperation::Native { .. } => false,
+                // Unresolved construction retained as native.
+                FeatureOperation::Unresolved { .. } => true,
             }
         })
         .count();

@@ -2372,20 +2372,18 @@ fn append_resolved_consolidated_surface_curves(
                     .map(|(index, (_, _, _, _, endpoints))| (index, *endpoints)),
             )
         });
-        let attachment = selected_attachment
-            .map(|(index, reversed)| {
-                let (edge, procedure, curve, surfaces, _) = &attachable_edges[index];
-                Ok::<_, cadmpeg_core::CodecError>((
-                    (
-                        *edge,
-                        *procedure,
-                        curve.clone(),
-                        [surfaces[0].clone(), surfaces[1].clone()],
-                    ),
-                    reversed,
-                ))
-            })
-            .transpose()?;
+        let attachment = selected_attachment.map(|(index, reversed)| {
+            let (edge, procedure, curve, surfaces, _) = &attachable_edges[index];
+            (
+                (
+                    *edge,
+                    *procedure,
+                    curve.clone(),
+                    [surfaces[0].clone(), surfaces[1].clone()],
+                ),
+                reversed,
+            )
+        });
         macro_rules! option_or_none {
             ($value:expr) => {
                 match $value {
@@ -2539,7 +2537,7 @@ fn append_resolved_consolidated_surface_curves(
                         ) {
                             Ok(Some(pcurve)) => pcurve,
                             Ok(None) => return Ok(None),
-                            Err(RechartFailure::NonFinite) => {
+                            Err(RechartFailure) => {
                                 binding_counts.rechart_numeric_failures += 1;
                                 return Ok(None);
                             }
@@ -2678,13 +2676,11 @@ fn append_resolved_consolidated_surface_curves(
                         binding_counts.standard_face_surfaces += 1;
                         bound_new_standard_surface = true;
                     }
-                    let copy_side = |side: usize| {
-                        Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                            surface: Some(binding.standard_surfaces[side].clone()),
-                            pcurve: Some(binding.edge_pcurves[side].clone().into()),
-                        })
+                    let copy_side = |side: usize| IntcurveSupportSide {
+                        surface: Some(binding.standard_surfaces[side].clone()),
+                        pcurve: Some(binding.edge_pcurves[side].clone().into()),
                     };
-                    sides = [copy_side(0)?, copy_side(1)?];
+                    sides = [copy_side(0), copy_side(1)];
                 }
             }
         }
@@ -3188,10 +3184,9 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
         <= EPS_APEX_ALIGNMENT * scale
 }
 
+/// A rechart produced a non-finite pcurve coordinate.
 #[derive(Debug)]
-enum RechartFailure {
-    NonFinite,
-}
+struct RechartFailure;
 
 fn rechart_equivalent_surface_pcurve(
     pcurve: &PcurveGeometry,
@@ -3218,14 +3213,14 @@ fn rechart_equivalent_surface_pcurve(
         + (source_origin.y - target_origin.y) * source_axis.y
         + (source_origin.z - target_origin.z) * source_axis.z;
     if !v_shift.is_finite() {
-        return Err(RechartFailure::NonFinite);
+        return Err(RechartFailure);
     }
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
             let shifted_origin =
                 cadmpeg_ir::units::FinitePoint2::new(Point2::new(origin.u, origin.v + v_shift))
-                    .ok_or(RechartFailure::NonFinite)?;
+                    .ok_or(RechartFailure)?;
             Ok(Some(PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                     shifted_origin,
@@ -3252,7 +3247,7 @@ fn rechart_equivalent_surface_pcurve(
                             raw.u,
                             raw.v + v_shift,
                         ))
-                        .ok_or(RechartFailure::NonFinite)?;
+                        .ok_or(RechartFailure)?;
                     }
                 }
                 PcurveNurbsPoles::Rational { points } => {
@@ -3262,7 +3257,7 @@ fn rechart_equivalent_surface_pcurve(
                             raw.u,
                             raw.v + v_shift,
                         ))
-                        .ok_or(RechartFailure::NonFinite)?;
+                        .ok_or(RechartFailure)?;
                     }
                 }
             }
@@ -3272,7 +3267,7 @@ fn rechart_equivalent_surface_pcurve(
                 poles,
                 nurbs.periodic(),
             )
-            .map_err(|_| RechartFailure::NonFinite)?;
+            .map_err(|_| RechartFailure)?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: shifted }))
         }
         _ => Ok(None),
@@ -4008,7 +4003,7 @@ mod tests {
         };
         assert!(matches!(
             rechart_equivalent_surface_pcurve(&pcurve, &source, &target),
-            Err(RechartFailure::NonFinite),
+            Err(RechartFailure),
         ));
     }
 
@@ -4569,7 +4564,7 @@ mod tests {
     mod rechart_cases;
 
     #[test]
-    fn consolidated_jet_pcurve_workspace_result() {
+    fn identity_chart_jet_pcurve_lowers_to_a_pcurve() {
         use crate::wire::records::{ConsolidatedPcurve, ConsolidatedPcurveSite};
         let site = |knot, u| ConsolidatedPcurveSite {
             knot: cadmpeg_ir::scalar::FiniteReal::new(knot).expect("finite knot"),
@@ -4599,7 +4594,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_line_profile_result() {
+    fn b2_line_profile_stream_yields_one_line_profile() {
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let service = consolidated_line_profiles(&bytes, &records)
@@ -4608,7 +4603,7 @@ mod tests {
     }
 
     #[test]
-    fn freeform_surface_pool_result() {
+    fn a5_surface_pool_appends_one_surface() {
         let bytes = crate::test_support::test_a5a8::a5_surface_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -4634,7 +4629,7 @@ mod tests {
     }
 
     #[test]
-    fn a5_guide_scratch_points_result() {
+    fn a5_guide_curve_pool_appends_one_curve() {
         let bytes = crate::test_support::test_a5a8::a5_guide_curve_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -4660,7 +4655,7 @@ mod tests {
     }
 
     #[test]
-    fn equivalent_surface_rechart_result() {
+    fn rechart_between_identical_surfaces_copies_the_pcurve() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -4678,7 +4673,7 @@ mod tests {
     }
 
     #[test]
-    fn standard_carrier_tag_index_result() {
+    fn carrier_index_lists_an_unknown_geometry_tag_without_a_surface_id() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#tagged".to_owned()).expect("identity grammar"),
@@ -4693,7 +4688,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_revolution_directrix_id_result() {
+    fn b2_revolution_stream_resolves_one_revolution() {
         let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let resolved =
@@ -4702,7 +4697,7 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_line_profile_identity_result() {
+    fn line_profile_curve_gets_the_consolidated_line_profile_id() {
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let service = consolidated_line_profiles(&bytes, &records).expect("service budget");

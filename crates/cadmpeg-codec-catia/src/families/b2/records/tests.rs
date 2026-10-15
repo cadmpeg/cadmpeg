@@ -1468,7 +1468,7 @@ mod indexed_wrappers;
 mod spatial_and_consolidated;
 
 #[test]
-fn b2_owner_packet_collection_result() {
+fn all_compact_owner_stream_yields_one_owner_packet() {
     let bytes = b2_all_compact_owner_packet_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
@@ -1478,7 +1478,7 @@ fn b2_owner_packet_collection_result() {
 }
 
 #[test]
-fn b2_offset_support_parser_result() {
+fn offset_support_stream_yields_one_offset_support() {
     let bytes = b2_offset_support_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let service = crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records);
@@ -1486,7 +1486,7 @@ fn b2_offset_support_parser_result() {
 }
 
 #[test]
-fn b2_construction_offset_support_result() {
+fn construction_use_stream_yields_one_offset_support() {
     let bytes = b2_construction_use_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let service = crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records);

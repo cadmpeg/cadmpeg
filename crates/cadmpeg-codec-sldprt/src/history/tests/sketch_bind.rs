@@ -376,7 +376,6 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             source_tag: Some("Sketch".into()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(native_ref.into()),
         };

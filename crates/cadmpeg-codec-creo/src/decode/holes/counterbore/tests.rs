@@ -8,33 +8,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-fn service_boundary_circle(
-    scan: &crate::container::ContainerScan<'_>,
-    ir: &cadmpeg_ir::document::CadIr,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-    feature_id: u32,
-    cylinder_ids: &[u32],
-    radius: f64,
-) -> Option<(u32, Point3, [f64; 3])> {
-    {
-        super::counterbore_source_boundary_circle(
-            scan,
-            ir,
-            source_carriers,
-            feature_id,
-            cylinder_ids,
-            radius,
-        )
-    }
-    .expect("service boundary circle admitted")
-}
-
-fn service_unique_model_surface_geometries(
-    ir: &cadmpeg_ir::document::CadIr,
-) -> Option<BTreeMap<u32, SurfaceGeometry>> {
-    super::unique_model_surface_geometries(ir)
-}
-
 fn boundary_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.extend([
@@ -116,10 +89,10 @@ fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
 fn model_surface_geometry_lookup_rejects_duplicate_native_ids() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
-    assert!(service_unique_model_surface_geometries(&ir).is_some());
+    assert!(super::unique_model_surface_geometries(&ir).is_some());
 
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.5]));
-    assert!(service_unique_model_surface_geometries(&ir).is_none());
+    assert!(super::unique_model_surface_geometries(&ir).is_none());
 }
 
 #[test]
@@ -129,14 +102,15 @@ fn boundary_circle_uses_native_plane_carrier_when_model_plane_is_absent() {
     ir.model.curves.push(boundary_circle());
 
     assert_eq!(
-        service_boundary_circle(
+        super::counterbore_source_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             42,
             &[2],
             1.0
-        ),
+        )
+        .expect("boundary circle admitted"),
         Some((1, Point3::new(0.0, 0.0, 0.0), [0.0, 0.0, 1.0]))
     );
 }
@@ -150,14 +124,15 @@ fn boundary_circle_uses_model_plane_carrier_when_native_plane_is_absent() {
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
 
     assert_eq!(
-        service_boundary_circle(
+        super::counterbore_source_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             42,
             &[2],
             1.0
-        ),
+        )
+        .expect("boundary circle admitted"),
         Some((1, Point3::new(0.0, 0.0, 0.0), [0.0, 0.0, 1.0]))
     );
 }
@@ -170,14 +145,15 @@ fn boundary_circle_rejects_conflicting_model_plane_carrier() {
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.5]));
 
     assert_eq!(
-        service_boundary_circle(
+        super::counterbore_source_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             42,
             &[2],
             1.0
-        ),
+        )
+        .expect("boundary circle admitted"),
         None
     );
 }
@@ -191,14 +167,15 @@ fn boundary_circle_rejects_duplicate_model_curves() {
         .extend([boundary_circle(), boundary_circle()]);
 
     assert_eq!(
-        service_boundary_circle(
+        super::counterbore_source_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             42,
             &[2],
             1.0
-        ),
+        )
+        .expect("boundary circle admitted"),
         None
     );
 }
@@ -212,14 +189,15 @@ fn boundary_circle_rejects_duplicate_surface_rows() {
     ir.model.curves.push(boundary_circle());
 
     assert_eq!(
-        service_boundary_circle(
+        super::counterbore_source_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             42,
             &[2],
             1.0
-        ),
+        )
+        .expect("boundary circle admitted"),
         None
     );
 }

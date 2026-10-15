@@ -13,7 +13,7 @@ use super::records::ZeroEntitySupportRun;
 use crate::solve::union_find::UnionFind;
 
 const MODEL_POINT_TOLERANCE: f64 = 2e-3;
-pub(super) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
+pub(crate) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
 
 /// One sense-oriented support occurrence owned by a face.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -87,16 +87,43 @@ pub(crate) struct ZeroEntityEndpointLocusCandidate {
 pub(crate) fn zero_entity_endpoint_pair_candidates(
     ctx: &DecodeContext<'_>,
     runs: &[ZeroEntitySupportRun],
-) -> Result<Vec<ZeroEntityEndpointPairCandidate>, CodecError> {
-    endpoint_pair_candidates(ctx, &zero_entity_oriented_occurrences(runs))
-}
-
-pub(super) fn zero_entity_endpoint_pair_candidates_with_budget(
-    ctx: &DecodeContext<'_>,
-    runs: &[ZeroEntitySupportRun],
     budget: &WorkBudget,
 ) -> Result<Option<Vec<ZeroEntityEndpointPairCandidate>>, CodecError> {
-    endpoint_pair_candidates_with_budget(ctx, &zero_entity_oriented_occurrences(runs), budget)
+    endpoint_pair_candidates(ctx, &zero_entity_oriented_occurrences(runs), budget)
+}
+
+/// Endpoint-pair and endpoint-locus candidates found under one work bound.
+pub(crate) struct BoundedEndpointCandidates {
+    pub(crate) pairs: Vec<ZeroEntityEndpointPairCandidate>,
+    pub(crate) loci: Vec<ZeroEntityEndpointLocusCandidate>,
+    /// Whether the bound cut the search short. A list the bound cuts short,
+    /// or that the matcher rejects, is empty.
+    pub(crate) bounded: bool,
+}
+
+/// The endpoint candidates of `runs`, with `limit` operations shared by the
+/// pair and locus searches.
+pub(crate) fn bounded_endpoint_candidates(
+    ctx: &DecodeContext<'_>,
+    runs: &[ZeroEntitySupportRun],
+    limit: usize,
+) -> Result<BoundedEndpointCandidates, CodecError> {
+    occurrence_endpoint_candidates(ctx, &zero_entity_oriented_occurrences(runs), limit)
+}
+
+pub(crate) fn occurrence_endpoint_candidates(
+    ctx: &DecodeContext<'_>,
+    occurrences: &[ZeroEntityOrientedOccurrence],
+    limit: usize,
+) -> Result<BoundedEndpointCandidates, CodecError> {
+    let bound = WorkBudget::new(limit);
+    let pairs = endpoint_pair_candidates(ctx, occurrences, &bound)?.unwrap_or_default();
+    let loci = endpoint_locus_candidates(ctx, &pairs, &bound)?.unwrap_or_default();
+    Ok(BoundedEndpointCandidates {
+        pairs,
+        loci,
+        bounded: bound.exhausted(),
+    })
 }
 
 fn zero_entity_oriented_occurrences(
@@ -136,14 +163,6 @@ fn zero_entity_oriented_occurrences(
 }
 
 pub(crate) fn endpoint_pair_candidates(
-    ctx: &DecodeContext<'_>,
-    occurrences: &[ZeroEntityOrientedOccurrence],
-) -> Result<Vec<ZeroEntityEndpointPairCandidate>, CodecError> {
-    let budget = WorkBudget::new(usize::MAX);
-    Ok(endpoint_pair_candidates_with_budget(ctx, occurrences, &budget)?.unwrap_or_default())
-}
-
-fn endpoint_pair_candidates_with_budget(
     ctx: &DecodeContext<'_>,
     occurrences: &[ZeroEntityOrientedOccurrence],
     budget: &WorkBudget,
@@ -255,14 +274,6 @@ fn endpoint_pair_candidates_with_budget(
 }
 
 pub(crate) fn endpoint_locus_candidates(
-    ctx: &DecodeContext<'_>,
-    endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
-) -> Result<Vec<ZeroEntityEndpointLocusCandidate>, CodecError> {
-    let budget = WorkBudget::new(usize::MAX);
-    Ok(endpoint_locus_candidates_with_budget(ctx, endpoint_pairs, &budget)?.unwrap_or_default())
-}
-
-pub(super) fn endpoint_locus_candidates_with_budget(
     ctx: &DecodeContext<'_>,
     endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
     budget: &WorkBudget,
@@ -474,10 +485,30 @@ fn unordered_endpoint_pairs_match(left: [FinitePoint3; 2], right: [FinitePoint3;
 #[cfg(test)]
 mod tests {
     use super::{
-        endpoint_locus_candidates, endpoint_pair_candidates, endpoint_pair_candidates_with_budget,
+        endpoint_locus_candidates, endpoint_pair_candidates, ZeroEntityEndpointLocusCandidate,
         ZeroEntityEndpointPairCandidate, ZeroEntityOrientedOccurrence,
+        MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS,
     };
-    use cadmpeg_core::decode::WorkBudget;
+    use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+    use cadmpeg_core::CodecError;
+
+    fn pairs_within_bound(
+        ctx: &DecodeContext<'_>,
+        occurrences: &[ZeroEntityOrientedOccurrence],
+    ) -> Result<Vec<ZeroEntityEndpointPairCandidate>, CodecError> {
+        let bound = WorkBudget::new(MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS);
+        Ok(endpoint_pair_candidates(ctx, occurrences, &bound)?
+            .expect("the fixture fits the topology bound"))
+    }
+
+    fn loci_within_bound(
+        ctx: &DecodeContext<'_>,
+        pairs: &[ZeroEntityEndpointPairCandidate],
+    ) -> Result<Vec<ZeroEntityEndpointLocusCandidate>, CodecError> {
+        let bound = WorkBudget::new(MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS);
+        Ok(endpoint_locus_candidates(ctx, pairs, &bound)?
+            .expect("the fixture fits the topology bound"))
+    }
 
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::math::Point3;
@@ -540,7 +571,7 @@ mod tests {
             model_midpoint: endpoints[0],
         }];
         let result = crate::test_support::with_service_context(|ctx| {
-            super::endpoint_locus_candidates_with_budget(
+            super::endpoint_locus_candidates(
                 ctx,
                 &pairs,
                 &cadmpeg_core::decode::WorkBudget::new(100),
@@ -560,7 +591,7 @@ mod tests {
             model_midpoint: endpoints[0],
         }];
         let result = crate::test_support::with_service_context(|ctx| {
-            super::endpoint_locus_candidates_with_budget(
+            super::endpoint_locus_candidates(
                 ctx,
                 &pairs,
                 &cadmpeg_core::decode::WorkBudget::new(100),
@@ -586,10 +617,9 @@ mod tests {
             occurrence(13, 8, second_link, Point3::new(0.5, 2.0, 0.0)),
         ];
 
-        let candidates = crate::test_support::with_service_context(|ctx| {
-            endpoint_pair_candidates(ctx, &occurrences)
-        })
-        .expect("test endpoint pairs fit the service profile");
+        let candidates =
+            crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
+                .expect("test endpoint pairs fit the service profile");
         assert_eq!(
             candidates
                 .iter()
@@ -598,7 +628,7 @@ mod tests {
             [[1, 2], [3, 4], [5, 6], [7, 8]]
         );
         assert!(crate::test_support::with_service_context(|ctx| {
-            endpoint_pair_candidates(ctx, &occurrences[..4])
+            pairs_within_bound(ctx, &occurrences[..4])
         })
         .expect("test endpoint pairs fit the service profile")
         .is_empty());
@@ -615,14 +645,11 @@ mod tests {
         ];
 
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| endpoint_pair_candidates(
-                ctx,
-                &occurrences
-            ))
-            .expect("test endpoint pairs fit the service profile")
-            .iter()
-            .map(|candidate| candidate.support_record_ordinals)
-            .collect::<Vec<_>>(),
+            crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
+                .expect("test endpoint pairs fit the service profile")
+                .iter()
+                .map(|candidate| candidate.support_record_ordinals)
+                .collect::<Vec<_>>(),
             [[1, 2], [3, 4]]
         );
     }
@@ -648,11 +675,8 @@ mod tests {
         ];
 
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| endpoint_pair_candidates(
-                ctx,
-                &occurrences
-            ))
-            .expect("test endpoint pairs fit the service profile")[0]
+            crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
+                .expect("test endpoint pairs fit the service profile")[0]
                 .support_record_ordinals,
             [1, 2]
         );
@@ -669,7 +693,7 @@ mod tests {
 
         let (result, refusal) = crate::test_support::with_service_context(|ctx| {
             (
-                endpoint_pair_candidates_with_budget(ctx, &occurrences, &budget),
+                endpoint_pair_candidates(ctx, &occurrences, &budget),
                 ctx.resource_refusal(),
             )
         });
@@ -681,6 +705,40 @@ mod tests {
     }
 
     #[test]
+    fn bounded_endpoint_candidates_skip_both_lists_at_the_bound() {
+        let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let occurrences = [
+            occurrence(10, 1, endpoints, Point3::new(0.5, 0.0, 0.0)),
+            occurrence(11, 2, endpoints, Point3::new(0.5, 0.0, 0.0)),
+        ];
+        let search = |limit| {
+            crate::test_support::with_service_context(|ctx| {
+                super::occurrence_endpoint_candidates(ctx, &occurrences, limit)
+            })
+            .expect("a bounded search is not a decode error")
+        };
+
+        let complete = search(MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS);
+        assert!(!complete.bounded);
+        assert_eq!(complete.pairs.len(), 1);
+        assert_eq!(complete.loci.len(), 2);
+
+        let bounded = search(0);
+        assert!(bounded.bounded);
+        assert!(bounded.pairs.is_empty());
+        assert!(bounded.loci.is_empty());
+
+        let mut sink = crate::nurbs::LaneRefusals::new();
+        sink.push_zero_entity_candidates_bounded();
+        let notes = sink.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(
+            notes[0].code,
+            crate::loss::CatiaLossCode::TopologyZeroEntityCandidatesBounded.kind()
+        );
+    }
+
+    #[test]
     fn unique_endpoint_pair_requires_equal_parameter_midpoints() {
         let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
         let occurrences = [
@@ -689,12 +747,9 @@ mod tests {
         ];
 
         assert!(
-            crate::test_support::with_service_context(|ctx| endpoint_pair_candidates(
-                ctx,
-                &occurrences
-            ))
-            .expect("test endpoint pairs fit the service profile")
-            .is_empty()
+            crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
+                .expect("test endpoint pairs fit the service profile")
+                .is_empty()
         );
     }
 
@@ -709,14 +764,11 @@ mod tests {
         ];
 
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| endpoint_pair_candidates(
-                ctx,
-                &occurrences
-            ))
-            .expect("test endpoint pairs fit the service profile")
-            .iter()
-            .map(|candidate| candidate.support_record_ordinals)
-            .collect::<Vec<_>>(),
+            crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
+                .expect("test endpoint pairs fit the service profile")
+                .iter()
+                .map(|candidate| candidate.support_record_ordinals)
+                .collect::<Vec<_>>(),
             [[1, 3], [2, 4]]
         );
     }
@@ -743,7 +795,7 @@ mod tests {
         ];
 
         let candidates =
-            crate::test_support::with_service_context(|ctx| endpoint_locus_candidates(ctx, &pairs))
+            crate::test_support::with_service_context(|ctx| loci_within_bound(ctx, &pairs))
                 .expect("test endpoint loci fit the service profile");
         assert_eq!(candidates.len(), 3);
         assert_eq!(
@@ -770,10 +822,9 @@ mod tests {
                 [Point3::new(0.003, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
             ),
         ];
-        let candidates = crate::test_support::with_service_context(|ctx| {
-            endpoint_locus_candidates(ctx, &ambiguous)
-        })
-        .expect("test endpoint loci fit the service profile");
+        let candidates =
+            crate::test_support::with_service_context(|ctx| loci_within_bound(ctx, &ambiguous))
+                .expect("test endpoint loci fit the service profile");
         assert_eq!(candidates.len(), 3);
         assert!(candidates
             .iter()

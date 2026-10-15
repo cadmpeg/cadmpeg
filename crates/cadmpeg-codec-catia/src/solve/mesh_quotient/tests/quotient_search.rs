@@ -1207,7 +1207,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
 mod selection_search;
 
 #[test]
-fn quotient_assignment_deduplication_result() {
+fn quotient_assignment_deduplication_keeps_one_identical_assignment() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -1233,7 +1233,7 @@ fn quotient_assignment_deduplication_result() {
 }
 
 #[test]
-fn possible_face_equations_result() {
+fn possible_face_equations_list_corners_of_a_two_edge_boundary() {
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -1257,7 +1257,7 @@ fn possible_face_equations_result() {
 }
 
 #[test]
-fn selection_state_signature_result() {
+fn selection_state_signature_copies_the_selected_choices() {
     let assignments = [Vec::new()];
     let quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0]))]);
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -1288,7 +1288,7 @@ fn selection_state_signature_result() {
 }
 
 #[test]
-fn coordinate_root_candidate_copy_and_changed_edge_result() {
+fn coordinate_root_domains_drop_an_unsupported_candidate_pair() {
     let candidates = [
         vec![[0, 1], [0, 2]],
         vec![[0, 1]],
@@ -1314,7 +1314,7 @@ fn coordinate_root_candidate_copy_and_changed_edge_result() {
 }
 
 #[test]
-fn ordered_corner_equations_result() {
+fn ordered_triangle_face_supports_three_corner_equations() {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::CodecError;
     let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
@@ -1391,7 +1391,7 @@ fn ordered_corner_equations_result() {
 }
 
 #[test]
-fn common_full_quotient_result() {
+fn single_full_quotient_alternative_merges_into_the_common_quotient() {
     use cadmpeg_core::CodecError;
     let domains = repeated_domain(HashSet::from([0, 1]), 4);
     let base = MeshQuotient::new(domains.clone());
@@ -1428,7 +1428,7 @@ fn common_full_quotient_result() {
 }
 
 #[test]
-fn face_choice_materialization_result() {
+fn face_choice_materialization_declines_when_budget_ends_between_masks() {
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -1448,7 +1448,7 @@ fn face_choice_materialization_result() {
 }
 
 #[test]
-fn face_choice_fallback_result() {
+fn face_choices_use_the_fallback_equations_for_13_unknown_edges() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..13)
             .map(|edge| MeshBoundaryEdgeCandidate {
@@ -1467,7 +1467,7 @@ fn face_choice_fallback_result() {
 }
 
 #[test]
-fn point_assignment_result() {
+fn point_assignment_maps_two_distinct_endpoints_of_one_edge() {
     let make_quotient = || {
         MeshQuotient::new(vec![
             Arc::new(HashSet::from([0])),

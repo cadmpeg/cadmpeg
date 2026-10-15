@@ -85,12 +85,14 @@ pub fn intersection(data: &[u8]) {
 
 /// Exercise NX NURBS curve extraction.
 pub fn nurbs_curves(data: &[u8]) {
-    drop(crate::nurbs::curves(data));
+    let graph = crate::topology::Graph::parse(data);
+    drop(crate::nurbs::parse_with_graph(data, &graph).curves);
 }
 
 /// Exercise NX NURBS surface extraction.
 pub fn nurbs_surfaces(data: &[u8]) {
-    drop(crate::nurbs::surfaces(data));
+    let graph = crate::topology::Graph::parse(data);
+    drop(crate::nurbs::parse_with_graph(data, &graph).surfaces);
 }
 
 /// Exercise NX Parasolid topology parsing.

@@ -407,7 +407,7 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
 }
 
 #[test]
-fn compact_boundary_advance_result() {
+fn compact_boundary_advance_completes_a_two_edge_cycle() {
     use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::WorkBudget;
     let use_ = |edge| MeshBoundaryEdgeCandidate {

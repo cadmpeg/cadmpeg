@@ -794,20 +794,18 @@ fn emit_extrusion_procedure(
             supports,
             cache_fit_tolerance,
         } => {
-            let make_side = |side: super::ResolvedExtrusionSupport| {
-                Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                    surface: Some(surface_ids[&side.surface_object_id].clone()),
-                    pcurve: Some(SupportPcurve::new(
-                        side.pcurve,
-                        (side.pcurve_parameter_range
-                            != extrusion.directrix_parameter_range.endpoints())
-                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                        .flatten(),
-                    )),
-                })
+            let make_side = |side: super::ResolvedExtrusionSupport| IntcurveSupportSide {
+                surface: Some(surface_ids[&side.surface_object_id].clone()),
+                pcurve: Some(SupportPcurve::new(
+                    side.pcurve,
+                    (side.pcurve_parameter_range
+                        != extrusion.directrix_parameter_range.endpoints())
+                    .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                    .flatten(),
+                )),
             };
             let [first, second] = *supports;
-            let sides = [make_side(first)?, make_side(second)?];
+            let sides = [make_side(first), make_side(second)];
             annotate(
                 annotations,
                 &directrix_id,
@@ -1150,7 +1148,7 @@ mod tests {
     }
 
     #[test]
-    fn revolution_control_rows_result() {
+    fn quarter_turn_revolution_of_a_line_builds_a_nurbs_surface() {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
         let profile = NurbsCurve::from_lanes(
@@ -1186,7 +1184,7 @@ mod carrier_resource_tests {
     use cadmpeg_ir::math::Point3;
 
     #[test]
-    fn nurbs_surface_carrier_result() {
+    fn bilinear_nurbs_surface_maps_to_an_analytic_carrier() {
         let surface = B5Surface::Nurbs(
             NurbsSurface::from_lanes(
                 NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),

@@ -95,7 +95,7 @@ fn signature_interning_orders_large_keys() {
 }
 
 #[test]
-fn relation_choice_sort_result() {
+fn edgeless_relation_state_maps_unchanged() {
     let state = (
         vec![],
         vec![vec![
@@ -124,7 +124,7 @@ fn relation_choice_sort_result() {
 }
 
 #[test]
-fn relation_row_sort_result() {
+fn identical_edge_rows_keep_the_identity_row_mapping() {
     let rows = std::array::from_fn::<_, 2, _>(|_| {
         EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
             .expect("nonempty handles")
@@ -152,7 +152,7 @@ fn relation_row_sort_result() {
 }
 
 #[test]
-fn coordinate_permutation_search_result() {
+fn coordinate_permutations_of_two_points_list_both_orders() {
     let mut output = vec![];
     crate::test_support::with_service_context(|ctx| {
         super::enumerate_coordinate_permutations(
@@ -169,7 +169,7 @@ fn coordinate_permutation_search_result() {
 }
 
 #[test]
-fn gauge_signature_lookup_result() {
+fn equal_gauge_signatures_share_one_color() {
     let signatures = vec![vec![0usize; 128]; 2];
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
@@ -181,7 +181,7 @@ fn gauge_signature_lookup_result() {
 }
 
 #[test]
-fn mapped_pair_scan_result() {
+fn relation_selection_naming_an_edge_twice_does_not_map() {
     let state = (
         vec![None],
         vec![vec![MeshEndpointRelationSelection::Enumerated {
@@ -205,7 +205,7 @@ fn mapped_pair_scan_result() {
 }
 
 #[test]
-fn partial_endpoint_candidate_comparison_result() {
+fn unassigned_endpoint_pairs_canonicalize_unchanged() {
     let coordinate = super::MeshCoordinateGauge {
         components: vec![vec![vec![0, 1], vec![1, 0]]],
     };
@@ -256,7 +256,7 @@ fn comparison_topology() -> crate::families::standard::topology::StandardTopolog
 }
 
 #[test]
-fn candidate_equivalence_result() {
+fn mesh_candidate_without_gauge_is_equivalent_to_itself() {
     let candidate = (comparison_topology(), vec![0, 1]);
     assert!(crate::test_support::with_service_context(|ctx| {
         super::mesh_candidates_equivalent(ctx, &candidate, &candidate, None)

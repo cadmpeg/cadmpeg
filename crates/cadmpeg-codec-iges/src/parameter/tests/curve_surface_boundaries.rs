@@ -42,13 +42,11 @@ fn type126_entity_table_boundary_uses_k_and_degree() {
             comment: Vec::new(),
         };
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1,
@@ -101,13 +99,11 @@ fn type126_entity_table_boundary_precedes_valid_generic_alternative() {
         comment: Vec::new(),
     };
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -156,13 +152,11 @@ fn type126_malformed_k_or_degree_does_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
@@ -203,13 +197,11 @@ fn type112_entity_table_boundary_uses_segment_count() {
             comment: Vec::new(),
         };
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -256,13 +248,11 @@ fn type112_entity_table_boundary_precedes_valid_generic_alternatives() {
         comment: Vec::new(),
     };
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -311,13 +301,11 @@ fn type112_malformed_segment_count_does_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
@@ -387,13 +375,11 @@ fn type106_entity_table_boundary_uses_interpretation_width() {
             comment: Vec::new(),
         };
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -427,13 +413,11 @@ fn type106_form_interpretation_mismatch_does_not_enable_generic_recovery() {
         comment: Vec::new(),
     };
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         0
@@ -463,13 +447,11 @@ fn type106_form63_rejects_nonplanar_interpretation_for_boundary_recovery() {
         comment: Vec::new(),
     };
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         0
@@ -513,13 +495,11 @@ fn type116_entity_table_boundary_keeps_defaulted_display_pointer_slot() {
             comment: Vec::new(),
         };
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -551,13 +531,11 @@ fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
         comment: Vec::new(),
     };
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         2

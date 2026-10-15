@@ -1173,7 +1173,7 @@ fn compact_face_quotient_state_cap_is_exhausted() {
 mod component_search;
 
 #[test]
-fn incidence_component_preflight_result() {
+fn independent_component_choices_yield_every_pair_solution() {
     let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
     let edge_faces = [[0, 0], [0, 0]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -1198,7 +1198,7 @@ fn incidence_component_preflight_result() {
 }
 
 #[test]
-fn incidence_component_order_result() {
+fn incidence_components_order_a_single_prerequisite_chain() {
     let choices = vec![vec![[0, 0]], vec![[1, 1]]];
     let dependencies = [Vec::new(), vec![0]];
     let components = vec![vec![0], vec![1]];
@@ -1217,7 +1217,7 @@ fn incidence_component_order_result() {
 }
 
 #[test]
-fn incidence_component_search_result() {
+fn component_search_stops_at_the_first_visited_solution() {
     use std::ops::ControlFlow;
 
     let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
@@ -1244,7 +1244,7 @@ fn incidence_component_search_result() {
 }
 
 #[test]
-fn deferred_boundary_closure_result() {
+fn deferred_boundary_closes_a_four_cycle_over_two_missing_edges() {
     let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
         cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
             length: 4,
@@ -1260,7 +1260,7 @@ fn deferred_boundary_closure_result() {
 }
 
 #[test]
-fn compact_partial_subtour_result() {
+fn compact_unordered_cycle_rejects_a_closed_triangle_subtour() {
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
     let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0]), Some([3, 4]), None];
     catia_test_context!(service_ctx);
@@ -1271,7 +1271,7 @@ fn compact_partial_subtour_result() {
 }
 
 #[test]
-fn compact_boundary_viability_result() {
+fn compact_unordered_triangle_cycle_is_viable() {
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2]);
     let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
     catia_test_context!(service_ctx);
@@ -1282,7 +1282,7 @@ fn compact_boundary_viability_result() {
 }
 
 #[test]
-fn component_face_viability_result() {
+fn component_face_closing_a_triangle_is_viable() {
     let faces = HashSet::from([0]);
     let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
     let choices = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];

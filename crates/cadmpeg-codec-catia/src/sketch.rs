@@ -2095,14 +2095,14 @@ mod tests {
     }
 
     #[test]
-    fn sketch_unique_record_indexes_result() {
+    fn unique_entity_records_index_the_fixture_entity() {
         let (_, native, _, _) = fixture(false);
         let admitted = super::unique_entity_records(&native);
         assert!(admitted.get(native.entity_records[0].id.as_str()).is_some());
     }
 
     #[test]
-    fn sketch_native_identity_indexes_result() {
+    fn sketch_and_sketch_entity_lookups_find_their_native_refs() {
         let (mut ir, _, _, _) = fixture(false);
         let admitted = { super::sketch_ids_by_native_ref(&ir) };
         assert!(admitted.get("sketch-object").is_some());
@@ -2120,7 +2120,7 @@ mod tests {
     }
 
     #[test]
-    fn sketch_transfer_result() {
+    fn unadmitted_point_member_transfers_no_sketch_entities() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
         let admitted = crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
@@ -2130,7 +2130,7 @@ mod tests {
     }
 
     #[test]
-    fn sketch_constraint_scan_result() {
+    fn unadmitted_point_member_fixture_transfers_no_constraints() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
         let admitted = crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
@@ -2140,7 +2140,7 @@ mod tests {
     }
 
     #[test]
-    fn sketch_range_properties_result() {
+    fn constraint_range_properties_carry_the_constraint_value() {
         let (_, native, _, _) = fixture(false);
         let range = native.entity_records[0]
             .constraint_range()

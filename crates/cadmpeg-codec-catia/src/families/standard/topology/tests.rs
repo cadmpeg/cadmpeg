@@ -163,7 +163,7 @@ fn ambiguous_duplicate_face_fixture(
 }
 
 #[test]
-fn standard_duplicate_mesh_edge_faces_result() {
+fn ambiguous_duplicate_faces_stay_unassigned_with_an_empty_mesh() {
     assert!(crate::test_support::with_service_context(|ctx| {
         ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 3]), Some(&[]))
     })
@@ -197,7 +197,7 @@ fn two_face_topology() -> StandardTopologyDraft {
 }
 
 #[test]
-fn body_group_allocations_result() {
+fn body_kinds_reject_groups_that_leave_an_edge_row_unused() {
     assert!(two_face_topology()
         .body_kinds(&[2])
         .expect("body kinds")
@@ -205,7 +205,7 @@ fn body_group_allocations_result() {
 }
 
 #[test]
-fn face_component_collections_result() {
+fn faces_sharing_an_edge_form_one_component() {
     assert_eq!(
         two_face_topology()
             .face_components()
@@ -215,7 +215,7 @@ fn face_component_collections_result() {
 }
 
 #[test]
-fn standard_native_vertex_binding_result() {
+fn native_edge_vertices_bind_only_with_one_pair_per_edge_row() {
     use super::{BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft};
     use cadmpeg_ir::features::NonEmptyMembers;
     let topology = StandardTopologyDraft {
@@ -247,7 +247,7 @@ fn standard_native_vertex_binding_result() {
 }
 
 #[test]
-fn standard_duplicate_face_comparison_result() {
+fn duplicate_face_assignments_with_different_slots_are_not_equivalent() {
     use super::{duplicate_face_assignments_equivalent, EdgeBoundaryLayout, EdgeRow};
 
     let rows = [
@@ -277,7 +277,7 @@ fn standard_duplicate_face_comparison_result() {
 }
 
 #[test]
-fn standard_duplicate_face_copy_result() {
+fn duplicate_face_slots_keep_an_already_complete_assignment() {
     use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
 
     let rows = [{
@@ -295,7 +295,7 @@ fn standard_duplicate_face_copy_result() {
 }
 
 #[test]
-fn standard_incidence_mapped_collections_result() {
+fn incidence_reconstructs_a_closed_edge_shared_by_two_faces() {
     use super::{reconstruct_incidence, EdgeBoundaryLayout, EdgeRow};
 
     let rows = || {
@@ -314,7 +314,7 @@ fn standard_incidence_mapped_collections_result() {
 }
 
 #[test]
-fn standard_edge_vertices_result() {
+fn edge_vertices_follow_the_coedge_direction() {
     use super::{BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft};
     use cadmpeg_core::decode::DecodeArena;
     use cadmpeg_core::decode::DecodeContext;
@@ -351,7 +351,7 @@ fn standard_edge_vertices_result() {
 }
 
 #[test]
-fn standard_completed_edge_vertices_result() {
+fn edge_vertices_reject_an_edge_row_without_a_coedge() {
     use super::{BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft};
     use cadmpeg_ir::features::NonEmptyMembers;
 
@@ -393,7 +393,7 @@ fn standard_completed_edge_vertices_result() {
 }
 
 #[test]
-fn standard_vertex_point_domain_entries_result() {
+fn vertex_points_bind_by_endpoint_pairs_and_reject_out_of_range_points() {
     use super::{BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft};
     use cadmpeg_core::decode::DecodeArena;
     use cadmpeg_core::decode::DecodeContext;
@@ -453,7 +453,7 @@ fn standard_vertex_point_domain_entries_result() {
 }
 
 #[test]
-fn mesh_selection_reconstruction_result() {
+fn mesh_selection_rejects_an_assignment_naming_a_missing_edge_row() {
     use super::{reconstruct_mesh_selection, EdgeBoundaryLayout, EdgeRow};
     use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
 
@@ -486,7 +486,7 @@ fn mesh_selection_reconstruction_result() {
 }
 
 #[test]
-fn incidence_cycles_result() {
+fn incidence_cycles_close_two_opposed_edges_and_reject_repeats() {
     let points = [[0, 1], [1, 0]];
     assert!(incidence_cycles(&[0, 1], &points)
         .expect("service resource budget")
@@ -497,7 +497,7 @@ fn incidence_cycles_result() {
 }
 
 #[test]
-fn reconstructed_mesh_copies_result() {
+fn empty_mesh_selection_reconstructs_with_rows_or_points_alone() {
     use super::{reconstruct_mesh_selection, EdgeBoundaryLayout, EdgeRow};
     use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
 
@@ -518,7 +518,7 @@ fn reconstructed_mesh_copies_result() {
 }
 
 #[test]
-fn standard_endpoint_degree_entries_result() {
+fn set_duplicate_degree_inserts_a_missing_point() {
     use super::set_duplicate_degree;
 
     let mut row = Vec::new();
@@ -527,7 +527,7 @@ fn standard_endpoint_degree_entries_result() {
 }
 
 #[test]
-fn standard_orientation_result() {
+fn face_orientation_rejects_an_unpaired_edge_use() {
     use super::{orient_face_cycles, BoundaryDraft, CoedgeUse, FaceTopologyDraft};
     use cadmpeg_ir::features::NonEmptyMembers;
     let faces = || {

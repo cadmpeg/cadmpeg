@@ -1801,7 +1801,7 @@ fn standard_line_parser_reads_face_incidence() {
 }
 
 #[test]
-fn source_order_population_pair_copies_result() {
+fn two_matching_populations_pair_into_first_and_one_rest() {
     let layout = |start| FbbPopulationLayout {
         face_run: crate::families::standard::fbb::FbbFaceRun::try_new(start, 1).expect("one face"),
         edge_count: 1,
@@ -1830,7 +1830,7 @@ fn source_order_population_pair_copies_result() {
 }
 
 #[test]
-fn plane_parameter_target_sets_and_rows_result() {
+fn duplicate_plane_parameter_rows_yield_no_plane_params() {
     let row = plane_bounds_record(
         0x0001_0203,
         [0.0, 0.0, 0.0],

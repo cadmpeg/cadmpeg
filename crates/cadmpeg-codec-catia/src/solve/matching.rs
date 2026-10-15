@@ -752,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn distinct_matching_domain_collection_result() {
+    fn matching_more_domains_than_points_has_no_solution() {
         let domains = [vec![0]];
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
@@ -770,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    fn matching_repair_domain_collection_result() {
+    fn repair_refuses_a_matching_of_the_wrong_length() {
         let domains = [vec![0]];
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
@@ -788,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    fn matching_support_inner_arcs_result() {
+    fn matching_supports_refuse_a_point_outside_the_point_count() {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
@@ -802,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn coordinate_bijection_queue_result() {
+    fn symmetric_coordinate_domains_have_no_unique_bijection() {
         use std::collections::HashSet;
         let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
         let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];

@@ -100,6 +100,8 @@ pub(crate) enum CatiaLossCode {
     TopologyB5GraphUnclosed,
     /// Zero-entity support runs retain face-local occurrences without closed topology.
     TopologyZeroEntitySupportsRetained,
+    /// Zero-entity endpoint-pair and endpoint-locus candidates exceeded their work bound.
+    TopologyZeroEntityCandidatesBounded,
     /// Zero-entity topology transferred under a derived or source-bound gauge.
     TopologyZeroEntityGaugeSubstituted,
     /// Zero-entity loop members bind supports, but no neutral topology transferred.
@@ -147,6 +149,7 @@ impl CatiaLossCode {
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
         Self::TopologyZeroEntitySupportsRetained,
+        Self::TopologyZeroEntityCandidatesBounded,
         Self::TopologyZeroEntityGaugeSubstituted,
         Self::TopologyZeroEntityNotTransferred,
         Self::TopologyZeroEntityFaceUnresolved,
@@ -189,6 +192,7 @@ impl CatiaLossCode {
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
             Self::TopologyZeroEntitySupportsRetained => "topology.zero-entity-supports-retained",
+            Self::TopologyZeroEntityCandidatesBounded => "topology.zero-entity-candidates-bounded",
             Self::TopologyZeroEntityGaugeSubstituted => "topology.zero-entity-gauge-substituted",
             Self::TopologyZeroEntityNotTransferred => "topology.zero-entity-not-transferred",
             Self::TopologyZeroEntityFaceUnresolved => "topology.zero-entity-face-unresolved",
@@ -255,6 +259,7 @@ impl CatiaLossCode {
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
             | Self::TopologyZeroEntitySupportsRetained
+            | Self::TopologyZeroEntityCandidatesBounded
             | Self::TopologyZeroEntityNotTransferred
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
@@ -327,6 +332,7 @@ mod tests {
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
                 "topology.zero-entity-supports-retained",
+                "topology.zero-entity-candidates-bounded",
                 "topology.zero-entity-gauge-substituted",
                 "topology.zero-entity-not-transferred",
                 "topology.zero-entity-face-unresolved",

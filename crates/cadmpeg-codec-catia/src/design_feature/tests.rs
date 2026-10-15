@@ -1445,7 +1445,7 @@ mod feature_identity;
 mod parentage;
 
 #[test]
-fn feature_transfer_lookup_result() {
+fn design_object_without_records_transfers_no_feature_ids() {
     let native = CatiaNative {
         design_objects: vec![design_object("synthetic:test:object#one", None)],
         ..CatiaNative::default()
@@ -1464,7 +1464,7 @@ fn feature_transfer_lookup_result() {
 }
 
 #[test]
-fn principal_and_reference_features_result() {
+fn principal_and_reference_planes_each_transfer_one_feature() {
     let object = design_object("synthetic:test:object#plane", None);
     let record = object_record("plane-record", None, None, None, None, None);
 
@@ -1496,7 +1496,7 @@ fn principal_and_reference_features_result() {
 }
 
 #[test]
-fn principal_plane_declaration_list_result() {
+fn plane_record_without_declaration_class_is_not_a_principal_plane() {
     let mut object = design_object("synthetic:test:object#plane", None);
     object.owner_record = Some("plane-record".to_string());
     object.fields.push("plane-record".to_string());
@@ -1506,7 +1506,7 @@ fn principal_plane_declaration_list_result() {
 }
 
 #[test]
-fn sketch_and_operation_feature_rows_result() {
+fn sketch_and_edge_fillet_each_transfer_one_feature() {
     let native = sketch_owner_native();
     let sketch_object = &native.design_objects[0];
     let sketch_record = &native.object_graphs[0].records[0];
@@ -1551,7 +1551,7 @@ fn sketch_and_operation_feature_rows_result() {
 }
 
 #[test]
-fn feature_parameter_name_indexes_result() {
+fn normalize_parameter_names_keeps_a_unique_name() {
     let mut ir = CadIr::empty();
     let mut value = parameter("one", "native");
     value.name = "Length".to_string();
@@ -1561,7 +1561,7 @@ fn feature_parameter_name_indexes_result() {
 }
 
 #[test]
-fn exact_parameter_owner_lookup_result() {
+fn parameter_owner_resolves_through_entity_record_to_object_feature() {
     let object_id = "synthetic:test:object#owner";
     let native = CatiaNative {
         object_graphs: vec![CatiaObjectGraph {
@@ -1598,7 +1598,7 @@ fn exact_parameter_owner_lookup_result() {
 }
 
 #[test]
-fn feature_dependency_lookup_result() {
+fn object_without_relations_gets_no_feature_dependencies() {
     let object_id = "synthetic:test:object#owner";
     let native = CatiaNative {
         design_objects: vec![design_object(object_id, None)],
@@ -1612,7 +1612,7 @@ fn feature_dependency_lookup_result() {
 }
 
 #[test]
-fn native_operation_owned_object_rows_result() {
+fn operation_without_owner_records_has_no_source_properties() {
     let object = design_object("synthetic:test:object#operation", None);
     let objects = HashMap::from([(object.id.as_str(), &object)]);
     let records = HashMap::new();
@@ -1630,7 +1630,7 @@ fn native_operation_owned_object_rows_result() {
 }
 
 #[test]
-fn native_operation_parameter_map_result() {
+fn native_operation_map_holds_owned_parameter_value_by_name() {
     let mut ir = CadIr::empty();
     let mut owner = feature("owner", "native");
     owner
@@ -1658,7 +1658,7 @@ fn native_operation_parameter_map_result() {
 }
 
 #[test]
-fn native_operation_property_values_result() {
+fn schema_value_properties_hold_entry_and_value_under_prefix() {
     let value = crate::native::CatiaEntitySchemaValue {
         offset: 7,
         ordinal: 1,
@@ -1687,7 +1687,7 @@ fn native_operation_property_values_result() {
 }
 
 #[test]
-fn native_sweep_unresolved_references_result() {
+fn sweep_thick_thin_class_defines_a_sweep_operation() {
     let admitted = super::native_operation_definition(
         super::NativeOperationClass::SweepThickThin1,
         "synthetic:test:object#sweep",

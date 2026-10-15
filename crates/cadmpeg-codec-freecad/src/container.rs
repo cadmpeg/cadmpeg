@@ -501,7 +501,6 @@ pub(crate) fn admit_document<'input>(
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = match ctx.parse_xml(text, "FreeCAD document XML tree") {
         Ok(xml) => xml,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
             let CodecError::Malformed(error) = error else {
                 return Err(error);

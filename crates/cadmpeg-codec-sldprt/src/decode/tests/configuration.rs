@@ -444,7 +444,6 @@ fn configuration_suppression_and_override_references_are_coherent() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition.clone()),
         native_ref: None,
     });

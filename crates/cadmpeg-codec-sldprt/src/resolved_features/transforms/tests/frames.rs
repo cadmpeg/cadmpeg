@@ -62,7 +62,6 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         name: "dimension-name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
-
         operands,
     };
     let display_operand = operand(2, "display-handle");
@@ -363,7 +362,6 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -394,7 +392,6 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         name: "name".into(),
         value: cadmpeg_ir::scalar::FiniteReal::new(0.012).expect("finite test scalar"),
         role: FeatureInputScalarRole::Display,
-
         operands: Vec::new(),
     };
     let lane = FeatureInputLane {
@@ -871,7 +868,6 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1323,7 +1319,6 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),

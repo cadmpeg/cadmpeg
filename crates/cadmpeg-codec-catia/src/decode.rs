@@ -857,7 +857,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_expression())
-        .try_fold(
+        .fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, placeholder, parser, boolean, opened, typed), expression| {
                 let (placeholder, parser, boolean, opened) = match expression.framing {
@@ -874,16 +874,16 @@ fn finish_decode(
                         ..
                     } => (placeholder, parser, boolean, opened + 1),
                 };
-                Ok::<_, CodecError>((
+                (
                     total + 1,
                     placeholder,
                     parser,
                     boolean,
                     opened,
                     typed + usize::from(expression.signature().is_some()),
-                ))
+                )
             },
-        )?;
+        );
     let parameter_value_count = native
         .entity_records
         .iter()

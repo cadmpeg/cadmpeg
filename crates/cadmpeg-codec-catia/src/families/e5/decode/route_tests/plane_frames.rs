@@ -285,7 +285,7 @@ fn e5_native_uv_endpoints_hand_back_admitted_pairs() {
 }
 
 #[test]
-fn e5_nurbs_uv_endpoints_result() {
+fn e5_native_uv_endpoints_evaluate_a_linear_nurbs_pcurve() {
     let pcurve = E5Pcurve::Nurbs {
         surface: 100,
         degree: 1,
@@ -303,7 +303,7 @@ fn e5_nurbs_uv_endpoints_result() {
 }
 
 #[test]
-fn e5_derived_vertices_result() {
+fn e5_vertices_derive_from_line_pcurve_bounds_on_a_plane() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point3;
     let topology = E5Topology {

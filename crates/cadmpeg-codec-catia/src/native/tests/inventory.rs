@@ -797,7 +797,7 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
 }
 
 #[test]
-fn native_value_selector_views_result() {
+fn native_value_block_resolves_one_catalog_schema_selection() {
     let mut bytes = value_block_stream(&[0x32, 4, 0, 0, 0, 0x81]);
     bytes.extend(catalog_stream(&[
         "CATCatalogManager",
@@ -820,7 +820,7 @@ fn native_value_selector_views_result() {
 }
 
 #[test]
-fn native_catalog_projection_result() {
+fn catalog_projection_keeps_every_entry() {
     let catalog = crate::catalog::Catalog {
         pos: 16,
         total_len: 24,
@@ -835,7 +835,7 @@ fn native_catalog_projection_result() {
 }
 
 #[test]
-fn native_alias_graph_link_result() {
+fn alias_row_links_to_its_object_graph_record() {
     let mut stream = object_graph_stream();
     let mut alias = surface_alias_stream();
     alias[13..16].copy_from_slice(&[3, 0, 2]);
@@ -851,4 +851,33 @@ fn native_alias_graph_link_result() {
     })
     .expect("service decode");
     assert!(native.alias_rows[0].object_graph.is_some());
+}
+
+#[test]
+fn extent_owners_agree_with_pairwise_containment() {
+    let extents = [
+        (0, 10),
+        (2, 3),
+        (5, 0),
+        (5, 5),
+        (9, 1),
+        (usize::MAX - 1, 4),
+        (usize::MAX, 0),
+    ];
+    for owners_len in 0..=extents.len() {
+        let owners = &extents[..owners_len];
+        let index = super::super::ExtentOwners::new(owners.iter().copied());
+        for start in (0..12).chain([usize::MAX - 1, usize::MAX]) {
+            for len in [0, 1, 3, 5, 8, usize::MAX] {
+                let pairwise = owners.iter().any(|&(owner, owner_len)| {
+                    crate::object_graph::extent_contains(owner, owner_len, start, len)
+                });
+                assert_eq!(
+                    index.contains(start, len),
+                    pairwise,
+                    "{owners:?} {start} {len}"
+                );
+            }
+        }
+    }
 }

@@ -146,7 +146,6 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
                 length: actual_length,
             }),

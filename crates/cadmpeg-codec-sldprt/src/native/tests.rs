@@ -1224,13 +1224,11 @@ fn repeated_circle_display_shape_requires_distinct_display_entities() {
     let distinct = [scalar(0, 1), scalar(1, 2), scalar(2, 3), scalar(3, 4)];
     assert!(super::repeated_circle_display_shape_valid(
         &record(&distinct),
-        &distinct,
-        &names
+        &super::RecordIds::new(&[], &distinct, &names)
     ));
     let repeated = [scalar(0, 1), scalar(1, 2), scalar(2, 3), scalar(3, 1)];
     assert!(!super::repeated_circle_display_shape_valid(
         &record(&repeated),
-        &repeated,
-        &names
+        &super::RecordIds::new(&[], &repeated, &names)
     ));
 }

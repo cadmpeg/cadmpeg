@@ -509,7 +509,7 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
 }
 
 #[test]
-fn b5_topology_reference_helpers_result() {
+fn edge_face_and_support_references_resolve_from_object_frames() {
     let mut reference_bytes = Vec::new();
     crate::test_support::test_b5::append_b5_record(
         &mut reference_bytes,
@@ -541,7 +541,7 @@ fn b5_topology_reference_helpers_result() {
 }
 
 #[test]
-fn parameter_and_roster_incidence_result() {
+fn parameter_record_has_two_lanes_and_roster_lists_two_vertices() {
     let roster = B5Record {
         offset: 0,
         family: 0xb5,

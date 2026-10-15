@@ -22,23 +22,21 @@ fn type212_table_boundary_precedes_valid_generic_alternative() {
     ]);
     let record =
         integer_parameter_record(7, &[212, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 3, 1, 5]);
-    let valid_starts = { structural_pointer_group_candidates(&record) }
+    let valid_starts = structural_pointer_group_candidates(&record)
         .into_iter()
         .filter(|candidate| {
-            { groups_for_candidate(&record, &directory, *candidate) }
+            groups_for_candidate(&record, &directory, *candidate)
                 .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
     assert_eq!(valid_starts, vec![13, 14]);
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -87,13 +85,11 @@ fn type212_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         (TokenValue::Integer(1), TokenValue::Integer(9)),
     ] {
         let record = token_parameter_record(7, complete(1.into(), font, mirror));
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -114,13 +110,11 @@ fn type212_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         token_parameter_record(7, complete(i64::MAX.into(), 1.into(), 0.into())),
         token_parameter_record(7, complete(1.into(), 1.into(), 0.into())[..4].to_vec()),
     ] {
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0
@@ -132,13 +126,11 @@ fn type212_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
     let mut truncated_group = complete(1.into(), 1.into(), 0.into());
     truncated_group.pop();
     let analysis_record = token_parameter_record(7, truncated_group);
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &analysis_record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &analysis_record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(
             &analysis_record,
@@ -222,13 +214,11 @@ fn type213_form0_follows_string_count() {
 
     for (values, expected_start) in cases {
         let record = token_parameter_record(7, values);
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -296,23 +286,21 @@ fn type213_table_boundary_precedes_valid_generic_alternative() {
         5.into(),
     ]);
     let record = token_parameter_record(7, values);
-    let valid_starts = { structural_pointer_group_candidates(&record) }
+    let valid_starts = structural_pointer_group_candidates(&record)
         .into_iter()
         .filter(|candidate| {
-            { groups_for_candidate(&record, &directory, *candidate) }
+            groups_for_candidate(&record, &directory, *candidate)
                 .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
     assert_eq!(valid_starts, vec![32, 33]);
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -383,13 +371,11 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         complete(1.into(), TokenValue::String(b"bad".to_vec().into())),
     ] {
         let analysis_record = token_parameter_record(7, values);
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &analysis_record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &analysis_record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(
                 &analysis_record,
@@ -474,13 +460,11 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         truncated_group,
     ] {
         let analysis_record = token_parameter_record(7, values);
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &analysis_record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &analysis_record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(
                 &analysis_record,
@@ -505,13 +489,11 @@ fn type228_form0_entity_table_boundary_follows_geometry_and_leader_lists() {
         (vec![228, 9, 2, 7, 13, 1, 11, 1, 1, 1, 5], 7),
         (vec![228, 9, 1, 7, 2, 11, 15, 1, 1, 1, 5], 7),
     ] {
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &integer_parameter_record(17, &values),
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &integer_parameter_record(17, &values),
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(
                 &integer_parameter_record(17, &values),
@@ -540,23 +522,21 @@ fn type228_table_boundary_precedes_valid_generic_alternative() {
         (17, &source),
     ]);
     let record = integer_parameter_record(17, &[228, 9, 1, 7, 2, 11, 2, 1, 3, 1, 5]);
-    let valid_starts = { structural_pointer_group_candidates(&record) }
+    let valid_starts = structural_pointer_group_candidates(&record)
         .into_iter()
         .filter(|candidate| {
-            { groups_for_candidate(&record, &directory, *candidate) }
+            groups_for_candidate(&record, &directory, *candidate)
                 .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
     assert_eq!(valid_starts, vec![6, 7]);
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -670,13 +650,11 @@ fn type228_malformed_counts_or_spans_do_not_enable_generic_recovery() {
 
     for values in malformed {
         let analysis_record = token_parameter_record(17, values);
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &analysis_record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &analysis_record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(
                 &analysis_record,
@@ -709,13 +687,11 @@ fn type410_entity_table_boundaries_follow_view_fields() {
         let directory = BTreeMap::from([(3, &association), (9, &source)]);
         let record = integer_parameter_record(9, &values);
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -761,13 +737,11 @@ fn type410_entity_table_boundary_precedes_valid_generic_alternative() {
         ]);
         let record = integer_parameter_record(9, &values);
 
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -803,13 +777,11 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             0.into(),
         ],
     );
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &wrong_form0,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &wrong_form0,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&wrong_form0, entity_primary_end(&wrong_form0, &directory)),
         1
@@ -827,13 +799,11 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         vec![410, 1, 1, 0, 0, 0, 0, 0],
         vec![410, 1, 1, 0, 0, 0, 0, 0, 0, 1, 3],
     ] {
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &integer_parameter_record(9, &values),
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &integer_parameter_record(9, &values),
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(
                 &integer_parameter_record(9, &values),
@@ -878,13 +848,11 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             0.into(),
         ],
     );
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &wrong_form1,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &wrong_form1,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&wrong_form1, entity_primary_end(&wrong_form1, &directory)),
         1
@@ -906,13 +874,11 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             410, 2, 1, 0, 0, 1, 0, 0, 0, 0, 0, 10, 0, 1, 0, 5, -2, 2, -1, 1, 3, -5, 5, 1, 3,
         ],
     ] {
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &integer_parameter_record(9, &values),
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &integer_parameter_record(9, &values),
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(
                 &integer_parameter_record(9, &values),
@@ -992,13 +958,11 @@ fn type416_entity_table_boundaries_follow_external_reference_fields() {
         source.form = form;
         let directory = BTreeMap::from([(3, &association), (9, &source)]);
         let record = token_parameter_record(9, values);
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1,
@@ -1106,17 +1070,15 @@ fn type416_entity_table_boundary_precedes_valid_generic_alternative() {
             (9, &source),
         ]);
         let record = token_parameter_record(9, values);
-        let generic = { structural_pointer_group_candidates(&record) };
+        let generic = structural_pointer_group_candidates(&record);
         assert!(generic
             .iter()
             .any(|candidate| candidate.token_start != expected_start));
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1,
@@ -1244,13 +1206,11 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         source.form = form;
         let directory = BTreeMap::from([(3, &association), (9, &source)]);
         let wrong = token_parameter_record(9, wrong_values);
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &wrong,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &wrong,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&wrong, entity_primary_end(&wrong, &directory)),
             1,
@@ -1268,13 +1228,11 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 
         for values in [truncated_primary, truncated_group] {
             let analysis_record = token_parameter_record(9, values);
-            let analysis = {
-                analyze_trailing_pointer_groups_for_global_table(
-                    &analysis_record,
-                    &directory,
-                    crate::global::GlobalTable::V5Later,
-                )
-            };
+            let analysis = analyze_trailing_pointer_groups_for_global_table(
+                &analysis_record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+            );
             assert_eq!(
                 analysis.candidate_count(
                     &analysis_record,
@@ -1302,13 +1260,11 @@ fn type420_entity_table_boundary_follows_connect_point_count() {
         values[expected_start] = 1;
         values[expected_start + 1] = 1;
         values[expected_start + 2] = 0;
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &integer_parameter_record(9, &values),
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &integer_parameter_record(9, &values),
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(
                 &integer_parameter_record(9, &values),
@@ -1348,17 +1304,15 @@ fn type420_entity_table_boundary_precedes_valid_generic_alternative() {
     ]);
     let values = [420, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0, 2, 1, 3, 2, 5, 7];
     let record = integer_parameter_record(9, &values);
-    assert!({ structural_pointer_group_candidates(&record) }
+    assert!(structural_pointer_group_candidates(&record)
         .iter()
         .any(|candidate| candidate.token_start == 13));
 
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -1404,13 +1358,11 @@ fn type420_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             7.into(),
         ],
     );
-    let analysis = {
-        analyze_trailing_pointer_groups_for_global_table(
-            &wrong_fields,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    };
+    let analysis = analyze_trailing_pointer_groups_for_global_table(
+        &wrong_fields,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    );
     assert_eq!(
         analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
         1
@@ -1468,13 +1420,11 @@ fn type420_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         integer_parameter_record(9, &[420, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 2, 5]),
     ];
     for record in malformed {
-        let analysis = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        };
+        let analysis = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        );
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0

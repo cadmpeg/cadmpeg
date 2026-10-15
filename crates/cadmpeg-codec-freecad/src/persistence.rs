@@ -3,7 +3,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::native::{
@@ -117,23 +116,6 @@ pub(crate) fn resolve_side_entries(
         side_entries.retain(|name| entries.contains_key(name));
     }
     Ok(())
-}
-
-/// Recover the persistence graph from `Document.xml` bytes.
-pub(crate) fn parse(
-    bytes: &[u8],
-    schema_version: &str,
-    ctx: &DecodeContext<'_>,
-) -> Result<Graph, CodecError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    let xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
-        let CodecError::Malformed(error) = error else {
-            return error;
-        };
-        CodecError::malformed(format_args!("invalid Document.xml: {error}"))
-    })?;
-    parse_document(&xml, Vocabulary::from_declaration(schema_version)?)
 }
 
 /// Recover the persistence graph from an already admitted document.

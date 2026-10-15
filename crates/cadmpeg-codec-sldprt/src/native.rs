@@ -590,17 +590,10 @@ impl SldprtNative {
             .iter()
             .map(|record| (record.id.as_str(), record))
             .collect::<HashMap<_, _>>();
-        let class_ids = classes
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<HashSet<_>>();
-        let scalar_ids = scalars
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<HashSet<_>>();
+        let ids = RecordIds::new(&classes, &scalars, &names);
         if let Some(record) = relation_bindings.iter().find(|record| {
-            !class_ids.contains(record.class_ref.as_str())
-                || !scalar_ids.contains(record.scalar_ref.as_str())
+            !ids.classes.contains_key(record.class_ref.as_str())
+                || !ids.scalars.contains_key(record.scalar_ref.as_str())
                 || record
                     .feature_ref
                     .as_deref()
@@ -612,14 +605,14 @@ impl SldprtNative {
             )));
         }
         if let Some(record) = relation_instances.iter().find(|record| {
-            !class_ids.contains(record.class_ref.as_str())
+            !ids.classes.contains_key(record.class_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
                 || record.scalar_refs().is_empty()
                 || (record.scalar_refs().len() > 3
-                    && !repeated_circle_display_shape_valid(record, &scalars, &names))
-                || classes
-                    .iter()
-                    .find(|class| class.id == record.class_ref)
+                    && !repeated_circle_display_shape_valid(record, &ids))
+                || ids
+                    .classes
+                    .get(record.class_ref.as_str())
                     .is_none_or(|class| {
                         !matches!(
                             crate::classification::native_object_class(&class.name),
@@ -630,22 +623,16 @@ impl SldprtNative {
                 || record
                     .scalar_refs()
                     .iter()
-                    .any(|scalar| !scalar_ids.contains(scalar.as_str()))
+                    .any(|scalar| !ids.scalars.contains_key(scalar.as_str()))
                 || record.parameter_scalar_ref().is_some_and(|id| {
-                    scalars
-                        .iter()
-                        .find(|scalar| scalar.id == id)
-                        .is_none_or(|scalar| {
-                            scalar.role != crate::records::FeatureInputScalarRole::Driving
-                        })
+                    ids.scalars.get(id).is_none_or(|(_, scalar)| {
+                        scalar.role != crate::records::FeatureInputScalarRole::Driving
+                    })
                 })
                 || record.display_scalar_ref().is_some_and(|id| {
-                    scalars
-                        .iter()
-                        .find(|scalar| scalar.id == id)
-                        .is_none_or(|scalar| {
-                            scalar.role != crate::records::FeatureInputScalarRole::Display
-                        })
+                    ids.scalars.get(id).is_none_or(|(_, scalar)| {
+                        scalar.role != crate::records::FeatureInputScalarRole::Display
+                    })
                 })
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -891,16 +878,7 @@ impl SldprtNative {
                 .iter()
                 .map(|record| (record.id.as_str(), record))
                 .collect::<HashMap<_, _>>();
-            let class_ids = lane
-                .classes
-                .iter()
-                .map(|record| record.id.as_str())
-                .collect::<HashSet<_>>();
-            let scalar_ids = lane
-                .scalars
-                .iter()
-                .map(|record| record.id.as_str())
-                .collect::<HashSet<_>>();
+            let ids = RecordIds::new(&lane.classes, &lane.scalars, &lane.names);
             if let Some(record) = lane.classes.iter().find(|record| record.parent != lane.id) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input class {} references {} instead of {}",
@@ -1006,8 +984,8 @@ impl SldprtNative {
             }
             if let Some(record) = lane.relation_bindings.iter().find(|record| {
                 record.parent != lane.id
-                    || !class_ids.contains(record.class_ref.as_str())
-                    || !scalar_ids.contains(record.scalar_ref.as_str())
+                    || !ids.classes.contains_key(record.class_ref.as_str())
+                    || !ids.scalars.contains_key(record.scalar_ref.as_str())
                     || record
                         .feature_ref
                         .as_deref()
@@ -1020,28 +998,22 @@ impl SldprtNative {
             }
             if let Some(record) = lane.relation_instances.iter().find(|record| {
                 record.parent != lane.id
-                    || !class_ids.contains(record.class_ref.as_str())
+                    || !ids.classes.contains_key(record.class_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
-                    || !relation_instance_shape_valid(record, lane)
+                    || !relation_instance_shape_valid(record, &ids)
                     || record
                         .scalar_refs()
                         .iter()
-                        .any(|scalar| !scalar_ids.contains(scalar.as_str()))
+                        .any(|scalar| !ids.scalars.contains_key(scalar.as_str()))
                     || record.parameter_scalar_ref().is_some_and(|id| {
-                        lane.scalars
-                            .iter()
-                            .find(|scalar| scalar.id == id)
-                            .is_none_or(|scalar| {
-                                scalar.role != crate::records::FeatureInputScalarRole::Driving
-                            })
+                        ids.scalars.get(id).is_none_or(|(_, scalar)| {
+                            scalar.role != crate::records::FeatureInputScalarRole::Driving
+                        })
                     })
                     || record.display_scalar_ref().is_some_and(|id| {
-                        lane.scalars
-                            .iter()
-                            .find(|scalar| scalar.id == id)
-                            .is_none_or(|scalar| {
-                                scalar.role != crate::records::FeatureInputScalarRole::Display
-                            })
+                        ids.scalars.get(id).is_none_or(|(_, scalar)| {
+                            scalar.role != crate::records::FeatureInputScalarRole::Display
+                        })
                     })
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -1050,10 +1022,9 @@ impl SldprtNative {
                 )));
             }
             if let Some(record) = lane.relation_bindings.iter().find(|record| {
-                lane.scalars
-                    .iter()
-                    .find(|scalar| scalar.id == record.scalar_ref)
-                    .is_some_and(|scalar| scalar.feature_ref != record.feature_ref)
+                ids.scalars
+                    .get(record.scalar_ref.as_str())
+                    .is_some_and(|(_, scalar)| scalar.feature_ref != record.feature_ref)
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input relation binding {} disagrees with its scalar owner",
@@ -1307,18 +1278,49 @@ fn surface_selection_disagrees_with_payload(
         } != record.terminal_feature_ref)
 }
 
+/// Class, scalar, and name records keyed by id. Each id maps to its first
+/// record, which is the record a front-to-back search finds; a scalar also
+/// keeps its position in the source list.
+struct RecordIds<'a> {
+    classes: HashMap<&'a str, &'a FeatureInputClass>,
+    scalars: HashMap<&'a str, (usize, &'a FeatureInputScalar)>,
+    names: HashMap<&'a str, &'a FeatureInputName>,
+}
+
+impl<'a> RecordIds<'a> {
+    fn new(
+        classes: &'a [FeatureInputClass],
+        scalars: &'a [FeatureInputScalar],
+        names: &'a [FeatureInputName],
+    ) -> Self {
+        let mut ids = Self {
+            classes: HashMap::new(),
+            scalars: HashMap::new(),
+            names: HashMap::new(),
+        };
+        for class in classes {
+            ids.classes.entry(class.id.as_str()).or_insert(class);
+        }
+        for (position, scalar) in scalars.iter().enumerate() {
+            ids.scalars
+                .entry(scalar.id.as_str())
+                .or_insert((position, scalar));
+        }
+        for name in names {
+            ids.names.entry(name.id.as_str()).or_insert(name);
+        }
+        ids
+    }
+}
+
 fn relation_instance_shape_valid(
     record: &FeatureInputRelationInstance,
-    lane: &FeatureInputLane,
+    ids: &RecordIds<'_>,
 ) -> bool {
     if record.scalar_refs().is_empty() {
         return false;
     }
-    let Some(class) = lane
-        .classes
-        .iter()
-        .find(|class| class.id == record.class_ref)
-    else {
+    let Some(class) = ids.classes.get(record.class_ref.as_str()) else {
         return false;
     };
     if !matches!(
@@ -1329,15 +1331,14 @@ fn relation_instance_shape_valid(
         return false;
     }
     for scalar_ref in record.scalar_refs() {
-        let Some(scalar) = lane.scalars.iter().find(|scalar| scalar.id == *scalar_ref) else {
+        let Some((_, scalar)) = ids.scalars.get(scalar_ref.as_str()) else {
             return false;
         };
         if scalar.feature_ref.as_deref() != Some(record.feature_ref.as_str()) {
             return false;
         }
     }
-    let repeated_circle_display =
-        repeated_circle_display_shape_valid(record, &lane.scalars, &lane.names);
+    let repeated_circle_display = repeated_circle_display_shape_valid(record, ids);
     if record.scalar_refs().len() > 3 && !repeated_circle_display {
         return false;
     }
@@ -1360,11 +1361,7 @@ fn relation_instance_shape_valid(
                     if matches!(scalar.operands.as_slice(), [candidate]
                         if candidate.kind == first.kind)))
     };
-    let Some(first) = lane
-        .scalars
-        .iter()
-        .find(|scalar| scalar.id == record.scalar_refs()[0])
-    else {
+    let Some((_, first)) = ids.scalars.get(record.scalar_refs()[0].as_str()) else {
         return false;
     };
     if first.offset != record.offset || !scalar_operands_match(first) {
@@ -1373,12 +1370,7 @@ fn relation_instance_shape_valid(
     let mut last_operand_position = None;
     let mut detached = None;
     for scalar_ref in record.scalar_refs() {
-        let Some((position, scalar)) = lane
-            .scalars
-            .iter()
-            .enumerate()
-            .find(|(_, scalar)| scalar.id == *scalar_ref)
-        else {
+        let Some(&(position, scalar)) = ids.scalars.get(scalar_ref.as_str()) else {
             return false;
         };
         if scalar.operands.is_empty() {
@@ -1405,8 +1397,7 @@ fn relation_instance_shape_valid(
 
 fn repeated_circle_display_shape_valid(
     record: &FeatureInputRelationInstance,
-    scalars: &[FeatureInputScalar],
-    names: &[FeatureInputName],
+    ids: &RecordIds<'_>,
 ) -> bool {
     if record.family != crate::records::FeatureInputRelationFamily::CircleDiameter
         || record.parameter_scalar_ref().is_some()
@@ -1417,15 +1408,11 @@ fn repeated_circle_display_shape_valid(
         return false;
     }
     let scalar_name_value = |scalar: &FeatureInputScalar| {
-        names
-            .iter()
-            .find(|name| name.id == scalar.name)
+        ids.names
+            .get(scalar.name.as_str())
             .map(|name| name.value.as_str())
     };
-    let Some(first) = scalars
-        .iter()
-        .find(|scalar| scalar.id == record.scalar_refs()[0])
-    else {
+    let Some((_, first)) = ids.scalars.get(record.scalar_refs()[0].as_str()) else {
         return false;
     };
     let Some(first_name) = scalar_name_value(first) else {
@@ -1436,7 +1423,7 @@ fn repeated_circle_display_shape_valid(
     // set of the accepted operand entity indices.
     let mut entity_indices = HashSet::new();
     record.scalar_refs().iter().all(|scalar_id| {
-        let Some(scalar) = scalars.iter().find(|scalar| scalar.id == *scalar_id) else {
+        let Some((_, scalar)) = ids.scalars.get(scalar_id.as_str()) else {
             return false;
         };
         if previous_ordinal.is_some_and(|ordinal: u32| {

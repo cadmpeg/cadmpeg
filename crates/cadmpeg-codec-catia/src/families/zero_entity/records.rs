@@ -3578,7 +3578,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_isocurve_result() {
+    fn zero_entity_model_curve_lifts_an_isocurve_on_a_degree_16_surface() {
         use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
         let fixed_degree = 16;
         let fixed_poles = fixed_degree + 1;

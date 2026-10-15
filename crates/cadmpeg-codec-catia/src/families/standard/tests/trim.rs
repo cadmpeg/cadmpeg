@@ -770,7 +770,7 @@ fn allocation_program_rejects_an_unconsumed_trim_packet() {
 }
 
 #[test]
-fn endpoint_order_helpers_result() {
+fn two_trails_have_two_orders_and_a_triangle_has_one_cycle() {
     let trails = [vec![0], vec![1]];
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
     let trail_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -790,7 +790,7 @@ fn endpoint_order_helpers_result() {
 }
 
 #[test]
-fn motif_port_identity_map_result() {
+fn three_seed_trims_allocate_eight_port_points() {
     let trims = [
         trim(0x4a, [0, 1, 2, 3]),
         trim(0x4a, [10, 11, 12, 13]),

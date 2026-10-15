@@ -10,7 +10,7 @@ fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, usize)> {
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::decode_int32_cdp2(ctx, bytes, depth).expect("service decode budget"),
+        |ctx| super::decode_int32_cdp2(ctx, bytes, depth).expect("the JT test stream decodes"),
     )
 }
 
@@ -49,7 +49,7 @@ fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::frame_int32_cdp2(ctx, bytes, depth).expect("service decode budget"),
+        |ctx| super::frame_int32_cdp2(ctx, bytes, depth).expect("the JT test stream decodes"),
     )
 }
 
@@ -64,7 +64,7 @@ fn decode_vertex_coordinates(
         |_| {},
         |ctx| {
             super::decode_vertex_coordinates(ctx, bytes, count, ranges, bits)
-                .expect("service decode budget")
+                .expect("the JT test stream decodes")
                 .map(|array| (array.values, array.hash, array.byte_len))
         },
     )
@@ -80,7 +80,7 @@ fn decode_vertex_texture_coordinates(
         |_| {},
         |ctx| {
             super::decode_vertex_texture_coordinates(ctx, bytes, count, bits)
-                .expect("service decode budget")
+                .expect("the JT test stream decodes")
                 .map(|array| (array.values, array.hash, array.byte_len))
         },
     )
@@ -96,7 +96,7 @@ fn decode_vertex_colors(
         |_| {},
         |ctx| {
             super::decode_vertex_colors(ctx, bytes, count, bits)
-                .expect("service decode budget")
+                .expect("the JT test stream decodes")
                 .map(|array| (array.values, array.hash, array.byte_len))
         },
     )
@@ -106,14 +106,8 @@ fn decode_vertex_flags(bytes: &[u8], count: usize) -> Option<(Vec<u32>, usize)> 
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::decode_vertex_flags(ctx, bytes, count).expect("service decode budget"),
+        |ctx| super::decode_vertex_flags(ctx, bytes, count).expect("the JT test stream decodes"),
     )
-}
-
-fn unpack_predictor_residuals(residuals: &[i32], predictor: super::Predictor) -> Vec<i32> {
-    {
-        super::unpack_predictor_residuals(residuals, predictor)
-    }
 }
 
 const EPS_JT_NORMAL_RECONSTRUCTION: f32 = 1.0e-6;
@@ -337,11 +331,11 @@ fn jt_predictors_reconstruct_primal_integers() {
     let primers = [10, 20, 30, 40];
     let residuals = [10, 20, 30, 40, 5, -2];
     assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Lag1),
+        super::unpack_predictor(&residuals, Predictor::Lag1),
         [10, 20, 30, 40, 45, 43]
     );
     assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Null),
+        super::unpack_predictor(&residuals, Predictor::Null),
         residuals
     );
     assert_eq!(primers, residuals[..4]);
@@ -352,7 +346,7 @@ fn jt_predictors_use_wrapping_i32_arithmetic() {
     use super::Predictor;
 
     assert_eq!(
-        unpack_predictor_residuals(&[0, 0, 0, i32::MAX, 1], Predictor::Lag1),
+        super::unpack_predictor(&[0, 0, 0, i32::MAX, 1], Predictor::Lag1),
         [0, 0, 0, i32::MAX, i32::MIN]
     );
 }

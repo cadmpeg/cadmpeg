@@ -254,7 +254,6 @@ pub(crate) fn enrich_history_hole_constructions(
             !claimed_profiles.contains(profile.as_str())
                 && profile_claim_ranks.get(profile) == Some(&(*rank, 1))
         });
-        drop(claimed_profiles);
         for (feature_index, profile_source, _) in additions {
             history.features[feature_index].properties.insert(
                 cadmpeg_core::nonblank_literal!("DissectableChildren"),
@@ -310,7 +309,6 @@ pub(crate) fn enrich_history_hole_constructions(
             }
             interval_additions.push((feature_index, hole_profile_source(profile)));
         }
-        drop(claimed_profiles);
         let mut interval_claim_counts = HashMap::<String, usize>::new();
         for (_, profile) in &interval_additions {
             *interval_claim_counts.entry(profile.clone()).or_insert(0) += 1;
@@ -1341,7 +1339,6 @@ pub(crate) fn project_profiled_hole_constructions(
             fallback_constructions.insert(*hole, construction);
         }
     }
-    drop(complete_native_holes);
     for feature in features.iter_mut() {
         let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
             feature.evaluation.definition()
@@ -2364,7 +2361,6 @@ fn project_flat_blind_topology_axes(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements: ref hole_placements,
                 shape,
-
                 extent: Some(LinearTermination::Blind { length }),
                 bottom: Some(HoleBottom::Flat),
                 ..
@@ -2425,7 +2421,6 @@ fn project_drilled_hole_topology_axes(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements: ref hole_placements,
                 shape,
-
                 extent: Some(LinearTermination::Blind { length }),
                 bottom:
                     Some(HoleBottom::Angled {
@@ -2545,7 +2540,6 @@ fn expand_seeded_drilled_hole_topology_axes(
         let FeatureDefinition::Operation(FeatureOperation::Hole {
             placements,
             shape,
-
             extent: Some(LinearTermination::Blind { length }),
             bottom:
                 Some(HoleBottom::Angled {
@@ -2818,7 +2812,6 @@ fn counterbore_topology_candidates(
 fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         shape,
-
         extent: left_extent,
         bottom: left_bottom,
         taper_angle: left_taper_angle,
@@ -2833,7 +2826,6 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
     let left_diameter = shape.diameter();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         shape,
-
         extent: right_extent,
         bottom: right_bottom,
         taper_angle: right_taper_angle,
@@ -3779,7 +3771,6 @@ pub(crate) fn project_bore_backed_position_sketches(
             entities: projected_entities,
         });
     }
-    drop(model_features);
     for projection in projections {
         let feature = &mut features[projection.feature];
         let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) =

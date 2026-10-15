@@ -222,7 +222,6 @@ fn axial_profile_resolves_counterdrill_roles() {
                 Some(cadmpeg_ir::scalar::PositiveLength::new(5.55).unwrap())
             )
             .unwrap(),
-
             depth: cadmpeg_ir::scalar::PositiveLength::new(2.9).unwrap(),
             angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         }
@@ -785,7 +784,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
@@ -803,7 +801,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -881,7 +878,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             extent: Some(LinearTermination::ThroughAll {}),
-
             ..
         }) if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
@@ -948,7 +944,6 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(

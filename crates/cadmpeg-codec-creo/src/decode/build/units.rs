@@ -16,20 +16,6 @@ use cadmpeg_ir::scalar::{Length, PositiveReal};
 use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::transform::Transform;
 
-pub(in crate::decode) fn malformed_refusal(message: impl std::fmt::Display) -> CodecError {
-    match Ok(format!("{message}")) {
-        Ok(message) => CodecError::Malformed(message),
-        Err(error) => error,
-    }
-}
-
-pub(in crate::decode) fn not_implemented_refusal(message: impl std::fmt::Display) -> CodecError {
-    match Ok(format!("{message}")) {
-        Ok(message) => CodecError::NotImplemented(message),
-        Err(error) => error,
-    }
-}
-
 fn scale_point2(point: &mut Point2, scale: PositiveReal) {
     point.u *= scale.get();
     point.v *= scale.get();
@@ -47,7 +33,7 @@ fn scale_finite_point3(
 ) -> Result<(), CodecError> {
     *point = point
         .scaled(scale)
-        .ok_or_else(|| malformed_refusal("Creo scaled feature point must be finite"))?;
+        .ok_or_else(|| CodecError::malformed("Creo scaled feature point must be finite"))?;
     Ok(())
 }
 
@@ -62,7 +48,7 @@ fn scale_transform_translation(
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     *transform = transform.scaled_translation(scale).ok_or_else(|| {
-        malformed_refusal(format_args!(
+        CodecError::malformed(format_args!(
             "Creo length scale {} drives a transform translation the carrier refuses",
             scale.get()
         ))
@@ -75,7 +61,7 @@ pub(in crate::decode) fn scale_length(
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     *length = Length::new(length.get() * scale.get())
-        .ok_or_else(|| malformed_refusal("Creo scaled length must be finite"))?;
+        .ok_or_else(|| CodecError::malformed("Creo scaled length must be finite"))?;
     Ok(())
 }
 
@@ -84,7 +70,7 @@ fn scale_positive_length(
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     *length = cadmpeg_ir::scalar::PositiveLength::new(length.get() * scale.get())
-        .ok_or_else(|| malformed_refusal("Creo scaled length must be positive and finite"))?;
+        .ok_or_else(|| CodecError::malformed("Creo scaled length must be positive and finite"))?;
     Ok(())
 }
 
@@ -93,7 +79,7 @@ fn scale_nonzero_length(
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     *length = cadmpeg_ir::scalar::NonZeroLength::new(length.get() * scale.get())
-        .ok_or_else(|| malformed_refusal("Creo scaled length must be finite and nonzero"))?;
+        .ok_or_else(|| CodecError::malformed("Creo scaled length must be finite and nonzero"))?;
     Ok(())
 }
 
@@ -101,9 +87,9 @@ fn scale_nonnegative_length(
     length: &mut cadmpeg_ir::scalar::NonNegativeLength,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *length = length
-        .scaled(scale)
-        .ok_or_else(|| malformed_refusal("Creo scaled length must be nonnegative and finite"))?;
+    *length = length.scaled(scale).ok_or_else(|| {
+        CodecError::malformed("Creo scaled length must be nonnegative and finite")
+    })?;
     Ok(())
 }
 
@@ -135,7 +121,7 @@ fn scale_datum_plane_reference(
         let mut origin = frame.origin().get();
         scale_point3(&mut origin, scale);
         let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
-            malformed_refusal("Creo scaled plane support must have a finite origin")
+            CodecError::malformed("Creo scaled plane support must have a finite origin")
         })?;
         *frame = frame.with_origin(origin);
     }
@@ -203,7 +189,7 @@ fn scale_feature_operation(
                 scale_point2(point, scale);
             }
             *bounds = cadmpeg_ir::features::FeatureImageBounds::new(corners).ok_or_else(|| {
-                malformed_refusal(
+                CodecError::malformed(
                     "Creo scaled image bounds must have finite corners and nonzero extents",
                 )
             })?;
@@ -212,7 +198,7 @@ fn scale_feature_operation(
             let mut origin = frame.origin().get();
             scale_point3(&mut origin, scale);
             let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
-                malformed_refusal("Creo scaled coordinate frame must have a finite origin")
+                CodecError::malformed("Creo scaled coordinate frame must have a finite origin")
             })?;
             *frame = frame.with_origin(origin);
         }
@@ -221,7 +207,7 @@ fn scale_feature_operation(
             let mut origin = frame.origin().get();
             scale_point3(&mut origin, scale);
             let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
-                malformed_refusal("Creo scaled datum plane must have a finite origin")
+                CodecError::malformed("Creo scaled datum plane must have a finite origin")
             })?;
             *frame = frame.with_origin(origin);
         }
@@ -260,7 +246,7 @@ fn scale_feature_operation(
             scale_point3(&mut end, scale);
             *segment =
                 cadmpeg_ir::features::FeatureLineSegment::new(start, end).ok_or_else(|| {
-                    malformed_refusal("Creo scaled line must have finite distinct endpoints")
+                    CodecError::malformed("Creo scaled line must have finite distinct endpoints")
                 })?;
         }
         FeatureOperation::CircularArc { arc } => {
@@ -269,7 +255,7 @@ fn scale_feature_operation(
             scale_point3(&mut center, scale);
             scale_positive_length(&mut radius, scale)?;
             let center = cadmpeg_ir::features::FinitePoint3::new(center).ok_or_else(|| {
-                malformed_refusal("Creo scaled circular arc must have finite geometry")
+                CodecError::malformed("Creo scaled circular arc must have finite geometry")
             })?;
             *arc = cadmpeg_ir::features::FeatureCircularArc::from_parts(
                 center,
@@ -281,10 +267,10 @@ fn scale_feature_operation(
         FeatureOperation::EllipticArc { arc } => {
             let center = arc.center().scaled(scale);
             let scaled = arc.with_scaled_radii(scale).ok_or_else(|| {
-                malformed_refusal("Creo scaled length must be positive and finite")
+                CodecError::malformed("Creo scaled length must be positive and finite")
             })?;
             let center = center.ok_or_else(|| {
-                malformed_refusal("Creo scaled elliptic arc must have finite ordered geometry")
+                CodecError::malformed("Creo scaled elliptic arc must have finite ordered geometry")
             })?;
             *arc = scaled.with_center(center);
         }
@@ -292,7 +278,7 @@ fn scale_feature_operation(
             let mut points = Vec::new();
             for point in chain.points() {
                 let scaled = point.scaled(scale).ok_or_else(|| {
-                    malformed_refusal(
+                    CodecError::malformed(
                         "Creo scaled polyline must have finite distinct adjacent vertices",
                     )
                 })?;
@@ -300,7 +286,7 @@ fn scale_feature_operation(
             }
             *chain = cadmpeg_ir::features::FeaturePolyline::from_parts(points, chain.closed())
                 .ok_or_else(|| {
-                    malformed_refusal(
+                    CodecError::malformed(
                         "Creo scaled polyline must have finite distinct adjacent vertices",
                     )
                 })?;
@@ -324,7 +310,9 @@ fn scale_feature_operation(
             }
             if let Some(placement) = placement {
                 *placement = placement.scaled_translation(scale).ok_or_else(|| {
-                    malformed_refusal("Creo scaled block placement must remain finite and rigid")
+                    CodecError::malformed(
+                        "Creo scaled block placement must remain finite and rigid",
+                    )
                 })?;
             }
         }
@@ -398,10 +386,13 @@ fn scale_feature_operation(
             let mut radial_growth = construction.travel.radial_growth();
             scale_length(&mut height, scale)?;
             scale_length(&mut radial_growth, scale)?;
-            construction.travel =
-                cadmpeg_ir::features::HelicalSweepTravel::new(height, radial_growth).ok_or_else(
-                    || malformed_refusal("Creo scaled helical sweep must retain nonzero travel"),
-                )?;
+            construction.travel = cadmpeg_ir::features::HelicalSweepTravel::new(
+                height,
+                radial_growth,
+            )
+            .ok_or_else(|| {
+                CodecError::malformed("Creo scaled helical sweep must retain nonzero travel")
+            })?;
         }
         FeatureOperation::Coil { construction, .. } => {
             scale_coil_construction(construction, scale)?;
@@ -503,7 +494,9 @@ fn scale_feature_operation(
             ..
         } => {
             *translation = cadmpeg_ir::features::FiniteVector3::new(translation.scale(scale.get()))
-                .ok_or_else(|| malformed_refusal("Creo scaled body translation must be finite"))?;
+                .ok_or_else(|| {
+                    CodecError::malformed("Creo scaled body translation must be finite")
+                })?;
             if let Some(rotation) = rotation {
                 scale_finite_point3(&mut rotation.origin, scale)?;
             }
@@ -553,10 +546,10 @@ fn scale_primitive_solid(
 ) -> Result<(), cadmpeg_core::CodecError> {
     *solid = solid.scaled(scale).map_err(|error| match error {
         cadmpeg_ir::features::PrimitiveSolidScaleError::NonFinite => {
-            malformed_refusal("Creo scaled length must be finite")
+            CodecError::malformed("Creo scaled length must be finite")
         }
         cadmpeg_ir::features::PrimitiveSolidScaleError::Admission(message) => {
-            malformed_refusal(message)
+            CodecError::malformed(message)
         }
     })?;
     Ok(())
@@ -572,7 +565,7 @@ fn scale_sweep_section(
     scale_positive_length(&mut outer_radius, scale)?;
     scale_optional_positive_length(&mut wall_thickness, scale)?;
     *region = cadmpeg_ir::features::SweepCircularRegion::new(outer_radius, wall_thickness)
-        .map_err(malformed_refusal)?;
+        .map_err(CodecError::malformed)?;
     Ok(())
 }
 
@@ -582,8 +575,9 @@ fn scale_unit_plane_frame(
 ) -> Result<(), CodecError> {
     let mut origin = frame.origin().get();
     scale_point3(&mut origin, scale);
-    let origin = cadmpeg_ir::features::FinitePoint3::new(origin)
-        .ok_or_else(|| malformed_refusal("Creo scaled plane frame must have a finite origin"))?;
+    let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
+        CodecError::malformed("Creo scaled plane frame must have a finite origin")
+    })?;
     *frame = frame.with_origin(origin);
     Ok(())
 }
@@ -821,13 +815,13 @@ fn scale_radius_spec(
             RadiusSpec::Variable {
                 points: points
                     .try_map_radii(|radius| {
-                        radius
-                            .scaled(scale)
-                            .ok_or_else(|| malformed_refusal("Creo scaled length must be finite"))
+                        radius.scaled(scale).ok_or_else(|| {
+                            CodecError::malformed("Creo scaled length must be finite")
+                        })
                     })
                     .map_err(|error| match error {
                         VariableRadiiMapError::Radius(error) => error,
-                        VariableRadiiMapError::Admission(message) => malformed_refusal(message),
+                        VariableRadiiMapError::Admission(message) => CodecError::malformed(message),
                     })?,
             }
         }
@@ -930,7 +924,7 @@ fn scale_hole_shape(
         None,
         None,
     )
-    .map_err(malformed_refusal)?;
+    .map_err(CodecError::malformed)?;
     let owned = std::mem::replace(shape, placeholder);
     *shape = owned
         .try_map_lengths_owned(
@@ -948,7 +942,7 @@ fn scale_hole_shape(
         .map_err(|error| match error {
             HoleLengthEditError::Field(error) => error,
             HoleLengthEditError::Counterdrill(message)
-            | HoleLengthEditError::Treatment(message) => malformed_refusal(message),
+            | HoleLengthEditError::Treatment(message) => CodecError::malformed(message),
         })?;
     Ok(())
 }
@@ -973,7 +967,7 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         })
         .map_err(|error| match error {
             PatternLengthEditError::Field(error) => error,
-            PatternLengthEditError::Offsets(message) => malformed_refusal(message),
+            PatternLengthEditError::Offsets(message) => CodecError::malformed(message),
         })?;
     Ok(())
 }
@@ -1023,12 +1017,12 @@ pub(in crate::decode) fn scale_curve_geometry(
 /// `carrier` names the carrier family in a control-point refusal.
 fn scale_refusal(refusal: ScaleRefusal, carrier: &str, scale: PositiveReal) -> CodecError {
     match refusal {
-        ScaleRefusal::Field(message) => malformed_refusal(message),
-        ScaleRefusal::ControlPoints(error) => malformed_refusal(format_args!(
+        ScaleRefusal::Field(message) => CodecError::malformed(message),
+        ScaleRefusal::ControlPoints(error) => CodecError::malformed(format_args!(
             "Creo {carrier} unit normalization produced invalid NURBS control points: {error}"
         )),
-        ScaleRefusal::Samples(error) => malformed_refusal(error),
-        ScaleRefusal::Translation => malformed_refusal(format_args!(
+        ScaleRefusal::Samples(error) => CodecError::malformed(error),
+        ScaleRefusal::Translation => CodecError::malformed(format_args!(
             "Creo length scale {} drives a transform translation the carrier refuses",
             scale.get()
         )),
@@ -1148,10 +1142,10 @@ pub(in crate::decode) fn scale_procedural_surface(
 ) -> Result<(), CodecError> {
     procedural
         .edit_definition(|definition| definition.scale_lengths(scale))
-        .map_err(not_implemented_refusal)?;
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
     procedural
         .scale_cache_fit_tolerance(scale)
-        .map_err(not_implemented_refusal)?;
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
     Ok(())
 }
 
@@ -1161,10 +1155,10 @@ pub(in crate::decode) fn scale_procedural_curve(
 ) -> Result<(), CodecError> {
     procedural
         .edit_definition(|definition| definition.scale_lengths(scale))
-        .map_err(not_implemented_refusal)?;
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
     procedural
         .scale_cache_fit_tolerance(scale)
-        .map_err(not_implemented_refusal)?;
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
     Ok(())
 }
 
@@ -1224,17 +1218,20 @@ pub(in crate::decode) fn scale_sketch_geometry(
     geometry
         .scaled_lengths_owned(scale)
         .map_err(|error| match error {
-            SketchLengthScaleError::Resource(limit) => CodecError::ResourceLimit(limit),
             SketchLengthScaleError::LengthOverflow => {
-                malformed_refusal("Creo scaled length must be finite")
+                CodecError::malformed("Creo scaled length must be finite")
             }
-            SketchLengthScaleError::Field(message) => malformed_refusal(message),
-            SketchLengthScaleError::CurveControlPoints(error) => malformed_refusal(format_args!(
-                "Creo sketch unit normalization produced invalid NURBS control points: {error}"
-            )),
-            SketchLengthScaleError::SurfaceControlPoints(error) => malformed_refusal(format_args!(
+            SketchLengthScaleError::Field(message) => CodecError::malformed(message),
+            SketchLengthScaleError::CurveControlPoints(error) => {
+                CodecError::malformed(format_args!(
+                    "Creo sketch unit normalization produced invalid NURBS control points: {error}"
+                ))
+            }
+            SketchLengthScaleError::SurfaceControlPoints(error) => {
+                CodecError::malformed(format_args!(
                 "Creo sketch unit normalization produced invalid B-spline control points: {error}"
-            )),
+            ))
+            }
         })
 }
 

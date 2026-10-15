@@ -124,3 +124,42 @@ fn formula_legacy_candidates_transfer_under_service_profile() {
     .expect("service profile admits three legacy candidates");
     assert_eq!(ir.model.parameters.len(), 3);
 }
+
+#[test]
+fn legacy_types_follow_unique_selector_chains() {
+    let descriptor = |entity_id: u32, value: serde_json::Value| {
+        serde_json::from_value::<crate::native::CatiaLegacyTypeDescriptor>(serde_json::json!({
+            "byte_offset": 0,
+            "entity_id": entity_id,
+            "value": value,
+        }))
+        .expect("descriptor wire")
+    };
+    let name = |value: &str| serde_json::json!({ "Name": { "value": value } });
+    let selector = |value: u32| serde_json::json!({ "Selector": { "value": value } });
+    let descriptors = [
+        descriptor(1, name("Length")),
+        descriptor(2, selector(1)),
+        descriptor(3, selector(2)),
+        descriptor(4, selector(5)),
+        descriptor(5, selector(4)),
+        descriptor(6, selector(9)),
+        descriptor(7, name("Real")),
+        descriptor(7, name("Angle")),
+        descriptor(8, selector(7)),
+    ];
+    let types = super::super::LegacyTypes::new(&descriptors);
+    assert_eq!(types.resolved(1), Some(("Length", false)));
+    assert_eq!(types.resolved(2), Some(("Length", true)));
+    assert_eq!(types.resolved(3), Some(("Length", true)));
+    // A selector cycle, a missing target, a repeated descriptor and a chain
+    // into a repeated descriptor resolve nothing.
+    assert_eq!(types.resolved(4), None);
+    assert_eq!(types.resolved(5), None);
+    assert_eq!(types.resolved(6), None);
+    assert_eq!(types.resolved(7), None);
+    assert_eq!(types.resolved(8), None);
+    assert_eq!(types.resolved(9), None);
+    assert!(types.descriptors.contains_key(&7));
+    assert!(!types.descriptors.contains_key(&9));
+}

@@ -17,7 +17,7 @@ use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroU32;
 use std::ops::Range;
 
@@ -836,7 +836,11 @@ impl ContainerScan<'_> {
 /// of one descriptor, but never across descriptors.
 pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<SourceExtent>> {
     let mut sources = Vec::new();
-    let add_directory = |sources: &mut Vec<Vec<SourceExtent>>, directory: &InnerDir| {
+    // Each distinct source is kept once, at its first position.
+    let mut distinct = HashSet::new();
+    let add_directory = |sources: &mut Vec<Vec<SourceExtent>>,
+                         distinct: &mut HashSet<Vec<SourceExtent>>,
+                         directory: &InnerDir| {
         for descriptor in &directory.descriptors {
             let mut source = Vec::new();
             for extent in &descriptor.extents {
@@ -854,14 +858,14 @@ pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<S
                     source.push(extent);
                 }
             }
-            if !source.is_empty() && !sources.contains(&source) {
+            if !source.is_empty() && distinct.insert(source.clone()) {
                 sources.push(source);
             }
         }
     };
 
     if let Some(outer) = scan.outer.as_ref() {
-        add_directory(&mut sources, outer);
+        add_directory(&mut sources, &mut distinct, outer);
     } else {
         let outer_end = match scan.inner.as_ref() {
             Some(directory) => directory.inner,
@@ -873,11 +877,12 @@ pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<S
             .flatten();
         if let Some(preamble) = preamble {
             let source = vec![preamble];
+            distinct.insert(source.clone());
             sources.push(source);
         }
     }
     if let Some(inner) = scan.inner.as_ref() {
-        add_directory(&mut sources, inner);
+        add_directory(&mut sources, &mut distinct, inner);
     }
 
     let whole = (sources.is_empty() && scan.data.len() > outer_hdr::FILL_FF)

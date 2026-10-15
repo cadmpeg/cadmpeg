@@ -166,11 +166,13 @@ pub(crate) fn transfer_parameters(
         let mut type_bindings = BTreeMap::new();
         let mut all_inputs_complete = true;
         let mut all_inputs_typed = true;
+        let input_index = crate::native::RelationInputIndex::new(&signature.inputs);
+        let mut dependency_ids = HashSet::new();
         for dependency in &formula.parameter_dependencies {
-            let Some(input) = signature
-                .inputs
-                .iter()
-                .find(|input| crate::native::dependency_matches_input(dependency, input))
+            let Some(input) = input_index
+                .matches(dependency)
+                .min()
+                .map(|index| &signature.inputs[index])
             else {
                 all_inputs_complete = false;
                 all_inputs_typed = false;
@@ -197,7 +199,7 @@ pub(crate) fn transfer_parameters(
                 continue;
             };
             used_inputs.insert(input.parameter.as_str());
-            if dependencies.contains(&candidate.parameter.id) {
+            if !dependency_ids.insert(candidate.parameter.id.clone()) {
                 continue;
             }
             let id = candidate.parameter.id.clone();
@@ -778,6 +780,7 @@ fn collect_legacy_parameters(
         .iter()
         .filter(|run| outer_container_in_scope(run.outer_container.as_ref(), modeling_scope))
     {
+        let types = LegacyTypes::new(&run.type_descriptors);
         let mut parameters_by_entity = HashMap::<u32, Vec<ParameterId>>::new();
         let mut parameters_by_name = HashMap::<String, Vec<ParameterId>>::new();
         for scalar in &run.scalar_values {
@@ -787,7 +790,7 @@ fn collect_legacy_parameters(
             let Some(name) = &scalar.name else {
                 continue;
             };
-            let Some((value_type, selected)) = resolved_legacy_type(run, scalar.entity_id) else {
+            let Some((value_type, selected)) = types.resolved(scalar.entity_id) else {
                 continue;
             };
             let evaluation = match scalar.evaluation {
@@ -856,6 +859,7 @@ fn collect_legacy_parameters(
             };
             let Some((value_type, selected)) = resolved_or_intrinsic_legacy_type(
                 run,
+                &types,
                 string.entity_id,
                 string.byte_offset,
                 string.name_field,
@@ -914,6 +918,7 @@ fn collect_legacy_parameters(
             };
             let Some((value_type, selected)) = resolved_or_intrinsic_legacy_type(
                 run,
+                &types,
                 integer.entity_id,
                 integer.byte_offset,
                 integer.name_field,
@@ -1154,54 +1159,83 @@ fn outer_container_in_scope(
     }
 }
 
-fn resolved_legacy_type(
-    run: &crate::native::CatiaLegacyEntityRun,
-    mut entity_id: u32,
-) -> Option<(&str, bool)> {
-    let mut steps = 0usize;
-    let mut selected = false;
-    loop {
-        if steps >= run.type_descriptors.len() {
-            return None;
-        }
-        steps += 1;
+/// The type names a legacy run's descriptors state, per entity.
+///
+/// An entity resolves when exactly one descriptor states it and that
+/// descriptor names a type, or selects an entity that resolves. A missing or
+/// repeated descriptor, or a selector cycle, leaves it unresolved.
+struct LegacyTypes<'a> {
+    /// Every descriptor entity, with its value when exactly one descriptor
+    /// states it.
+    descriptors: HashMap<u32, Option<&'a crate::native::CatiaLegacyTypeValue>>,
+    /// The type name each descriptor entity resolves to.
+    names: HashMap<u32, Option<&'a str>>,
+}
 
-        let mut descriptors = run
-            .type_descriptors
-            .iter()
-            .filter(|descriptor| descriptor.entity_id == entity_id);
-        let descriptor = descriptors.next()?;
-        if descriptors.next().is_some() {
-            return None;
+impl<'a> LegacyTypes<'a> {
+    fn new(type_descriptors: &'a [crate::native::CatiaLegacyTypeDescriptor]) -> Self {
+        let mut descriptors = HashMap::new();
+        for descriptor in type_descriptors {
+            descriptors
+                .entry(descriptor.entity_id)
+                .and_modify(|value| *value = None)
+                .or_insert(Some(&descriptor.value));
         }
-        match &descriptor.value {
-            crate::native::CatiaLegacyTypeValue::Name { value } => {
-                return Some((value, selected));
-            }
-            crate::native::CatiaLegacyTypeValue::Selector { value } => {
-                entity_id = *value;
-                selected = true;
+        let mut names = HashMap::<u32, Option<&str>>::new();
+        for &start in descriptors.keys() {
+            let mut path = Vec::new();
+            let mut on_path = HashSet::new();
+            let mut entity_id = start;
+            let name = loop {
+                if let Some(&name) = names.get(&entity_id) {
+                    break name;
+                }
+                if !on_path.insert(entity_id) {
+                    break None;
+                }
+                path.push(entity_id);
+                match descriptors.get(&entity_id).copied().flatten() {
+                    Some(crate::native::CatiaLegacyTypeValue::Name { value }) => {
+                        break Some(value.as_str())
+                    }
+                    Some(crate::native::CatiaLegacyTypeValue::Selector { value }) => {
+                        entity_id = *value;
+                    }
+                    None => break None,
+                }
+            };
+            for entity_id in path {
+                names.insert(entity_id, name);
             }
         }
+        Self { descriptors, names }
+    }
+
+    /// The type name `entity_id` resolves to, and whether its descriptor is a
+    /// selector.
+    fn resolved(&self, entity_id: u32) -> Option<(&'a str, bool)> {
+        let value = self.descriptors.get(&entity_id).copied().flatten()?;
+        let name = self.names.get(&entity_id).copied().flatten()?;
+        Some((
+            name,
+            matches!(value, crate::native::CatiaLegacyTypeValue::Selector { .. }),
+        ))
     }
 }
 
 fn resolved_or_intrinsic_legacy_type<'a>(
     run: &'a crate::native::CatiaLegacyEntityRun,
+    types: &LegacyTypes<'a>,
     entity_id: u32,
     value_offset: u64,
     name_field: Option<u64>,
     name: &str,
     intrinsic_type: &'static str,
 ) -> Option<(&'a str, bool)> {
-    if let Some(resolved) = resolved_legacy_type(run, entity_id) {
+    if let Some(resolved) = types.resolved(entity_id) {
         return Some(resolved);
     }
-    if run
-        .type_descriptors
-        .iter()
-        .any(|descriptor| descriptor.entity_id == entity_id)
-    {
+    if types.descriptors.contains_key(&entity_id) {
         return None;
     }
     let name_field = name_field?;
@@ -4597,7 +4631,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_design_parameter_copy_result() {
+    fn design_parameter_copy_keeps_dependencies_and_properties() {
         let mut parameter = unset_candidate(FormulaParameterType::String).parameter;
         parameter.dependencies.insert(
             ParameterId::mint("synthetic:test:id#dependency".to_string())
@@ -4613,7 +4647,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_candidate_index_result() {
+    fn merging_one_candidate_into_an_empty_index_adds_it() {
         let candidate = unset_candidate(FormulaParameterType::String);
         let mut candidates = BTreeMap::new();
         super::merge_formula_parameter_candidate(
@@ -4626,7 +4660,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_literal_and_property_projection_result() {
+    fn parameter_properties_record_value_type_and_binding() {
         let properties = super::parameter_properties("String", Some("source-binding"))
             .expect("service profile admits properties");
         assert_eq!(properties["value_type"], "String");
@@ -4634,7 +4668,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_string_value_copy_result() {
+    fn string_parameter_value_clone_equals_the_original() {
         let value = ParameterValue::String("source string".to_string());
         let admitted = { value.clone() };
         assert_eq!(admitted, value);

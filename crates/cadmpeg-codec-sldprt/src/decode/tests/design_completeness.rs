@@ -32,7 +32,6 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
@@ -113,7 +112,6 @@ fn design_completeness_audits_direct_body_and_shape_families() {
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
-
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                     definition,
                     cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
@@ -198,7 +196,6 @@ fn design_completeness_audits_direct_body_and_shape_families() {
                 ),
             )
             .unwrap(),
-
             keep: cadmpeg_ir::features::BodyTrimSide::Unresolved,
         }),
     );
@@ -229,7 +226,6 @@ fn design_completeness_audits_direct_body_and_shape_families() {
                 ),
             )
             .unwrap(),
-
             approximate: None,
         }),
     );
@@ -326,7 +322,6 @@ fn design_completeness_audits_typed_construction_families() {
                 .expect("identity grammar")]),
             )
             .unwrap(),
-
             radius: RadiusSpec::Unresolved {
                 form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
             },
@@ -351,7 +346,6 @@ fn design_completeness_audits_typed_construction_families() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -385,7 +379,6 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
@@ -508,7 +501,6 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -604,7 +596,6 @@ fn design_completeness_recurses_through_pattern_operands() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: vec![seed.clone()],
@@ -643,9 +634,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
                 cadmpeg_ir::features::SweepSection::Profile(planar_profile.clone()),
                 sections,
             ),
-
             path: Some(path.clone()),
-
             orientation,
             transition: None,
             transformation: None,
@@ -704,7 +693,6 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -831,7 +819,6 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -865,7 +852,6 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
@@ -1007,7 +993,6 @@ fn hole_completeness_checks_optional_operands_when_present() {
                 Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
             )
             .unwrap(),
-
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             bottom: None,
             taper_angle: None,
@@ -1041,7 +1026,6 @@ fn hole_completeness_checks_optional_operands_when_present() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -1075,7 +1059,6 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -1263,7 +1246,6 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -1333,7 +1315,6 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
