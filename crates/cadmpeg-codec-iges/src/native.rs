@@ -3958,9 +3958,8 @@ pub(crate) fn store(
                         match fields {
                             Some((record, layout)) => {
                                 let connection_indices = layout.connections();
-                                let connections = (0..connection_indices.len())
-                                    .map(|offset| {
-                                        let index = connection_indices.start + offset;
+                                let connections = connection_indices
+                                    .map(|index| {
                                         record
                                             .integer(index)
                                             .and_then(|sequence| {
@@ -3979,9 +3978,8 @@ pub(crate) fn store(
                                     .collect::<Vec<_>>();
                                 let geometry_links =
                                     |indices: std::ops::Range<usize>| -> Vec<Option<String>> {
-                                        (0..indices.len())
-                                            .map(|offset| {
-                                                let index = indices.start + offset;
+                                        indices
+                                            .map(|index| {
                                                 record
                                                     .integer(index)
                                                     .and_then(|sequence| {
@@ -4008,10 +4006,10 @@ pub(crate) fn store(
                                     };
                                 let name_indices = layout.signal_names();
                                 (
-                                    (0..name_indices.len())
-                                        .map(|offset| {
+                                    name_indices
+                                        .map(|index| {
                                             record
-                                                .string(name_indices.start + offset)
+                                                .string(index)
                                                 .map(|bytes| NativeBytes::from(bytes.to_vec()))
                                         })
                                         .collect::<Vec<_>>(),
@@ -4066,9 +4064,8 @@ pub(crate) fn store(
                         declared_geometry_count: record.and_then(|record| record.integer(1)),
                         declared_text_description_count: record
                             .and_then(|record| record.integer(2)),
-                        geometry: (0..geometry_indices.len())
-                            .map(|offset| {
-                                let index = geometry_indices.start + offset;
+                        geometry: geometry_indices
+                            .map(|index| {
                                 record
                                     .and_then(|record| record.integer(index))
                                     .and_then(|sequence| {
@@ -4114,9 +4111,8 @@ pub(crate) fn store(
                     let (points, data) = match fields {
                         Some((record, layout)) => {
                             let point_indices = layout.points();
-                            let points = (0..point_indices.len())
-                                .map(|offset| {
-                                    let index = point_indices.start + offset;
+                            let points = point_indices
+                                .map(|index| {
                                     record
                                         .integer(index)
                                         .and_then(|sequence| {
@@ -4132,10 +4128,10 @@ pub(crate) fn store(
                                 })
                                 .collect::<Vec<_>>();
                             let data_indices = layout.data();
-                            let data = (0..data_indices.len())
-                                .map(|offset| {
+                            let data = data_indices
+                                .map(|index| {
                                     record
-                                        .token(data_indices.start + offset)
+                                        .token(index)
                                         .map_or(TokenValue::Omitted, |item| item.value.clone())
                                 })
                                 .collect::<Vec<_>>();

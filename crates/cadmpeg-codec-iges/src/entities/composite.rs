@@ -1975,7 +1975,7 @@ fn project_with_type_130_policy(
             );
             continue;
         }
-        let mut curve_ids = { Vec::new() };
+        let mut curve_ids = Vec::new();
         let mut missing_curve = false;
         for sequence in &curve_sequences {
             let Some(curve) = curve_carriers.get(sequence) else {
