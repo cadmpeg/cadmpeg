@@ -16,6 +16,7 @@ use crate::records::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
         edge_identity::DesignEdgeOperand, extrude_selection::DesignExtrudeFaceRole,
         extrude_selection::DesignOperandRole, face::DesignFaceOperand,
+        historical_context::AsmFaceBoundary,
     },
 };
 use cadmpeg_core::decode::DecodeContext;
@@ -739,6 +740,7 @@ pub(super) fn resolved_loft_edge_profile_group(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
+    face_boundaries: &[AsmFaceBoundary],
 ) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Loft
         || !matches!(
@@ -808,7 +810,8 @@ pub(super) fn resolved_loft_edge_profile_group(
         };
         member_operands.push(operand);
     }
-    let Some(face_slot) = loft_edge_profile_face_slot(group.members().len(), &member_operands)
+    let Some(face_slot) =
+        loft_edge_profile_face_slot(group.members().len(), &member_operands, face_boundaries)
     else {
         return Ok(None);
     };
@@ -837,7 +840,9 @@ pub(super) fn resolved_loft_edge_profile_group(
 fn loft_edge_profile_face_slot(
     member_count: usize,
     operands: &[&DesignEdgeOperand],
+    face_boundaries: &[AsmFaceBoundary],
 ) -> Option<i64> {
+    let boundary = |id: &String| AsmFaceBoundary::find(face_boundaries, id);
     if member_count == 0 || operands.len() != member_count {
         return None;
     }
@@ -934,30 +939,31 @@ fn loft_edge_profile_face_slot(
                 {
                     return None;
                 }
-                let [preceding_boundary] = context.preceding_face_boundaries.as_slice() else {
+                let [preceding_boundary] = context.preceding_face_boundary_ids.as_slice() else {
                     return None;
                 };
-                let boundary_edge_count = boundary_edge_count([preceding_boundary])?;
+                let preceding_boundary = boundary(preceding_boundary)?;
+                let boundary_edge_count = loop_edge_count(&preceding_boundary.loops)?;
                 if preceding_boundary.face_slot != slot {
                     return None;
                 }
                 let [result_face] = context.result_faces.as_slice() else {
                     return None;
                 };
-                let [result_boundary] = context.result_face_boundaries.as_slice() else {
+                let [result_boundary] = context.result_face_boundary_ids.as_slice() else {
                     return None;
                 };
-                if result_face != candidate || result_boundary.face_slot != slot {
+                if result_face != candidate || boundary(result_boundary)?.face_slot != slot {
                     return None;
                 }
                 let [support_slot] = context.preceding_support_face_slots.as_slice() else {
                     return None;
                 };
-                let [support_boundary] = context.preceding_support_face_boundaries.as_slice()
+                let [support_boundary] = context.preceding_support_face_boundary_ids.as_slice()
                 else {
                     return None;
                 };
-                if *support_slot != slot || support_boundary.face_slot != slot {
+                if *support_slot != slot || boundary(support_boundary)?.face_slot != slot {
                     return None;
                 }
                 if ordinal == target_ordinal {
@@ -1903,10 +1909,17 @@ fn boundary_edge_count<'a>(
     boundaries: impl IntoIterator<Item = &'a crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>,
 ) -> Option<usize> {
     boundaries.into_iter().try_fold(0usize, |total, boundary| {
-        boundary.loops.iter().try_fold(total, |total, loop_| {
-            let count = loop_.boundary.coedges().count();
-            (count != 0).then(|| total.checked_add(count)).flatten()
-        })
+        loop_edge_count(&boundary.loops)?.checked_add(total)
+    })
+}
+
+/// Number of coedges in `loops`, when every loop has at least one.
+fn loop_edge_count(
+    loops: &[crate::records::topology::historical_context::DesignHistoricalFaceLoopContext],
+) -> Option<usize> {
+    loops.iter().try_fold(0usize, |total, loop_| {
+        let count = loop_.boundary.coedges().count();
+        (count != 0).then(|| total.checked_add(count)).flatten()
     })
 }
 
@@ -2603,6 +2616,7 @@ mod tests {
         topology::{
             construction::DesignConstructionOperandGroup, edge_identity::DesignEdgeOperand,
             edge_recipe::DesignEdgeRecipeStructure, face::DesignFaceRecipeNode,
+            historical_context::AsmFaceBoundary,
             historical_context::DesignEdgeRecipeReferenceContext,
             historical_context::DesignHistoricalFaceBoundaryContext,
             historical_context::DesignHistoricalFaceLoopContext,
@@ -2919,14 +2933,27 @@ mod tests {
         }
     }
 
+    /// Delta-state record of loft-test history state `state_id`.
+    fn loft_state(state_id: i64) -> String {
+        format!("f3d:test:asm-delta-state#{state_id:010}")
+    }
+
+    fn loft_boundary_id(state_id: i64, slot: i64) -> String {
+        AsmFaceBoundary::identity(
+            &loft_state(state_id),
+            u64::try_from(state_id).expect("test state"),
+            slot,
+        )
+        .expect("test boundary identity")
+    }
+
     fn reference_context(
         ordinal: u32,
         slot: i64,
         edge_count: usize,
     ) -> DesignEdgeRecipeReferenceContext {
         let face = face(slot);
-        let boundary = boundary(slot, edge_count);
-        let edges = boundary.loops[0]
+        let edges = boundary(slot, edge_count).loops[0]
             .boundary
             .coedges()
             .map(|row| row.edge_slot)
@@ -2934,16 +2961,44 @@ mod tests {
         DesignEdgeRecipeReferenceContext {
             reference_ordinal: ordinal,
             result_faces: vec![face.clone()],
-            result_face_boundaries: vec![boundary.clone()],
+            result_face_boundary_ids: vec![loft_boundary_id(7, slot)],
             result_shared_edge_slots: edges.clone(),
             preceding_faces: vec![face],
-            preceding_face_boundaries: vec![boundary.clone()],
+            preceding_face_boundary_ids: vec![loft_boundary_id(6, slot)],
             preceding_support_face_slots: vec![slot],
-            preceding_support_face_boundaries: vec![boundary],
+            preceding_support_face_boundary_ids: vec![loft_boundary_id(6, slot)],
             shared_edge_slots: edges,
             changed_shared_edge_slots: Vec::new(),
             changed_reference_edge_slots: Vec::new(),
         }
+    }
+
+    /// The `asm_face_boundaries` arena named by the reference contexts of
+    /// `operands`, with each boundary built as by `reference_context`.
+    fn loft_face_boundaries(operands: &[&DesignEdgeOperand]) -> Vec<AsmFaceBoundary> {
+        let mut arena = std::collections::BTreeMap::new();
+        for context in operands
+            .iter()
+            .flat_map(|operand| &operand.recipe_reference_contexts)
+        {
+            let slot = context.preceding_support_face_slots[0];
+            let face = boundary(slot, context.shared_edge_slots.len());
+            for (state_id, id) in [
+                (7, &context.result_face_boundary_ids[0]),
+                (6, &context.preceding_face_boundary_ids[0]),
+            ] {
+                arena.insert(
+                    id.clone(),
+                    AsmFaceBoundary {
+                        id: id.clone(),
+                        parent: loft_state(state_id),
+                        face_slot: face.face_slot,
+                        loops: face.loops.clone(),
+                    },
+                );
+            }
+        }
+        arena.into_values().collect()
     }
 
     fn edge_operand(
@@ -3344,11 +3399,17 @@ mod tests {
         let second = edge_operand(2, 100, 1, 3, 201);
         let third = edge_operand(3, 100, 0, 3, 202);
         let members = [&first, &second, &third];
-        assert_eq!(loft_edge_profile_face_slot(3, &members), Some(100));
+        assert_eq!(
+            loft_edge_profile_face_slot(3, &members, &loft_face_boundaries(&members)),
+            Some(100)
+        );
 
         let different_target = edge_operand(4, 101, 1, 3, 203);
         let mismatched = [&first, &different_target, &third];
-        assert_eq!(loft_edge_profile_face_slot(3, &mismatched), None);
+        assert_eq!(
+            loft_edge_profile_face_slot(3, &mismatched, &loft_face_boundaries(&mismatched)),
+            None
+        );
 
         let mut ambiguous = first.clone();
         append_reference(&mut ambiguous, 2, 300, "alternate", 309, 2);
@@ -3357,7 +3418,14 @@ mod tests {
         let mut ambiguous_third = third.clone();
         append_reference(&mut ambiguous_third, 2, 300, "alternate", 309, 2);
         let ambiguous_members = [&ambiguous, &ambiguous_second, &ambiguous_third];
-        assert_eq!(loft_edge_profile_face_slot(3, &ambiguous_members), None);
+        assert_eq!(
+            loft_edge_profile_face_slot(
+                3,
+                &ambiguous_members,
+                &loft_face_boundaries(&ambiguous_members)
+            ),
+            None
+        );
     }
 
     #[test]
@@ -3376,8 +3444,9 @@ mod tests {
             edge_operand(2, 100, 1, 3, 201),
             edge_operand(3, 100, 0, 3, 202),
         ];
+        let face_boundaries = loft_face_boundaries(&operands.iter().collect::<Vec<_>>());
         assert!(matches!(
-            crate::test_support::with_decode_context(|decode_ctx| super::resolved_loft_edge_profile_group(decode_ctx, &scope, &group, &operands)).unwrap(),
+            crate::test_support::with_decode_context(|decode_ctx| super::resolved_loft_edge_profile_group(decode_ctx, &scope, &group, &operands, &face_boundaries)).unwrap(),
             Some(cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
                 state,
                 faces,

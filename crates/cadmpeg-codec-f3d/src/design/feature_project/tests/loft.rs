@@ -38,7 +38,14 @@ fn project(
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    project_fixed_loft(scope, groups, &[], &[], &[], &[], ctx)
+    project_fixed_loft(
+        scope,
+        &crate::design::feature_project::ProjectInputs {
+            construction_groups: groups,
+            ..Default::default()
+        },
+        ctx,
+    )
 }
 
 fn assert_loft_sections(roles: [DesignOperandRole; 2], has_point: bool) {

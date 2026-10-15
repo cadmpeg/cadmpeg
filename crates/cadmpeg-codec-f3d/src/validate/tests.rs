@@ -33,6 +33,7 @@ mod edge_treatment_vertex;
 mod entity_bindings;
 mod extrude_group;
 mod extrude_member;
+mod face_boundary;
 mod face_group;
 mod face_operand;
 mod fillet_group;
