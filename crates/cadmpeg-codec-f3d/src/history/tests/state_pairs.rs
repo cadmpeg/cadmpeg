@@ -77,6 +77,8 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         ),
         transition: previous_state_id.map(|previous_state_id| {
             crate::history_records::AsmHistoricalTransition {
+                record_revisions: Vec::new(),
+                rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                 previous_state_id: Some(previous_state_id),
                 records: Default::default(),
                 topology: Default::default(),
@@ -84,6 +86,8 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         }),
     };
     let history = |id: &str, current| AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: id.into(),
         byte_offset: 0,
         preamble: None,
@@ -102,6 +106,8 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
     assert!(unique_history_state_pair(&duplicate_pair, 9, 2).is_none());
 
     let indirect = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "indirect".into(),
         states: vec![
             state("indirect", 23, Some(21)),
@@ -111,6 +117,8 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         ..history("indirect", 23)
     };
     let direct = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "direct".into(),
         states: vec![state("direct", 23, Some(11)), state("direct", 11, None)],
         ..history("direct", 23)
@@ -152,6 +160,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         ),
         transition: previous_state_id.map(|previous_state_id| {
             crate::history_records::AsmHistoricalTransition {
+                record_revisions: Vec::new(),
+                rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                 previous_state_id: Some(previous_state_id),
                 records: Default::default(),
                 topology: Default::default(),
@@ -161,6 +171,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     let history = |source: &str| {
         let id = format!("f3d:asset/Breps.BlobParts/BREP.{source}.smbh:asm-history#1");
         AsmHistory {
+            topology_scope: crate::history_records::AsmTopologyScope::Complete,
+            materialized: crate::history_records::MaterializedTopologies::default(),
             id: id.clone(),
             byte_offset: 0,
             preamble: None,
@@ -284,6 +296,8 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         transition: None,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -349,6 +363,8 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
 
     let mut inconsistent = histories[0].clone();
     inconsistent.states[0].transition = Some(AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(4),
         records: Default::default(),
         topology: Default::default(),
@@ -565,6 +581,8 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         ..AsmHistoricalTopology::default()
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -624,6 +642,8 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         carrier: 42,
     });
     let ambiguous_history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         states: vec![AsmDeltaState {
             topology_cache: crate::history_records::AsmTopologyCache::Complete(ambiguous),
             ..history.states[0].clone()
@@ -685,6 +705,8 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
         raw_bytes: Vec::new().into(),
     };
     let history = |records| AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -898,12 +920,16 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
         entity_versions: Vec::new(),
         topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: previous_state_id.map(|previous_state_id| AsmHistoricalTransition {
+            record_revisions: Vec::new(),
+            rows: crate::history_records::AsmHistoricalRowsDelta::default(),
             previous_state_id: Some(previous_state_id),
             records: Default::default(),
             topology: Default::default(),
         }),
     };
     let history = |id: &str| AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: id.into(),
         byte_offset: 0,
         preamble: None,
@@ -1008,6 +1034,8 @@ fn active_face_support_retains_invariant_preceding_owners() {
         ..AsmHistoricalTopology::default()
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -1086,6 +1114,8 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
     let mut intermediate = change_state(2);
     let mut result = change_state(3);
     let mut first = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(1),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),
@@ -1094,6 +1124,8 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
     first.topology.edges.updated = vec![20];
     intermediate.transition = Some(first);
     let mut second = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(2),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),

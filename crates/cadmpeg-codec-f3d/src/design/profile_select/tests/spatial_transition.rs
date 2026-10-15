@@ -138,6 +138,8 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
         transition,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -148,6 +150,8 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
                 2,
                 topology,
                 Some(AsmHistoricalTransition {
+                    record_revisions: Vec::new(),
+                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                     previous_state_id: Some(1),
                     records: crate::history_records::AsmHistoricalEntityDelta::default(),
                     topology: AsmHistoricalTopologyDelta {

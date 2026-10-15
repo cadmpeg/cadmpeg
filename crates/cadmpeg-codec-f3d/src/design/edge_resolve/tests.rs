@@ -521,6 +521,8 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         transition: None,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:test:history".into(),
         byte_offset: 0,
         preamble: None,

@@ -234,6 +234,8 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         None,
     );
     let mut transition = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(1),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),
@@ -245,6 +247,8 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         Some(transition),
     );
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,

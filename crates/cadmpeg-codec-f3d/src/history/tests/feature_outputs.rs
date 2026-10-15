@@ -91,6 +91,8 @@ fn output_binding_inputs() -> (
         transition,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:asm-history#1".into(),
         byte_offset: 0,
         preamble: None,
@@ -102,6 +104,8 @@ fn output_binding_inputs() -> (
                 Some(0),
                 current_topology,
                 Some(AsmHistoricalTransition {
+                    record_revisions: Vec::new(),
+                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                     previous_state_id: Some(0),
                     records: AsmHistoricalEntityDelta::default(),
                     topology: delta,

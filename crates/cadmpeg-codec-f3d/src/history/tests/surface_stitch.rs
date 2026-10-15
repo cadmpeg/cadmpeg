@@ -183,6 +183,8 @@ fn surface_stitch_fixture() -> StitchFixture {
         transition,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: history_id.clone(),
         byte_offset: 0,
         preamble: None,
@@ -191,6 +193,8 @@ fn surface_stitch_fixture() -> StitchFixture {
             state(
                 2,
                 Some(AsmHistoricalTransition {
+                    record_revisions: Vec::new(),
+                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                     previous_state_id: Some(1),
                     records: Default::default(),
                     topology: Default::default(),

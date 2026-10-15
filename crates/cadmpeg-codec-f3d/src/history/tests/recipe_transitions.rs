@@ -151,6 +151,8 @@ fn split_face_case() -> Result<
         transition,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,
@@ -159,6 +161,8 @@ fn split_face_case() -> Result<
             state(
                 2,
                 Some(crate::history_records::AsmHistoricalTransition {
+                    record_revisions: Vec::new(),
+                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                     previous_state_id: Some(1),
                     records: Default::default(),
                     topology: Default::default(),
@@ -353,6 +357,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .unwrap();
 
     let mut transition = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(1),
         records: Default::default(),
         topology: Default::default(),
@@ -377,6 +383,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         transition,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,
@@ -898,6 +906,8 @@ fn hole_face_case() -> Result<
         transition,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "f3d:history".into(),
         byte_offset: 0,
         preamble: None,
@@ -906,6 +916,8 @@ fn hole_face_case() -> Result<
             state(
                 2,
                 Some(AsmHistoricalTransition {
+                    record_revisions: Vec::new(),
+                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
                     previous_state_id: Some(1),
                     records: Default::default(),
                     topology: Default::default(),

@@ -20,7 +20,6 @@ use crate::history::combine_recipe_family_tool_slots;
 use crate::history::grouped_reference_face_candidate;
 use crate::history::historical_body_slot;
 use crate::history::historical_record_archive;
-use crate::history::historical_transition;
 use crate::history::insert_only_active_record_count;
 use crate::history::materialize_record_table;
 use crate::history::pattern_combine_tool_slots;
@@ -63,6 +62,8 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
         transition: None,
     };
     let history = |id: &str, state| AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: id.into(),
         byte_offset: 0,
         preamble: None,
@@ -162,6 +163,8 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         transition: None,
     };
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "selected".into(),
         byte_offset: 0,
         preamble: None,
@@ -326,12 +329,16 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         8,
         AsmHistoricalTopology::default(),
         Some(AsmHistoricalTransition {
+            record_revisions: Vec::new(),
+            rows: crate::history_records::AsmHistoricalRowsDelta::default(),
             previous_state_id: Some(7),
             records: AsmHistoricalEntityDelta::default(),
             topology: AsmHistoricalTopologyDelta::default(),
         }),
     );
     let history = AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
@@ -377,6 +384,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
     };
     let previous = state(10, None);
     let mut transition = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(10),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),
@@ -399,6 +408,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
     );
 
     let mut intermediate_transition = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(10),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),
@@ -425,6 +436,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
     split_previous.topology_cache =
         crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8]));
     let mut split_transition = AsmHistoricalTransition {
+        record_revisions: Vec::new(),
+        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(20),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),
@@ -795,7 +808,28 @@ fn historical_transition_separates_membership_and_revision_changes() {
         },
     );
 
-    let transition = historical_transition(&current, Some(&previous)).unwrap();
+    let versions = |state: &AsmDeltaState| {
+        state
+            .entity_versions
+            .iter()
+            .map(|row| (row.entity_ref, row.record_ref))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let old_versions = versions(&previous);
+    let new_versions = versions(&current);
+    let transition = AsmHistoricalTransition::between(
+        Some(crate::history_records::AsmStateSnapshot {
+            state_id: previous.state_id,
+            topology: previous.topology().unwrap(),
+            versions: &old_versions,
+        }),
+        crate::history_records::AsmStateSnapshot {
+            state_id: current.state_id,
+            topology: current.topology().unwrap(),
+            versions: &new_versions,
+        },
+    )
+    .unwrap();
     assert_eq!(transition.previous_state_id, Some(10));
     assert_eq!(transition.topology.bodies.inserted, [2]);
     assert_eq!(transition.topology.bodies.updated, [1]);

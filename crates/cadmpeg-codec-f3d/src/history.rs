@@ -30,12 +30,12 @@ use topology_cache::{TopologyQueryCache, VertexBoundaryIndex};
 use treatment_index::TreatmentCache;
 
 use crate::bytes::int_at;
+use crate::history_records::AsmHistoricalTopologyDelta;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
-    AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint,
-    AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
+    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
 use crate::records::topology::{
     body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
@@ -256,6 +256,8 @@ pub(crate) fn decode(
         });
     let offset = history_offset;
     Ok(Some(AsmHistory {
+        topology_scope: crate::history_records::AsmTopologyScope::Complete,
+        materialized: crate::history_records::MaterializedTopologies::default(),
         id: history_id,
         byte_offset: u64_from_index(offset),
         preamble,
@@ -636,7 +638,53 @@ fn bind_complete_record_tables(
         state.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology);
     }
     if complete {
-        bind_historical_transitions(states);
+        let by_node: HashMap<_, _> = states
+            .iter()
+            .enumerate()
+            .map(|(index, state)| (state.node_index, index))
+            .collect();
+        let versions: Vec<BTreeMap<_, _>> = states
+            .iter()
+            .map(|state| {
+                state
+                    .entity_versions
+                    .iter()
+                    .map(|row| (row.entity_ref, row.record_ref))
+                    .collect()
+            })
+            .collect();
+        let transitions = (by_node.len() == states.len())
+            .then(|| {
+                states
+                    .iter()
+                    .enumerate()
+                    .map(|(index, state)| {
+                        let snapshot = |index: usize| {
+                            let state = states.get(index)?;
+                            Some(crate::history_records::AsmStateSnapshot {
+                                state_id: state.state_id,
+                                topology: state.topology()?,
+                                versions: versions.get(index)?,
+                            })
+                        };
+                        let older = match state.next_ref {
+                            Some(node) => Some(snapshot(*by_node.get(&node)?)?),
+                            None => None,
+                        };
+                        AsmHistoricalTransition::between(older, snapshot(index)?)
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })
+            .flatten();
+        if let Some(transitions) = transitions {
+            for (state, transition) in states.iter_mut().zip(transitions) {
+                state.transition = Some(transition);
+            }
+        } else {
+            complete = false;
+        }
+    }
+    if complete {
         // Keep only record revisions that can be named by a late persistent
         // selection. Non-topological ASM attributes do not participate in
         // feature selection and need not survive projection finalization.
@@ -653,6 +701,7 @@ fn bind_complete_record_tables(
     } else {
         for state in states {
             state.topology_cache = crate::history_records::AsmTopologyCache::Absent;
+            state.transition = None;
         }
     }
     Ok(())
@@ -777,38 +826,6 @@ fn clone_historical_token(token: &cadmpeg_asm::sab::Token) -> cadmpeg_asm::sab::
     }
 }
 
-fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
-    let mut by_node = HashMap::new();
-
-    for (ordinal, state) in states.iter().enumerate() {
-        by_node.insert(state.node_index, ordinal);
-    }
-    if by_node.len() != states.len() {
-        return;
-    }
-
-    let mut transitions = Vec::new();
-
-    for state in states.iter() {
-        let previous = match state.next_ref {
-            Some(node) => {
-                let Some(&ordinal) = by_node.get(&node) else {
-                    return;
-                };
-                states.get(ordinal)
-            }
-            None => None,
-        };
-        let Some(transition) = historical_transition(state, previous) else {
-            return;
-        };
-        transitions.push(transition);
-    }
-    for (state, transition) in states.iter_mut().zip(transitions) {
-        state.transition = Some(transition);
-    }
-}
-
 fn retain_mirror_plane_topology(
     mut topology: AsmHistoricalTopology,
 ) -> Option<AsmHistoricalTopology> {
@@ -851,7 +868,12 @@ fn retain_mirror_plane_topology(
 /// plane-selection topology remain retained.
 pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
     for history in histories {
+        history.release_topologies();
+        history.topology_scope = crate::history_records::AsmTopologyScope::Retained;
         for state in &mut history.states {
+            if let Some(transition) = &mut state.transition {
+                transition.rows.retain_projection_rows();
+            }
             let topology = match std::mem::take(&mut state.topology_cache) {
                 crate::history_records::AsmTopologyCache::Absent
                 | crate::history_records::AsmTopologyCache::Released => None,
@@ -879,78 +901,6 @@ pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
         && histories
             .iter()
             .all(crate::history_records::AsmHistory::projection_finalized)
-}
-
-fn historical_transition(
-    current: &AsmDeltaState,
-    previous: Option<&AsmDeltaState>,
-) -> Option<AsmHistoricalTransition> {
-    let current_topology = current.topology()?;
-    let previous_topology = previous.and_then(|state| state.topology());
-    // The version maps and record keys are scratch for this transition.
-    let current_versions = historical_version_map(&current.entity_versions);
-    let previous_versions = match previous {
-        Some(state) => historical_version_map(&state.entity_versions),
-        None => BTreeMap::new(),
-    };
-    let delta = |current: &[i64], previous: &[i64]| {
-        entity_delta(current, previous, &current_versions, &previous_versions)
-    };
-    let empty = AsmHistoricalTopology::default();
-    let previous_topology = previous_topology.unwrap_or(&empty);
-    let current_record_keys = current_versions.keys().copied().collect::<Vec<_>>();
-    let previous_record_keys = previous_versions.keys().copied().collect::<Vec<_>>();
-    Some(AsmHistoricalTransition {
-        previous_state_id: previous.map(|state| state.state_id),
-        records: entity_delta(
-            &current_record_keys,
-            &previous_record_keys,
-            &current_versions,
-            &previous_versions,
-        ),
-        topology: AsmHistoricalTopologyDelta {
-            bodies: delta(&current_topology.bodies, &previous_topology.bodies),
-            regions: delta(&current_topology.regions, &previous_topology.regions),
-            shells: delta(&current_topology.shells, &previous_topology.shells),
-            faces: delta(&current_topology.faces, &previous_topology.faces),
-            loops: delta(&current_topology.loops, &previous_topology.loops),
-            coedges: delta(&current_topology.coedges, &previous_topology.coedges),
-            edges: delta(&current_topology.edges, &previous_topology.edges),
-            vertices: delta(&current_topology.vertices, &previous_topology.vertices),
-            points: delta(&current_topology.points, &previous_topology.points),
-            surfaces: delta(&current_topology.surfaces, &previous_topology.surfaces),
-            curves: delta(&current_topology.curves, &previous_topology.curves),
-            pcurves: delta(&current_topology.pcurves, &previous_topology.pcurves),
-        },
-    })
-}
-
-fn historical_version_map(versions: &[AsmEntityVersion]) -> BTreeMap<i64, i64> {
-    let mut indexed = BTreeMap::new();
-    for version in versions {
-        indexed.insert(version.entity_ref, version.record_ref);
-    }
-    indexed
-}
-
-fn entity_delta(
-    current: &[i64],
-    previous: &[i64],
-    current_versions: &BTreeMap<i64, i64>,
-    previous_versions: &BTreeMap<i64, i64>,
-) -> AsmHistoricalEntityDelta {
-    let current = current.iter().copied().collect::<BTreeSet<_>>();
-    let previous = previous.iter().copied().collect::<BTreeSet<_>>();
-
-    AsmHistoricalEntityDelta {
-        inserted: current.difference(&previous).copied().collect::<Vec<_>>(),
-        deleted: previous.difference(&current).copied().collect::<Vec<_>>(),
-        updated: current
-            .intersection(&previous)
-            .copied()
-            .filter(|entity| current_versions.get(entity) != previous_versions.get(entity))
-            .collect::<Vec<_>>(),
-    }
 }
 
 pub(crate) fn bind_feature_outputs(
@@ -7431,6 +7381,9 @@ pub(crate) fn historical_topology_with_tags(
             },
         );
     }
+    topology
+        .persistent_subentity_tags
+        .sort_by_key(|tag| tag.entity_ref);
     Ok(Some(topology))
 }
 

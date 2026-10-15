@@ -25,6 +25,8 @@ pub(crate) struct AsmHistory {
     /// state-record entry count exceeded the binding bound.
     pub(crate) record_table_binding_budget_exceeded: bool,
     pub(crate) states: Vec<AsmDeltaState>,
+    pub(crate) topology_scope: AsmTopologyScope,
+    pub(crate) materialized: MaterializedTopologies,
 }
 
 impl AsmHistory {
@@ -68,6 +70,8 @@ struct AsmHistorySerde {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     record_table_binding_budget_exceeded: bool,
     states: Vec<AsmDeltaState>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    topology_scope: AsmTopologyScope,
 }
 
 impl TryFrom<AsmHistorySerde> for AsmHistory {
@@ -92,6 +96,8 @@ impl TryFrom<AsmHistorySerde> for AsmHistory {
             preamble,
             record_table_binding_budget_exceeded: wire.record_table_binding_budget_exceeded,
             states: wire.states,
+            topology_scope: wire.topology_scope,
+            materialized: crate::history_records::MaterializedTopologies::default(),
         })
     }
 }
@@ -107,6 +113,7 @@ impl From<AsmHistory> for AsmHistorySerde {
             history_entry_count,
             record_table_binding_budget_exceeded: history.record_table_binding_budget_exceeded,
             states: history.states,
+            topology_scope: history.topology_scope,
         }
     }
 }
@@ -519,8 +526,8 @@ pub(crate) struct AsmHistoricalOptionalCarrierBinding {
     pub(crate) carrier: Option<i64>,
 }
 
-/// Forward stable-slot changes from an older ASM state to a newer state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Forward change from the older `next_ref` neighbour, or empty on the tail.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTransition {
     /// Older state identity; absent only at the end of the reverse-history chain.
     #[serde(
@@ -533,6 +540,11 @@ pub(crate) struct AsmHistoricalTransition {
     pub(crate) records: AsmHistoricalEntityDelta,
     /// Changes restricted to each normalized topology family.
     pub(crate) topology: AsmHistoricalTopologyDelta,
+    /// Revisions of inserted and updated record slots, sorted by slot.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) record_revisions: Vec<AsmEntityVersion>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub(crate) rows: AsmHistoricalRowsDelta,
 }
 
 /// Stable entity slots inserted, deleted, or assigned a different record revision.
@@ -1186,3 +1198,181 @@ cadmpeg_core::named_optional_field!(deserialize_revision_id, i64, "revision_id")
 cadmpeg_core::named_optional_field!(deserialize_framing_error, String, "framing_error");
 cadmpeg_core::named_optional_field!(deserialize_old_ref, i64, "old_ref");
 cadmpeg_core::named_optional_field!(deserialize_new_ref, i64, "new_ref");
+
+/// Topology families carried by a history's transitions.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AsmTopologyScope {
+    #[default]
+    Complete,
+    Retained,
+}
+
+/// Rows inserted or replaced, and keys removed from one keyed family.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalRowDelta<R> {
+    #[serde(default = "Vec::new", skip_serializing_if = "Vec::is_empty")]
+    pub(crate) set: Vec<R>,
+    #[serde(default = "Vec::new", skip_serializing_if = "Vec::is_empty")]
+    pub(crate) removed: Vec<i64>,
+}
+
+impl<R> Default for AsmHistoricalRowDelta<R> {
+    fn default() -> Self {
+        Self {
+            set: Vec::new(),
+            removed: Vec::new(),
+        }
+    }
+}
+
+impl<R> AsmHistoricalRowDelta<R> {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.set.is_empty() && self.removed.is_empty()
+    }
+}
+
+/// One row in a family with unique, strictly increasing keys.
+pub(crate) trait AsmHistoricalRow: Clone + PartialEq {
+    fn key(&self) -> i64;
+}
+
+/// Persistent tag groups of one historical face or edge, in decode order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalEntityTags {
+    pub(crate) entity_ref: i64,
+    pub(crate) tags: Vec<AsmHistoricalPersistentSubentityTag>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalRowsDelta {
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) surface_radii: AsmHistoricalRowDelta<AsmHistoricalSurfaceRadius>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) surface_cylinders: AsmHistoricalRowDelta<AsmHistoricalCylinder>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) surface_planes: AsmHistoricalRowDelta<AsmHistoricalPlane>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) surface_axes: AsmHistoricalRowDelta<AsmHistoricalSurfaceAxis>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) curve_axes: AsmHistoricalRowDelta<AsmHistoricalCurveAxis>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) persistent_subentity_tags: AsmHistoricalRowDelta<AsmHistoricalEntityTags>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) body_regions: AsmHistoricalRowDelta<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) region_shells: AsmHistoricalRowDelta<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) shell_faces: AsmHistoricalRowDelta<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) shell_wire_edges: AsmHistoricalRowDelta<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) shell_free_vertices: AsmHistoricalRowDelta<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) face_loops: AsmHistoricalRowDelta<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) loop_coedges: AsmHistoricalRowDelta<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) coedge_topology: AsmHistoricalRowDelta<AsmHistoricalCoedge>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) edge_vertices: AsmHistoricalRowDelta<AsmHistoricalEdge>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) face_surfaces: AsmHistoricalRowDelta<AsmHistoricalCarrierBinding>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) vertex_points: AsmHistoricalRowDelta<AsmHistoricalCarrierBinding>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) edge_curves: AsmHistoricalRowDelta<AsmHistoricalOptionalCarrierBinding>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) coedge_pcurves: AsmHistoricalRowDelta<AsmHistoricalOptionalCarrierBinding>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) point_positions: AsmHistoricalRowDelta<AsmHistoricalPoint>,
+}
+
+impl AsmHistoricalRow for AsmHistoricalEntityTags {
+    fn key(&self) -> i64 {
+        self.entity_ref
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalCarrierBinding {
+    fn key(&self) -> i64 {
+        self.entity
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalCoedge {
+    fn key(&self) -> i64 {
+        self.coedge
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalCurveAxis {
+    fn key(&self) -> i64 {
+        self.curve
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalCylinder {
+    fn key(&self) -> i64 {
+        self.surface
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalEdge {
+    fn key(&self) -> i64 {
+        self.edge
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalOptionalCarrierBinding {
+    fn key(&self) -> i64 {
+        self.entity
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalPlane {
+    fn key(&self) -> i64 {
+        self.surface
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalPoint {
+    fn key(&self) -> i64 {
+        self.point
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalRelation {
+    fn key(&self) -> i64 {
+        self.owner_ref
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalSurfaceAxis {
+    fn key(&self) -> i64 {
+        self.surface
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalSurfaceRadius {
+    fn key(&self) -> i64 {
+        self.surface
+    }
+}
+
+/// A transition invariant that prevents chain reconstruction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AsmTransitionError {
+    MissingTransition,
+    Chain,
+    PreviousState,
+    InsertedPresent,
+    DeletedAbsent,
+    InvalidUpdate,
+    RevisionCoverage,
+    RemovedRowAbsent,
+    UnsortedFamily,
+}
+
+pub(crate) use chain::{AsmStateSnapshot, MaterializedTopologies};
+mod chain;

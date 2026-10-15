@@ -99,6 +99,8 @@ fn history_past_its_binding_bound_reports_a_loss() {
     native
         .asm_histories
         .push(crate::history_records::AsmHistory {
+            topology_scope: crate::history_records::AsmTopologyScope::Complete,
+            materialized: crate::history_records::MaterializedTopologies::default(),
             id: "f3d:test:asm-history#0".into(),
             byte_offset: 0,
             preamble: None,
