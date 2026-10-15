@@ -240,7 +240,7 @@ fn finish_decode(
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
-    let consolidated_record_sources = container::consolidated_record_sources(scan)?;
+    let consolidated_record_sources = container::consolidated_record_sources(scan);
     let native = CatiaNative::decode_with_record_sources(
         ctx,
         &scan.data,
@@ -3662,11 +3662,11 @@ fn modeling_graph_scope(
     }
 }
 
-/// The single site that finishes a decode and charges dialect admission loss.
+/// The single site that finishes a decode and records dialect admission loss.
 ///
 /// Identity is authored once from the match classified at the decode entry;
 /// the sealed wrapper stamps it onto the report. This function merges the
-/// container-level notes and charges dialect loss from that same match.
+/// container-level notes and records dialect loss from that same match.
 fn decode_result(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,

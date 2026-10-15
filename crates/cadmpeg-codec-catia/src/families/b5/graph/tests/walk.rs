@@ -56,7 +56,7 @@ fn propagate_vertex_points(
     adjacency: &HashMap<u32, Vec<usize>>,
     points: &[cadmpeg_ir::features::FinitePoint3],
 ) -> HashMap<u32, usize> {
-    super::super::propagate_vertex_points(constraints, adjacency, points).expect("service budget")
+    super::super::propagate_vertex_points(constraints, adjacency, points)
 }
 
 #[test]

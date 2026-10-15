@@ -826,7 +826,7 @@ fn collect_legacy_parameters(
             let Some(name) = &scalar.name else {
                 continue;
             };
-            let Some((value_type, selected)) = resolved_legacy_type(run, scalar.entity_id)? else {
+            let Some((value_type, selected)) = resolved_legacy_type(run, scalar.entity_id) else {
                 continue;
             };
             let evaluation = match scalar.evaluation {
@@ -901,8 +901,7 @@ fn collect_legacy_parameters(
                 string.name_field,
                 name,
                 "String",
-            )?
-            else {
+            ) else {
                 continue;
             };
             if value_type != "String" {
@@ -961,8 +960,7 @@ fn collect_legacy_parameters(
                 integer.name_field,
                 name,
                 "Integer",
-            )?
-            else {
+            ) else {
                 continue;
             };
             if !matches!(value_type, "Integer" | "I") {
@@ -1205,12 +1203,12 @@ fn outer_container_in_scope(
 fn resolved_legacy_type(
     run: &crate::native::CatiaLegacyEntityRun,
     mut entity_id: u32,
-) -> Result<Option<(&str, bool)>, cadmpeg_core::CodecError> {
+) -> Option<(&str, bool)> {
     let mut steps = 0usize;
     let mut selected = false;
     loop {
         if steps >= run.type_descriptors.len() {
-            return Ok(None);
+            return None;
         }
         steps += 1;
 
@@ -1218,15 +1216,13 @@ fn resolved_legacy_type(
             .type_descriptors
             .iter()
             .filter(|descriptor| descriptor.entity_id == entity_id);
-        let Some(descriptor) = descriptors.next() else {
-            return Ok(None);
-        };
+        let descriptor = descriptors.next()?;
         if descriptors.next().is_some() {
-            return Ok(None);
+            return None;
         }
         match &descriptor.value {
             crate::native::CatiaLegacyTypeValue::Name { value } => {
-                return Ok(Some((value, selected)));
+                return Some((value, selected));
             }
             crate::native::CatiaLegacyTypeValue::Selector { value } => {
                 entity_id = *value;
@@ -1243,28 +1239,26 @@ fn resolved_or_intrinsic_legacy_type<'a>(
     name_field: Option<u64>,
     name: &str,
     intrinsic_type: &'static str,
-) -> Result<Option<(&'a str, bool)>, cadmpeg_core::CodecError> {
-    if let Some(resolved) = resolved_legacy_type(run, entity_id)? {
-        return Ok(Some(resolved));
+) -> Option<(&'a str, bool)> {
+    if let Some(resolved) = resolved_legacy_type(run, entity_id) {
+        return Some(resolved);
     }
     if run
         .type_descriptors
         .iter()
         .any(|descriptor| descriptor.entity_id == entity_id)
     {
-        return Ok(None);
+        return None;
     }
-    let Some(name_field) = name_field else {
-        return Ok(None);
-    };
-    Ok(crate::native::legacy_evaluated_value_name(
+    let name_field = name_field?;
+    crate::native::legacy_evaluated_value_name(
         &run.role_selectors,
         &run.text_fields,
         entity_id,
         value_offset,
     )
     .is_some_and(|field| field.byte_offset == name_field && field.value == name)
-    .then_some((intrinsic_type, false)))
+    .then_some((intrinsic_type, false))
 }
 
 struct FormulaParameterCandidate {
@@ -2252,10 +2246,10 @@ struct FormulaExpressionParser<'a, 'b, 'c, 'd> {
 
 const MAX_FORMULA_EXPRESSION_DEPTH: usize = 128;
 const MAX_FORMULA_FUNCTION_ARGUMENTS: usize = 128;
-/// Longest string a formula operator may produce. Parameter bindings feed one
-/// formula's result into another, so chained concatenation or replacement
-/// grows a string geometrically; a longer result leaves the formula
-/// unevaluated.
+/// Longest string a formula operator may produce. Nested operators inside one
+/// expression feed one result into the next, so repeated concatenation or
+/// replacement grows a string geometrically; a longer result leaves the
+/// formula unevaluated.
 const MAX_FORMULA_STRING_BYTES: usize = 1 << 20;
 
 /// Whether an operator result of at most `bytes` bytes fits the string cap.
@@ -3116,12 +3110,16 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             let known =
                 source.is_known() && from.is_known() && to.is_known() && !from.value().is_empty();
             let value = if self.evaluate || (self.static_check && known) {
-                // Each source byte begins at most one replacement.
+                let (source_text, from_text, to_text) = (source.value(), from.value(), to.value());
+                let (replacements, removed) = if from_text.is_empty() {
+                    (source_text.chars().count().checked_add(1)?, 0)
+                } else {
+                    let count = source_text.matches(from_text).count();
+                    (count, count.checked_mul(from_text.len())?)
+                };
                 within_string_cap(
-                    source
-                        .value()
-                        .len()
-                        .checked_mul(to.value().len().checked_add(1)?)?,
+                    (source_text.len() - removed)
+                        .checked_add(replacements.checked_mul(to_text.len())?)?,
                 )?;
                 ReplacedText {
                     source: source.value(),
@@ -3169,14 +3167,15 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             };
             let known = value.is_known();
             let string_value = if self.evaluate || (self.static_check && known) {
-                // A Unicode character maps to at most three characters of
-                // at most four bytes each.
-                within_string_cap(value.value().len().checked_mul(12)?)?;
-                CasedText {
+                // Case mapping grows a string by at most three times, so the
+                // result is built before it is measured.
+                let cased = CasedText {
                     source: value.value(),
                     upper: function == "ToUpper",
                 }
-                .to_string()
+                .to_string();
+                within_string_cap(cased.len())?;
+                cased
             } else {
                 String::new()
             };

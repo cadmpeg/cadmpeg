@@ -433,15 +433,12 @@ pub(crate) fn consolidated_edge_nodes(
             continue;
         };
 
-        let allocation = owned_nodes
-            .get(&node.pos)
-            .map(|(pos, ordinal)| {
-                Ok::<_, CodecError>((
-                    format!("catia:consolidated:owner-packet#{:010}", *pos),
-                    *ordinal,
-                ))
-            })
-            .transpose()?;
+        let allocation = owned_nodes.get(&node.pos).map(|(pos, ordinal)| {
+            (
+                format!("catia:consolidated:owner-packet#{:010}", *pos),
+                *ordinal,
+            )
+        });
         let (uses, definition) = match use_runs.remove(&node.pos) {
             Some((uses, definition)) => (Some(uses), definition),
             None => (None, None),

@@ -44,9 +44,7 @@ pub(super) struct MeshCandidateGauge<'a> {
     pub(super) coordinate_gauge: Option<&'a MeshCoordinateGauge>,
 }
 
-fn canonicalize_topology_boundary_gauges(
-    topology: &mut StandardTopologyDraft,
-) -> Result<(), CodecError> {
+fn canonicalize_topology_boundary_gauges(topology: &mut StandardTopologyDraft) {
     fn signature(coedges: &[CoedgeUse]) -> impl Iterator<Item = (usize, bool, usize, usize)> + '_ {
         coedges.iter().map(|coedge| {
             (
@@ -80,10 +78,7 @@ fn canonicalize_topology_boundary_gauges(
     for face in &mut topology.faces {
         for boundary in &mut face.boundaries {
             rotate_to_minimum(&mut boundary.coedges);
-            let reversed = boundary.coedges.as_slice().to_vec();
-            let mut reversed = NonEmptyMembers::<CoedgeUse>::try_from(reversed)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-
+            let mut reversed = boundary.coedges.clone();
             reversed.reverse();
 
             for coedge in &mut reversed {
@@ -102,7 +97,6 @@ fn canonicalize_topology_boundary_gauges(
         face.boundaries
             .sort_by(|left, right| signature(&left.coedges).cmp(signature(&right.coedges)));
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -144,8 +138,7 @@ mod boundary_tests {
             vec![coedge(1, true), coedge(0, true)],
             vec![coedge(3, false); 32],
         ]);
-        canonicalize_topology_boundary_gauges(&mut candidate)
-            .expect("service work limit admits the cycles");
+        canonicalize_topology_boundary_gauges(&mut candidate);
         assert_eq!(
             candidate,
             topology(vec![
@@ -910,9 +903,7 @@ fn canonicalize_mesh_edge_row_gauges(
             coedge.edge_row = *row_permutation.get(coedge.edge_row)?;
         }
         topology.edge_rows = new_rows;
-        if let Err(error) = canonicalize_topology_boundary_gauges(&mut topology) {
-            return Some(Err(error));
-        }
+        canonicalize_topology_boundary_gauges(&mut topology);
         Some(Ok(topology))
     })()
     .transpose()
@@ -1005,7 +996,7 @@ fn canonicalize_mesh_coordinate_gauges(
             else {
                 return Ok(None);
             };
-            canonicalize_topology_boundary_gauges(&mut candidate)?;
+            canonicalize_topology_boundary_gauges(&mut candidate);
             let Some(canonical) =
                 canonicalize_mesh_edge_row_gauges(ctx, candidate, gauge, Some(permutation))?
             else {
@@ -1100,9 +1091,7 @@ fn canonicalize_mesh_candidate(
                 coedge.reversed = !coedge.reversed;
             }
         }
-        if let Err(error) = canonicalize_topology_boundary_gauges(&mut topology) {
-            return Some(Err(error));
-        }
+        canonicalize_topology_boundary_gauges(&mut topology);
         if let Some(gauge) = gauge {
             topology = match canonicalize_mesh_coordinate_gauges(ctx, topology, gauge) {
                 Ok(Some(topology)) => topology,

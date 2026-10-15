@@ -3385,7 +3385,7 @@ pub(in crate::families) fn b2_offset_supports_from_records(
 pub(in crate::families) fn offset_support_carriers(
     offsets: &[B2OffsetSupport],
     carriers: &[FreeformSurface],
-) -> Result<Vec<Option<usize>>, CodecError> {
+) -> Vec<Option<usize>> {
     const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-3;
     let mut bindings = Vec::new();
     for offset in offsets {
@@ -3414,22 +3414,19 @@ pub(in crate::families) fn offset_support_carriers(
                 && u1 <= u_max + u_tolerance
                 && v0 >= v_min - v_tolerance
                 && v1 <= v_max + v_tolerance;
-            let has_v_limit = |limit: f64| -> Result<bool, CodecError> {
-                for knot in surface.v_knots() {
-                    if (*knot - limit).abs() <= v_tolerance {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
+            let has_v_limit = |limit: f64| {
+                surface
+                    .v_knots()
+                    .iter()
+                    .any(|knot| (*knot - limit).abs() <= v_tolerance)
             };
-            if contains && has_v_limit(v0)? && has_v_limit(v1)? && selected.replace(index).is_some()
-            {
+            if contains && has_v_limit(v0) && has_v_limit(v1) && selected.replace(index).is_some() {
                 ambiguous = true;
             }
         }
         bindings.push(if ambiguous { None } else { selected });
     }
-    Ok(bindings)
+    bindings
 }
 
 /// Decode width-coded `b2/b3/b4 03 20` consolidated UV jets.

@@ -1159,7 +1159,11 @@ pub(crate) fn incidence_cycles(
         return Ok(None);
     }
     unseen.sort_unstable_by_key(|left| std::cmp::Reverse(left.0));
+    let mut consumed = HashSet::new();
     while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {
+        if !consumed.insert(first) {
+            continue;
+        }
         let mut members = Vec::new();
         members.push((first, false));
         let mut previous_edge = first;
@@ -1175,10 +1179,9 @@ pub(crate) fn incidence_cycles(
                 left
             };
 
-            let Some(index) = unseen.iter().position(|(edge, _)| *edge == next.edge) else {
+            if !consumed.insert(next.edge) {
                 return Ok(None);
-            };
-            unseen.remove(index);
+            }
             vertex = next.vertex;
             previous_edge = next.edge;
             members.push((next.edge, next.reversed));

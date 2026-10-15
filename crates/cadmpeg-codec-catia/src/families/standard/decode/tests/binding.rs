@@ -1187,7 +1187,6 @@ fn standard_emission_reverses_face_pcurve_range() {
         };
         let topology =
             { crate::families::standard::topology::admitted::StandardTopology::new(topology) }
-                .expect("service admission")
                 .expect("closed topology");
         let mut annotations = AnnotationBuilder::new();
         crate::test_support::with_service_context(|ctx| {

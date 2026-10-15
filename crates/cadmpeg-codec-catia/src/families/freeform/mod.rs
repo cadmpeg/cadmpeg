@@ -361,10 +361,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 run_count,
             } => (run_count, 1, false, source, frames, records, census_records),
         };
-        let sources = match container::consolidated_record_sources(scan) {
-            Ok(sources) => sources,
-            Err(error) => return Some(Err(error)),
-        };
+        let sources = container::consolidated_record_sources(scan);
         let consolidated_records =
             match crate::wire::records::consolidated_records_in_sources(&scan.data, sources) {
                 Ok(records) => records,
@@ -1634,7 +1631,7 @@ pub(super) fn append_freeform_surface_pools(
     }
 
     let offsets = crate::families::b2::records::b2_offset_supports_from_records(data, records);
-    let bindings = crate::families::b2::records::offset_support_carriers(&offsets, &surfaces)?;
+    let bindings = crate::families::b2::records::offset_support_carriers(&offsets, &surfaces);
     for (offset, carrier) in offsets
         .iter()
         .zip(bindings)

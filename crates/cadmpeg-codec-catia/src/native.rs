@@ -8997,7 +8997,7 @@ impl CatiaNative {
 
 #[cfg(test)]
 mod test_only;
-/// Admit all extent comparisons before removing inventories nested inside another frame.
+/// Remove inventories nested inside another frame.
 fn filter_nested_inventory(
     graphs: &mut Vec<object_graph::ObjectGraph>,
     blocks: &mut Vec<value_block::ValueBlock>,

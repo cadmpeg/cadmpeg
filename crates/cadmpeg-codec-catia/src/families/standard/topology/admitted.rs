@@ -1,6 +1,5 @@
 //! Immutable standard topology with closed cycles and owned-table references.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, NonEmptyMembers};
 
 use super::{CoedgeUse, EdgeRow, StandardTopologyDraft};
@@ -51,47 +50,40 @@ pub(crate) struct StandardTopology {
 }
 
 impl StandardTopology {
-    pub(crate) fn new(draft: StandardTopologyDraft) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn new(draft: StandardTopologyDraft) -> Option<Self> {
         let StandardTopologyDraft {
             faces: draft_faces,
             edge_rows,
             vertex_points,
             logical_vertex_count,
         } = draft;
-        let Some(vertex_points) = vertex_points
+        let vertex_points = vertex_points
             .into_iter()
-            .map(|[x, y, z]| {
-                Ok::<_, CodecError>(FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z)))
-            })
-            .collect::<Result<Option<Vec<_>>, _>>()?
-        else {
-            return Ok(None);
-        };
+            .map(|[x, y, z]| FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z)))
+            .collect::<Option<Vec<_>>>()?;
         let mut faces = Vec::new();
         for face in draft_faces {
             let mut boundaries = Vec::new();
             for boundary in face.boundaries {
-                let Some(boundary) = Boundary::new(boundary.coedges) else {
-                    return Ok(None);
-                };
+                let boundary = Boundary::new(boundary.coedges)?;
 
                 if boundary.coedges().iter().any(|coedge| {
                     coedge.edge_row >= edge_rows.len()
                         || coedge.start_vertex >= logical_vertex_count
                         || coedge.end_vertex >= logical_vertex_count
                 }) {
-                    return Ok(None);
+                    return None;
                 }
                 boundaries.push(boundary);
             }
             faces.push(FaceTopology { boundaries });
         }
-        Ok(Some(Self {
+        Some(Self {
             faces,
             edge_rows,
             vertex_points,
             logical_vertex_count,
-        }))
+        })
     }
 
     pub(crate) fn faces(&self) -> &[FaceTopology] {
@@ -145,9 +137,7 @@ mod tests {
         crate::test_support::with_service_context(|ctx| {
             for use_ in [coedge(1, 0, 0), coedge(0, 1, 1)] {
                 let invalid = draft(use_);
-                assert!(StandardTopology::new(invalid)
-                    .expect("service admission")
-                    .is_none());
+                assert!(StandardTopology::new(invalid).is_none());
             }
             let mut missing_rows = draft(coedge(0, 0, 0));
             missing_rows.edge_rows.clear();
@@ -155,12 +145,8 @@ mod tests {
                 .edge_vertices(ctx)
                 .expect("checked draft access")
                 .is_none());
-            assert!(StandardTopology::new(missing_rows)
-                .expect("service admission")
-                .is_none());
-            let valid = StandardTopology::new(draft(coedge(0, 0, 0)))
-                .expect("service admission")
-                .expect("owned references");
+            assert!(StandardTopology::new(missing_rows).is_none());
+            let valid = StandardTopology::new(draft(coedge(0, 0, 0))).expect("owned references");
             assert_eq!(
                 valid.faces()[0].boundaries()[0].coedges()[0],
                 coedge(0, 0, 0)
@@ -173,13 +159,9 @@ mod tests {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut invalid = draft(coedge(0, 0, 0));
             invalid.vertex_points[0][0] = value;
-            assert!(StandardTopology::new(invalid)
-                .expect("service admission")
-                .is_none());
+            assert!(StandardTopology::new(invalid).is_none());
         }
-        assert!(StandardTopology::new(draft(coedge(0, 0, 0)))
-            .expect("service admission")
-            .is_some());
+        assert!(StandardTopology::new(draft(coedge(0, 0, 0))).is_some());
     }
 
     #[test]

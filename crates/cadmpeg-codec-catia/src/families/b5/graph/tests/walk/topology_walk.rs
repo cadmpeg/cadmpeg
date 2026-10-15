@@ -411,8 +411,7 @@ fn loop_and_endpoint_incidences_bind_an_unframed_pcurve_occurrence() {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &surfaces,
-        )
-        .expect("service budget"),
+        ),
         BTreeMap::from([(9, 11)])
     );
 }
@@ -499,8 +498,7 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &surfaces,
-        )
-        .expect("service budget"),
+        ),
         BTreeMap::from([(9, 11)])
     );
 }
