@@ -165,6 +165,20 @@ impl<'a> DecodeContext<'a> {
             .map_err(Into::into)
     }
 
+    /// Retained bytes the session can still afford: the retained-byte
+    /// allowance (the smaller of `max_retained_bytes` and the
+    /// input-proportional allowance) minus the bytes already retained, or zero
+    /// after a refusal fused the session.
+    ///
+    /// A codec uses this only to decide whether to skip optional enrichment
+    /// before it builds the enrichment, and reports the skip as a loss. It
+    /// does not reserve anything: the bytes the codec keeps are still charged
+    /// through [`DecodeContext::retain_bytes`], which can still refuse.
+    #[must_use]
+    pub fn retained_bytes_available(&self) -> u64 {
+        self.budget.retained_bytes_available()
+    }
+
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
         let used = self.derived_spaces.get();
         // Root owns zero; every other `usize` value identifies a derived space.

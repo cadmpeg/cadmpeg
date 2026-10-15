@@ -209,6 +209,18 @@ impl DecodeBudget {
         )
     }
 
+    /// Retained bytes the session can still charge before `retain_bytes` refuses.
+    pub(super) fn retained_bytes_available(&self) -> u64 {
+        if self.fuse.get().is_some() {
+            return 0;
+        }
+        // A session that retained past its allowance can afford nothing more.
+        let Some(remaining) = self.retained_allowance().checked_sub(self.retained.get()) else {
+            return 0;
+        };
+        remaining
+    }
+
     /// Reports an allocator refusal for `requested` bytes or slots.
     pub(super) fn retained_allocation_failed(
         &self,
@@ -406,7 +418,7 @@ pub const fn work_units(items: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{work_units, DecodeBudget, WorkBudget};
+    use super::{work_units, DecodeBudget, WorkBudget, RETAINED_BASE, RETAINED_PER_INPUT_BYTE};
     use crate::decode::{DecodePolicy, ResourceDimension, ResourceFailure};
 
     fn descend(budget: &WorkBudget, depth: usize) -> usize {
@@ -466,6 +478,70 @@ mod tests {
         assert_eq!(limit.used, 3);
         assert_eq!(limit.additional, 5);
         assert_eq!(session.fused(), Some(limit));
+    }
+
+    #[test]
+    fn retained_bytes_available_reports_proportional_allowance() {
+        let policy = DecodePolicy::default();
+        let input = 3;
+        let expected = policy
+            .limits
+            .max_retained_bytes
+            .min(RETAINED_BASE + RETAINED_PER_INPUT_BYTE * input);
+        let session = DecodeBudget::new(policy, input);
+        assert_eq!(session.retained_bytes_available(), expected);
+    }
+
+    #[test]
+    fn retained_bytes_available_reports_policy_ceiling() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = RETAINED_BASE / 2;
+        let session = DecodeBudget::new(policy, 3);
+        assert_eq!(
+            session.retained_bytes_available(),
+            policy.limits.max_retained_bytes
+        );
+    }
+
+    #[test]
+    fn retained_bytes_available_reads_without_charging_or_fusing() {
+        let policy = DecodePolicy::default();
+        let input = 3;
+        let allowance = policy
+            .limits
+            .max_retained_bytes
+            .min(RETAINED_BASE + RETAINED_PER_INPUT_BYTE * input);
+        let session = DecodeBudget::new(policy, input);
+        let retained = 7;
+        assert!(session.retain_bytes(retained, "retain").is_ok());
+        for _ in 0..3 {
+            assert_eq!(session.retained_bytes_available(), allowance - retained);
+            assert_eq!(session.fused(), None);
+        }
+        assert!(session
+            .retain_bytes(allowance - retained, "retain remaining")
+            .is_ok());
+        assert_eq!(session.retained_bytes_available(), 0);
+        assert_eq!(session.fused(), None);
+    }
+
+    #[test]
+    fn retained_bytes_available_is_zero_after_any_dimension_fuses() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = RETAINED_BASE / 2;
+        let retained_session = DecodeBudget::new(policy, 3);
+        assert!(retained_session
+            .retain_bytes(policy.limits.max_retained_bytes + 1, "retain over limit")
+            .is_err());
+        assert!(retained_session.fused().is_some());
+        assert_eq!(retained_session.retained_bytes_available(), 0);
+
+        let entity_session = DecodeBudget::new(policy, 3);
+        assert!(entity_session
+            .charge_entities(policy.limits.max_entities + 1, "entities over limit")
+            .is_err());
+        assert!(entity_session.fused().is_some());
+        assert_eq!(entity_session.retained_bytes_available(), 0);
     }
 
     #[test]
