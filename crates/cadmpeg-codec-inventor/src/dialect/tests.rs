@@ -889,10 +889,13 @@ fn kernel_layer_refuses_retained_limit_before_recovery_grammar() {
         .max(std::mem::align_of::<String>())
         .max(std::mem::align_of::<usize>());
     let declaration_bytes = cadmpeg_core::decode::u64_from_index(
-        17 + 17 + 15 + 3 + 1 + 1
-            + 11
-                * (std::mem::size_of::<cadmpeg_core::text::NonBlankString>()
-                    + std::mem::size_of::<String>())
+        17 + 17
+            + 15
+            + 3
+            + 1
+            + 1
+            + 11 * (std::mem::size_of::<cadmpeg_core::text::NonBlankString>()
+                + std::mem::size_of::<String>())
             + 16 * std::mem::size_of::<usize>()
             + 2 * node_alignment,
     );
