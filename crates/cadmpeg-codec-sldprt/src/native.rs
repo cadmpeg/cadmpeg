@@ -659,12 +659,30 @@ impl SldprtNative {
                 }
             }
         }
+        let configurations_by_parent =
+            group_by_parent(&configurations, |record| record.parent.as_str());
+        let features_by_parent = group_by_parent(&features, |record| record.parent.as_str());
+        let classes_by_parent = group_by_parent(&classes, |record| record.parent.as_str());
+        let names_by_parent = group_by_parent(&names, |record| record.parent.as_str());
+        let scalars_by_parent = group_by_parent(&scalars, |record| record.parent.as_str());
+        let references_by_parent = group_by_parent(&references, |record| record.parent.as_str());
+        let relation_bindings_by_parent =
+            group_by_parent(&relation_bindings, |record| record.parent.as_str());
+        let relation_instances_by_parent =
+            group_by_parent(&relation_instances, |record| record.parent.as_str());
+        let body_selections_by_parent =
+            group_by_parent(&body_selections, |record| record.parent.as_str());
+        let edge_selections_by_parent =
+            group_by_parent(&edge_selections, |record| record.parent.as_str());
+        let surface_selections_by_parent =
+            group_by_parent(&surface_selections, |record| record.parent.as_str());
+        let generated_surface_identities_by_parent =
+            group_by_parent(&generated_surface_identities, |record| {
+                record.parent.as_str()
+            });
+        let entities_by_parent = group_by_parent(&entities, |record| record.parent());
         for history in &mut native.feature_histories {
-            history.configurations = configurations
-                .iter()
-                .filter(|record| record.parent == history.id)
-                .cloned()
-                .collect();
+            history.configurations = children(&configurations_by_parent, &history.id);
             history.configurations.sort_by_key(|left| left.ordinal);
             if let Some(pair) = history
                 .configurations
@@ -676,11 +694,7 @@ impl SldprtNative {
                     history.id, pair[1].ordinal
                 )));
             }
-            history.features = features
-                .iter()
-                .filter(|record| record.parent == history.id)
-                .cloned()
-                .collect();
+            history.features = children(&features_by_parent, &history.id);
             history.features.sort_by_key(|left| left.ordinal);
             if let Some(pair) = history
                 .features
@@ -694,47 +708,19 @@ impl SldprtNative {
             }
         }
         for lane in &mut native.feature_input_lanes {
-            lane.classes = classes
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
+            lane.classes = children(&classes_by_parent, &lane.id);
             lane.classes.sort_by_key(|left| left.ordinal);
-            lane.names = names
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
+            lane.names = children(&names_by_parent, &lane.id);
             lane.names.sort_by_key(|left| left.ordinal);
-            lane.scalars = scalars
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
+            lane.scalars = children(&scalars_by_parent, &lane.id);
             lane.scalars.sort_by_key(|left| left.ordinal);
-            lane.references = references
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
+            lane.references = children(&references_by_parent, &lane.id);
             lane.references.sort_by_key(|left| left.ordinal);
-            lane.relation_bindings = relation_bindings
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
+            lane.relation_bindings = children(&relation_bindings_by_parent, &lane.id);
             lane.relation_bindings.sort_by_key(|left| left.ordinal);
-            lane.relation_instances = relation_instances
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
+            lane.relation_instances = children(&relation_instances_by_parent, &lane.id);
             lane.relation_instances.sort_by_key(|left| left.ordinal);
-            lane.body_selections = body_selections
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
+            lane.body_selections = children(&body_selections_by_parent, &lane.id);
             lane.body_selections.sort_by_key(|left| left.ordinal);
             for record in &lane.body_selections {
                 if body_selection_disagrees_with_payload(lane, record) {
@@ -744,19 +730,13 @@ impl SldprtNative {
                     )));
                 }
             }
-            lane.edge_selections = edge_selections
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
+            lane.edge_selections = children(&edge_selections_by_parent, &lane.id);
             lane.edge_selections.sort_by_key(|left| left.ordinal);
-            let mut edge_features = features.clone();
-            crate::resolved_features::selections::enrich_feature_object_sources(
-                &mut edge_features,
-                std::slice::from_ref(lane),
-            );
+            lane.surface_selections = children(&surface_selections_by_parent, &lane.id);
+            lane.surface_selections.sort_by_key(|left| left.ordinal);
+            let lane_features = features_with_lane_sources(&features, lane);
             for record in &lane.edge_selections {
-                if edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)? {
+                if edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input edge selection {} disagrees with its payload",
                         record.id
@@ -764,7 +744,7 @@ impl SldprtNative {
                 }
                 let references = match usize::try_from(record.offset) {
                     Ok(offset) => {
-                        let feature_kind = edge_features
+                        let feature_kind = lane_features
                             .iter()
                             .find(|feature| feature.id == record.feature_ref)
                             .map(|feature| feature.kind.as_str())
@@ -783,30 +763,15 @@ impl SldprtNative {
                     )));
                 }
             }
-            let mut surface_features = features.clone();
-            crate::resolved_features::selections::enrich_feature_object_sources(
-                &mut surface_features,
-                std::slice::from_ref(lane),
-            );
-            lane.surface_selections = surface_selections
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
-            lane.surface_selections.sort_by_key(|left| left.ordinal);
             for record in &lane.surface_selections {
-                if surface_selection_disagrees_with_payload(ctx, lane, record, &surface_features)? {
+                if surface_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input surface selection {} disagrees with its payload",
                         record.id
                     )));
                 }
             }
-            let mut records = generated_surface_identities
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect::<Vec<_>>();
+            let mut records = children(&generated_surface_identities_by_parent, &lane.id);
             records.sort_by_key(|left| left.ordinal);
             lane.generated_surface_identities = records;
             if generated_surface_identities_disagree_with_payload(lane)? {
@@ -815,11 +780,7 @@ impl SldprtNative {
                     lane.id
                 )));
             }
-            lane.sketch_entities = entities
-                .iter()
-                .filter(|record| record.parent() == lane.id)
-                .cloned()
-                .collect();
+            lane.sketch_entities = children(&entities_by_parent, &lane.id);
             lane.sketch_entities
                 .sort_by_key(super::records::SketchInputEntity::ordinal);
         }
@@ -917,18 +878,14 @@ impl SldprtNative {
                     )));
                 }
             }
-            let mut edge_features = features.clone();
-            crate::resolved_features::selections::enrich_feature_object_sources(
-                &mut edge_features,
-                std::slice::from_ref(lane),
-            );
+            let lane_features = features_with_lane_sources(&features, lane);
             for record in &lane.edge_selections {
                 let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.local_edge_ids.is_empty();
                 if invalid
-                    || edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)?
+                    || edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)?
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input edge selection {} has inconsistent ownership",
@@ -936,23 +893,13 @@ impl SldprtNative {
                     )));
                 }
             }
-            let mut surface_features = features.clone();
-            crate::resolved_features::selections::enrich_feature_object_sources(
-                &mut surface_features,
-                std::slice::from_ref(lane),
-            );
             for record in &lane.surface_selections {
                 let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.components.is_empty();
                 if invalid
-                    || surface_selection_disagrees_with_payload(
-                        ctx,
-                        lane,
-                        record,
-                        &surface_features,
-                    )?
+                    || surface_selection_disagrees_with_payload(ctx, lane, record, &lane_features)?
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input surface selection {} has inconsistent ownership",
@@ -1188,7 +1135,7 @@ fn body_selection_disagrees_with_payload(
 
 /// `true` when an edge selection disagrees with the compact selection in its lane payload.
 ///
-/// `edge_features` are the history features enriched with this lane's object sources.
+/// `edge_features` are the history features with this lane's object sources.
 fn edge_selection_disagrees_with_payload(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
@@ -1241,7 +1188,7 @@ fn edge_selection_disagrees_with_payload(
 
 /// `true` when a surface selection disagrees with the compact reference in its lane payload.
 ///
-/// `surface_features` are the history features enriched with this lane's object sources.
+/// `surface_features` are the history features with this lane's object sources.
 fn surface_selection_disagrees_with_payload(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
@@ -1276,6 +1223,43 @@ fn surface_selection_disagrees_with_payload(
             }
             Err(_) => None,
         } != record.terminal_feature_ref)
+}
+
+/// `features` with the object sources that `lane` names, or no features when
+/// the lane has no edge or surface selection to check against them.
+fn features_with_lane_sources(
+    features: &[crate::records::Feature],
+    lane: &FeatureInputLane,
+) -> Vec<crate::records::Feature> {
+    if lane.edge_selections.is_empty() && lane.surface_selections.is_empty() {
+        return Vec::new();
+    }
+    let mut features = features.to_vec();
+    crate::resolved_features::selections::enrich_feature_object_sources(
+        &mut features,
+        std::slice::from_ref(lane),
+    );
+    features
+}
+
+/// References to `records` grouped by parent id, each group in source order.
+fn group_by_parent<'a, T>(
+    records: &'a [T],
+    parent: impl Fn(&'a T) -> &'a str,
+) -> HashMap<&'a str, Vec<&'a T>> {
+    let mut groups = HashMap::<&str, Vec<&T>>::new();
+    for record in records {
+        groups.entry(parent(record)).or_default().push(record);
+    }
+    groups
+}
+
+/// Copies of the records grouped under `parent`, in source order.
+fn children<T: Clone>(groups: &HashMap<&str, Vec<&T>>, parent: &str) -> Vec<T> {
+    groups
+        .get(parent)
+        .map(|records| records.iter().map(|&record| record.clone()).collect())
+        .unwrap_or_default()
 }
 
 /// Class, scalar, and name records keyed by id. Each id maps to its first
