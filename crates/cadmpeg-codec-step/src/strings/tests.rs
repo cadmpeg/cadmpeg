@@ -179,8 +179,9 @@ fn writer_and_lexer_preserve_apostrophes_and_backslashes_once() {
 
     let source = "O'Brien \\ fixtures";
     let encoded = crate::writer::string(source);
-    let tokens = crate::test_support::with_service_context(encoded.as_bytes(), crate::lex::lex)
-        .expect("lex encoded string");
+    let tokens =
+        crate::test_support::with_service_context(encoded.as_bytes(), crate::test_support::lex)
+            .expect("lex encoded string");
     let TokenKind::String(bytes) = &tokens[0].kind else {
         panic!("encoded text did not lex as a string")
     };

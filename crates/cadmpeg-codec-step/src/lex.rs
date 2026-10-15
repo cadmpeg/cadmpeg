@@ -123,17 +123,6 @@ impl LexError {
     }
 }
 
-/// Tokenize one complete clear-text exchange structure.
-#[cfg(test)]
-pub(crate) fn lex(input: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Token>, LexError> {
-    let mut lexer = Lexer::new(input, ctx);
-    let mut tokens = Vec::new();
-    while let Some(token) = lexer.next_token()? {
-        tokens.push(token);
-    }
-    Ok(tokens)
-}
-
 #[derive(Clone, Copy)]
 pub(crate) enum LiteralAdmission {
     Required,
