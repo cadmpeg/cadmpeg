@@ -591,13 +591,11 @@ pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
 #[must_use]
 #[cfg(test)]
 pub(crate) fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_records_in_sources(
-            data,
-            std::iter::once(std::iter::once(SourceExtent::whole(data))),
-        )
-        .expect("service decode")
-    })
+    consolidated_records_in_sources(
+        data,
+        std::iter::once(std::iter::once(SourceExtent::whole(data))),
+    )
+    .expect("service decode")
 }
 
 /// A physical record-source extent proved to lie inside the image it indexes.
@@ -647,16 +645,14 @@ pub(crate) fn consolidated_records_in_ranges(
     data: &[u8],
     ranges: impl IntoIterator<Item = Range<usize>>,
 ) -> Vec<ConsolidatedRecord> {
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_records_in_sources(
-            data,
-            ranges
-                .into_iter()
-                .filter_map(|range| SourceExtent::within(data, range.start, range.end))
-                .map(std::iter::once),
-        )
-        .expect("service decode")
-    })
+    consolidated_records_in_sources(
+        data,
+        ranges
+            .into_iter()
+            .filter_map(|range| SourceExtent::within(data, range.start, range.end))
+            .map(std::iter::once),
+    )
+    .expect("service decode")
 }
 
 /// Inventory records in descriptor-scoped logical sources stated as byte
@@ -674,18 +670,16 @@ where
     S: IntoIterator<Item = R>,
     R: IntoIterator<Item = Range<usize>>,
 {
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_records_in_sources(
-            data,
-            sources.into_iter().map(|ranges| {
-                ranges
-                    .into_iter()
-                    .filter_map(|range| SourceExtent::within(data, range.start, range.end))
-                    .collect::<Vec<_>>()
-            }),
-        )
-        .expect("service decode")
-    })
+    consolidated_records_in_sources(
+        data,
+        sources.into_iter().map(|ranges| {
+            ranges
+                .into_iter()
+                .filter_map(|range| SourceExtent::within(data, range.start, range.end))
+                .collect::<Vec<_>>()
+        }),
+    )
+    .expect("service decode")
 }
 
 /// Inventory records in descriptor-scoped logical sources. Physical extents
@@ -1099,12 +1093,12 @@ mod tests {
     fn borrowed_source_extents_build_record_inventory() {
         let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
         let sources = [vec![super::SourceExtent::whole(&bytes)]];
-        let records = crate::test_support::with_service_context(|ctx| {
+        let records = {
             super::consolidated_records_in_sources(
                 &bytes,
                 sources.iter().map(|source| source.iter()),
             )
-        })
+        }
         .expect("borrowed source inventory fits service profile");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].class, 0x06);
@@ -1253,13 +1247,9 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
 
-        let [point] = crate::test_support::with_service_context(|ctx| {
-            scan_vertex_records(&bytes)
-                .expect("service resource budget")
-                .collect::<Vec<_>>()
-        })
-        .try_into()
-        .expect("one vertex row");
+        let [point] = { scan_vertex_records(&bytes).collect::<Vec<_>>() }
+            .try_into()
+            .expect("one vertex row");
         assert_eq!(point.x, 2_000_000.0);
         assert_eq!(point.y, -2_000_000.0);
         assert_eq!(point.z, 2_000_000.0);
@@ -1272,9 +1262,9 @@ mod source_image_admission_tests {
     fn record_sources_reject_extents_from_a_larger_image() {
         let larger = [0_u8; 260];
         let short = [0xb2, 0x03, 0x24, 0xff, 0x01];
-        let result = crate::test_support::with_service_context(|ctx| {
+        let result = {
             super::consolidated_records_in_sources(&short, [[super::SourceExtent::whole(&larger)]])
-        });
+        };
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::Malformed(_))

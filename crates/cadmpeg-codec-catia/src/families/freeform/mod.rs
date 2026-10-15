@@ -323,10 +323,6 @@ pub(super) fn try_decode_freeform_surfaces(
             &logical_streams,
             Some(&selection_budget),
         );
-        let object_selection = match object_selection {
-            Ok(selection) => selection,
-            Err(error) => return Some(Err(error)),
-        };
         let (
             object_stream_run_count,
             selected_object_stream_run_count,
@@ -3792,10 +3788,9 @@ mod tests {
     fn consolidated_revolution_entity_limit_refuses_before_directrix_append() {
         let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let resolved = crate::test_support::with_service_context(|ctx| {
+        let resolved = {
             crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records)
-        })
-        .expect("service decode");
+        };
         assert_eq!(resolved.len(), 1);
         crate::test_support::with_entity_limit(0, |ctx| {
             let mut ir = CadIr::empty();
@@ -3842,21 +3837,10 @@ mod tests {
             .iter()
             .all(|face| graph.face_records.contains_key(&face.object_id)));
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| typed_face_counts(
-                &graph.face_records,
-                &graph.faces
-            ))
-            .expect("service face count"),
+            typed_face_counts(&graph.face_records, &graph.faces),
             [1, 1, 0, 1]
         );
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| typed_face_counts(
-                &graph.face_records,
-                &[]
-            ))
-            .expect("service face count"),
-            [1, 1, 0, 2]
-        );
+        assert_eq!(typed_face_counts(&graph.face_records, &[]), [1, 1, 0, 2]);
 
         let record = B5Record {
             offset: 0,
@@ -3898,13 +3882,12 @@ mod tests {
         unrelated.extend_from_slice(&99u32.to_le_bytes());
         unrelated.push(0x00);
 
-        let selection = crate::test_support::with_service_context(|ctx| {
+        let selection = {
             crate::families::b5::graph::select_object_stream_population(
                 &[unrelated, topology.clone()],
                 None,
             )
-        })
-        .expect("service collection budget");
+        };
         assert_eq!(selection.run_count(), 2);
         assert!(selection.selected());
         assert_eq!(selection.source(), topology);
@@ -3913,13 +3896,12 @@ mod tests {
     #[test]
     fn object_stream_selection_refuses_multiple_topology_root_runs() {
         let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
-        let selection = crate::test_support::with_service_context(|ctx| {
+        let selection = {
             crate::families::b5::graph::select_object_stream_population(
                 &[topology.clone(), topology],
                 None,
             )
-        })
-        .expect("service collection budget");
+        };
 
         assert_eq!(selection.run_count(), 2);
         assert!(!selection.selected());
@@ -3931,10 +3913,9 @@ mod tests {
         let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
         let budget = cadmpeg_core::decode::WorkBudget::new(1);
 
-        let selection = crate::test_support::with_service_context(|ctx| {
+        let selection = {
             crate::families::b5::graph::select_object_stream_population(&[topology], Some(&budget))
-        })
-        .expect("service collection budget");
+        };
 
         assert_eq!(selection.run_count(), 1);
         assert!(!selection.selected());
@@ -4031,9 +4012,9 @@ mod tests {
     fn consolidated_line_profile_retains_its_stored_wire_interval() {
         let mut ir = CadIr::empty();
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
-        let profiles = crate::test_support::with_service_context(|ctx| {
+        let profiles = {
             consolidated_line_profiles(&bytes, &crate::wire::records::consolidated_records(&bytes))
-        })
+        }
         .expect("service profile admits line profiles");
         let wires = profiles
             .iter()
@@ -4622,10 +4603,8 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: Some(
-                crate::test_support::with_service_context(|ctx| {
-                    crate::assemble::cgm_source("carrier", 0x1234)
-                })
-                .expect("service profile admits source object"),
+                crate::assemble::cgm_source("carrier", 0x1234)
+                    .expect("service profile admits source object"),
             ),
         });
 
@@ -4691,10 +4670,8 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: Some(
-                crate::test_support::with_service_context(|ctx| {
-                    crate::assemble::cgm_source("carrier", 0x1234)
-                })
-                .expect("service profile admits source object"),
+                crate::assemble::cgm_source("carrier", 0x1234)
+                    .expect("service profile admits source object"),
             ),
         });
 
@@ -4765,10 +4742,8 @@ mod tests {
                 id: SurfaceId::mint(format!("catia:test:surface#{id}")).expect("identity grammar"),
                 geometry,
                 source_object: Some(
-                    crate::test_support::with_service_context(|ctx| {
-                        crate::assemble::cgm_source("carrier", 0x1234)
-                    })
-                    .expect("service profile admits source object"),
+                    crate::assemble::cgm_source("carrier", 0x1234)
+                        .expect("service profile admits source object"),
                 ),
             });
         }

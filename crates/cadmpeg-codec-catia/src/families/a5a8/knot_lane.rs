@@ -57,65 +57,15 @@ mod tests {
 
     #[test]
     fn knot_lane_admission_requires_aligned_increasing_values() {
-        assert!(
-            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(vec![], vec![]))
-                .expect("service admission")
-                .is_none()
-        );
-        assert!(
-            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
-                finite_lane(&[0.0, 1.0]),
-                vec![0, 2]
-            ))
-            .expect("service admission")
-            .is_none()
-        );
-        assert!(
-            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
-                finite_lane(&[0.0, 1.0]),
-                vec![2]
-            ))
-            .expect("service admission")
-            .is_none()
-        );
-        assert!(
-            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
-                finite_lane(&[0.0]),
-                vec![2, 2]
-            ))
-            .expect("service admission")
-            .is_none()
-        );
-        assert!(
-            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
-                finite_lane(&[1.0, 0.0]),
-                vec![2, 2]
-            ))
-            .expect("service admission")
-            .is_none()
-        );
-        assert!(
-            crate::test_support::with_service_context(|ctx| A8KnotLane::try_new(
-                finite_lane(&[0.0, 0.0]),
-                vec![2, 2]
-            ))
-            .expect("service admission")
-            .is_none()
-        );
-        let lane = crate::test_support::with_service_context(|ctx| {
-            A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2, 2])
-        })
-        .expect("service admission")
-        .expect("aligned increasing knot lane");
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| lane.expanded(ctx))
-                .expect("service collection budget"),
-            vec![0.0, 0.0, 1.0, 1.0]
-        );
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| lane.pole_count(1))
-                .expect("service count work"),
-            Some(2)
-        );
+        assert!(A8KnotLane::try_new(vec![], vec![]).is_none());
+        assert!(A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![0, 2]).is_none());
+        assert!(A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2]).is_none());
+        assert!(A8KnotLane::try_new(finite_lane(&[0.0]), vec![2, 2]).is_none());
+        assert!(A8KnotLane::try_new(finite_lane(&[1.0, 0.0]), vec![2, 2]).is_none());
+        assert!(A8KnotLane::try_new(finite_lane(&[0.0, 0.0]), vec![2, 2]).is_none());
+        let lane = A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2, 2])
+            .expect("aligned increasing knot lane");
+        assert_eq!(lane.expanded(1), Some(vec![0.0, 0.0, 1.0, 1.0]));
+        assert_eq!(lane.pole_count(1), Some(2));
     }
 }

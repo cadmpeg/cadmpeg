@@ -4877,9 +4877,7 @@ fn entity_suffix_schema_selection(
     suffix_value: Option<&CatiaEntitySuffixValue>,
     catalog: Option<&CatiaCatalog>,
 ) -> Option<CatiaEntitySuffixSchemaSelection> {
-    let Some(suffix_value) = suffix_value else {
-        return None;
-    };
+    let suffix_value = suffix_value?;
     let CatiaEntitySuffixPayload::SchemaSelected {
         selector_offset,
         selector,
@@ -4888,12 +4886,9 @@ fn entity_suffix_schema_selection(
     else {
         return None;
     };
-    let Some(entry) = usize::try_from(*selector)
+    let entry = usize::try_from(*selector)
         .ok()
-        .and_then(|ordinal| catalog.and_then(|catalog| catalog.entries.get(ordinal)))
-    else {
-        return None;
-    };
+        .and_then(|ordinal| catalog.and_then(|catalog| catalog.entries.get(ordinal)))?;
     let value = match value {
         CatiaEntitySuffixSchemaValue::Atom { value } => {
             CatiaEntitySuffixSchemaValue::Atom { value: *value }
@@ -5388,12 +5383,8 @@ fn definition_value(
     let [definition] = definitions else {
         return None;
     };
-    let Some(suffix_value) = suffix_value else {
-        return None;
-    };
-    let Some(definition) = copy_definition_schema(definition) else {
-        return None;
-    };
+    let suffix_value = suffix_value?;
+    let definition = copy_definition_schema(definition)?;
     Some(CatiaDefinitionValue {
         definition,
         payload: suffix_value.payload.clone(),
@@ -5419,23 +5410,15 @@ fn definition_chain_value(
     let [selector, role] = definitions else {
         return None;
     };
-    let Some(selector_value) = copy_definition_schema(selector) else {
-        return None;
-    };
-    let Some(role) = copy_definition_schema(role) else {
-        return None;
-    };
-    let Some(suffix_schema_selection) = suffix_schema_selection else {
-        return None;
-    };
+    let selector_value = copy_definition_schema(selector)?;
+    let role = copy_definition_schema(role)?;
+    let suffix_schema_selection = suffix_schema_selection?;
     if suffix_schema_selection.entry != selector_value.entry
         || suffix_schema_selection.name != selector_value.value
     {
         return None;
     }
-    let Some(suffix_value) = suffix_value else {
-        return None;
-    };
+    let suffix_value = suffix_value?;
     let CatiaEntitySuffixPayload::SchemaSelected { .. } = &suffix_value.payload else {
         return None;
     };
@@ -7855,16 +7838,10 @@ fn consolidated_class5b5c_records(
 }
 
 #[cfg(test)]
-mod consolidated_class_record_limit_tests {
-    use super::{consolidated_class5b5c_records, consolidated_class61_records};
-    use cadmpeg_core::CodecError;
-}
+mod consolidated_class_record_limit_tests {}
 
 #[cfg(test)]
-mod consolidated_cone_face_limit_tests {
-    use super::{consolidated_cone_faces, consolidated_parameter_points};
-    use cadmpeg_core::CodecError;
-}
+mod consolidated_cone_face_limit_tests {}
 
 fn consolidated_cone_faces(
     bytes: &[u8],
@@ -8043,20 +8020,10 @@ fn consolidated_cylinder_groups(
 }
 
 #[cfg(test)]
-mod consolidated_cylinder_limit_tests {
-    use super::{consolidated_cylinder_groups, consolidated_cylinders};
-    use cadmpeg_core::CodecError;
-}
+mod consolidated_cylinder_limit_tests {}
 
 #[cfg(test)]
-mod consolidated_analytic_limit_tests {
-    use super::{
-        consolidated_circles, consolidated_cones, consolidated_line_profiles,
-        consolidated_parameter_points, consolidated_plane_carriers, consolidated_reference_lists,
-        consolidated_revolutions, consolidated_spheres, consolidated_tori,
-    };
-    use cadmpeg_core::CodecError;
-}
+mod consolidated_analytic_limit_tests {}
 
 fn consolidated_parameter_points(
     bytes: &[u8],
@@ -8481,12 +8448,9 @@ fn zero_entity_endpoint_locus_candidates(
     Ok(output)
 }
 
-fn zero_entity_edge_strides(
-    bytes: &[u8],
-    range: Range<usize>,
-) -> Result<Vec<CatiaZeroEntityEdgeStride>, CodecError> {
+fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityEdgeStride> {
     let records =
-        crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range)?;
+        crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range);
     let mut output = Vec::new();
 
     for (index, record) in records.into_iter().enumerate() {
@@ -8499,18 +8463,18 @@ fn zero_entity_edge_strides(
             surface_support_refs: record.surface_support_refs(),
         });
     }
-    Ok(output)
+    output
 }
 
 fn zero_entity_oriented_use_pairs(
     bytes: &[u8],
     range: Range<usize>,
-) -> Result<Vec<CatiaZeroEntityOrientedUsePair>, CodecError> {
+) -> Vec<CatiaZeroEntityOrientedUsePair> {
     use crate::families::zero_entity::records::ZeroEntityUseSlot;
 
     let pairs = crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(
         bytes, range,
-    )?;
+    );
     let mut output = Vec::new();
 
     for (index, pair) in pairs.into_iter().enumerate() {
@@ -8531,7 +8495,7 @@ fn zero_entity_oriented_use_pairs(
             }),
         });
     }
-    Ok(output)
+    output
 }
 
 fn zero_entity_ownership_roots(
@@ -8539,7 +8503,7 @@ fn zero_entity_ownership_roots(
     range: Range<usize>,
 ) -> Result<Vec<CatiaZeroEntityOwnershipRoot>, CodecError> {
     let roots =
-        crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range)?;
+        crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range);
     let mut output = Vec::new();
 
     for (index, root) in roots.into_iter().enumerate() {
@@ -8563,10 +8527,9 @@ fn zero_entity_vertex_incidences(
     bytes: &[u8],
     range: Range<usize>,
     records: &[CatiaZeroEntityRecord],
-) -> Result<Vec<CatiaZeroEntityVertexIncidence>, CodecError> {
-    let incidences = crate::families::zero_entity::records::zero_entity_vertex_incidences_in_range(
-        bytes, range,
-    )?;
+) -> Vec<CatiaZeroEntityVertexIncidence> {
+    let incidences =
+        crate::families::zero_entity::records::zero_entity_vertex_incidences_in_range(bytes, range);
     let mut output = Vec::new();
 
     for (index, record) in incidences.into_iter().enumerate() {
@@ -8581,15 +8544,12 @@ fn zero_entity_vertex_incidences(
             vertex_record,
         });
     }
-    Ok(output)
+    output
 }
 
-fn zero_entity_records(
-    bytes: &[u8],
-    range: Range<usize>,
-) -> Result<Vec<CatiaZeroEntityRecord>, CodecError> {
+fn zero_entity_records(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityRecord> {
     let records =
-        crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range)?;
+        crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range);
     let mut output = Vec::new();
 
     for record in records {
@@ -8601,7 +8561,7 @@ fn zero_entity_records(
             record_ordinal: record.record_ordinal,
         });
     }
-    Ok(output)
+    output
 }
 
 impl CatiaNative {
@@ -8952,10 +8912,10 @@ impl CatiaNative {
                 0..bytes.len()
             }
         });
-        let zero_entity_records = zero_entity_records(bytes, zero_entity_range.clone())?;
-        let zero_entity_edge_strides = zero_entity_edge_strides(bytes, zero_entity_range.clone())?;
+        let zero_entity_records = zero_entity_records(bytes, zero_entity_range.clone());
+        let zero_entity_edge_strides = zero_entity_edge_strides(bytes, zero_entity_range.clone());
         let zero_entity_oriented_use_pairs =
-            zero_entity_oriented_use_pairs(bytes, zero_entity_range.clone())?;
+            zero_entity_oriented_use_pairs(bytes, zero_entity_range.clone());
         let zero_entity_ownership_roots =
             zero_entity_ownership_roots(bytes, zero_entity_range.clone())?;
         let parsed_zero_entity_support_runs =
@@ -8982,7 +8942,7 @@ impl CatiaNative {
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
-            zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records)?;
+            zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records);
         let consolidated_edge_nodes =
             consolidated_edge_nodes(ctx, bytes, consolidated_records, &consolidated_circles)?;
         let consolidated_edge_runs = consolidated_edge_runs(

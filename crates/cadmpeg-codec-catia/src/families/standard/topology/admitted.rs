@@ -170,40 +170,34 @@ mod tests {
 
     #[test]
     fn topology_admission_rejects_nonfinite_coordinates() {
-        crate::test_support::with_service_context(|ctx| {
-            for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-                let mut invalid = draft(coedge(0, 0, 0));
-                invalid.vertex_points[0][0] = value;
-                assert!(StandardTopology::new(invalid)
-                    .expect("service admission")
-                    .is_none());
-            }
-            assert!(StandardTopology::new(draft(coedge(0, 0, 0)))
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut invalid = draft(coedge(0, 0, 0));
+            invalid.vertex_points[0][0] = value;
+            assert!(StandardTopology::new(invalid)
                 .expect("service admission")
-                .is_some());
-        });
+                .is_none());
+        }
+        assert!(StandardTopology::new(draft(coedge(0, 0, 0)))
+            .expect("service admission")
+            .is_some());
     }
 
     #[test]
     fn boundary_admission_requires_adjacency_and_last_to_first_closure() {
-        crate::test_support::with_service_context(|ctx| {
-            for invalid in [
-                vec![coedge(0, 0, 1)],
-                vec![coedge(0, 0, 1), coedge(1, 2, 0)],
-                vec![coedge(0, 0, 1), coedge(1, 1, 2)],
-            ] {
-                assert!(Boundary::new(
-                    NonEmptyMembers::try_from(invalid).expect("nonempty fixture")
-                )
-                .expect("service admission")
-                .is_none());
-            }
-            let cycle = vec![coedge(0, 0, 1), coedge(1, 1, 0)];
-            let boundary =
-                Boundary::new(NonEmptyMembers::try_from(cycle.clone()).expect("nonempty fixture"))
-                    .expect("service admission")
-                    .expect("closed cycle");
-            assert_eq!(boundary.coedges(), cycle);
-        });
+        for invalid in [
+            vec![coedge(0, 0, 1)],
+            vec![coedge(0, 0, 1), coedge(1, 2, 0)],
+            vec![coedge(0, 0, 1), coedge(1, 1, 2)],
+        ] {
+            assert!(
+                Boundary::new(NonEmptyMembers::try_from(invalid).expect("nonempty fixture"))
+                    .is_none()
+            );
+        }
+        let cycle = vec![coedge(0, 0, 1), coedge(1, 1, 0)];
+        let boundary =
+            Boundary::new(NonEmptyMembers::try_from(cycle.clone()).expect("nonempty fixture"))
+                .expect("closed cycle");
+        assert_eq!(boundary.coedges(), cycle);
     }
 }

@@ -1009,10 +1009,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         Ok(runs) => runs,
         Err(error) => return Some(Err(error)),
     };
-    let ownership_root = match crate::families::zero_entity::records::zero_entity_ownership_root_in_range(&scan.data, preamble) {
-        Ok(root) => root,
-        Err(error) => return Some(Err(error)),
-    };
+    let ownership_root = crate::families::zero_entity::records::zero_entity_ownership_root_in_range(&scan.data, preamble);
 
     let mut ir = CadIr::empty();
     let mut admission = FamilyEntityAdmission::new(ctx);
@@ -1311,7 +1308,7 @@ pub(in crate::families) fn try_decode_zero_entity(
 
 #[cfg(test)]
 mod tests {
-    use super::{closed_wire_loop_members, transfer_closed_wire_loops, WireTransferCounts};
+    use super::{transfer_closed_wire_loops, WireTransferCounts};
     use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::FinitePoint3;

@@ -1463,10 +1463,7 @@ mod tests {
     use crate::value_block;
 
     fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSignature> {
-        crate::test_support::with_service_context(|ctx| {
-            super::parse_reference_signature(ctx, payload)
-        })
-        .expect("service reference signature budget")
+        super::parse_reference_signature(payload)
     }
 
     fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
@@ -1483,14 +1480,7 @@ mod tests {
     fn unique_monotone_run(
         records: &[EntityRecordCandidates],
     ) -> Option<Vec<EntityIdentityCandidate>> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[0],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("small synthetic root fits the service profile");
-        super::unique_monotone_run(records).expect("synthetic path states fit the service limits")
+        super::unique_monotone_run(records)
     }
 
     #[test]
@@ -1533,10 +1523,7 @@ mod tests {
             } => (
                 prefix.len() + suffix.len() + 11,
                 prefix.as_slice(),
-                crate::test_support::with_service_context(|ctx| {
-                    parse_definition_schema_selectors(prefix)
-                })
-                .expect("test definition selectors fit service limits"),
+                parse_definition_schema_selectors(prefix),
                 suffix.as_slice(),
                 value_payload.len() + 6,
                 value_payload.as_slice(),
@@ -1695,11 +1682,7 @@ mod tests {
 
     #[test]
     fn truncated_definition_selector_is_not_assigned() {
-        assert!(crate::test_support::with_service_context(
-            |ctx| parse_definition_schema_selectors(&[0x32, 1, 2, 3])
-        )
-        .expect("short prefix fits service limits")
-        .is_empty());
+        assert!(parse_definition_schema_selectors(&[0x32, 1, 2, 3]).is_empty());
     }
 
     #[test]

@@ -109,8 +109,7 @@ fn canonicalize_topology_boundary_gauges(
 mod boundary_tests {
     use super::{canonicalize_topology_boundary_gauges, CoedgeUse, StandardTopologyDraft};
     use crate::families::standard::topology::{BoundaryDraft, FaceTopologyDraft};
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
+
     use cadmpeg_ir::features::NonEmptyMembers;
 
     fn coedge(edge_row: usize, reversed: bool) -> CoedgeUse {
@@ -145,10 +144,8 @@ mod boundary_tests {
             vec![coedge(1, true), coedge(0, true)],
             vec![coedge(3, false); 32],
         ]);
-        crate::test_support::with_service_context(|ctx| {
-            canonicalize_topology_boundary_gauges(&mut candidate)
-        })
-        .expect("service work limit admits the cycles");
+        canonicalize_topology_boundary_gauges(&mut candidate)
+            .expect("service work limit admits the cycles");
         assert_eq!(
             candidate,
             topology(vec![
@@ -1194,7 +1191,6 @@ pub(super) fn mesh_candidates_equivalent_with_context(
 
 #[test]
 fn endpoint_pair_gauge_canonicalization_snapshots_row_values() {
-    catia_test_context!(ctx);
     let edge_rows = [
         {
             assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());

@@ -35,9 +35,7 @@ fn loop_record(indices: &[usize]) -> E5Loop {
 #[test]
 fn loop_admission_retains_the_oriented_source_occurrences() {
     let source = loop_record(&[1, 0]);
-    let plan = crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &source))
-        .expect("service resource budget")
-        .expect("complete permutation");
+    let plan = E5LoopPlan::admit(&source).expect("complete permutation");
     assert!(std::ptr::eq(plan.source, &raw const source));
     assert_eq!(plan.members.len(), 2);
     for (planned, index) in plan.members.iter().zip([1, 0]) {
@@ -62,25 +60,12 @@ fn loop_admission_refuses_incomplete_duplicate_and_out_of_range_orders() {
         vec![0, 1, 0],
     ] {
         let record = loop_record(&indices);
-        assert!(
-            crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &record))
-                .expect("service resource budget")
-                .is_none(),
-            "{indices:?}"
-        );
+        assert!(E5LoopPlan::admit(&record).is_none(), "{indices:?}");
     }
     let mut unresolved = loop_record(&[0, 1]);
     unresolved.oriented_members = None;
-    assert!(
-        crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &unresolved))
-            .expect("service resource budget")
-            .is_none()
-    );
+    assert!(E5LoopPlan::admit(&unresolved).is_none());
     let mut empty = loop_record(&[]);
     empty.members.clear();
-    assert!(
-        crate::test_support::with_service_context(|ctx| E5LoopPlan::admit(ctx, &empty))
-            .expect("service resource budget")
-            .is_none()
-    );
+    assert!(E5LoopPlan::admit(&empty).is_none());
 }

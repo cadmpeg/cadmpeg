@@ -596,7 +596,7 @@ pub(crate) struct B2EdgeNode {
 #[cfg(test)]
 pub(in crate::families) fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| b2_use_metadata_from_records(data, &records))
+    b2_use_metadata_from_records(data, &records)
 }
 
 pub(in crate::families) fn b2_use_metadata_from_records(
@@ -817,7 +817,7 @@ pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
 #[cfg(test)]
 fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| b2_reference_lists_from_records(data, &records))
+    b2_reference_lists_from_records(data, &records)
 }
 
 pub(crate) fn b2_reference_lists_from_records(
@@ -859,8 +859,7 @@ pub(crate) fn b2_reference_lists_from_records(
 #[cfg(test)]
 fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| b2_counted_owners_from_records(data, &records))
-        .expect("service context admits counted owner packets")
+    b2_counted_owners_from_records(data, &records)
 }
 
 pub(crate) fn b2_counted_owners_from_records(
@@ -1425,7 +1424,7 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
 #[cfg(test)]
 fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| b2_counted_61_from_records(data, &records))
+    b2_counted_61_from_records(data, &records)
 }
 
 pub(crate) fn b2_counted_61_from_records(
@@ -1487,7 +1486,7 @@ pub(crate) fn b2_counted_61_from_records(
 #[cfg(test)]
 fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| b2_long_61_from_records(data, &records))
+    b2_long_61_from_records(data, &records)
 }
 
 pub(crate) fn b2_long_61_from_records(
@@ -1578,9 +1577,7 @@ pub(crate) fn b2_long_61_from_records(
 #[cfg(test)]
 fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_class5b5c_records_from_records(data, &records).expect("service decode")
-    })
+    b2_class5b5c_records_from_records(data, &records).expect("service decode")
 }
 
 pub(crate) fn b2_class5b5c_records_from_records(
@@ -1656,9 +1653,7 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records<'a>(
 #[cfg(test)]
 fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_adjacent_face_owners_from_records(data, &records)
-    })
+    b2_adjacent_face_owners_from_records(data, &records)
 }
 
 pub(crate) fn b2_adjacent_face_owners_from_records(
@@ -1703,10 +1698,7 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
 #[cfg(test)]
 fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_adjacent_face_counted_owners_from_records(data, &records)
-    })
-    .expect("service context admits adjacent counted owners")
+    b2_adjacent_face_counted_owners_from_records(data, &records)
 }
 
 pub(crate) fn b2_adjacent_face_counted_owners_from_records(
@@ -1803,9 +1795,7 @@ pub(crate) fn b2_parameter_points_from_records<'a>(
 #[cfg(test)]
 pub(crate) fn b2_plane_carriers(data: &[u8]) -> Vec<B2PlaneCarrier> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_plane_carriers_from_records(data, &records).expect("service decode")
-    })
+    b2_plane_carriers_from_records(data, &records)
 }
 
 pub(crate) fn b2_plane_carriers_from_records(
@@ -2838,9 +2828,7 @@ pub(crate) fn b2_revolutions_from_records<'a>(
 #[cfg(test)]
 fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_resolved_revolutions_from_records(data, &records)
-    })
+    b2_resolved_revolutions_from_records(data, &records)
 }
 
 pub(crate) fn b2_resolved_revolutions_from_records(
@@ -3351,9 +3339,7 @@ pub(in crate::families) fn b2_edge_parameters_from_records<'a>(
 #[cfg(test)]
 fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_offset_supports_from_records(data, &records).expect("service decode")
-    })
+    b2_offset_supports_from_records(data, &records)
 }
 
 pub(in crate::families) fn b2_offset_supports_from_records(
@@ -3451,10 +3437,7 @@ pub(in crate::families) fn offset_support_carriers(
 #[cfg(test)]
 fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::B)
-            .expect("service decode")
-    })
+    crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::B)
 }
 
 #[cfg(test)]

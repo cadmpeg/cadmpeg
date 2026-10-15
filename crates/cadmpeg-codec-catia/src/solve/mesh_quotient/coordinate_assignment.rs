@@ -1580,12 +1580,4 @@ pub(super) fn close_coordinate_roots_with_incidence(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{partial_compact_assignment_viable, MeshFaceBoundaryDomain};
-    use crate::solve::missing_edge::{
-        MeshBoundaryEdgeCandidate, MeshDeferredBoundaryCycle, MeshDeferredFaceBoundary,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::collections::HashMap;
-}
+mod tests {}
