@@ -152,6 +152,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
                 ordinal: std::num::NonZeroU32::MIN,
                 transform: transform.try_into().unwrap(),
             },
+            owner_entity: 0,
         },
     )
     .unwrap();

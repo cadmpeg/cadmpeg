@@ -37,6 +37,7 @@ fn validation_admits_ordinal_one_placement_outside_class_256() {
                 ])
                 .unwrap(),
             },
+            owner_entity: 0,
         })
         .unwrap()
     };
@@ -82,6 +83,7 @@ fn validation_names_a_repeated_occurrence_guid() {
                 .expect("GUID"),
             occurrence_guid: GUID.to_owned().try_into().expect("GUID"),
             placement: DesignComponentOccurrencePlacement::Base,
+            owner_entity: 0,
         })
         .unwrap()
     };

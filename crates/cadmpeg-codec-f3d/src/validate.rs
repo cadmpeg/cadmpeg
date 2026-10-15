@@ -4093,9 +4093,9 @@ fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>
             } => occurrence.class_tag.as_str() != "256" || ordinal.get() > 1,
         };
         // The duplicated references must agree within one carrier, which
-        // the decoder checks. The component GUID is the reusable-definition
-        // identity; a different carrier-local component-record reference
-        // does not contradict it.
+        // the decoder checks. The component-record reference names the
+        // definition; carriers of one definition can store different
+        // carrier GUIDs.
         for (holds, message) in [
             (
                 unique_identity,
