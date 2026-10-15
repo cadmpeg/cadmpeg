@@ -52,9 +52,9 @@ pub(crate) struct DimensionDecodeInputs<'a> {
     pub(crate) curves: &'a [SketchCurveIdentity],
 }
 
-fn dimension_parameter_index<'a>(
-    parameters: &'a [DesignParameter],
-) -> HashMap<(&'a str, u32), &'a DesignParameter> {
+fn dimension_parameter_index(
+    parameters: &[DesignParameter],
+) -> HashMap<(&str, u32), &DesignParameter> {
     let mut index = HashMap::new();
     for parameter in parameters {
         let Some(stream) = native_stream(&parameter.id) else {
@@ -212,7 +212,7 @@ pub(crate) fn decode_dimension_recipe_records(
                 ":design-dimension-recipe-record#",
                 recipe.byte_offset,
             );
-            let recipe_id = recipe.id.to_owned();
+            let recipe_id = recipe.id.clone();
 
             out.push(DesignDimensionRecipeRecord {
                 id,

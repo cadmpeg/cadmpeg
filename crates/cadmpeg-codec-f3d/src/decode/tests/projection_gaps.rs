@@ -990,7 +990,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         binding("ambiguous-b", AppearanceTarget::Face(second_face)),
     ];
 
-    apply_appearance_base_colors(&mut ir).unwrap();
+    apply_appearance_base_colors(&mut ir);
     assert_eq!(ir.model.bodies[0].color, Some(direct));
     assert_eq!(ir.model.faces[0].color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);

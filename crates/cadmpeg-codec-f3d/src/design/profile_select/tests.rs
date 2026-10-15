@@ -1732,8 +1732,7 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
             10,
             1.0e-6,
             1.0e-9,
-        )
-        .unwrap(),
+        ),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
     let mut tilted = topology;
@@ -1746,8 +1745,7 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
             10,
             1.0e-6,
             1.0e-9,
-        )
-        .unwrap(),
+        ),
         None
     );
 }

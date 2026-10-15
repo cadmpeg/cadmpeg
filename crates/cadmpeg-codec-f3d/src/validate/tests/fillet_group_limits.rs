@@ -105,9 +105,9 @@ fn fillet_radius_valid_assignment_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = radius_native(true);
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_fillet_radius_groups(&ctx, &mut findings).unwrap();
+        super::super::validate_fillet_radius_groups(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }
@@ -147,15 +147,15 @@ fn fillet_variable_radius_midpoints_keep_order_validation() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let valid_native = variable_radius_native(true);
-        let valid_ctx = super::super::Ctx::new(&ir, &valid_native, service_ctx).unwrap();
+        let valid_ctx = super::super::Ctx::new(&ir, &valid_native, service_ctx);
         let mut valid_findings = Vec::new();
-        super::super::validate_fillet_radius_groups(&valid_ctx, &mut valid_findings).unwrap();
+        super::super::validate_fillet_radius_groups(&valid_ctx, &mut valid_findings);
         assert!(valid_findings.is_empty());
 
         let invalid_native = variable_radius_native(false);
-        let invalid_ctx = super::super::Ctx::new(&ir, &invalid_native, service_ctx).unwrap();
+        let invalid_ctx = super::super::Ctx::new(&ir, &invalid_native, service_ctx);
         let mut invalid_findings = Vec::new();
-        super::super::validate_fillet_radius_groups(&invalid_ctx, &mut invalid_findings).unwrap();
+        super::super::validate_fillet_radius_groups(&invalid_ctx, &mut invalid_findings);
         assert!(invalid_findings.iter().any(|finding| finding.message
             == "Fusion Design Fillet radius group has an invalid parameter assignment"));
     })

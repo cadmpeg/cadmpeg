@@ -51,7 +51,7 @@ fn historical_faces_require_one_emitted_feature_state_and_every_selected_member(
         let mut inputs = FaceInputs::new(&topologies, &[]);
         let mut selection = admitted.clone();
         let mut losses = Vec::new();
-        inputs.admit(&feature, &mut selection, &mut losses).unwrap();
+        inputs.admit(&feature, &mut selection, &mut losses);
         if topologies.len() == 1 {
             assert_eq!(selection, admitted);
             assert!(losses.is_empty());
@@ -71,17 +71,15 @@ fn historical_faces_require_one_emitted_feature_state_and_every_selected_member(
     let mut inputs = FaceInputs::new(&topologies, &[]);
     let mut selection = historical(&topology, 3);
     let mut losses = Vec::new();
-    inputs.admit(&feature, &mut selection, &mut losses).unwrap();
+    inputs.admit(&feature, &mut selection, &mut losses);
     assert!(matches!(selection, FaceSelection::Native(_)));
     assert_eq!(losses.len(), 1);
     let mut selection = historical(&topology, 2);
-    inputs
-        .admit(
-            &FeatureId::mint("f3d:model:feature#other").unwrap(),
-            &mut selection,
-            &mut losses,
-        )
-        .unwrap();
+    inputs.admit(
+        &FeatureId::mint("f3d:model:feature#other").unwrap(),
+        &mut selection,
+        &mut losses,
+    );
     assert!(matches!(selection, FaceSelection::Native(_)));
 }
 
@@ -352,7 +350,7 @@ fn repeated_membership_queries_reuse_only_the_topologies_they_need() {
     for _ in 0..1_000 {
         for (feature, original) in [(&first, &original[0]), (&second, &original[1])] {
             let mut selection = original.clone();
-            inputs.admit(feature, &mut selection, &mut losses).unwrap();
+            inputs.admit(feature, &mut selection, &mut losses);
             assert_eq!(&selection, original);
         }
     }

@@ -37,7 +37,7 @@ fn tested_surface_extend_operation(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceExtendOperation> {
-    exact_surface_extend_operation(bytes, records, scope).unwrap()
+    exact_surface_extend_operation(bytes, records, scope)
 }
 
 fn tested_surface_offset_operation(

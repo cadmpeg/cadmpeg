@@ -149,7 +149,7 @@ fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check:
             class_tag,
             byte_offset,
         });
-        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
         super::super::validate_construction_operand_groups(&ctx, &mut findings);
         findings

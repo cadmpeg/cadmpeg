@@ -94,7 +94,7 @@ fn timeline_valid_records_keep_no_findings() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = native();
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_feature_timelines(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty());
@@ -205,7 +205,7 @@ fn timeline_history_findings_keep_specific_messages() {
                 "Fusion Design scope history-state dependency is cyclic",
             ),
         ] {
-            let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
             super::super::validate_feature_timelines(&ctx, &mut findings).unwrap();
             assert!(findings.iter().any(|finding| finding.message == message));

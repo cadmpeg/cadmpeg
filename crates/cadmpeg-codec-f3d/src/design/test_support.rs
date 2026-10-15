@@ -18,7 +18,7 @@ pub(crate) fn with_test_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> 
 pub(in crate::design) fn indexed_record_offsets_for_test(
     bytes: &[u8],
 ) -> crate::design::decode::sketch::IndexedRecordOffsets {
-    crate::design::decode::sketch::IndexedRecordOffsets::build(bytes).unwrap()
+    crate::design::decode::sketch::IndexedRecordOffsets::build(bytes)
 }
 
 pub(crate) fn parameter_record(

@@ -115,7 +115,7 @@ fn entity_selection_valid_slot_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = operand_native(true);
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_entity_selection_operands(&ctx, &mut findings);
         assert!(findings.is_empty());

@@ -32,7 +32,7 @@ pub(super) fn validate_configuration_projection(
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut projected,
         &target.model.parameters,
-    )?;
+    );
     crate::design::configurations::bind_configuration_suppressed_features(
         decode_ctx,
         &mut projected,

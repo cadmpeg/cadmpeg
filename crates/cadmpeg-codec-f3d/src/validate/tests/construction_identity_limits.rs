@@ -66,7 +66,7 @@ fn construction_identity_valid_group_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = native(true);
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         let groups = super::super::validate_construction_operand_identities(&ctx, &mut findings);
         assert!(findings.is_empty());

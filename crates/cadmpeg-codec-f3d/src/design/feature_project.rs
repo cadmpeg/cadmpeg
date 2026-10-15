@@ -221,7 +221,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     {
         stream_timelines.push(timeline);
     }
-    stream_timelines.sort_by(|left, right| left.source_ordinal.cmp(&right.source_ordinal));
+    stream_timelines.sort_by_key(|left| left.source_ordinal);
     if stream_timelines.is_empty() {
         let first_family = design_feature_family(&first_scope.kind());
         let homogeneous = scopes.iter().all(|scope| {
@@ -234,7 +234,7 @@ fn authored_scope_ordinals_for_stream<'a>(
         for &scope in scopes {
             ordered.push(scope);
         }
-        ordered.sort_by(|left, right| left.feature_ordinal.cmp(&right.feature_ordinal));
+        ordered.sort_by_key(|left| left.feature_ordinal);
         let complete_ordinals = ordered.iter().enumerate().all(|(ordinal, scope)| {
             u32::try_from(ordinal)
                 .ok()
@@ -367,7 +367,7 @@ impl<'a> ScopeHistoryGraph<'a> {
         body_recipe_operands: &[DesignBodyRecipeOperand],
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
-    ) -> Result<Self, CodecError> {
+    ) -> Self {
         let binding = if histories.is_empty() {
             ScopeHistoryBinding::Absent
         } else {
@@ -376,7 +376,7 @@ impl<'a> ScopeHistoryGraph<'a> {
                 body_bindings,
                 body_recipe_operands,
                 histories,
-            )?)
+            ))
         };
         let mut component_namespaces = HashMap::new();
         for scope in scopes {
@@ -412,11 +412,11 @@ impl<'a> ScopeHistoryGraph<'a> {
             );
             scopes_by_state.entry(key).or_default().push(scope);
         }
-        Ok(Self {
+        Self {
             binding,
             component_namespaces,
             scopes_by_state,
-        })
+        }
     }
 
     fn component_namespace(
@@ -1229,7 +1229,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         body_recipe_operands,
         component_naming_spaces,
         histories,
-    )?;
+    );
     for feature in &mut features {
         let Some(scope) = feature
             .native_ref
@@ -1550,7 +1550,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         }
         parameter.dependencies.clear();
         for identifier in expression_identifiers(&parameter.expression) {
-            let identifier = format!("{identifier}");
+            let identifier = identifier.to_string();
             let alias_key = (scope, identifier);
             let preceding_owned = || {
                 let consumer = parameter.owner.as_ref()?;
@@ -1567,7 +1567,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             let candidate = if let Some(owner) = &parameter.owner {
                 let owner_key = (owner).try_clone_for_decode(ctx, "f3d expression owner lookup")?;
-                let feature_identifier = format!("{}", alias_key.1);
+                let feature_identifier = alias_key.1.clone();
                 match feature_aliases.get(&(scope, owner_key, feature_identifier)) {
                     Some(None) => None,
                     Some(Some(local)) => Some(local),
@@ -2136,7 +2136,7 @@ fn project_fillet_arm(
             assignments.push(assignment);
         }
     }
-    assignments.sort_by(|left, right| left.group_ordinal.cmp(&right.group_ordinal));
+    assignments.sort_by_key(|left| left.group_ordinal);
     if !assignments.is_empty() {
         let Some(assignments) = resolved_fillet_assignments(ctx, &assignments, parameters)? else {
             return native_scope_definition(scope, parameters);
@@ -2416,7 +2416,7 @@ fn project_thread_face_selection(
         return Ok(FaceSelection::Native(native));
     };
 
-    let historical_native = native.to_owned();
+    let historical_native = native.clone();
     Ok(
         cadmpeg_ir::features::FaceSelection::historical(state, faces, historical_native, ctx)?
             .unwrap_or(FaceSelection::Native(native)),
@@ -2728,7 +2728,6 @@ pub(crate) fn bind_sketch_feature_geometry(
             // discarded-value: duplicate sketch bindings keep the last feature.
             let _ = index.insert(key, value);
         }
-        ()
     };
     let planar_profile_dependency = |profile: &PlanarProfileRef| match profile {
         PlanarProfileRef::Sketch(sketch)
@@ -3373,9 +3372,7 @@ fn selected_work_plane<'a>(
     scopes: &'a [DesignParameterScope],
 ) -> Option<&'a DesignParameterScope> {
     let planes = selected_work_planes(scope, group, entity_selection_operands, scopes);
-    let Some(planes) = planes else {
-        return None;
-    };
+    let planes = planes?;
     let [plane] = planes.as_slice() else {
         return None;
     };
@@ -3408,9 +3405,7 @@ fn selected_work_planes<'a>(
                 && operand.group_member_ordinal == ordinal
                 && operand.record_index() == *member
         }));
-        let Some(selection) = selection else {
-            return None;
-        };
+        let selection = selection?;
         if selection.secondary().is_some() {
             return None;
         }
@@ -3426,9 +3421,7 @@ fn selected_work_planes<'a>(
                 && candidate.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
                 && candidate.work_plane_transform().is_some()
         }));
-        let Some(target) = target else {
-            return None;
-        };
+        let target = target?;
         planes.push(target);
     }
     Some(planes)
@@ -4178,8 +4171,7 @@ fn project_hem(
         None => None,
     };
     let semantics = edge_slot
-        .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories))
-        .transpose()?;
+        .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories));
     let form = match (
         form,
         semantics.and_then(|semantics| semantics.gap_length_form),
@@ -4606,8 +4598,7 @@ fn normalize_parameter_ordinals(
                     .as_ref()
                     .map(|id| (id).try_clone_for_decode(ctx, "f3d parameter owner ID"))
                     .transpose()?;
-                let mut indices = Vec::new();
-                indices.push(index);
+                let indices = vec![index];
                 // discarded-value: a new owner group has no previous member list.
                 let _ = groups.insert(owner, indices);
             }
@@ -4925,8 +4916,8 @@ fn variable_fillet_law(
             _ => {}
         }
     }
-    middle_radii.sort_by(|left, right| left.0.cmp(&right.0));
-    middle_parameters.sort_by(|left, right| left.0.cmp(&right.0));
+    middle_radii.sort_by_key(|left| left.0);
+    middle_parameters.sort_by_key(|left| left.0);
     if middle_radii.len() != middle_parameters.len()
         || parameters.iter().any(|(_, parameter)| {
             !matches!(
@@ -5062,7 +5053,7 @@ fn project_chamfer(
                 {
                     matches.push(parameter);
                 }
-                matches.sort_by(|left, right| left.0.cmp(&right.0));
+                matches.sort_by_key(|left| left.0);
                 let mut out = Vec::new();
                 for (_, parameter) in matches {
                     out.push(parameter);
@@ -7097,9 +7088,7 @@ fn project_boundary_fill(
     for cell in cells {
         selected_cells.push(BodySelection::Native(cell.id.clone()));
     }
-    let Some(selected_cells) = selected_cells.try_into().ok() else {
-        return None;
-    };
+    let selected_cells = selected_cells.try_into().ok()?;
     Some(FeatureDefinition::Operation(
         FeatureOperation::BoundaryFill {
             tools: BodySelection::Native(tools.id.clone()),
@@ -7506,7 +7495,7 @@ pub(super) fn project_split(
                 };
             match &mut tools {
                 FaceSelection::Resolved { native, .. } | FaceSelection::Native(native) => {
-                    *native = tool.id.clone();
+                    native.clone_from(&tool.id);
                 }
                 FaceSelection::Historical { native, .. }
                 | FaceSelection::HistoricalPartial { native, .. } => {
@@ -8373,12 +8362,11 @@ pub(super) fn closed_spatial_sketch_profiles(
                 reference_direction,
                 ..
             } => {
-                let mut boundary = Vec::new();
-                boundary.push(SpatialSketchEntityUse {
+                let boundary = vec![SpatialSketchEntityUse {
                     entity: (entity.id())
                         .try_clone_for_decode(ctx, "f3d spatial profile circle id")?,
                     reversed: false,
-                });
+                }];
                 let profile = SpatialSketchProfile::try_new(
                     center.get(),
                     *normal.as_raw(),

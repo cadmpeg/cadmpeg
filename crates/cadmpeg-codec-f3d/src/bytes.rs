@@ -241,9 +241,7 @@ pub(crate) fn take_reference_charged(
     bytes: &[u8],
     at: &mut usize,
 ) -> Option<Reference<String, String>> {
-    let Some(reference) = take_reference(bytes, at) else {
-        return None;
-    };
+    let reference = take_reference(bytes, at)?;
     let copy_guid = |guid: Option<&str>| guid.map(str::to_owned);
     Some(match reference {
         Reference::Null => Reference::Null,

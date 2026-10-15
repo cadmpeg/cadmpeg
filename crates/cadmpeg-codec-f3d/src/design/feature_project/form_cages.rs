@@ -60,13 +60,13 @@ pub(crate) fn bind_form_cages(
             continue;
         };
         let bytes = scan.entry_bytes(stream)?;
-        let records = IndexedRecordOffsets::build(bytes)?;
+        let records = IndexedRecordOffsets::build(bytes);
         let (cage_lists, cage_counts) = form_cage_lists(
             bytes,
             &records,
             scope.reference_members().values().copied(),
             scope.record_index,
-        )?;
+        );
         if scope.class_tag.as_str() == "325" {
             if let Some(cage_objects) = form_class_325_cage_objects(
                 bytes,
@@ -850,7 +850,7 @@ fn form_cage_objects(
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
-) -> Result<Option<Vec<u32>>, CodecError> {
+) -> Option<Vec<u32>> {
     let parsed = (|| -> Option<(usize, usize)> {
         let mut frames = records.frames(record_index).filter(|(_, paired)| {
             matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264"))
@@ -873,31 +873,24 @@ fn form_cage_objects(
         }
         Some((count, offset.checked_add(36)?))
     })();
-    let Some((count, mut cursor)) = parsed else {
-        return Ok(None);
-    };
+    let (count, mut cursor) = parsed?;
 
     let mut objects = Vec::new();
 
     for _ in 0..count {
         if bytes.get(cursor) != Some(&1) {
-            return Ok(None);
+            return None;
         }
-        let Some(object) =
-            View::u64_le_at(bytes, cursor + 1).and_then(|value| u32::try_from(value).ok())
-        else {
-            return Ok(None);
-        };
+        let object =
+            View::u64_le_at(bytes, cursor + 1).and_then(|value| u32::try_from(value).ok())?;
         objects.push(object);
         if bytes.get(cursor + 9..cursor + 11) != Some(&[0, 0][..]) {
-            return Ok(None);
+            return None;
         }
-        let Some(next) = cursor.checked_add(11) else {
-            return Ok(None);
-        };
+        let next = cursor.checked_add(11)?;
         cursor = next;
     }
-    Ok(Some(objects))
+    Some(objects)
 }
 
 fn form_cage_lists(
@@ -905,11 +898,11 @@ fn form_cage_lists(
     records: &IndexedRecordOffsets,
     references: impl Iterator<Item = u32>,
     scope_record_index: u32,
-) -> Result<(Vec<Vec<u32>>, Vec<usize>), CodecError> {
+) -> (Vec<Vec<u32>>, Vec<usize>) {
     let mut lists = Vec::new();
     let mut counts = Vec::new();
     for record_index in references {
-        let objects = form_cage_objects(bytes, records, record_index, scope_record_index)?;
+        let objects = form_cage_objects(bytes, records, record_index, scope_record_index);
         let count = objects
             .as_ref()
             .map(Vec::len)
@@ -921,7 +914,7 @@ fn form_cage_lists(
             counts.push(count);
         }
     }
-    Ok((lists, counts))
+    (lists, counts)
 }
 
 fn form_cage_surface(
@@ -987,9 +980,7 @@ fn form_cage_surfaces(
 ) -> Option<Vec<u32>> {
     let mut surfaces = Vec::new();
     for object in objects {
-        let Some(surface) = form_cage_surface(bytes, records, *object, scope_record_index) else {
-            return None;
-        };
+        let surface = form_cage_surface(bytes, records, *object, scope_record_index)?;
         surfaces.push(surface);
     }
     Some(surfaces)

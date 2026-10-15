@@ -52,7 +52,7 @@ fn face_operand_rejects_overflowed_node_offset() {
         ..Default::default()
     };
     let error = crate::test_support::with_decode_context(|service_ctx| {
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         super::super::validate_face_operands(&ctx, &mut Vec::new(), &[]).unwrap_err()
     });
     assert!(

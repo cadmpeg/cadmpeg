@@ -561,7 +561,7 @@ pub(crate) fn decode_parameter_owners(
 
         streams
             .entry(stream)
-            .or_insert((entry, IndexedRecordOffsets::build(bytes)?));
+            .or_insert((entry, IndexedRecordOffsets::build(bytes)));
     }
     let mut out = Vec::new();
     for parameter in parameters {
@@ -943,7 +943,7 @@ pub(crate) fn decode_parameter_companions(
         {
             continue;
         }
-        let Some(companion) = parsed.into_record(&entry.name, header.byte_offset)? else {
+        let Some(companion) = parsed.into_record(&entry.name, header.byte_offset) else {
             continue;
         };
 
@@ -966,16 +966,10 @@ impl ParsedParameterCompanion {
     /// Locate this companion prefix in its containing stream. The owned payload
     /// extent and recipes are bound afterward by
     /// `bind_parameter_companion_payloads`.
-    fn into_record(
-        self,
-        stream: &str,
-        frame_start: u64,
-    ) -> Result<Option<DesignParameterCompanion>, CodecError> {
-        let Some(timestamp_offset) = self.timestamp_micros_offset.absolute(frame_start) else {
-            return Ok(None);
-        };
+    fn into_record(self, stream: &str, frame_start: u64) -> Option<DesignParameterCompanion> {
+        let timestamp_offset = self.timestamp_micros_offset.absolute(frame_start)?;
         let id = design_record_id(stream, ":design-parameter-companion#", frame_start);
-        Ok(Some(DesignParameterCompanion::unbound(
+        Some(DesignParameterCompanion::unbound(
             id,
             frame_start,
             self.class_tag,
@@ -983,7 +977,7 @@ impl ParsedParameterCompanion {
             self.owner_record_index,
             self.timestamp_micros,
             timestamp_offset,
-        )))
+        ))
     }
 }
 

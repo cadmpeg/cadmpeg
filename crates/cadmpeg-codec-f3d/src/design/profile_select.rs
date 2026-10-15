@@ -799,8 +799,7 @@ fn historical_face_profile_selection(
         }) {
             group_members.push(member);
         }
-        group_members
-            .sort_by(|left, right| left.group_member_ordinal.cmp(&right.group_member_ordinal));
+        group_members.sort_by_key(|left| left.group_member_ordinal);
         if group_members.len() != group.members().len()
             || group_members
                 .iter()
@@ -1239,8 +1238,7 @@ pub(super) fn resolved_extrude_profile_selection(
     }) {
         selection_members.push(member);
     }
-    selection_members
-        .sort_by(|left, right| left.group_member_ordinal.cmp(&right.group_member_ordinal));
+    selection_members.sort_by_key(|left| left.group_member_ordinal);
     let exact_member_run = selection_members.len() == group.members().len()
         && selection_members
             .iter()
@@ -1336,8 +1334,7 @@ pub(super) fn resolved_extrude_profile_selection(
         }
         None => {
             let id = group.id.clone();
-            let mut ids = Vec::new();
-            ids.push(id);
+            let ids = vec![id];
             match PlanarProfileRef::sketch_selection(
                 (sketch_id).try_clone_for_decode(resolution.ctx, "f3d profile sketch id")?,
                 ids,
@@ -1424,7 +1421,7 @@ fn transition_profile_selection(
             *face,
             tolerance,
             resolution.angular_tolerance,
-        )?;
+        );
         cylindrical_selections.push(selection);
     }
     if let Some(selection) = unique_resolved_selection(cylindrical_selections) {
@@ -1470,60 +1467,48 @@ fn inserted_cylindrical_profile_selection(
     face: i64,
     linear_tolerance: f64,
     angular_tolerance: f64,
-) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+) -> Option<ResolvedProfileSelection> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut carriers = topology
         .face_surfaces
         .iter()
         .filter(|binding| binding.entity == face);
-    let Some(carrier) = carriers.next().map(|binding| binding.carrier) else {
-        return Ok(None);
-    };
+    let carrier = carriers.next().map(|binding| binding.carrier)?;
     if carriers.next().is_some() {
-        return Ok(None);
+        return None;
     }
     let mut cylinders = topology
         .surface_cylinders
         .iter()
         .filter(|cylinder| cylinder.surface == carrier);
-    let Some(cylinder) = cylinders.next() else {
-        return Ok(None);
-    };
+    let cylinder = cylinders.next()?;
     if cylinders.next().is_some() || !cylinder.radius.is_finite() || cylinder.radius <= 0.0 {
-        return Ok(None);
+        return None;
     }
-    let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
-        return Ok(None);
-    };
+    let (sketch_origin, sketch_normal, _) = sketch.resolved_placement()?;
     let alignment = cylinder.axis.x * sketch_normal.x
         + cylinder.axis.y * sketch_normal.y
         + cylinder.axis.z * sketch_normal.z;
     if alignment.abs() < angular_tolerance.cos() {
-        return Ok(None);
+        return None;
     }
     let offset = (sketch_origin.x - cylinder.origin.x) * sketch_normal.x
         + (sketch_origin.y - cylinder.origin.y) * sketch_normal.y
         + (sketch_origin.z - cylinder.origin.z) * sketch_normal.z;
     let parameter = offset / alignment;
-    let Some(center) = project_to_sketch(
+    let center = project_to_sketch(
         sketch,
         Point3::new(
             cylinder.origin.x + parameter * cylinder.axis.x,
             cylinder.origin.y + parameter * cylinder.axis.y,
             cylinder.origin.z + parameter * cylinder.axis.z,
         ),
-    ) else {
-        return Ok(None);
-    };
-    let Some(points) = historical_face_points(face, topology) else {
-        return Ok(None);
-    };
+    )?;
+    let points = historical_face_points(face, topology)?;
     let mut projected = Vec::new();
     for point in &points {
-        let Some(point) = project_to_sketch(sketch, *point) else {
-            return Ok(None);
-        };
+        let point = project_to_sketch(sketch, *point)?;
         projected.push(point);
     }
     let mut matches = sketch
@@ -1555,13 +1540,11 @@ fn inserted_cylindrical_profile_selection(
                 }))
             .then(|| u32::try_from(index).ok())?
         });
-    let Some(profile) = matches.next() else {
-        return Ok(None);
-    };
-    Ok(matches
+    let profile = matches.next()?;
+    matches
         .next()
         .is_none()
-        .then(|| ResolvedProfileSelection::Loops(vec![profile])))
+        .then(|| ResolvedProfileSelection::Loops(vec![profile]))
 }
 
 fn resolved_spatial_extrude_profile_selection(
@@ -1586,7 +1569,7 @@ fn resolved_spatial_extrude_profile_selection(
     }) {
         group_members.push(member);
     }
-    group_members.sort_by(|left, right| left.group_member_ordinal.cmp(&right.group_member_ordinal));
+    group_members.sort_by_key(|left| left.group_member_ordinal);
     let exact_member_run = group_members.len() == group.members().len()
         && group_members
             .iter()
@@ -1753,12 +1736,9 @@ fn spatial_polyline_profile_containing_points(
         };
         let mut polygon = Vec::new();
         for use_ in profile.boundary() {
-            let Some(entity) = entities
+            let entity = entities
                 .iter()
-                .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)
-            else {
-                return None;
-            };
+                .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
             let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line { start, end } =
                 entity.geometry.definition()
             else {
@@ -1807,18 +1787,14 @@ fn unique_multi_face_deleted_carrier_family(
             .face_surfaces
             .iter()
             .filter(|binding| binding.entity == face);
-        let Some(carrier) = bindings.next().map(|binding| binding.carrier) else {
-            return None;
-        };
+        let carrier = bindings.next().map(|binding| binding.carrier)?;
         if bindings.next().is_some() {
             return None;
         }
         families.entry(carrier).or_default().push(face);
     }
     let mut candidates = families.into_values().filter(|faces| faces.len() > 1);
-    let Some(mut faces) = candidates.next() else {
-        return None;
-    };
+    let mut faces = candidates.next()?;
     if candidates.next().is_some() {
         return None;
     }
@@ -1934,8 +1910,7 @@ fn transition_inserted_profile_selection(
     let Some(region) = SketchProfileRegion::loops(outer, owned_holes, ctx)?.ok() else {
         return Ok(None);
     };
-    let mut output = Vec::new();
-    output.push(region);
+    let output = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(output)))
 }
 
@@ -1943,54 +1918,36 @@ pub(super) fn historical_face_points(
     face: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<Vec<Point3>> {
-    let Some(loops) = topology
+    let loops = topology
         .face_loops
         .iter()
-        .find(|relation| relation.owner_ref == face)
-    else {
-        return None;
-    };
+        .find(|relation| relation.owner_ref == face)?;
     let mut positions = Vec::new();
     for loop_ref in &loops.member_refs {
-        let Some(coedges) = topology
+        let coedges = topology
             .loop_coedges
             .iter()
-            .find(|relation| relation.owner_ref == *loop_ref)
-        else {
-            return None;
-        };
+            .find(|relation| relation.owner_ref == *loop_ref)?;
         for coedge_ref in &coedges.member_refs {
-            let Some(coedge) = topology
+            let coedge = topology
                 .coedge_topology
                 .iter()
-                .find(|coedge| coedge.coedge == *coedge_ref)
-            else {
-                return None;
-            };
-            let Some(edge) = topology
+                .find(|coedge| coedge.coedge == *coedge_ref)?;
+            let edge = topology
                 .edge_vertices
                 .iter()
-                .find(|edge| edge.edge == coedge.edge)
-            else {
-                return None;
-            };
+                .find(|edge| edge.edge == coedge.edge)?;
             for vertex_ref in [edge.start_vertex, edge.end_vertex] {
-                let Some(point_ref) = topology
+                let point_ref = topology
                     .vertex_points
                     .iter()
                     .find(|binding| binding.entity == vertex_ref)
-                    .map(|binding| binding.carrier)
-                else {
-                    return None;
-                };
-                let Some(position) = topology
+                    .map(|binding| binding.carrier)?;
+                let position = topology
                     .point_positions
                     .iter()
                     .find(|point| point.point == point_ref)
-                    .map(|point| point.position)
-                else {
-                    return None;
-                };
+                    .map(|point| point.position)?;
                 if !positions.contains(&position) {
                     positions.push(position);
                 }
@@ -2054,13 +2011,12 @@ fn historical_selection_regions(
         let mut member_points = Vec::new();
         let mut complete = true;
         for member in members {
-            let points = match historical_member_points_in_state(member, topology)? {
+            let points = match historical_member_points_in_state(member, topology) {
                 Some(points) => Some(points),
                 None => {
                     if let Some(point) = resolved_selection_member_point(member, sketch, entities)?
                     {
-                        let mut points = Vec::new();
-                        points.push(point);
+                        let points = vec![point];
                         Some(points)
                     } else {
                         None
@@ -2114,8 +2070,7 @@ fn historical_selection_regions(
             complete = false;
             break;
         };
-        let mut points = Vec::new();
-        points.push(point);
+        let points = vec![point];
         member_points.push(points);
     }
     if complete {
@@ -2258,8 +2213,7 @@ fn region_with_boundary_selection_members(
     let Some(region) = SketchProfileRegion::loops(loops.outer(), owned_holes, ctx)?.ok() else {
         return Ok(None);
     };
-    let mut selected = Vec::new();
-    selected.push(region);
+    let selected = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(selected)))
 }
 
@@ -2349,9 +2303,7 @@ fn ordered_unique_profile_selections(
     let mut loops = Vec::new();
     let mut regions = Vec::new();
     for selection in matches {
-        let Some(selection) = selection else {
-            return None;
-        };
+        let selection = selection?;
         match selection {
             ResolvedProfileSelection::Loops(selected) if regions.is_empty() => {
                 for loop_index in selected {
@@ -2422,8 +2374,7 @@ fn selection_containing_points(
         }
     }
     if let [profile] = boundaries.as_slice() {
-        let mut loops = Vec::new();
-        loops.push(*profile);
+        let loops = vec![*profile];
         return Ok(Some(ResolvedProfileSelection::Loops(loops)));
     }
     if let Some(region) = arrangement_region_containing_points(
@@ -2434,8 +2385,7 @@ fn selection_containing_points(
         arrangement_budget,
         ctx,
     )? {
-        let mut regions = Vec::new();
-        regions.push(region);
+        let regions = vec![region];
         return Ok(Some(ResolvedProfileSelection::Regions(regions)));
     }
     if !boundaries.is_empty() {
@@ -2444,8 +2394,7 @@ fn selection_containing_points(
     let Some(region) = region_containing_points(sketch, entities, points, tolerance, ctx)? else {
         return Ok(None);
     };
-    let mut regions = Vec::new();
-    regions.push(region);
+    let regions = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(regions)))
 }
 

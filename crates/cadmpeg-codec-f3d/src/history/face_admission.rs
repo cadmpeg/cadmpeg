@@ -86,7 +86,7 @@ impl<'a> FaceInputs<'a> {
         feature: &FeatureId,
         selection: &mut FaceSelection,
         losses: &mut Vec<LossNote>,
-    ) -> Result<(), CodecError> {
+    ) {
         let (state, faces, native) = match selection {
             FaceSelection::Historical {
                 state,
@@ -99,7 +99,7 @@ impl<'a> FaceInputs<'a> {
                 native,
                 ..
             } => (&*state, faces.as_slice(), native.as_str()),
-            _ => return Ok(()),
+            _ => return,
         };
         let admitted = self.contains(feature, state, faces);
         if !admitted {
@@ -107,7 +107,6 @@ impl<'a> FaceInputs<'a> {
             record_loss(feature, losses);
             *selection = FaceSelection::Native(native);
         }
-        Ok(())
     }
     fn contains(
         &mut self,
@@ -227,7 +226,8 @@ impl<'a> FaceInputs<'a> {
             }
             return Ok(());
         }
-        self.admit(feature, selection, losses)
+        self.admit(feature, selection, losses);
+        Ok(())
     }
 }
 fn record_loss(feature: &FeatureId, losses: &mut Vec<LossNote>) {
@@ -292,7 +292,8 @@ impl FaceAdmission<'_, '_, '_> {
             if hole {
                 inputs.hole(ctx, id, selection, losses)
             } else {
-                inputs.admit(id, selection, losses)
+                inputs.admit(id, selection, losses);
+                Ok(())
             }
         };
         match operation {

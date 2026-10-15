@@ -1219,9 +1219,9 @@ fn mesh_collection_indices(collections: &[MeshCollectionRecord]) -> HashSet<u32>
     indices
 }
 
-fn mesh_filename_entries<'a>(
-    filenames: &'a [MeshTextureFilenameEntry],
-) -> HashMap<String, &'a MeshTextureFilenameEntry> {
+fn mesh_filename_entries(
+    filenames: &[MeshTextureFilenameEntry],
+) -> HashMap<String, &MeshTextureFilenameEntry> {
     let mut entries = HashMap::new();
     for entry in filenames {
         entries.insert(entry.resource_guid.as_str().to_ascii_uppercase(), entry);
@@ -1239,7 +1239,7 @@ where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
     let stream = crate::ids::native_scope(source_entry_name);
-    let records = IndexedRecordOffsets::build(bytes)?;
+    let records = IndexedRecordOffsets::build(bytes);
     let collection_frames =
         typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
     if collection_frames.is_empty() {
@@ -1605,7 +1605,7 @@ fn mesh_image_asset(
         )));
     };
     Ok((
-        asset.name.to_owned(),
+        asset.name.clone(),
         super::image::neutral_asset_id(&asset.name)?,
     ))
 }
@@ -1663,7 +1663,7 @@ pub(crate) fn decode_mesh_bodies(
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 outcomes.push(MeshContainerOutcome::Failed {
-                    entry_name: entry.name.to_owned(),
+                    entry_name: entry.name.clone(),
                     error,
                 });
                 continue;
@@ -1675,7 +1675,7 @@ pub(crate) fn decode_mesh_bodies(
             resolve_mesh_body(&design_records, base, &container.fusion_uuid)
         else {
             outcomes.push(MeshContainerOutcome::Unjoined {
-                entry_name: entry.name.to_owned(),
+                entry_name: entry.name.clone(),
             });
             continue;
         };
@@ -1692,14 +1692,14 @@ pub(crate) fn decode_mesh_bodies(
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 outcomes.push(MeshContainerOutcome::Failed {
-                    entry_name: entry.name.to_owned(),
+                    entry_name: entry.name.clone(),
                     error,
                 });
                 continue;
             }
         };
         design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
-            .tessellation_id = Some(projected.id.to_owned());
+            .tessellation_id = Some(projected.id.clone());
         outcomes.push(MeshContainerOutcome::Joined(projected));
     }
     for body in design_records

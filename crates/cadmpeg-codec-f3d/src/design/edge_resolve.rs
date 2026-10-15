@@ -1023,7 +1023,7 @@ fn resolved_edge_group_with_transition_chain(
             slots = deleted_boundary_edge_group_candidates(&matched_operands);
         }
         if slots.is_none() {
-            slots = scope_partition_edge_group_candidates(group, groups, operands, members)?;
+            slots = scope_partition_edge_group_candidates(group, groups, operands, members);
         }
         Ok(slots)
     };
@@ -1182,9 +1182,7 @@ pub(super) fn resolved_hem_edge_slot(
     if let Some(edge) = operand.resolved_edge_slot {
         return Some(edge);
     }
-    if previous_state_id.is_none() {
-        return None;
-    }
+    previous_state_id?;
     hem_transition_edge_slot(operand)
 }
 
@@ -1243,12 +1241,9 @@ fn hem_transition_edge_slot(operand: &DesignEdgeOperand) -> Option<i64> {
     let mut empty_contexts = reference_contexts
         .iter()
         .filter(|context| context.changed_reference_edge_slots.is_empty());
-    let Some(empty_context) = empty_contexts
+    let empty_context = empty_contexts
         .next()
-        .filter(|_| empty_contexts.next().is_none())
-    else {
-        return None;
-    };
+        .filter(|_| empty_contexts.next().is_none())?;
     if !empty_context.result_faces.is_empty()
         || !empty_context.preceding_faces.is_empty()
         || !empty_context.preceding_support_face_slots.is_empty()
@@ -1758,10 +1753,8 @@ fn scope_partition_edge_group_candidates<'a>(
     groups: &'a [DesignConstructionOperandGroup],
     operands: &'a [DesignEdgeOperand],
     target_members: &[crate::records::identity::Located<u32>],
-) -> Result<Option<Vec<i64>>, CodecError> {
-    let Some(stream) = native_stream(&target.id) else {
-        return Ok(None);
-    };
+) -> Option<Vec<i64>> {
+    let stream = native_stream(&target.id)?;
     let mut scope_groups = Vec::new();
     let mut target_ordinal = None;
     for group in groups.iter().filter(|group| {
@@ -1806,13 +1799,8 @@ fn scope_partition_edge_group_candidates<'a>(
         }
         scope_groups.push(members);
     }
-    let Some(target_ordinal) = target_ordinal else {
-        return Ok(None);
-    };
-    Ok(partition_unique_incomplete_edge_group(
-        target_ordinal,
-        &scope_groups,
-    ))
+    let target_ordinal = target_ordinal?;
+    partition_unique_incomplete_edge_group(target_ordinal, &scope_groups)
 }
 
 fn partition_unique_incomplete_edge_group(
@@ -1843,9 +1831,7 @@ fn partition_unique_incomplete_edge_group(
         }
         universe.get_or_insert(deleted);
     }
-    let Some(universe) = universe else {
-        return None;
-    };
+    let universe = universe?;
     if identities.len() != universe.len() {
         return None;
     }
@@ -1863,9 +1849,7 @@ fn partition_unique_incomplete_edge_group(
             continue;
         }
         for member in group {
-            let Some(resolved) = member.resolved_edge.as_ref() else {
-                return None;
-            };
+            let resolved = member.resolved_edge.as_ref()?;
             if !universe.contains(resolved) || reserved.contains(resolved) {
                 return None;
             }
@@ -1896,9 +1880,7 @@ fn common_deleted_edge_group_candidates<'a>(
     let mut candidate_sets = members
         .into_iter()
         .filter_map(|(edge_bearing, candidates)| edge_bearing.then_some(candidates));
-    let Some(first) = candidate_sets.next() else {
-        return None;
-    };
+    let first = candidate_sets.next()?;
     let mut member_count = 1;
     let mut candidates = Vec::new();
     for candidate in first {
@@ -2058,9 +2040,7 @@ fn result_boundary_reference_edge_group_candidates(
     let [operand] = operands else {
         return None;
     };
-    let Some(structure) = operand.recipe_structure.as_ref() else {
-        return None;
-    };
+    let structure = operand.recipe_structure.as_ref()?;
     if structure.root != 2
         || structure.sides.len() != 2
         || structure.sides.iter().any(|side| {
@@ -2436,9 +2416,7 @@ fn corroborated_edge_candidates<'a>(
     slots: SelectorSlots,
 ) -> Option<Vec<i64>> {
     let mut selectors = selector_contexts.iter();
-    let Some(first_selector) = selectors.next() else {
-        return None;
-    };
+    let first_selector = selectors.next()?;
     let first = selector_candidate_edges(first_selector, slots);
     if first.is_empty() {
         return None;

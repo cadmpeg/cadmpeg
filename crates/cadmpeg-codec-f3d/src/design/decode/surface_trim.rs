@@ -219,7 +219,7 @@ pub(crate) fn decode_surface_trim_operations(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offsets, stream, bytes)?;
+        let records = cached_owned_record_offsets(&mut record_offsets, stream, bytes);
         let Some(mut operation) = exact_surface_trim_operation(bytes, records, scope)? else {
             continue;
         };

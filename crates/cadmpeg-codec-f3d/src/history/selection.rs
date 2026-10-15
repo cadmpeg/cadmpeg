@@ -32,12 +32,9 @@ pub(super) fn boundary_edges_in_changes(boundary_edges: &[i64], changes: &[i64])
 pub(super) fn recipe_selector_candidates(
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
     contexts: &[crate::records::topology::historical_context::DesignHistoricalEdgeContext],
-) -> Result<
-    Vec<crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext>,
-    cadmpeg_core::CodecError,
-> {
+) -> Vec<crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext> {
     let Some(structure) = structure else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut selectors = BTreeSet::new();
     for selector in structure
@@ -128,16 +125,13 @@ pub(super) fn recipe_selector_candidates(
             },
         );
     }
-    Ok(selected)
+    selected
 }
 
 pub(super) fn historical_edge_context(
     edge: i64,
     topology: &AsmHistoricalTopology,
-) -> Result<
-    crate::records::topology::historical_context::DesignHistoricalEdgeContext,
-    cadmpeg_core::CodecError,
-> {
+) -> crate::records::topology::historical_context::DesignHistoricalEdgeContext {
     let mut incident_loops = topology
         .coedge_topology
         .iter()
@@ -185,12 +179,10 @@ pub(super) fn historical_edge_context(
         })
         .collect::<Vec<_>>();
     incident_loops.sort_by_key(|left| left.coedge_slot);
-    Ok(
-        crate::records::topology::historical_context::DesignHistoricalEdgeContext {
-            edge_slot: edge,
-            incident_loops,
-        },
-    )
+    crate::records::topology::historical_context::DesignHistoricalEdgeContext {
+        edge_slot: edge,
+        incident_loops,
+    }
 }
 
 pub(super) fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) -> bool {
@@ -691,19 +683,16 @@ pub(crate) fn historical_extrude_selection_identity_kind(
     naming_spaces: &[DesignComponentNamingSpace],
     body_bindings: &[DesignBodyBinding],
     histories: &[AsmHistory],
-) -> Result<Option<(AsmHistoricalEntityKind, i64, Vec<i64>)>, cadmpeg_core::CodecError> {
+) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
     match component_histories(
         member.context_id.as_str(),
         naming_spaces,
         body_bindings,
         histories,
     ) {
-        Some(selected) => Ok(HistoricalIdentityIndex::build(selected, [member.local_id])
-            .selection_identity_kind(member.local_id)),
-        None => Ok(historical_selection_identity_kind(
-            histories,
-            member.local_id,
-        )),
+        Some(selected) => HistoricalIdentityIndex::build(selected, [member.local_id])
+            .selection_identity_kind(member.local_id),
+        None => historical_selection_identity_kind(histories, member.local_id),
     }
 }
 
@@ -712,7 +701,7 @@ pub(crate) fn bind_extrude_selection_history(
     naming_spaces: &[DesignComponentNamingSpace],
     body_bindings: &[DesignBodyBinding],
     histories: &[AsmHistory],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for member in members {
         member.historical = None;
         if let Some((kind, entity_ref, states)) = historical_extrude_selection_identity_kind(
@@ -720,7 +709,7 @@ pub(crate) fn bind_extrude_selection_history(
             naming_spaces,
             body_bindings,
             histories,
-        )? {
+        ) {
             member.historical = Some(crate::records::topology::fillet::HistoricalBinding {
                 kind,
                 entity_ref,
@@ -728,7 +717,6 @@ pub(crate) fn bind_extrude_selection_history(
             });
         }
     }
-    Ok(())
 }
 
 /// Resolve both identities in nested entity-selection operands against the
@@ -737,7 +725,7 @@ pub(crate) fn bind_entity_selection_history(
     operands: &mut [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let identities = HistoricalIdentityIndex::build(
         histories,
         operands.iter().flat_map(|operand| {
@@ -753,7 +741,7 @@ pub(crate) fn bind_entity_selection_history(
         operand.historical_face_candidates.clear();
         operand.resolved_edge_slot = None;
         operand.historical_face_candidates =
-            entity_selection_face_candidates(operand.primary_identity, histories)?;
+            entity_selection_face_candidates(operand.primary_identity, histories);
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -787,11 +775,10 @@ pub(crate) fn bind_entity_selection_history(
                 .map(|secondary| (1, secondary.identity.value)),
         );
         operand.historical_edge_candidates =
-            entity_selection_edge_candidates(selections, previous_state_id, &identities, topology)?;
+            entity_selection_edge_candidates(selections, previous_state_id, &identities, topology);
         operand.resolved_edge_slot =
             unique_entity_selection_edge(&operand.historical_edge_candidates);
     }
-    Ok(())
 }
 
 /// Resolve direct persistent face selections carried by Hole constructions.
@@ -810,7 +797,7 @@ pub(crate) fn bind_hole_selection_history(
         };
         selection.historical_face_candidates.clear();
         selection.historical_face_candidates =
-            entity_selection_face_candidates(selection.primary_identity, histories)?;
+            entity_selection_face_candidates(selection.primary_identity, histories);
         if selection.historical_face_candidates.is_empty() {
             if let Some(candidate) = hole_transition_face_candidate(
                 selection,
@@ -1001,7 +988,7 @@ pub(crate) fn bind_circular_pattern_axes(
     scopes: &mut [crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use crate::records::feature::patterns::DesignCircularPatternAxis;
     for scope in scopes {
         let mut matching_histories = histories.iter().filter(|history| {
@@ -1037,7 +1024,7 @@ pub(crate) fn bind_circular_pattern_axes(
             &identities,
             history,
             input_state_id,
-        )?
+        )
         .into_iter();
         let Some(axis) = axes.next() else {
             continue;
@@ -1053,7 +1040,6 @@ pub(crate) fn bind_circular_pattern_axes(
         }
         *resolved = Some(axis);
     }
-    Ok(())
 }
 
 pub(super) fn historical_pattern_identity_axes(
@@ -1061,11 +1047,11 @@ pub(super) fn historical_pattern_identity_axes(
     identities: &HistoricalIdentityIndex,
     history: &AsmHistory,
     input_state_id: Option<i64>,
-) -> Result<Vec<crate::records::feature::patterns::DesignAxis>, cadmpeg_core::CodecError> {
+) -> Vec<crate::records::feature::patterns::DesignAxis> {
     if let Some((kind, entity_ref, state_ids)) = identities.selection_identity_kind(identity) {
         let state_ids = if let Some(input_state_id) = input_state_id {
             if !state_ids.contains(&input_state_id) {
-                return Ok(Vec::new());
+                return Vec::new();
             }
             vec![input_state_id]
         } else {
@@ -1077,15 +1063,15 @@ pub(super) fn historical_pattern_identity_axes(
         );
     }
     let Some(revision) = snapshot_edge_identity_revision(identity, history) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let archived = HistoricalIdentityIndex::build(std::slice::from_ref(history), [revision]);
     let Some((kind, entity_ref, state_ids)) = archived.selection_identity_kind(revision) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let state_ids = if let Some(input_state_id) = input_state_id {
         if !state_ids.contains(&input_state_id) {
-            return Ok(Vec::new());
+            return Vec::new();
         }
         vec![input_state_id]
     } else {
@@ -1118,12 +1104,12 @@ pub(super) fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistor
 pub(super) fn historical_pattern_identity_axes_for_selection(
     selected: Option<(AsmHistoricalEntityKind, i64, &[i64])>,
     history: &AsmHistory,
-) -> Result<Vec<crate::records::feature::patterns::DesignAxis>, cadmpeg_core::CodecError> {
+) -> Vec<crate::records::feature::patterns::DesignAxis> {
     let Some((kind, entity_ref, state_ids)) = selected else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     if state_ids.is_empty() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let mut axes = Vec::new();
     let mut matched_state_ids = HashSet::new();
@@ -1134,50 +1120,50 @@ pub(super) fn historical_pattern_identity_axes_for_selection(
     {
         matched_state_ids.insert(state.state_id);
         let Some(topology) = state.topology() else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
         let state_axes =
-            historical_pattern_identity_axis_candidates(Some((kind, entity_ref)), topology)?
+            historical_pattern_identity_axis_candidates(Some((kind, entity_ref)), topology)
                 .into_iter()
                 .filter_map(|(origin, direction)| design_axis(origin, direction))
                 .collect::<Vec<_>>();
         if state_axes.is_empty() {
-            return Ok(Vec::new());
+            return Vec::new();
         }
         for axis in state_axes {
             axes.push(axis);
         }
     }
     if matched_state_ids.len() != state_ids.len() || axes.is_empty() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
-    Ok(axes)
+    axes
 }
 
 fn historical_pattern_identity_axis_candidates(
     selected: Option<(AsmHistoricalEntityKind, i64)>,
     topology: &AsmHistoricalTopology,
-) -> Result<Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>, cadmpeg_core::CodecError> {
+) -> Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
     let Some((kind, entity_ref)) = selected else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     match kind {
-        AsmHistoricalEntityKind::Face => Ok(historical_face_surface_axis(entity_ref, topology)
+        AsmHistoricalEntityKind::Face => historical_face_surface_axis(entity_ref, topology)
             .into_iter()
-            .collect::<Vec<_>>()),
-        AsmHistoricalEntityKind::Surface => Ok(historical_surface_axis(entity_ref, topology)
+            .collect::<Vec<_>>(),
+        AsmHistoricalEntityKind::Surface => historical_surface_axis(entity_ref, topology)
             .into_iter()
-            .collect::<Vec<_>>()),
+            .collect::<Vec<_>>(),
         _ => {
             let mut axes = Vec::new();
             for edge in historical_identity_edges(kind, entity_ref, topology) {
-                let Some(axis) = historical_edge_axis(edge, topology)? else {
+                let Some(axis) = historical_edge_axis(edge, topology) else {
                     continue;
                 };
 
                 axes.push(axis);
             }
-            Ok(axes)
+            axes
         }
     }
 }
@@ -1226,7 +1212,7 @@ pub(crate) fn bind_mirror_selection_planes(
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
     identities: &[crate::records::topology::construction::DesignConstructionOperandIdentity],
     histories: &[AsmHistory],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for scope in scopes {
         let stream = crate::ids::native_stream(&scope.id).map(str::to_owned);
         let record_index = scope.record_index;
@@ -1301,21 +1287,21 @@ pub(crate) fn bind_mirror_selection_planes(
             }
             let persistent_candidates = if let Some(identity) = identity
                 .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
-                entity_selection_face_candidates(identity.local_id, histories)?
+                entity_selection_face_candidates(identity.local_id, histories)
             } else {
                 Vec::new()
             };
             let primary_candidates =
-                entity_selection_face_candidates(operand.primary_identity, histories)?;
+                entity_selection_face_candidates(operand.primary_identity, histories);
             if primary_candidates.is_empty() && persistent_candidates.is_empty() {
                 design_geometry_mirror_plane(operand.primary_identity)
             } else {
                 let Some(candidate) =
-                    unique_mirror_plane_candidate(primary_candidates, persistent_candidates)?
+                    unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
                 else {
                     continue;
                 };
-                historical_mirror_plane(&candidate, previous_state_id, histories)?
+                historical_mirror_plane(&candidate, previous_state_id, histories)
             }
         } else if let Some(operand) = matching_face_operand {
             historical_mirror_face_operand_plane(operand, history, previous_state_id)
@@ -1339,7 +1325,6 @@ pub(crate) fn bind_mirror_selection_planes(
         construction.plane =
             crate::records::feature::patterns::DesignPlane::from_parts(origin, normal);
     }
-    Ok(())
 }
 
 pub(super) fn historical_mirror_face_operand_plane(
@@ -1413,10 +1398,7 @@ pub(super) fn unique_mirror_plane_candidate(
     mut persistent: Vec<
         crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     >,
-) -> Result<
-    Option<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate>,
-    cadmpeg_core::CodecError,
-> {
+) -> Option<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     primary.sort_by(|left, right| left.history_id.cmp(&right.history_id));
     primary.dedup();
     persistent.retain(|candidate| {
@@ -1426,11 +1408,11 @@ pub(super) fn unique_mirror_plane_candidate(
     });
     persistent.sort_by(|left, right| left.history_id.cmp(&right.history_id));
     persistent.dedup();
-    Ok(match persistent.len() {
+    match persistent.len() {
         1 => persistent.pop(),
         0 if primary.len() == 1 => primary.pop(),
         _ => None,
-    })
+    }
 }
 
 #[derive(Clone)]
@@ -1462,24 +1444,22 @@ pub(super) fn historical_mirror_plane(
     candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     preferred_state_id: i64,
     histories: &[AsmHistory],
-) -> Result<Option<HistoricalMirrorPlane>, cadmpeg_core::CodecError> {
+) -> Option<HistoricalMirrorPlane> {
     if candidate.historical.state_ids.contains(&preferred_state_id) {
         return historical_mirror_plane_in_state(candidate, preferred_state_id, histories);
     }
     let mut resolved = None;
     for state_id in &candidate.historical.state_ids {
-        let Some(plane) = historical_mirror_plane_in_state(candidate, *state_id, histories)? else {
-            return Ok(None);
-        };
+        let plane = historical_mirror_plane_in_state(candidate, *state_id, histories)?;
         if resolved
             .as_ref()
             .is_some_and(|exact: &HistoricalMirrorPlane| !mirror_planes_coincident(exact, &plane))
         {
-            return Ok(None);
+            return None;
         }
         resolved = Some(plane);
     }
-    Ok(resolved)
+    resolved
 }
 
 fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirrorPlane) -> bool {
@@ -1493,42 +1473,31 @@ fn historical_mirror_plane_in_state(
     candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     state_id: i64,
     histories: &[AsmHistory],
-) -> Result<Option<HistoricalMirrorPlane>, cadmpeg_core::CodecError> {
+) -> Option<HistoricalMirrorPlane> {
     let mut matching_histories = histories
         .iter()
         .filter(|history| history.id == candidate.history_id);
-    let Some(history) = matching_histories.next() else {
-        return Ok(None);
-    };
+    let history = matching_histories.next()?;
     if matching_histories.next().is_some() {
-        return Ok(None);
+        return None;
     }
     let mut matching_states = history
         .states
         .iter()
         .filter(|state| state.state_id == state_id);
-    let Some(state) = matching_states.next() else {
-        return Ok(None);
-    };
+    let state = matching_states.next()?;
     if matching_states.next().is_some() {
-        return Ok(None);
+        return None;
     }
-    let Some(topology) = state.topology() else {
-        return Ok(None);
-    };
+    let topology = state.topology()?;
     match candidate.historical.kind {
-        AsmHistoricalEntityKind::Coedge => Ok(historical_mirror_coedge_plane(
-            candidate.historical.entity_ref,
-            topology,
-        )),
-        AsmHistoricalEntityKind::Loop => Ok(historical_loop_plane(
-            candidate.historical.entity_ref,
-            topology,
-        )),
-        _ => Ok(historical_mirror_plane_for_face_slot_in_topology(
-            candidate.face_slot,
-            topology,
-        )),
+        AsmHistoricalEntityKind::Coedge => {
+            historical_mirror_coedge_plane(candidate.historical.entity_ref, topology)
+        }
+        AsmHistoricalEntityKind::Loop => {
+            historical_loop_plane(candidate.historical.entity_ref, topology)
+        }
+        _ => historical_mirror_plane_for_face_slot_in_topology(candidate.face_slot, topology),
     }
 }
 
@@ -1754,10 +1723,7 @@ pub(super) fn historical_mirror_coedge_plane(
 pub(super) fn entity_selection_face_candidates(
     local_id: u64,
     histories: &[AsmHistory],
-) -> Result<
-    Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate>,
-    cadmpeg_core::CodecError,
-> {
+) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 
     let mut candidates = Vec::new();
@@ -1806,7 +1772,7 @@ pub(super) fn entity_selection_face_candidates(
             face_slot,
         });
     }
-    Ok(candidates)
+    candidates
 }
 
 pub(super) fn entity_selection_edge_candidates(
@@ -1814,10 +1780,7 @@ pub(super) fn entity_selection_edge_candidates(
     previous_state_id: i64,
     history_identities: &HistoricalIdentityIndex,
     topology: &AsmHistoricalTopology,
-) -> Result<
-    Vec<crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate>,
-    cadmpeg_core::CodecError,
-> {
+) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate> {
     use crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate;
 
     let mut candidates = Vec::new();
@@ -1845,7 +1808,7 @@ pub(super) fn entity_selection_edge_candidates(
             edge_slots,
         });
     }
-    Ok(candidates)
+    candidates
 }
 
 pub(super) fn unique_entity_selection_edge(
@@ -1873,7 +1836,7 @@ pub(crate) fn bind_edge_identity_history(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     struct EdgeTreatmentTransitionCandidates {
         radii: Vec<crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate>,
         treatment_edges: Vec<i64>,
@@ -1881,7 +1844,7 @@ pub(crate) fn bind_edge_identity_history(
     }
 
     if projection_was_finalized(histories) {
-        return Ok(());
+        return;
     }
     let mut compact_group_counts = HashMap::<(String, u32, u32), Option<usize>>::new();
     for operand in operands.iter() {
@@ -2017,7 +1980,7 @@ pub(crate) fn bind_edge_identity_history(
                             topology,
                             &deleted_edges,
                             &mut treatment_cache,
-                        )?;
+                        );
 
                         treatment_candidates_by_transition.insert(
                             (history.id.clone(), current_state_id, previous_state_id),
@@ -2110,7 +2073,6 @@ pub(crate) fn bind_edge_identity_history(
         operand.resolved_edge_slot = Some(edge);
         operand.resolution_identity_id = Some(identity_id.to_owned());
     }
-    Ok(())
 }
 
 pub(super) fn complete_compact_edge_treatment_deletions(

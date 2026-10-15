@@ -88,7 +88,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
     let mut cache = crate::history::treatment_index::TreatmentCache::default();
     for _ in 0..1_000 {
         let (radii, edges) =
-            treatment_edge_candidates(None, &[20], &result, &preceding, &[17], &mut cache).unwrap();
+            treatment_edge_candidates(None, &[20], &result, &preceding, &[17], &mut cache);
         assert_eq!(edges, [17]);
         assert_eq!(radii.len(), 1);
         assert_eq!(radii[0].radius.get(), 3.0);
@@ -103,8 +103,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
             &[17],
             &mut crate::history::treatment_index::TreatmentCache::default(),
         )
-    }
-    .unwrap();
+    };
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].edge_slot, 17);
     assert_eq!(candidates[0].radius.get(), 3.0);
@@ -117,7 +116,6 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
             &[17],
             &mut crate::history::treatment_index::TreatmentCache::default()
         )
-        .unwrap()
         .1,
         [17]
     );
@@ -132,7 +130,6 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         &[17],
         &mut crate::history::treatment_index::TreatmentCache::default()
     )
-    .unwrap()
     .is_empty());
     assert!(treatment_edge_candidates(
         None,
@@ -142,7 +139,6 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         &[18],
         &mut crate::history::treatment_index::TreatmentCache::default()
     )
-    .unwrap()
     .1
     .is_empty());
     assert!(treatment_radius_candidates(
@@ -153,6 +149,5 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         &[18],
         &mut crate::history::treatment_index::TreatmentCache::default()
     )
-    .unwrap()
     .is_empty());
 }

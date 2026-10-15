@@ -16,7 +16,7 @@ fn indexed_record_offsets_charge_each_key_and_offset() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&indexed_header(7));
     bytes.extend_from_slice(&indexed_header(7));
-    let records = IndexedRecordOffsets::build(&bytes).unwrap();
+    let records = IndexedRecordOffsets::build(&bytes);
     assert_eq!(records.offsets(7), &[0, 11]);
 }
 

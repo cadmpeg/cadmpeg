@@ -2554,29 +2554,27 @@ fn arcs_intersect(
 pub(super) fn historical_member_points_in_state(
     member: &DesignExtrudeSelectionMember,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Result<Option<Vec<Point3>>, CodecError> {
+) -> Option<Vec<Point3>> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     let (kind, entity_ref) = match &member.historical {
         Some(binding) => (binding.kind, binding.entity_ref),
         None => {
-            let Some(geometry) = member.resolved_geometry.as_ref() else {
-                return Ok(None);
-            };
+            let geometry = member.resolved_geometry.as_ref()?;
             let kind = match geometry {
                 SketchRelationOperand::Point { .. } => AsmHistoricalEntityKind::Point,
                 SketchRelationOperand::Curve { .. } => AsmHistoricalEntityKind::Curve,
                 SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => {
-                    return Ok(None);
+                    return None;
                 }
             };
             let Ok(entity_ref) = i64::try_from(member.local_id) else {
-                return Ok(None);
+                return None;
             };
             (kind, entity_ref)
         }
     };
-    Ok(historical_entity_positions(kind, entity_ref, topology))
+    historical_entity_positions(kind, entity_ref, topology)
 }
 
 fn historical_entity_positions(
@@ -2649,9 +2647,7 @@ fn historical_entity_positions(
             }
         }
         AsmHistoricalEntityKind::Face => {
-            let Some(points) = historical_face_points(local_id, topology) else {
-                return None;
-            };
+            let points = historical_face_points(local_id, topology)?;
             for point in points {
                 positions.push(point);
             }
@@ -2664,9 +2660,7 @@ fn historical_entity_positions(
                 .filter(|binding| binding.carrier == local_id)
             {
                 found = true;
-                let Some(points) = historical_face_points(binding.entity, topology) else {
-                    return None;
-                };
+                let points = historical_face_points(binding.entity, topology)?;
                 for point in points {
                     positions.push(point);
                 }
@@ -2678,13 +2672,9 @@ fn historical_entity_positions(
         AsmHistoricalEntityKind::Body
         | AsmHistoricalEntityKind::Region
         | AsmHistoricalEntityKind::Shell => {
-            let Some(faces) = historical_owned_faces(kind, local_id, topology) else {
-                return None;
-            };
+            let faces = historical_owned_faces(kind, local_id, topology)?;
             for face in faces {
-                let Some(points) = historical_face_points(face, topology) else {
-                    return None;
-                };
+                let points = historical_face_points(face, topology)?;
                 for point in points {
                     positions.push(point);
                 }
@@ -2692,13 +2682,10 @@ fn historical_entity_positions(
         }
     }
     for edge_ref in edge_refs {
-        let Some(edge) = topology
+        let edge = topology
             .edge_vertices
             .iter()
-            .find(|edge| edge.edge == edge_ref)
-        else {
-            return None;
-        };
+            .find(|edge| edge.edge == edge_ref)?;
         let mut start = historical_vertex_positions(topology, edge.start_vertex).peekable();
         let mut end = historical_vertex_positions(topology, edge.end_vertex).peekable();
         if start.peek().is_none() || end.peek().is_none() {
@@ -2721,15 +2708,9 @@ fn historical_owned_faces(
     let mut faces = Vec::new();
     match kind {
         AsmHistoricalEntityKind::Body => {
-            let Some(regions) = historical_relation_members(&topology.body_regions, local_id)
-            else {
-                return None;
-            };
+            let regions = historical_relation_members(&topology.body_regions, local_id)?;
             for region in regions {
-                let Some(shells) = historical_relation_members(&topology.region_shells, *region)
-                else {
-                    return None;
-                };
+                let shells = historical_relation_members(&topology.region_shells, *region)?;
                 for shell in shells {
                     if !append_historical_shell_faces(*shell, topology, &mut faces) {
                         return None;
@@ -2738,10 +2719,7 @@ fn historical_owned_faces(
             }
         }
         AsmHistoricalEntityKind::Region => {
-            let Some(shells) = historical_relation_members(&topology.region_shells, local_id)
-            else {
-                return None;
-            };
+            let shells = historical_relation_members(&topology.region_shells, local_id)?;
             for shell in shells {
                 if !append_historical_shell_faces(*shell, topology, &mut faces) {
                     return None;
@@ -2954,11 +2932,10 @@ pub(super) fn closed_sketch_profiles(
         ) {
             let id =
                 (entity.id()).try_clone_for_decode(ctx, "f3d closed sketch profile entity id")?;
-            let mut profile = Vec::new();
-            profile.push(SketchEntityUse {
+            let profile = vec![SketchEntityUse {
                 entity: id,
                 reversed: false,
-            });
+            }];
             profiles.push(profile);
         }
         if let Some(ends) = sketch_entity_endpoints(entity, ctx)? {
