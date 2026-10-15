@@ -1097,7 +1097,7 @@ mod tests {
             &bytes,
             sources.iter().map(|source| source.iter()),
         )
-        .expect("borrowed source inventory fits service profile");
+        .expect("compute the consolidated records in sources");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].class, 0x06);
     }

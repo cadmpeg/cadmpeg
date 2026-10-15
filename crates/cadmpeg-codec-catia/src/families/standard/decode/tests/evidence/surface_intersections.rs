@@ -803,7 +803,7 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service budget admits standard pcurve");
+        .expect("compute the standard pcurve geometry");
         assert_eq!(result.is_some(), accepted);
     }
 }

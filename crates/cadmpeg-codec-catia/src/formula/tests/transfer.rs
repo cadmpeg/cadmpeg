@@ -63,7 +63,7 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -303,7 +303,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -577,7 +577,7 @@ fn decode_transfers_typed_integer_to_angle_formula() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -692,7 +692,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -766,7 +766,7 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert_eq!(input.properties["catia_binding"], "#1_ /2");
         assert!(
             cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok()
         );
     }
@@ -805,7 +805,7 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
     assert_eq!(output.properties["value_type"], "String");
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -922,7 +922,7 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1226,7 +1226,7 @@ fn decode_transfers_a_chained_formula_definition_once() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1281,7 +1281,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1310,7 +1310,7 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1334,7 +1334,7 @@ fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
     assert!(input.dependencies.is_empty());
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .findings
             .is_empty()
     );
@@ -1457,7 +1457,7 @@ fn unresolved_graph_scope_transfers_no_formula_parameters() {
             &crate::decode::ModelingGraphScope::Unresolved,
         )
     })
-    .expect("service profile admits formula scan");
+    .expect("transfer parameters");
     assert!(admitted.consumed_object_records.is_empty());
     assert!(ir.model.parameters.is_empty());
 }
@@ -1478,7 +1478,7 @@ fn boolean_definition_chain_yields_a_parameter_candidate() {
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::super::definition_chain_parameter_candidate(ctx, entity, chain)
     })
-    .expect("service profile admits definition candidate");
+    .expect("compute the definition chain parameter candidate");
     assert!(admitted.is_some());
 }
 
@@ -1502,7 +1502,7 @@ fn typed_length_parameter_yields_a_parameter_candidate() {
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
     })
-    .expect("service profile admits typed candidate");
+    .expect("compute the typed entity parameter candidate");
     assert!(admitted.is_some());
 }
 
@@ -1526,7 +1526,7 @@ fn typed_parameter_candidate_carries_source_name_and_entity_ref() {
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
     })
-    .expect("service profile admits typed candidate")
+    .expect("compute the typed entity parameter candidate")
     .expect("typed candidate");
 
     assert_eq!(admitted.parameter.name, value.name.value);

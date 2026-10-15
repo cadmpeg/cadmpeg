@@ -777,7 +777,7 @@ mod consolidated_revolution_binding_tests {
                     &[],
                 )
             })
-            .expect("service context admits one point"),
+            .expect("bind consolidated revolution faces and seams"),
             (0, 0)
         );
     }

@@ -35,7 +35,7 @@ fn standard_pcurve_geometry(
             refusal,
         )
     })
-    .expect("service budget admits standard pcurve")
+    .expect("compute the standard pcurve geometry")
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn sphere_section_circle_attaches_one_curve() {
             &mut admission,
         )
     })
-    .expect("service circle budget");
+    .expect("attach standard circles");
     assert_eq!(ir.model.curves.len(), 1);
 }
 
@@ -367,6 +367,6 @@ fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
             },
         )
     })
-    .expect("service edge circle budget");
+    .expect("build standard edge curve");
     assert!(curve.is_some());
 }

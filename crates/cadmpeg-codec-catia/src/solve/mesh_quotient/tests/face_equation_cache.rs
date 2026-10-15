@@ -60,7 +60,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
             None,
             &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
-        .expect("service resource budget"));
+        .expect("propagate the forced face equations"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
     quotient
         .merge(4, 5)
@@ -72,7 +72,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
             None,
             &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
-        .expect("service resource budget"));
+        .expect("propagate the forced face equations"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
     quotient
         .merge(0, 4)
@@ -84,7 +84,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
             None,
             &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
-        .expect("service resource budget"));
+        .expect("propagate the forced face equations"));
     assert_eq!(search.face_equation_cache.borrow().len(), 2);
     {
         let mut cache = search.face_equation_cache.borrow_mut();
@@ -102,7 +102,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
             None,
             &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
-        .expect("service resource budget"));
+        .expect("propagate the forced face equations"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
 }
 
@@ -160,5 +160,7 @@ fn forced_face_equations_propagate_for_a_two_edge_loop() {
             &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
     };
-    crate::test_support::with_service_context(|ctx| assert!(run(ctx).expect("service budget")));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(run(ctx).expect("propagate the forced face equations"));
+    });
 }

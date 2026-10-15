@@ -1063,7 +1063,7 @@ mod consolidated_edge_run_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service collection budget");
+        .expect("parse the consolidated edge runs");
         assert!(runs.is_empty());
     }
 }

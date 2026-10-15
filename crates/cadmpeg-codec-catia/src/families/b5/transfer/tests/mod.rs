@@ -6,12 +6,11 @@ mod parameter_ranges;
 
 #[test]
 fn b5_derived_field_records_exactness() {
-    let annotations = crate::test_support::with_service_context(|_| {
-        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        annotations.derived("catia:b5:vertex#0", "point")?;
-        Ok::<_, cadmpeg_core::CodecError>(annotations.build())
-    })
-    .expect("service budget admits the field note");
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    annotations
+        .derived("catia:b5:vertex#0", "point")
+        .expect("record the derived field note");
+    let annotations = annotations.build();
     assert!(annotations.exactness().contains_key("catia:b5:vertex#0"));
 }
 
@@ -21,7 +20,7 @@ fn b5_topology_entity_limit_refuses_before_first_model_append() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("closed B5 triangle graph");
     crate::test_support::with_entity_limit(0, |ctx| {
         let mut ir = cadmpeg_ir::CadIr::empty();
@@ -53,7 +52,7 @@ fn b5_closed_triangle_emits_its_vertex_points() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("closed B5 triangle graph");
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
@@ -65,7 +64,7 @@ fn b5_closed_triangle_emits_its_vertex_points() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service resource budget")
+    .expect("build plan")
     .expect("complete B5 plan");
     let admitted = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
@@ -79,7 +78,7 @@ fn b5_closed_triangle_emits_its_vertex_points() {
         )?;
         Ok::<_, cadmpeg_core::CodecError>(ir.model.points.len())
     })
-    .expect("service resource budget");
+    .expect("emit vertices");
     assert!(admitted > 0);
 }
 
@@ -89,7 +88,7 @@ fn b5_closed_triangle_emits_its_pcurves() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("closed B5 triangle graph");
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
@@ -101,7 +100,7 @@ fn b5_closed_triangle_emits_its_pcurves() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service resource budget")
+    .expect("build plan")
     .expect("complete B5 plan");
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
@@ -114,7 +113,7 @@ fn b5_closed_triangle_emits_its_pcurves() {
             &mut admission,
         )
     };
-    let admitted = crate::test_support::with_service_context(run).expect("service resource budget");
+    let admitted = crate::test_support::with_service_context(run).expect("emit pcurves");
     assert!(!admitted.is_empty());
 }
 
@@ -124,7 +123,7 @@ fn b5_closed_triangle_emits_its_surfaces() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("closed B5 triangle graph");
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
@@ -137,7 +136,7 @@ fn b5_closed_triangle_emits_its_surfaces() {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service resource budget")
+        .expect("build plan")
         .expect("complete B5 plan")
     };
 
@@ -152,7 +151,7 @@ fn b5_closed_triangle_emits_its_surfaces() {
             &mut admission,
         )
     })
-    .expect("service resource budget");
+    .expect("emit surfaces");
     assert!(!admitted.is_empty());
 }
 
@@ -162,7 +161,7 @@ fn b5_triangle_edges_emit_without_exact_support_plans() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("closed B5 triangle graph");
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
@@ -175,7 +174,7 @@ fn b5_triangle_edges_emit_without_exact_support_plans() {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service resource budget")
+        .expect("build plan")
         .expect("complete B5 plan");
         plan.exact_support_edges.clear();
         plan.exact_support_curves.clear();
@@ -196,7 +195,7 @@ fn b5_triangle_edges_emit_without_exact_support_plans() {
             &mut admission,
         )
     })
-    .expect("service resource budget");
+    .expect("emit edges");
     assert!(!emitted.is_empty());
 }
 
@@ -206,7 +205,7 @@ fn b5_closed_triangle_transfers_into_an_empty_model() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("closed B5 triangle graph");
     let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
         .expect("identity grammar");
@@ -222,7 +221,7 @@ fn b5_closed_triangle_transfers_into_an_empty_model() {
             &mut admission,
         )
     })
-    .expect("service resource budget");
+    .expect("transfer the B5 graph");
     assert!(admitted);
 }
 
@@ -232,7 +231,7 @@ fn b5_closed_triangle_has_a_face_ownership_plan() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("closed B5 triangle graph");
     crate::test_support::with_service_context(|ctx| {
         assert!(super::faces::ownership_plan(ctx, &graph)
@@ -248,7 +247,7 @@ fn b5_closed_triangle_loops_orient_from_their_edge_senses() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("closed B5 triangle graph");
     let reversed = graph
         .loops

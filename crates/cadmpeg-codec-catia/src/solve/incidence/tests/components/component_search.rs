@@ -26,7 +26,7 @@ fn incidence_components_filter_complete_solutions_during_search() {
         None,
         &|pairs| Ok(pairs[1] == [2, 3]),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("filtered component solution");
 
     assert_eq!(solutions, vec![vec![[0, 1], [2, 3], [1, 2], [3, 0]]]);
@@ -62,7 +62,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
         }),
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("partially constrained component solutions");
 
     assert_eq!(solutions, vec![vec![[0, 0], [300, 300]]]);
@@ -114,7 +114,7 @@ fn incidence_components_include_fixed_incidence_chains() {
     let choices = vec![vec![[0, 0], [0, 1]], vec![[2, 2], [2, 3]], vec![[0, 2]]];
     let components =
         crate::solve::incidence::incidence_choice_components(&choices, &[[0, 0]; 3], None, None)
-            .expect("service resource budget");
+            .expect("compute the incidence choice components");
 
     assert_eq!(components, vec![vec![0, 1]]);
 }
@@ -162,7 +162,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
             Ok(ControlFlow::Continue(()))
         },
     )
-    .expect("service resource budget");
+    .expect("visit component incidence pair solutions");
 
     assert_eq!(
         outcome,
@@ -199,7 +199,7 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
         None,
         &|_| Ok(true),
     )
-    .expect("service resource budget")
+    .expect("compute the component incidence pair solutions")
     .expect("globally assignable component solution");
 
     assert_eq!(solutions, vec![vec![[0, 0], [1, 1]]]);
@@ -255,7 +255,7 @@ fn incidence_components_preflight_quotient_impossible_domains() {
             Ok(ControlFlow::Continue(()))
         },
     )
-    .expect("service resource budget");
+    .expect("visit component incidence pair solutions");
 
     assert_eq!(
         outcome,
@@ -285,7 +285,7 @@ fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
             None,
             &|_| Ok(true),
         )
-        .expect("service resource budget"),
+        .expect("compute the component incidence pair solution outcome"),
         crate::solve::incidence::IncidenceSolve::Rejected(
             crate::solve::incidence::IncidenceRejection::FixedAssignment
         )
@@ -310,7 +310,7 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
             None,
             &|_| Ok(true),
         )
-        .expect("service resource budget"),
+        .expect("compute the component incidence pair solution outcome"),
         IncidenceSolve::Exhausted
     );
     assert_eq!(
@@ -325,7 +325,7 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
             None,
             &|_| Ok(true),
         )
-        .expect("service resource budget"),
+        .expect("compute the component incidence pair solution outcome"),
         IncidenceSolve::Rejected(crate::solve::incidence::IncidenceRejection::FixedAssignment)
     );
 }
@@ -361,7 +361,7 @@ fn incidence_component_products_stream_until_the_consumer_stops() {
             }
         },
     )
-    .expect("service resource budget");
+    .expect("visit component incidence pair solutions");
 
     assert_eq!(outcome, IncidenceSolve::Solved(2));
     assert_eq!(visited, 2);
@@ -399,7 +399,7 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
             }
         },
     )
-    .expect("service resource budget");
+    .expect("visit component incidence pair solutions");
 
     assert_eq!(outcome, IncidenceSolve::Solved(2));
     assert_eq!(visited, 2);
@@ -429,7 +429,7 @@ fn compact_boundary_advance_completes_a_two_edge_cycle() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("service resource budget")
+            .expect("compute the initial mesh quotient")
             .expect("initial quotient");
     let advance = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(10_000);
@@ -449,5 +449,5 @@ fn compact_boundary_advance_completes_a_two_edge_cycle() {
             )
         })
     };
-    assert!(advance(&service_ctx).expect("service resource budget"));
+    assert!(advance(&service_ctx).expect("advance compact boundary domains"));
 }

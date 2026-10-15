@@ -138,7 +138,7 @@ fn repeated_long_row_selects_one_majority_sharing_face() {
     ];
 
     let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
-        .expect("service resource budget")
+        .expect("compute the repeated edge face handle candidates from sets")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![vec![1]]);
@@ -155,7 +155,7 @@ fn repeated_long_row_abstains_when_majority_sharing_is_not_unique() {
     ];
 
     let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
-        .expect("service resource budget")
+        .expect("compute the repeated edge face handle candidates from sets")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![Vec::<usize>::new()]);
@@ -173,7 +173,7 @@ fn repeated_short_row_retains_every_complete_handle_sharing_face() {
     ];
 
     let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
-        .expect("service resource budget")
+        .expect("compute the repeated edge face handle candidates from sets")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![vec![1, 2]]);
@@ -187,7 +187,7 @@ fn repeated_handle_selector_requires_file_wide_owning_face_containment() {
 
     assert!(
         repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0], [0, 1]],)
-            .expect("service resource budget")
+            .expect("compute the repeated edge face handle candidates from sets")
             .is_none()
     );
 }
@@ -215,7 +215,7 @@ fn endpoint_degree_closure_selects_optional_second_face() {
 
     let completed =
         repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
-            .expect("service resource budget")
+            .expect("compute the repeated face endpoint closures")
             .expect("bounded endpoint closure");
 
     assert_eq!(completed, vec![vec![[0, 1], [0, 1], [0, 1]]]);
@@ -230,7 +230,7 @@ fn endpoint_degree_closure_retains_one_face_incidences() {
 
     let completed =
         repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
-            .expect("service resource budget")
+            .expect("compute the repeated face endpoint closures")
             .expect("bounded endpoint closure");
 
     assert_eq!(completed, vec![edge_faces.to_vec()]);
@@ -245,7 +245,7 @@ fn endpoint_degree_closure_retains_symmetric_face_swaps() {
 
     let mut completed =
         repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 4)
-            .expect("service resource budget")
+            .expect("compute the repeated face endpoint closures")
             .expect("bounded endpoint closure");
     completed.sort();
 
@@ -265,14 +265,14 @@ fn candidate_contexts_share_edge_row_storage() {
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
     let base = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
-        .expect("service resource budget")
+        .expect("parse the standard mesh boundary context")
         .expect("quad boundary context");
     let mut candidates = Vec::with_capacity(CANDIDATES);
     assert_eq!(Arc::strong_count(&base.analysis), 1);
     for _ in 0..CANDIDATES {
         candidates.push(
             base.with_edge_faces(&ctx, &faces)
-                .expect("service resource budget")
+                .expect("bind the edge faces")
                 .expect("quad candidate context"),
         );
         assert_eq!(Arc::strong_count(&base.analysis), candidates.len() + 1);
@@ -339,7 +339,7 @@ fn a_repeated_slot_with_one_admitted_face_takes_it_without_a_search() {
     let serialized = [[0usize, 0]];
     let allowed = vec![vec![0usize]];
     let solved = unique_duplicate_face_assignment(&serialized, &allowed, 1, |_| Ok(true))
-        .expect("service resource budget");
+        .expect("compute the unique duplicate face assignment");
     assert_eq!(solved, Some(vec![[0, 0]]));
 }
 
@@ -350,7 +350,7 @@ fn a_repeated_slot_with_two_admitted_faces_resolves_to_the_one_valid_assignment(
     let solved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |assignment| {
         Ok(assignment[0][1] == 1)
     })
-    .expect("service resource budget");
+    .expect("compute the unique duplicate face assignment");
     assert_eq!(solved, Some(vec![[0, 1]]));
 }
 
@@ -390,7 +390,7 @@ fn standard_and_fbb_quads_count_four_edge_ports() {
             crate::test_support::with_service_context(|ctx| {
                 super::standard_edge_port_identities(ctx, &bytes, true)
             })
-            .expect("service resource budget")
+            .expect("compute the standard edge port identities")
         }
         .expect("counted edge ports");
         assert_eq!(ports.len(), 4);
@@ -409,7 +409,8 @@ fn edge_runs_resolve_a_consistent_edge_face_pair() {
     };
     catia_test_context!(service_ctx);
     assert_eq!(
-        resolve_edge_faces_from_runs(&service_ctx, &[[1, 1]], &[run]).expect("service budget"),
+        resolve_edge_faces_from_runs(&service_ctx, &[[1, 1]], &[run])
+            .expect("resolve edge faces from runs"),
         Some(vec![[1, 1]])
     );
 }
@@ -421,7 +422,7 @@ fn edge_port_propagation_keeps_a_seeded_point_pair() {
     catia_test_context!(service_ctx);
     assert_eq!(
         super::propagate_edge_port_points(&service_ctx, &ports, &pairs)
-            .expect("service resource budget"),
+            .expect("propagate edge port points"),
         Some(vec![Some([0, 1])])
     );
 }
@@ -435,7 +436,8 @@ fn ordered_seed_matching_the_pair_propagates_unchanged() {
         super::propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
     };
     assert_eq!(
-        crate::test_support::with_service_context(run).expect("service budget"),
+        crate::test_support::with_service_context(run)
+            .expect("propagate edge port points with ordered seeds"),
         Some(vec![Some([0, 1])])
     );
 }
@@ -448,7 +450,8 @@ fn partial_port_propagation_returns_the_given_pairs() {
         super::propagate_partial_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &[])
     };
     assert_eq!(
-        crate::test_support::with_service_context(run).expect("service budget"),
+        crate::test_support::with_service_context(run)
+            .expect("propagate partial edge port points with ordered seeds"),
         Some(pairs.to_vec())
     );
 }
@@ -460,7 +463,7 @@ fn single_port_candidate_binds_to_its_edge() {
     catia_test_context!(service_ctx);
     assert_eq!(
         super::bind_edge_port_candidates(&service_ctx, &ports, &candidates)
-            .expect("service resource budget"),
+            .expect("bind edge port candidates"),
         Some(vec![[0, 1]])
     );
 }
@@ -493,7 +496,7 @@ fn repeated_handle_row_selects_the_second_sharing_face() {
     catia_test_context!(service_ctx);
     assert_eq!(
         repeated_edge_face_handle_candidates_from_sets(&service_ctx, &rows, &faces, &[[0, 0]],)
-            .expect("service budget"),
+            .expect("compute the repeated edge face handle candidates from sets"),
         Some(vec![vec![1]])
     );
 }
@@ -522,7 +525,7 @@ fn endpoint_degree_closure_closes_a_three_edge_cycle() {
         &endpoint_pairs,
         2,
     )
-    .expect("service budget")
+    .expect("compute the repeated face endpoint closures")
     .is_some());
 }
 
@@ -532,7 +535,10 @@ fn duplicate_face_assignment_picks_the_one_passing_face() {
     let allowed = [vec![0usize, 1]];
     let run =
         || unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| Ok(faces[0][1] == 1));
-    assert_eq!(run().expect("service budget"), Some(vec![[0, 1]]));
+    assert_eq!(
+        run().expect("compute the unique duplicate face assignment"),
+        Some(vec![[0, 1]])
+    );
 }
 
 #[test]
@@ -542,7 +548,7 @@ fn standard_quad_materializes_four_mesh_edge_runs() {
         |ctx: &cadmpeg_core::decode::DecodeContext<'_>| super::standard_mesh_edge_runs(ctx, &bytes);
     assert_eq!(
         crate::test_support::with_service_context(run)
-            .expect("service budget")
+            .expect("parse the standard mesh edge runs")
             .expect("runs")
             .len(),
         4

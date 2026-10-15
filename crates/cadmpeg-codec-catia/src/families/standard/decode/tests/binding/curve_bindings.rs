@@ -499,7 +499,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
             },
         )
     })
-    .expect("circle evaluation resources")
+    .expect("compute the circle parameter range from surface branch")
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
@@ -560,7 +560,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
             },
         )
     })
-    .expect("circle evaluation resources")
+    .expect("compute the circle parameter range from surface branch")
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);
 }
@@ -662,8 +662,7 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
 
 #[test]
 fn edge_support_reuses_the_surface_with_matching_source_record() {
-    let source =
-        crate::assemble::cgm_source("surface", 42).expect("service profile admits source identity");
+    let source = crate::assemble::cgm_source("surface", 42).expect("build the CGM source object");
     let id = SurfaceId::mint("catia:test:surface#matching".to_owned()).expect("surface identity");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let mut ir = CadIr::empty();
@@ -683,7 +682,7 @@ fn edge_support_reuses_the_surface_with_matching_source_record() {
             &mut admission,
         )
     })
-    .expect("service profile admits surface match");
+    .expect("ensure native edge support surface");
     assert_eq!(matched, id);
     assert_eq!(ir.model.surfaces.len(), 1);
 }
@@ -705,7 +704,7 @@ fn nurbs_edge_support_adds_one_surface_and_returns_its_id() {
         )?;
         Ok::<_, cadmpeg_core::CodecError>((id, ir.model.surfaces))
     })
-    .expect("service budget admits native edge support surface");
+    .expect("ensure native edge support surface");
     assert_eq!(admitted.1.len(), 1);
     assert_eq!(admitted.0, admitted.1[0].id);
 }

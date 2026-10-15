@@ -78,7 +78,7 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
         let propagation_budget = WorkBudget::new(0);
         search
             .search_from_state(&quotient, true, &budget, &propagation_budget)
-            .expect("service resource budget");
+            .expect("search from state");
         matches!(search.outcome, SearchOutcome::Exhausted)
     };
 

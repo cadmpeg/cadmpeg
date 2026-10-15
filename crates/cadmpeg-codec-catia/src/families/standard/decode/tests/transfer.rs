@@ -379,7 +379,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
 
     // The produced IR validates (free carriers, no dangling references).
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -606,7 +606,7 @@ fn decode_fbb_only_without_parseable_counted_table_transfers_only_carriers() {
             ctx,
             fbb_only_catpart()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::FbbOnly
     );
@@ -1097,7 +1097,7 @@ fn population_scope_prefixes_rewritten_body_ids() {
         }
         .rewrite(body)
     })
-    .expect("service profile admits rewrite");
+    .expect("rewrite the body into the population scope");
     assert_eq!(admitted.id.as_str(), "catia:standard:population-1/body#0");
 }
 
@@ -1119,7 +1119,7 @@ fn standard_catpart_decodes_as_a_standard_population() {
         )
     };
     assert!(crate::test_support::with_service_context(decode)
-        .expect("service budget")
+        .expect("decode standard population")
         .is_some());
 }
 
@@ -1145,6 +1145,7 @@ fn copying_a_revolution_procedure_preserves_it() {
             parameter_interval: [0.0, 1.0],
         },
     ));
-    let service = ({ super::super::copy_standard_procedure(&procedure) }).expect("service budget");
+    let service =
+        ({ super::super::copy_standard_procedure(&procedure) }).expect("copy standard procedure");
     assert!(service == procedure);
 }

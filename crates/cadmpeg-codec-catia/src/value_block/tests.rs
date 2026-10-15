@@ -42,7 +42,7 @@ fn inline_bytes_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-            .expect("service profile admits inline bytes");
+            .expect("store the native arena");
     });
 }
 use crate::test_support::test_object_graph::{catalog_stream, value_block_stream};

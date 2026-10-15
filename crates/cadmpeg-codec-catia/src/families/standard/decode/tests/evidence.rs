@@ -71,7 +71,7 @@ fn standard_shared_nurbs_boundary_pair_options(
             ctx, left, right, points, options,
         )
     })
-    .expect("service context admits NURBS boundary pairs")
+    .expect("compute the standard shared NURBS boundary pair options")
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service resource budget");
+    .expect("parse the standard object evidence from streams");
     assert!(
         matches!(evidence.surface_geometries.get(&10), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
         if {
@@ -244,7 +244,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service resource budget");
+    .expect("parse the standard object evidence from streams");
     assert!(!evidence.surface_geometries.contains_key(&10));
 }
 
@@ -298,7 +298,7 @@ fn targeted_surface_evidence_retains_revolution_construction() {
     let evidence = crate::test_support::with_service_context(|ctx| {
         standard_surface_evidence(ctx, &graph, 10, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("compute the standard surface evidence")
     .expect("revolution evidence");
     let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure_ref() else {
         panic!("surface-of-revolution evidence must retain its construction");
@@ -365,7 +365,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service resource budget");
+    .expect("parse the standard object evidence from streams");
     assert!(matches!(
         evidence.surface_geometries.get(&120),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
@@ -1096,7 +1096,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
             [1, 0],
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits native support pcurve reversal"),
+        .expect("compute the standard oriented native support pcurves"),
         Some([
             PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -1267,7 +1267,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             std::slice::from_ref(&limit_curve),
         )
     })
-    .expect("service budget");
+    .expect("compute the standard limit curve bindings");
     let [limit_candidates] = limit_bindings.as_slice() else {
         panic!("one edge limit-curve domain");
     };
@@ -1314,7 +1314,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             &[limit_curve],
         )
     })
-    .expect("service budget");
+    .expect("compute the standard limit curve bindings");
     assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
     let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
         .expect("the solved endpoint pair selects the limit curve");
@@ -1466,7 +1466,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
             },
         )
     })
-    .expect("service budget admits circle range")
+    .expect("compute the standard circle param range")
     .expect("witnessed circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
@@ -1497,8 +1497,8 @@ fn evidence_store_outputs_one_unknown_surface_geometry() {
         );
         store.into_outputs(ctx, &HashSet::new())
     };
-    let (geometries, procedures) =
-        crate::test_support::with_service_context(build).expect("service context admits evidence");
+    let (geometries, procedures) = crate::test_support::with_service_context(build)
+        .expect("collect the standard evidence outputs");
     assert_eq!(geometries.len(), 1);
     assert!(matches!(
         geometries.get(&17),
@@ -1554,7 +1554,7 @@ fn native_support_keeps_its_pcurves_without_bound_endpoints() {
         )
     };
     let admitted = crate::test_support::with_service_context(copy)
-        .expect("service profile admits native support copy")
+        .expect("compute the standard oriented native support pcurves")
         .expect("unbound endpoints still retain native pcurves");
     assert_eq!(admitted, native.pcurves);
 }
@@ -1615,7 +1615,7 @@ fn native_support_matches_endpoints_and_reverses_pcurves() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits reversal")
+    .expect("compute the standard oriented native support pcurves")
     .is_some());
 }
 
@@ -1663,7 +1663,7 @@ fn bspline_edge_takes_its_limit_curve_geometry() {
             },
         )
     })
-    .expect("service profile admits the edge");
+    .expect("build standard edge curve");
     assert!(admitted.0.is_some());
     assert!(matches!(&ir.model.curves[0].geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) if curve == &limit_curve));

@@ -46,7 +46,7 @@ fn e5_boundary_line_rejects_overflowing_uv_start() {
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .is_none()
     );
 }
@@ -87,7 +87,7 @@ fn e5_boundary_line_rejects_overflowing_uv_end() {
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .is_none()
     );
 }
@@ -132,7 +132,7 @@ fn e5_plane_boundary_line_keeps_finite_wide_parameter_endpoints() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("compute the E5 boundary curve")
     .expect("finite line carrier across a wide parameter range");
     assert!(matches!(
         curve,
@@ -179,7 +179,7 @@ fn e5_boundary_line_normalizes_subnormal_chord() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("compute the E5 boundary curve")
     .expect("subnormal line chord");
     assert_eq!(range, [0.0, tiny]);
     assert!(
@@ -231,7 +231,7 @@ fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("compute the E5 boundary curve")
     .expect("plane boundary circle");
     assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
     assert!(
@@ -262,7 +262,7 @@ fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("compute the E5 boundary curve")
     .expect("reflected plane boundary circle");
     assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
     assert!(
@@ -325,7 +325,7 @@ fn e5_plane_jet_boundary_lifts_control_net_affinely() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service profile admits E5 boundary curve")
+    .expect("compute the E5 boundary curve")
     .expect("plane jet curve");
     assert_eq!(range, [0.0, 1.0]);
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = curve else {
@@ -383,7 +383,7 @@ fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .is_none()
     );
 }
@@ -438,7 +438,7 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
             [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
         )
     })
-    .expect("evaluation resources"));
+    .expect("check E5 circle carriers have same ordered sweep"));
     assert!(!crate::test_support::with_service_context(|ctx| {
         e5_circle_carriers_have_same_ordered_sweep(
             ctx,
@@ -448,7 +448,7 @@ fn e5_intersection_requires_equivalent_two_sided_carriers() {
             [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2],
         )
     })
-    .expect("evaluation resources"));
+    .expect("check E5 circle carriers have same ordered sweep"));
     let displaced = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.01),
@@ -788,7 +788,7 @@ fn e5_boundary_circle_rejects_nonfinite_center() {
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new()
         ))
-        .expect("service profile admits E5 boundary curve")
+        .expect("compute the E5 boundary curve")
         .is_none()
     );
 }

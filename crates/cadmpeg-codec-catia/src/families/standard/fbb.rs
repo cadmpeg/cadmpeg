@@ -1020,14 +1020,14 @@ mod appearance_tests {
         ];
         assert_eq!(
             crate::test_support::with_service_context(|ctx| standard_face_colors(ctx, &bytes))
-                .expect("service resource budget"),
+                .expect("compute the standard face colors"),
             Some(vec![[0xd1, 0x1a, 0x1f, 0x99], [0x14, 0x3d, 0xe0, 0xff]])
         );
         let mut mixed = bytes;
         mixed[8] = 0x30;
         assert_eq!(
             crate::test_support::with_service_context(|ctx| standard_face_colors(ctx, &mixed))
-                .expect("service resource budget"),
+                .expect("compute the standard face colors"),
             None
         );
     }
@@ -1829,7 +1829,7 @@ mod endpoint_tests {
             &[[0, 1], [1, 2], [0, 2]],
             Some(&[0, 1, 2]),
         )
-        .expect("service resource budget")
+        .expect("parse FBB endpoints with edge classes")
         .expect("native endpoint pairs close the FBB face");
 
         assert_eq!(topology.face_count(), 2);
@@ -1841,7 +1841,7 @@ mod endpoint_tests {
         assert_eq!(
             topology
                 .edge_vertices(&ctx)
-                .expect("service resource budget"),
+                .expect("compute the edge vertices"),
             Some(vec![[0, 1], [1, 2], [0, 2]])
         );
     }
