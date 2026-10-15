@@ -71,11 +71,7 @@ fn sorted_classes<'l>(
 ) -> Result<Vec<&'l crate::records::FeatureInputClass>, cadmpeg_core::CodecError> {
     let mut classes = Vec::new();
     for class in ctx.admit_iter(&lane.classes, operation)? {
-        if ctx.equal(
-            class.name.as_str(),
-            name,
-            "compare SLDPRT filtered class name",
-        )? {
+        if class.name.as_str() == name {
             storage.with_storage(|| ctx.push_vec(&mut classes, class, operation))?;
         }
     }

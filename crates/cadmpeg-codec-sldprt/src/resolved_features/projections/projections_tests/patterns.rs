@@ -140,12 +140,22 @@ fn pattern_surface_seed_uses_generated_face_and_dependency() {
 fn pattern_surface_seed_refuses_collection_limit() {
     let (mut features, _history, lane) = pattern_fixture();
     features.remove(0);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_compact_surface_selections(&ctx, &mut features, &[], &[lane])
-        .expect_err("pattern seed exceeds collection limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "project SLDPRT pattern face seeds",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            project_compact_surface_selections(
+                &ctx,
+                &mut features.clone(),
+                &[],
+                std::slice::from_ref(&lane),
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems

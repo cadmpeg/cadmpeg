@@ -439,25 +439,23 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 continue;
             };
             let vote = consensus.vote;
-            insert_termination_field(
-                ctx,
+            drop(ctx.insert_btree_map(
                 &mut feature.properties,
                 cadmpeg_core::nonblank_literal!("EndCondition"),
                 vote.condition().into(),
                 OPERATION,
-            )?;
+            )?);
             match vote {
                 TerminationVote::ToVertex { reference } => {
                     if !ctx.contains_key_btree_map(&feature.properties, "Vertex", OPERATION)? {
                         let reference = ctx
                             .copy_retained_text(reference, "agree SLDPRT extrusion terminations")?;
-                        insert_termination_field(
-                            ctx,
+                        drop(ctx.insert_btree_map(
                             &mut feature.properties,
                             cadmpeg_core::nonblank_literal!("Vertex"),
                             reference,
                             OPERATION,
-                        )?;
+                        )?);
                     }
                 }
                 TerminationVote::Face { .. } => {
@@ -467,23 +465,21 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     if !ctx.contains_key_btree_map(&feature.properties, "Face", OPERATION)? {
                         let reference = ctx
                             .copy_retained_text(reference, "agree SLDPRT extrusion terminations")?;
-                        insert_termination_field(
-                            ctx,
+                        drop(ctx.insert_btree_map(
                             &mut feature.properties,
                             cadmpeg_core::nonblank_literal!("Face"),
                             reference,
                             OPERATION,
-                        )?;
+                        )?);
                     }
                 }
                 TerminationVote::BlindSecondThroughAll => {
-                    insert_termination_field(
-                        ctx,
+                    drop(ctx.insert_btree_map(
                         &mut feature.properties,
                         cadmpeg_core::nonblank_literal!("EndCondition2"),
                         "ThroughAll".into(),
                         OPERATION,
-                    )?;
+                    )?);
                 }
                 TerminationVote::Blind {
                     depth_m: Some(depth_m),
@@ -495,30 +491,18 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             format_args!("{}", crate::history::literals::LengthLiteral(depth)),
                             OPERATION,
                         )?;
-                        insert_termination_field(
-                            ctx,
+                        drop(ctx.insert_btree_map(
                             &mut feature.parameters,
                             cadmpeg_core::nonblank_literal!("D1"),
                             value,
                             OPERATION,
-                        )?;
+                        )?);
                     }
                 }
                 _ => {}
             }
         }
     }
-    Ok(())
-}
-
-fn insert_termination_field(
-    ctx: &DecodeContext<'_>,
-    fields: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    name: cadmpeg_core::text::NonBlankString,
-    value: String,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.insert_btree_map(fields, name, value, operation)?;
     Ok(())
 }
 
@@ -760,7 +744,7 @@ pub(crate) fn enrich_history_combine_selections(
                     continue;
                 }
                 let value = ctx.copy_retained_text(value, OPERATION)?;
-                insert_termination_field(ctx, &mut feature.properties, key, value, OPERATION)?;
+                drop(ctx.insert_btree_map(&mut feature.properties, key, value, OPERATION)?);
             }
         }
     }
@@ -1041,7 +1025,7 @@ pub(crate) fn project_surface_sweep_profiles(
     for lane in ctx.admit_iter(lanes, OPERATION)? {
         let Some(reference_class) = ctx.find_by(
             &lane.classes,
-            |class| ctx.equal(class.name.as_str(), "moCompReferenceCurve_c", OPERATION),
+            |class| Ok(class.name.as_str() == "moCompReferenceCurve_c"),
             OPERATION,
         )?
         else {

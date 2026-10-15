@@ -97,8 +97,8 @@ fn detached_spatial_range_workspace_preserves_original_refusal() {
 }
 
 #[test]
-fn spatial_plane_class_comparison_has_its_own_work_boundary() {
-    const OPERATION: &str = "compare SLDPRT spatial plane class name";
+fn spatial_plane_lookup_admits_class_visits() {
+    const OPERATION: &str = "scan SLDPRT spatial relation classes";
     let lane = lane();
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
