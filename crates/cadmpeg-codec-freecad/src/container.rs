@@ -153,7 +153,7 @@ pub(crate) fn scan<'a, 'c>(
         let name = ctx.copy_retained_text(&file.name, "FCStd archive entry name")?;
         ctx.insert_btree_map(&mut data, name, view, "FCStd archive entry map")?;
     }
-    let physical_ledger = archive.physical_ledger(ctx)?;
+    let (physical_ledger, ledger_storage) = archive.physical_ledger(ctx)?;
     let mut ledger = ctx.collection_vec(physical_ledger.len(), "FCStd archive ledger records")?;
     let mut spans = physical_ledger.into_iter().enumerate();
     while spans.len() != 0 {
@@ -172,6 +172,7 @@ pub(crate) fn scan<'a, 'c>(
             role: crate::native::ArchiveSpanRole::from(span.role),
         });
     }
+    drop(ledger_storage);
     Ok(Scan {
         entries: archive.container_entries(ctx, classify)?,
         document,

@@ -29,7 +29,7 @@ pub(super) struct RseNativeProjection {
 
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
-    container: &InventorContainer<'_>,
+    container: &InventorContainer<'_, '_>,
 ) -> Result<RseNativeProjection, CodecError> {
     let mut projection = RseNativeProjection {
         identity_issues: Vec::new(),

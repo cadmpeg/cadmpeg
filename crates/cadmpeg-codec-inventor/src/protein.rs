@@ -11,12 +11,12 @@ use cadmpeg_core::CodecError;
 use crate::layout::protein_header;
 
 #[derive(Debug)]
-pub(crate) enum ProteinState<'a> {
+pub(crate) enum ProteinState<'a, 'ctx> {
     Absent,
     Empty {
         stream: CompoundStreamId,
     },
-    Package(ProteinEnvelope<'a>),
+    Package(ProteinEnvelope<'a, 'ctx>),
     Malformed {
         stream: CompoundStreamId,
         detail: String,
@@ -24,10 +24,10 @@ pub(crate) enum ProteinState<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct ProteinEnvelope<'a> {
+pub(crate) struct ProteinEnvelope<'a, 'ctx> {
     pub(crate) stream: CompoundStreamId,
     pub(crate) declared_len: NonZeroU32,
-    pub(crate) archive: ArchiveSnapshot<'a>,
+    pub(crate) archive: ArchiveSnapshot<'a, 'ctx>,
     payload: View<'a>,
 }
 
@@ -37,24 +37,24 @@ pub(crate) struct ProteinInstanceRecords {
     pub(crate) rejected: Vec<cadmpeg_protein::RejectedRecord>,
 }
 
-pub(crate) fn parse<'a>(
-    ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
-) -> Result<ProteinState<'a>, CodecError> {
+pub(crate) fn parse<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'a>,
+    snapshot: &CompoundSnapshot<'a, '_>,
+) -> Result<ProteinState<'a, 'ctx>, CodecError> {
     let Some(stream) = snapshot.stream(ctx, "Protein")? else {
         return Ok(ProteinState::Absent);
     };
     let source = snapshot.open(ctx, stream)?;
     let result = parse_stream(ctx, source);
     Ok(match result {
-        Ok(ParsedProtein::Empty) => ProteinState::Empty {
+        Ok(None) => ProteinState::Empty {
             stream: stream.id(),
         },
-        Ok(ParsedProtein::Package {
+        Ok(Some(ParsedProtein {
             declared_len,
             archive,
             payload,
-        }) => ProteinState::Package(ProteinEnvelope {
+        })) => ProteinState::Package(ProteinEnvelope {
             stream: stream.id(),
             declared_len,
             archive,
@@ -67,19 +67,16 @@ pub(crate) fn parse<'a>(
     })
 }
 
-enum ParsedProtein<'a> {
-    Empty,
-    Package {
-        declared_len: NonZeroU32,
-        archive: ArchiveSnapshot<'a>,
-        payload: View<'a>,
-    },
+struct ParsedProtein<'a, 'ctx> {
+    declared_len: NonZeroU32,
+    archive: ArchiveSnapshot<'a, 'ctx>,
+    payload: View<'a>,
 }
 
-fn parse_stream<'a>(
-    ctx: &DecodeContext<'a>,
+fn parse_stream<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'a>,
     source: cadmpeg_core::decode::View<'a>,
-) -> Result<ParsedProtein<'a>, CodecError> {
+) -> Result<Option<ParsedProtein<'a, 'ctx>>, CodecError> {
     let mut header = source;
     let declared_len = header.req_u32_le()?;
     let Some(declared_len) = NonZeroU32::new(declared_len) else {
@@ -88,7 +85,7 @@ fn parse_stream<'a>(
                 "empty Inventor Protein stream has trailing bytes".into(),
             ));
         }
-        return Ok(ParsedProtein::Empty);
+        return Ok(None);
     };
     let payload_len = source
         .window()
@@ -113,11 +110,11 @@ fn parse_stream<'a>(
     {
         validate_entry_name(ctx, &entry.name)?;
     }
-    Ok(ParsedProtein::Package {
+    Ok(Some(ParsedProtein {
         declared_len,
         archive,
         payload,
-    })
+    }))
 }
 
 pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
@@ -126,14 +123,14 @@ pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
 
 pub(crate) fn decode_instances(
     ctx: &DecodeContext<'_>,
-    package: &ProteinEnvelope<'_>,
+    package: &ProteinEnvelope<'_, '_>,
 ) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
     decode_instances_from(ctx, &package.archive, package.payload)
 }
 
 pub(crate) fn decode_instances_with_issue(
     ctx: &DecodeContext<'_>,
-    package: &ProteinEnvelope<'_>,
+    package: &ProteinEnvelope<'_, '_>,
 ) -> Result<(Vec<ProteinInstanceRecords>, Option<String>), CodecError> {
     match decode_instances(ctx, package) {
         Ok(instances) => Ok((instances, None)),
@@ -151,7 +148,7 @@ pub(crate) fn decode_instances_with_issue(
 
 fn decode_instances_from(
     ctx: &DecodeContext<'_>,
-    archive: &ArchiveSnapshot<'_>,
+    archive: &ArchiveSnapshot<'_, '_>,
     payload: View<'_>,
 ) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
     let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
@@ -252,7 +249,7 @@ mod tests {
         // entry vector, decoded-name set and name index. Validation stores none.
         policy.limits.max_collection_items = 5;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        let ParsedProtein::Package { archive, .. } =
+        let Some(ParsedProtein { archive, .. }) =
             parse_stream(&ctx, root).expect("five archive slots")
         else {
             panic!("package state");
@@ -368,7 +365,7 @@ mod tests {
                 u32::from_le_bytes(root.window().try_into().expect("empty payload length")),
                 0
             );
-            assert!(matches!(parse_stream(ctx, root), Ok(ParsedProtein::Empty)));
+            assert!(matches!(parse_stream(ctx, root), Ok(None)));
         });
         let zip = zip_fixture("Schemas/ExampleSchema.xml");
         let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
@@ -380,11 +377,11 @@ mod tests {
             u32::try_from(zip.len()).expect("fixture value fits u32")
         );
         with_stream(&bytes, |ctx, root| {
-            let ParsedProtein::Package {
+            let Some(ParsedProtein {
                 declared_len,
                 archive,
                 ..
-            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
+            }) = parse_stream(ctx, root).expect("synthetic Protein package parses")
             else {
                 panic!("package state")
             };
@@ -432,11 +429,11 @@ mod tests {
             .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
-            let ParsedProtein::Package {
+            let Some(ParsedProtein {
                 declared_len,
                 archive,
                 payload,
-            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
+            }) = parse_stream(ctx, root).expect("synthetic Protein package parses")
             else {
                 panic!("package state")
             };
@@ -477,9 +474,9 @@ mod tests {
             policy.limits.max_work_units = u64::MAX;
             let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("Protein scan context");
-            let ParsedProtein::Package {
+            let Some(ParsedProtein {
                 archive, payload, ..
-            } = parse_stream(&ctx, root).expect("Protein scan package")
+            }) = parse_stream(&ctx, root).expect("Protein scan package")
             else {
                 panic!("package state");
             };
@@ -494,6 +491,7 @@ mod tests {
                 Err(cadmpeg_core::CodecError::Malformed(detail))
                     if detail == "Protein page stream is shorter than its header and one page"));
             drop(probe);
+            drop(archive);
             ctx.finish_session()
                 .expect("instance-stream pass stops at the first malformed frame");
         }
@@ -518,9 +516,9 @@ mod tests {
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
             const RESULT_COLLECTION_PRIOR_ITEMS: u64 = 293;
-            let ParsedProtein::Package {
+            let Some(ParsedProtein {
                 archive, payload, ..
-            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
+            }) = parse_stream(ctx, root).expect("synthetic Protein package parses")
             else {
                 panic!("package state")
             };
@@ -585,11 +583,11 @@ mod tests {
         let (setup, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("package context");
-        let ParsedProtein::Package {
+        let Some(ParsedProtein {
             declared_len,
             archive,
             payload,
-        } = parse_stream(&setup, root).expect("ZIP package parses")
+        }) = parse_stream(&setup, root).expect("ZIP package parses")
         else {
             panic!("package state");
         };
@@ -739,25 +737,39 @@ mod tests {
             std::mem::size_of::<()>(),
             std::mem::align_of::<String>(),
             std::mem::align_of::<()>(),
-        ) + btree_insert_work(
-            std::mem::size_of::<String>(),
-            std::mem::size_of::<usize>(),
-            std::mem::align_of::<String>(),
-            std::mem::align_of::<usize>(),
         );
-        // Each snapshot copies names into three owners and charges three
-        // central-name, entry-record, and name-index visits.
+        // The three-entry sorted index admits two visits per key and
+        // 8 * 3 levels of scalar moves and two maximum-width key reads.
+        // Its adjacent insertion pass charges two outer and three inner steps.
+        let archive_index_sort_work = 2 * archive_entry_count
+            + archive_entry_count
+                * (std::mem::size_of::<usize>()
+                    + 2 * archive_name_lengths
+                        .iter()
+                        .copied()
+                        .max()
+                        .expect("entry names"))
+                * 3
+                * 8
+            + 2
+            + 3;
+        // Each snapshot copies names into two owners and visits the central
+        // name and entry record once; the sorted index is charged separately.
         let archive_snapshot_work = cadmpeg_core::decode::u64_from_index(
-            archive_tree_work + 3 * archive_name_bytes + 3 * archive_entry_count,
+            archive_tree_work
+                + 2 * archive_name_bytes
+                + 2 * archive_entry_count
+                + archive_index_sort_work,
         );
-        let archive_map_comparisons = tree_comparisons(archive_entry_count);
-        // The schema lookup is inside its calibrated load; two instance opens
-        // each look up one key in the three-entry Protein name map.
+        // The sorted order is First, Schemas, Second. Each instance lookup
+        // takes two partition steps and a final equality comparison. Both
+        // operands are charged: one schema name and five instance-name widths.
+        // The schema lookup is inside its calibrated load.
         let instance_open_lookup_work = cadmpeg_core::decode::u64_from_index(
             archive_name_lengths
                 .iter()
                 .skip(1)
-                .map(|key_bytes| *key_bytes * archive_map_comparisons)
+                .map(|key_bytes| 3 + archive_name_lengths[0] + 5 * *key_bytes)
                 .sum::<usize>(),
         );
         // Each of the three names is scanned once, every byte plus the end
@@ -849,11 +861,11 @@ mod tests {
         let (original_ctx, original_root) =
             DecodeContext::from_root_bytes(&bytes, &original_arena, &original_policy)
                 .expect("package fits the service input limit");
-        let ParsedProtein::Package {
+        let Some(ParsedProtein {
             archive: original_archive,
             payload: original_payload,
             ..
-        } = parse_stream(&original_ctx, original_root).expect("package parses")
+        }) = parse_stream(&original_ctx, original_root).expect("package parses")
         else {
             panic!("package state");
         };
@@ -877,6 +889,7 @@ mod tests {
         );
         assert_eq!(original_limit.used, common_work + archive_entry_work);
         assert_eq!(original_limit.additional, remaining + 1);
+        drop(original_archive);
         assert!(matches!(
             original_ctx.finish_session(),
             Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == original_limit
@@ -885,9 +898,9 @@ mod tests {
         policy.limits.max_work_units = common_work + archive_entry_work;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("package fits the service input limit");
-        let ParsedProtein::Package {
+        let Some(ParsedProtein {
             archive, payload, ..
-        } = parse_stream(&ctx, root).expect("package parses")
+        }) = parse_stream(&ctx, root).expect("package parses")
         else {
             panic!("package state")
         };
@@ -922,9 +935,9 @@ mod tests {
             .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
-            let ParsedProtein::Package {
+            let Some(ParsedProtein {
                 archive, payload, ..
-            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
+            }) = parse_stream(ctx, root).expect("synthetic Protein package parses")
             else {
                 panic!("package state")
             };

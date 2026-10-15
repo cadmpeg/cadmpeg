@@ -34,7 +34,7 @@ use crate::application::transcoder::{
     self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossPolicy,
     SourceRequest, TargetSelection,
 };
-use crate::application::validators::validate_ir;
+use crate::application::validators::{has_errors, validate_ir};
 use crate::loader;
 use crate::DecodeArgs;
 
@@ -391,37 +391,51 @@ pub(crate) fn check_cmd(
     let validation_arena = DecodeArena::new();
     let (validation_ctx, _) =
         DecodeContext::from_root_bytes(&[], &validation_arena, &args.options().policy)?;
-    let report = validate_ir(
-        &validation_ctx,
-        inputs,
-        &loaded.ir,
-        loaded.fidelity(),
-        loaded
-            .decode_report()
-            .map_or_else(Vec::new, |report| report.losses.clone()),
-    )?;
-    validation_ctx.finish_session()?;
-    let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
-        operation: crate::application::refusal::CheckOperation::Check,
-        decode_report: loaded.decode_report().cloned(),
-        validation: report.clone(),
-    });
-    let body = match check_refusal.as_ref() {
-        Some(refusal) => CommandReportBody::Refused(refusal),
-        None => CommandReportBody::Ok {
-            decode_report: loaded.decode_report(),
-            check_report: Some(&report),
-            export: None,
-        },
+    let validation_result = (|| {
+        let losses = match loaded.decode_report() {
+            Some(report) => validation_ctx.try_collect_retained_with(
+                &report.losses,
+                "validation loss copy",
+                |loss| loss.try_clone_for_decode(&validation_ctx, "validation loss copy"),
+            )?,
+            None => Vec::new(),
+        };
+        let report = validate_ir(
+            &validation_ctx,
+            inputs,
+            &loaded.ir,
+            loaded.fidelity(),
+            losses,
+        )?;
+        let invalid = has_errors(&validation_ctx, &report)?;
+        Ok::<_, cadmpeg_core::CodecError>((report, invalid))
+    })();
+    let (report, invalid) = validation_ctx.finish(validation_result)?;
+    if invalid {
+        let refusal = ConversionRefusal::CheckFailed {
+            operation: crate::application::refusal::CheckOperation::Check,
+            decode_report: loaded.into_decode_report(),
+            validation: report,
+        };
+        let body = CommandReportBody::Refused(&refusal);
+        write_command_report(path, report_path, "check", body)?;
+        if json {
+            writeln!(stdout, "{}", command_body_json("check", body)?)?;
+        } else if let Some(validation) = refusal.evidence().reports.check {
+            print_check_report(&mut stdout, validation)?;
+        }
+        return Err(refusal.into());
+    }
+    let body = CommandReportBody::Ok {
+        decode_report: loaded.decode_report(),
+        check_report: Some(&report),
+        export: None,
     };
     write_command_report(path, report_path, "check", body)?;
     if json {
         writeln!(stdout, "{}", command_body_json("check", body)?)?;
     } else {
         print_check_report(&mut stdout, &report)?;
-    }
-    if let Some(refusal) = check_refusal {
-        return Err(refusal.into());
     }
     Ok(())
 }
@@ -516,7 +530,7 @@ pub(crate) fn convert(
         }
     };
 
-    let (decode_report, validation) = {
+    {
         let prepared = planned.prepared();
         print_load_notice(&prepared.document);
         let mut stderr = io::stderr();
@@ -525,12 +539,8 @@ pub(crate) fn convert(
             writeln!(stderr)?;
         }
         print_check_report(&mut stderr, &prepared.validation)?;
-        (
-            prepared.document.decode_report().cloned(),
-            prepared.validation.clone(),
-        )
-    };
-    let emission = planned.write()?;
+    }
+    let (emission, decode_report, validation) = planned.write()?;
     print_export_emission(&mut io::stderr(), &emission)?;
     if let Err(error) = write_command_report(
         path,
