@@ -120,87 +120,52 @@ pub(crate) enum SupportChart {
     },
 }
 
-/// Skip one cone interval bound: `TRUE` and a `DOUBLE`, or a bare `FALSE`.
-fn skip_cone_bound(cur: &mut Cur<'_>) -> Option<()> {
-    if cur.take_bool()? {
-        cur.take_f64()?;
-    }
-    Some(())
-}
-
 impl SupportChart {
-    /// The chart of a carrier `kind` whose fields start at the cursor, absent
-    /// when an analytic carrier's fields do not parse.
-    pub(crate) fn from_fields(kind: &str, cur: &mut Cur<'_>) -> Option<Self> {
-        let native = |chart| Self::Native {
-            chart,
+    /// The chart of a plane with v-sense slot `reverse_v`.
+    pub(crate) fn plane(reverse_v: bool) -> Self {
+        Self::Native {
+            chart: NativeChart::Plane { reverse_v },
             axis_reversed: false,
-        };
-        match kind {
-            "plane" => {
-                cur.take_position()?;
-                cur.take_vector3()?;
-                cur.take_vector3()?;
-                Some(native(NativeChart::Plane {
-                    reverse_v: cur.take_bool()?,
-                }))
-            }
-            "cone" => {
-                cur.take_position()?;
-                cur.take_vector3()?;
-                cur.take_vector3()?;
-                let ratio = cur.take_f64()?;
-                skip_cone_bound(cur)?;
-                skip_cone_bound(cur)?;
-                let sine = cur.take_f64()?;
-                let cosine = cur.take_f64()?;
-                let u_scale = cur.take_f64()?;
-                Some(Self::Native {
-                    chart: NativeChart::cone(cosine, u_scale, cur.take_bool()?)?,
-                    axis_reversed: cone_axis_reversed(sine, cosine, ratio),
-                })
-            }
-            "sphere" => {
-                cur.take_position()?;
-                cur.take_f64()?;
-                cur.take_vector3()?;
-                cur.take_vector3()?;
-                Some(native(NativeChart::LatitudeFirst {
-                    reverse_v: cur.take_bool()?,
-                }))
-            }
-            "torus" => {
-                cur.take_position()?;
-                cur.take_vector3()?;
-                cur.take_f64()?;
-                cur.take_f64()?;
-                cur.take_vector3()?;
-                Some(native(NativeChart::LatitudeFirst {
-                    reverse_v: cur.take_bool()?,
-                }))
-            }
-            _ => Some(Self::Canonical),
         }
     }
 
-    /// The chart of the embedded support whose identifier is at token
-    /// `position`, absent when an analytic support's fields do not parse.
-    pub(crate) fn embedded_at(toks: &[Token], position: usize) -> Option<Self> {
-        let mut cur = Cur::at(toks, position);
-        match cur.take_ident() {
-            Some(kind) => Self::from_fields(kind, &mut cur),
-            None => Some(Self::Canonical),
+    /// The chart of a sphere or torus with v-sense slot `reverse_v`.
+    pub(crate) fn latitude_first(reverse_v: bool) -> Self {
+        Self::Native {
+            chart: NativeChart::LatitudeFirst { reverse_v },
+            axis_reversed: false,
         }
+    }
+
+    /// The chart of a cone or cylinder from its stored `sine`, `cosine`,
+    /// `ratio`, `u_scale`, and u-sense slot `reverse_u`, absent when the
+    /// axial scale defines no chart.
+    pub(crate) fn cone(
+        sine: f64,
+        cosine: f64,
+        ratio: f64,
+        u_scale: f64,
+        reverse_u: bool,
+    ) -> Option<Self> {
+        Some(Self::Native {
+            chart: NativeChart::cone(cosine, u_scale, reverse_u)?,
+            axis_reversed: cone_axis_reversed(sine, cosine, ratio),
+        })
     }
 
     /// The chart of a standalone surface record. An analytic record's fields
-    /// start at its first position token.
+    /// start at its first position token and use the embedded support layout;
+    /// a record whose analytic fields do not parse has no chart.
     pub(crate) fn of_surface_record(head: &str, tokens: &[Token]) -> Option<Self> {
+        if !matches!(head, "plane" | "cone" | "sphere" | "torus") {
+            return Some(Self::Canonical);
+        }
         let start = tokens
             .iter()
             .position(|token| matches!(token, Token::Position(_)))
             .unwrap_or(tokens.len());
-        Self::from_fields(head, &mut Cur::at(tokens, start))
+        crate::nurbs::proc_curve::analytic_support(head, &mut Cur::at(tokens, start))
+            .map(|(_, chart)| chart)
     }
 
     fn neutral_point(self, native: Point2) -> Point2 {

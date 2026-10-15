@@ -212,7 +212,7 @@ pub(super) fn vertex_point_ref(record: &Record) -> Option<i64> {
 /// The coedge record's pcurve reference: chunk 10 after the reserved integer
 /// in the modern layout, chunk 9 in the save-format 700 layout that stores
 /// no reserved integer.
-pub(super) fn coedge_pcurve_ref(record: &Record) -> Option<i64> {
+pub(crate) fn coedge_pcurve_ref(record: &Record) -> Option<i64> {
     match record.chunk(9) {
         Some(Token::Long(_)) => record.ref_at(10),
         _ => record.ref_at(9),

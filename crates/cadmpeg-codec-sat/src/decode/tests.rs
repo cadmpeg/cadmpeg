@@ -178,6 +178,94 @@ fn text_scale_selects_the_length_unit() {
     assert!((inch.ir().tolerances.linear.get() - expected_resabs_mm).abs() < f64::EPSILON);
 }
 
+/// Millimetre distance within which a pcurve endpoint reaches its vertex.
+const EPS_VERTEX_MM: f64 = 1.0e-9;
+
+/// A triangle on the `reverse_v` plane through `(1, 2, 0)` with normal `+z`
+/// and u along `+x`, so v runs along `-y`. Its vertices are at native plane
+/// coordinates `(0, 0)`, `(2, 0)`, and `(0, 1)`, and each coedge carries the
+/// pcurve of its edge in those coordinates.
+fn text_plane_triangle_stream(scale: f64) -> Vec<u8> {
+    use std::fmt::Write as _;
+    let mut text = format!(
+        "23200 0 2 2 \n16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n\
+         {scale} 9.999999999999999547e-07 1.000000000000000036e-10 \n"
+    );
+    text.push_str(
+        "asmheader $-1 -1 @13 232.4.0.65535 #\n\
+         body $-1 -1 $-1 $2 $-1 $-1 #\n\
+         lump $-1 -1 $-1 $-1 $3 $1 #\n\
+         shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n\
+         face $-1 -1 $-1 $-1 $5 $3 $-1 $6 forward single #\n\
+         loop $-1 -1 $-1 $-1 $7 $4 #\n\
+         plane-surface $-1 -1 $-1 1 2 0 0 0 1 1 0 0 reverse_v I I I I #\n\
+         coedge $-1 -1 $-1 $8 $9 $-1 $10 forward $5 0 $16 #\n\
+         coedge $-1 -1 $-1 $9 $7 $-1 $11 forward $5 0 $17 #\n\
+         coedge $-1 -1 $-1 $7 $8 $-1 $12 forward $5 0 $18 #\n\
+         edge $-1 -1 $-1 $13 0 $14 2 $7 $19 forward @7 unknown #\n\
+         edge $-1 -1 $-1 $14 0 $15 1 $8 $20 forward @7 unknown #\n\
+         edge $-1 -1 $-1 $15 0 $13 1 $9 $21 forward @7 unknown #\n\
+         vertex $-1 -1 $-1 $10 0 $22 #\n\
+         vertex $-1 -1 $-1 $11 0 $23 #\n\
+         vertex $-1 -1 $-1 $12 0 $24 #\n",
+    );
+    for (end, poles) in [(2, "0 0 2 0"), (1, "2 0 0 1"), (1, "0 1 0 0")] {
+        writeln!(
+            text,
+            "pcurve $-1 -1 $-1 0 forward {{ exp_par_cur nubs 1 open 2 0 1 {end} 1 {poles} 0 \
+             spline forward {{ ref 99 }} I I I I }} 0 0 #"
+        )
+        .expect("writing to a String does not fail");
+    }
+    text.push_str(
+        "straight-curve $-1 -1 $-1 1 2 0 1 0 0 I I #\n\
+         straight-curve $-1 -1 $-1 3 2 0 -2 -1 0 I I #\n\
+         straight-curve $-1 -1 $-1 1 1 0 0 1 0 I I #\n\
+         point $-1 -1 $-1 1 2 0 #\n\
+         point $-1 -1 $-1 3 2 0 #\n\
+         point $-1 -1 $-1 1 1 0 #\n\
+         End-of-ASM-data\n",
+    );
+    text.into_bytes()
+}
+
+#[test]
+fn text_plane_pcurves_reach_their_vertices_in_the_stream_unit() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for scale in [1.0, 25.4, 10.0] {
+        let result = decode_bytes(&text_plane_triangle_stream(scale));
+        let model = &result.ir().model;
+        let plane = model.surfaces[0].geometry.solved().expect("plane carrier");
+        let vertices: Vec<_> = model
+            .points
+            .iter()
+            .map(|point| point.position().get())
+            .collect();
+        assert_eq!(vertices.len(), 3);
+        assert_eq!(model.pcurves.len(), 3, "scale {scale}");
+        for pcurve in &model.pcurves {
+            let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry
+            else {
+                panic!("NURBS pcurve expected");
+            };
+            for uv in nurbs.control_points() {
+                let uv = uv.get();
+                let point = cadmpeg_ir::eval::decode::surface_point_solved(&ctx, plane, uv.u, uv.v)
+                    .expect("finite plane point")
+                    .get();
+                let miss = vertices
+                    .iter()
+                    .map(|vertex| point.distance(*vertex))
+                    .fold(f64::INFINITY, f64::min);
+                assert!(
+                    miss <= EPS_VERTEX_MM,
+                    "scale {scale}: endpoint {point:?} misses every vertex by {miss}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn unrepresentable_text_length_is_not_implemented() {
     let source = String::from_utf8(text_sphere_stream(1.0))

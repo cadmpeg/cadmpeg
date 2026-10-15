@@ -6,6 +6,8 @@
 
 use super::{NativeChart, SupportChart};
 use crate::brep::geometry::decode_surface;
+use crate::nurbs::proc_curve::embedded_support;
+use crate::nurbs::toks::Cur;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -286,23 +288,25 @@ fn embedded_support_chart_reads_the_same_fields_as_the_record() {
     ];
     let mut embedded = vec![Token::Ident("cone".into())];
     embedded.extend(fields.iter().cloned());
+    embedded.extend(std::iter::repeat_n(Token::False, 4));
+    let support = embedded_support(&mut Cur::at(&embedded, 0)).expect("embedded cone decodes");
     assert_eq!(
-        SupportChart::embedded_at(&embedded, 0),
+        Some(support.chart),
         SupportChart::of_surface_record("cone", &fields)
     );
     assert_eq!(
-        SupportChart::embedded_at(&embedded, 0),
-        Some(SupportChart::Native {
+        support.chart,
+        SupportChart::Native {
             chart: NativeChart::cone(0.75_f64.sqrt(), 1.5, false).expect("nonzero scale"),
             axis_reversed: true,
-        })
+        }
     );
-    let spline = [Token::Ident("spline".into())];
     assert_eq!(
-        SupportChart::embedded_at(&spline, 0),
+        SupportChart::of_surface_record("spline", &[]),
         Some(SupportChart::Canonical)
     );
-    assert_eq!(SupportChart::embedded_at(&embedded[..4], 0), None);
+    assert!(embedded_support(&mut Cur::at(&embedded[..4], 0)).is_none());
+    assert_eq!(SupportChart::of_surface_record("cone", &fields[..4]), None);
 }
 
 #[test]
