@@ -60,10 +60,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                 entity: circle.clone(),
                 reversed: false,
             }],
-            &cadmpeg_test_support::service_decode_context(),
-            "spatial profile uniqueness",
         )
-        .expect("fixture collection admission")
         .unwrap()],
         native_ref: None,
     });
@@ -479,8 +476,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             .unwrap(),
             native_ref: None,
         });
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings
@@ -715,17 +711,13 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
     assert!(curve
-        .try_map_control_points(
-            |index, point| {
-                let mut mapped = point.get();
-                if index == 0 {
-                    mapped.x = f64::NAN;
-                }
-                crate::features::FinitePoint3::new(mapped).ok_or(())
-            },
-            &cadmpeg_test_support::service_decode_context()
-        )
-        .expect("pole edit admission")
+        .try_map_control_points(|index, point| {
+            let mut mapped = point.get();
+            if index == 0 {
+                mapped.x = f64::NAN;
+            }
+            crate::features::FinitePoint3::new(mapped).ok_or(())
+        })
         .is_err());
     assert_eq!(curve, before);
     let geometry =
@@ -754,12 +746,9 @@ fn a_refused_spatial_sketch_pole_edit_keeps_the_prior_poles() {
     .unwrap();
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
-    let refusal = curve
-        .try_map_control_points(
-            |_, _| Err(NurbsError::EditRefused("caller refused this pole".into())),
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("pole edit admission");
+    let refusal = curve.try_map_control_points(|_, _| {
+        Err(NurbsError::EditRefused("caller refused this pole".into()))
+    });
     assert_eq!(
         refusal,
         Err(NurbsError::EditRefused("caller refused this pole".into()))
@@ -915,16 +904,8 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
         entity: SpatialSketchEntityId::mint("synthetic:test:spatial-entity#profile").unwrap(),
         reversed: true,
     }];
-    let mut profile = SpatialSketchProfile::try_new(
-        origin,
-        normal,
-        u_axis,
-        boundary.clone(),
-        &cadmpeg_test_support::service_decode_context(),
-        "spatial profile uniqueness",
-    )
-    .expect("fixture collection admission")
-    .unwrap();
+    let mut profile =
+        SpatialSketchProfile::try_new(origin, normal, u_axis, boundary.clone()).unwrap();
     assert_eq!(profile.origin(), origin);
     assert_eq!(
         [profile.normal(), profile.u_axis()],
@@ -944,51 +925,27 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
         serde_json::from_value::<SpatialSketchProfile>(wire.clone()).unwrap(),
         profile
     );
+    assert!(SpatialSketchProfile::try_new(origin, normal, u_axis, vec![]).is_err());
     assert!(SpatialSketchProfile::try_new(
         origin,
         normal,
         u_axis,
-        vec![],
-        &cadmpeg_test_support::service_decode_context(),
-        "spatial profile uniqueness"
+        vec![boundary[0].clone(), boundary[0].clone()]
     )
-    .expect("fixture collection admission")
-    .is_err());
-    assert!(SpatialSketchProfile::try_new(
-        origin,
-        normal,
-        u_axis,
-        vec![boundary[0].clone(), boundary[0].clone()],
-        &cadmpeg_test_support::service_decode_context(),
-        "spatial profile uniqueness"
-    )
-    .expect("fixture collection admission")
     .is_err());
     for axis in [
         Vector3::new(0.0, 0.0, 0.0),
         normal,
         Vector3::new(f64::NAN, 0.0, 0.0),
     ] {
-        assert!(SpatialSketchProfile::try_new(
-            origin,
-            normal,
-            axis,
-            boundary.clone(),
-            &cadmpeg_test_support::service_decode_context(),
-            "spatial profile uniqueness"
-        )
-        .expect("fixture collection admission")
-        .is_err());
+        assert!(SpatialSketchProfile::try_new(origin, normal, axis, boundary.clone()).is_err());
     }
     assert!(SpatialSketchProfile::try_new(
         origin,
         normal,
         Vector3::new(1.0 + EPS_SPATIAL_FRAME_BOUNDARY * 0.5, 0.0, 0.0),
-        boundary,
-        &cadmpeg_test_support::service_decode_context(),
-        "spatial profile uniqueness"
+        boundary
     )
-    .expect("fixture collection admission")
     .is_ok());
     for (field, invalid) in [
         ("origin", serde_json::json!({"x": null, "y": 0.0, "z": 0.0})),

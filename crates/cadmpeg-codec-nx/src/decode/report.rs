@@ -262,7 +262,6 @@ fn push_bounded_completion_losses(
 }
 
 pub(super) fn build_geometry_report(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan,
     geometry_report_facts: &GeometryReportFacts<'_>,
     ir: &CadIr,
@@ -402,7 +401,7 @@ pub(super) fn build_geometry_report(
         );
     }
 
-    append_design_intent_losses(ctx, ir, &mut losses)?;
+    append_design_intent_losses(ir, &mut losses)?;
 
     if has_untransferred_attribute_fields {
         push_report_loss(
@@ -416,7 +415,7 @@ pub(super) fn build_geometry_report(
     }
 
     for loss in dialect_losses {
-        losses.push(loss.try_clone_for_decode(ctx, "nx geometry report dialect loss")?);
+        losses.push(loss.clone());
     }
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -428,21 +427,16 @@ pub(super) fn build_geometry_report(
 }
 
 pub(crate) fn append_design_intent_losses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut current_body_ids = Vec::new();
     for body in &ir.model.bodies {
-        current_body_ids.push(
-            body.id
-                .try_clone_for_decode(ctx, "nx report current body identity")?,
-        );
+        current_body_ids.push(body.id.clone());
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
     let (active_features, closure_rejection) =
-        match crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)?
-        {
+        match crate::native::history::active_feature_closure_for_decode(ir, &current_body_ids) {
             Ok(active) => (Some(active), None),
             Err(rejection) => (None, Some(rejection.code())),
         };
@@ -506,7 +500,7 @@ pub(crate) fn append_design_intent_losses(
                         || current_bodies.iter().any(|body| !bodies.contains(body))
                 }))
             || (configuration.active
-                && active_configuration_state_is_incomplete_for_decode(ctx, ir, configuration)?);
+                && active_configuration_state_is_incomplete_for_decode(ir, configuration));
         if incomplete {
             incomplete_configuration_count += 1;
         }
@@ -523,7 +517,7 @@ pub(crate) fn append_design_intent_losses(
         );
     }
 
-    let incomplete_expression_count = incomplete_expression_parameters(ctx, ir)?.len();
+    let incomplete_expression_count = incomplete_expression_parameters(ir)?.len();
     if incomplete_expression_count != 0 {
         push_report_loss(
             losses,
@@ -968,8 +962,7 @@ pub(crate) fn append_design_intent_losses(
             ..
         }) = feature.evaluation.definition()
         {
-            active_sketch_ids
-                .insert(sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?);
+            active_sketch_ids.insert(sketch.clone());
         }
     }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
@@ -1035,7 +1028,6 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                &cadmpeg_ir::document::admission::StandardAdmission,
                 &carrier,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("test:model:entity#report-intersection")
@@ -1055,7 +1047,6 @@ mod tests {
                     },
                 ),
             )
-            .expect("standard admission")
             .expect("procedural attachment");
         ir
     }

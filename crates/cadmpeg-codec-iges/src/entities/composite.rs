@@ -1558,19 +1558,16 @@ fn anchor_analytic_nurbs_endpoint_poles(
     };
     let mut nurbs = nurbs;
     Ok(nurbs
-        .try_map_control_points(
-            |index, point| {
-                let mapped = if index == last {
-                    end
-                } else if index == 0 {
-                    start
-                } else {
-                    point
-                };
-                Ok::<_, ()>(mapped)
-            },
-            ctx,
-        )?
+        .try_map_control_points(|index, point| {
+            let mapped = if index == last {
+                end
+            } else if index == 0 {
+                start
+            } else {
+                point
+            };
+            Ok::<_, ()>(mapped)
+        })
         .ok()
         .map(|()| nurbs))
 }
@@ -1825,7 +1822,7 @@ fn project_with_type_130_policy(
 ) -> Result<WireProjectionOutcome, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
 
     let mut records = BTreeMap::new();
     for record in parameters {

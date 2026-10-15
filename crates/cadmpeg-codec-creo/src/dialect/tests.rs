@@ -328,5 +328,3 @@ fn the_layout_token_vocabulary_is_not_the_registry_vocabulary() {
         assert!(id.as_str().starts_with("creo:"));
     }
 }
-
-

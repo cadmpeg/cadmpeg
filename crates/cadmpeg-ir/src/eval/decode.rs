@@ -349,18 +349,14 @@ pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
 
 /// Reusable point-evaluation storage for repeated parameters on one NURBS curve.
 /// The basis is allocated once; evaluations mutate that storage and borrow poles.
-pub struct NurbsPointEvaluator<'curve, 'ctx> {
+pub struct NurbsPointEvaluator<'curve> {
     curve: &'curve NurbsCurve,
     basis: SupportValues<f64>,
-    _ctx: std::marker::PhantomData<&'ctx ()>,
 }
 
-impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
+impl<'curve> NurbsPointEvaluator<'curve> {
     /// Allocate the basis storage for `curve`.
-    pub fn new(
-        _ctx: &'ctx DecodeContext<'_>,
-        curve: &'curve NurbsCurve,
-    ) -> Result<Self, ResourceLimit> {
+    pub fn new(curve: &'curve NurbsCurve) -> Self {
         let support = curve.knots().len() - curve.pole_count();
         let basis = if support <= INLINE_SUPPORT {
             SupportValues::Inline {
@@ -370,11 +366,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
         } else {
             SupportValues::Heap((0..support).map(|_| 0.0).collect())
         };
-        Ok(Self {
-            curve,
-            basis,
-            _ctx: std::marker::PhantomData,
-        })
+        Self { curve, basis }
     }
 
     /// Evaluate in the knot domain without allocating another basis or pole window.

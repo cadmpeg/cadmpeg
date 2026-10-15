@@ -87,12 +87,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         }));
 
     configured.evaluation.edit(|definition, _| {
-        inherit_configuration_shared_semantics(
-            &cadmpeg_test_support::service_decode_context(),
-            definition,
-            base.evaluation.definition(),
-        )
-        .unwrap();
+        inherit_configuration_shared_semantics(definition, base.evaluation.definition()).unwrap();
     });
 
     assert_eq!(
@@ -169,13 +164,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         allow_multi_profile_faces: None,
     });
 
-    inherit_configuration_hole_semantics(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut local,
-        &base,
-        false,
-    )
-    .unwrap();
+    inherit_configuration_hole_semantics(&mut local, &base, false).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,

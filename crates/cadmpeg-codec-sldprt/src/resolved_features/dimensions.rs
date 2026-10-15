@@ -29,8 +29,8 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::decode::{id_from_index, DecodeContext};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
@@ -1480,24 +1480,19 @@ fn marker_circle_one_to_one(
 }
 
 fn append_marker_circle(
-    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketch: &mut Sketch,
     entity: SketchEntity,
     profile: bool,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     if profile {
         let id = SketchEntityId::clone(entity.id());
-        sketch.profiles.push_single(
-            ctx,
-            SketchEntityUse {
-                entity: id,
-                reversed: false,
-            },
-        )?;
+        sketch.profiles.push_single(SketchEntityUse {
+            entity: id,
+            reversed: false,
+        });
     }
     entities.push(entity);
-    Ok(())
 }
 
 fn copy_marker_circle_sketch_id(
@@ -1512,7 +1507,6 @@ fn copy_marker_circle_sketch_id(
 /// Materialize marker-only circles whose radial witnesses have exact radial
 /// dimensions, including repeated circles constrained to the same radius.
 pub(crate) fn project_marker_dimensioned_circles(
-    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketches: &mut [Sketch],
     features: &[cadmpeg_ir::features::Feature],
@@ -1656,9 +1650,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         else {
                             continue;
                         };
-                        sketch
-                            .profiles
-                            .retain_uses(ctx, |usage| usage.entity != removed)?;
+                        sketch.profiles.retain_uses(|usage| usage.entity != removed);
                         for (index, (parameter, radius)) in
                             radial_dimensions.iter().copied().enumerate()
                         {
@@ -1696,7 +1688,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                             .with_construction(carrier_construction && same_carrier)
                             .with_native_ref(native_reference)
                             .with_geometry_ref(geometry_reference);
-                            append_marker_circle(ctx, entities, sketch, entity, true)?;
+                            append_marker_circle(entities, sketch, entity, true);
                         }
                         continue;
                     }
@@ -1850,7 +1842,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 };
                 sketch
                     .profiles
-                    .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
+                    .retain_uses(|usage| !removed.contains(&usage.entity));
                 for (index, geometry) in transformed.into_iter().enumerate() {
                     let id_text = format!("sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}");
                     let Ok(entity_id) = SketchEntityId::mint(id_text) else {
@@ -1869,7 +1861,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     )
                     .with_native_ref(native_reference)
                     .with_geometry_ref(geometry_reference);
-                    append_marker_circle(ctx, entities, sketch, entity, true)?;
+                    append_marker_circle(entities, sketch, entity, true);
                 }
                 continue 'feature;
             }
@@ -2004,7 +1996,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     };
                     sketch
                         .profiles
-                        .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
+                        .retain_uses(|usage| !removed.contains(&usage.entity));
                     for (record, geometry) in transformed {
                         let lane_key = record
                             .0
@@ -2028,7 +2020,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         .with_construction(record.2)
                         .with_native_ref(Some(native_reference))
                         .with_geometry_ref(geometry_reference);
-                        append_marker_circle(ctx, entities, sketch, entity, !record.2)?;
+                        append_marker_circle(entities, sketch, entity, !record.2);
                     }
                     continue;
                 }
@@ -2098,7 +2090,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             )
             .with_construction(construction)
             .with_geometry_ref(geometry_reference);
-            append_marker_circle(ctx, entities, sketch, entity, true)?;
+            append_marker_circle(entities, sketch, entity, true);
         }
     }
 

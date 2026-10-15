@@ -423,11 +423,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         if item.sense == 0 && section_skamp_is_arc(definition, item) =>
                     {
                         let entity = sketch_entity_id_admitted(sketch, item.entity_id)?;
-                        let first = SketchLocus::Start(defer_resource(
-                            entity
-                                .try_clone_for_decode(ctx, "creo skamp arc endpoint identity copy"),
-                            &resource_error,
-                        )?);
+                        let first = SketchLocus::Start(entity.clone());
                         let second = SketchLocus::End(entity);
                         let axis = if kind == 12 {
                             SketchCoordinateAxis::V
@@ -579,10 +575,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             format_args!("skamp:offset:{}", skamp.offset),
                         )?
                     },
-                    sketch: defer_resource(
-                        sketch.try_clone_for_decode(ctx, "creo skamp constraint sketch identity"),
-                        &resource_error,
-                    )?,
+                    sketch: sketch.clone(),
                     definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                         constraint_definition,
                     )

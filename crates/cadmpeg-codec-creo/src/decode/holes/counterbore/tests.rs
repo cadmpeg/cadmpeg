@@ -32,8 +32,7 @@ fn service_boundary_circle(
 fn service_unique_model_surface_geometries(
     ir: &cadmpeg_ir::document::CadIr,
 ) -> Option<BTreeMap<u32, SurfaceGeometry>> {
-    crate::decode::with_test_decode_ctx(|ctx| super::unique_model_surface_geometries(ctx, ir))
-        .expect("service resources")
+    super::unique_model_surface_geometries(ir)
 }
 
 fn boundary_scan() -> crate::container::ContainerScan<'static> {
@@ -504,11 +503,9 @@ fn counterbore_patch_rows_cover_each_source_row() {
     ir.model
         .surfaces
         .extend([model_cylinder(1), model_cylinder(2)]);
-    let service = crate::decode::with_test_decode_ctx(|ctx| {
-        super::counterbore_patch_geometries(ctx, &scan, &ir, 40)
-    })
-    .expect("service resources")
-    .expect("source patches");
+    let service = ({ super::counterbore_patch_geometries(&scan, &ir, 40) })
+        .expect("service resources")
+        .expect("source patches");
     assert_eq!(
         service.iter().map(|(row, _)| row.id).collect::<Vec<_>>(),
         [1, 2, 3, 4]

@@ -16,7 +16,6 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -151,15 +150,6 @@ pub enum SolvedSurfaceGeometry {
 }
 
 impl SolvedSurfaceGeometry {
-    /// Copy the geometry.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
     /// [`PlacedSurface`] stores its own depth, so this reads one field and
@@ -280,15 +270,6 @@ pub enum SurfaceGeometry {
 }
 
 impl SurfaceGeometry {
-    /// Copy retained geometry through the caller's decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
     pub const fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
@@ -334,17 +315,6 @@ pub struct Surface {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
-}
-
-impl Surface {
-    /// Copy the carrier, retained identity and source metadata under caller limits.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
 }
 
 /// The analytic or free-form shape of a 3D curve carrier established without a
@@ -393,15 +363,6 @@ pub enum SolvedCurveGeometry {
 }
 
 impl SolvedCurveGeometry {
-    /// Copy retained geometry through the caller's decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
     /// [`PlacedCurve`] stores its own depth, so this reads one field and
@@ -524,15 +485,6 @@ pub enum CurveGeometry {
 }
 
 impl CurveGeometry {
-    /// Copy retained geometry through the caller's decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
     pub const fn procedural_construction(&self) -> Option<&ProceduralCurveId> {
@@ -3212,12 +3164,7 @@ impl RollingBallJetStations {
     pub fn try_new(
         degree: u32,
         stations: Vec<RollingBallJetStation>,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        Ok(Self::from_raw(degree, stations))
-    }
-
-    fn from_raw(degree: u32, stations: Vec<RollingBallJetStation>) -> Result<Self, &'static str> {
+    ) -> Result<Self, &'static str> {
         Self::admit_controls(degree, &stations, |row| row.knot)?;
         let mut admitted = Vec::new();
         for row in stations {
@@ -3240,15 +3187,12 @@ impl RollingBallJetStations {
     pub fn from_parts(
         degree: u32,
         stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        Ok((|| {
-            Self::admit_controls(degree, &stations, |row| row.knot.get())?;
-            for station in &stations {
-                admit_rolling_ball_radii(&station.site)?;
-            }
-            Ok(Self { degree, stations })
-        })())
+    ) -> Result<Self, &'static str> {
+        Self::admit_controls(degree, &stations, |row| row.knot.get())?;
+        for station in &stations {
+            admit_rolling_ball_radii(&station.site)?;
+        }
+        Ok(Self { degree, stations })
     }
 
     fn admit_controls<R, V, P>(
@@ -3316,7 +3260,7 @@ impl TryFrom<RollingBallJetReadWire> for RollingBallJetStations {
     type Error = RollingBallJetError;
 
     fn try_from(wire: RollingBallJetReadWire) -> Result<Self, Self::Error> {
-        Self::from_raw(wire.degree, wire.stations).map_err(RollingBallJetError::Invalid)
+        Self::try_new(wire.degree, wire.stations).map_err(RollingBallJetError::Invalid)
     }
 }
 
@@ -6912,7 +6856,6 @@ impl IntcurveSupportContext {
     /// Copy a support pcurve under a decoder's allocation limits.
     pub fn try_copy_pcurve_for_decode(
         &mut self,
-        ctx: &DecodeContext<'_>,
         source: usize,
         target: usize,
     ) -> Result<(), CodecError> {
@@ -6924,9 +6867,7 @@ impl IntcurveSupportContext {
             .as_ref()
             .map(|pcurve| {
                 Ok::<_, CodecError>(SupportPcurve::new(
-                    pcurve
-                        .geometry
-                        .try_clone_for_decode(ctx, "intersection support pcurve copy")?,
+                    pcurve.geometry.clone(),
                     pcurve.parameter_range,
                 ))
             })

@@ -213,14 +213,7 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
        },
        cache_fit_tolerance: None,
     };
-    ir.model
-        .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
-            &curve,
-            construction,
-        )
-        .unwrap()
-        .unwrap();
+    ir.model.add_procedural_curve(&curve, construction).unwrap();
     ir
 }
 
@@ -390,13 +383,11 @@ fn untrimmed_surface_curve() -> CadIr {
         face: "test:model:face#face".try_into().expect("valid identity"),
         boundary: crate::topology::LoopBoundary::Ring(
             crate::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
                 vec!["test:model:coedge#coedge"
                     .try_into()
                     .expect("valid identity")],
                 Vec::new(),
             )
-            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });
@@ -587,11 +578,9 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     };
     ir.model
         .add_procedural_surface(
-            &crate::document::admission::StandardAdmission,
             &SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
             construction,
         )
-        .unwrap()
         .unwrap();
     ir.model.points[0].set_position(
         crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
@@ -1039,14 +1028,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         },
         cache_fit_tolerance: Some(0.99),
     };
-    ir.model
-        .add_procedural_curve(
-            &crate::document::admission::StandardAdmission,
-            &curve,
-            procedural,
-        )
-        .unwrap()
-        .unwrap();
+    ir.model.add_procedural_curve(&curve, procedural).unwrap();
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         report
@@ -1211,12 +1193,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     };
     procedural
         .model
-        .add_procedural_surface(
-            &crate::document::admission::StandardAdmission,
-            &surface,
-            construction,
-        )
-        .unwrap()
+        .add_procedural_surface(&surface, construction)
         .unwrap();
     let procedural_report =
         validate_neutral(&procedural, Vec::new()).expect("resource allocation did not fail");

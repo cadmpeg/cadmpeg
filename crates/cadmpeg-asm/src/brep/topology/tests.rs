@@ -211,7 +211,6 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             .expect("generated identities are valid");
             assert_eq!(out.stats.nurbs_surfaces, 1);
             crate::brep::emit::emit_carrier_records(
-                &asm_decode_ctx,
                 &mut out,
                 &records,
                 &mut carriers,

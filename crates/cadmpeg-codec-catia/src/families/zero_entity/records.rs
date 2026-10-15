@@ -1574,9 +1574,7 @@ pub(super) fn zero_entity_neutral_pcurve(
             Some(weights)
         }
     };
-    let knots = nurbs
-        .knots()
-        .try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
+    let knots = nurbs.knots().clone();
     Ok(crate::nurbs::note_refusal(
         PcurveNurbs::from_checked_lanes(
             ctx,
@@ -1898,9 +1896,7 @@ fn zero_entity_lift_pcurve(
             Some(weights)
         }
     };
-    let knots = nurbs
-        .knots()
-        .try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
+    let knots = nurbs.knots().clone();
     Ok(crate::nurbs::note_refusal(
         NurbsCurve::from_checked_lanes(
             ctx,

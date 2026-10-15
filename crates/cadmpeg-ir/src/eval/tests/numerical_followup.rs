@@ -137,9 +137,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
         .expect("fixture constructor admission")
         .unwrap();
         assert_eq!(
-            nurbs_curve_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve)
-                .expect("speed bound admission")
-                .map(crate::scalar::FiniteReal::get),
+            nurbs_curve_speed_bound(&curve).map(crate::scalar::FiniteReal::get),
             Some(1.0)
         );
         assert_eq!(
@@ -194,10 +192,8 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
     .expect("fixture constructor admission")
     .expect("unit-weight rational curve");
     assert_eq!(
-        nurbs_curve_speed_bound(&cadmpeg_test_support::service_decode_context(), &implicit)
-            .expect("speed bound admission"),
-        nurbs_curve_speed_bound(&cadmpeg_test_support::service_decode_context(), &explicit)
-            .expect("speed bound admission")
+        nurbs_curve_speed_bound(&implicit).expect("speed bound admission"),
+        nurbs_curve_speed_bound(&explicit).expect("speed bound admission")
     );
     assert_eq!(
         nurbs_curve_parameter_near_point(

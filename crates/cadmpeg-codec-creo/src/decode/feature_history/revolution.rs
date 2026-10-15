@@ -233,7 +233,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &surface_id,
                 "FeatDefs",
@@ -301,7 +300,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     continue;
                 }
                 annotate(
-                    ctx,
                     annotations,
                     &surface_id,
                     "FeatDefs",
@@ -404,7 +402,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &surface_id,
                 "FeatDefs",
@@ -413,7 +410,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 Exactness::Derived,
             )?;
             annotate(
-                ctx,
                 annotations,
                 &procedural_id,
                 "FeatDefs",
@@ -426,8 +422,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ctx,
                 ir,
                 Surface {
-                    id: surface_id
-                        .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
+                    id: surface_id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
@@ -444,7 +439,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 },
             )?;
             source_carriers.admit_procedural_surface(
-                ctx,
                 ir,
                 &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -554,7 +548,6 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "FeatDefs",
@@ -647,7 +640,6 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "FeatDefs",

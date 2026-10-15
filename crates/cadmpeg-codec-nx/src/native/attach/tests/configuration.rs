@@ -254,9 +254,8 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .map(|operation| (operation.clone(), chamfer))
         .collect();
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let projection = hole_package_projection(
-            ctx,
             &cadmpeg_ir::document::CadIr::empty(),
             &templates,
             std::slice::from_ref(&group),
@@ -266,8 +265,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
                 diameters: &diameters,
                 chamfers: &chamfers,
             },
-        )
-        .unwrap();
+        );
         assert_eq!(
             projection.internal_operations,
             operations.iter().cloned().collect()
@@ -286,7 +284,6 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
             })
             .collect::<Vec<_>>();
         let projection = hole_package_projection(
-            ctx,
             &cadmpeg_ir::document::CadIr::empty(),
             &untreated_templates,
             std::slice::from_ref(&group),
@@ -296,8 +293,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
                 diameters: &diameters,
                 chamfers: &BTreeMap::new(),
             },
-        )
-        .unwrap();
+        );
         assert_eq!(
             projection.internal_operations,
             operations.iter().cloned().collect()
@@ -309,7 +305,6 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         let mut mixed_templates = untreated_templates.clone();
         mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
         let projection = hole_package_projection(
-            ctx,
             &cadmpeg_ir::document::CadIr::empty(),
             &mixed_templates,
             std::slice::from_ref(&group),
@@ -319,8 +314,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
                 diameters: &diameters,
                 chamfers: &BTreeMap::new(),
             },
-        )
-        .unwrap();
+        );
         assert!(projection.internal_operations.is_empty());
         assert!(projection.outputs.is_empty());
 
@@ -330,7 +324,6 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
             vec![BodyId::mint("test:model:entity#other-body").expect("identity grammar")],
         );
         let projection = hole_package_projection(
-            ctx,
             &cadmpeg_ir::document::CadIr::empty(),
             &templates,
             std::slice::from_ref(&group),
@@ -340,8 +333,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
                 diameters: &diameters,
                 chamfers: &chamfers,
             },
-        )
-        .unwrap();
+        );
         assert!(projection.internal_operations.is_empty());
         assert!(projection.outputs.is_empty());
     });
@@ -399,10 +391,8 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     });
     let mut annotations = AnnotationBuilder::new();
 
-    crate::test_support::with_decode_context(|ctx| {
-        attach_active_configuration_parameter_values(ctx, &mut ir, &mut annotations)
-    })
-    .expect("valid exactness fields");
+    ({ attach_active_configuration_parameter_values(&mut ir, &mut annotations) })
+        .expect("valid exactness fields");
 
     assert_eq!(
         ir.model.configurations[0].parameter_values,
@@ -500,10 +490,8 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
-        crate::test_support::with_decode_context(|ctx| {
-            attach_active_configuration_parameter_values(ctx, &mut ir, &mut annotations)
-        })
-        .expect("valid exactness fields");
+        ({ attach_active_configuration_parameter_values(&mut ir, &mut annotations) })
+            .expect("valid exactness fields");
 
         assert!(ir.model.configurations[0].parameter_values.is_empty());
     }
@@ -662,10 +650,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     ];
     let mut annotations = AnnotationBuilder::new();
 
-    crate::test_support::with_decode_context(|ctx| {
-        attach_current_feature_states(ctx, &mut ir, &mut annotations)
-    })
-    .expect("valid exactness fields");
+    ({ attach_current_feature_states(&mut ir, &mut annotations) }).expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
@@ -872,16 +857,10 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     };
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_ir::stream_name!("nx:container"),
-        "fixture stream handle",
-    )
-    .unwrap();
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let sketch = attach_sketch_graph(
-            ctx,
             &mut ir,
             &label,
             &SketchSources {
@@ -895,7 +874,6 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
             &mut annotations,
             &stream,
         )
-        .unwrap()
         .expect("one exact point use projects a sketch");
         assert_eq!(ir.model.sketches[0].id, sketch);
         assert!(matches!(
@@ -906,14 +884,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
 
         let mut rejected_ir = CadIr::empty();
         let mut rejected_annotations = AnnotationBuilder::new();
-        let rejected_stream = StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::stream_name!("nx:container"),
-            "fixture stream handle",
-        )
-        .unwrap();
+        let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         assert!(attach_sketch_graph(
-            ctx,
             &mut rejected_ir,
             &label,
             &SketchSources {
@@ -925,9 +897,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
                 coordinate_pairs: &[],
             },
             &mut rejected_annotations,
-            &rejected_stream,
+            &rejected_stream
         )
-        .unwrap()
         .is_none());
         assert!(rejected_ir.model.sketches.is_empty());
         assert!(rejected_ir.model.sketch_entities.is_empty());
@@ -985,16 +956,10 @@ fn named_sketch_points_project_without_an_external_named_point() {
     ];
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_ir::stream_name!("nx:container"),
-        "fixture stream handle",
-    )
-    .unwrap();
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let sketch = attach_sketch_graph(
-            ctx,
             &mut ir,
             &label,
             &SketchSources {
@@ -1008,7 +973,6 @@ fn named_sketch_points_project_without_an_external_named_point() {
             &mut annotations,
             &stream,
         )
-        .unwrap()
         .expect("a complete named payload point projects a sketch");
         assert_eq!(ir.model.sketches[0].id, sketch);
         assert_eq!(ir.model.sketch_entities.len(), 1);
@@ -1367,7 +1331,7 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let history = BodyWriterHistory::default();
         assert_eq!(
             extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid]),
@@ -1407,9 +1371,7 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
             FeatureId::mint("synthetic:test:id#prior-offset-writer").expect("identity grammar");
         let offset_body = "store:block#7";
         let mut offset_history = BodyWriterHistory::default();
-        offset_history
-            .record_writer(ctx, None, Some(offset_body), &[], &prior)
-            .expect("admitted writer history");
+        offset_history.record_writer(None, Some(offset_body), &[], &prior);
         assert_eq!(
             extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
             BooleanOp::Unresolved

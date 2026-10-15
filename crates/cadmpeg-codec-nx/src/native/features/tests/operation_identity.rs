@@ -287,9 +287,7 @@ fn feature_label_identity_retains_the_complete_header_ordinal() {
     assert_eq!(labels.len(), 2);
     assert!(labels[0].id.ends_with("-0000000000"));
     assert!(labels[1].id.ends_with("-0000000002"));
-    let records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
-            .unwrap();
+    let records = (feature_operation_records(&container)).unwrap();
     assert_eq!(records[1].operation_label, labels[1].id);
 }
 
@@ -297,8 +295,7 @@ fn feature_label_identity_retains_the_complete_header_ordinal() {
 fn feature_operation_record_admits_fixture() {
     let container = unlabeled_history_fixture();
     let admitted =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
-            .expect("admitted feature operation records");
+        (feature_operation_records(&container)).expect("admitted feature operation records");
     assert_eq!(admitted.len(), 2);
 }
 
@@ -388,12 +385,8 @@ fn operation_header_identity_survives_offset_store_insertion() {
         second_labels[0].stable_identity
     );
 
-    let first_records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &first))
-            .unwrap();
-    let second_records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &second))
-            .unwrap();
+    let first_records = (feature_operation_records(&first)).unwrap();
+    let second_records = (feature_operation_records(&second)).unwrap();
     assert_eq!(
         first_records[0].stable_identity,
         second_records[0].stable_identity

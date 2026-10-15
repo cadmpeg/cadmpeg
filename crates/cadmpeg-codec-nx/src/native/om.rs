@@ -171,7 +171,6 @@ pub(super) struct OmOperationStateMessage {
 
 /// Decode internally pointed record areas from linked OM sections.
 pub(super) fn om_record_areas(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmRecordArea>, cadmpeg_core::CodecError> {
     let links = segment_om_links(container)?;
@@ -211,11 +210,7 @@ pub(super) fn om_record_areas(
             control_words: header.control_words,
             product_version: header.product.value.into_owned(),
             byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                bytes,
-                "retain source digest",
-            )?,
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
             source_offset,
         });
     }
@@ -2898,10 +2893,9 @@ pub(super) fn external_reference_records(
 
 /// Retain all indexed records and link uniquely decoded handle-set records.
 pub(super) fn external_reference_indexed_records(
-    ctx: &DecodeContext<'_>,
     container: &Container,
     decoded: &[ExternalReferenceRecord],
-) -> Result<Vec<ExternalReferenceIndexedRecord>, cadmpeg_core::CodecError> {
+) -> Vec<ExternalReferenceIndexedRecord> {
     let mut decoded_by_key = BTreeMap::<(&str, u32), Option<&ExternalReferenceRecord>>::new();
     for record in decoded {
         let key = (record.source_entry.as_str(), record.record_id);
@@ -2939,17 +2933,13 @@ pub(super) fn external_reference_indexed_records(
             id,
             record_id: record.record_id,
             byte_len,
-            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                bytes,
-                "nx external reference indexed digest",
-            )?,
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
             handle_set_record,
             source_entry: entry.name.clone(),
             source_offset,
         });
     }
-    Ok(output)
+    output
 }
 
 /// Decode every exact six- or seven-byte empty indexed record.
@@ -3606,7 +3596,6 @@ fn object_record_relation_ids(
 
 /// Catalog every externally bounded NX OM entity record.
 pub(super) fn object_records(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
@@ -3662,11 +3651,7 @@ pub(super) fn object_records(
                 record_ordinal: record_ordinal_u32,
                 section_offset,
                 byte_len: cadmpeg_core::decode::u64_from_index(record.bytes.len()),
-                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                    ctx,
-                    record.bytes,
-                    "NX retained record digest",
-                )?,
+                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.bytes),
                 stable_identity,
                 dependencies: object_record_relation_ids(
                     dependencies.get(&record_ordinal),
@@ -5061,9 +5046,7 @@ mod object_record_identity_tests {
     fn unique_indexed_object_records_receive_stable_identities() {
         let container = crate::container::scan_bytes(prt_with_indexed_om_section())
             .expect("required invariant");
-        let records =
-            crate::test_support::with_decode_context(|ctx| super::object_records(ctx, &container))
-                .unwrap();
+        let records = (super::object_records(&container)).unwrap();
         assert_eq!(records.len(), 2);
         assert!(records
             .iter()

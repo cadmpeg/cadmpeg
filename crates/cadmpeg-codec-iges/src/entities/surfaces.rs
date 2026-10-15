@@ -18,7 +18,6 @@ use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
     boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
-use cadmpeg_ir::geometry::nurbs::scoped::ScopedRows;
 use cadmpeg_ir::geometry::{
     nurbs::{
         KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
@@ -458,10 +457,9 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
         .map(|curve| &curve.geometry)
 }
 
-fn homogeneous_bezier_spans<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn homogeneous_bezier_spans(
     curve: &NurbsCurve,
-) -> Result<Option<ScopedRows<'ctx, HomogeneousBezierSpan>>, CodecError> {
+) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
     };
@@ -496,16 +494,10 @@ fn homogeneous_bezier_spans<'ctx>(
                 .ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?,
         );
     }
-    let Some(controls) = positive_controls(
-        ctx,
-        &points,
-        weights.as_deref(),
-        "iges_surface_closure_controls",
-    )?
-    else {
+    let Some(controls) = positive_controls(&points, weights.as_deref()) else {
         return Ok(None);
     };
-    Ok(homogeneous_spans(ctx, degree, curve.knots(), &controls)?)
+    Ok(homogeneous_spans(degree, curve.knots(), &controls))
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
@@ -686,15 +678,14 @@ fn partition_homogeneous_spans(
 }
 
 fn aligned_homogeneous_spans(
-    ctx: &DecodeContext<'_>,
     first: &NurbsCurve,
     second: &NurbsCurve,
 ) -> Result<Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>>, CodecError> {
-    let Some(first_extraction) = homogeneous_bezier_spans(ctx, first)? else {
+    let Some(first_extraction) = homogeneous_bezier_spans(first)? else {
         return Ok(None);
     };
     let first_spans = &*first_extraction;
-    let Some(second_extraction) = homogeneous_bezier_spans(ctx, second)? else {
+    let Some(second_extraction) = homogeneous_bezier_spans(second)? else {
         return Ok(None);
     };
     let second_spans = &*second_extraction;
@@ -835,7 +826,7 @@ fn ruled_surface_carrier(
             return same_basis_ruled_surface(first, second, &weights, ctx).map(Some);
         }
     }
-    let lanes = ruled_surface_span_lanes(first, second, ctx)?;
+    let lanes = ruled_surface_span_lanes(first, second)?;
     let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
@@ -879,7 +870,6 @@ type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal
 fn ruled_surface_span_lanes(
     first: &NurbsCurve,
     second: &NurbsCurve,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<RuledSpanLanes>, CodecError> {
     let (Ok(first_degree), Ok(second_degree)) = (
         usize::try_from(first.degree()),
@@ -893,7 +883,7 @@ fn ruled_surface_span_lanes(
     if degree == 0 {
         return Ok(None);
     }
-    let Some(spans) = aligned_homogeneous_spans(ctx, first, second)? else {
+    let Some(spans) = aligned_homogeneous_spans(first, second)? else {
         return Ok(None);
     };
     let Some(u_count) = spans
@@ -978,7 +968,6 @@ fn ruled_surface_span_lanes(
 }
 
 fn homogeneous_curve_boundary_matches(
-    ctx: &DecodeContext<'_>,
     first: &NurbsCurve,
     second: &NurbsCurve,
     range: [f64; 2],
@@ -992,11 +981,11 @@ fn homogeneous_curve_boundary_matches(
     {
         return Ok(None);
     }
-    let Some(first_extraction) = homogeneous_bezier_spans(ctx, first)? else {
+    let Some(first_extraction) = homogeneous_bezier_spans(first)? else {
         return Ok(None);
     };
     let first_spans = &*first_extraction;
-    let Some(second_extraction) = homogeneous_bezier_spans(ctx, second)? else {
+    let Some(second_extraction) = homogeneous_bezier_spans(second)? else {
         return Ok(None);
     };
     let second_spans = &*second_extraction;
@@ -1013,12 +1002,8 @@ fn homogeneous_curve_boundary_matches(
         if first_span.domain != second_span.domain {
             return Ok(None);
         }
-        let Some(within_resolution) = boundaries_within_resolution(
-            ctx,
-            &first_span.controls,
-            &second_span.controls,
-            resolution,
-        )?
+        let Some(within_resolution) =
+            boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution)
         else {
             return Ok(None);
         };
@@ -1047,7 +1032,7 @@ fn surface_boundary_is_closed(
     else {
         return Ok(None);
     };
-    homogeneous_curve_boundary_matches(ctx, &first, &second, varying_range, resolution)
+    homogeneous_curve_boundary_matches(&first, &second, varying_range, resolution)
 }
 
 fn rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
@@ -1263,7 +1248,7 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
 
     let mut records = BTreeMap::new();
     for record in parameters {
@@ -1559,7 +1544,7 @@ pub(super) fn project(
         }
         if direction_flag == 1 {
             let knot_sum = second.knots()[0] + second.knots()[second.knots().len() - 1];
-            second.reverse_parameterization(ctx)?;
+            second.reverse_parameterization();
             if second
                 .edit_knots(ctx, |knots| {
                     for knot in knots {
@@ -1894,10 +1879,9 @@ pub(super) fn project(
         let placed_directrix = if entry.transform == 0 {
             directrix
         } else {
-            match directrix.try_map_control_points(
-                |_, point| transform.apply_point(point.get()).ok_or(()),
-                ctx,
-            )? {
+            match directrix
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
+            {
                 Ok(()) => directrix,
                 Err(()) => {
                     super::push_attributed_loss(
@@ -2462,10 +2446,8 @@ pub(super) fn project(
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
             let mut placed_generatrix = generatrix;
-            let Ok(()) = placed_generatrix.try_map_control_points(
-                |_, point| transform.apply_point(point.get()).ok_or(()),
-                ctx,
-            )?
+            let Ok(()) = placed_generatrix
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
             else {
                 super::push_attributed_loss(
                     &mut losses,

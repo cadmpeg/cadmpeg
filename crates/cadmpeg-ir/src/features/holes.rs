@@ -502,15 +502,6 @@ pub enum HoleConstruction {
 }
 
 impl HoleConstruction {
-    /// Copy construction metadata after admitting retained specification fields.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-
     /// Creates an entry treatment without standard sizing metadata.
     #[must_use]
     pub const fn form(kind: HoleKind) -> Self {
@@ -932,17 +923,6 @@ pub enum HoleSpecification {
     },
 }
 
-impl HoleSpecification {
-    /// Copy a boxed specification after admitting its slot and every retained string.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Box<Self>, cadmpeg_core::CodecError> {
-        Ok(Box::new(self.clone()))
-    }
-}
-
 /// Thread handedness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -973,17 +953,6 @@ pub enum HoleThreadDepth {
 }
 
 mod decode_clone;
-
-impl HolePlacement {
-    /// Copy admitted fields through the caller's decode context.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-}
 
 #[cfg(test)]
 mod length_mapping_tests {

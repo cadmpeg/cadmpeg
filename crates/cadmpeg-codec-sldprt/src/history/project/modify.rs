@@ -24,10 +24,7 @@ fn property_text(feature: &Feature, name: &str) -> Option<String> {
     feature.properties.get(name).cloned()
 }
 
-pub(super) fn project_fillet(
-    ctx: &DecodeContext<'_>,
-    feature: &Feature,
-) -> Result<FeatureDefinition, CodecError> {
+pub(super) fn project_fillet(feature: &Feature) -> FeatureDefinition {
     let radius = if let Some(radius) = feature
         .parameters
         .get("Radius")
@@ -84,7 +81,7 @@ pub(super) fn project_fillet(
                 .all(|(expected, (actual, _))| expected == *actual)
         {
             let radii = points.into_iter().map(|(_, point)| point).collect();
-            cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii, ctx)?.ok()
+            cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii).ok()
         } else {
             None
         };
@@ -113,7 +110,7 @@ pub(super) fn project_fillet(
             |points| RadiusSpec::Variable { points },
         )
     };
-    Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
+    FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::FilletGroup {
                 edges: property_text(feature, "Edges")
@@ -122,7 +119,7 @@ pub(super) fn project_fillet(
                 tangency_weight: None,
             },
         ),
-    }))
+    })
 }
 
 pub(crate) fn fillet_radius_parameter_has_native_display(

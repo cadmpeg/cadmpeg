@@ -3,24 +3,21 @@
 
 use crate::math::sum::ExactSignedSum;
 use crate::scalar::FiniteReal;
-use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 /// Global rational curve speed bound about `origin` over the active knot domain.
 /// Common weight scaling is removed before products are formed. Absent
 /// weights are read as 1.0 without allocating a weight array.
 pub fn speed_bound<const N: usize>(
-    ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     points: &[[f64; N]],
     weights: Option<&[f64]>,
     origin: [f64; N],
-) -> Result<Option<FiniteReal>, ResourceLimit> {
+) -> Option<FiniteReal> {
     if weights.is_some_and(|weights| weights.len() != points.len()) {
-        return Ok(None);
+        return None;
     }
     speed_bound_by(
-        ctx,
         degree,
         knots,
         points.len(),
@@ -32,110 +29,106 @@ pub fn speed_bound<const N: usize>(
 
 /// Evaluate a speed bound from admitted pole accessors without copying poles or weights.
 pub fn speed_bound_by<const N: usize>(
-    _ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     point_count: usize,
     point_at: impl Fn(usize) -> Option<[f64; N]>,
     weight_at: impl Fn(usize) -> f64,
     origin: [f64; N],
-) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let result = (|| {
-        let order = usize::try_from(degree).ok()?;
-        if point_count <= order || knots.len() != point_count.checked_add(order)?.checked_add(1)? {
+) -> Option<FiniteReal> {
+    let order = usize::try_from(degree).ok()?;
+    if point_count <= order || knots.len() != point_count.checked_add(order)?.checked_add(1)? {
+        return None;
+    }
+    for value in knots.iter().chain(origin.iter()) {
+        if !value.is_finite() {
             return None;
         }
-        for value in knots.iter().chain(origin.iter()) {
-            if !value.is_finite() {
-                return None;
-            }
-        }
-        for pair in knots.windows(2) {
-            if pair[0] > pair[1] {
-                return None;
-            }
-        }
-        for index in 0..point_count {
-            let weight = weight_at(index);
-            if !weight.is_finite()
-                || weight <= 0.0
-                || point_at(index).is_none_or(|point| point.iter().any(|value| !value.is_finite()))
-            {
-                return None;
-            }
-        }
-        let mut scale = 0.0_f64;
-        for index in 0..point_count {
-            scale = scale.max(weight_at(index));
-        }
-        let mut minimum = f64::INFINITY;
-        for index in 0..point_count {
-            minimum = minimum.min(weight_at(index) / scale);
-        }
-        if minimum <= 0.0 {
+    }
+    for pair in knots.windows(2) {
+        if pair[0] > pair[1] {
             return None;
         }
-        let mut maximum_radius = 0.0_f64;
-        let mut numerator_speed = 0.0_f64;
-        let mut weight_speed = 0.0_f64;
-        let mut previous: Option<[f64; N]> = None;
-        for index in 0..point_count {
-            let point = point_at(index)?;
-            let weight = weight_at(index) / scale;
-            let relative: [f64; N] = std::array::from_fn(|axis| point[axis] - origin[axis]);
-            let weighted: [f64; N] = std::array::from_fn(|axis| weight * relative[axis]);
-            if relative.iter().chain(&weighted).any(|v| !v.is_finite())
-                || relative
+    }
+    for index in 0..point_count {
+        let weight = weight_at(index);
+        if !weight.is_finite()
+            || weight <= 0.0
+            || point_at(index).is_none_or(|point| point.iter().any(|value| !value.is_finite()))
+        {
+            return None;
+        }
+    }
+    let mut scale = 0.0_f64;
+    for index in 0..point_count {
+        scale = scale.max(weight_at(index));
+    }
+    let mut minimum = f64::INFINITY;
+    for index in 0..point_count {
+        minimum = minimum.min(weight_at(index) / scale);
+    }
+    if minimum <= 0.0 {
+        return None;
+    }
+    let mut maximum_radius = 0.0_f64;
+    let mut numerator_speed = 0.0_f64;
+    let mut weight_speed = 0.0_f64;
+    let mut previous: Option<[f64; N]> = None;
+    for index in 0..point_count {
+        let point = point_at(index)?;
+        let weight = weight_at(index) / scale;
+        let relative: [f64; N] = std::array::from_fn(|axis| point[axis] - origin[axis]);
+        let weighted: [f64; N] = std::array::from_fn(|axis| weight * relative[axis]);
+        if relative.iter().chain(&weighted).any(|v| !v.is_finite())
+            || relative
+                .iter()
+                .zip(&weighted)
+                .any(|(raw, product)| *raw != 0.0 && *product == 0.0)
+        {
+            return None;
+        }
+        maximum_radius = maximum_radius.max(weighted.iter().fold(0.0_f64, |r, v| r.hypot(*v)));
+        if let Some(first) = previous {
+            let lower = knots[index];
+            let upper = knots[index + order];
+            if upper > lower {
+                let mut width = ExactSignedSum::default();
+                width.add_product(upper, 1.0);
+                width.add_product(lower, -1.0);
+                let width = width.finish()?;
+                let derivative = |delta: f64| {
+                    if !delta.is_finite() {
+                        return None;
+                    }
+                    let mut numerator = ExactSignedSum::default();
+                    numerator.add_product(delta, f64::from(degree));
+                    numerator.finish().map_or(Some(0.0), |value| {
+                        value.quotient(width).ok().map(FiniteReal::get)
+                    })
+                };
+                let delta = weighted
                     .iter()
-                    .zip(&weighted)
-                    .any(|(raw, product)| *raw != 0.0 && *product == 0.0)
-            {
-                return None;
+                    .zip(first)
+                    .fold(0.0_f64, |r, (b, a)| r.hypot(b - a));
+                numerator_speed = numerator_speed.max(derivative(delta)?);
+                weight_speed =
+                    weight_speed.max(derivative((weight - weight_at(index - 1) / scale).abs())?);
             }
-            maximum_radius = maximum_radius.max(weighted.iter().fold(0.0_f64, |r, v| r.hypot(*v)));
-            if let Some(first) = previous {
-                let lower = knots[index];
-                let upper = knots[index + order];
-                if upper > lower {
-                    let mut width = ExactSignedSum::default();
-                    width.add_product(upper, 1.0);
-                    width.add_product(lower, -1.0);
-                    let width = width.finish()?;
-                    let derivative = |delta: f64| {
-                        if !delta.is_finite() {
-                            return None;
-                        }
-                        let mut numerator = ExactSignedSum::default();
-                        numerator.add_product(delta, f64::from(degree));
-                        numerator.finish().map_or(Some(0.0), |value| {
-                            value.quotient(width).ok().map(FiniteReal::get)
-                        })
-                    };
-                    let delta = weighted
-                        .iter()
-                        .zip(first)
-                        .fold(0.0_f64, |r, (b, a)| r.hypot(b - a));
-                    numerator_speed = numerator_speed.max(derivative(delta)?);
-                    weight_speed = weight_speed
-                        .max(derivative((weight - weight_at(index - 1) / scale).abs())?);
-                }
-            }
-            previous = Some(weighted);
         }
-        if !maximum_radius.is_finite() {
-            return None;
-        }
-        let mut numerator = ExactSignedSum::default();
-        numerator.add_product(maximum_radius, weight_speed);
-        let mut denominator = ExactSignedSum::default();
-        denominator.add_product(minimum, minimum);
-        let correction = match numerator.finish() {
-            Some(value) => value.quotient(denominator.finish()?).ok()?.get(),
-            None => 0.0,
-        };
-        FiniteReal::new(numerator_speed / minimum + correction)
-    })();
-    Ok(result)
+        previous = Some(weighted);
+    }
+    if !maximum_radius.is_finite() {
+        return None;
+    }
+    let mut numerator = ExactSignedSum::default();
+    numerator.add_product(maximum_radius, weight_speed);
+    let mut denominator = ExactSignedSum::default();
+    denominator.add_product(minimum, minimum);
+    let correction = match numerator.finish() {
+        Some(value) => value.quotient(denominator.finish()?).ok()?.get(),
+        None => 0.0,
+    };
+    FiniteReal::new(numerator_speed / minimum + correction)
 }
 
 #[cfg(test)]
@@ -146,24 +139,8 @@ mod tests {
     fn implicit_unit_weights_match_explicit_unit_weights() {
         let knots = [0.0, 0.0, 1.0, 1.0];
         let points = [[0.0, 0.0], [1.0, 0.0]];
-        let implicit = speed_bound(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            &knots,
-            &points,
-            None,
-            [0.25, 0.0],
-        )
-        .expect("speed bound admission");
-        let explicit = speed_bound(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            &knots,
-            &points,
-            Some(&[1.0, 1.0]),
-            [0.25, 0.0],
-        )
-        .expect("speed bound admission");
+        let implicit = speed_bound(1, &knots, &points, None, [0.25, 0.0]);
+        let explicit = speed_bound(1, &knots, &points, Some(&[1.0, 1.0]), [0.25, 0.0]);
         assert_eq!(implicit, explicit);
     }
 
@@ -172,14 +149,12 @@ mod tests {
         for w in [1.0, 1e-200, 1e200, 1e308, f64::from_bits(1)] {
             assert_eq!(
                 speed_bound(
-                    &cadmpeg_test_support::service_decode_context(),
                     1,
                     &[0., 0., 1., 1.],
                     &[[0., 0.], [1., 0.]],
                     Some(&[w, w]),
                     [0., 0.]
                 )
-                .expect("speed bound admission")
                 .map(crate::scalar::FiniteReal::get),
                 Some(1.0)
             );
@@ -189,14 +164,12 @@ mod tests {
     #[test]
     fn numerical_audit_speed_bound_keeps_wide_finite_knots() {
         let speed = super::speed_bound(
-            &cadmpeg_test_support::service_decode_context(),
             1,
             &[-1e308, -1e308, 1e308, 1e308],
             &[[0., 0.], [1., 0.]],
             Some(&[1., 1.]),
             [0., 0.],
         )
-        .expect("speed bound admission")
         .unwrap()
         .get();
         assert!((speed * 1e308 - 0.5).abs() <= 8. * f64::EPSILON);
@@ -205,14 +178,12 @@ mod tests {
     fn numerical_audit_speed_bound_refuses_unrepresentable_control_differences() {
         assert_eq!(
             super::speed_bound(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 &[0., 0., 1., 1.],
                 &[[-1e308, 0.], [1e308, 0.]],
                 Some(&[1., 1.]),
                 [0., 0.]
-            )
-            .expect("speed bound admission"),
+            ),
             None
         );
     }

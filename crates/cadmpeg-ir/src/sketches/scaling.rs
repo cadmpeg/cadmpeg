@@ -137,165 +137,130 @@ impl SketchGeometry {
     /// Scale length-bearing fields while carrying stored directions, angles,
     /// bounds unrelated to length, and text attributes unchanged.
     pub fn scaled_lengths(&self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .map_err(SketchLengthScaleError::from)?;
-        self.scaled_lengths_for_decode(&ctx, scale)
-            .map_err(SketchLengthScaleError::from)?
-    }
-
-    /// Copy and scale borrowed planar geometry through its owner.
-    pub fn scaled_lengths_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
-        self.try_clone_for_decode(ctx, "IR planar sketch scaling copy")?
-            .scaled_lengths_owned_for_decode(ctx, scale)
+        self.clone().scaled_lengths_owned(scale)
     }
 
     /// Scale an owned carrier without copying its retained text or NURBS lanes.
     pub fn scaled_lengths_owned(self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .map_err(SketchLengthScaleError::from)?;
-        self.scaled_lengths_owned_for_decode(&ctx, scale)
-            .map_err(SketchLengthScaleError::from)?
-    }
+        use SketchGeometryDefinition as Definition;
 
-    /// Scale owned geometry without copying retained lanes or text.
-    pub fn scaled_lengths_owned_for_decode(
-        self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
-        let result = (|| -> Result<Self, SketchLengthScaleError> {
-            use SketchGeometryDefinition as Definition;
-
-            let mut definition = self.0;
-            match &mut definition {
-                Definition::Point { position } => {
-                    *position = planar_point(*position, scale).ok_or(
-                        SketchLengthScaleError::Field("sketch point position must be finite"),
-                    )?;
-                }
-                Definition::Line { start, end } => {
-                    *start = planar_point(*start, scale).ok_or(SketchLengthScaleError::Field(
-                        "sketch line endpoints must be finite",
-                    ))?;
-                    *end = planar_point(*end, scale).ok_or(SketchLengthScaleError::Field(
-                        "sketch line endpoints must be finite",
-                    ))?;
-                }
-                Definition::ReferenceLine { origin, .. } => {
-                    *origin = planar_point(*origin, scale).ok_or(SketchLengthScaleError::Field(
-                        "sketch reference line requires finite origin and nonzero finite direction",
-                    ))?;
-                }
-                Definition::Circle { center, radius } | Definition::Arc { center, radius, .. } => {
-                    let product = length_product(*radius, scale)?;
-                    *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
-                    "sketch circular geometry requires finite center and positive finite radius",
+        let mut definition = self.0;
+        match &mut definition {
+            Definition::Point { position } => {
+                *position = planar_point(*position, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch point position must be finite",
                 ))?;
-                    *radius = PositiveLength::new(product).ok_or(SketchLengthScaleError::Field(
-                    "sketch circular geometry requires finite center and positive finite radius",
-                ))?;
-                }
-                Definition::Ellipse { center, radii, .. } => {
-                    let major_product = length_product(radii.major(), scale)?;
-                    let minor_product = length_product(radii.minor(), scale)?;
-                    let radii_message = "sketch ellipse radii must be positive and finite";
-                    *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
-                        "sketch ellipse center and major_angle must be finite",
-                    ))?;
-                    let major = PositiveLength::new(major_product)
-                        .ok_or(SketchLengthScaleError::Field(radii_message))?;
-                    let minor = PositiveLength::new(minor_product)
-                        .ok_or(SketchLengthScaleError::Field(radii_message))?;
-                    *radii = OrderedMajorRadius::new(major, minor)
-                        .ok_or(SketchLengthScaleError::Field(radii_message))?;
-                }
-                Definition::Hyperbola {
-                    center,
-                    major_radius,
-                    minor_radius,
-                    ..
-                } => {
-                    let major_product = length_product(*major_radius, scale)?;
-                    let minor_product = length_product(*minor_radius, scale)?;
-                    let radii_message = "sketch hyperbola radii must be positive and finite";
-                    *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
-                        "sketch hyperbola center and major_angle must be finite",
-                    ))?;
-                    *major_radius = PositiveLength::new(major_product)
-                        .ok_or(SketchLengthScaleError::Field(radii_message))?;
-                    *minor_radius = PositiveLength::new(minor_product)
-                        .ok_or(SketchLengthScaleError::Field(radii_message))?;
-                }
-                Definition::Parabola {
-                    vertex,
-                    focal_length,
-                    bounds,
-                    ..
-                } => {
-                    let product = length_product(*focal_length, scale)?;
-                    let scaled_bounds =
-                        (*bounds).map(|values| values.map(|value| value.get() * scale.get()));
-                    *vertex = planar_point(*vertex, scale).ok_or(SketchLengthScaleError::Field(
-                        "sketch parabola vertex and axis_angle must be finite",
-                    ))?;
-                    *focal_length =
-                        PositiveLength::new(product).ok_or(SketchLengthScaleError::Field(
-                            "sketch parabola focal_length must be positive and finite",
-                        ))?;
-                    *bounds = scaled_bounds
-                        .map(|values| {
-                            FiniteReal::array(values).ok_or(SketchLengthScaleError::Field(
-                                "sketch parabola bounds must be finite",
-                            ))
-                        })
-                        .transpose()?;
-                }
-                Definition::Nurbs { curve } => {
-                    curve
-                        .scale_points(scale)
-                        .map_err(SketchLengthScaleError::CurveControlPoints)?;
-                }
-                Definition::Text {
-                    height, placement, ..
-                } => {
-                    let product = length_product(*height, scale)?;
-                    let scaled_anchor = placement.as_ref().map(|placement| placement.anchor);
-                    *height = PositiveLength::new(product).ok_or(SketchLengthScaleError::Field(
-                        "sketch text height must be positive and finite",
-                    ))?;
-                    if let (Some(placement), Some(anchor)) = (placement, scaled_anchor) {
-                        placement.anchor =
-                            planar_point(anchor, scale).ok_or(SketchLengthScaleError::Field(
-                                "sketch text anchor and rotation must be finite",
-                            ))?;
-                    }
-                }
-                Definition::ExternalReference { .. } | Definition::Native { .. } => {}
             }
-            if let Definition::Hyperbola {
-                bounds: Some(bounds),
+            Definition::Line { start, end } => {
+                *start = planar_point(*start, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch line endpoints must be finite",
+                ))?;
+                *end = planar_point(*end, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch line endpoints must be finite",
+                ))?;
+            }
+            Definition::ReferenceLine { origin, .. } => {
+                *origin = planar_point(*origin, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch reference line requires finite origin and nonzero finite direction",
+                ))?;
+            }
+            Definition::Circle { center, radius } | Definition::Arc { center, radius, .. } => {
+                let product = length_product(*radius, scale)?;
+                *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch circular geometry requires finite center and positive finite radius",
+                ))?;
+                *radius = PositiveLength::new(product).ok_or(SketchLengthScaleError::Field(
+                    "sketch circular geometry requires finite center and positive finite radius",
+                ))?;
+            }
+            Definition::Ellipse { center, radii, .. } => {
+                let major_product = length_product(radii.major(), scale)?;
+                let minor_product = length_product(radii.minor(), scale)?;
+                let radii_message = "sketch ellipse radii must be positive and finite";
+                *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch ellipse center and major_angle must be finite",
+                ))?;
+                let major = PositiveLength::new(major_product)
+                    .ok_or(SketchLengthScaleError::Field(radii_message))?;
+                let minor = PositiveLength::new(minor_product)
+                    .ok_or(SketchLengthScaleError::Field(radii_message))?;
+                *radii = OrderedMajorRadius::new(major, minor)
+                    .ok_or(SketchLengthScaleError::Field(radii_message))?;
+            }
+            Definition::Hyperbola {
+                center,
+                major_radius,
+                minor_radius,
                 ..
-            } = &mut definition
-            {
-                let scaled = bounds.map(|value| value.get() * scale.get());
-                *bounds = FiniteReal::array(scaled).ok_or(SketchLengthScaleError::Field(
-                    "sketch hyperbola bounds must be finite",
+            } => {
+                let major_product = length_product(*major_radius, scale)?;
+                let minor_product = length_product(*minor_radius, scale)?;
+                let radii_message = "sketch hyperbola radii must be positive and finite";
+                *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch hyperbola center and major_angle must be finite",
                 ))?;
+                *major_radius = PositiveLength::new(major_product)
+                    .ok_or(SketchLengthScaleError::Field(radii_message))?;
+                *minor_radius = PositiveLength::new(minor_product)
+                    .ok_or(SketchLengthScaleError::Field(radii_message))?;
             }
-            Ok(Self(definition))
-        })();
-        match result {
-            Err(SketchLengthScaleError::Resource(limit)) => Err(limit.into()),
-            result => Ok(result),
+            Definition::Parabola {
+                vertex,
+                focal_length,
+                bounds,
+                ..
+            } => {
+                let product = length_product(*focal_length, scale)?;
+                let scaled_bounds =
+                    (*bounds).map(|values| values.map(|value| value.get() * scale.get()));
+                *vertex = planar_point(*vertex, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch parabola vertex and axis_angle must be finite",
+                ))?;
+                *focal_length =
+                    PositiveLength::new(product).ok_or(SketchLengthScaleError::Field(
+                        "sketch parabola focal_length must be positive and finite",
+                    ))?;
+                *bounds = scaled_bounds
+                    .map(|values| {
+                        FiniteReal::array(values).ok_or(SketchLengthScaleError::Field(
+                            "sketch parabola bounds must be finite",
+                        ))
+                    })
+                    .transpose()?;
+            }
+            Definition::Nurbs { curve } => {
+                curve
+                    .scale_points(scale)
+                    .map_err(SketchLengthScaleError::CurveControlPoints)?;
+            }
+            Definition::Text {
+                height, placement, ..
+            } => {
+                let product = length_product(*height, scale)?;
+                let scaled_anchor = placement.as_ref().map(|placement| placement.anchor);
+                *height = PositiveLength::new(product).ok_or(SketchLengthScaleError::Field(
+                    "sketch text height must be positive and finite",
+                ))?;
+                if let (Some(placement), Some(anchor)) = (placement, scaled_anchor) {
+                    placement.anchor =
+                        planar_point(anchor, scale).ok_or(SketchLengthScaleError::Field(
+                            "sketch text anchor and rotation must be finite",
+                        ))?;
+                }
+            }
+            Definition::ExternalReference { .. } | Definition::Native { .. } => {}
         }
+        if let Definition::Hyperbola {
+            bounds: Some(bounds),
+            ..
+        } = &mut definition
+        {
+            let scaled = bounds.map(|value| value.get() * scale.get());
+            *bounds = FiniteReal::array(scaled).ok_or(SketchLengthScaleError::Field(
+                "sketch hyperbola bounds must be finite",
+            ))?;
+        }
+        Ok(Self(definition))
     }
 }
 
@@ -303,25 +268,9 @@ impl SpatialSketchGeometry {
     /// Scale the model-space coordinates and radii while carrying admitted
     /// unit directions, angles, and native labels unchanged.
     pub fn scaled_lengths(&self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .map_err(SketchLengthScaleError::from)?;
-        self.scaled_lengths_for_decode(&ctx, scale)
-    }
-
-    /// Scale a charged copy of a borrowed spatial carrier.
-    pub fn scaled_lengths_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scale: PositiveReal,
-    ) -> Result<Self, SketchLengthScaleError> {
         use SpatialSketchGeometryDefinition as Definition;
 
-        let mut definition = self
-            .try_clone_for_decode(ctx, "IR spatial sketch scaling copy")
-            .map_err(SketchLengthScaleError::from)?
-            .0;
+        let mut definition = self.clone().0;
         match &mut definition {
             Definition::Point { position } => {
                 *position = spatial_point(*position, scale).ok_or(
@@ -599,7 +548,6 @@ mod tests {
     }
     #[test]
     fn admitted_owned_sketch_nurbs_scaling_matches_borrowed_scaling() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let make = |x: f64, rational: bool| {
             SketchGeometry::nurbs(
                 crate::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -615,25 +563,17 @@ mod tests {
             )
         };
         for rational in [false, true] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let actual = make(1.0, rational)
-                .scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale"))
-                .expect("no copy")
+                .scaled_lengths_owned(PositiveReal::new(2.0).expect("scale"))
                 .expect("finite");
             assert_eq!(
                 actual,
                 make(1.0, rational)
-                    .scaled_lengths_owned(PositiveReal::new(2.0).expect("scale"))
+                    .scaled_lengths(PositiveReal::new(2.0).expect("scale"))
                     .expect("reference")
             );
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-                .expect("root");
             let actual = make(f64::MAX, rational)
-                .scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale"))
-                .expect("admitted refusal");
+                .scaled_lengths_owned(PositiveReal::new(2.0).expect("scale"));
             assert!(
                 matches!(actual, Err(SketchLengthScaleError::CurveControlPoints(crate::geometry::nurbs::NurbsError::Structure(message))) if message == "control_points contains a non-finite point")
             );

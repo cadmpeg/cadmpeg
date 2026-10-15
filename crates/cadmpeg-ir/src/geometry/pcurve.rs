@@ -1606,15 +1606,6 @@ impl<P: Copy, S: Copy> PolarNurbsPoles<P, S> {
 }
 
 impl PolarPcurveNurbs {
-    /// Copy the admitted knot and pole lanes through the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Build a polar NURBS from its pole rows.
     ///
     /// A pole is one row carrying its radial and axial halves together, so
@@ -1790,15 +1781,6 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
-    /// Copy the admitted knot and pole lanes through the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Map admitted pole positions in place without allocating storage.
     ///
     /// # Errors
@@ -1807,23 +1789,20 @@ impl PcurveNurbs {
     pub fn try_map_control_points_in_place<E>(
         &mut self,
         mut map: impl FnMut(FinitePoint2) -> Result<FinitePoint2, E>,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<Result<(), E>, CodecError> {
-        Ok((|| {
-            match &mut self.poles {
-                PcurveNurbsPoles::Polynomial { points } => {
-                    for point in points {
-                        *point = map(*point)?;
-                    }
-                }
-                PcurveNurbsPoles::Rational { points } => {
-                    for pole in points {
-                        pole.point = map(pole.point)?;
-                    }
+    ) -> Result<(), E> {
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for point in points {
+                    *point = map(*point)?;
                 }
             }
-            Ok(())
-        })())
+            PcurveNurbsPoles::Rational { points } => {
+                for pole in points {
+                    pole.point = map(pole.point)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Scale every pole position in place.
@@ -1990,17 +1969,13 @@ impl PcurveNurbs {
     /// Replace every admitted pole position when the supplied lane has the same cardinality.
     ///
     /// The check precedes mutation. Pole weights and knots stay in place.
-    pub fn replace_admitted_control_points(
-        &mut self,
-        positions: &[FinitePoint2],
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<bool, CodecError> {
+    pub fn replace_admitted_control_points(&mut self, positions: &[FinitePoint2]) -> bool {
         let count = match &self.poles {
             PcurveNurbsPoles::Polynomial { points } => points.len(),
             PcurveNurbsPoles::Rational { points } => points.len(),
         };
         if positions.len() != count {
-            return Ok(false);
+            return false;
         }
 
         match &mut self.poles {
@@ -2015,7 +1990,7 @@ impl PcurveNurbs {
                 }
             }
         }
-        Ok(true)
+        true
     }
 
     /// Map pole positions in order after every result passes admission.
@@ -2024,35 +1999,32 @@ impl PcurveNurbs {
     pub fn try_map_control_points<E>(
         &mut self,
         map: impl Fn(usize, FinitePoint2) -> Result<FinitePoint2, E>,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<Result<(), E>, CodecError> {
-        Ok((|| {
-            match &self.poles {
-                PcurveNurbsPoles::Polynomial { points } => {
-                    for (index, point) in points.iter().copied().enumerate() {
-                        map(index, point)?;
-                    }
-                }
-                PcurveNurbsPoles::Rational { points } => {
-                    for (index, pole) in points.iter().enumerate() {
-                        map(index, pole.point)?;
-                    }
+    ) -> Result<(), E> {
+        match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for (index, point) in points.iter().copied().enumerate() {
+                    map(index, point)?;
                 }
             }
-            match &mut self.poles {
-                PcurveNurbsPoles::Polynomial { points } => {
-                    for (index, point) in points.iter_mut().enumerate() {
-                        *point = map(index, *point)?;
-                    }
-                }
-                PcurveNurbsPoles::Rational { points } => {
-                    for (index, pole) in points.iter_mut().enumerate() {
-                        pole.point = map(index, pole.point)?;
-                    }
+            PcurveNurbsPoles::Rational { points } => {
+                for (index, pole) in points.iter().enumerate() {
+                    map(index, pole.point)?;
                 }
             }
-            Ok(())
-        })())
+        }
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for (index, point) in points.iter_mut().enumerate() {
+                    *point = map(index, *point)?;
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for (index, pole) in points.iter_mut().enumerate() {
+                    pole.point = map(index, pole.point)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Rational weights in pole order.
@@ -2071,10 +2043,9 @@ impl PcurveNurbs {
     }
 
     /// Reverse poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self, _ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    pub fn reverse_parameterization(&mut self) {
         self.knots.reverse_negated();
         self.poles.reverse();
-        Ok(())
     }
 }
 
@@ -2205,15 +2176,6 @@ impl From<CodecError> for PcurveCoordinateScaleError {
 }
 
 impl PcurveGeometry {
-    /// Copy the parameter curve. Nesting is bounded at construction.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Nesting carriers enclosing the leaf of this carrier's inline chain.
     #[must_use]
     pub(crate) const fn nesting_depth(&self) -> usize {

@@ -222,9 +222,8 @@ fn saved_line_joins_through_order_table() {
         .expect("test spline allocation")
         .is_empty()
     );
-    let (native_entity, offset) = crate::decode::with_test_decode_ctx(|ctx| {
+    let (native_entity, offset) = ({
         unresolved_saved_section_entity(
-            ctx,
             &incomplete,
             &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),
             &incomplete

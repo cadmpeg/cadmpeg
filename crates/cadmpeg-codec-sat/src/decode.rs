@@ -529,12 +529,11 @@ fn build_result(
         )));
     }
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    coverage.record(ctx, crate::coverage::UNKNOWN_RECORDS, unknowns.len())?;
+    coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
     coverage.record(
-        ctx,
         crate::coverage::UNKNOWN_SURFACE_FACES,
         stats.unknown_surface_faces(),
-    )?;
+    );
     let body = DecodeBody {
         coverage,
         losses,
@@ -545,25 +544,17 @@ fn build_result(
 
     let mut annotations = AnnotationBuilder::new();
     for record in annotation_records {
-        let stream = StreamHandle::new(
-            ctx,
-            cadmpeg_ir::stream_name!("sat:").with_suffix(
-                ctx,
-                &record.stream,
-                "compose annotation stream name",
-            )?,
-            "allocate annotation stream handle",
-        )?;
+        let stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream));
         annotations.note(
-            ctx,
             &record.id,
             &stream,
             record.offset,
             Some(record.tag.as_str()),
-        )?;
+        );
         for field in record.derived_fields {
             annotations
-                .derived(ctx, &record.id, field)
+                .derived(&record.id, field)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

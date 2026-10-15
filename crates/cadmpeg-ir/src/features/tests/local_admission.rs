@@ -364,9 +364,7 @@ fn three_point_admission_compares_targets_and_historical_states() {
             state.clone(),
             HistoricalVertexId::mint(format!("test:model:historical-vertex#{suffix}")).unwrap(),
             native.into(),
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("selection reference admission")
         .unwrap()
     };
     assert!(ThreePointSelection::new(
@@ -392,12 +390,7 @@ fn three_point_admission_compares_targets_and_historical_states() {
     let mixed = ThreePointSelection::new(
         Box::new([
             vertex(&state, "a", "one"),
-            VertexSelection::native(
-                "two".into(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("selection reference admission")
-            .unwrap(),
+            VertexSelection::native("two".into()).unwrap(),
             VertexSelection::Unresolved,
         ]),
         &cadmpeg_test_support::service_decode_context(),
@@ -736,27 +729,21 @@ fn three_point_selection_moves_its_points_and_names_a_repeated_target() {
     for kind in 0..3 {
         let points = Box::new(["a", "b", "c"].map(|local| {
             match kind {
-                0 => VertexSelection::native(local.to_owned(), &ctx)
-                    .unwrap()
-                    .unwrap(),
+                0 => VertexSelection::native(local.to_owned()).unwrap(),
                 1 => VertexSelection::generated(
                     GeneratedVertexRef {
                         feature: producer.clone(),
                         local_id: local.to_owned().try_into().unwrap(),
                     },
                     "native".into(),
-                    &ctx,
                 )
-                .unwrap()
                 .unwrap(),
                 _ => VertexSelection::historical(
                     state.clone(),
                     HistoricalVertexId::mint(format!("test:model:historical-vertex#{local}"))
                         .unwrap(),
                     "native".into(),
-                    &ctx,
                 )
-                .unwrap()
                 .unwrap(),
             }
         }));
@@ -764,7 +751,7 @@ fn three_point_selection_moves_its_points_and_names_a_repeated_target() {
         let points = ThreePointSelection::new(points, &ctx).unwrap().unwrap();
         assert_eq!(points.as_ptr(), pointer);
     }
-    let selection = |text: String| VertexSelection::native(text, &ctx).unwrap().unwrap();
+    let selection = |text: String| VertexSelection::native(text).unwrap();
     assert_eq!(
         ThreePointSelection::new(
             Box::new([
@@ -806,17 +793,12 @@ fn selection_reference_constructors_keep_padded_text() {
         BodySelectionError, EdgeSelection, FaceSelection, GeneratedBodyRef, GeneratedCurveRef,
         GeneratedEdgeRef, GeneratedFaceRef, GeneratedVertexRef, SelectionReference,
     };
-    use cadmpeg_core::decode::ResourceLimit;
 
-    fn finish<T>(
-        result: Result<Result<T, BodySelectionError>, ResourceLimit>,
-    ) -> Result<Result<(), BodySelectionError>, ResourceLimit> {
-        result.map(|result| result.map(|_| ()))
+    fn finish<T>(result: Result<T, BodySelectionError>) -> Result<(), BodySelectionError> {
+        result.map(|_| ())
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        SelectionReference::new("  face  ".to_owned(), &ctx)
-            .unwrap()
+        SelectionReference::new("  face  ".to_owned())
             .unwrap()
             .as_str(),
         "  face  "
@@ -825,19 +807,18 @@ fn selection_reference_constructors_keep_padded_text() {
         let text = "  face  ".to_owned();
         let reference = || "local".to_owned().try_into().unwrap();
         let result = match owner {
-            0 => finish(SelectionReference::new(text, &ctx)),
-            1 => finish(GeneratedBodyRef::new(feature_id("producer"), text, &ctx)),
-            2 => finish(GeneratedFaceRef::new(feature_id("producer"), text, &ctx)),
-            3 => finish(GeneratedEdgeRef::new(feature_id("producer"), text, &ctx)),
-            4 => finish(GeneratedVertexRef::new(feature_id("producer"), text, &ctx)),
-            5 => finish(GeneratedCurveRef::new(feature_id("producer"), text, &ctx)),
+            0 => finish(SelectionReference::new(text)),
+            1 => finish(GeneratedBodyRef::new(feature_id("producer"), text)),
+            2 => finish(GeneratedFaceRef::new(feature_id("producer"), text)),
+            3 => finish(GeneratedEdgeRef::new(feature_id("producer"), text)),
+            4 => finish(GeneratedVertexRef::new(feature_id("producer"), text)),
+            5 => finish(GeneratedCurveRef::new(feature_id("producer"), text)),
             6 => finish(FaceSelection::generated(
                 vec![GeneratedFaceRef {
                     feature: feature_id("producer"),
                     local_id: reference(),
                 }],
                 text,
-                &ctx,
             )),
             7 => finish(EdgeSelection::generated(
                 vec![GeneratedEdgeRef {
@@ -845,7 +826,6 @@ fn selection_reference_constructors_keep_padded_text() {
                     local_id: reference(),
                 }],
                 text,
-                &ctx,
             )),
             8 => finish(PlanarProfileRef::generated(
                 vec![GeneratedCurveRef {
@@ -853,7 +833,6 @@ fn selection_reference_constructors_keep_padded_text() {
                     local_id: reference(),
                 }],
                 text,
-                &ctx,
             )),
             9 => finish(VertexSelection::generated(
                 GeneratedVertexRef {
@@ -861,16 +840,14 @@ fn selection_reference_constructors_keep_padded_text() {
                     local_id: reference(),
                 },
                 text,
-                &ctx,
             )),
             10 => finish(VertexSelection::historical(
                 FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap(),
                 HistoricalVertexId::mint("test:model:historical-vertex#one").unwrap(),
                 text,
-                &ctx,
             )),
-            _ => finish(VertexSelection::native(text, &ctx)),
+            _ => finish(VertexSelection::native(text)),
         };
-        result.unwrap().unwrap();
+        result.unwrap();
     }
 }

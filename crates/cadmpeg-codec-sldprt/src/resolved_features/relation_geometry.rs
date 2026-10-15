@@ -862,7 +862,6 @@ pub(super) fn relation_uses_solver_line_operand(
 }
 
 pub(crate) fn project_relation_solved_line_geometry(
-    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
@@ -1340,17 +1339,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                                 endpoint_refs.push(reference);
                             }
                             entities.push(
-                                SketchEntity::new(
-                                    id,
-                                    sketch_id,
-                                    line.geometry.try_clone_for_decode(
-                                        ctx,
-                                        "copy SLDPRT relation line geometry",
-                                    )?,
-                                )
-                                .with_construction(true)
-                                .with_geometry_ref(Some(geometry_ref))
-                                .with_endpoint_refs(endpoint_refs),
+                                SketchEntity::new(id, sketch_id, line.geometry.clone())
+                                    .with_construction(true)
+                                    .with_geometry_ref(Some(geometry_ref))
+                                    .with_endpoint_refs(endpoint_refs),
                             );
                         }
                         continue;
@@ -1386,16 +1378,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let second_ref = markers[1].id().to_string();
                 let endpoint_refs = vec![first_ref, second_ref];
                 entities.push(
-                    SketchEntity::new(
-                        id,
-                        sketch_id,
-                        line.geometry
-                            .try_clone_for_decode(ctx, "copy SLDPRT relation line geometry")?,
-                    )
-                    .with_construction(line.construction)
-                    .with_native_ref(native_ref)
-                    .with_geometry_ref(Some(geometry_ref))
-                    .with_endpoint_refs(endpoint_refs),
+                    SketchEntity::new(id, sketch_id, line.geometry.clone())
+                        .with_construction(line.construction)
+                        .with_native_ref(native_ref)
+                        .with_geometry_ref(Some(geometry_ref))
+                        .with_endpoint_refs(endpoint_refs),
                 );
             }
         }
@@ -3346,14 +3333,6 @@ mod relation_geometry_tests {
         const FEATURE: &str = "feature-native";
         const LANE: &str = "lane#test";
 
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            b"relation test",
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-
         let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
             id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -3583,7 +3562,6 @@ mod relation_geometry_tests {
         let mut entities = Vec::new();
 
         project_relation_solved_line_geometry(
-            &ctx,
             &mut entities,
             &sketches,
             std::slice::from_ref(&feature),
@@ -3610,7 +3588,6 @@ mod relation_geometry_tests {
 
         let mut fallback_entities = Vec::new();
         project_relation_solved_line_geometry(
-            &ctx,
             &mut fallback_entities,
             &sketches,
             std::slice::from_ref(&feature),

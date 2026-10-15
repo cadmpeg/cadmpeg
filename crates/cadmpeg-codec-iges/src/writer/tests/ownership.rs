@@ -62,10 +62,8 @@ fn round_trip(ir: &CadIr) -> cadmpeg_ir::codec::DecodeResult {
 fn exact_surface_export_keeps_its_active_rectangle() {
     let mut ir = rectangle();
     let owner = ir.model.surfaces[0].id.clone();
-    let ctx = cadmpeg_test_support::service_decode_context();
     ir.model
         .add_procedural_surface(
-            &ctx,
             &owner,
             ProceduralSurface::new(
                 "test:model:procedure#active".try_into().unwrap(),
@@ -78,7 +76,6 @@ fn exact_surface_export_keeps_its_active_rectangle() {
                 None,
             ),
         )
-        .unwrap()
         .unwrap();
     let result = round_trip(&ir);
     let Some(SolvedSurfaceGeometry::Nurbs(basis)) =

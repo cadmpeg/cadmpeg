@@ -530,7 +530,6 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             Some(if reversed { [-5.0, -2.0] } else { [2.0, 5.0] })
         );
         emit_carrier_curve(
-            &asm_decode_ctx,
             &mut out,
             4,
             &mut carriers,
@@ -709,14 +708,6 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
     use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, SilhouetteKind};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
-
     for (source, cause) in [
         (
             ProceduralCurveSource::Cached {
@@ -755,7 +746,6 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
         );
         carriers.procedural_curve_defs.insert(4, source);
         emit_carrier_curve(
-            &resource_ctx,
             &mut out,
             4,
             &mut carriers,
@@ -795,14 +785,6 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
     use super::super::ProceduralCurveSource;
     use crate::nurbs::proc_curve::{EmbeddedIntersection, SupportSlot};
     use cadmpeg_ir::math::Point3;
-
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("test decode context");
 
     for (parameter_range, distance, tolerance, cause) in [
         (
@@ -882,7 +864,6 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
             },
         );
         emit_carrier_curve(
-            &resource_ctx,
             &mut out,
             4,
             &mut carriers,

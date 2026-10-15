@@ -169,7 +169,6 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
     });
     ir.model
         .add_procedural_surface(
-            &ctx,
             &id,
             ProceduralSurface::new(
                 "test:model:procedural_surface#active".try_into().unwrap(),
@@ -182,7 +181,6 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
                 None,
             ),
         )
-        .unwrap()
         .unwrap();
     let mut bytes = Vec::new();
     write_step(

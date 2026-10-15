@@ -942,11 +942,10 @@ impl A8FreeformCurve {
 /// Convert a complete common-form rolling-ball jet to its exact neutral
 /// procedural carrier.
 pub(in crate::families) fn rolling_ball_jet_definition(
-    ctx: &DecodeContext<'_>,
     jet: &A8FreeformCurve,
-) -> Result<Option<ProceduralSurfaceDefinition>, CodecError> {
+) -> Option<ProceduralSurfaceDefinition> {
     if jet.sites.is_empty() {
-        return Ok(None);
+        return None;
     }
     let mut stations = Vec::new();
 
@@ -963,13 +962,9 @@ pub(in crate::families) fn rolling_ball_jet_definition(
                 ),
             }),
     );
-    Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
-        A8FreeformCurve::DEGREE,
-        stations,
-        ctx,
-    )?
-    .ok()
-    .map(ProceduralSurfaceDefinition::RollingBallJet))
+    cadmpeg_ir::geometry::RollingBallJetStations::from_parts(A8FreeformCurve::DEGREE, stations)
+        .ok()
+        .map(ProceduralSurfaceDefinition::RollingBallJet)
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two

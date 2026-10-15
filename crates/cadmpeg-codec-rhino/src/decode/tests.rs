@@ -401,12 +401,7 @@ fn instance_plane_transform_keeps_component_division() {
         [0.0, 0.0, 4.0, 6.0],
     ])
     .expect("finite affine transform");
-    transform_surface(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut surface,
-        transform,
-    )
-    .expect("transformed plane");
+    transform_surface(&mut surface, transform).expect("transformed plane");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
         panic!("plane remains solved");
     };
@@ -1176,20 +1171,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                     .unwrap()],
                 );
                 {
-                    let arena = cadmpeg_core::decode::DecodeArena::new();
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                        &[],
-                        &arena,
-                        &cadmpeg_core::decode::DecodePolicy::service(),
-                    )
-                    .unwrap();
-                    set_exactness(
-                        &ctx,
-                        annotations,
-                        "rhino:test:asset#rejected",
-                        Exactness::Derived,
-                    )
-                    .unwrap();
+                    set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
                 }
                 if admission_failure {
                     return Err::<(), String>("source admission refusal".into());
@@ -1260,8 +1242,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
             )
         };
         context.ir_mut().model.points.push(point("z"));
-        let checkpoint =
-            ModelCheckpoint::capture(&context.session.document().model, expand.ctx()).unwrap();
+        let checkpoint = ModelCheckpoint::capture(&context.session.document().model);
         context
             .validate_candidate(|candidate, _| {
                 candidate.model.points.push(point("a"));
@@ -1273,15 +1254,14 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                 .document()
                 .model
                 .points
-                .get(checkpoint.0.arena_len::<Point>()..)
+                .get(checkpoint.arena_len::<Point>()..)
                 .unwrap()[0]
                 .id
                 .as_str(),
             "rhino:test:point#a"
         );
         checkpoint
-            .0
-            .discard_appended(&mut context.ir_mut().model, expand.ctx())
+            .discard_appended(&mut context.ir_mut().model)
             .unwrap();
         assert_eq!(context.session.document().model.points.len(), 1);
         assert_eq!(

@@ -81,14 +81,12 @@ impl FeatureBodySelection {
 /// a segment alias with the same integer; mixed namespace coverage remains
 /// native.
 pub(super) fn feature_body_selection(
-    ctx: &DecodeContext<'_>,
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
-) -> Result<FeatureBodySelection, CodecError> {
+) -> FeatureBodySelection {
     feature_body_selection_with_offset_blocks(
-        ctx,
         object_indices,
         body_alias_roots,
         &BTreeMap::new(),
@@ -98,13 +96,12 @@ pub(super) fn feature_body_selection(
 }
 
 pub(super) fn feature_body_selection_with_offset_blocks(
-    ctx: &DecodeContext<'_>,
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     offset_store_body_blocks: &BTreeMap<u32, String>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
-) -> Result<FeatureBodySelection, CodecError> {
+) -> FeatureBodySelection {
     let mut roots = Vec::new();
     let mut offset_blocks: Vec<&String> = Vec::new();
     for index in object_indices {
@@ -128,12 +125,12 @@ pub(super) fn feature_body_selection_with_offset_blocks(
                 }
             }
             (None, None) => {
-                return Ok(FeatureBodySelection::Native(native));
+                return FeatureBodySelection::Native(native);
             }
         }
     }
     if !roots.is_empty() && !offset_blocks.is_empty() {
-        return Ok(FeatureBodySelection::Native(native));
+        return FeatureBodySelection::Native(native);
     }
     let offset_store = offset_blocks
         .first()
@@ -144,7 +141,7 @@ pub(super) fn feature_body_selection_with_offset_blocks(
                 .iter()
                 .any(|block| offset_store_identity(block) != offset_store))
     {
-        return Ok(FeatureBodySelection::Native(native));
+        return FeatureBodySelection::Native(native);
     }
     if !offset_blocks.is_empty() {
         let mut bodies = Vec::new();
@@ -153,11 +150,11 @@ pub(super) fn feature_body_selection_with_offset_blocks(
             bodies.push(block.clone());
             identity_keys.push(FeatureBodyIdentity::OffsetStore(block.clone()));
         }
-        return Ok(FeatureBodySelection::Local {
+        return FeatureBodySelection::Local {
             bodies,
             native,
             identity_keys,
-        });
+        };
     }
     let mut resolved = Vec::new();
     let mut all_resolved = true;
@@ -172,18 +169,18 @@ pub(super) fn feature_body_selection_with_offset_blocks(
             break;
         }
 
-        resolved.push(body.try_clone_for_decode(ctx, "NX resolved body identity")?);
+        resolved.push(body.clone());
     }
     if all_resolved {
         let mut identity_keys = Vec::new();
         for root in roots {
             identity_keys.push(FeatureBodyIdentity::Segment(root));
         }
-        return Ok(FeatureBodySelection::Resolved {
+        return FeatureBodySelection::Resolved {
             bodies: resolved,
             native,
             identity_keys,
-        });
+        };
     }
     let mut bodies = Vec::new();
     let mut identity_keys = Vec::new();
@@ -191,11 +188,11 @@ pub(super) fn feature_body_selection_with_offset_blocks(
         bodies.push(format!("nx:om-body-object#{root}"));
         identity_keys.push(FeatureBodyIdentity::Segment(root));
     }
-    Ok(FeatureBodySelection::Local {
+    FeatureBodySelection::Local {
         bodies,
         native,
         identity_keys,
-    })
+    }
 }
 
 /// Resolve one complete body set when possible. Otherwise retain every exact
@@ -228,7 +225,7 @@ pub(super) fn feature_body_set_selection(
             break;
         }
 
-        resolved.push(body.try_clone_for_decode(ctx, "NX resolved body identity")?);
+        resolved.push(body.clone());
     }
     if all_resolved && !resolved.is_empty() {
         return FeatureBodySelection::Resolved {

@@ -300,7 +300,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ir,
                 Curve {
                     parameter_range: None,
-                    id: curve_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    id: curve_id.clone(),
                     geometry: curve_geometry,
                     source_object: None,
                 },
@@ -309,19 +309,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             ctx.charge_entities(1, "admit Creo model points")?;
-            source_carriers.admit_point(
-                ir,
-                Point::new(
-                    point_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
-                    finite_position,
-                    None,
-                ),
-            )?;
+            source_carriers.admit_point(ir, Point::new(point_id.clone(), finite_position, None))?;
             ctx.charge_entities(1, "admit Creo model vertices")?;
             source_carriers.admit_vertex(
                 ir,
                 Vertex {
-                    id: vertex_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    id: vertex_id.clone(),
                     point: point_id,
                     tolerance: None,
                 },
@@ -331,13 +324,13 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Edge {
-                    id: edge_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    id: edge_id.clone(),
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                         Some(curve_id),
                         Some([0.0, std::f64::consts::TAU]),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: vertex_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    start: vertex_id.clone(),
                     end: vertex_id,
                     tolerance: None,
                 },
@@ -360,7 +353,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Surface {
-                    id: surface_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    id: surface_id.clone(),
                     geometry: surface_geometry,
                     source_object: None,
                 },
@@ -375,11 +368,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     RevolutionBoundary::Start => (index, Sense::Reversed),
                     RevolutionBoundary::End => (next, Sense::Forward),
                 };
-                let Some(edge_id) = edges[vertex_index]
-                    .as_ref()
-                    .map(|edge| edge.try_clone_for_decode(ctx, "creo revolution identity copy"))
-                    .transpose()?
-                else {
+                let Some(edge_id) = edges[vertex_index].clone() else {
                     continue;
                 };
                 let boundary_key = boundary.key();
@@ -404,15 +393,13 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     transform.offset,
                     pcurve_geometry,
                 )?;
-                let ring_coedges =
-                    vec![coedge_id.try_clone_for_decode(ctx, "creo revolution identity copy")?];
+                let ring_coedges = vec![coedge_id.clone()];
                 ctx.charge_entities(1, "admit Creo model loops")?;
                 ir.model.loops.push(IrLoop {
-                    id: loop_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
-                    face: face_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    id: loop_id.clone(),
+                    face: face_id.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new(ctx, ring_coedges, Vec::new())
-                            .map_err(cadmpeg_core::CodecError::from)?
+                        cadmpeg_ir::topology::LoopRing::new(ring_coedges, Vec::new())
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });
@@ -426,9 +413,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     ctx,
                     ir,
                     Coedge {
-                        id: coedge_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
-                        owner_loop: loop_id
-                            .try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                        id: coedge_id.clone(),
+                        owner_loop: loop_id.clone(),
                         edge: edge_id,
                         radial_next: revolution_identity::<CoedgeId>(
                             feature_id,
@@ -445,8 +431,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             source_carriers.admit_face(
                 ir,
                 Face {
-                    id: face_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
-                    shell: shell_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    id: face_id.clone(),
+                    shell: shell_id.clone(),
                     surface: surface_id,
                     sense: face_sense,
                     loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
@@ -458,8 +444,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             faces.push(face_id);
         }
         let Ok(shell) = Shell::new(
-            shell_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
-            region_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+            shell_id.clone(),
+            region_id.clone(),
             faces,
             Vec::new(),
             Vec::new(),
@@ -471,8 +457,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "admit Creo model regions")?;
         ir.model.regions.push(Region {
-            id: region_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
-            body: body_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+            id: region_id.clone(),
+            body: body_id.clone(),
             shells: region_shells,
         });
         let body_regions = vec![region_id];

@@ -397,13 +397,11 @@ pub(crate) fn transfer_neutral(
                 },
                 parent: parent
                     .as_ref()
-                    .map(|occurrence| {
-                        occurrence
-                            .try_clone_for_decode(ctx, "fcstd product parent identity")
-                            .map(|occurrence| OccurrenceParent::Occurrence { occurrence })
-                    })
-                    .transpose()?
-                    .unwrap_or(OccurrenceParent::Root {}),
+                    .map_or(OccurrenceParent::Root {}, |occurrence| {
+                        OccurrenceParent::Occurrence {
+                            occurrence: occurrence.clone(),
+                        }
+                    }),
                 ordinal: u32::try_from(index).map_err(|_| {
                     CodecError::malformed(format_args!(
                         "product occurrence {} element index exceeds u32",
@@ -486,10 +484,7 @@ pub(crate) fn transfer_neutral(
                 .iter()
                 .any(|(prefix, owner)| *owner == object && body.id.as_str().starts_with(prefix))
         }) {
-            definition_bodies.push(
-                body.id
-                    .try_clone_for_decode(ctx, "fcstd product body identity")?,
-            );
+            definition_bodies.push(body.id.clone());
         }
         definitions.push(ProductDefinition {
             id: definition_id(object)?,

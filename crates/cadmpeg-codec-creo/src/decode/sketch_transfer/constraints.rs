@@ -66,25 +66,21 @@ where
 }
 
 fn equation_constraint(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     equation_id: u32,
     definition: SketchConstraintDefinitionInput,
     active: bool,
     offset: usize,
-) -> Result<Option<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
-    let Some(id) = sketch_constraint_id_admitted(sketch, format_args!("equation:{equation_id}"))
-    else {
-        return Ok(None);
-    };
+) -> Option<(SketchConstraint, usize)> {
+    let id = sketch_constraint_id_admitted(sketch, format_args!("equation:{equation_id}"))?;
     let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
     else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some((
+    Some((
         SketchConstraint {
             id,
-            sketch: sketch.try_clone_for_decode(ctx, "creo equation sketch identity")?,
+            sketch: sketch.clone(),
             definition,
             name: None,
             driving: None,
@@ -98,7 +94,7 @@ fn equation_constraint(
             native_ref: Some(sketch_native_ref_admitted(sketch)),
         },
         offset,
-    )))
+    ))
 }
 
 pub(in super::super) fn section_segment_verhor_definition(
@@ -340,18 +336,11 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
     }
 }
 
-pub(in super::super) fn close_sketch_constraint_parameter_references(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &mut CadIr,
-) -> Result<(), cadmpeg_core::CodecError> {
+pub(in super::super) fn close_sketch_constraint_parameter_references(ir: &mut CadIr) {
     let mut emitted = BTreeSet::new();
     for parameter in &ir.model.parameters {
         if !emitted.contains(&parameter.id) {
-            emitted.insert(
-                parameter
-                    .id
-                    .try_clone_for_decode(ctx, "creo emitted parameter identity")?,
-            );
+            emitted.insert(parameter.id.clone());
         }
     }
     ir.model.sketch_constraints.retain_mut(|constraint| {
@@ -360,7 +349,6 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(
             .edit(|kind| reconcile_constraint_parameter_reference(kind, &emitted))
             .unwrap_or(false)
     });
-    Ok(())
 }
 
 pub(in super::super) fn joined_relation_incidence(
@@ -728,7 +716,6 @@ fn section_segment_radius_bindings(
 }
 
 fn section_segment_radius_constraint(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     binding: SectionSegmentRadiusBinding,
     sketch: &SketchId,
 ) -> Result<Option<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
@@ -770,7 +757,7 @@ fn section_segment_radius_constraint(
     Ok(Some((
         SketchConstraint {
             id,
-            sketch: sketch.try_clone_for_decode(ctx, "creo radius constraint sketch identity")?,
+            sketch: sketch.clone(),
             definition,
             name: None,
             driving: None,
@@ -788,13 +775,12 @@ fn section_segment_radius_constraint(
 }
 
 pub(in super::super) fn section_segment_radius_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut constraints = Vec::new();
     for binding in section_segment_radius_bindings(definition, sketch)? {
-        if let Some(constraint) = section_segment_radius_constraint(ctx, binding, sketch)? {
+        if let Some(constraint) = section_segment_radius_constraint(binding, sketch)? {
             constraints.push(constraint);
         }
     }
@@ -802,7 +788,6 @@ pub(in super::super) fn section_segment_radius_constraints(
 }
 
 pub(in super::super) fn section_segment_radius_constraints_for_emitted(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     emitted: &BTreeSet<SketchEntityId>,
@@ -811,7 +796,7 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
     let bindings = section_segment_radius_bindings(definition, sketch)?;
     let mut constraints = Vec::new();
     for ((mut constraint, offset), binding) in
-        section_segment_radius_constraints(ctx, definition, sketch)?
+        section_segment_radius_constraints(definition, sketch)?
             .into_iter()
             .zip(bindings)
     {
@@ -868,7 +853,6 @@ fn reconcile_section_segment_radius_constraint(
 }
 
 pub(in super::super) fn section_equation_radius_dimension_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
@@ -937,8 +921,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             ) else {
                 continue;
             };
-            let parameter =
-                parameter.try_clone_for_decode(ctx, "creo equation radius parameter copy")?;
+            let parameter = parameter.clone();
             let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                 SketchConstraintDefinitionInput::Radius { entity, parameter },
             ) else {
@@ -947,7 +930,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             constraints.push((
                 SketchConstraint {
                     id,
-                    sketch: sketch.try_clone_for_decode(ctx, "creo equation sketch identity")?,
+                    sketch: sketch.clone(),
                     definition,
                     name: None,
                     driving: None,
@@ -968,7 +951,6 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
 }
 
 pub(in super::super) fn section_equation_equal_distance_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
@@ -1008,20 +990,18 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
                 first: second_start,
                 second: second_end,
             };
-            equation_constraint(
-                ctx,
+            Ok(equation_constraint(
                 sketch,
                 equation.equation_id,
                 SketchConstraintDefinitionInput::EqualDistance { first, second },
                 equation.active,
                 equation.offset,
-            )
+            ))
         }),
     )
 }
 
 fn section_equation_radius_dimension_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<BTreeMap<SectionScalarVariable, Option<(ParameterId, f64)>>, cadmpeg_core::CodecError> {
@@ -1058,9 +1038,7 @@ fn section_equation_radius_dimension_parameters(
                     *slot = None;
                 }
             } else {
-                let copied_parameter = candidate
-                    .0
-                    .try_clone_for_decode(ctx, "creo equation dimension parameter copy")?;
+                let copied_parameter = candidate.0.clone();
                 dimension_parameters.insert(variable, Some((copied_parameter, candidate.1)));
             }
         }
@@ -1069,24 +1047,20 @@ fn section_equation_radius_dimension_parameters(
 }
 
 fn section_equation_dimension_parameter(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &BTreeMap<SectionScalarVariable, Option<(ParameterId, f64)>>,
     variable: SectionScalarVariable,
     value: f64,
-) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
+) -> Option<ParameterId> {
     let Some(Some((parameter, dimension_value))) = parameters.get(&variable) else {
-        return Ok(None);
+        return None;
     };
     if (FiniteReal::new(*dimension_value))
         .zip(FiniteReal::new(value))
         .is_some_and(|(first, second)| approximately_equal(first, second))
     {
-        Ok(Some(parameter.try_clone_for_decode(
-            ctx,
-            "creo equation distance parameter copy",
-        )?))
+        Some(parameter.clone())
     } else {
-        Ok(None)
+        None
     }
 }
 
@@ -1102,8 +1076,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().ambiguous)
         .unwrap_or_default();
-    let dimension_parameters =
-        section_equation_radius_dimension_parameters(ctx, definition, sketch)?;
+    let dimension_parameters = section_equation_radius_dimension_parameters(definition, sketch)?;
     collect_constraint_candidates(
         section_equation_function_six_distance_rows(definition, &coordinates, &ambiguous_point_ids)
             .into_iter()
@@ -1118,13 +1091,11 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                     return Ok(None);
                 };
                 let parameter = section_equation_dimension_parameter(
-                    ctx,
                     &dimension_parameters,
                     equation.radius,
                     distance.get(),
-                )?;
-                equation_constraint(
-                    ctx,
+                );
+                Ok(equation_constraint(
                     sketch,
                     equation.equation_id,
                     SketchConstraintDefinitionInput::DistanceLociValue {
@@ -1135,7 +1106,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                     },
                     equation.active(),
                     equation.offset,
-                )
+                ))
             }),
     )
 }
@@ -1179,8 +1150,7 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
             let Some(value) = Length::new(value) else {
                 return Ok(None);
             };
-            equation_constraint(
-                ctx,
+            Ok(equation_constraint(
                 sketch,
                 equation.equation_id,
                 SketchConstraintDefinitionInput::MidpointCoordinate {
@@ -1191,7 +1161,7 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
                 },
                 equation.active,
                 equation.offset,
-            )
+            ))
         }),
     )
 }
@@ -1229,8 +1199,7 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
             let (Some(u), Some(v)) = (Length::new(u), Length::new(v)) else {
                 return Ok(None);
             };
-            equation_constraint(
-                ctx,
+            Ok(equation_constraint(
                 sketch,
                 equation.equation_id,
                 SketchConstraintDefinitionInput::PointCoordinateValues {
@@ -1239,13 +1208,12 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
                 },
                 equation.active,
                 equation.offset,
-            )
+            ))
         }),
     )
 }
 
 pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
@@ -1256,8 +1224,7 @@ pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
                 let Some(value) = Angle::new(equation.value) else {
                     return Ok(None);
                 };
-                equation_constraint(
-                    ctx,
+                Ok(equation_constraint(
                     sketch,
                     equation.equation_id,
                     SketchConstraintDefinitionInput::AngleDifference {
@@ -1268,13 +1235,12 @@ pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
                     },
                     equation.active,
                     equation.offset,
-                )
+                ))
             }),
     )
 }
 
 pub(super) fn section_equation_function_five_scalar_equality_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
@@ -1282,8 +1248,7 @@ pub(super) fn section_equation_function_five_scalar_equality_constraints(
         section_equation_function_five_scalar_equality_rows(definition)
             .into_iter()
             .map(|equation| {
-                equation_constraint(
-                    ctx,
+                Ok(equation_constraint(
                     sketch,
                     equation.equation_id,
                     SketchConstraintDefinitionInput::ScalarEquality {
@@ -1292,7 +1257,7 @@ pub(super) fn section_equation_function_five_scalar_equality_constraints(
                     },
                     true,
                     equation.offset,
-                )
+                ))
             }),
     )
 }
@@ -1309,8 +1274,7 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().ambiguous)
         .unwrap_or_default();
-    let dimension_parameters =
-        section_equation_radius_dimension_parameters(ctx, definition, sketch)?;
+    let dimension_parameters = section_equation_radius_dimension_parameters(definition, sketch)?;
     collect_constraint_candidates(
         section_equation_radial_constraint_rows(definition, &coordinates, &ambiguous_point_ids)
             .into_iter()
@@ -1333,13 +1297,11 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                     return Ok(None);
                 };
                 let distance_parameter = section_equation_dimension_parameter(
-                    ctx,
                     &dimension_parameters,
                     equation.radius,
                     distance.get(),
-                )?;
-                equation_constraint(
-                    ctx,
+                );
+                Ok(equation_constraint(
                     sketch,
                     equation.equation_id,
                     SketchConstraintDefinitionInput::PolarDistance {
@@ -1351,7 +1313,7 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                     },
                     equation.active,
                     equation.offset,
-                )
+                ))
             }),
     )
 }
@@ -1443,7 +1405,6 @@ fn native_equation_operands(
 }
 
 pub(in super::super) fn section_equation_native_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     typed_offsets: &BTreeSet<usize>,
@@ -1528,7 +1489,7 @@ pub(in super::super) fn section_equation_native_constraints(
         constraints.push((
             SketchConstraint {
                 id,
-                sketch: sketch.try_clone_for_decode(ctx, "creo native equation sketch identity")?,
+                sketch: sketch.clone(),
                 definition,
                 name: None,
                 driving: None,
@@ -1548,7 +1509,6 @@ pub(in super::super) fn section_equation_native_constraints(
 }
 
 pub(in super::super) fn section_equation_same_coordinate_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
@@ -1581,20 +1541,18 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
                 else {
                     return Ok(None);
                 };
-                equation_constraint(
-                    ctx,
+                Ok(equation_constraint(
                     sketch,
                     equation.equation_id,
                     SketchConstraintDefinitionInput::SameCoordinate { relation },
                     equation.active,
                     equation.offset,
-                )
+                ))
             }),
     )
 }
 
 pub(in super::super) fn section_equation_point_on_line_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
@@ -1659,14 +1617,13 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                 let Some(entity) = sketch_entity_id_admitted(sketch, line_external_id) else {
                     return Ok(None);
                 };
-                equation_constraint(
-                    ctx,
+                Ok(equation_constraint(
                     sketch,
                     equation.equation_id,
                     SketchConstraintDefinitionInput::PointOnObject { point, entity },
                     equation.active,
                     equation.offset,
-                )
+                ))
             }),
     )
 }
@@ -1731,20 +1688,18 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
                     parameter,
                 },
             };
-            equation_constraint(
-                ctx,
+            Ok(equation_constraint(
                 sketch,
                 equation.equation_id,
                 definition,
                 equation.active,
                 equation.offset,
-            )
+            ))
         }),
     )
 }
 
 pub(in super::super) fn section_equation_unsigned_distance_constraints(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
@@ -1787,14 +1742,13 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
                         parameter,
                     },
                 };
-                equation_constraint(
-                    ctx,
+                Ok(equation_constraint(
                     sketch,
                     equation.equation_id,
                     definition,
                     equation.active,
                     equation.offset,
-                )
+                ))
             }),
     )
 }
@@ -2052,16 +2006,7 @@ pub(in super::super) fn section_dimension_constraints(
                     )?,
                     None => None,
                 };
-                let parameter = capture_constraint_refusal(
-                    &mut coordinate_refusal,
-                    dimension
-                        .as_ref()
-                        .map(|(_, parameter)| {
-                            parameter
-                                .try_clone_for_decode(ctx, "creo section dimension parameter copy")
-                        })
-                        .transpose(),
-                )?;
+                let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
                 let joined_incidence_link = unique_relation_id
                     .then(|| joined_relation_incidence_link(definition, relation.relation_id))
                     .flatten();
@@ -2069,12 +2014,7 @@ pub(in super::super) fn section_dimension_constraints(
                 let typed = (|| {
                     unique_relation_id.then_some(())?;
                     let (dimension, _) = dimension.as_ref()?;
-                    let parameter = capture_constraint_refusal(
-                        &mut coordinate_refusal,
-                        parameter
-                            .as_ref()?
-                            .try_clone_for_decode(ctx, "creo typed dimension parameter copy"),
-                    )?;
+                    let parameter = parameter.as_ref()?.clone();
                     if relation.relation_type == 1
                         && dimension.unit() == crate::feature::definitions::DimensionUnit::Radians
                     {
@@ -2222,24 +2162,12 @@ pub(in super::super) fn section_dimension_constraints(
                                         let [first, second] =
                                             if measured.point_ids() == [first_id, second_id] {
                                                 [
-                                                    SketchLocus::Start(capture_constraint_refusal(
-                                                        &mut coordinate_refusal,
-                                                        entity.try_clone_for_decode(
-                                                            ctx,
-                                                            "creo dimension locus entity copy",
-                                                        ),
-                                                    )?),
+                                                    SketchLocus::Start(entity.clone()),
                                                     SketchLocus::End(entity),
                                                 ]
                                             } else {
                                                 [
-                                                    SketchLocus::End(capture_constraint_refusal(
-                                                        &mut coordinate_refusal,
-                                                        entity.try_clone_for_decode(
-                                                            ctx,
-                                                            "creo dimension locus entity copy",
-                                                        ),
-                                                    )?),
+                                                    SketchLocus::End(entity.clone()),
                                                     SketchLocus::Start(entity),
                                                 ]
                                             };
@@ -2372,13 +2300,7 @@ pub(in super::super) fn section_dimension_constraints(
                                 format_args!("relation:offset:{}", relation.offset),
                             )?
                         },
-                        sketch: capture_constraint_refusal(
-                            &mut coordinate_refusal,
-                            sketch.try_clone_for_decode(
-                                ctx,
-                                "creo section dimension sketch identity",
-                            ),
-                        )?,
+                        sketch: sketch.clone(),
                         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                             constraint_definition,
                         )
@@ -2438,10 +2360,10 @@ mod tests {
             first: 10,
             second: 11,
         };
-        let rows = crate::decode::with_test_decode_ctx(|ctx| {
-            super::collect_constraint_candidates([super::equation_constraint(
-                ctx, &sketch, 1, definition, true, 7,
-            )])
+        let rows = ({
+            super::collect_constraint_candidates([Ok(super::equation_constraint(
+                &sketch, 1, definition, true, 7,
+            ))])
         })
         .expect("one equation row");
         assert_eq!(rows.len(), 1);
@@ -2549,10 +2471,8 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let rows = crate::decode::with_test_decode_ctx(|ctx| {
-            super::section_segment_radius_constraints(ctx, &definition, &sketch)
-        })
-        .expect("radius row");
+        let rows = ({ super::section_segment_radius_constraints(&definition, &sketch) })
+            .expect("radius row");
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows[0].0.id.as_str(),
@@ -2562,9 +2482,8 @@ mod tests {
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID")
         ]);
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            ({
                 super::section_segment_radius_constraints_for_emitted(
-                    ctx,
                     &definition,
                     &sketch,
                     &emitted,
@@ -2634,10 +2553,7 @@ mod tests {
                 pmi: None,
                 native_ref: None,
             });
-        crate::decode::with_test_decode_ctx(|ctx| {
-            close_sketch_constraint_parameter_references(ctx, &mut document)
-        })
-        .expect("service parameter closure");
+        close_sketch_constraint_parameter_references(&mut document);
         assert_eq!(document.model.parameters[0].id, id);
     }
 
@@ -2684,20 +2600,19 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#1").expect("valid sketch identity");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        ({
             assert_eq!(
-                super::section_segment_radius_constraints(ctx, &definition, &sketch)
+                super::section_segment_radius_constraints(&definition, &sketch)
                     .expect("service radius constraint")
                     .len(),
                 1
             );
             assert_eq!(
                 super::section_segment_radius_constraints_for_emitted(
-                    ctx,
                     &definition,
                     &sketch,
                     &BTreeSet::new(),
-                    &BTreeSet::new(),
+                    &BTreeSet::new()
                 )
                 .expect("service emitted radius constraint")
                 .len(),
@@ -2764,12 +2679,8 @@ mod tests {
         };
         let sketch =
             SketchId::mint("creo:model:sketch#angle-difference").expect("valid test fixture");
-        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-            section_equation_function_sixteen_angle_difference_constraints(
-                ctx,
-                &definition,
-                &sketch,
-            )
+        let constraints = ({
+            section_equation_function_sixteen_angle_difference_constraints(&definition, &sketch)
         })
         .expect("section_equation_function_sixteen_angle_difference_constraints admitted");
         assert_eq!(constraints.len(), 1);
@@ -2843,10 +2754,9 @@ mod tests {
         };
         let sketch =
             SketchId::mint("creo:model:sketch#scalar-equality").expect("valid test fixture");
-        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
-            section_equation_function_five_scalar_equality_constraints(ctx, &definition, &sketch)
-        })
-        .expect("section_equation_function_five_scalar_equality_constraints admitted");
+        let constraints =
+            ({ section_equation_function_five_scalar_equality_constraints(&definition, &sketch) })
+                .expect("section_equation_function_five_scalar_equality_constraints admitted");
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].0.active, Some(true));
         assert_eq!(
@@ -2860,8 +2770,8 @@ mod tests {
         let mut conflicting = definition.clone();
         conflicting.variables.as_mut().expect("variables").rows[1].value =
             crate::feature::definitions::ScalarLane::Value(3.5);
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            section_equation_function_five_scalar_equality_constraints(ctx, &conflicting, &sketch)
+        assert!(({
+            section_equation_function_five_scalar_equality_constraints(&conflicting, &sketch)
         })
         .expect("section_equation_function_five_scalar_equality_constraints admitted")
         .is_empty());

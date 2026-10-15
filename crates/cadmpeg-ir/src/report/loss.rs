@@ -421,15 +421,6 @@ pub struct NamespacedLossKind {
 }
 
 impl LossKind {
-    /// Copy the retained namespace and code through the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-
     /// Shared-namespace code whose local id equals the taxonomy `snake_case` name.
     pub fn shared(taxonomy: LossTaxonomy) -> Self {
         Self::Shared { kind: taxonomy }
@@ -565,15 +556,6 @@ pub struct LossNote {
 }
 
 impl LossNote {
-    /// Copies a report loss after admitting every owned string in the copy.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-
     /// Creates a loss note with the kind's default severity and no provenance.
     pub fn new(code: impl Into<LossKind>, message: impl Into<String>) -> Self {
         let code = code.into();

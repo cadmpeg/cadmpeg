@@ -52,17 +52,15 @@ fn string_attribute_output_preserves_value() {
         inflated_offset: 300,
     };
 
-    let attributes = crate::test_support::with_decode_context(|ctx| {
+    let attributes = {
         let index = ParasolidTopologyAttributeIndex::new(
-            ctx,
             &ir,
             std::slice::from_ref(&reference),
             &[],
             &[],
             &[],
             &[],
-        )
-        .unwrap();
+        );
         assert_eq!(index.contexts.len(), 1);
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
@@ -77,7 +75,6 @@ fn string_attribute_output_preserves_value() {
         }))
         .unwrap();
         attach_parasolid_topology_string_attributes(
-            ctx,
             &mut ir,
             &ParasolidStringAttributeSources {
                 string_uses: &[value_use],
@@ -88,7 +85,7 @@ fn string_attribute_output_preserves_value() {
         )
         .unwrap();
         ir.model.attributes.len()
-    });
+    };
     assert_eq!(attributes, 1);
 }
 
@@ -197,21 +194,18 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         doubles: &[double],
     };
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
-            ctx,
             &ir,
             &references,
             &class_uses,
             &definitions,
             &[],
             &[],
-        )
-        .unwrap();
+        );
         let mut annotations = AnnotationBuilder::new();
 
         attach_parasolid_topology_numeric_attributes(
-            ctx,
             &mut ir,
             &sources,
             &topology_attribute_index,
@@ -645,17 +639,15 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         },
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let index = ParasolidTopologyAttributeIndex::new(
-            ctx,
             &ir,
             std::slice::from_ref(&reference),
             &class_uses,
             std::slice::from_ref(&definition),
             &field_uses,
             &[],
-        )
-        .unwrap();
+        );
 
         assert_eq!(index.contexts.len(), 2);
         assert_eq!(
@@ -690,14 +682,8 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             doubles: &doubles,
         };
         let mut annotations = AnnotationBuilder::new();
-        attach_parasolid_topology_numeric_attributes(
-            ctx,
-            &mut ir,
-            &sources,
-            &index,
-            &mut annotations,
-        )
-        .expect("valid exactness fields");
+        attach_parasolid_topology_numeric_attributes(&mut ir, &sources, &index, &mut annotations)
+            .expect("valid exactness fields");
         let attributes = ir
             .model
             .attributes
@@ -826,19 +812,16 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         unicode: &[unicode],
     };
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
-            ctx,
             &ir,
             std::slice::from_ref(&reference),
             &[],
             &[],
             &[],
             &[],
-        )
-        .unwrap();
+        );
         attach_parasolid_topology_structured_attributes(
-            ctx,
             &mut ir,
             &sources,
             &topology_attribute_index,

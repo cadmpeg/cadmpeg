@@ -43,19 +43,14 @@ fn sampled_point_edit_keeps_storage_parameters_and_releases_scratch() {
         let mut edited = original.clone();
         let mut calls = 0;
         assert_eq!(
-            edited
-                .edit_admitted_points(
-                    |point| {
-                        calls += 1;
-                        if calls == 3 {
-                            Err("caller refused third point")
-                        } else {
-                            Ok(point.negated())
-                        }
-                    },
-                    &ctx
-                )
-                .expect("scoped admission"),
+            edited.edit_admitted_points(|point| {
+                calls += 1;
+                if calls == 3 {
+                    Err("caller refused third point")
+                } else {
+                    Ok(point.negated())
+                }
+            }),
             Err("caller refused third point")
         );
         assert_eq!(edited, original);
@@ -65,8 +60,7 @@ fn sampled_point_edit_keeps_storage_parameters_and_releases_scratch() {
         };
         for _ in 0..2 {
             edited
-                .edit_admitted_points(|point| Ok::<_, ()>(point.negated()), &ctx)
-                .expect("scratch reused")
+                .edit_admitted_points(|point| Ok::<_, ()>(point.negated()))
                 .expect("valid edit");
         }
         assert_eq!(edited, original);

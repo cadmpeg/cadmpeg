@@ -172,21 +172,7 @@ pub(crate) fn prepare_features_for_write(
                 .as_ref()
                 .map(project_feature_model_with_native_inputs)
                 .transpose()?
-                .map(|projection| {
-                    let projection_bytes = native
-                        .as_ref()
-                        .into_iter()
-                        .flat_map(|native| &native.feature_input_lanes)
-                        .flat_map(|lane| lane.native_payload.iter().copied())
-                        .collect::<Vec<_>>();
-                    let arena = DecodeArena::new();
-                    let (ctx, _) = DecodeContext::from_root_bytes(
-                        &projection_bytes,
-                        &arena,
-                        &DecodePolicy::service(),
-                    )?;
-                    Ok::<_, CodecError>(projection.into_model(&ctx)?.0)
-                })
+                .map(|projection| Ok::<_, CodecError>(projection.into_model()?.0))
                 .transpose()?
                 .unwrap_or_default();
             if feature_hash(&hash_ctx, &projected_model)? == neutral_hash {
@@ -446,17 +432,6 @@ fn validate_compact_edge_selection_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputEdgeSelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -516,11 +491,11 @@ fn validate_compact_edge_selection_edits(
                     .map(u32::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
-                Ok(cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id, &ctx)?.ok())
+                Ok(cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id).ok())
             })
             .collect::<Result<Option<Vec<_>>, CodecError>>()?;
         let expected = match generated.filter(|edges| !edges.is_empty()) {
-            Some(edges) => EdgeSelection::generated(edges, native.clone(), &ctx)?
+            Some(edges) => EdgeSelection::generated(edges, native.clone())
                 .unwrap_or(EdgeSelection::Native(native)),
             None => EdgeSelection::Native(native),
         };
@@ -543,12 +518,6 @@ fn validate_compact_surface_selection_edits(
         Vertex(&'a VertexSelection),
     }
     let Some(native) = native else { return Ok(()) };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputSurfaceSelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -631,9 +600,8 @@ fn validate_compact_surface_selection_edits(
                     Some((feature, local_id)) => match cadmpeg_ir::features::GeneratedFaceRef::new(
                         feature.clone(),
                         local_id.to_string(),
-                        &ctx,
-                    )? {
-                        Ok(face) => FaceSelection::generated(vec![face], native.clone(), &ctx)?
+                    ) {
+                        Ok(face) => FaceSelection::generated(vec![face], native.clone())
                             .unwrap_or(FaceSelection::Native(native)),
                         Err(_) => FaceSelection::Native(native),
                     },
@@ -653,21 +621,19 @@ fn validate_compact_surface_selection_edits(
                         match cadmpeg_ir::features::GeneratedVertexRef::new(
                             feature.clone(),
                             local_id.to_string(),
-                            &ctx,
-                        )? {
+                        ) {
                             Ok(vertex) => {
-                                match VertexSelection::generated(vertex, native.clone(), &ctx)? {
+                                match VertexSelection::generated(vertex, native.clone()) {
                                     Ok(selection) => selection,
-                                    Err(_) => VertexSelection::native(native, &ctx)?
+                                    Err(_) => VertexSelection::native(native)
                                         .unwrap_or(VertexSelection::Unresolved),
                                 }
                             }
-                            Err(_) => VertexSelection::native(native, &ctx)?
+                            Err(_) => VertexSelection::native(native)
                                 .unwrap_or(VertexSelection::Unresolved),
                         }
                     }
-                    None => VertexSelection::native(native, &ctx)?
-                        .unwrap_or(VertexSelection::Unresolved),
+                    None => VertexSelection::native(native).unwrap_or(VertexSelection::Unresolved),
                 };
                 vertex != &expected
             }

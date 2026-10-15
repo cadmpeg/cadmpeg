@@ -149,21 +149,17 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_sketch_entities(
         &mut self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         entities: Vec<SketchEntity>,
     ) -> Result<(), CodecError> {
         for mut entity in entities {
             let source_id = SketchEntityId::mint(entity.id().as_str().to_owned())
                 .map_err(CodecError::malformed)?;
-            let source_geometry = entity
-                .geometry
-                .try_clone_for_decode(ctx, "creo source sketch geometry copy")?;
+            let source_geometry = entity.geometry.clone();
             let source_geometry = if let Some(scale) = self.length_scale_mm {
                 let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
-                let scaled =
-                    crate::decode::build::units::scale_sketch_geometry(ctx, unscaled, scale)
-                        .map_err(Self::unrepresentable_length)?;
+                let scaled = crate::decode::build::units::scale_sketch_geometry(unscaled, scale)
+                    .map_err(Self::unrepresentable_length)?;
                 std::mem::replace(&mut entity.geometry, scaled)
             } else {
                 source_geometry
@@ -209,9 +205,7 @@ impl SourceUnitCarriers {
     ) -> Result<(), CodecError> {
         let source_id =
             SurfaceId::mint(surface.id.as_str().to_owned()).map_err(CodecError::malformed)?;
-        let source_geometry = surface
-            .geometry
-            .try_clone_for_decode(ctx, "creo source surface geometry")?;
+        let source_geometry = surface.geometry.clone();
         if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut surface.geometry)
         {
@@ -235,8 +229,7 @@ impl SourceUnitCarriers {
     ) -> Result<(), CodecError> {
         let source_id =
             SurfaceId::mint(surface.id.as_str().to_owned()).map_err(CodecError::malformed)?;
-        let source_geometry =
-            geometry.try_clone_for_decode(ctx, "creo replacement source surface geometry")?;
+        let source_geometry = geometry.clone();
         if let (Some(scale), SurfaceGeometry::Solved(solved)) =
             (self.length_scale_mm, &mut geometry)
         {
@@ -260,9 +253,7 @@ impl SourceUnitCarriers {
     ) -> Result<(), CodecError> {
         let source_id =
             CurveId::mint(curve.id.as_str().to_owned()).map_err(CodecError::malformed)?;
-        let source_geometry = curve
-            .geometry
-            .try_clone_for_decode(ctx, "creo source curve geometry")?;
+        let source_geometry = curve.geometry.clone();
         if let (Some(scale), CurveGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut curve.geometry)
         {
@@ -290,8 +281,7 @@ impl SourceUnitCarriers {
     ) -> Result<(), CodecError> {
         let source_id =
             CurveId::mint(curve.id.as_str().to_owned()).map_err(CodecError::malformed)?;
-        let source_geometry =
-            geometry.try_clone_for_decode(ctx, "creo replacement source curve geometry")?;
+        let source_geometry = geometry.clone();
         if let (Some(scale), CurveGeometry::Solved(solved)) = (self.length_scale_mm, &mut geometry)
         {
             crate::decode::build::units::scale_curve_geometry(ctx, solved, scale).map_err(
@@ -494,7 +484,6 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_procedural_surface(
         &mut self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         owner: &SurfaceId,
         mut procedural: ProceduralSurface,
@@ -504,13 +493,12 @@ impl SourceUnitCarriers {
         }
 
         self.procedural_index
-            .add_surface(ctx, &mut ir.model, owner, procedural)?
+            .add_surface(&mut ir.model, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
     pub(super) fn admit_procedural_curve(
         &mut self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         owner: &CurveId,
         mut procedural: ProceduralCurve,
@@ -520,7 +508,7 @@ impl SourceUnitCarriers {
         }
 
         self.procedural_index
-            .add_curve(ctx, &mut ir.model, owner, procedural)?
+            .add_curve(&mut ir.model, owner, procedural)?
             .map_err(CodecError::malformed)
     }
 
@@ -589,10 +577,7 @@ mod tests {
             .expect("fixture pcurve construction admission")
             .expect("source NURBS"),
         );
-        let copy = crate::decode::with_test_decode_ctx(|ctx| {
-            geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-        })
-        .expect("service copy");
+        let copy = { geometry.clone() };
         assert_eq!(copy, geometry);
     }
 
@@ -613,10 +598,7 @@ mod tests {
             cadmpeg_core::text::NonBlankString::new("native").expect("native kind"),
         );
         for geometry in [&text, &native] {
-            let copy = crate::decode::with_test_decode_ctx(|ctx| {
-                geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-            })
-            .expect("service copy");
+            let copy = { geometry.clone() };
             assert_eq!(&copy, geometry);
         }
     }
@@ -629,10 +611,7 @@ mod tests {
             subelements: vec!["face".to_owned(), "edge".to_owned()],
         })
         .expect("external source geometry");
-        let copy = crate::decode::with_test_decode_ctx(|ctx| {
-            geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-        })
-        .expect("service copy");
+        let copy = { geometry.clone() };
         assert_eq!(copy, geometry);
     }
 
@@ -924,10 +903,8 @@ mod tests {
         let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         { carriers.admit_sketch(&mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0))) }
             .expect("sketch admission");
-        crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_sketch_entities(ctx, &mut ir, vec![source_sketch_line(1.0)])
-        })
-        .expect("entity admission");
+        ({ carriers.admit_sketch_entities(&mut ir, vec![source_sketch_line(1.0)]) })
+            .expect("entity admission");
         { carriers.admit_sketch_constraints(&mut ir, vec![source_distance_constraint(2.0)]) }
             .expect("constraint admission");
         assert_eq!(
@@ -975,10 +952,9 @@ mod tests {
     fn sketch_entity_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| {
-            carriers.admit_sketch_entities(ctx, &mut ir, vec![source_sketch_line(f64::MAX)])
-        })
-        .expect_err("millimeter line cannot be represented");
+        let error =
+            ({ carriers.admit_sketch_entities(&mut ir, vec![source_sketch_line(f64::MAX)]) })
+                .expect_err("millimeter line cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.sketch_entities.is_empty());
     }
@@ -1259,10 +1235,8 @@ mod tests {
             ),
             None,
         );
-        crate::decode::with_test_decode_ctx(|ctx| {
-            source_carriers.admit_procedural_surface(ctx, &mut ir, &surface_id, procedural)
-        })
-        .expect("procedural attachment");
+        ({ source_carriers.admit_procedural_surface(&mut ir, &surface_id, procedural) })
+            .expect("procedural attachment");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
             ir.model.procedural_surfaces[0].definition()
         else {
@@ -1281,28 +1255,25 @@ mod tests {
     fn procedural_surface_without_owner_is_malformed_at_attachment() {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = crate::decode::with_test_decode_ctx(|ctx| source_carriers
-            .admit_procedural_surface(
-                ctx,
-                &mut ir,
-                &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1")
-                        .expect("identity grammar"),
-                    ProceduralSurfaceDefinition::Extrusion(
-                        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                            CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
-                            None,
-                            Vector3::new(0.0, 0.0, 1.0),
-                            None,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
-                        )
-                        .expect("valid extrusion fixture"),
-                    ),
-                    None,
+        let error = (source_carriers.admit_procedural_surface(
+            &mut ir,
+            &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1").expect("identity grammar"),
+                ProceduralSurfaceDefinition::Extrusion(
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
+                        None,
+                        Vector3::new(0.0, 0.0, 1.0),
+                        None,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    )
+                    .expect("valid extrusion fixture"),
                 ),
-            ))
-            .expect_err("missing owner must refuse attachment");
+                None,
+            ),
+        ))
+        .expect_err("missing owner must refuse attachment");
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
         assert!(ir.model.procedural_surfaces.is_empty());
     }
@@ -1326,10 +1297,8 @@ mod tests {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
-        crate::decode::with_test_decode_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_procedural_surface(ctx, &mut ir, &owner, procedural)
-        })
-        .expect("valid test setup or admitted service result");
+        ({ SourceUnitCarriers::default().admit_procedural_surface(&mut ir, &owner, procedural) })
+            .expect("valid test setup or admitted service result");
         assert_eq!(ir.model.procedural_surfaces.len(), 1);
     }
 
@@ -1349,10 +1318,8 @@ mod tests {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        crate::decode::with_test_decode_ctx(|ctx| {
-            SourceUnitCarriers::default().admit_procedural_curve(ctx, &mut ir, &owner, procedural)
-        })
-        .expect("valid test setup or admitted service result");
+        ({ SourceUnitCarriers::default().admit_procedural_curve(&mut ir, &owner, procedural) })
+            .expect("valid test setup or admitted service result");
         assert_eq!(ir.model.procedural_curves.len(), 1);
     }
 
@@ -1374,9 +1341,8 @@ mod tests {
             )
         })
         .expect("curve admission");
-        crate::decode::with_test_decode_ctx(|ctx| {
+        ({
             source_carriers.admit_procedural_curve(
-                ctx,
                 &mut ir,
                 &curve_id,
                 ProceduralCurve::new(
@@ -1834,13 +1800,7 @@ mod tests {
                 .expect("fixture pcurve construction admission")
                 .expect("curve"),
             );
-            assert_eq!(
-                crate::decode::with_test_decode_ctx(
-                    |ctx| geometry.try_clone_for_decode(ctx, "creo source sketch geometry copy")
-                )
-                .expect("service"),
-                geometry
-            );
+            assert_eq!((geometry.clone()), geometry);
         }
     }
 

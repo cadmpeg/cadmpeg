@@ -88,8 +88,7 @@ impl SolvedSurfaceGeometry {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
-        self.try_clone_for_decode(ctx, "IR scaled carrier copy")?
-            .scaled_owned(ctx, scale)
+        self.clone().scaled_owned(ctx, scale)
     }
 }
 
@@ -106,8 +105,7 @@ impl SolvedCurveGeometry {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<Result<Self, ScaleRefusal>, cadmpeg_core::CodecError> {
-        self.try_clone_for_decode(ctx, "IR scaled carrier copy")?
-            .scaled_owned(ctx, scale)
+        self.clone().scaled_owned(ctx, scale)
     }
 }
 

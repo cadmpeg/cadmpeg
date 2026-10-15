@@ -902,10 +902,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         )
     })
     .unwrap();
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
-    })
-    .unwrap();
+    ({ transfer.assign_parameter_owners(&mut ir, &native) }).unwrap();
 
     assert_eq!(
         ir.model
@@ -1035,10 +1032,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         )
     })
     .unwrap();
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
-    })
-    .unwrap();
+    ({ transfer.assign_parameter_owners(&mut ir, &native) }).unwrap();
 
     let child_feature =
         FeatureId::mint("synthetic:test:feature#child-operation").expect("identity grammar");
@@ -1086,11 +1080,9 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     second.name = "Length".to_string();
     ir.model.parameters.extend([first, second]);
 
-    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
-        .unwrap();
-    crate::test_support::with_service_context(|ctx| {
+    (normalize_parameter_names(&mut ir));
+    ({
         assign_native_operation_parameter_values(
-            ctx,
             &mut ir,
             &HashMap::from([
                 (
@@ -1155,11 +1147,9 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     value.expression = "3".to_string();
     ir.model.parameters.push(value);
 
-    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
-        .unwrap();
-    crate::test_support::with_service_context(|ctx| {
+    (normalize_parameter_names(&mut ir));
+    ({
         assign_native_operation_parameter_values(
-            ctx,
             &mut ir,
             &HashMap::from([(
                 ParameterId::mint("synthetic:test:id#pattern-parameter".to_string())
@@ -1196,8 +1186,7 @@ fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
         .parameters
         .extend([first, second, later_source_name]);
 
-    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
-        .unwrap();
+    (normalize_parameter_names(&mut ir));
 
     assert_eq!(
         ir.model
@@ -1423,10 +1412,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
             pmi: None,
             native_ref: Some(parameter_entity.id.clone()),
         });
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
-    })
-    .unwrap();
+    ({ transfer.assign_parameter_owners(&mut ir, &native) }).unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
@@ -1573,8 +1559,7 @@ fn feature_parameter_name_indexes_result() {
     let mut value = parameter("one", "native");
     value.name = "Length".to_string();
     ir.model.parameters.push(value);
-    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
-        .expect("service profile admits name indexes");
+    (normalize_parameter_names(&mut ir));
     assert_eq!(ir.model.parameters[0].name, "Length");
 }
 
@@ -1610,10 +1595,8 @@ fn exact_parameter_owner_lookup_result() {
     };
     let mut ir = CadIr::empty();
     ir.model.parameters.push(parameter("one", "owner-entity"));
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
-    })
-    .expect("service profile admits owner indexes");
+    ({ transfer.assign_parameter_owners(&mut ir, &native) })
+        .expect("service profile admits owner indexes");
     assert_eq!(ir.model.parameters[0].owner.as_ref(), Some(&feature_id));
 }
 
@@ -1670,10 +1653,8 @@ fn native_operation_parameter_map_result() {
         ir.model.parameters[0].id.clone(),
         ir.model.features[0].id.clone(),
     )]);
-    crate::test_support::with_service_context(|ctx| {
-        assign_native_operation_parameter_values(ctx, &mut ir, &owners)
-    })
-    .expect("service profile admits operation values");
+    ({ assign_native_operation_parameter_values(&mut ir, &owners) })
+        .expect("service profile admits operation values");
     let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
         ir.model.features[0].evaluation.definition()
     else {

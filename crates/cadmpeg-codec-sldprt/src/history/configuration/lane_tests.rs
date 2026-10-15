@@ -87,11 +87,7 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
         ..design_configuration("unresolved", 0, Some(0), None)
     });
 
-    assert_eq!(
-        configuration_surface_carriers(&cadmpeg_test_support::service_decode_context(), &ir, 0)
-            .unwrap(),
-        ir.model.surfaces,
-    );
+    assert_eq!(configuration_surface_carriers(&ir, 0), ir.model.surfaces,);
 }
 
 #[test]
@@ -114,13 +110,7 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
         .configurations
         .push(design_configuration("empty", 0, Some(0), None));
 
-    assert!(configuration_surface_carriers(
-        &cadmpeg_test_support::service_decode_context(),
-        &ir,
-        0
-    )
-    .unwrap()
-    .is_empty());
+    assert!(configuration_surface_carriers(&ir, 0).is_empty());
 }
 
 #[test]
@@ -946,12 +936,7 @@ fn configuration_offset_plane_inherits_shared_reference() {
         distance: Length::new(8.0).unwrap(),
     });
 
-    inherit_configuration_shared_semantics(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut configured,
-        &base,
-    )
-    .unwrap();
+    inherit_configuration_shared_semantics(&mut configured, &base).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference,
@@ -992,12 +977,7 @@ fn configuration_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
         distance: Length::new(8.0).unwrap(),
     });
 
-    inherit_configuration_shared_semantics(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut configured,
-        &base,
-    )
-    .unwrap();
+    inherit_configuration_shared_semantics(&mut configured, &base).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::ResolvedPlane { frame }),

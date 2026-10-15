@@ -126,7 +126,6 @@ pub(in crate::native) fn feature_projected_curve_references(
 
 /// Reconstruct ordered logical payloads from projected-curve reference fields.
 pub(in crate::native) fn feature_projected_curve_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeatureProjectedCurveReference],
@@ -185,7 +184,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         }) {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
@@ -569,7 +568,6 @@ pub(in crate::native) fn feature_swp104_leading_branches(
 
 /// Reconstruct ordered logical payloads from complete surface-construction graphs.
 pub(in crate::native) fn feature_surface_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     references: &[FeatureSurfaceConstructionReference],
 ) -> Result<Vec<FeatureSurfaceConstructionPayload>, cadmpeg_core::CodecError> {
@@ -616,7 +614,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         }) {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
@@ -1510,7 +1508,6 @@ pub(in crate::native) fn feature_block_constructions(
 
 /// Reconstruct complete `BLOCK` construction payloads in reference order.
 pub(in crate::native) fn feature_block_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureBlockConstruction],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
@@ -1523,7 +1520,7 @@ pub(in crate::native) fn feature_block_construction_payloads(
             .map(|member| member.data_block.clone())
             .chain(std::iter::once(construction.terminal_data_block.clone()))
             .collect::<Vec<_>>();
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let id = construction

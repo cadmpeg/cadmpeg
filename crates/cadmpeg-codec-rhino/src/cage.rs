@@ -175,8 +175,7 @@ pub(crate) fn decode_at(
             .ok_or_else(|| {
                 GeometryError::malformed(body.position(), "NURBS cage knot vector truncated")
             })?;
-        let mut reserved =
-            ExactVec::<FiniteReal>::new(bound);
+        let mut reserved = ExactVec::<FiniteReal>::new(bound);
         let mut previous: Option<FiniteReal> = None;
         for _ in 0..knot_count {
             let knot = req_f64(&mut body)?;
@@ -218,8 +217,7 @@ pub(crate) fn decode_at(
         .ok_or_else(|| {
             GeometryError::malformed(body.position(), "NURBS cage control net truncated")
         })?;
-    let mut control_points =
-        ExactVec::<Vec<FiniteReal>>::new(control_bound);
+    let mut control_points = ExactVec::<Vec<FiniteReal>>::new(control_bound);
     let mut weights = if rational { Some(Vec::new()) } else { None };
     for _ in 0..control_count {
         let tuple_bound = body
@@ -227,8 +225,7 @@ pub(crate) fn decode_at(
             .ok_or_else(|| {
                 GeometryError::malformed(body.position(), "NURBS cage coordinate tuple truncated")
             })?;
-        let mut stored =
-            ExactVec::<FiniteReal>::new(tuple_bound);
+        let mut stored = ExactVec::<FiniteReal>::new(tuple_bound);
         for _ in 0..dimension {
             let value = req_f64(&mut body)?;
             let Some(value) = FiniteReal::new(value) else {

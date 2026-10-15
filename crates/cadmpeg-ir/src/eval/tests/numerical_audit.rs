@@ -529,9 +529,7 @@ fn audit_rolling_ball_jet(
                     site,
                 },
             ],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .unwrap(),
     )
 }
@@ -597,9 +595,7 @@ fn rolling_ball_jet_over_wide_knot_interval_keeps_finite_interior_point() {
                     site,
                 },
             ],
-            &cadmpeg_test_support::service_decode_context(),
         )
-        .expect("fixture rolling-ball admission")
         .unwrap(),
     );
     assert_eq!(

@@ -12,8 +12,6 @@
 
 pub mod comparison;
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use serde::Deserialize;
 
 fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
@@ -105,15 +103,6 @@ impl schemars::JsonSchema for Identity {
 }
 
 impl Identity {
-    /// Copies an admitted identity within the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Admit a string matching the entity identity grammar.
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
         match Self::admit_text(value.into(), |_| Ok::<(), std::convert::Infallible>(())) {
@@ -448,15 +437,6 @@ pub struct IdentityKey(std::borrow::Cow<'static, str>);
 rewrite_scalar!(IdentityKey);
 
 impl IdentityKey {
-    /// Copy owned key text under the decode budget; retain static borrowed text.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        Ok(self.clone())
-    }
-
     /// Encode one source component for use as an identity key.
     ///
     /// ASCII letters, digits, `.`, `_`, `-`, and `/` remain literal. Every other
@@ -1006,15 +986,6 @@ macro_rules! id_type {
         }
 
         impl $name {
-            /// Copies an admitted identity within the decode budget.
-            pub fn try_clone_for_decode(
-                &self,
-                _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                _operation: &'static str,
-            ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-
             /// Mint an identity that matches `<format>:<scope>:<kind>#<key>`.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 $crate::ids::Identity::new(value).map(Self::from)
@@ -1111,15 +1082,6 @@ macro_rules! local_id_type {
         }
 
         impl $name {
-            /// Copies an admitted local identity within the decode budget.
-            pub fn try_clone_for_decode(
-                &self,
-                _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                _operation: &'static str,
-            ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
-    }
-
             /// Mint a non-empty identity that has no whitespace.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 let value = value.into();

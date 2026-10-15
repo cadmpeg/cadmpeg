@@ -13,10 +13,8 @@ fn successive_session_commits_accumulate_entities_and_exactness() {
     for index in 0..4096 {
         let id = format!("test:model:point#{index:08}");
         let mut draft = super::ModelDraft::new().with_accounting();
-        draft.insert(super::point(&id), &ctx).unwrap();
-        draft
-            .exactness(&ctx, &id, crate::provenance::Exactness::Derived)
-            .unwrap();
+        draft.insert(super::point(&id)).unwrap();
+        draft.exactness(&id, crate::provenance::Exactness::Derived);
         session.commit(draft, &mut annotations).unwrap().unwrap();
     }
     assert_eq!(session.document().model.points.len(), 4096);
@@ -62,9 +60,7 @@ fn native_candidate_admission_does_not_build_an_unread_prefix_index() {
     session
         .try_admit_append(
             candidate,
-            annotations
-                .sparse_transaction(&ctx, "native candidate annotations")
-                .unwrap(),
+            annotations.sparse_transaction(),
             crate::RHINO_DRAFT_CHECKS,
             |report, _| {
                 assert!(report.unwrap().is_ok());

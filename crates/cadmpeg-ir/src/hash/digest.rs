@@ -20,28 +20,10 @@ impl Sha256Digest {
         Self::from_bytes(super::sha256(bytes))
     }
 
-    /// Charge input hashing work and 64 retained bytes before allocating digest text.
-    pub fn digest_for_decode(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        bytes: &[u8],
-        operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Self::from_bytes_for_decode(ctx, super::sha256(bytes), operation)
-    }
-
     /// Encode the 32 bytes produced by a SHA-256 hasher.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Self::encode_bytes(bytes, String::with_capacity(64))
-    }
-
-    /// Encode a completed hash.
-    pub fn from_bytes_for_decode(
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        bytes: [u8; 32],
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self::from_bytes(bytes))
     }
 
     fn encode_bytes(bytes: [u8; 32], mut text: String) -> Self {
@@ -51,15 +33,6 @@ impl Sha256Digest {
             text.push(char::from(HEX[usize::from(byte & 15)]));
         }
         Self(text)
-    }
-
-    /// Copy the canonical spelling through the decode budget.
-    pub fn try_clone_for_decode(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(self.clone())
     }
 
     /// Borrow the canonical hexadecimal spelling.
@@ -128,17 +101,6 @@ impl schemars::JsonSchema for Sha256Digest {
 #[cfg(test)]
 mod tests {
     use super::Sha256Digest;
-
-    #[test]
-    fn digest_for_decode_succeeds_under_service_profile() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
-        let digest = Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test").unwrap();
-        assert_eq!(digest, Sha256Digest::digest(b"abc"));
-        assert_eq!(String::from(digest), Sha256Digest::digest(b"abc").as_str());
-    }
 
     #[cfg(feature = "schema")]
     #[test]

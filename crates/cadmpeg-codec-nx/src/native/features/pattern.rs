@@ -1025,7 +1025,6 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
 
 /// Reconstruct ordered logical payloads from complete pattern-reference graphs.
 pub(in crate::native) fn feature_pattern_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeaturePatternReference],
@@ -1085,7 +1084,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         }) {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let Some((_, operation_key)) = operation_label.rsplit_once('#') else {

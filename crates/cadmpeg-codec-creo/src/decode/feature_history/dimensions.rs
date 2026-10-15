@@ -53,7 +53,6 @@ fn dimension_expression(value: Option<f64>) -> Result<String, cadmpeg_core::Code
 }
 
 fn push_feature_source_parameter(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     content: &mut cadmpeg_ir::features::FeatureContent,
     id: ParameterId,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -65,13 +64,8 @@ fn push_feature_source_parameter(
             "source_content repeats a parameter or child-feature reference".into(),
         ));
     }
-    content.reserve_for_decode(ctx, 1, "creo feature source content")?;
     content
-        .push(
-            FeatureSourceContent::Parameter(id),
-            ctx,
-            "creo feature source content",
-        )
+        .push(FeatureSourceContent::Parameter(id))
         .map_err(cadmpeg_core::CodecError::from)
 }
 
@@ -323,11 +317,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     let mut feature_ids = BTreeSet::new();
     for feature in &ir.model.features {
         if !feature_ids.contains(&feature.id) {
-            feature_ids.insert(
-                feature
-                    .id
-                    .try_clone_for_decode(ctx, "creo dimension owner feature IDs")?,
-            );
+            feature_ids.insert(feature.id.clone());
         }
     }
     let mut candidates = Vec::new();
@@ -345,12 +335,7 @@ pub(in super::super) fn transfer_feature_dimensions(
             continue;
         };
         for (source_ordinal, dimension) in table.rows.iter().enumerate() {
-            candidates.push((
-                sketch.try_clone_for_decode(ctx, "creo dimension candidate sketch IDs")?,
-                definition,
-                source_ordinal,
-                dimension,
-            ));
+            candidates.push((sketch.clone(), definition, source_ordinal, dimension));
         }
     }
     candidates.as_mut_slice().sort_by(
@@ -364,10 +349,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     );
     let mut keys = Vec::new();
     for (sketch, _, _, dimension) in &candidates {
-        keys.push((
-            sketch.try_clone_for_decode(ctx, "creo dimension layout sketch IDs")?,
-            dimension.external_id,
-        ));
+        keys.push((sketch.clone(), dimension.external_id));
     }
     let Some(layout) = feature_dimension_parameter_layout(&keys) else {
         return Ok((0, BTreeMap::new()));
@@ -394,13 +376,9 @@ pub(in super::super) fn transfer_feature_dimensions(
             continue;
         };
         if unique_external_ids[&dimension.external_id] == 1 {
-            relation_parameters.insert(
-                format!("d{}", dimension.external_id),
-                id.try_clone_for_decode(ctx, "creo relation parameter identities")?,
-            );
+            relation_parameters.insert(format!("d{}", dimension.external_id), id.clone());
         }
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -450,19 +428,15 @@ pub(in super::super) fn transfer_feature_dimensions(
         source_carriers.admit_parameter(
             ir,
             DesignParameter {
-                id: id.try_clone_for_decode(ctx, "creo design parameter identity copy")?,
-                owner: Some(
-                    owner_id.try_clone_for_decode(ctx, "creo design parameter owner identity")?,
-                ),
+                id: id.clone(),
+                owner: Some(owner_id.clone()),
                 ordinal,
                 name,
                 expression,
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                properties: cadmpeg_core::text::named_entries(id.as_str(),
-                    properties,
-                )?,
+                properties: cadmpeg_core::text::named_entries(id.as_str(), properties)?,
                 pmi: None,
                 native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),
             },
@@ -473,7 +447,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                 .iter_mut()
                 .filter(|feature| feature.id == owner_id),
         ) {
-            push_feature_source_parameter(ctx, &mut feature.source_content, id)?;
+            push_feature_source_parameter(&mut feature.source_content, id)?;
         }
     }
     Ok((transferred, relation_parameters))

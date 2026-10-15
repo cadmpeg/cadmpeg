@@ -3,7 +3,6 @@
 
 use cadmpeg_ir::{
     codec::{Codec, DecodeOptions},
-    document::admission::StandardAdmission,
     geometry::{
         analytic::LineCurve, surface_payloads::LinearSweepSurfaceConstruction, Curve,
         CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -36,7 +35,6 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
         let owner = ir.model.surfaces[0].id.clone();
         ir.model
             .add_procedural_surface(
-                &StandardAdmission,
                 &owner,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::mint("test:model:procedural-surface#sweep").unwrap(),
@@ -46,7 +44,6 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
                     None,
                 ),
             )
-            .unwrap()
             .unwrap();
         let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
             panic!("construction owner")

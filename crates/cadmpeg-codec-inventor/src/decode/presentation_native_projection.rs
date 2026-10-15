@@ -49,11 +49,7 @@ pub(super) fn project(
             state: style.state,
             terminal_reference: style.terminal_reference,
             suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
-            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                style.suffix.window(),
-                "retain Inventor default style suffix digest",
-            )?,
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(style.suffix.window()),
         });
     }
     for style in &inventory.rendering_styles {
@@ -86,12 +82,9 @@ pub(super) fn project(
             style_values: extension.map(|value| value.style_values),
             guid: extension.map(|value| value.guid.clone()),
             suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
-            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
+            suffix_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
                 style.suffix.window(),
-                "retain Inventor rendering style suffix digest",
-            )
-            .map(String::from)?,
+            )),
         };
         match PmAppRenderingStyleRecord::try_from(wire) {
             Ok(record) => {

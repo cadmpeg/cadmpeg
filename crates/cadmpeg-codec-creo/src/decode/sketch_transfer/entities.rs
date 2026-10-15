@@ -50,13 +50,12 @@ fn native_section_geometry(kind: &str) -> Result<SketchGeometry, cadmpeg_core::C
 }
 
 fn copied_or_native_geometry(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometries: &BTreeMap<usize, SketchGeometry>,
     offset: usize,
     kind: &str,
 ) -> Result<SketchGeometry, cadmpeg_core::CodecError> {
     match geometries.get(&offset) {
-        Some(geometry) => geometry.try_clone_for_decode(ctx, "creo section geometry copy"),
+        Some(geometry) => Ok(geometry.clone()),
         None => native_section_geometry(kind),
     }
 }
@@ -155,7 +154,7 @@ pub(super) fn transfer_section_entities(
     } = transfer;
     let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
         if let Some(geometry) = segment_geometries.get(&segment.offset).and_then(Option::as_ref) {
-            return geometry.try_clone_for_decode(ctx, "creo section entity geometry copy").map(Some);
+            return Ok(Some(geometry.clone()));
         }
         if section_degenerate_axis_line(definition, segment) {
             let kind = "line".to_owned();
@@ -177,7 +176,6 @@ pub(super) fn transfer_section_entities(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -230,8 +228,7 @@ pub(super) fn transfer_section_entities(
         };
         let endpoint_refs = admitted_endpoint_refs(sketch_id, endpoints.iter().copied());
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         push_section_entity(
             ctx,
@@ -255,7 +252,6 @@ pub(super) fn transfer_section_entities(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -276,8 +272,7 @@ pub(super) fn transfer_section_entities(
             crate::feature::definitions::FeatureSegmentKind::Arc(_) => "arc",
             crate::feature::definitions::FeatureSegmentKind::Point(_) => "point",
         })?;
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         push_section_entity(
             ctx,
@@ -308,13 +303,12 @@ pub(super) fn transfer_section_entities(
         let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
             continue;
         };
-        let geometry = copied_or_native_geometry(ctx, circle_geometries, segment.offset, "circle")?;
+        let geometry = copied_or_native_geometry(circle_geometries, segment.offset, "circle")?;
         let solved_geometry = matches!(
             geometry.definition(),
             SketchGeometryDefinition::Circle { .. }
         );
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -332,8 +326,7 @@ pub(super) fn transfer_section_entities(
         )?;
         let construction = !unique_external_id || !profile_entities.contains(&id);
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         push_section_entity(
             ctx,
@@ -364,13 +357,12 @@ pub(super) fn transfer_section_entities(
         let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
             continue;
         };
-        let geometry = copied_or_native_geometry(ctx, point_geometries, segment.offset, "point")?;
+        let geometry = copied_or_native_geometry(point_geometries, segment.offset, "point")?;
         let solved_geometry = matches!(
             geometry.definition(),
             SketchGeometryDefinition::Point { .. }
         );
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -387,8 +379,7 @@ pub(super) fn transfer_section_entities(
             },
         )?;
         let construction = !unique_external_id || !profile_entities.contains(&id);
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         let endpoint_refs = admitted_endpoint_refs(sketch_id, [segment.point_id]);
         push_section_entity(
@@ -420,12 +411,10 @@ pub(super) fn transfer_section_entities(
         let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
             continue;
         };
-        let geometry =
-            copied_or_native_geometry(ctx, centered_line_geometries, segment.offset, "line")?;
+        let geometry = copied_or_native_geometry(centered_line_geometries, segment.offset, "line")?;
         let solved_geometry =
             matches!(geometry.definition(), SketchGeometryDefinition::Line { .. });
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -443,8 +432,7 @@ pub(super) fn transfer_section_entities(
         )?;
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
         let endpoint_refs = admitted_endpoint_refs(sketch_id, [0, 1]);
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         push_section_entity(
             ctx,
@@ -476,18 +464,13 @@ pub(super) fn transfer_section_entities(
         let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
             continue;
         };
-        let geometry = copied_or_native_geometry(
-            ctx,
-            reference_line_geometries,
-            segment.offset,
-            "reference_line",
-        )?;
+        let geometry =
+            copied_or_native_geometry(reference_line_geometries, segment.offset, "reference_line")?;
         let solved_geometry = matches!(
             geometry.definition(),
             SketchGeometryDefinition::ReferenceLine { .. }
         );
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -506,8 +489,7 @@ pub(super) fn transfer_section_entities(
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
         let endpoint_refs =
             admitted_endpoint_refs(sketch_id, segment.point_ids.into_iter().flatten());
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         push_section_entity(
             ctx,
@@ -541,7 +523,6 @@ pub(super) fn transfer_section_entities(
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -550,8 +531,7 @@ pub(super) fn transfer_section_entities(
             Exactness::ByteExact,
         )?;
         let endpoint_refs = admitted_endpoint_refs(sketch_id, segment.point_ids);
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         let geometry = native_section_geometry("bounded_curve")?;
         push_section_entity(
@@ -584,7 +564,6 @@ pub(super) fn transfer_section_entities(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -592,8 +571,7 @@ pub(super) fn transfer_section_entities(
             "unresolved_section_conic",
             Exactness::ByteExact,
         )?;
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         let geometry = native_section_geometry("conic")?;
         push_section_entity(
@@ -641,7 +619,6 @@ pub(super) fn transfer_section_entities(
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
         annotate(
-            ctx,
             annotations,
             id.as_str(),
             "FeatDefs",
@@ -650,8 +627,7 @@ pub(super) fn transfer_section_entities(
             Exactness::ByteExact,
         )?;
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
-        let sketch_copy =
-            sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
+        let sketch_copy = sketch_id.clone();
         let native_ref = sketch_native_ref_admitted(sketch_id);
         push_section_entity(
             ctx,
@@ -712,7 +688,6 @@ pub(super) fn transfer_section_entities(
             continue;
         };
         annotate(
-            ctx,
             annotations,
             entity_id.as_str(),
             "FeatDefs",
@@ -721,24 +696,19 @@ pub(super) fn transfer_section_entities(
             Exactness::Derived,
         )?;
         if let Some(external_id) = external_id.filter(|_| generated) {
-            let copied =
-                geometry.try_clone_for_decode(ctx, "creo generated saved geometry copy")?;
+            let copied = geometry.clone();
             generated_saved_geometries.push((external_id, copied));
         }
         let native_ref = format!(
             "{}:saved_entity#{internal_id}",
             sketch_native_ref_admitted(sketch_id)
         );
-        let entity = SketchEntity::new(
-            entity_id,
-            sketch_id.try_clone_for_decode(ctx, "creo saved entity sketch identity")?,
-            geometry.try_clone_for_decode(ctx, "creo saved entity geometry copy")?,
-        )
-        .with_construction(!generated)
-        .with_native_ref(Some(native_ref))
-        .with_geometry_ref(placed_sketch_curve_ref(
-            transform, sketch_id, &suffix, &geometry,
-        ));
+        let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
+            .with_construction(!generated)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(placed_sketch_curve_ref(
+                transform, sketch_id, &suffix, &geometry,
+            ));
         push_section_entity(ctx, &mut entities, entity)?;
         saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
     }
@@ -820,7 +790,6 @@ pub(super) fn transfer_section_entities(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             entity_id.as_str(),
             "FeatDefs",
@@ -833,14 +802,10 @@ pub(super) fn transfer_section_entities(
             sketch_native_ref_admitted(sketch_id)
         );
         let geometry_ref = transform.map(|_| curve_id.as_str().to_owned());
-        let entity = SketchEntity::new(
-            entity_id,
-            sketch_id.try_clone_for_decode(ctx, "creo saved spline sketch identity")?,
-            geometry.try_clone_for_decode(ctx, "creo saved spline geometry copy")?,
-        )
-        .with_construction(!generated)
-        .with_native_ref(Some(native_ref))
-        .with_geometry_ref(geometry_ref);
+        let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
+            .with_construction(!generated)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref);
         push_section_entity(ctx, &mut entities, entity)?;
         if let Some(external_id) = external_id.filter(|_| generated) {
             generated_saved_geometries.push((external_id, geometry));
@@ -848,7 +813,6 @@ pub(super) fn transfer_section_entities(
     }
     for saved in semantic_saved_section_entities(definition) {
         let Some((entity, offset)) = unresolved_saved_section_entity(
-            ctx,
             definition,
             sketch_id,
             saved,
@@ -862,7 +826,6 @@ pub(super) fn transfer_section_entities(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             entity.id().as_str(),
             "FeatDefs",
@@ -904,7 +867,6 @@ pub(super) fn transfer_section_entities(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
@@ -951,7 +913,6 @@ pub(super) fn transfer_section_entities(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
@@ -998,7 +959,6 @@ pub(super) fn transfer_section_entities(
                 continue;
             }
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
@@ -1029,7 +989,6 @@ pub(super) fn transfer_section_entities(
                 continue;
             };
             annotate(
-                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
@@ -1088,13 +1047,7 @@ mod tests {
             ),
         )]);
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| copied_or_native_geometry(
-                ctx,
-                &geometries,
-                7,
-                "line"
-            ))
-            .expect("geometry copy"),
+            (copied_or_native_geometry(&geometries, 7, "line")).expect("geometry copy"),
             geometries[&7]
         );
     }

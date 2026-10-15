@@ -103,7 +103,7 @@ pub(super) fn project(
                     format_args!(":external:{external_index}"),
                 ))
                 .map_err(CodecError::malformed)?,
-                id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
+                id.clone(),
                 geometry,
             )
             .with_construction(true)

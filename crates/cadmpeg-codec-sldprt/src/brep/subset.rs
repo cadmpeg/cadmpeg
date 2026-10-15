@@ -149,8 +149,7 @@ pub(super) fn scan(
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        let copied_geometry =
-            geometry.try_clone_for_decode(ctx, "copy Parasolid subset curve lanes")?;
+        let copied_geometry = geometry.clone();
         out.push(CurveCarrier {
             attr,
             offset: off,

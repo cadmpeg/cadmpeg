@@ -339,40 +339,20 @@ pub struct Coverage {
 
 impl Coverage {
     /// Records a static key.
-    pub fn record(
-        &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        key: CoverageKey,
-        count: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn record(&mut self, key: CoverageKey, count: usize) {
         self.entries.insert(key.0.to_owned(), count);
-        Ok(())
     }
 
     /// Records a decimal-indexed key.
-    pub fn record_indexed(
-        &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        key: IndexedCoverageKey,
-        index: u32,
-        count: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn record_indexed(&mut self, key: IndexedCoverageKey, index: u32, count: usize) {
         self.entries
             .insert(format!("{}{index}{}", key.prefix, key.suffix), count);
-        Ok(())
     }
 
     /// Records a hexadecimal-byte key.
-    pub fn record_hex_byte(
-        &mut self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        key: HexByteCoverageKey,
-        value: u8,
-        count: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn record_hex_byte(&mut self, key: HexByteCoverageKey, value: u8, count: usize) {
         self.entries
             .insert(format!("{}{:02x}{}", key.prefix, value, key.suffix), count);
-        Ok(())
     }
 
     /// Records an already-copied declared key without allocating another key.
@@ -393,12 +373,11 @@ impl Coverage {
 
     /// Build a coverage map through the charged insertion operation.
     pub fn from_iter_for_decode(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         entries: impl IntoIterator<Item = (CoverageKey, usize)>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut coverage = Self::default();
         for (key, count) in entries {
-            coverage.record(ctx, key, count)?;
+            coverage.record(key, count);
         }
         Ok(coverage)
     }

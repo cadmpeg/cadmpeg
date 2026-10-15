@@ -25,7 +25,7 @@ struct PartialCompactAssignmentViableInputs<'input0, 'input1, 'input2, 'input3, 
 
 fn partial_compact_assignment_viable(
     ctx: &DecodeContext<'_>,
-    inputs: PartialCompactAssignmentViableInputs< '_, '_, '_, '_, '_>,
+    inputs: PartialCompactAssignmentViableInputs<'_, '_, '_, '_, '_>,
 ) -> Result<bool, CodecError> {
     fn augment(
         ctx: &DecodeContext<'_>,
@@ -191,7 +191,6 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
     'input1,
     'input2,
     'input3,
-    
     'input5,
     'input6,
     'input7,
@@ -208,7 +207,7 @@ pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
 
 pub(super) fn close_coordinate_roots_with_incidence(
     ctx: &DecodeContext<'_>,
-    inputs: CloseCoordinateRootsWithIncidenceInputs< '_, '_, '_, '_, '_, '_, '_>,
+    inputs: CloseCoordinateRootsWithIncidenceInputs<'_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
     const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
     struct LocalIncidence<'a> {
@@ -382,7 +381,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
         'input12,
         'input13,
         'input14,
-        
         'input16,
     > {
         domains: &'input0 [Vec<usize>],
@@ -484,16 +482,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 }
             }
         }
-        struct CoordinateAssignment<
-            'input0,
-            'input1,
-            'input2,
-            'input3,
-            'input4,
-            'input5,
-            
-            'input7,
-        > {
+        struct CoordinateAssignment<'input0, 'input1, 'input2, 'input3, 'input4, 'input5, 'input7> {
             root: usize,
             point: usize,
             assigned: &'input0 mut [Option<usize>],
@@ -504,7 +493,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             budget: Option<&'input7 WorkBudget>,
         }
         fn assign(
-            inputs: CoordinateAssignment< '_, '_, '_, '_, '_, '_, '_>,
+            inputs: CoordinateAssignment<'_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<Option<DegreeUndo>, CodecError> {
             let CoordinateAssignment {
                 root,

@@ -9,14 +9,13 @@ fn typed_rewrite_maps_repeated_identities_once() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let calls = std::cell::Cell::new(0);
-    let mut map = IdentityMap::new(&ctx, "test identity rewrite", |source: &str| {
+    let mut map = IdentityMap::new(|source: &str| {
         calls.set(calls.get() + 1);
         Ok(format!(
             "test:occurrence:{}",
             source.strip_prefix("test:model:").unwrap()
         ))
-    })
-    .unwrap();
+    });
     let source = PointId::mint("test:model:point#one").unwrap();
     let rewritten = vec![source.clone(), source]
         .rewrite_identities(&ctx, &mut map)
@@ -32,10 +31,7 @@ fn typed_rewrite_preserves_refusal_before_sequence_recursion() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut map = IdentityMap::new(&ctx, "test identity rewrite", |source: &str| {
-        Ok(source.to_owned())
-    })
-    .unwrap();
+    let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
     let error = vec![PointId::mint("test:model:point#one").unwrap()]
         .rewrite_identities(&ctx, &mut map)
         .unwrap_err();
@@ -60,12 +56,9 @@ fn typed_text_rewrite_only_changes_owned_identity_text() {
         "test:model:point#one".to_owned(),
         "test:occurrence:point#one".to_owned(),
     )]);
-    let mut map = IdentityMap::new(&ctx, "test text identities", |source: &str| {
-        Ok(source.to_owned())
-    })
-    .unwrap()
-    .with_text_replacements(replacements.iter())
-    .unwrap();
+    let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()))
+        .with_text_replacements(replacements.iter())
+        .unwrap();
     let text = vec![
         "test:model:point#one".to_owned(),
         "test:model:point#external".to_owned(),
@@ -107,10 +100,7 @@ fn typed_ordered_map_rewrite_accepts_keys_without_hashing() {
     }
     let ctx = cadmpeg_test_support::service_decode_context();
     let source = std::collections::BTreeMap::from([(OrderedKey(2), 4_u8), (OrderedKey(1), 3)]);
-    let mut map = IdentityMap::new(&ctx, "ordered map rewrite", |source: &str| {
-        Ok(source.to_owned())
-    })
-    .unwrap();
+    let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
     let rewritten = source.rewrite_identities(&ctx, &mut map).unwrap();
     assert_eq!(
         rewritten
@@ -132,11 +122,10 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let calls = std::cell::Cell::new(0);
-        let mut map = IdentityMap::new(&ctx, "single grammar cache", |source: &str| {
+        let mut map = IdentityMap::new(|source: &str| {
             calls.set(calls.get() + 1);
             Ok(source.to_owned())
-        })
-        .unwrap();
+        });
         for _ in 0..2 {
             let identity = crate::ids::Identity::new(source).unwrap();
             assert_eq!(
@@ -149,7 +138,7 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
         }
         assert_eq!(calls.get(), 1);
         assert!(map.targets.values().all(|target| target.as_str() == source));
-        map.finish(&ctx).unwrap();
+        map.finish().unwrap();
         drop(map);
         ctx.finish_session().unwrap();
     }
@@ -167,8 +156,7 @@ fn typed_rewrite_skips_identity_free_point_grids() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut map =
-        IdentityMap::new(&ctx, "no identities", |_| panic!("no identity fields")).unwrap();
+    let mut map = IdentityMap::new(|_| panic!("no identity fields"));
     let rows = rows.rewrite_identities(&ctx, &mut map).unwrap();
     assert_eq!(rows.as_ptr(), outer);
     assert_eq!(rows[0].as_ptr(), inner);
@@ -177,7 +165,7 @@ fn typed_rewrite_skips_identity_free_point_grids() {
         .iter()
         .flatten()
         .all(|point| *point == crate::features::FinitePoint3::ZERO));
-    map.finish(&ctx).unwrap();
+    map.finish().unwrap();
     drop(map);
     ctx.finish_session().unwrap();
 }
@@ -186,24 +174,23 @@ fn typed_rewrite_skips_identity_free_point_grids() {
 fn typed_hash_index_qualifies_thousands_of_long_identities_and_rejects_collisions() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let prefix = "x".repeat(128);
-    let mut map = IdentityMap::new(&ctx, "long identity cache", |source: &str| {
+    let mut map = IdentityMap::new(|source: &str| {
         Ok(format!(
             "test:qualified:point#{}",
             source.rsplit('#').next().unwrap()
         ))
-    })
-    .unwrap();
+    });
     for index in 0..4096 {
         let source = format!("test:model:point#{prefix}{index:04}");
         let expected = format!("test:qualified:point#{prefix}{index:04}");
-        assert_eq!(map.identity(&ctx, &source).unwrap(), expected);
-        assert_eq!(map.identity(&ctx, &source).unwrap(), expected);
+        assert_eq!(map.identity(&source).unwrap(), expected);
+        assert_eq!(map.identity(&source).unwrap(), expected);
     }
     assert!(
-        matches!(map.identity(&ctx, &format!("test:other:point#{prefix}0000")), Err(CodecError::Malformed(message)) if message.contains("collides"))
+        matches!(map.identity(&format!("test:other:point#{prefix}0000")), Err(CodecError::Malformed(message)) if message.contains("collides"))
     );
     assert!(
-        matches!(map.finish(&ctx), Err(CodecError::Malformed(message)) if message.contains("collides"))
+        matches!(map.finish(), Err(CodecError::Malformed(message)) if message.contains("collides"))
     );
     drop(map);
     ctx.finish_session().unwrap();
@@ -223,11 +210,10 @@ fn a_callback_resource_refusal_fuses_later_identity_and_text_rewrites() {
         "test:occurrence:point#one".to_owned(),
     )]);
     let calls = std::cell::Cell::new(0);
-    let mut map = IdentityMap::new(&ctx, "test text identities", |_: &str| {
+    let mut map = IdentityMap::new(|_: &str| {
         calls.set(calls.get() + 1);
         Err(CodecError::ResourceLimit(limit))
     })
-    .unwrap()
     .with_text_replacements(replacements.iter())
     .unwrap();
     assert!(matches!(
@@ -247,7 +233,7 @@ fn a_callback_resource_refusal_fuses_later_identity_and_text_rewrites() {
         "ordinary text".to_owned().rewrite_identities(&ctx, &mut map),
         Err(CodecError::ResourceLimit(first)) if first == limit
     ));
-    assert!(matches!(map.finish(&ctx), Err(CodecError::ResourceLimit(first)) if first == limit));
+    assert!(matches!(map.finish(), Err(CodecError::ResourceLimit(first)) if first == limit));
 }
 
 #[test]
@@ -260,8 +246,7 @@ fn typed_rewrite_reuses_owned_sequence_storage() {
     let capacity = values.capacity();
     assert!(capacity > values.len());
     let ctx = cadmpeg_test_support::service_decode_context();
-    let mut map =
-        IdentityMap::new(&ctx, "sequence cache", |source: &str| Ok(source.to_owned())).unwrap();
+    let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
     let values = values.rewrite_identities(&ctx, &mut map).unwrap();
     assert_eq!(values.len(), 4096);
     assert_eq!(values.as_ptr(), pointer);
@@ -269,5 +254,5 @@ fn typed_rewrite_reuses_owned_sequence_storage() {
     for (index, value) in values.iter().enumerate() {
         assert_eq!(value.as_str(), format!("test:model:point#{index:04}"));
     }
-    map.finish(&ctx).unwrap();
+    map.finish().unwrap();
 }

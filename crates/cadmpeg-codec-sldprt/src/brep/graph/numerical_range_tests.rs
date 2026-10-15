@@ -42,19 +42,15 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
     )
     .expect("test context");
     let mut s = bilinear([0., 1.], 1.);
-    s.try_map_control_points(
-        |_, p| {
-            let mut p = p.get();
-            p.z = p.x * p.y;
-            cadmpeg_ir::features::FinitePoint3::new(p).ok_or_else(|| {
-                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                    "control_points contains a non-finite point".into(),
-                )
-            })
-        },
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("pole edit admission")
+    s.try_map_control_points(|_, p| {
+        let mut p = p.get();
+        p.z = p.x * p.y;
+        cadmpeg_ir::features::FinitePoint3::new(p).ok_or_else(|| {
+            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                "control_points contains a non-finite point".into(),
+            )
+        })
+    })
     .unwrap();
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let c = NurbsCurve::from_lanes(
@@ -169,12 +165,7 @@ fn derive_sphere(out: &mut Brep) {
         &ctx,
         out,
         &mut AnnotationBuilder::new(),
-        &StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap(),
-            "fixture stream handle",
-        )
-        .unwrap(),
+        &StreamHandle::new(cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap()),
     )
     .expect("spherical pcurve derivation");
 }

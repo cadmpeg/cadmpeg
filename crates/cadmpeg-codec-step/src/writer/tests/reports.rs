@@ -91,11 +91,9 @@ pub(super) fn edgeless_doc() -> CadIr {
         face: FaceId::mint("test:model:face#f0").expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
                 vec![CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar")],
                 Vec::new(),
             )
-            .expect("fixture ring admission")
             .expect("valid loop ring"),
         ),
     });
@@ -1799,7 +1797,6 @@ fn degenerate_torus_report(
     let owner = ir.model.surfaces[0].id.clone();
     ir.model
         .add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -1812,7 +1809,6 @@ fn degenerate_torus_report(
                 None,
             ),
         )
-        .unwrap()
         .expect("a torus carrier admits a degenerate torus construction");
 
     let mut buf = Vec::new();
@@ -1868,7 +1864,6 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
     // candidate STEP carrier.
     ir.model
         .add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
             &owner,
             cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -1885,7 +1880,6 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
                 None,
             ),
         )
-        .unwrap()
         .expect("a cone carrier admits a compound construction");
 
     let error = StepCodec::default()
@@ -1920,14 +1914,7 @@ fn procedural_construction_reduction_is_reported() {
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
         },
     );
-    ir.model
-        .add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
-            &owner,
-            procedural,
-        )
-        .unwrap()
-        .unwrap();
+    ir.model.add_procedural_curve(&owner, procedural).unwrap();
 
     let mut buf = Vec::new();
     let report = write_step(
@@ -1954,8 +1941,7 @@ fn source_native_record_reduction_is_reported() {
         )
         .expect("valid native identity")],
     );
-    ir.finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.finalize();
 
     let mut buf = Vec::new();
     let report = write_step(

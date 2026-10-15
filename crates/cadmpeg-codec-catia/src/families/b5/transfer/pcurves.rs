@@ -280,7 +280,7 @@ pub(super) fn oriented_nurbs_range(
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry else {
         return Ok(None);
     };
-    let mut curve = curve.try_clone_for_decode(ctx, "catia_b5_oriented_nurbs_curve")?;
+    let mut curve = curve.clone();
     (|| -> Option<Result<CurvePlan, cadmpeg_core::CodecError>> {
         let degree = usize::try_from(curve.degree()).ok()?;
         let domain_start = *curve.knots().get(degree)?;
@@ -292,9 +292,7 @@ pub(super) fn oriented_nurbs_range(
         let mut range = endpoint_parameters;
         if range[0] > range[1] {
             let sum = domain_start + domain_end;
-            if let Err(error) = curve.reverse_parameterization(ctx) {
-                return Some(Err(error));
-            }
+            curve.reverse_parameterization();
             match curve.edit_knots(ctx, |knots| {
                 for knot in knots {
                     *knot += sum;
@@ -847,7 +845,6 @@ pub(super) fn emit_pcurves(
             };
             let id = PcurveId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
             annotate(
-                admission.context(),
                 annotations,
                 &id,
                 "object_stream_b5_03",
@@ -855,7 +852,7 @@ pub(super) fn emit_pcurves(
                 Exactness::ByteExact,
             )?;
             if *cylinder_reparameterized {
-                annotations.derived(admission.context(), id.as_str(), "geometry.control_points")?;
+                annotations.derived(id.as_str(), "geometry.control_points")?;
             }
             if graph
                 .pcurves
@@ -863,15 +860,13 @@ pub(super) fn emit_pcurves(
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
-                annotations.derived(admission.context(), id.as_str(), "parameter_range")?;
+                annotations.derived(id.as_str(), "parameter_range")?;
             }
             for occurrence in occurrences {
-                let use_id =
-                    id.try_clone_for_decode(admission.context(), "catia_b5_pcurve_use_id")?;
+                let use_id = id.clone();
                 pcurve_uses.insert(occurrence, (use_id, parameter_range));
             }
-            let geometry = geometry
-                .try_clone_for_decode(admission.context(), "catia_b5_emitted_pcurve_geometry")?;
+            let geometry = geometry.clone();
             admission.charge()?;
             ir.model.pcurves.push(Pcurve {
                 id,

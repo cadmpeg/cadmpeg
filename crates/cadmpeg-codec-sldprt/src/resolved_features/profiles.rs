@@ -84,13 +84,12 @@ pub(crate) struct SketchArenas<'a> {
 
 /// Reconcile profile streams with uniquely enclosing sketch feature records.
 pub(crate) fn bind_sketch_profiles(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     arenas: SketchArenas<'_>,
     parameters: &[cadmpeg_ir::features::DesignParameter],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     let SketchArenas {
         sketches,
         sketch_entities,
@@ -219,13 +218,12 @@ pub(crate) fn bind_sketch_profiles(
     sketches.retain(|sketch| !superseded.contains(sketch.id.as_str()));
     sketch_entities.retain(|entity| !superseded.contains(entity.sketch.as_str()));
     sketch_constraints.retain(|constraint| !superseded.contains(constraint.sketch.as_str()));
-    let mut keep = |id: &str| Ok(!removed.contains(id));
-    annotations.retain_provenance(ctx, &mut keep)?;
+    let mut keep = |id: &str| !removed.contains(id);
+    annotations.retain_provenance(&mut keep);
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-    builder.retain_exactness(ctx, keep)?;
+    builder.retain_exactness(keep);
     *annotations = builder.build();
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
-    Ok(())
 }
 
 #[derive(Debug)]
@@ -2118,13 +2116,12 @@ struct SketchBlockProfileInput<'a> {
 /// the assembled geometry planar when the reusable definition frame is a
 /// source-local construction frame rather than the consuming profile plane.
 pub(crate) fn project_sketch_block_profiles(
-    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+) {
     for lane in lanes {
         for history in histories {
             let mut objects = Vec::new();
@@ -2305,20 +2302,16 @@ pub(crate) fn project_sketch_block_profiles(
                 let Ok(sketch_id) = SketchId::mint(sketch_text) else {
                     continue;
                 };
-                let Some(assembled) = assemble_sketch_block_profile(
-                    ctx,
-                    &SketchBlockProfileInput {
-                        sketch_id: &sketch_id,
-                        native_profile,
-                        native_ref: &lane.id,
-                        configuration: lane.configuration.as_deref(),
-                        block_sketches: &block_sketches,
-                        instances: &instances,
-                        sketches,
-                        sketch_entities,
-                    },
-                )?
-                else {
+                let Some(assembled) = assemble_sketch_block_profile(&SketchBlockProfileInput {
+                    sketch_id: &sketch_id,
+                    native_profile,
+                    native_ref: &lane.id,
+                    configuration: lane.configuration.as_deref(),
+                    block_sketches: &block_sketches,
+                    instances: &instances,
+                    sketches,
+                    sketch_entities,
+                }) else {
                     continue;
                 };
                 if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
@@ -2333,7 +2326,6 @@ pub(crate) fn project_sketch_block_profiles(
             }
         }
     }
-    Ok(())
 }
 
 fn dissectable_child_sources(value: &str) -> Option<HashSet<u32>> {
@@ -2356,25 +2348,17 @@ fn is_sketch_block_object(feature: &crate::records::Feature) -> bool {
 }
 
 fn assemble_sketch_block_profile(
-    ctx: &DecodeContext<'_>,
     input: &SketchBlockProfileInput<'_>,
-) -> Result<Option<AssembledSketchBlockProfile>, CodecError> {
-    let Some((placement, rotations)) = sketch_block_assembly_frame(input.instances) else {
-        return Ok(None);
-    };
+) -> Option<AssembledSketchBlockProfile> {
+    let (placement, rotations) = sketch_block_assembly_frame(input.instances)?;
     let mut assembled_profiles = Vec::new();
     let mut assembled_entities = Vec::new();
     for (instance, rotation) in input.instances.iter().zip(rotations) {
-        let Some(source_sketch_id) = input.block_sketches.get(&instance.block_source) else {
-            return Ok(None);
-        };
-        let Some(source_sketch) = input
+        let source_sketch_id = input.block_sketches.get(&instance.block_source)?;
+        let source_sketch = input
             .sketches
             .iter()
-            .find(|sketch| sketch.id == *source_sketch_id)
-        else {
-            return Ok(None);
-        };
+            .find(|sketch| sketch.id == *source_sketch_id)?;
         let mut source_entities = Vec::new();
         for entity in input.sketch_entities {
             if entity.sketch == source_sketch.id {
@@ -2390,24 +2374,18 @@ fn assemble_sketch_block_profile(
                 id_key(entity.id().as_str())
             );
             let Ok(id) = SketchEntityId::mint(id_text) else {
-                return Ok(None);
+                return None;
             };
             entity_ids.insert(entity.id(), id);
         }
         for source_entity in &source_entities {
-            let Some(id) = entity_ids.get(source_entity.id()) else {
-                return Ok(None);
-            };
-            let Some(geometry) = transform_sketch_block_geometry(
-                ctx,
+            let id = entity_ids.get(source_entity.id())?;
+            let geometry = transform_sketch_block_geometry(
                 &source_entity.geometry,
                 instance.transform,
                 placement,
                 rotation,
-            )?
-            else {
-                return Ok(None);
-            };
+            )?;
             let native_ref = format!(
                 "{}:{}",
                 instance.feature_id,
@@ -2437,9 +2415,7 @@ fn assemble_sketch_block_profile(
         for profile in source_profiles {
             let mut assembled_profile = Vec::new();
             for use_ in profile {
-                let Some(id) = entity_ids.get(&use_.entity) else {
-                    return Ok(None);
-                };
+                let id = entity_ids.get(&use_.entity)?;
                 assembled_profile.push(SketchEntityUse {
                     entity: id.clone(),
                     reversed: use_.reversed,
@@ -2449,17 +2425,14 @@ fn assemble_sketch_block_profile(
         }
     }
     if assembled_profiles.is_empty() {
-        return Ok(None);
+        return None;
     }
-    let Some(placement) =
-        SketchPlacement::try_resolved(placement.origin, placement.normal, placement.u_axis).ok()
-    else {
-        return Ok(None);
-    };
+    let placement =
+        SketchPlacement::try_resolved(placement.origin, placement.normal, placement.u_axis).ok()?;
     let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(assembled_profiles) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(AssembledSketchBlockProfile {
+    Some(AssembledSketchBlockProfile {
         sketch: Sketch {
             id: input.sketch_id.clone(),
             name: Some(input.native_profile.name.clone()),
@@ -2470,7 +2443,7 @@ fn assemble_sketch_block_profile(
             native_ref: Some(input.native_ref.to_owned()),
         },
         entities: assembled_entities,
-    }))
+    })
 }
 
 fn id_key(id: &str) -> &str {
@@ -2547,13 +2520,11 @@ fn sketch_block_assembly_frame(
 }
 
 fn transform_sketch_block_geometry(
-    ctx: &DecodeContext<'_>,
     geometry: &SketchGeometry,
     transform: Transform,
     frame: SketchBlockAssemblyFrame,
     rotation: f64,
-) -> Result<Option<SketchGeometry>, CodecError> {
-    const OPERATION: &str = "transform SLDPRT sketch block geometry";
+) -> Option<SketchGeometry> {
     let point = |point| transform_sketch_block_point(point, transform, frame);
     let finite_point =
         |value| transform_sketch_block_point(value, transform, frame).and_then(FinitePoint2::new);
@@ -2563,17 +2534,16 @@ fn transform_sketch_block_geometry(
     let angle = |value: Angle| Angle::new(value.get() + rotation);
     match geometry.definition() {
         SketchGeometryDefinition::Nurbs { curve } => {
-            let mut copied = curve.try_clone_for_decode(ctx, OPERATION)?;
+            let mut copied = curve.clone();
             if copied
-                .try_map_control_points_in_place(
-                    |pole| point(pole.get()).and_then(FinitePoint2::new).ok_or(()),
-                    ctx,
-                )?
+                .try_map_control_points_in_place(|pole| {
+                    point(pole.get()).and_then(FinitePoint2::new).ok_or(())
+                })
                 .is_err()
             {
-                return Ok(None);
+                return None;
             }
-            return Ok(Some(SketchGeometry::nurbs(copied)));
+            return Some(SketchGeometry::nurbs(copied));
         }
         SketchGeometryDefinition::Text {
             text,
@@ -2594,10 +2564,8 @@ fn transform_sketch_block_geometry(
                     None => None,
                 },))
             })();
-            let Some((placement,)) = prepared else {
-                return Ok(None);
-            };
-            return Ok(SketchGeometry::from_parts(SketchGeometryDefinition::Text {
+            let (placement,) = prepared?;
+            return SketchGeometry::from_parts(SketchGeometryDefinition::Text {
                 text: text.clone(),
                 font_family: font_family.clone(),
                 font_weight: *font_weight,
@@ -2607,11 +2575,11 @@ fn transform_sketch_block_geometry(
                 horizontal_alignment: *horizontal_alignment,
                 vertical_alignment: *vertical_alignment,
             })
-            .ok());
+            .ok();
         }
         _ => {}
     }
-    Ok((|| {
+    (|| {
         Some(match geometry.definition() {
             SketchGeometryDefinition::Point { position } => {
                 SketchGeometry::from_parts(SketchGeometryDefinition::Point {
@@ -2702,7 +2670,7 @@ fn transform_sketch_block_geometry(
             | SketchGeometryDefinition::ExternalReference { .. }
             | SketchGeometryDefinition::Native { .. } => return None,
         })
-    })())
+    })()
 }
 
 fn transform_sketch_block_point(
@@ -3369,32 +3337,12 @@ mod detached_legacy_sketch_tests {
         };
         let sketch = sketch();
         let mut builder = cadmpeg_ir::AnnotationBuilder::new();
-        let stream = cadmpeg_ir::annotations::StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            cadmpeg_ir::stream_name!("test:profile"),
-            "fixture stream handle",
-        )
-        .unwrap();
-        builder
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                sketch.id.as_str(),
-                &stream,
-                1,
-                Some("profile"),
-            )
-            .unwrap();
+        let stream =
+            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
+        builder.note(sketch.id.as_str(), &stream, 1, Some("profile"));
         let annotations = builder.build();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut admitted = [feature.clone()];
         super::bind_sketch_profiles(
-            &service,
             &mut admitted,
             super::SketchArenas {
                 sketches: &mut vec![sketch.clone()],
@@ -3405,8 +3353,7 @@ mod detached_legacy_sketch_tests {
             &[],
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        )
-        .unwrap();
+        );
         assert!(matches!(admitted[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
@@ -4143,27 +4090,16 @@ mod detached_legacy_sketch_tests {
         let assembled_id = SketchId::mint("synthetic:test:id#assembled-sketch").unwrap();
         let native = feature();
         let sketches = [source];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let assembled = assemble_sketch_block_profile(
-            &ctx,
-            &SketchBlockProfileInput {
-                sketch_id: &assembled_id,
-                native_profile: &native,
-                native_ref: "lane",
-                configuration: None,
-                block_sketches: &sources,
-                instances: &instances,
-                sketches: &sketches,
-                sketch_entities: &entities,
-            },
-        )
-        .unwrap()
+        let assembled = assemble_sketch_block_profile(&SketchBlockProfileInput {
+            sketch_id: &assembled_id,
+            native_profile: &native,
+            native_ref: "lane",
+            configuration: None,
+            block_sketches: &sources,
+            instances: &instances,
+            sketches: &sketches,
+            sketch_entities: &entities,
+        })
         .unwrap();
         assert_eq!(assembled.entities.len(), 4);
         let SketchGeometryDefinition::Nurbs { curve } = assembled.entities[2].geometry.definition()
@@ -4264,27 +4200,16 @@ mod detached_legacy_sketch_tests {
                 transform: quarter_turn,
             },
         ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let assembled = assemble_sketch_block_profile(
-            &ctx,
-            &SketchBlockProfileInput {
-                sketch_id: &assembled_id,
-                native_profile: &feature(),
-                native_ref: "lane",
-                configuration: Some("configuration"),
-                block_sketches: &block_sketches,
-                instances: &instances,
-                sketches: &[block_sketch],
-                sketch_entities: &block_entities,
-            },
-        )
-        .unwrap()
+        let assembled = assemble_sketch_block_profile(&SketchBlockProfileInput {
+            sketch_id: &assembled_id,
+            native_profile: &feature(),
+            native_ref: "lane",
+            configuration: Some("configuration"),
+            block_sketches: &block_sketches,
+            instances: &instances,
+            sketches: &[block_sketch],
+            sketch_entities: &block_entities,
+        })
         .expect("rigid coplanar block placements assemble");
 
         assert_eq!(assembled.sketch.profiles.len(), 2);

@@ -461,10 +461,10 @@ fn scale_feature_operation(
         }
         FeatureOperation::Fillet { groups } => {
             for group in groups {
-                scale_radius_spec(ctx, &mut group.radius, scale)?;
+                scale_radius_spec(&mut group.radius, scale)?;
             }
         }
-        FeatureOperation::FaceBlend { radius, .. } => scale_radius_spec(ctx, radius, scale)?,
+        FeatureOperation::FaceBlend { radius, .. } => scale_radius_spec(radius, scale)?,
         FeatureOperation::Chamfer { groups, .. } => {
             for group in groups {
                 scale_chamfer_spec(&mut group.spec, scale)?;
@@ -790,7 +790,6 @@ fn scale_sheet_metal_hem_form(
 }
 
 fn scale_radius_spec(
-    ctx: &DecodeContext<'_>,
     radius: &mut cadmpeg_ir::features::edge_treatments::RadiusSpec,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -821,11 +820,11 @@ fn scale_radius_spec(
             use cadmpeg_ir::features::edge_treatments::VariableRadiiMapError;
             RadiusSpec::Variable {
                 points: points
-                    .try_map_radii(ctx, |radius| {
+                    .try_map_radii(|radius| {
                         radius
                             .scaled(scale)
                             .ok_or_else(|| malformed_refusal("Creo scaled length must be finite"))
-                    })?
+                    })
                     .map_err(|error| match error {
                         VariableRadiiMapError::Radius(error) => error,
                         VariableRadiiMapError::Admission(message) => malformed_refusal(message),
@@ -1217,14 +1216,13 @@ pub(in crate::decode) fn surface_parameter_scales(
 }
 
 pub(in crate::decode) fn scale_sketch_geometry(
-    ctx: &DecodeContext<'_>,
     geometry: SketchGeometry,
     scale: PositiveReal,
 ) -> Result<SketchGeometry, CodecError> {
     use cadmpeg_ir::sketches::scaling::SketchLengthScaleError;
 
     geometry
-        .scaled_lengths_owned_for_decode(ctx, scale)?
+        .scaled_lengths_owned(scale)
         .map_err(|error| match error {
             SketchLengthScaleError::Resource(limit) => CodecError::ResourceLimit(limit),
             SketchLengthScaleError::LengthOverflow => {
@@ -1254,10 +1252,8 @@ mod tests {
             bounds: Some([1., 2.]),
         })
         .expect("valid finite regression fixture");
-        let geometry = crate::decode::with_test_decode_ctx(|ctx| {
-            super::scale_sketch_geometry(ctx, geometry, positive(10.))
-        })
-        .expect("valid finite regression fixture");
+        let geometry = ({ super::scale_sketch_geometry(geometry, positive(10.)) })
+            .expect("valid finite regression fixture");
         assert!(
             matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some(bounds),focal_length,..} if cadmpeg_ir::scalar::FiniteReal::raw_array(*bounds) == [10., 20.] && focal_length.get()==20.)
         );
@@ -1643,10 +1639,8 @@ mod tests {
                     .unwrap(),
             ),
         );
-        crate::decode::with_test_decode_ctx(|ctx| {
-            source_carriers.admit_procedural_surface(ctx, &mut ir, &surface_id, surface)
-        })
-        .expect("surface construction admission");
+        ({ source_carriers.admit_procedural_surface(&mut ir, &surface_id, surface) })
+            .expect("surface construction admission");
         let curve_id =
             cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve").expect("identity grammar");
         crate::decode::with_test_decode_ctx(|ctx| {
@@ -1687,10 +1681,8 @@ mod tests {
                 .expect("identity grammar"),
             curve_definition,
         );
-        crate::decode::with_test_decode_ctx(|ctx| {
-            source_carriers.admit_procedural_curve(ctx, &mut ir, &curve_id, curve)
-        })
-        .expect("curve construction admission");
+        ({ source_carriers.admit_procedural_curve(&mut ir, &curve_id, curve) })
+            .expect("curve construction admission");
 
         let surface = &ir.model.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
@@ -1825,11 +1817,10 @@ mod tests {
                 definition,
                 None,
             );
-            let error = crate::decode::with_test_decode_ctx(|ctx| {
-                source_carriers.admit_procedural_surface(ctx, &mut ir, &surface_id, surface)
-            })
-            .expect_err("an overflowing scaled vector has no payload")
-            .to_string();
+            let error =
+                ({ source_carriers.admit_procedural_surface(&mut ir, &surface_id, surface) })
+                    .expect_err("an overflowing scaled vector has no payload")
+                    .to_string();
             assert!(error.contains(refusal), "{error}");
         }
     }
@@ -2171,9 +2162,8 @@ mod tests {
     #[test]
     fn sketch_scaling_refusal_names_the_field() {
         assert_scaling_malformed(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            {
                 super::scale_sketch_geometry(
-                    ctx,
                     cadmpeg_ir::sketches::SketchGeometry::try_from(
                         cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
                             position: Point2::new(f64::MAX, 0.0),
@@ -2183,7 +2173,7 @@ mod tests {
                     positive(2.0),
                 )
                 .map(|_| ())
-            }),
+            },
             "sketch point position must be finite",
         );
     }

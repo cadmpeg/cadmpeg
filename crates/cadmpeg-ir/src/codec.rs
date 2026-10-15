@@ -220,12 +220,7 @@ impl DecodeResult {
     ///
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format.
-    fn new(
-        decoded: Decoded,
-        format: FormatId,
-        container_only: bool,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Self, CodecError> {
+    fn new(decoded: Decoded, format: FormatId, container_only: bool) -> Self {
         let Decoded {
             mut ir,
             body,
@@ -233,21 +228,21 @@ impl DecodeResult {
         } = decoded;
         let classification = match ir.source.as_ref() {
             Some(source) => match source.classification() {
-                FormatIdentity::Classified { dialects } => FormatIdentity::classified(
-                    dialects.clone(),
-                ),
+                FormatIdentity::Classified { dialects } => {
+                    FormatIdentity::classified(dialects.clone())
+                }
                 FormatIdentity::Unclassified { format } => {
                     FormatIdentity::unclassified(format.to_owned())
                 }
             },
             None => FormatIdentity::unclassified(format.as_str().to_owned()),
         };
-        ir.finalize(ctx)?;
-        Ok(Self {
+        ir.finalize();
+        Self {
             ir,
             report: DecodeReport::from_body(classification, body, container_only),
             source_fidelity,
-        })
+        }
     }
 
     /// Borrow the finalized IR.
@@ -464,7 +459,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
-        let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, ctx)?;
+        let result = DecodeResult::new(decoded, C::FORMAT, options.container_only);
         if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",

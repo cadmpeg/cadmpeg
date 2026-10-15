@@ -3162,11 +3162,7 @@ pub(super) fn display_jt_segments(
                 };
                 Some(DisplayJtCompression {
                     envelope,
-                    inflated_sha256: Sha256Digest::digest_for_decode(
-                        ctx,
-                        &inflated,
-                        "retain DisplayJT hash",
-                    )?,
+                    inflated_sha256: Sha256Digest::digest(&inflated),
                 })
             } else {
                 None
@@ -3179,11 +3175,7 @@ pub(super) fn display_jt_segments(
                 segment_id: (segment_id).into(),
                 segment_type,
                 segment_byte_len: header_byte_len,
-                payload_sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    payload,
-                    "retain DisplayJT hash",
-                )?,
+                payload_sha256: Sha256Digest::digest(payload),
                 compression,
                 source_offset: document.source_offset + u64::from(entry.segment_offset),
             });
@@ -3227,11 +3219,7 @@ pub(super) fn display_jt_shape_lod_elements(
                 object_id: element.object_id,
                 body_byte_len: u32::try_from(element.body.len())
                     .map_err(|_| CodecError::malformed("DisplayJT count exceeds u32"))?,
-                body_sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    element.body,
-                    "retain DisplayJT hash",
-                )?,
+                body_sha256: Sha256Digest::digest(element.body),
                 source_offset: segment.source_offset
                     + 24
                     + cadmpeg_core::decode::u64_from_index(element.offset),
@@ -3288,11 +3276,7 @@ pub(super) fn display_jt_tri_strip_lod_headers(
             compressed_lod_version,
             compressed_representation_byte_len: u32::try_from(compressed_representation.len())
                 .map_err(|_| CodecError::malformed("DisplayJT count exceeds u32"))?,
-            compressed_representation_sha256: Sha256Digest::digest_for_decode(
-                ctx,
-                compressed_representation,
-                "retain DisplayJT hash",
-            )?,
+            compressed_representation_sha256: Sha256Digest::digest(compressed_representation),
             source_offset: element.source_offset + 25,
         });
     }
@@ -3343,7 +3327,7 @@ pub(super) fn display_jt_initial_face_degree_symbols(
             degrees,
             packet_byte_len: u32::try_from(packet_byte_len)
                 .map_err(|_| CodecError::malformed("DisplayJT count exceeds u32"))?,
-            packet_sha256: Sha256Digest::digest_for_decode(ctx, packet, "retain DisplayJT hash")?,
+            packet_sha256: Sha256Digest::digest(packet),
             source_offset: element.source_offset + 45,
         });
     }
@@ -3451,7 +3435,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 value_count,
                 codec,
                 byte_len,
-                sha256: Sha256Digest::digest_for_decode(ctx, packet, "retain DisplayJT hash")?,
+                sha256: Sha256Digest::digest(packet),
                 representation_offset,
                 values,
             });
@@ -3554,11 +3538,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 component_ranges,
                 component_quantization_bits: (component_quantization_bits).into(),
                 compressed_components_byte_len,
-                compressed_components_sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    compressed_components,
-                    "retain DisplayJT hash",
-                )?,
+                compressed_components_sha256: Sha256Digest::digest(compressed_components),
                 source_offset: representation_source_offset
                     + u64::from(topology_byte_len)
                     + vertex_header_byte_len_u64,
@@ -3589,11 +3569,7 @@ pub(super) fn display_jt_topology_packet_sequences(
             topological_vertex_count,
             vertex_attribute_count,
             compressed_arrays_byte_len,
-            compressed_arrays_sha256: Sha256Digest::digest_for_decode(
-                ctx,
-                arrays,
-                "retain DisplayJT hash",
-            )?,
+            compressed_arrays_sha256: Sha256Digest::digest(arrays),
             source_offset: representation_source_offset + u64::from(topology_byte_len),
         });
     }
@@ -4190,11 +4166,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                     object_base_type: element.object_base_type,
                     body_byte_len: u32::try_from(element.body.len())
                         .map_err(|_| display_jt_framing_error("body_byte_len exceeds u32"))?,
-                    body_sha256: Sha256Digest::digest_for_decode(
-                        ctx,
-                        element.body,
-                        "hash DisplayJT compressed element body",
-                    )?,
+                    body_sha256: Sha256Digest::digest(element.body),
                     inflated_offset: u32::try_from(element.offset)
                         .map_err(|_| display_jt_framing_error("inflated_offset exceeds u32"))?,
                     source_offset: segment.source_offset + 24,
@@ -4212,11 +4184,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                 framed_byte_len: u32::try_from(framed_end)
                     .map_err(|_| display_jt_framing_error("framed_byte_len exceeds u32"))?,
                 tail: tail.to_vec().into(),
-                tail_sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    tail,
-                    "hash DisplayJT compressed sequence tail",
-                )?,
+                tail_sha256: Sha256Digest::digest(tail),
                 source_offset: segment.source_offset + 24,
             })
             .map_err(display_jt_framing_error)?,
@@ -4533,11 +4501,7 @@ pub(super) fn display_jt_base_node_data(
                 attribute_object_ids,
                 family_data_byte_len: u32::try_from(family_data.len())
                     .map_err(|_| CodecError::malformed("DisplayJT count exceeds u32"))?,
-                family_data_sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    family_data,
-                    "retain DisplayJT hash",
-                )?,
+                family_data_sha256: Sha256Digest::digest(family_data),
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -4612,11 +4576,7 @@ pub(super) fn display_jt_group_node_data(
                 child_object_ids,
                 family_data_byte_len: u32::try_from(family_data.len())
                     .map_err(|_| CodecError::malformed("DisplayJT count exceeds u32"))?,
-                family_data_sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    family_data,
-                    "retain DisplayJT hash",
-                )?,
+                family_data_sha256: Sha256Digest::digest(family_data),
                 source_offset: segment.source_offset + 24,
             });
         }

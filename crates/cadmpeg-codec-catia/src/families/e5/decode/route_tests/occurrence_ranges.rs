@@ -53,11 +53,9 @@ fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
             curve: Some((line.clone(), range)),
         },
     ];
-    let context = crate::test_support::with_service_context(|ctx| {
-        e5_support_occurrence_intersection_context(ctx, range, range, &sides)
-    })
-    .expect("service budget admits context")
-    .expect("wide support context");
+    let context = ({ e5_support_occurrence_intersection_context(range, range, &sides) })
+        .expect("service budget admits context")
+        .expect("wide support context");
     assert_eq!(context.parameter_range().endpoints(), range);
     let (cached, cached_range) = crate::test_support::with_service_context(|ctx| {
         e5_occurrence_intersection_cache(ctx, &sides)
@@ -98,11 +96,10 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
             curve: None,
         },
     ];
-    let context = crate::test_support::with_service_context(|ctx| {
-        e5_support_occurrence_intersection_context(ctx, [10.0, 20.0], [10.0, 20.0], &sides)
-    })
-    .expect("service budget admits context")
-    .expect("support intersection context");
+    let context =
+        ({ e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides) })
+            .expect("service budget admits context")
+            .expect("support intersection context");
     assert_eq!(context.parameter_range().endpoints(), [10.0, 20.0]);
     assert_eq!(
         context.sides()[0]
@@ -318,29 +315,4 @@ fn reversing_nurbs_preserves_tiny_knot_domain() {
         reversed.control_points(),
         [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
     );
-}
-
-#[test]
-fn e5_intersection_context_copy_result() {
-    let sides = ["left", "right"].map(|name| cadmpeg_ir::geometry::IntcurveSupportSide {
-        surface: Some(
-            SurfaceId::mint(format!("catia:test:surface#{name}")).expect("valid surface identity"),
-        ),
-        pcurve: None,
-    });
-    let context = cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-        sides,
-        [0.0, 1.0],
-        std::array::from_fn(|_| Vec::new()),
-    )
-    .expect("valid support context");
-    let copied = crate::test_support::with_service_context(|ctx| {
-        crate::resource::copy_intcurve_support_context(
-            ctx,
-            &context,
-            "catia_e5_intersection_context",
-        )
-    })
-    .expect("service budget admits context copy");
-    assert_eq!(copied, context);
 }

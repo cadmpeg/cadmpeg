@@ -9,13 +9,12 @@ use cadmpeg_core::CodecError;
 /// Rewrite each marked identity while retaining ordinary owned text.
 pub fn identities<T: typed::RewriteIdentities>(
     ctx: &DecodeContext<'_>,
-    operation: &'static str,
     value: T,
     map: impl FnMut(&str) -> Result<String, CodecError>,
 ) -> Result<T, CodecError> {
-    let mut identities = typed::IdentityMap::new(ctx, operation, map)?;
+    let mut identities = typed::IdentityMap::new(map);
     let rewritten = value.rewrite_identities(ctx, &mut identities);
-    identities.finish(ctx)?;
+    identities.finish()?;
     rewritten
 }
 

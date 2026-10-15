@@ -3806,7 +3806,6 @@ pub(super) fn feature_boolean_operations(
 
 /// Decode exact feature-operation record boundaries and byte identities.
 pub(super) fn feature_operation_records(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureOperationRecord>, cadmpeg_core::CodecError> {
     let block_identities = operation_header_block_identities(container)?;
@@ -3861,16 +3860,10 @@ pub(super) fn feature_operation_records(
                         None,
                     ),
                     ordinal,
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        record.bytes(),
-                        "NX retained record digest",
-                    )?,
-                    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.bytes()),
+                    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
                         record.payload(),
-                        "NX retained record digest",
-                    )?,
+                    ),
                     stable_identity,
                     span,
                 })
@@ -3913,13 +3906,9 @@ pub(super) fn feature_unlabeled_operation_records(
             );
             let ordinal = u32::try_from(operation_ordinal)
                 .map_err(|_| CodecError::malformed("NX unlabeled operation ordinal exceeds u32"))?;
-            if let Some(record) = FeatureUnlabeledOperationRecord::from_source(
-                ctx,
-                id,
-                ordinal,
-                entry_offset,
-                record,
-            )? {
+            if let Some(record) =
+                FeatureUnlabeledOperationRecord::from_source(id, ordinal, entry_offset, record)
+            {
                 ctx.charge_entities(1, "NX unlabeled operation record")?;
 
                 records.push(record);
@@ -5424,7 +5413,6 @@ pub(super) fn feature_datum_csys_constructions(
 
 /// Reconstruct datum-plane object payloads across ordered store blocks.
 pub(super) fn feature_datum_plane_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     headers: &[FeatureDatumPlaneHeader],
 ) -> Result<Vec<FeatureDatumPlanePayload>, cadmpeg_core::CodecError> {
@@ -5442,7 +5430,7 @@ pub(super) fn feature_datum_plane_payloads(
             .resolved_data_blocks(DatumPlaneBlockLane::Object)
             .cloned()
             .collect::<Vec<_>>();
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let Some(joined) = JoinedPayload::from_source(content.block_ids(), &blocks) else {
@@ -5468,7 +5456,6 @@ pub(super) fn feature_datum_plane_payloads(
 
 /// Reconstruct the two leading object blocks of each datum coordinate system.
 pub(super) fn feature_datum_csys_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureDatumCsysConstruction],
 ) -> Result<Vec<FeatureDatumCsysPayload>, cadmpeg_core::CodecError> {
@@ -5479,7 +5466,7 @@ pub(super) fn feature_datum_csys_payloads(
             construction.frame.members()[0].1.clone(),
             construction.frame.members()[1].1.clone(),
         ];
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
 
@@ -6043,7 +6030,6 @@ pub(super) fn feature_sketch_construction_inputs(
 
 /// Reconstruct exact sketch payloads across offset-store block boundaries.
 pub(super) fn feature_sketch_construction_payloads(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
@@ -6057,7 +6043,7 @@ pub(super) fn feature_sketch_construction_payloads(
             .map(|member| member.data_block.clone())
             .chain(std::iter::once(construction.terminal_data_block.clone()))
             .collect::<Vec<_>>();
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(data_blocks, &blocks)? else {
             continue;
         };
         let id = construction.id.replacen(

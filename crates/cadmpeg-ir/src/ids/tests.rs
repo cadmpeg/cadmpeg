@@ -458,39 +458,6 @@ fn const_whitespace_grammar_matches_runtime_identity_grammar_for_every_scalar() 
 }
 
 #[test]
-fn typed_identity_copy_preserves_the_identity() {
-    let id = crate::sketches::SketchId::mint("synthetic:test:sketch#42").expect("valid fixture ID");
-    let ctx = cadmpeg_test_support::service_decode_context();
-    assert_eq!(
-        id.try_clone_for_decode(&ctx, "typed identity copy")
-            .expect("service copy"),
-        id
-    );
-}
-
-#[test]
-fn local_identity_copy_succeeds_under_service_profile() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    macro_rules! check_copy {
-        ($id:ty) => {{
-            let id = <$id>::mint("synthetic-local-42").expect("valid local identity");
-            assert_eq!(
-                id.try_clone_for_decode(&ctx, "local identity copy")
-                    .expect("service copy"),
-                id
-            );
-        }};
-    }
-    check_copy!(super::HistoricalBodyId);
-    check_copy!(super::HistoricalFaceId);
-    check_copy!(super::HistoricalEdgeId);
-    check_copy!(super::HistoricalVertexId);
-}
-
-#[test]
 fn identity_grammar_admits_only_three_components_and_one_key() {
     for (text, valid) in [
         ("", false),

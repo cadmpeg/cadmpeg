@@ -52,7 +52,6 @@ impl DesignFeatureTransfer {
     /// incidences populate feature-local parameter ordinals.
     pub(crate) fn assign_parameter_owners(
         &self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         native: &CatiaNative,
     ) -> Result<(), CodecError> {
@@ -95,30 +94,25 @@ impl DesignFeatureTransfer {
                 continue;
             };
             if parameter.owner.is_none() {
-                parameter.owner =
-                    Some(feature_id.try_clone_for_decode(ctx, "catia_feature_parameter_owner")?);
+                parameter.owner = Some(feature_id.clone());
             }
             if parameter.owner.as_ref() == Some(feature_id) {
-                let parameter_id = parameter
-                    .id
-                    .try_clone_for_decode(ctx, "catia_feature_owner_parameter_id")?;
-                let feature_id =
-                    feature_id.try_clone_for_decode(ctx, "catia_feature_owner_feature_id")?;
+                let parameter_id = parameter.id.clone();
+                let feature_id = feature_id.clone();
                 exact_feature_owners.insert(parameter_id, feature_id);
             }
         }
 
         assign_feature_parameter_ordinals(
-            ctx,
             ir,
             &entities,
             &object_records,
             &exact_feature_owners,
             &self.feature_ids,
-        )?;
-        assign_document_parameter_ordinals(ctx, ir)?;
-        normalize_parameter_names(ctx, ir)?;
-        assign_native_operation_parameter_values(ctx, ir, &exact_feature_owners)?;
+        );
+        assign_document_parameter_ordinals(ir);
+        normalize_parameter_names(ir);
+        assign_native_operation_parameter_values(ir, &exact_feature_owners)?;
         Ok(())
     }
 
@@ -133,11 +127,10 @@ impl DesignFeatureTransfer {
     /// invalid neutral history.
     fn assign_feature_parents(
         &self,
-        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         native: &CatiaNative,
     ) -> Result<(), CodecError> {
-        let parents = self.feature_parents(ctx, ir, native)?;
+        let parents = self.feature_parents(ir, native);
         for feature in &mut ir.model.features {
             feature.dependencies.retain(|dependency| {
                 parents
@@ -146,18 +139,12 @@ impl DesignFeatureTransfer {
             });
         }
         for (child, parent) in parents {
-            ir.model
-                .set_feature_regeneration_parent(ctx, &child, &parent)?;
+            ir.model.set_feature_regeneration_parent(&child, &parent)?;
         }
         Ok(())
     }
 
-    fn feature_parents(
-        &self,
-        ctx: &DecodeContext<'_>,
-        ir: &CadIr,
-        native: &CatiaNative,
-    ) -> Result<HashMap<FeatureId, FeatureId>, CodecError> {
+    fn feature_parents(&self, ir: &CadIr, native: &CatiaNative) -> HashMap<FeatureId, FeatureId> {
         let design_objects = native
             .design_objects
             .iter()
@@ -193,23 +180,21 @@ impl DesignFeatureTransfer {
             if parent == &feature.id || *parent_ordinal >= feature.ordinal {
                 continue;
             }
-            let child = feature
-                .id
-                .try_clone_for_decode(ctx, "catia_feature_parent_child")?;
-            let parent = parent.try_clone_for_decode(ctx, "catia_feature_parent_id")?;
+            let child = feature.id.clone();
+            let parent = parent.clone();
             parents.insert(child, parent);
         }
         let mut cyclic = Vec::new();
         for feature in parents.keys() {
             if !feature_parent_chain_is_acyclic(feature, &parents) {
-                let id = feature.try_clone_for_decode(ctx, "catia_feature_cyclic_id")?;
+                let id = feature.clone();
                 cyclic.push(id);
             }
         }
         for feature in cyclic {
             parents.remove(&feature);
         }
-        Ok(parents)
+        parents
     }
 
     /// Bind exact payload references to earlier transferred features as
@@ -274,12 +259,10 @@ impl DesignFeatureTransfer {
                 }
                 seen.insert(target);
                 if !dependencies_by_feature.contains_key(&feature.id) {
-                    let id = feature
-                        .id
-                        .try_clone_for_decode(ctx, "catia_feature_dependency_owner")?;
+                    let id = feature.id.clone();
                     dependencies_by_feature.insert(id, Vec::new());
                 }
-                let target = target.try_clone_for_decode(ctx, "catia_feature_dependency_target")?;
+                let target = target.clone();
                 if let Some(dependencies) = dependencies_by_feature.get_mut(&feature.id) {
                     dependencies.push(target);
                 }
@@ -288,11 +271,6 @@ impl DesignFeatureTransfer {
 
         for feature in &mut ir.model.features {
             if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
-                feature.dependencies.reserve_for_decode(
-                    ctx,
-                    dependencies.len(),
-                    "catia_feature_dependency_values",
-                )?;
                 feature.dependencies.append(
                     ctx,
                     dependencies,
@@ -305,13 +283,12 @@ impl DesignFeatureTransfer {
 }
 
 fn assign_feature_parameter_ordinals(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
     object_records: &HashMap<&str, &CatiaObjectRecord>,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
     feature_ids: &HashMap<String, FeatureId>,
-) -> Result<(), CodecError> {
+) {
     let transferred_features = feature_ids
         .values()
         .collect::<std::collections::HashSet<_>>();
@@ -333,12 +310,10 @@ fn assign_feature_parameter_ordinals(
             continue;
         };
         if !parameters_by_feature.contains_key(feature_id) {
-            let id = feature_id.try_clone_for_decode(ctx, "catia_feature_parameter_bucket_id")?;
+            let id = feature_id.clone();
             parameters_by_feature.insert(id, Vec::new());
         }
-        let id = parameter
-            .id
-            .try_clone_for_decode(ctx, "catia_feature_parameter_ordinal_id")?;
+        let id = parameter.id.clone();
         if let Some(parameters) = parameters_by_feature.get_mut(feature_id) {
             parameters.push((object_record.byte_offset, entity.byte_offset, id));
         }
@@ -356,9 +331,7 @@ fn assign_feature_parameter_ordinals(
             let Some(ordinal) = u32::try_from(ordinal).ok() else {
                 continue;
             };
-            let id = parameter
-                .2
-                .try_clone_for_decode(ctx, "catia_feature_ordinal_map_id")?;
+            let id = parameter.2.clone();
             parameter_ordinals.insert(id, ordinal);
         }
     }
@@ -368,7 +341,6 @@ fn assign_feature_parameter_ordinals(
             parameter.ordinal = *ordinal;
         }
     }
-    Ok(())
 }
 
 /// Normalize the document scope after feature ownership is known.
@@ -377,10 +349,7 @@ fn assign_feature_parameter_ordinals(
 /// established. Feature-owned parameters receive a feature-local ordinal
 /// above; document parameters must receive their own contiguous scope instead
 /// of retaining gaps left by those feature parameters.
-fn assign_document_parameter_ordinals(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-) -> Result<(), CodecError> {
+fn assign_document_parameter_ordinals(ir: &mut CadIr) {
     let mut parameters = Vec::new();
     for parameter in ir
         .model
@@ -388,9 +357,7 @@ fn assign_document_parameter_ordinals(
         .iter()
         .filter(|parameter| parameter.owner.is_none())
     {
-        let id = parameter
-            .id
-            .try_clone_for_decode(ctx, "catia_document_parameter_sort_id")?;
+        let id = parameter.id.clone();
         parameters.push((parameter.ordinal, id));
     }
     parameters.sort_unstable_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
@@ -407,7 +374,6 @@ fn assign_document_parameter_ordinals(
             parameter.ordinal = *ordinal;
         }
     }
-    Ok(())
 }
 
 /// Expose exact feature-owned parameter expressions without assigning
@@ -418,7 +384,6 @@ fn assign_document_parameter_ordinals(
 /// source properties because their neutral definitions have no generic
 /// parameter map.
 fn assign_native_operation_parameter_values(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
 ) -> Result<(), CodecError> {
@@ -432,7 +397,7 @@ fn assign_native_operation_parameter_values(
             continue;
         };
         if !values_by_feature.contains_key(feature_id) {
-            let id = feature_id.try_clone_for_decode(ctx, "catia_feature_operation_owner")?;
+            let id = feature_id.clone();
             values_by_feature.insert(id, BTreeMap::new());
         }
         let expression = parameter.expression.clone();
@@ -489,21 +454,12 @@ fn assign_native_operation_parameter_values(
 /// Keep the first source name; suffix later collisions. Reserve every source
 /// name before choosing a suffix. Original spelling stays in
 /// `properties["source_name"]` when the neutral name changes.
-fn copy_feature_scope(
-    ctx: &DecodeContext<'_>,
-    owner: Option<&FeatureId>,
-) -> Result<Option<FeatureId>, CodecError> {
-    owner
-        .map(|id| id.try_clone_for_decode(ctx, "catia_parameter_scope_id"))
-        .transpose()
-}
-
-fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+fn normalize_parameter_names(ir: &mut CadIr) {
     let mut reserved_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
     for parameter in &ir.model.parameters {
         if !parameter.name.is_empty() {
             if !reserved_by_scope.contains_key(&parameter.owner) {
-                let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+                let scope = parameter.owner.clone();
                 reserved_by_scope.insert(scope, HashSet::new());
             }
             let name = parameter.name.clone();
@@ -516,11 +472,11 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
     let mut used_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
     for parameter in &mut ir.model.parameters {
         if !reserved_by_scope.contains_key(&parameter.owner) {
-            let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+            let scope = parameter.owner.clone();
             reserved_by_scope.insert(scope, HashSet::new());
         }
         if !used_by_scope.contains_key(&parameter.owner) {
-            let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+            let scope = parameter.owner.clone();
             used_by_scope.insert(scope, HashSet::new());
         }
         let Some(reserved) = reserved_by_scope.get(&parameter.owner) else {
@@ -552,7 +508,6 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
             .properties
             .insert(cadmpeg_core::nonblank_literal!("source_name"), source_name);
     }
-    Ok(())
 }
 
 fn feature_parent_chain_is_acyclic(
@@ -675,7 +630,7 @@ pub(crate) fn transfer_design_features(
         }
     }
 
-    transfer.assign_feature_parents(ctx, ir, native)?;
+    transfer.assign_feature_parents(ir, native)?;
     transfer.assign_feature_dependencies(ctx, ir, native)?;
     Ok(transfer)
 }
@@ -692,7 +647,7 @@ fn transfer_principal_plane(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_principal_feature_map_id")?;
+    let map_feature_id = feature_id.clone();
     let source_tag = candidate.declaration_class.to_owned();
     let native_ref = object.id.clone();
     ir.model.features.push(Feature {
@@ -734,7 +689,7 @@ fn transfer_reference_plane(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_reference_feature_map_id")?;
+    let map_feature_id = feature_id.clone();
     let source_tag = candidate.kind.to_owned();
     let native_ref = object.id.clone();
     ir.model.features.push(Feature {
@@ -780,8 +735,7 @@ fn transfer_sketch(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design sketch")?;
-    let binding_sketch_id =
-        sketch_id.try_clone_for_decode(ctx, "catia_design_sketch_binding_id")?;
+    let binding_sketch_id = sketch_id.clone();
     let sketch_ref = object.id.clone();
     ir.model.sketches.push(Sketch {
         id: sketch_id,
@@ -793,8 +747,7 @@ fn transfer_sketch(
         native_ref: Some(sketch_ref),
     });
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id =
-        feature_id.try_clone_for_decode(ctx, "catia_design_sketch_feature_map_id")?;
+    let map_feature_id = feature_id.clone();
     let feature_ref = object.id.clone();
     let source_tag = "Sketch".to_owned();
     ir.model.features.push(Feature {
@@ -960,8 +913,7 @@ fn transfer_native_operation(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id =
-        feature_id.try_clone_for_decode(ctx, "catia_native_operation_feature_map_id")?;
+    let map_feature_id = feature_id.clone();
     let source_tag = kind.as_str().to_owned();
     let native_ref = object.id.clone();
     ir.model.features.push(Feature {

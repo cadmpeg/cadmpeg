@@ -750,7 +750,6 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         reconciled += 1;
         if let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, face_id) {
             annotate(
-                ctx,
                 annotations,
                 &surface.id,
                 "VisibGeom",
@@ -1658,7 +1657,6 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -1672,9 +1670,8 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             ir,
             Curve {
                 parameter_range: None,
-                id: id.try_clone_for_decode(ctx, "creo analytic pcurve curve identity copy")?,
-                geometry: geometry
-                    .try_clone_for_decode(ctx, "creo analytic pcurve geometry copy")?,
+                id: id.clone(),
+                geometry: geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
@@ -2211,16 +2208,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
                         }
                     }
                 };
-                let knots = match nurbs
-                    .knots()
-                    .try_clone_for_decode(ctx, "creo planar projected NURBS knots")
-                {
-                    Ok(knots) => knots,
-                    Err(error) => {
-                        resource_error = Some(error);
-                        return None;
-                    }
-                };
+                let knots = nurbs.knots().clone();
                 match match PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic()) {
                     Ok(result) => result,
                     Err(error) => {

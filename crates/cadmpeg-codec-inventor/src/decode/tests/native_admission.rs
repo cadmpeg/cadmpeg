@@ -229,11 +229,7 @@ fn kernel_annotation_is_admitted() {
         tag: cadmpeg_asm::brep::annotations::AnnotationTag::ProceduralSurface,
         derived_fields: vec!["definition.surface"],
     };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
     admit_kernel_annotation(
-        &ctx,
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &record,
     )

@@ -666,7 +666,7 @@ fn revolution_nurbs(
     .map_err(GeometryError::from)?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
-        result.transpose_parameter_axes(ctx)?;
+        result.transpose_parameter_axes();
     }
     Ok(result)
 }
@@ -720,14 +720,8 @@ fn sum_nurbs(
         .as_deref()
         .map(|values| copy_rows(values, row_len))
         .transpose()?;
-    let u_knots = first
-        .knots()
-        .try_clone_for_decode(ctx, "Rhino sum surface U knots")
-        .map_err(crate::curves::GeometryError::from)?;
-    let v_knots = second
-        .knots()
-        .try_clone_for_decode(ctx, "Rhino sum surface V knots")
-        .map_err(crate::curves::GeometryError::from)?;
+    let u_knots = first.knots().clone();
+    let v_knots = second.knots().clone();
     NurbsSurface::from_checked_lanes(
         ctx,
         NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic()),
@@ -788,9 +782,7 @@ pub(crate) fn extrusion_nurbs(
         },
         _ => return Err(error(offset, "extrusion tensor inputs are incompatible")),
     };
-    let u_knots = start
-        .knots()
-        .try_clone_for_decode(ctx, "Rhino extrusion surface knots")?;
+    let u_knots = start.knots().clone();
     let [path_start, path_end] = path_domain.finite_components();
     let path_knots =
         KnotVector::from_finite_lanes(ctx, vec![path_start, path_start, path_end, path_end])?
@@ -804,7 +796,7 @@ pub(crate) fn extrusion_nurbs(
     )?
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
-        surface.transpose_parameter_axes(ctx)?;
+        surface.transpose_parameter_axes();
     }
     Ok(surface)
 }

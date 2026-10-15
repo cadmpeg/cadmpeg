@@ -175,13 +175,6 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 
 #[test]
 fn section_profile_prefers_a_resolved_sketch_chain() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &resource_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("admitted circular profile fixture");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture"),
@@ -198,40 +191,25 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#offset:40".to_string())
-        })
-        .expect("profile lookup admitted"),
+        ({ section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()) }),
         ProfileRef::Planar(PlanarProfileRef::Native(
             "creo:featdefs:sketch#offset:40".to_string()
         ))
     );
 
-    ir.model.sketches[0]
-        .profiles
-        .push_single(
-            &resource_ctx,
-            SketchEntityUse {
-                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
-                    .expect("valid test fixture"),
-                reversed: false,
-            },
-        )
-        .expect("admitted circular profile fixture");
+    ir.model.sketches[0].profiles.push_single(SketchEntityUse {
+        entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
+            .expect("valid test fixture"),
+        reversed: false,
+    });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#offset:40".to_string())
-        })
-        .expect("profile lookup admitted"),
+        ({ section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()) }),
         ProfileRef::Planar(PlanarProfileRef::Sketch(
             SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture")
         ))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#918".to_string())
-        })
-        .expect("profile lookup admitted"),
+        ({ section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()) }),
         ProfileRef::Planar(PlanarProfileRef::Native(
             "creo:featdefs:sketch#918".to_string()
         ))
@@ -242,17 +220,12 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
 fn section_profile_lookup_resolves_the_feature_sketch() {
     let id = SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let mut profiles = cadmpeg_ir::sketches::SketchProfiles::default();
-    crate::decode::with_test_decode_ctx(|ctx| {
-        profiles.push_single(
-            ctx,
-            SketchEntityUse {
-                entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:1")
-                    .expect("entity ID"),
-                reversed: false,
-            },
-        )
-    })
-    .expect("profile use admitted");
+    ({
+        profiles.push_single(SketchEntityUse {
+            entity: SketchEntityId::mint("creo:featdefs:sketch_entity#40:1").expect("entity ID"),
+            reversed: false,
+        });
+    });
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: id.clone(),
@@ -264,10 +237,7 @@ fn section_profile_lookup_resolves_the_feature_sketch() {
         native_ref: None,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            section_profile_ref(ctx, &ir, "creo:featdefs:sketch#40".to_owned())
-        })
-        .expect("service profile admitted"),
+        ({ section_profile_ref(&ir, "creo:featdefs:sketch#40".to_owned()) }),
         ProfileRef::Planar(PlanarProfileRef::Sketch(id))
     );
 }

@@ -73,9 +73,9 @@ fn segment_body_index_groups_bodies_by_object_and_binding() {
         source_offset: 0,
     };
 
-    crate::test_support::with_decode_context(|ctx| {
+    ({
         let bindings = [binding];
-        let indexes = segment_binding_body_indexes(ctx, &ir, &bindings).unwrap();
+        let indexes = segment_binding_body_indexes(&ir, &bindings).unwrap();
         assert_eq!(
             indexes.by_object[&10].as_slice(),
             std::slice::from_ref(&body)

@@ -1028,13 +1028,8 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-            cadmpeg_ir::topology::LoopRing::new(
-                &cadmpeg_test_support::service_decode_context(),
-                coedge_ids.clone(),
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid loop ring"),
+            cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
+                .expect("valid loop ring"),
         ),
     });
     ir.model.faces.push(Face {
@@ -1075,11 +1070,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ];
     let vertex_uses = ir.model.loops[0].anchored_vertex_uses().to_vec();
     ir.model.loops[0]
-        .replace_ring(
-            &cadmpeg_test_support::service_decode_context(),
-            reversed_order.to_vec(),
-            vertex_uses,
-        )
+        .replace_ring(reversed_order.to_vec(), vertex_uses)
         .expect("reversed loop ring remains valid");
     for coedge_id in &reversed_order {
         let coedge = ir
@@ -1290,17 +1281,13 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
         };
         nurbs
-            .try_map_control_points(
-                |pole_index, point| {
-                    let mut point = point.get();
-                    if pole_index == 0 {
-                        point.u += 0.25;
-                    }
-                    cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|pole_index, point| {
+                let mut point = point.get();
+                if pole_index == 0 {
+                    point.u += 0.25;
+                }
+                cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
+            })
             .unwrap();
     }
 

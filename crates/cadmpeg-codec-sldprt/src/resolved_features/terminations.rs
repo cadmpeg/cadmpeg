@@ -943,11 +943,11 @@ pub(crate) fn project_surface_sweep_profiles(
                     let native = format!(
                         "sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"
                     );
-                    let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id, ctx)? else {
+                    let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id) else {
                         continue;
                     };
                     let curves = vec![curve];
-                    let Ok(profile) = PlanarProfileRef::generated(curves, native, ctx)? else {
+                    let Ok(profile) = PlanarProfileRef::generated(curves, native) else {
                         continue;
                     };
                     generated.push((profile, components));
@@ -1146,7 +1146,7 @@ pub(crate) fn project_compact_combine_paths(
             let owner = cadmpeg_ir::features::FeatureId::clone(id);
             let body_owner = cadmpeg_ir::features::FeatureId::clone(id);
             let local_id = component_local_ids(&components);
-            let Ok(body) = GeneratedBodyRef::new(body_owner, local_id, ctx)? else {
+            let Ok(body) = GeneratedBodyRef::new(body_owner, local_id) else {
                 return Ok(None);
             };
             let bodies = vec![body];

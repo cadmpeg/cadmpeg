@@ -2,13 +2,12 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use crate::document::admission::StandardAdmission;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn curves(count: usize) -> (Model, Vec<(CurveId, ProceduralCurve)>) {
     let mut model = Model::default();
@@ -90,15 +89,8 @@ fn indexed_curve_batch_preserves_single_attachment_rejections() {
         }
         let before = model.clone();
         let mut scanned = model.clone();
-        let expected = scanned
-            .add_procedural_curve(&StandardAdmission, &rows[0].0, rows[0].1.clone())
-            .unwrap();
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let actual = model
-            .add_procedural_curves(&ctx, vec![rows.remove(0)])
-            .unwrap();
+        let expected = scanned.add_procedural_curve(&rows[0].0, rows[0].1.clone());
+        let actual = model.add_procedural_curves(vec![rows.remove(0)]).unwrap();
         assert_eq!(
             actual.as_ref().map_err(ToString::to_string),
             expected.as_ref().map_err(ToString::to_string)
@@ -121,10 +113,7 @@ fn indexed_batch_rejects_repeated_constructions_and_owners_after_the_accepted_pr
             rows[1].0 = rows[0].0.clone();
         }
         let before = model.clone();
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        assert!(model.add_procedural_surfaces(&ctx, rows).unwrap().is_err());
+        assert!(model.add_procedural_surfaces(rows).unwrap().is_err());
         assert_eq!(model.surfaces[1], before.surfaces[1]);
         assert_eq!(model.procedural_surfaces.len(), 1);
         assert!(model.surfaces[0]
@@ -138,10 +127,7 @@ fn indexed_batch_rejects_repeated_constructions_and_owners_after_the_accepted_pr
 fn indexed_admission_rejects_another_model_and_a_changed_owner_slot() {
     for another_model in [false, true] {
         let (mut model, mut rows) = curves(2);
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let mut admission = ProceduralAdmission::new(&ctx, &model).unwrap();
+        let mut admission = ProceduralAdmission::new(&model);
         let (owner, procedural) = rows.remove(0);
         admission
             .add_curve(&mut model, &owner, procedural)
@@ -167,23 +153,17 @@ fn indexed_admission_rejects_another_model_and_a_changed_owner_slot() {
 #[test]
 fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
     let (mut model, rows) = curves(4096);
-    model
-        .add_procedural_curves(&cadmpeg_test_support::service_decode_context(), rows)
-        .unwrap()
-        .unwrap();
+    model.add_procedural_curves(rows).unwrap().unwrap();
     let (surface_model, rows) = surfaces(4096);
     model.surfaces = surface_model.surfaces;
-    model
-        .add_procedural_surfaces(&cadmpeg_test_support::service_decode_context(), rows)
-        .unwrap()
-        .unwrap();
+    model.add_procedural_surfaces(rows).unwrap().unwrap();
     let encoded = serde_json::to_value(&model).unwrap();
     let reconstructed: Model = serde_json::from_value(encoded.clone()).unwrap();
     assert_eq!(reconstructed, model);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let snapshot = serde_json::to_value(model.geometry_snapshot(&ctx, "brep").unwrap()).unwrap();
+    let snapshot = serde_json::to_value(model.geometry_snapshot("brep").unwrap()).unwrap();
     assert_eq!(snapshot["procedural_curves"], encoded["procedural_curves"]);
     assert_eq!(
         snapshot["procedural_surfaces"],
@@ -194,10 +174,8 @@ fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
 
 #[test]
 fn procedural_batches_link_every_carrier_to_its_construction() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let (mut model, rows) = curves(4096);
-    model.add_procedural_curves(&ctx, rows).unwrap().unwrap();
+    model.add_procedural_curves(rows).unwrap().unwrap();
     assert_eq!(model.procedural_curves.len(), 4096);
     for (curve, procedural) in model.curves.iter().zip(&model.procedural_curves) {
         assert_eq!(
@@ -210,7 +188,7 @@ fn procedural_batches_link_every_carrier_to_its_construction() {
         ));
     }
     let (mut model, rows) = surfaces(4096);
-    model.add_procedural_surfaces(&ctx, rows).unwrap().unwrap();
+    model.add_procedural_surfaces(rows).unwrap().unwrap();
     assert_eq!(model.procedural_surfaces.len(), 4096);
     for (surface, procedural) in model.surfaces.iter().zip(&model.procedural_surfaces) {
         assert_eq!(
@@ -228,9 +206,7 @@ fn procedural_batches_link_every_carrier_to_its_construction() {
 fn indexed_admission_tracks_carriers_appended_after_it_was_built() {
     let (mut model, rows) = curves(4096);
     let carriers = std::mem::take(&mut model.curves);
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let mut admission = ProceduralAdmission::new(&ctx, &model).unwrap();
+    let mut admission = ProceduralAdmission::new(&model);
     for (carrier, (owner, procedural)) in carriers.into_iter().zip(rows) {
         model.curves.push(carrier);
         admission

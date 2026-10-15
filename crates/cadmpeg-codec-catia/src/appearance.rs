@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, FaceId};
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 
@@ -147,7 +147,7 @@ pub(crate) fn transfer(
         None
     };
     if let Some(colors) = positional_colors {
-        let faces = copy_face_ids(ctx, ir)?;
+        let faces = copy_face_ids(ir);
         for (index, (face, rgba)) in faces.into_iter().zip(colors).enumerate() {
             let appearance = insert_appearance(ctx, ir, rgba)?;
             insert_binding(ctx, ir, &appearance, AppearanceTarget::Face(face), index)?;
@@ -156,7 +156,7 @@ pub(crate) fn transfer(
     } else {
         if all_faces.len() == 1 && !ir.model.faces.is_empty() {
             let appearance = insert_appearance(ctx, ir, all_faces[0])?;
-            let faces = copy_face_ids(ctx, ir)?;
+            let faces = copy_face_ids(ir);
             for (index, face) in faces.into_iter().enumerate() {
                 insert_binding(ctx, ir, &appearance, AppearanceTarget::Face(face), index)?;
             }
@@ -171,11 +171,7 @@ pub(crate) fn transfer(
         match body.as_slice() {
             [rgba] if all_faces.is_empty() && ir.model.bodies.len() == 1 => {
                 let appearance = insert_appearance(ctx, ir, *rgba)?;
-                let target = AppearanceTarget::Body(
-                    ir.model.bodies[0]
-                        .id
-                        .try_clone_for_decode(ctx, "catia_appearance_body_target")?,
-                );
+                let target = AppearanceTarget::Body(ir.model.bodies[0].id.clone());
                 insert_binding(ctx, ir, &appearance, target, 0)?;
                 result.transferred_packets += 1;
             }
@@ -192,18 +188,13 @@ pub(crate) fn transfer(
     Ok(result)
 }
 
-fn copy_face_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
+fn copy_face_ids(ir: &CadIr) -> Vec<cadmpeg_ir::ids::FaceId> {
     let mut faces = Vec::new();
     for face in &ir.model.faces {
-        let id = face
-            .id
-            .try_clone_for_decode(ctx, "catia_appearance_face_id")?;
+        let id = face.id.clone();
         faces.push(id);
     }
-    Ok(faces)
+    faces
 }
 
 fn same_color_multiset(left: &[[u8; 4]], right: &[[u8; 4]]) -> bool {
@@ -242,7 +233,7 @@ fn insert_appearance(
         .any(|appearance| appearance.id == id)
     {
         ctx.charge_entities(1, "admit CATIA appearance")?;
-        let retained_id = id.try_clone_for_decode(ctx, "catia_appearance_asset_id")?;
+        let retained_id = id.clone();
         let schema = "CATIA V5 display color".to_owned();
         ir.model.appearances.push(Appearance {
             id: retained_id,
@@ -312,8 +303,7 @@ fn insert_binding_record(
     id: AppearanceBindingId,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_entities(1, "admit CATIA appearance binding")?;
-    let retained_appearance =
-        appearance.try_clone_for_decode(ctx, "catia_appearance_binding_asset_id")?;
+    let retained_appearance = appearance.clone();
     let object_type = "CATIA V5 display property".to_owned();
     ir.model.appearance_bindings.push(AppearanceBinding {
         id,

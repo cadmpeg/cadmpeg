@@ -8,7 +8,6 @@ use crate::container::ContainerScan;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
 use crate::vecmath::{cross, dot};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -407,11 +406,7 @@ pub(super) fn feature_revolution_axis_for_transfer(
     }
 }
 
-pub(in super::super) fn section_profile_ref(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    native_ref: String,
-) -> Result<ProfileRef, CodecError> {
+pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
     let native_scope = native_ref.strip_prefix("creo:featdefs:sketch#");
     let Some(sketch) = exactly_one(
         ir.model
@@ -422,16 +417,12 @@ pub(in super::super) fn section_profile_ref(
                 None => sketch.id.as_str() == native_ref,
             }),
     ) else {
-        return Ok(ProfileRef::Planar(PlanarProfileRef::Native(native_ref)));
+        return ProfileRef::Planar(PlanarProfileRef::Native(native_ref));
     };
     if sketch.profiles.is_empty() {
-        Ok(ProfileRef::Planar(PlanarProfileRef::Native(native_ref)))
+        ProfileRef::Planar(PlanarProfileRef::Native(native_ref))
     } else {
-        Ok(ProfileRef::Planar(PlanarProfileRef::Sketch(
-            sketch
-                .id
-                .try_clone_for_decode(ctx, "creo section profile sketch identity")?,
-        )))
+        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.id.clone()))
     }
 }
 

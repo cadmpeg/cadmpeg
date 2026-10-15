@@ -34,13 +34,7 @@ pub enum NotePhase {
 }
 
 /// Annotation function carried by a family row.
-pub type NoteFn<M, A, N, E> = fn(
-    &DecodeContext<'_>,
-    &M,
-    &FamilyRow<M, A, N, E>,
-    Option<&'static str>,
-    &mut A,
-) -> Result<(), cadmpeg_core::CodecError>;
+pub type NoteFn<M, A, N, E> = fn(&M, &FamilyRow<M, A, N, E>, Option<&'static str>, &mut A);
 
 /// Namespace-emission function carried by a family row.
 pub type EmitFn<M, A, N, E> =
@@ -87,23 +81,16 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
     }
 
     /// Emits annotations for every family in one phase.
-    pub fn note_phase(
-        &self,
-        ctx: &DecodeContext<'_>,
-        phase: NotePhase,
-        model: &M,
-        annotations: &mut A,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn note_phase(&self, phase: NotePhase, model: &M, annotations: &mut A) {
         for row in self.rows {
             match (&row.phase, phase) {
                 (Phase::GroupA { tag, note }, NotePhase::GroupA)
                 | (Phase::GroupB { tag, note }, NotePhase::GroupB) => {
-                    note(ctx, model, row, *tag, annotations)?;
+                    note(model, row, *tag, annotations);
                 }
                 (Phase::GroupA { .. } | Phase::GroupB { .. } | Phase::ArenaOnly, _) => {}
             }
         }
-        Ok(())
     }
 
     /// Returns whether every family participating in emptiness is empty.

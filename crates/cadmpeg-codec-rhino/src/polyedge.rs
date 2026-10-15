@@ -226,8 +226,7 @@ pub(crate) fn decode(
         .ok_or_else(|| FramingError::structural(body.position(), "polyedge record truncated"))?;
     let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
 
-    let mut reserved =
-        ExactVec::<FiniteReal>::new(parameter_bound);
+    let mut reserved = ExactVec::<FiniteReal>::new(parameter_bound);
     let mut previous: Option<FiniteReal> = None;
     for _ in 0..parameter_count {
         let offset = body.position();
@@ -253,7 +252,8 @@ pub(crate) fn decode(
         .finish()
         .map_err(|error| refused(body.position(), &error))?;
 
-    let mut segments = ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(segment_bound);
+    let mut segments =
+        ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(segment_bound);
     for _ in 0..segment_count {
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;

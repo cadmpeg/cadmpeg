@@ -61,7 +61,6 @@ fn located_surfaces_copy_only_their_own_construction_and_reuse_placements() {
     }
     ir.model
         .add_procedural_surface(
-            &ctx,
             &base,
             ProceduralSurface::new(
                 ProceduralSurfaceId::mint("fcstd:model:surface#synthetic:construction").unwrap(),
@@ -72,7 +71,6 @@ fn located_surfaces_copy_only_their_own_construction_and_reuse_placements() {
                 None,
             ),
         )
-        .unwrap()
         .unwrap();
     let transform = Transform::affine([
         [1.0, 0.0, 0.0, 5.0],

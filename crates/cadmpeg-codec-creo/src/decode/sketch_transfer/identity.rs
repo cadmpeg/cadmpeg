@@ -163,7 +163,6 @@ fn saved_section_entity_identity(
 }
 
 pub(in super::super) fn unresolved_saved_section_entity(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     saved: &crate::feature::definitions::FeatureSavedEntity,
@@ -221,7 +220,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
     Ok(Some((
         SketchEntity::new(
             id,
-            sketch.try_clone_for_decode(ctx, "creo unresolved saved sketch identity")?,
+            sketch.clone(),
             SketchGeometry::native(
                 cadmpeg_core::text::NonBlankString::new(native_kind).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("saved native kind must not be empty")
@@ -400,9 +399,8 @@ mod tests {
         );
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let (entity, offset) = crate::decode::with_test_decode_ctx(|ctx| {
+        let (entity, offset) = ({
             super::unresolved_saved_section_entity(
-                ctx,
                 &definition,
                 &sketch,
                 &saved,

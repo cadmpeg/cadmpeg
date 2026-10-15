@@ -585,7 +585,7 @@ fn evaluate_parameter_expressions(
     let mut values = HashMap::new();
     for parameter in parameters.iter() {
         if let Some(value) = &parameter.value {
-            insert_parameter_value(ctx, &mut values, &parameter.id, value)?;
+            insert_parameter_value(&mut values, &parameter.id, value);
         }
     }
     loop {
@@ -601,7 +601,7 @@ fn evaluate_parameter_expressions(
             else {
                 continue;
             };
-            insert_parameter_value(ctx, &mut values, &parameter.id, &value)?;
+            insert_parameter_value(&mut values, &parameter.id, &value);
             parameter.value = Some(value);
             changed = true;
         }
@@ -613,14 +613,12 @@ fn evaluate_parameter_expressions(
 }
 
 fn insert_parameter_value(
-    ctx: &DecodeContext<'_>,
     values: &mut HashMap<ParameterId, ParameterValue>,
     id: &ParameterId,
     value: &ParameterValue,
-) -> Result<(), CodecError> {
-    let value = value.try_clone_for_decode(ctx, "retain SLDPRT parameter value text")?;
+) {
+    let value = value.clone();
     values.insert(id.clone(), value);
-    Ok(())
 }
 
 pub(crate) fn parameters_with_unresolved_references(
@@ -663,7 +661,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
         return Ok(0);
     }
     let aliases = ParameterAliases::new(parameters, feature_names, global_owners);
-    let mut states = parameter_value_states(ctx, parameters, configurations, false)?;
+    let mut states = parameter_value_states(parameters, configurations, false)?;
     let mut count = 0;
     for parameter in parameters {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
@@ -721,7 +719,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
         return Ok(0);
     }
     let aliases = ParameterAliases::new(parameters, feature_names, global_owners);
-    let mut states = parameter_value_states(ctx, parameters, configurations, true)?;
+    let mut states = parameter_value_states(parameters, configurations, true)?;
     let mut count = 0;
     for parameter in parameters
         .iter()
@@ -752,7 +750,6 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
 }
 
 fn parameter_value_states(
-    ctx: &DecodeContext<'_>,
     parameters: &[DesignParameter],
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
     include_global: bool,
@@ -760,10 +757,10 @@ fn parameter_value_states(
     let make_state = |configuration: Option<&cadmpeg_ir::features::DesignConfiguration>| -> Result<_, CodecError> {
         let mut values = HashMap::new();
         for parameter in parameters {
-            if let Some(value) = &parameter.value { insert_parameter_value(ctx, &mut values, &parameter.id, value)?; }
+            if let Some(value) = &parameter.value { insert_parameter_value(&mut values, &parameter.id, value); }
         }
         if let Some(configuration) = configuration {
-            for (id, value) in &configuration.parameter_values { insert_parameter_value(ctx, &mut values, id, value)?; }
+            for (id, value) in &configuration.parameter_values { insert_parameter_value(&mut values, id, value); }
         }
         Ok(values)
     };

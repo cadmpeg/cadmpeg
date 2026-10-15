@@ -2729,9 +2729,7 @@ pub(super) fn project(
                     use_curve: None,
                 });
             }
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
-                .map_err(cadmpeg_core::CodecError::from)?
-            else {
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
@@ -2820,7 +2818,6 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_trimming")?;
             let _attached = candidate.model_mut().add_procedural_surface(
-                ctx,
                 &derived_surface_id.clone(),
                 ProceduralSurface::new(
                     crate::ids::procedural_surface(
@@ -2835,7 +2832,7 @@ pub(super) fn project(
                     },
                     record_bounds,
                 ),
-            )?;
+            );
             derived_surface_id
         } else {
             surface_id
@@ -2900,7 +2897,7 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model_mut().finalize(ctx)?;
+        candidate.model_mut().finalize();
 
         staged.push((entry, candidate, candidate_boundary_vertex_derivations));
     }

@@ -1791,12 +1791,8 @@ fn plane_face_draft(
             use_curve: None,
         });
         let ring_coedges = vec![coedge_id];
-        let ring = match cadmpeg_ir::topology::LoopRing::new(ctx, ring_coedges, Vec::new())
-            .map_err(cadmpeg_core::CodecError::from)
-        {
-            Ok(Ok(ring)) => ring,
-            Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),
-            Err(error) => return Err(error.into()),
+        let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(ring_coedges, Vec::new()) else {
+            return Err("legacy plane loop ring is invalid".into());
         };
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
@@ -1857,7 +1853,7 @@ fn plane_face_draft(
         color: None,
         visible: None,
     });
-    candidate.model_mut().finalize(ctx)?;
+    candidate.model_mut().finalize();
     Ok(candidate)
 }
 

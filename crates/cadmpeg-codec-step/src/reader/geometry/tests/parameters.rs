@@ -493,7 +493,6 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
     ]);
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &sweep,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
@@ -509,7 +508,6 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         ),
     );
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &revolution,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
@@ -670,7 +668,6 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
@@ -730,7 +727,6 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        &cadmpeg_ir::document::admission::StandardAdmission,
         &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#construction")

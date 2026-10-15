@@ -107,13 +107,12 @@ impl FeatureProjection {
     /// silently, and the projection recomputes no condition the model owns.
     pub(crate) fn install(
         self,
-        ctx: &DecodeContext<'_>,
         model: &mut cadmpeg_ir::document::Model,
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> Result<(), CodecError> {
         model.features = self.features;
         for (child, parent) in self.regeneration_parents {
-            let error = match model.set_feature_regeneration_parent(ctx, &child, &parent) {
+            let error = match model.set_feature_regeneration_parent(&child, &parent) {
                 Ok(()) => continue,
                 Err(CodecError::Malformed(error)) => error,
                 Err(error) => return Err(error),
@@ -140,7 +139,6 @@ impl FeatureProjection {
 
     pub(super) fn into_model(
         self,
-        ctx: &DecodeContext<'_>,
     ) -> Result<
         (
             cadmpeg_ir::document::Model,
@@ -150,7 +148,7 @@ impl FeatureProjection {
     > {
         let mut model = cadmpeg_ir::document::Model::default();
         let mut losses = Vec::new();
-        self.install(ctx, &mut model, &mut losses)?;
+        self.install(&mut model, &mut losses)?;
         Ok((model, losses))
     }
 }
@@ -231,7 +229,7 @@ pub(crate) fn project_feature_model(
                     source_properties: feature.properties.clone(),
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.as_deref().map(str::to_owned),
-                    source_content: project_feature_content(ctx, feature, &by_native)?,
+                    source_content: project_feature_content(feature, &by_native)?,
 
                     evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                         project_definition(
@@ -1084,11 +1082,9 @@ pub(crate) fn incomplete_history_reference_features(
 }
 
 fn project_feature_content(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_native: &HashMap<&str, FeatureId>,
 ) -> Result<cadmpeg_ir::features::FeatureContent, CodecError> {
-    const OPERATION: &str = "project SLDPRT feature content";
     if feature.text.is_some() {
         return Ok(cadmpeg_ir::features::FeatureContent::default());
     }
@@ -1131,7 +1127,7 @@ fn project_feature_content(
                 FeatureSourceContent::Feature(target.clone())
             }
         };
-        result.push(value, ctx, OPERATION)?;
+        result.push(value)?;
     }
     Ok(result)
 }
@@ -1329,10 +1325,10 @@ fn project_definition(
         );
     }
     Ok(if class == Some(FeatureClass::Extrude) {
-        project_extrude(ctx, feature, native_by_source, features_by_source)?
+        project_extrude(feature, native_by_source, features_by_source)
             .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Fillet) {
-        project_fillet(ctx, feature)?
+        project_fillet(feature)
     } else if class == Some(FeatureClass::Chamfer) {
         project_chamfer(feature)
     } else if class == Some(FeatureClass::Shell) {
@@ -1376,7 +1372,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(feature)
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(ctx, feature, features_by_source, history_features)?
+        project_hole(feature, features_by_source, history_features)?
             .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source)

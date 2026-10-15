@@ -32,7 +32,6 @@ pub fn rewrite_field<
 
 /// Rewrite an owner-declared native identity field without touching display text.
 pub(crate) fn rewrite_reference<F: FnMut(&str) -> Result<String, CodecError>>(
-    ctx: &DecodeContext<'_>,
     value: &mut Value,
     name: &str,
     map: &mut IdentityMap<'_, F>,
@@ -43,11 +42,11 @@ pub(crate) fn rewrite_reference<F: FnMut(&str) -> Result<String, CodecError>>(
 
     if let Some(value) = fields.get_mut(name) {
         match value {
-            Value::String(reference) => *reference = map.identity(ctx, reference)?,
+            Value::String(reference) => *reference = map.identity(reference)?,
             Value::Array(references) => {
                 for value in references {
                     if let Value::String(reference) = value {
-                        *reference = map.identity(ctx, reference)?;
+                        *reference = map.identity(reference)?;
                     }
                 }
             }
@@ -61,7 +60,6 @@ pub(crate) fn rewrite_reference<F: FnMut(&str) -> Result<String, CodecError>>(
 pub(crate) trait FullFidelityReference: Sized {
     fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
         self,
-        ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError>;
 }
@@ -69,32 +67,29 @@ pub(crate) trait FullFidelityReference: Sized {
 impl FullFidelityReference for String {
     fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
         self,
-        ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
-        map.identity(ctx, &self)
+        map.identity(&self)
     }
 }
 
 impl<T: FullFidelityReference> FullFidelityReference for Option<T> {
     fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
         self,
-        ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
-        self.map(|value| value.rewrite(ctx, map)).transpose()
+        self.map(|value| value.rewrite(map)).transpose()
     }
 }
 
 impl<T: FullFidelityReference> FullFidelityReference for Vec<T> {
     fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
         self,
-        ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
         let mut references = Vec::new();
         for reference in self {
-            references.push(reference.rewrite(ctx, map)?);
+            references.push(reference.rewrite(map)?);
         }
         Ok(references)
     }

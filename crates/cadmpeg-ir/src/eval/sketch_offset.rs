@@ -153,9 +153,7 @@ mod tests {
         let result = crate::sketches::SketchGeometry::nurbs(curve(1.0, None));
         let ctx = cadmpeg_test_support::service_decode_context();
         let distance =
-            super::super::fitted_nurbs_offset_frame_distance(&ctx, &source, &result, 0.0)
-                .unwrap()
-                .unwrap();
+            super::super::fitted_nurbs_offset_frame_distance(&source, &result, 0.0).unwrap();
         assert_eq!(distance.get(), 1.0);
         ctx.finish_session().unwrap();
     }

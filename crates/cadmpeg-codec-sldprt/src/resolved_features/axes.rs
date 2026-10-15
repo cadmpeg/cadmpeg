@@ -19,8 +19,7 @@ use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, Sket
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
@@ -1029,13 +1028,12 @@ pub(crate) fn enrich_history_revolution_inputs(
 
 /// Bind revolution axes from profile records or complete coaxial generated geometry.
 pub(crate) fn bind_profile_revolution_axes(
-    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     sketches: &[Sketch],
     surfaces: &[Surface],
-) -> Result<(), CodecError> {
+) {
     let mut native_by_id = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         native_by_id.insert(feature.id.as_str(), feature);
@@ -1159,10 +1157,7 @@ pub(crate) fn bind_profile_revolution_axes(
         });
         candidates.dedup();
         if let [axis] = candidates.as_slice() {
-            assignments.push((
-                feature_index,
-                axis.try_clone_for_decode(ctx, "SLDPRT revolution axis assignment copy")?,
-            ));
+            assignments.push((feature_index, axis.clone()));
         }
     }
 
@@ -1178,7 +1173,6 @@ pub(crate) fn bind_profile_revolution_axes(
             }
         });
     }
-    Ok(())
 }
 
 fn profile_roster_construction_axis(

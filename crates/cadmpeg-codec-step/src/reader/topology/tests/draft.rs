@@ -27,21 +27,18 @@ use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 fn surface_draft(id: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
     draft
-        .insert(
-            Surface {
-                id: SurfaceId::mint(id).expect("identity grammar"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .unwrap(),
-                )),
-                source_object: None,
-            },
-            &cadmpeg_test_support::service_decode_context(),
-        )
+        .insert(Surface {
+            id: SurfaceId::mint(id).expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        })
         .expect("insert surface into draft");
     draft
 }
@@ -64,18 +61,15 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
 
     let mut rejected_root = surface_draft(rejected_id);
     rejected_root
-        .insert(
-            Vertex {
-                id: "step:data:vertex#rejected"
-                    .try_into()
-                    .expect("valid identity"),
-                point: "step:data:point#missing"
-                    .try_into()
-                    .expect("valid identity"),
-                tolerance: None,
-            },
-            &ctx,
-        )
+        .insert(Vertex {
+            id: "step:data:vertex#rejected"
+                .try_into()
+                .expect("valid identity"),
+            point: "step:data:point#missing"
+                .try_into()
+                .expect("valid identity"),
+            tolerance: None,
+        })
         .expect("insert invalid root reference");
     assert!(session.commit_model(rejected_root).unwrap().is_err());
 
@@ -715,10 +709,6 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 
 #[test]
 fn shared_surface_carrier_is_staged_once() {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let surface = Surface {
         id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -733,33 +723,30 @@ fn shared_surface_carrier_is_staged_once() {
     };
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
-    let built = super::super::staged_topology(
-        super::super::StagedTopologyParts {
-            typed: HashSet::new(),
-            vertices: Vec::new(),
-            edges: Vec::new(),
-            coedges: Vec::new(),
-            loops: Vec::new(),
-            faces: Vec::new(),
-            surfaces: vec![surface.clone(), surface],
+    let built = super::super::staged_topology(super::super::StagedTopologyParts {
+        typed: HashSet::new(),
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        coedges: Vec::new(),
+        loops: Vec::new(),
+        faces: Vec::new(),
+        surfaces: vec![surface.clone(), surface],
+        shells: Vec::new(),
+        region: Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
             shells: Vec::new(),
-            region: Region {
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells: Vec::new(),
-            },
-            body: Body {
-                id: body_id,
-                kind: BodyKind::Sheet,
-                regions: vec![region_id],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            },
         },
-        &ctx,
-    )
+        body: Body {
+            id: body_id,
+            kind: BodyKind::Sheet,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        },
+    })
     .expect("duplicate references to one source surface must stage");
 
     assert_eq!(built.draft.model().surfaces.len(), 1);

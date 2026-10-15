@@ -1248,7 +1248,6 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
     )));
 
     project_relation_solved_line_geometry(
-        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
@@ -1432,7 +1431,6 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         native_ref: Some("scalar".into()),
     };
     project_relation_solved_line_geometry(
-        &ctx,
         &mut entities,
         &[],
         std::slice::from_ref(&feature),
@@ -1645,7 +1643,6 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         );
     assert!(transforms["feature-native"].len() > 1);
     project_relation_solved_line_geometry(
-        &ctx,
         &mut entities,
         std::slice::from_ref(&sketch),
         std::slice::from_ref(&feature),

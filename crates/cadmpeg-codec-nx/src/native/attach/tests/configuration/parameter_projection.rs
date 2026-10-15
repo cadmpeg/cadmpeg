@@ -51,12 +51,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         .filter_map(|dimension| expression_parameter_id(&dimension.expression))
         .collect::<Vec<_>>();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| parameter_owner_dependencies(
-            ctx,
-            &parameter_owners,
-            &parameter_references
-        ))
-        .unwrap(),
+        (parameter_owner_dependencies(&parameter_owners, &parameter_references)),
         [ir.model.features[0].id.clone()]
     );
     assert_eq!(
@@ -69,10 +64,8 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             })
             .collect::<Vec<_>>()
     );
-    crate::test_support::with_decode_context(|ctx| {
-        attach_block_dimension_parameter_consumers(ctx, &mut ir, &[dimensions], &mut annotations)
-    })
-    .expect("valid exactness fields");
+    ({ attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations) })
+        .expect("valid exactness fields");
     assert_eq!(ir.model.parameters.len(), 3);
     for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
         assert_eq!(
@@ -134,11 +127,11 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             .map(String::as_str),
         Some("inch")
     );
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::decode::feature_completeness::incomplete_expression_parameters(ctx, &ir)
-    })
-    .unwrap()
-    .is_empty());
+    assert!(
+        ({ crate::decode::feature_completeness::incomplete_expression_parameters(&ir) })
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -173,10 +166,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         Some("custom/unit")
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::decode::feature_completeness::incomplete_expression_parameters(ctx, &ir)
-        })
-        .unwrap(),
+        ({ crate::decode::feature_completeness::incomplete_expression_parameters(&ir) }).unwrap(),
         [ir.model.parameters[0].id.clone()].into()
     );
 }

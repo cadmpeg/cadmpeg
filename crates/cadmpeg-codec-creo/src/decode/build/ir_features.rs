@@ -55,25 +55,21 @@ fn compose_feature_id(feature_id: u32) -> Result<IrFeatureId, cadmpeg_core::Code
 }
 
 fn append_regeneration_edge(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     edges: &mut Vec<(IrFeatureId, IrFeatureId)>,
     child: &IrFeatureId,
     parent: &IrFeatureId,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let child = child.try_clone_for_decode(ctx, "creo regeneration child identity")?;
-    let parent = parent.try_clone_for_decode(ctx, "creo regeneration parent identity")?;
+) {
+    let child = child.clone();
+    let parent = parent.clone();
     edges.push((child, parent));
-    Ok(())
 }
 
 fn commit_regeneration_edges(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     edges: Vec<(IrFeatureId, IrFeatureId)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (child, parent) in edges {
-        ir.model
-            .set_feature_regeneration_parent(ctx, &child, &parent)?;
+        ir.model.set_feature_regeneration_parent(&child, &parent)?;
     }
     Ok(())
 }
@@ -159,7 +155,6 @@ pub(super) fn emit_model_features(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "ActDatums",
@@ -201,7 +196,6 @@ pub(super) fn emit_model_features(
             continue;
         }
         annotate(
-            ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -323,7 +317,8 @@ pub(super) fn emit_model_features(
                                 .map_or("Native Feature", |operation| operation.kind.as_str())
                                 .to_owned()
                                 .into(),
-                            parameters: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{}", operation.feature_id),
+                            parameters: cadmpeg_core::text::named_entries(
+                                format_args!("creo:model:feature#{}", operation.feature_id),
                                 std::mem::take(&mut parameters),
                             )?,
                         }))
@@ -389,7 +384,7 @@ pub(super) fn emit_model_features(
             })
             .map(|feature| &feature.id);
         if let Some(parent) = parent {
-            append_regeneration_edge(ctx, &mut regeneration_edges, &id, parent)?;
+            append_regeneration_edge(&mut regeneration_edges, &id, parent);
         }
         if let Some(existing) = ir
             .model
@@ -419,7 +414,8 @@ pub(super) fn emit_model_features(
             merge_feature_dependencies(ctx, &mut existing.dependencies, dependencies)?;
             merge_feature_source_properties(
                 &mut existing.source_properties,
-                cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{}", operation.feature_id),
+                cadmpeg_core::text::named_entries(
+                    format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
                 )?,
             );
@@ -454,7 +450,6 @@ pub(super) fn emit_model_features(
             ("feature_recipe", Exactness::ByteExact)
         };
         annotate(
-            ctx,
             annotations,
             &id,
             operation_section,
@@ -469,7 +464,8 @@ pub(super) fn emit_model_features(
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
                 .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{}", operation.feature_id),
+            source_properties: cadmpeg_core::text::named_entries(
+                format_args!("creo:model:feature#{}", operation.feature_id),
                 source_properties,
             )?,
             source_tag,
@@ -511,7 +507,6 @@ pub(super) fn emit_model_features(
                 .unwrap_or("Native Feature")
         });
         annotate(
-            ctx,
             annotations,
             &id,
             "AllFeatur",
@@ -536,7 +531,8 @@ pub(super) fn emit_model_features(
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: kind.to_owned().into(),
-                    parameters: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{feature_id}"),
+                    parameters: cadmpeg_core::text::named_entries(
+                        format_args!("creo:model:feature#{feature_id}"),
                         std::mem::take(&mut parameters),
                     )?,
                 })),
@@ -586,7 +582,8 @@ pub(super) fn emit_model_features(
                 ctx,
             )
             .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries(format_args!("creo:model:feature#{feature_id}"),
+            source_properties: cadmpeg_core::text::named_entries(
+                format_args!("creo:model:feature#{feature_id}"),
                 source_properties,
             )?,
             source_tag: None,
@@ -606,7 +603,7 @@ pub(super) fn emit_model_features(
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
     }
-    commit_regeneration_edges(ctx, ir, regeneration_edges)?;
+    commit_regeneration_edges(ir, regeneration_edges)?;
     Ok(geometry_generator_feature_count)
 }
 
@@ -748,85 +745,69 @@ pub(super) fn finish_feature_transfers(
                 .count()
         };
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             decoded_curve_expression_assignment_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT,
             transferred_curve_expression_parameter_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT,
             decoded_curve_expression_table_cell_assignment_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_scoped_symbol_assignment_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT,
             decoded_curve_expression_system_symbol_assignment_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT,
             decoded_curve_expression_function_write_assignment_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
             evaluated_curve_expression_assignment_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             decoded_curve_expression_solve_block_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT,
             decoded_curve_expression_simultaneous_equation_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT,
             decoded_curve_expression_solve_assignment_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             decoded_curve_expression_solve_variable_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
             evaluated_curve_expression_solve_block_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT,
             evaluated_curve_expression_solve_variable_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT,
             unresolved_curve_expression_solve_control_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT,
             prohibited_curve_expression_record_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT,
             prohibited_curve_expression_kind_count,
-        )?;
+        );
         for (key, activation) in [
             (
                 crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT,
@@ -841,7 +822,7 @@ pub(super) fn finish_feature_transfers(
                 crate::curve::CurveExpressionActivation::Conditional,
             ),
         ] {
-            coverage.record(ctx, key, activation_count(activation))?;
+            coverage.record(key, activation_count(activation));
         }
         let (decoded_dimension_count, resolved_dimension_count) = scan
             .features
@@ -856,22 +837,18 @@ pub(super) fn finish_feature_transfers(
                 )
             });
         coverage.record(
-            ctx,
             crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,
             decoded_dimension_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT,
             transferred_feature_dimension_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             resolved_dimension_count,
-        )?;
+        );
         coverage.record(
-            ctx,
             crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
             decoded_dimension_count
                 .checked_sub(resolved_dimension_count)
@@ -880,9 +857,9 @@ pub(super) fn finish_feature_transfers(
                         "resolved dimension count exceeds decoded count",
                     )
                 })?,
-        )?;
+        );
     }
-    close_sketch_constraint_parameter_references(ctx, ir)?;
+    close_sketch_constraint_parameter_references(ir);
     Ok((feature_result_topology_count, feature_result_edge_count))
 }
 

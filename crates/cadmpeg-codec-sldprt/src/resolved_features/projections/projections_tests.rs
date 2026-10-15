@@ -429,7 +429,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
     assert_eq!(
@@ -617,7 +617,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Generated { faces, native },
             ..
-        }) if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
+        }) if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:7,8"
     ));
 }
 
@@ -786,7 +786,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     assert!(matches!(
         group.center_faces(),
         FaceSelection::Generated { faces, .. }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "2".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "2".into()).unwrap()]
     ));
     assert!(matches!(
         group.side_one_faces(),
@@ -920,12 +920,12 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     assert!(matches!(
         targets,
         BodySelection::Generated { bodies, native }
-            if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef::new(FeatureId::mint("synthetic:test:id#target").expect("identity grammar"), "0,3,2".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
+            if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef::new(FeatureId::mint("synthetic:test:id#target").expect("identity grammar"), "0,3,2".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
     ));
     assert!(matches!(
         tools,
         FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#tool").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#tool").expect("identity grammar"), "7".into()).unwrap()] && native == "sldprt:feature-input:surface-component-ids:0,7"
     ));
     assert!(reverse.is_none());
     assert_eq!(
@@ -1165,7 +1165,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap()]
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
                 && native == "sldprt:feature-input:surface-component-ids:7"
     ));
 
@@ -1339,8 +1339,8 @@ fn split_face_collects_distinct_generated_target_faces() {
         targets,
         FaceSelection::Generated { faces, native }
             if faces.as_slice() == [
-                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-a").expect("identity grammar"), "7".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
-                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-b").expect("identity grammar"), "9".into(), &cadmpeg_test_support::service_decode_context(),).expect("selection reference admission").unwrap(),
+                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-a").expect("identity grammar"), "7".into()).unwrap(),
+                cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer-b").expect("identity grammar"), "9".into()).unwrap(),
             ] && native == "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:_,7;sldprt:feature-input:surface-component-ids:_,9"
     ));
     assert_eq!(
@@ -1486,16 +1486,14 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
+    let groups = ({
         variable_fillet_radius_groups(
-            ctx,
             "variable",
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
             &[&selection],
         )
     })
-    .expect("fillet resource limits")
     .expect("vertex join");
     assert!(matches!(
         groups.as_slice(),
@@ -1686,11 +1684,9 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
-        variable_fillet_radius_groups(ctx, "variable", &[history], &[lane], &[&selection])
-    })
-    .expect("fillet resource limits")
-    .expect("legacy edge-control join");
+    let groups =
+        ({ variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection]) })
+            .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
         [super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
@@ -1754,16 +1750,14 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
+    let groups = ({
         variable_fillet_radius_groups(
-            ctx,
             "variable",
             std::slice::from_ref(&history),
             &[],
             &[&selection],
         )
     })
-    .expect("fillet resource limits")
     .expect("endpoint-less two-control roster");
     assert!(matches!(
         groups.as_slice(),
@@ -1776,15 +1770,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
-    assert!(with_projection_context(|ctx| variable_fillet_radius_groups(
-        ctx,
-        "variable",
-        &[history],
-        &[],
-        &[&collision]
-    ))
-    .expect("fillet resource limits")
-    .is_none());
+    assert!((variable_fillet_radius_groups("variable", &[history], &[], &[&collision])).is_none());
 }
 
 #[test]

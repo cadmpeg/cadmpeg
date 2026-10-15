@@ -348,11 +348,7 @@ impl SourceFidelity {
 
     /// Append source metadata after checking both tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
-    pub fn append(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut other: Self,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
         for id in other.retained_records.keys() {
             if self.retained_records.contains_key(id) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -360,9 +356,7 @@ impl SourceFidelity {
                 )));
             }
         }
-        self.annotations
-            .append(ctx, other.annotations, "append source provenance")?
-            .map_err(cadmpeg_core::CodecError::from)?;
+        self.annotations.append(other.annotations)?;
         self.retained_records.append(&mut other.retained_records);
         Ok(())
     }
@@ -452,9 +446,7 @@ impl SourceFidelity {
             {
                 return Err(duplicate_record(record.id()).into());
             }
-            let id = record
-                .id()
-                .try_clone_for_decode(ctx, "native unknown product identity")?;
+            let id = record.id().clone();
             let mut links = Vec::new();
 
             for link in record.links() {
@@ -476,10 +468,7 @@ impl SourceFidelity {
         let mut native_records = Vec::new();
 
         for product in &products {
-            let id = product
-                .id
-                .try_clone_for_decode(ctx, "native unknown arena identity")?
-                .into();
+            let id = product.id.clone().into();
             let mut fields = serde_json::Map::new();
             if !product.links.is_empty() {
                 let mut links = Vec::new();
@@ -770,21 +759,8 @@ mod tests {
         assert_eq!(CadIr::from_json(&ir_json).expect("parse CADIR"), ir);
 
         let mut builder = crate::AnnotationBuilder::new();
-        let stream = crate::annotations::StreamHandle::new(
-            &cadmpeg_test_support::service_decode_context(),
-            crate::stream_name!(" \t"),
-            "fixture stream handle",
-        )
-        .unwrap();
-        builder
-            .note(
-                &cadmpeg_test_support::service_decode_context(),
-                "synthetic:point#0",
-                &stream,
-                17,
-                Some("point"),
-            )
-            .unwrap();
+        let stream = crate::annotations::StreamHandle::new(crate::stream_name!(" \t"));
+        builder.note("synthetic:point#0", &stream, 17, Some("point"));
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
             report(),

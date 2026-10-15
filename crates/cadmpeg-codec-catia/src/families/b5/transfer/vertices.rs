@@ -98,7 +98,6 @@ pub(super) fn emit_vertices(
             PointId::mint,
         )?;
         annotate(
-            admission.context(),
             annotations,
             &point_id,
             "object_stream_b5_03",
@@ -106,25 +105,22 @@ pub(super) fn emit_vertices(
             Exactness::ByteExact,
         )?;
         admission.charge()?;
-        ir.model.points.push(Point::new(
-            point_id.try_clone_for_decode(admission.context(), "catia_b5_point_record_id")?,
-            *coordinates,
-            None,
-        ));
+        ir.model
+            .points
+            .push(Point::new(point_id.clone(), *coordinates, None));
         let vertex_id = crate::resource::compose_index_id(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             index,
             VertexId::mint,
         )?;
         annotate(
-            admission.context(),
             annotations,
             &vertex_id,
             "object_stream_b5_03",
             "05_08_01_vertex",
             Exactness::ByteExact,
         )?;
-        annotations.derived(admission.context(), vertex_id.as_str(), "point")?;
+        annotations.derived(vertex_id.as_str(), "point")?;
         admission.charge()?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
@@ -143,7 +139,6 @@ pub(super) fn emit_vertices(
             PointId::mint,
         )?;
         annotate(
-            admission.context(),
             annotations,
             &point_id,
             "object_stream_b5_03",
@@ -152,7 +147,7 @@ pub(super) fn emit_vertices(
         )?;
         admission.charge()?;
         ir.model.points.push(Point::new(
-            point_id.try_clone_for_decode(admission.context(), "catia_b5_point_record_id")?,
+            point_id.clone(),
             vertex.point,
             Some(cgm_source("vertex", vertex.object_id)?),
         ));
@@ -162,14 +157,13 @@ pub(super) fn emit_vertices(
             VertexId::mint,
         )?;
         annotate(
-            admission.context(),
             annotations,
             &vertex_id,
             "object_stream_b5_03",
             "5d_logical_vertex",
             Exactness::ByteExact,
         )?;
-        annotations.derived(admission.context(), vertex_id.as_str(), "point")?;
+        annotations.derived(vertex_id.as_str(), "point")?;
         admission.charge()?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! TIFF material assets with checked paths and image-directory bounds.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -166,7 +166,6 @@ impl TryFrom<TextureWire> for MaterialTextureAsset {
 }
 
 pub(in crate::native) fn material_texture_assets(
-    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<MaterialTextureAsset>, CodecError> {
     let mut entries = container
@@ -202,11 +201,7 @@ pub(in crate::native) fn material_texture_assets(
             byte_order,
             first_ifd_offset,
             u64_from_index(size),
-            cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                payload,
-                "retain NX material texture digest",
-            )?,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(payload),
             entry.name.clone(),
             offset,
         )
@@ -245,17 +240,13 @@ mod tests {
 
     #[test]
     fn material_texture_assets_preserve_identity_and_source() {
-        crate::test_support::with_decode_context_over(
-            TIFF,
-            |_| {},
-            |ctx| {
-                let assets = material_texture_assets(ctx, &container()).unwrap();
-                assert_eq!(assets.len(), 1);
-                assert_eq!(assets[0].id, "nx:container:material-texture#0");
-                assert_eq!(assets[0].name(), "Steel");
-                assert_eq!(assets[0].source_entry(), "/Root/materialsTif/Steel");
-            },
-        );
+        ({
+            let assets = material_texture_assets(&container()).unwrap();
+            assert_eq!(assets.len(), 1);
+            assert_eq!(assets[0].id, "nx:container:material-texture#0");
+            assert_eq!(assets[0].name(), "Steel");
+            assert_eq!(assets[0].source_entry(), "/Root/materialsTif/Steel");
+        });
     }
 
     #[test]

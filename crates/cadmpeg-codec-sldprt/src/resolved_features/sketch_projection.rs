@@ -216,7 +216,6 @@ fn project_brep(
                         continue;
                     };
                     crate::annotations::note(
-                        ctx,
                         annotations,
                         id.as_str(),
                         source_stream,
@@ -274,7 +273,6 @@ fn project_brep(
                 continue;
             };
             crate::annotations::note(
-                ctx,
                 annotations,
                 id.as_str(),
                 source_stream,
@@ -299,7 +297,6 @@ fn project_brep(
             continue;
         }
         crate::annotations::note(
-            ctx,
             annotations,
             sketch_id.as_str(),
             source_stream,
@@ -308,7 +305,6 @@ fn project_brep(
             Exactness::Derived,
         )?;
         project_endpoint_constraints(
-            ctx,
             EndpointConstraintSource {
                 sketch: &sketch_id,
                 entities: &entities[first_entity..],

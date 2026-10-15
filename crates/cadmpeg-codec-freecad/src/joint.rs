@@ -138,7 +138,6 @@ pub(crate) fn transfer(
 }
 
 pub(crate) fn transfer_neutral(
-    ctx: &DecodeContext<'_>,
     records: &[JointRecord],
     occurrences: &[Occurrence],
 ) -> Result<Vec<AssemblyJoint>, CodecError> {
@@ -212,8 +211,7 @@ pub(crate) fn transfer_neutral(
             }
             Ok(Some(match occurrence_by_native.get(name).copied() {
                 Some(occurrence) => {
-                    let identity =
-                        occurrence.try_clone_for_decode(ctx, "fcstd joint occurrence identity")?;
+                    let identity = occurrence.clone();
                     JointOperand::occurrence(identity, object, subelements)
                 }
                 None => JointOperand::root(object, subelements),

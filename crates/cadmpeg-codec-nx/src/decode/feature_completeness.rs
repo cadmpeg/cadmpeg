@@ -114,31 +114,26 @@ pub(crate) fn active_configuration_state_is_incomplete(
 /// Decode-time form of [`active_configuration_state_is_incomplete`]: the
 /// active-feature closure runs under the decode context.
 pub(crate) fn active_configuration_state_is_incomplete_for_decode(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> bool {
     if configuration_suppression_differs(ir, configuration) {
-        return Ok(true);
+        return true;
     }
     let Some(bodies) = configuration.bodies.as_deref() else {
-        return Ok(true);
+        return true;
     };
     let required_features = if ir.model.features.is_empty() {
         BTreeMap::new()
     } else {
         let Ok(active_features) =
-            crate::native::history::active_feature_closure_for_decode(ctx, ir, bodies)?
+            crate::native::history::active_feature_closure_for_decode(ir, bodies)
         else {
-            return Ok(true);
+            return true;
         };
         active_features
     };
-    Ok(configuration_state_differs(
-        ir,
-        configuration,
-        &required_features,
-    ))
+    configuration_state_differs(ir, configuration, &required_features)
 }
 
 /// Whether a feature's suppression differs from the configuration's
@@ -232,7 +227,6 @@ fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
 }
 
 pub(crate) fn incomplete_expression_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let mut parameter_owners = BTreeSet::new();
@@ -289,10 +283,7 @@ pub(crate) fn incomplete_expression_parameters(
                         if dependencies.iter().any(|id| id == *dependency) {
                             continue;
                         }
-                        dependencies.push(
-                            dependency
-                                .try_clone_for_decode(ctx, "nx expression dependency identity")?,
-                        );
+                        dependencies.push((*dependency).clone());
                     }
                     Ok(Some(dependencies))
                 })()?,
@@ -365,11 +356,7 @@ pub(crate) fn incomplete_expression_parameters(
                 || !emitted.contains(&index)
                 || !evaluated.contains_key(&parameter.id)
             {
-                incomplete.insert(
-                    parameter
-                        .id
-                        .try_clone_for_decode(ctx, "nx incomplete expression identity")?,
-                );
+                incomplete.insert(parameter.id.clone());
             }
         }
     }

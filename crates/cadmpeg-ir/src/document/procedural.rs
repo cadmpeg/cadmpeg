@@ -3,7 +3,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use super::{Model, ProceduralCarrierError};
@@ -111,7 +110,6 @@ impl ProceduralIndex {
     /// Admit one curve attachment.
     pub fn add_curve(
         &mut self,
-        ctx: &DecodeContext<'_>,
         model: &mut Model,
         owner: &CurveId,
         procedural: ProceduralCurve,
@@ -149,7 +147,7 @@ impl ProceduralIndex {
             .geometry
             .procedural_construction()
             .is_some();
-        let result = model.attach_procedural_curve(ctx, owner, slot, procedural)?;
+        let result = model.attach_procedural_curve(owner, slot, procedural);
         if result.is_ok() {
             let construction = model
                 .procedural_curves
@@ -171,7 +169,6 @@ impl ProceduralIndex {
     /// Admit one surface attachment.
     pub fn add_surface(
         &mut self,
-        ctx: &DecodeContext<'_>,
         model: &mut Model,
         owner: &SurfaceId,
         procedural: ProceduralSurface,
@@ -209,7 +206,7 @@ impl ProceduralIndex {
             .geometry
             .procedural_construction()
             .is_some();
-        let result = model.attach_procedural_surface(ctx, owner, slot, procedural)?;
+        let result = model.attach_procedural_surface(owner, slot, procedural);
         if result.is_ok() {
             let construction = model
                 .procedural_surfaces
@@ -230,21 +227,19 @@ impl ProceduralIndex {
 }
 
 /// Append-only admission bound to one decode context.
-pub struct ProceduralAdmission<'ctx> {
-    ctx: &'ctx DecodeContext<'ctx>,
+pub struct ProceduralAdmission {
     index: ProceduralIndex,
 }
 
-impl<'ctx> ProceduralAdmission<'ctx> {
+impl ProceduralAdmission {
     /// Start an index for one model. Each family indexes on first use.
-    pub fn new(ctx: &'ctx DecodeContext<'_>, model: &Model) -> Result<Self, CodecError> {
-        Ok(Self {
-            ctx,
+    pub fn new(model: &Model) -> Self {
+        Self {
             index: ProceduralIndex {
                 model: Some(model),
                 ..ProceduralIndex::default()
             },
-        })
+        }
     }
     /// Admit one attachment while preserving the append-only prefix.
     pub fn add_curve(
@@ -253,7 +248,7 @@ impl<'ctx> ProceduralAdmission<'ctx> {
         owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.index.add_curve(self.ctx, model, owner, procedural)
+        self.index.add_curve(model, owner, procedural)
     }
     /// Admit one attachment while preserving the append-only prefix.
     pub fn add_surface(
@@ -262,7 +257,7 @@ impl<'ctx> ProceduralAdmission<'ctx> {
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.index.add_surface(self.ctx, model, owner, procedural)
+        self.index.add_surface(model, owner, procedural)
     }
 }
 
@@ -271,10 +266,9 @@ impl Model {
     /// the accepted prefix, as repeated single attachments do.
     pub fn add_procedural_curves(
         &mut self,
-        ctx: &DecodeContext<'_>,
         rows: Vec<(CurveId, ProceduralCurve)>,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        let mut admission = ProceduralAdmission::new(ctx, self)?;
+        let mut admission = ProceduralAdmission::new(self);
         for (owner, procedural) in rows {
             if let Err(error) = admission.add_curve(self, &owner, procedural)? {
                 return Ok(Err(error));
@@ -286,10 +280,9 @@ impl Model {
     /// the accepted prefix, as repeated single attachments do.
     pub fn add_procedural_surfaces(
         &mut self,
-        ctx: &DecodeContext<'_>,
         rows: Vec<(SurfaceId, ProceduralSurface)>,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        let mut admission = ProceduralAdmission::new(ctx, self)?;
+        let mut admission = ProceduralAdmission::new(self);
         for (owner, procedural) in rows {
             if let Err(error) = admission.add_surface(self, &owner, procedural)? {
                 return Ok(Err(error));

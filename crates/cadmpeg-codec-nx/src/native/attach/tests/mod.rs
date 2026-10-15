@@ -12,12 +12,11 @@ fn hole_diameters_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
-    crate::test_support::with_decode_context(|ctx| {
-        hole_body_projection(ctx, ir, operations, outputs)
-            .expect("hole witness resource budget")
+    {
+        hole_body_projection(ir, operations, outputs)
             .map(|projection| projection.diameters)
             .unwrap_or_default()
-    })
+    }
 }
 
 fn simple_hole_diameters(

@@ -416,7 +416,7 @@ fn decode_recovers_type128_closure_claims_in_iges_4_and_5_0() {
 
 #[test]
 fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
+    ({
         let first = NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
             1,
@@ -450,30 +450,24 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         }
         .unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(decode_ctx, &first, &scaled, [0.0, 1.0], 0.0)
-                .unwrap(),
+            homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0).unwrap(),
             Some(true)
         );
         scaled
-            .try_map_control_points(
-                |index, point| {
-                    let mut point = point.get();
-                    if index == 1 {
-                        point.x = 1.1;
-                    }
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                },
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("pole edit admission")
+            .try_map_control_points(|index, point| {
+                let mut point = point.get();
+                if index == 1 {
+                    point.x = 1.1;
+                }
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
             .unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(decode_ctx, &first, &scaled, [0.0, 1.0], 0.0)
-                .unwrap(),
+            homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0).unwrap(),
             Some(false)
         );
     });
@@ -589,7 +583,7 @@ fn numerical_audit_similarity_orientation_survives_uniform_scale() {
 
 #[test]
 fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
+    ({
         let knots = vec![0., 0., 0., 1., 1., 1., 2., 2., 2.];
         let first = (0..6)
             .map(|i| Point3::new(f64::from(i), 0., 0.))
@@ -617,7 +611,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
         .expect("fixture constructor admission")
         .unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(decode_ctx, &a, &b, [0., 2.], 0.).unwrap(),
+            homogeneous_curve_boundary_matches(&a, &b, [0., 2.], 0.).unwrap(),
             Some(false)
         );
         for weight in [1., 1e-200, 1e200] {
@@ -642,11 +636,11 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
             .expect("fixture constructor admission")
             .unwrap();
             assert_eq!(
-                homogeneous_curve_boundary_matches(decode_ctx, &a, &b, [0., 1.], 0.001).unwrap(),
+                homogeneous_curve_boundary_matches(&a, &b, [0., 1.], 0.001).unwrap(),
                 Some(false)
             );
             assert_eq!(
-                homogeneous_curve_boundary_matches(decode_ctx, &a, &a, [0., 1.], 0.).unwrap(),
+                homogeneous_curve_boundary_matches(&a, &a, [0., 1.], 0.).unwrap(),
                 Some(true)
             );
         }
@@ -655,7 +649,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
 
 #[test]
 fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
-    crate::test_support::with_service_context(&[], |decode_ctx| {
+    ({
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
         use cadmpeg_ir::math::Point3;
         let line = |domain: [f64; 2], y| {
@@ -685,7 +679,7 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
         )
         .expect("fixture constructor admission")
         .unwrap();
-        let pairs = super::super::aligned_homogeneous_spans(decode_ctx, &first, &second)
+        let pairs = super::super::aligned_homogeneous_spans(&first, &second)
             .unwrap()
             .unwrap();
         assert_eq!(pairs.len(), 2);

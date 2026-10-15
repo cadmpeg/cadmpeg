@@ -18,10 +18,10 @@ fn assert_sketch_record_admits(route: SketchRoute) {
         crate::container::scan_bytes(crate::test_support::test_prt::composed_feature_history_prt())
     }
     .expect("composed feature-history container");
-    let (labels, records, inputs, references) = crate::test_support::with_decode_context(|ctx| {
+    let (labels, records, inputs, references) = crate::test_support::with_decode_context(|_| {
         Ok::<_, cadmpeg_core::CodecError>((
             feature_operation_labels(&container)?,
-            feature_operation_records(ctx, &container)?,
+            feature_operation_records(&container)?,
             feature_input_blocks(&container)?,
             feature_sketch_references(&container)?,
         ))

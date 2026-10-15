@@ -21,14 +21,14 @@ fn assert_sketch_point_admits(route: SketchPointRoute) {
         crate::container::scan_bytes(crate::test_support::test_prt::composed_feature_history_prt())
     }
     .expect("composed feature-history container");
-    let (records, names, scalars, pairs) = crate::test_support::with_decode_context(|ctx| {
+    let (records, names, scalars, pairs) = crate::test_support::with_decode_context(|_| {
         let labels = feature_operation_labels(&container)?;
-        let operations = feature_operation_records(ctx, &container)?;
+        let operations = feature_operation_records(&container)?;
         let inputs = feature_input_blocks(&container)?;
         let references = feature_sketch_references(&container)?;
         let sketches = feature_sketch_records(&labels, &operations, &inputs, &references);
         let constructions = feature_sketch_construction_inputs(&sketches, &references)?;
-        let payloads = feature_sketch_construction_payloads(ctx, &container, &constructions)?;
+        let payloads = feature_sketch_construction_payloads(&container, &constructions)?;
         let names = feature_sketch_payload_names(&container, &constructions)?;
         let scalars = feature_sketch_payload_scalars(&container, &constructions)?;
         let pairs = feature_sketch_payload_fixed_pairs(&container, &payloads)?;

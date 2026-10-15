@@ -8,7 +8,6 @@ use super::dependencies::{
 use super::outputs::CommaList;
 use crate::container::ContainerScan;
 use crate::feature::rows::agreed_feature_affected_ids;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{EdgeSelection, FeatureId as IrFeatureId, GeneratedEdgeRef};
@@ -20,7 +19,6 @@ fn edge_selection_native(namespace: &'static str, feature_id: u32, ids: &[u32]) 
 }
 
 pub(in super::super) fn feature_edge_selection(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -106,14 +104,13 @@ pub(in super::super) fn feature_edge_selection(
         // mixed identity, so retain the exact native selection.
         Ok(Some(EdgeSelection::Native(native)))
     } else if let Some(edges) = generated_curve_edge_refs(
-        ctx,
         ids,
         &scan.curves.topology_rows,
         &model_feature_ids(scan)?,
         &feature_result_edge_ids_by_feature(&scan.curves.topology_rows),
     )? {
         Ok(Some(
-            EdgeSelection::generated(edges, native.clone(), ctx)?
+            EdgeSelection::generated(edges, native.clone())
                 .unwrap_or(EdgeSelection::Native(native)),
         ))
     } else {
@@ -122,7 +119,6 @@ pub(in super::super) fn feature_edge_selection(
 }
 
 pub(in super::super) fn generated_curve_edge_refs(
-    ctx: &DecodeContext<'_>,
     curve_ids: &[u32],
     rows: &[crate::curve::CurveTopologyRow],
     available_features: &BTreeSet<IrFeatureId>,
@@ -161,7 +157,7 @@ pub(in super::super) fn generated_curve_edge_refs(
             return Ok(None);
         }
         let local_id = format!("curve#{curve_id}");
-        let Some(edge) = GeneratedEdgeRef::new(feature, local_id, ctx)?.ok() else {
+        let Some(edge) = GeneratedEdgeRef::new(feature, local_id).ok() else {
             return Ok(None);
         };
         generated.push(edge);

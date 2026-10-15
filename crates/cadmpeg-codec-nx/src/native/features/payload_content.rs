@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use serde::{
     ser::{SerializeSeq, SerializeStruct},
@@ -51,7 +51,6 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
 
 impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> FeaturePayloadContent<B> {
     pub(super) fn from_source(
-        ctx: &DecodeContext<'_>,
         ids: impl IntoIterator<Item = String>,
         blocks: &BTreeMap<String, (&[u8], u64)>,
     ) -> Result<Option<Self>, CodecError> {
@@ -74,11 +73,7 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             return Ok(None);
         };
 
-        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
-            ctx,
-            hash.finalize().into(),
-            "retain NX feature payload digest",
-        )?;
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes(hash.finalize().into());
         let content = Self::new(blocks, digest).map_err(CodecError::Malformed)?;
         Ok(Some(content))
     }
