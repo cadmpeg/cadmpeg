@@ -56,7 +56,7 @@ fn project_copied_body(
             ..Default::default()
         },
     )
-    .map(|(features, _)| features)
+    .map(|projected| projected.features)
 }
 
 fn copied_body_fixture() -> (DesignParameterScope, DesignBodyBinding) {

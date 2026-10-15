@@ -552,17 +552,21 @@ fn ensure_feature_dependencies_precede(
     Ok(())
 }
 
+/// Neutral features and parameters projected from the Design records.
+#[derive(Debug)]
+pub(crate) struct ProjectedParameterDesign {
+    pub(crate) features: Vec<cadmpeg_ir::features::Feature>,
+    pub(crate) parameters: Vec<cadmpeg_ir::features::DesignParameter>,
+    /// Owner scopes whose parameter ordering exceeded [`PARAMETER_ORDER_WORK`].
+    /// Each keeps its source ordinals and loses its same-scope dependency edges.
+    pub(crate) unordered_parameter_scopes: usize,
+}
+
 /// Project Design parameters and feature scopes, including fixed edge identities.
 pub(crate) fn project_parameter_design_with_edge_identities(
     ctx: &DecodeContext<'_>,
     inputs: &ProjectInputs<'_>,
-) -> Result<
-    (
-        Vec<cadmpeg_ir::features::Feature>,
-        Vec<cadmpeg_ir::features::DesignParameter>,
-    ),
-    CodecError,
-> {
+) -> Result<ProjectedParameterDesign, CodecError> {
     use cadmpeg_ir::features::{
         patterns::PatternKind, DesignParameter as NeutralParameter, DimensionDisplay, Feature,
         FeatureDefinition, FeatureOperation, ParameterId, ParameterValue,
@@ -1558,7 +1562,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             parameter.dependencies.insert(dependency);
         }
     }
-    normalize_parameter_ordinals(&mut parameters, &parameter_owners);
+    let unordered_parameter_scopes =
+        normalize_parameter_ordinals(&mut parameters, &parameter_owners);
     for feature in &mut features {
         for parameter in parameters
             .iter()
@@ -1575,7 +1580,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
     }
     ensure_feature_dependencies_precede(&features)?;
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok((features, parameters))
+    Ok(ProjectedParameterDesign {
+        features,
+        parameters,
+        unordered_parameter_scopes,
+    })
 }
 
 fn project_solid_primitive(
@@ -4406,10 +4415,12 @@ pub(crate) fn direct_face_selection(
 /// parameter count.
 const PARAMETER_ORDER_WORK: usize = 1 << 22;
 
+/// Order every owner scope's parameters and return how many scopes exceeded
+/// [`PARAMETER_ORDER_WORK`].
 fn normalize_parameter_ordinals(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
-) {
+) -> usize {
     let mut groups = HashMap::<Option<cadmpeg_ir::features::FeatureId>, Vec<usize>>::new();
     for (index, parameter) in parameters.iter().enumerate() {
         if let Some(indices) = groups.get_mut(&parameter.owner) {
@@ -4421,30 +4432,35 @@ fn normalize_parameter_ordinals(
             let _ = groups.insert(owner, indices);
         }
     }
+    let mut unordered_scopes = 0;
     for (owner, indices) in groups {
-        order_parameter_scope(
+        if !order_parameter_scope(
             parameters,
             owners,
             owner.as_ref(),
             &indices,
             &cadmpeg_core::decode::WorkBudget::new(PARAMETER_ORDER_WORK),
-        );
+        ) {
+            unordered_scopes += 1;
+        }
     }
+    unordered_scopes
 }
 
 /// Reassign the ordinals of one owner scope so each parameter follows its
 /// same-scope dependencies, breaking cycles at their lowest-ordinal member.
 ///
-/// When the ordering exhausts `budget`, the scope keeps its source ordinals
-/// and loses its same-scope dependency edges, so the projection stays valid.
-/// Decode reports the dropped edges as unbound expression symbols.
+/// Returns `false` when the ordering exhausts `budget`. The scope then keeps
+/// its source ordinals and loses its same-scope dependency edges, so the
+/// projection stays valid. Decode reports the skipped scope and the dropped
+/// edges as unbound expression symbols.
 fn order_parameter_scope(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
     owner: Option<&cadmpeg_ir::features::FeatureId>,
     indices: &[usize],
     budget: &cadmpeg_core::decode::WorkBudget,
-) {
+) -> bool {
     let mut ordinals = Vec::new();
     for index in indices {
         ordinals.push(parameters[*index].ordinal);
@@ -4479,7 +4495,7 @@ fn order_parameter_scope(
                     .dependencies
                     .retain(|dependency| owners.get(dependency).map(Option::as_ref) != Some(owner));
             }
-            return;
+            return false;
         }
         ready.sort_by(|a, b| {
             let pa = &parameters[*a];
@@ -4533,6 +4549,7 @@ fn order_parameter_scope(
     for (index, ordinal) in order.into_iter().zip(ordinals) {
         parameters[index].ordinal = ordinal;
     }
+    true
 }
 
 /// Strongly connected components of the unresolved parameter graph that contain a cycle.

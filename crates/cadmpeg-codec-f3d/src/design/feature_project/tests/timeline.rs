@@ -176,7 +176,8 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
             )
         })
     };
-    let (features, _) = project(&authored).expect("exact authored order");
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        project(&authored).expect("exact authored order");
     let earlier_feature = features
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some(&earlier.id))
@@ -351,7 +352,11 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         },
     )
     .unwrap();
-    let (features, parameters) = crate::test_support::with_decode_context(|decode_ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|decode_ctx| {
         project_parameter_design_with_edge_identities(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {
@@ -447,17 +452,18 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| {
-        project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes: &scopes,
-                timelines: std::slice::from_ref(&timeline),
-                ..Default::default()
-            },
-        )
-    })
-    .expect("one authored datum envelope");
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|decode_ctx| {
+            project_parameter_design_with_edge_identities(
+                decode_ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes: &scopes,
+                    timelines: std::slice::from_ref(&timeline),
+                    ..Default::default()
+                },
+            )
+        })
+        .expect("one authored datum envelope");
 
     let [feature] = features.as_slice() else {
         panic!("expected one projected datum feature");
@@ -491,17 +497,18 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         directly_listed.context_record_index,
     )
     .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| {
-        project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes: &scopes,
-                timelines: std::slice::from_ref(&directly_listed),
-                ..Default::default()
-            },
-        )
-    })
-    .expect("directly listed datum target");
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|decode_ctx| {
+            project_parameter_design_with_edge_identities(
+                decode_ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes: &scopes,
+                    timelines: std::slice::from_ref(&directly_listed),
+                    ..Default::default()
+                },
+            )
+        })
+        .expect("directly listed datum target");
     let [feature] = features.as_slice() else {
         panic!("expected one directly listed datum feature");
     };
@@ -710,17 +717,18 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| {
-        project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes: &scopes,
-                timelines: std::slice::from_ref(&timeline),
-                ..Default::default()
-            },
-        )
-    })
-    .expect("ambiguous internal state chain remains unresolved");
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|decode_ctx| {
+            project_parameter_design_with_edge_identities(
+                decode_ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes: &scopes,
+                    timelines: std::slice::from_ref(&timeline),
+                    ..Default::default()
+                },
+            )
+        })
+        .expect("ambiguous internal state chain remains unresolved");
 
     let successor = features
         .iter()
@@ -922,7 +930,11 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
-    let (features, parameters) = crate::test_support::with_decode_context(|decode_ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|decode_ctx| {
         project_parameter_design_with_edge_identities(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {

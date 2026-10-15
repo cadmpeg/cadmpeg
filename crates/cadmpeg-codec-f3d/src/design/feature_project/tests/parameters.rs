@@ -44,7 +44,11 @@ fn user_parameters_project_in_source_order_with_units_and_dependencies() {
     half.record_index = 21;
     half.source_ordinal = 5;
 
-    let (features, projected) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters: projected,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = &[];
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -111,7 +115,10 @@ fn parameters_project_all_design_database_unit_tokens() {
     unclassified.source_ordinal = 7;
     native.push(unclassified);
 
-    let (_, projected) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        parameters: projected,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = &[];
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -184,7 +191,10 @@ fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
         parameter.source_ordinal = source_ordinal;
         parameter
     };
-    let (_, projected) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        parameters: projected,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = &[];
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -305,7 +315,11 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     )
     .unwrap();
 
-    let (features, parameters) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = &[scope];
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -379,7 +393,11 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
         owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
 
-    let (features, parameters) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = &[];
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -503,43 +521,44 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let preceding_shared = parameter(Some(31), 30, "10 mm", "Shared");
     let shared_consumer = parameter(Some(32), 31, "Shared / 2", "SharedHalf");
     let later_shared = parameter(Some(33), 32, "20 mm", "Shared");
-    let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = &[scope(201), scope(202), scope(203)];
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &[
-                    document_width,
-                    local_width,
-                    local_half,
-                    remote_half,
-                    owned_depth,
-                    document_half,
-                    document_forward,
-                    document_later,
-                    cycle_a,
-                    cycle_b,
-                    preceding_shared,
-                    shared_consumer,
-                    later_shared,
-                ],
-                owners: &[
-                    owner(22, 21, 201),
-                    owner(23, 22, 201),
-                    owner(24, 23, 202),
-                    owner(25, 24, 201),
-                    owner(31, 30, 201),
-                    owner(32, 31, 202),
-                    owner(33, 32, 203),
-                ],
-                scopes,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { parameters, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[scope(201), scope(202), scope(203)];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &[
+                        document_width,
+                        local_width,
+                        local_half,
+                        remote_half,
+                        owned_depth,
+                        document_half,
+                        document_forward,
+                        document_later,
+                        cycle_a,
+                        cycle_b,
+                        preceding_shared,
+                        shared_consumer,
+                        later_shared,
+                    ],
+                    owners: &[
+                        owner(22, 21, 201),
+                        owner(23, 22, 201),
+                        owner(24, 23, 202),
+                        owner(25, 24, 201),
+                        owner(31, 30, 201),
+                        owner(32, 31, 202),
+                        owner(33, 32, 203),
+                    ],
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     let by_name_and_owner = |name: &str, owner_record_index: u32| {
         parameters
             .iter()
@@ -660,7 +679,11 @@ fn parameter_expressions_project_feature_dependencies() {
         )
         .unwrap()
     };
-    let (features, parameters) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = &[
             scope(12, 100, "Sketch"),
             scope(22, 200, "Extrude"),
@@ -758,20 +781,21 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         9,
     );
 
-    let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = &[scope];
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &[parameter],
-                scopes,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { parameters, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[scope];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &[parameter],
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
 
     let [parameter] = parameters.as_slice() else {
         panic!("expected one retained parameter");

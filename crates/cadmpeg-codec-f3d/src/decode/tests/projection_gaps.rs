@@ -704,17 +704,18 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes: &scopes,
-                timelines: std::slice::from_ref(&timeline),
-                ..Default::default()
-            },
-        )
-    })
-    .expect("timeline projection through one internal scope");
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                decode_ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes: &scopes,
+                    timelines: std::slice::from_ref(&timeline),
+                    ..Default::default()
+                },
+            )
+        })
+        .expect("timeline projection through one internal scope");
     let mut native = F3dNative::default();
     native.design_parameter_scopes = scopes;
     native.design_feature_timelines = vec![timeline];
