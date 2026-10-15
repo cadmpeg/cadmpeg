@@ -109,6 +109,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "asm_bulletin_boards",
     "asm_delta_states",
     "asm_entity_changes",
+    "asm_face_boundaries",
     "asm_histories",
     "asm_history_records",
     "body_native_keys",
@@ -1153,6 +1154,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         },
         counts_toward_emptiness: true,
     },
+    F3dFamilyRow {
+        arena: "asm_face_boundaries",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.asm_face_boundaries)
+        },
+        len: |model| model.asm_face_boundaries.len(),
+        counts_toward_emptiness: true,
+    },
 ];
 
 const F3D_CATALOGUE: Catalogue<'static, F3dNative, (), cadmpeg_ir::NativeNamespace, ()> =
@@ -1379,6 +1390,10 @@ pub(crate) struct F3dNative {
     /// ASM construction-history containers and their linked delta states.
     #[serde(default)]
     pub(crate) asm_histories: Vec<AsmHistory>,
+    /// Historical face boundaries named by edge-recipe reference contexts.
+    #[serde(default)]
+    pub(crate) asm_face_boundaries:
+        Vec<crate::records::topology::historical_context::AsmFaceBoundary>,
 }
 
 impl F3dNative {
@@ -1515,6 +1530,7 @@ impl F3dNative {
             xref_designs: read_arena!("xref_designs"),
             xref_references: read_arena!("xref_references"),
             asm_histories: read_arena!("asm_histories"),
+            asm_face_boundaries: read_arena!("asm_face_boundaries"),
         };
         let states: Vec<crate::history_records::AsmDeltaState> = read_arena!("asm_delta_states");
         let boards: Vec<crate::history_records::AsmBulletinBoard> =

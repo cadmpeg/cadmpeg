@@ -555,6 +555,7 @@ fn rescope_native_reference_fields(
         "asm_bulletin_boards"
         | "asm_delta_states"
         | "asm_entity_changes"
+        | "asm_face_boundaries"
         | "asm_history_records" => &["parent"],
         "body_native_keys" => &["body"],
         "edge_continuities" => &["edge"],
@@ -597,11 +598,23 @@ fn rescope_native_reference_fields(
         scope_named_fields(ctx, fields, &["history_id"], occurrence)?;
     }
 
-    // WorkPoint and mesh records contain native identities as ordinary strings
+    // WorkPoint, mesh and edge-operand records contain native identities as ordinary strings
     // inside their nested envelopes. Their surrounding payloads also carry
     // source text, so the walker is restricted to the field names owned by the
     // corresponding native relations.
     match arena {
+        "design_edge_operands" => {
+            scope_named_fields(
+                ctx,
+                fields,
+                &[
+                    "result_face_boundary_ids",
+                    "preceding_face_boundary_ids",
+                    "preceding_support_face_boundary_ids",
+                ],
+                occurrence,
+            )?;
+        }
         "design_edge_treatment_vertex_operands" => {
             scope_named_fields(ctx, fields, &["recipe_id"], occurrence)?;
         }
