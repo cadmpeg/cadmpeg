@@ -31,6 +31,7 @@ mod construction_identity;
 mod edge_identity;
 mod edge_treatment_vertex;
 mod entity_bindings;
+mod extrude_extent;
 mod extrude_group;
 mod extrude_member;
 mod face_boundary;
@@ -827,9 +828,20 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     .iter()
     .any(invalid_frame));
 
+    // A Hole body group can use role 0x8 for its whole-body recipe operand.
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
+        );
+    assert!(!crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
+    })
+    .iter()
+    .any(invalid_frame));
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
         );
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
@@ -1043,8 +1055,10 @@ fn validation_checks_pipe_path_group_roles() {
     assert_eq!(group_native_finding_count(&ir), 2);
 }
 
+/// A sketch point identity is unique within its Sketch. Distinct curve records
+/// of one Sketch can carry one `(primary, secondary)` identity pair.
 #[test]
-fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
+fn validation_rejects_shared_point_identities_and_accepts_shared_curve_identities() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1087,7 +1101,7 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
             && finding.entity.as_deref() == Some(point_id.as_str())
             && finding.message.contains("persistent identity")
     }));
-    assert!(findings.iter().any(|finding| {
+    assert!(!findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding.message.contains("persistent identity")

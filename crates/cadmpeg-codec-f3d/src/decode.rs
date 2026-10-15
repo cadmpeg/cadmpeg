@@ -4484,6 +4484,32 @@ fn collect_related_indices<'a>(
     collected
 }
 
+/// Indexed records named by parameter scopes: every scope reference and the
+/// record named by a reference-bearing compact Thread trailer, which need not
+/// occur in the scope reference table.
+fn scope_related_indices(
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> Vec<(String, u32)> {
+    collect_related_indices(scopes.iter().flat_map(|scope| {
+        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let thread_trailer =
+            scope
+                .thread_construction()
+                .and_then(|construction| match &construction.form {
+                    crate::records::feature::thread::DesignThreadForm::Compact(Some(reference)) => {
+                        Some(reference.value.get())
+                    }
+                    _ => None,
+                });
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .chain(thread_trailer)
+            .map(move |record_index| (stream, record_index))
+    }))
+}
+
 fn append_related_record_headers(
     scan: &ContainerScan,
     native: &mut F3dNative,
@@ -4618,14 +4644,7 @@ fn extend_related_design_records(
     }
     drop(existing);
     native.design_record_headers.extend(scope_headers);
-    let indices =
-        collect_related_indices(native.design_parameter_scopes.iter().flat_map(|scope| {
-            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-            scope
-                .reference_members()
-                .values()
-                .map(move |record_index| (stream, *record_index))
-        }));
+    let indices = scope_related_indices(&native.design_parameter_scopes);
     append_related_record_headers(scan, native, &indices)?;
     crate::design::decode::operands::bind_sketch_profiles(
         scan,

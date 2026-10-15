@@ -4518,7 +4518,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::Hole) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X5
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::BODIES_B
+                            | DesignOperandRole::ROLE_0X5
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::SurfaceTrim) => {
@@ -5080,6 +5082,12 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     )
                 });
             let has_one_along_carrier = along_count <= 1 && (along_count == 1 || has_fixed_along);
+            let has_fixed_against = scope
+                .fixed_extrude_parameters()
+                .as_ref()
+                .is_some_and(|fixed| fixed.against_distance.is_some());
+            let has_one_against_carrier =
+                against_count <= 1 && (against_count == 1 || has_fixed_against);
             let class_296_two_faces_layout = scope
                 .reference_count_offset()
                 .checked_sub(scope.byte_offset())
@@ -5118,9 +5126,8 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && (!prologue.direction_reversed() || class_296_two_faces_layout)
                 }
                 records::feature::extrude::DesignExtrudeExtent::TwoSidedDistance => {
-                    along_count == 1
-                        && !has_fixed_extrude_parameters
-                        && against_count == 1
+                    has_one_along_carrier
+                        && has_one_against_carrier
                         && side_one_offset_count == 0
                         && !prologue.direction_reversed()
                 }
@@ -7073,10 +7080,11 @@ fn validate_face_operands<'a>(
                             Some(design::DesignFeatureFamily::Split) => {
                                 operand.scope_reference_ordinal == 1
                             }
-                            Some(design::DesignFeatureFamily::Hole) => {
-                                operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::BoundedFace
-                            }
+                            Some(design::DesignFeatureFamily::Hole) => matches!(
+                                operand.recipe_kind,
+                                records::recipes::ConstructionRecipeKind::BoundedFace
+                                    | records::recipes::ConstructionRecipeKind::Face
+                            ),
                             Some(design::DesignFeatureFamily::Assemble)
                                 if scope.kind()
                                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
@@ -8161,7 +8169,8 @@ fn validate_sketch_relations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     }
 }
 
-/// Validate sketch point, curve, and surface persistent identities.
+/// Validate sketch point and surface persistent identities and the typed
+/// record of every sketch point, curve, and surface.
 fn validate_sketch_geometry_identities(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let mut sketch_point_identities = HashSet::new();
@@ -8197,26 +8206,9 @@ fn validate_sketch_geometry_identities(ctx: &Ctx<'_, '_>, findings: &mut Vec<Fin
             );
         }
     }
-    let mut sketch_curve_identities = HashSet::new();
+    // Distinct curve records of one Sketch can carry one identity pair, so
+    // the pair is not checked for uniqueness.
     for curve in &native.sketch_curve_identities {
-        let duplicate = if let Some(owner_reference) = curve.owner_reference {
-            !sketch_curve_identities.insert((
-                design_stream(&curve.id),
-                owner_reference,
-                curve.primary_id.get(),
-                curve.secondary_id,
-            ))
-        } else {
-            false
-        };
-        if duplicate {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion sketch curve has an invalid persistent identity",
-                Some(curve.id.clone()),
-            );
-        }
         if !sketch_geometry_records.insert((design_stream(&curve.id), curve.record_index)) {
             push_constant_finding(
                 findings,
