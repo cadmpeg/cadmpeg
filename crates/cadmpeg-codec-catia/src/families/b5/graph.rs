@@ -1702,7 +1702,7 @@ fn parse_a8_class21_pcurve(
         read_values(&mut position, &mut distinct_knots)?;
         let mut knot_values = Vec::new();
         knot_values.extend(distinct_knots.iter().copied().map(FiniteReal::get));
-        if !crate::nurbs::strictly_increasing(&knot_values) {
+        if !cadmpeg_ir::geometry::nurbs::knots_strictly_increasing(&knot_values) {
             return None;
         }
         let mut multiplicities_valid = true;
