@@ -158,6 +158,12 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
         bytes.extend_from_slice(&reference.to_be_bytes());
         bytes.push(1);
     }
+    for reference in [10u16, 11] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(0);
+    }
+    bytes.push(b'S');
+    bytes.extend_from_slice(&[0, 3, 1]);
     let declaration_end = bytes.len();
     bytes.extend([0, 7, 1, 0, 1, 1, 0x56, 0, 1, 1]);
 
@@ -165,15 +171,20 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &bytes))
             .unwrap();
 
-    assert_eq!(census.inline_schema_declarations.len(), 1);
-    let declaration = &census.inline_schema_declarations[0];
+    assert_eq!(census.schema_nodes.len(), 1);
+    let declaration = &census.schema_nodes[0];
+    let fields = serde_json::to_value(&declaration.fields).unwrap();
+    assert_eq!(fields["definition"]["kind"], 19);
+    assert_eq!(fields["definition"]["fields"].as_array().unwrap().len(), 9);
+    assert_eq!(fields["schema_byte_len"], 33);
+    assert_eq!(fields["xmt"], 40_000);
     assert_eq!(
-        declaration.fields,
-        crate::deltas::inline_schema_fields::InlineSchemaFields::Region {
-            xmt: 40_000u32.try_into().unwrap(),
-            state_word: 5,
-            references: [1, 3, 1, 9],
-        }
+        fields["values"][0],
+        serde_json::json!([{"type":"integer","value":5}])
+    );
+    assert_eq!(
+        fields["values"][7],
+        serde_json::json!([{"type":"char","value":83}])
     );
     assert_eq!(declaration.offset, 0);
     assert_eq!(declaration.end, declaration_end);
@@ -182,14 +193,15 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     assert_eq!(u32::from(census.reference_marker_packets[0].reference), 7);
     assert_eq!(census.bytes_decoded(), bytes.len());
 
-    let mut truncated = bytes[..declaration_end - 1].to_vec();
-    truncated.extend([0, 7, 1, 0, 1, 1, 0x56, 0, 1, 1]);
+    // A following zero could itself complete the final pointer status. Test
+    // the genuinely incomplete input, without supplying replacement storage.
+    let truncated = bytes[..declaration_end - 1].to_vec();
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
             ctx, &truncated
         ))
         .unwrap()
-        .inline_schema_declarations
+        .schema_nodes
         .is_empty()
     );
 }

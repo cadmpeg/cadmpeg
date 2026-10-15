@@ -6,12 +6,11 @@ use super::tails::TerminalNullReferences;
 use super::{
     body_revision_prefix, compact_tombstone, consume_fixed, consume_intersection_auxiliary,
     consume_shared_record, consume_variable, first_complete_record, fixed_signature,
-    inline_body_states, inline_schema_declaration, inline_schema_declarations, is_value_family,
-    merged_event_spans, reference_marker_packets, reference_type_map, reference_type_maps,
-    tagged_reference_lanes, transmit_header, type_150_state_packets, uncovered_spans, BodyRevision,
-    InlineBodyState, InlineSchemaDeclaration, PartitionPrefix, PartitionPrefixState, PmarkPacket,
-    Record, ReferenceMarkerPacket, ReferenceTypeMap, ReferenceTypeMapLimit, TaggedReferenceLane,
-    Tombstone, TransmitHeader, Type150StatePacket,
+    inline_schema_node, is_value_family, merged_event_spans, reference_marker_packets,
+    reference_type_map, reference_type_maps, tagged_reference_lanes, transmit_header,
+    type_150_state_packets, uncovered_spans, BodyRevision, PartitionPrefix, PartitionPrefixState,
+    PmarkPacket, Record, ReferenceMarkerPacket, ReferenceTypeMap, ReferenceTypeMapLimit,
+    SchemaNodeEvent, TaggedReferenceLane, Tombstone, TransmitHeader, Type150StatePacket,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -50,9 +49,7 @@ pub(crate) struct CensusEvents {
     /// Complete single-byte type-150 state packets in source order.
     pub(crate) type_150_state_packets: Vec<Type150StatePacket>,
     /// Complete inline schema declarations in source order.
-    pub(crate) inline_schema_declarations: Vec<InlineSchemaDeclaration>,
-    /// Complete schema-bound type-12 BODY states in source order.
-    pub(crate) inline_body_states: Vec<InlineBodyState>,
+    pub(crate) schema_nodes: Vec<SchemaNodeEvent>,
 }
 
 impl std::ops::Deref for Census {
@@ -105,7 +102,7 @@ impl Census {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<(usize, usize)>, CodecError> {
-        merged_event_spans(ctx, self, true)
+        merged_event_spans(ctx, self)
     }
 }
 
@@ -147,6 +144,19 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
     let mut referenced_value_offsets = None::<BTreeSet<usize>>;
     let mut referenced_offsets_guard = ctx.reserve_scoped(0, "NX referenced value offsets")?;
     let mut intersection_schema_anchor_seen = false;
+    let mut world_layout = None;
+    let mut schema_seen = [false; 102];
+    let supported_base = census
+        .transmit_header
+        .as_ref()
+        .is_none_or(|header| header.state.schema().ends_with("_13006"));
+    let mut intersection_layout = if !supported_base {
+        super::intersection::IntersectionLayout::Unsupported
+    } else if census.transmit_header.is_some() {
+        super::intersection::IntersectionLayout::Base
+    } else {
+        super::intersection::IntersectionLayout::WithData
+    };
     while offset + 4 <= stream.len() {
         if let Some(prefix) = census.partition_prefix.as_ref() {
             if let Some(packet) = super::pmark_packets::at(ctx, stream, offset, prefix)? {
@@ -161,12 +171,25 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         ctx.charge_work(1, "walk NX deltas census")?;
         intersection_schema_anchor_seen |=
             crate::topology::intersection_data_schema_header_at(stream, offset);
-        if let Some(declaration) = inline_schema_declaration(ctx, stream, offset, stream.len())? {
+        let declaration = if supported_base {
+            inline_schema_node(ctx, stream, offset, stream.len(), &mut schema_seen)?
+        } else {
+            None
+        };
+        if let Some(declaration) = declaration {
+            if declaration.fields.kind() == 38 {
+                intersection_layout = super::intersection::IntersectionLayout::from_schema(
+                    declaration.fields.definition(),
+                );
+            }
+            if declaration.fields.kind() == 101 {
+                world_layout = super::WorldLayout::from_schema(declaration.fields.definition());
+            }
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
             value_boundary = true;
             ctx.push_vec(
-                &mut census.events.inline_schema_declarations,
+                &mut census.events.schema_nodes,
                 declaration,
                 "NX deltas schema declarations",
             )?;
@@ -185,12 +208,38 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             )?;
             continue;
         }
+        let shared_head = census.records.last().and_then(|previous| {
+            (previous.end == offset && super::has_shareable_terminal(stream, previous))
+                .then(|| offset.checked_sub(1))
+                .flatten()
+        });
+        let ambiguous_prefix_end = shared_head
+            .into_iter()
+            .chain(std::iter::once(offset))
+            .find_map(|head| {
+                let kind = View::u16_be_at(stream, head)?;
+                let signature = fixed_signature(kind, intersection_layout)?;
+                match super::fixed_envelope(stream, head, kind, signature) {
+                    super::FixedEnvelope::Ambiguous { prefix_end } => Some(prefix_end),
+                    super::FixedEnvelope::Absent | super::FixedEnvelope::Unique(_) => None,
+                }
+            });
+        if let Some(prefix_end) = ambiguous_prefix_end {
+            // Both readings claim these bytes as fields. Their shared prefix
+            // stays opaque; scanning inside it would invent new record heads.
+            // The shorter extent does not select either reading's identity.
+            offset = prefix_end;
+            value_boundary = false;
+            continue;
+        }
         let shared_record = consume_shared_record(
             ctx,
             stream,
             offset,
             &census.records,
             intersection_schema_anchor_seen,
+            world_layout,
+            intersection_layout,
         )?;
         let complete_record = if shared_record.is_some() {
             shared_record
@@ -200,7 +249,14 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         let complete_record = if complete_record.is_some() {
             complete_record
         } else {
-            first_complete_record(ctx, stream, offset, intersection_schema_anchor_seen, true)?
+            first_complete_record(
+                ctx,
+                stream,
+                offset,
+                intersection_schema_anchor_seen,
+                true,
+                world_layout,
+            )?
         };
         if let Some(record) = complete_record {
             census.bytes_decoded += record.end - offset;
@@ -264,8 +320,8 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
                 }
             }
         }
-        let fixed = if let Some(signature) = fixed_signature(kind) {
-            consume_fixed(ctx, stream, offset, kind, signature)?
+        let fixed = if let Some(signature) = fixed_signature(kind, intersection_layout) {
+            consume_fixed(ctx, stream, offset, kind, signature, world_layout)?
         } else {
             None
         };
@@ -331,7 +387,7 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         .terminal_null_references
         .as_ref()
         .map_or(0, |tail| tail.end() - tail.offset());
-    census.bytes_decoded += populate_gap_events(ctx, stream, &mut census)?;
+    census.bytes_decoded += populate_gap_events(ctx, stream, &mut census, supported_base)?;
     let body_revision_state_bytes = populate_body_revision_state_tails(ctx, stream, &mut census)?;
     census.bytes_decoded += body_revision_state_bytes;
     Ok(census)
@@ -341,9 +397,10 @@ fn populate_gap_events(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     census: &mut Census,
+    supported_base: bool,
 ) -> Result<usize, CodecError> {
     let mut admitted_bytes = 0;
-    let mut covered = merged_event_spans(ctx, census, true)?;
+    let mut covered = merged_event_spans(ctx, census)?;
     loop {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(covered.len()),
@@ -379,28 +436,20 @@ fn populate_gap_events(
             "NX reference type maps",
         )?;
 
-        let declarations = inline_schema_declarations(ctx, stream, &covered)?;
+        let declarations = if supported_base {
+            super::inline_schema_nodes(ctx, stream, &covered, &census.schema_nodes)?
+        } else {
+            Vec::new()
+        };
         extend_covered_spans(
             ctx,
             &mut covered,
             declarations.iter().map(|event| (event.offset, event.end)),
         )?;
         ctx.extend_vec(
-            &mut census.events.inline_schema_declarations,
+            &mut census.events.schema_nodes,
             declarations,
             "NX inline schema declarations",
-        )?;
-
-        let body_states = inline_body_states(ctx, stream, census, &covered)?;
-        extend_covered_spans(
-            ctx,
-            &mut covered,
-            body_states.iter().map(|event| (event.offset, event.end)),
-        )?;
-        ctx.extend_vec(
-            &mut census.events.inline_body_states,
-            body_states,
-            "NX inline body states",
         )?;
 
         let marker_packets = reference_marker_packets(ctx, stream, &covered)?;
@@ -458,16 +507,10 @@ fn populate_gap_events(
         "NX deltas reference type maps",
     )?;
     ctx.sort_unstable_by(
-        &mut census.events.inline_schema_declarations,
+        &mut census.events.schema_nodes,
         |left, right| left.offset.cmp(&right.offset),
         |_| 0,
         "NX deltas inline schema declarations",
-    )?;
-    ctx.sort_unstable_by(
-        &mut census.events.inline_body_states,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "NX deltas inline body states",
     )?;
     ctx.sort_unstable_by(
         &mut census.events.reference_marker_packets,
@@ -514,7 +557,7 @@ fn populate_body_revision_state_tails(
         return Ok(0);
     }
     let mut byte_len = 0;
-    let covered = merged_event_spans(ctx, census, true)?;
+    let covered = merged_event_spans(ctx, census)?;
     for (start, end) in uncovered_spans(ctx, stream.len(), &covered)? {
         if let Some(revision) = census
             .events

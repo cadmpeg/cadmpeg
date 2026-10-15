@@ -916,7 +916,7 @@ Type-91 records are `type:005b [ff], xmt, flag:u32 BE, reference_status[6]`. The
 
 Types 45, 67, 70, 74, 90, 91, 101, and 141 use an explicit optional `ff` envelope before their body. When `ff` follows the type tag, a complete escaped body owns that byte. The direct body applies only when the escaped family grammar is incomplete. This decision uses no bytes after the selected body.
 
-Status-framed type-38 `INTERSECTION` records end after their six construction references and do not require a following recognized tag. Single-byte `5a` `INTERSECTION_DATA` records use the layout in section 6.3 and end after their sixth construction reference. Both participate in the deltas byte ledger and remain in the semantic lane.
+Status-framed type-38 `INTERSECTION` records end after the construction references in their effective field array and do not require a following recognized tag. The V13 base has five construction pointers; a declaration that appends `intersection_data` adds the sixth pointer. Single-byte `5a` `INTERSECTION_DATA` records use the layout in section 6.3 and end after their sixth construction reference. Both participate in the deltas byte ledger and remain in the semantic lane.
 
 A complete type-101 record whose start lies inside a fixed-record candidate and
 whose end extends beyond that candidate takes precedence over the fixed
@@ -936,25 +936,68 @@ normal. The optional `ff` envelope byte precedes the XMT identity. The record
 ends after the fourth value, participates in
 the deltas byte ledger, and remains in the semantic lane.
 
-Type 70 has the complete deltas record `0046 [ff], xmt, node_id:u32 BE, 04, (01 ref)[4], count:u16 BE, 00000014, 00000001, ref 00, ref 00`. The XMT identity and duplicated trailing reference are non-null, the count is nonzero, and the two trailing references are equal. Each reference uses compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity. The record ends after the second trailing status byte and participates in the deltas byte ledger.
+Type 70 `LIST` has the complete deltas record
+`0046 [ff], xmt, node_id:u32 BE, list_type:u8, notransmit:logical,
+owner 01, next 01, previous 01, list_length:u32 BE, block_length:u32 BE,
+finger_index:u32 BE, finger_block 00, list_block 00`.
+The XMT identity is non-null. `node_id` is zero, `list_type` is 4 (pointer
+list), and `block_length` is 20. `list_length` is the full 32-bit length,
+including zero. `notransmit` is a logical byte. `owner` is a non-null pointer
+to the owning BODY, ASSEMBLY, or WORLD. `next` and `previous` are nullable
+LIST pointers. `finger_index` is in `1..=list_length`, or 1 for an empty list.
+`finger_block` points to a block in the list; `list_block` points to the head
+of its singly linked block chain. These non-null block pointers need not be
+equal. Each pointer is an encoded XMT followed by its stated status byte.
+The record ends after the head pointer status and participates in the deltas
+byte ledger.
 
 Type 45 has the complete deltas record
-`002d [ff], count:u32 BE, xmt, value[n]:f64 BE`, where `n` is `count` or
-`count + 1`. The count is nonzero, the XMT identity is non-null, and every
-value is finite and either zero or normal. When both cardinalities fit the
-remaining bytes, a complete NURBS auxiliary record occupying the candidate
-extra-value start owns those bytes and selects the shorter form. Otherwise, the
-`count + 1` lane applies when it is complete; the `count` lane applies when the
-extra eight bytes are absent. Present non-finite extra bytes invalidate both
-lanes. The optional `ff` envelope byte precedes the count. The record ends after
-its selected value lane, participates in the deltas byte ledger, and remains in
-the semantic lane.
+`002d [ff], count:u32 BE, xmt, value[count]:f64 BE` and is the
+`BSPLINE_VERTICES` node. The count is nonzero, the XMT identity is non-null,
+and every admitted value is finite and either zero or normal. The optional
+`ff` envelope byte precedes the count. The record ends after exactly
+`count * 8` value bytes. Following bytes do not change its cardinality.
+Without the optional envelope, the count starts at offset 2 and the XMT
+identity starts at offset 6 relative to the type tag.
+The record participates in the deltas byte ledger and remains in the semantic
+lane.
 
-Type 74 `ATTDEF_LIST` has the complete deltas record `004a [ff], slot_count:u32 BE, xmt, active_count:u32 BE, zero:u32 BE, ref(1) 01, slot[slot_count]`. Each slot is an encoded XMT followed by status `01`. The first `active_count` slots are non-null references and the remaining slots are null reference `1`; `active_count <= slot_count`. The XMT identity and slot count are non-null. The optional `ff` envelope byte precedes the slot count. The record ends after the declared slot lane, participates in the deltas byte ledger, and does not replace topology or geometry records.
+A NURBS descriptor's `bspline_vertices` pointer identifies this control array.
+For a curve, `count = n_vertices * vertex_dim`. For a surface,
+`count = n_u_vertices * n_v_vertices * vertex_dim`; U is the major index and
+V varies fastest. Each consecutive `vertex_dim` scalars forms one control
+vertex. Non-rational dimension-2 vertices are surface parameters; non-rational
+dimension-3 vertices are model-space coordinates. Rational vertices carry one
+extra dimension: dimension 3 is `(u*w, v*w, w)` and dimension 4 is
+`(x*w, y*w, z*w, w)`. Divide the coordinate lanes by the nonzero weight before
+applying length conversion to model-space coordinates. Surface-parameter
+coordinates keep their support's parameter units. An array without a unique
+compatible descriptor has no assigned coordinate grouping.
+
+Type 74 `POINTER_LIS_BLOCK` has the complete deltas record
+`004a [ff], entry_array_length:u32 BE, xmt, n_entries:u32 BE,
+index_map_offset:u32 BE, next_block 01, entries[entry_array_length]`.
+The variable array count precedes the non-null record XMT. `index_map_offset`
+is zero. `next_block` is a nullable pointer to the next block; null XMT 1
+ends the chain. Each entry is an encoded XMT followed by status `01`.
+The first `n_entries` entries are non-null; the remaining entries are null
+XMT 1. `n_entries` must not exceed the array length. Part-file blocks have
+20 entries; only the first block may have zero populated entries. A block
+used as the root of a multi-part transmit is not subject to the twenty-entry
+limit. Part-file LIST entries reference ATTRIBUTE instances, type 81.
+The optional envelope precedes the array count. The record ends after the
+complete declared entry lane and participates in the deltas byte ledger.
 
 Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, ref 01, ref 01, ref 01, ref 01, mode, ref status`. The XMT identity is non-null, `mode` is `02`, `04`, or `09`, and the final status is binary. The optional `ff` envelope byte precedes the XMT identity. The record ends after the final status byte, participates in the deltas byte ledger, and does not enter the procedural-intersection semantic lane. This two-byte type tag is distinct from the single-byte `5a` intersection record.
 
-A repeated type-101 `WORLD` record is `0065 [ff]` followed by the same nineteen schema-declared instance fields as the inline WORLD form below. The optional `ff` envelope byte precedes the XMT identity. The record ends after the `mesh_offset_data` pointer status. Its reference projection contains the fifteen pointer targets in schema order; it excludes the `alive` logical and the three integer fields. An inline declaration places its schema edit program between `0065` and the WORLD identity.
+A repeated type-101 `WORLD` record is `0065 [ff]` followed by the instance
+fields selected by the preceding WORLD schema. The fifteen-, eighteen-, and
+nineteen-field lists are defined below. The optional envelope precedes the
+XMT identity. The reference projection contains only the pointer targets in
+that declared order. It excludes `alive` and the three integer words. The
+record ends after the final declared field, independently of the next event.
+A WORLD-shaped byte run without established schema state does not select a
+layout.
 
 The state tail of a validated BODY revision begins immediately after its
 eight-reference prefix and ends at the next admitted deltas event or at the end
@@ -1038,93 +1081,119 @@ The reference statuses are `01, 01, 00, 01, 00`. The first reference is the
 null XMT value `1`; the remaining references are non-null. `marker` is `2b` or
 `2d`, every numeric value is finite, and the packet ends after the ninth value.
 
-An inline schema declaration begins with one of eight exact headers. The type-12
-`BODY` form is a 282-byte header beginning `000c2443434349` and ending
-`6d6573685f6f66667365745f6461746100ce00015a`. It declares `lattice`, `mesh`,
-`polyline`, `owner`, `boundary_lattice`, `boundary_mesh`,
-`boundary_polyline`, `index_map_offset`, `index_map`, `node_id_index_map`,
-`schema_embedding_map`, `child`, `lowest_node_id`, and `mesh_offset_data` in
-that order. The header ends at `5a`; following instance-state bytes are not
-part of the declaration.
+The first node of each declared type inserts the schema information from
+section 3.2 between its type tag and its ordinary instance. The edit program
+reconstructs the complete ordered effective field list. `Z` ends the metadata;
+it does not end the node. A variable-length instance then stores its variable
+count as a big-endian u32 before its non-null XMT identity. A fixed instance
+begins with its non-null XMT identity. Only transmitted fields consume value
+storage. Scalar extent zero consumes one value, extent one consumes the
+instance count, and a greater extent consumes that fixed number of values.
+An untransmitted variable field retains its descriptor and count but has no
+value storage.
 
-A type-12 `BODY` header binds the immediately following instance state. The
-compact state is `ref, 00`, where `ref` is a non-null compact or extended XMT.
-The revision state is `ref(3), node_id:u32 BE, ref_status[8], state_bytes`.
-Every reference status is `01`. Its nonempty `state_bytes` tail ends at the
-next exact inline-schema header, the next admitted deltas event, or the end of
-the inflated stream, whichever comes first. Header and instance state retain
-independent byte spans.
+Every pointer value is a nonzero compact or extended XMT reference followed
+by status `00` or `01`. Null pointer value `1` remains distinct from the
+node's non-null identity. Characters and bytes occupy one byte, logicals are
+`00` or `01`, short and word fields occupy two big-endian bytes, and integer
+fields occupy four big-endian bytes. Integer projection preserves all source
+bits. Real values occupy eight big-endian bytes. Interval, vector, and box
+values contain two, three, and six finite binary64 values. A Deltas Hvec
+contains eleven finite binary64 values in the order defined in section 6.3.
+Schema metadata and first-instance values retain separate boundaries inside
+one complete first-node span. A subsequent node or schema program owns its
+own storage.
 
-The type-38 form has the header
-`00260c43434343434343434343434111696e74657273656374696f6e5f6461746100cc00015a`.
-Its common state is `xmt, node_id:u32 BE, ref_status[5], marker:u8,
-linked_state, ref_status(1)`. `xmt` and every reference after `marker` are
-non-null. The first four leading reference statuses are `01`; the fifth is
-`00` or `01` and is non-null when its status is `00`. For marker `2b` or
-`2d`, the common `linked_state` is `ref_status[2], state_ref_status[3]`; the
-linked statuses are `01`, and the state statuses are `00`. The three state references are either
-`xmt + 3, xmt + 2, xmt + 1` or `max(leading_ref, linked_ref) + 1,
-max(leading_ref, linked_ref) + 2, max(leading_ref, linked_ref) + 3` when the fifth leading status is
-`01`. When the fifth leading status is `00`, the three state references are
-that leading reference plus one, two, and three. Marker `2b` also has an alternate
-`linked_state` of `ref_status, state_ref_status[4]`; the linked status is `01`,
-every state status is `00`, and the final three state references are
-consecutive ascending indices. The compact declaration ends after the terminal
-null reference. The nested common form continues with
-`term_schema[22], one:u32 BE, term_ref, 4c3f, value[11]:f64 BE` and requires
-the descending XMT-relative state-reference order. `term_schema` is
-`0029034349087465726d5f757365000000010163435a`, `one` is `1`, and
-`term_ref` equals `xmt + 2`. Every numeric value is finite. The declaration
-ends after the eleventh numeric value.
+The BODY effective field order with both lattice fields is:
 
-The standalone type-41 form has the header
-`0029034349087465726d5f757365000000010163435a`. Its state is
-`one:u32 BE, reference, 4c3f, value[11]:f64 BE`. `one` is `1`, `reference` is
-non-null, and every numeric value is finite. The declaration ends after the
-eleventh numeric value.
+```text
+highest_node_id, attributes_features, attribute_chains, lattice,
+surface, curve, point, mesh, polyline, key, res_size, res_linear,
+ref_instance, next, previous, state, owner, body_type, nom_geom_state,
+shell, boundary_lattice, boundary_surface, boundary_curve, boundary_point,
+boundary_mesh, boundary_polyline, region, edge, vertex, index_map_offset,
+index_map, node_id_index_map, schema_embedding_map, child, lowest_node_id,
+mesh_offset_data
+```
 
-The type-100 form has the 28-byte header
-`00640a4343434343434343434109707265636973696f6e00e500015a`. Its bound
-precision state is `xmt, zero:u32 BE, ref_status(2),
-ref_status(xmt + 1), ref_status(1), transform[13]:f64 BE, one:u32 BE,
-tolerance[3]:f64 BE, ref_status(1)`. Every reference status is `01`. `xmt` is
-non-null. `transform` has exact unit values at elements 0, 4, 8, and 12,
-arbitrary finite translation at elements 9 through 11, and positive zero at
-every other element. `one` is `1`. Every tolerance has the exact sentinel bits
-`c2bc928f996e0000`. The declaration ends after the final reference status.
+This list has 36 fields. The 35-field list omits `boundary_lattice`. The
+34-field list omits both lattice fields. The 29-field list also omits `mesh`,
+`polyline`, `boundary_mesh`, `boundary_polyline`, and `mesh_offset_data`.
+The 27-field list further omits `child` and `lowest_node_id`. Each list is
+selected by its edit program; a following header does not bound a BODY tail.
 
-The type-101 `WORLD` form has a 156-byte header beginning
-`0065134343434343434349046d657368` and ending
-`6d6573685f6f66667365745f6461746100ce00015a`. It declares 19 fields.
-The instance is `xmt, assembly, attribute, body, transform, surface, curve,
-point, mesh, polyline, lattice, alive:u8, attrib_def, attdef_list,
-highest_id:u32 BE, current_id:u32 BE, index_map_offset:u32 BE, index_map,
-schema_embedding_map, mesh_offset_data`. Each pointer field is a compact or
-extended XMT reference followed by its `00` or `01` status byte. `alive` is
-`0` or `1`. The declaration and instance end after the `mesh_offset_data`
-status byte. A following PMARK packet owns its own fields.
+The 27-field BODY has 20 pointers, two integers, two doubles, and three bytes.
+The 29-field BODY has 21 pointers, three integers, two doubles, and three
+bytes. The 34-, 35-, and 36-field forms have 26, 27, and 28 pointers,
+respectively, with three integers, two doubles, and three bytes each. The
+instance length is the XMT identity width, plus four bytes per integer,
+sixteen bytes for the two doubles, three enum bytes, and the sum of each
+pointer's XMT width plus one status byte. A pointer status of zero remains
+part of that field. An extended pointer changes the instance length without
+changing its field count.
 
-The REGION form begins with
-`00130943434343434349056672616d6500e600014341056f776e6572000c00015a`.
-The header is followed by `xmt, state_word:u32 BE, ref_status[4]`. `xmt` is
-non-null. Each reference uses compact or extended XMT encoding and is followed
-by status `01`. The declaration ends after the fourth status byte.
+`highest_node_id` is the upper bound on node identifiers in the body, not a
+record count. `attribute_chains` references the LIST of attribute chains,
+with one chain for each attribute definition used by the body. `surface`,
+`curve`, and `point` head the construction-geometry chains.
+`boundary_surface` and `boundary_curve` head the geometry chains attached
+directly or indirectly to topology. `boundary_point` heads the points
+attached to vertices. `ref_instance` heads the instances that reference the
+body as a part. `region` heads the region chain at the infinite region;
+`edge` heads the non-wireframe edges and `vertex` heads the vertices.
 
-The `ATTDEF_LIST` form begins with
-`004a04434910696e6465785f6d61705f6f666673657400000001016443435a`.
-Its body is the type-74 body without the leading type tag or optional escaped
-envelope: `slot_count:u32 BE, xmt, active_count:u32 BE, zero:u32 BE,
-ref(1) 01, slot[slot_count]`. The type-70 form begins with
-`00460b4349096c6973745f74797065000000010175490a6e6f7472616e736d697400000001016c43434344434344490c66696e6765725f696e646578000000010164490c66696e6765725f626c6f636b03f40001435a`.
-Its body is the type-70 body without the leading type tag or optional escaped
-envelope, with either one trailing `ref 00` or two equal trailing `ref 00`
-fields. The full type-70 record requires the duplicated two-reference form.
-Adjacent inline declarations are independently framed and may occur in either
-order.
+`res_size` stores the transmitted size-box value; `res_linear` stores the
+transmitted modeller linear precision. `body_type` values are `1` solid,
+`2` wire, `3` sheet, and `6` general. `nom_geom_state` values are `1` off
+and `2` on. `state` and the referenced KEY do not determine the transferred
+body geometry. The `shell` link is an obsolete shortcut to a shell in a
+region. `index_map_offset`, `index_map`, `node_id_index_map`, and
+`schema_embedding_map` are indexed-transmit fields; an ordinary unindexed
+body has offset zero and null map pointers.
+
+The REGION field list is `node_id, attributes_features, body, next, previous,
+shell, frame, type, owner`. Its eight-field form omits `frame`. The complete
+instance includes the shell reference, type character, and owner reference.
+Four reference/status pairs do not complete this node.
+
+The INTERSECTION list is `node_id, attributes_features, owner, next, previous,
+geometric_owner, sense, surface[2], chart, start, end, intersection_data`.
+The V13 base list omits `intersection_data`. The appended field has pointer
+class 204. `surface` is one fixed two-pointer field. The three following references and
+`intersection_data` are separate fields. A following LIMIT schema and its
+instance do not belong to this INTERSECTION instance.
+
+The LIMIT list is `type, term_use, hvec[count]`. Its count precedes the XMT
+identity. Each Hvec consumes its complete eleven-double carrier. The two
+character fields and the count remain independent; they are not a fixed
+`4c3f` marker followed by an uncounted numeric tail.
+
+The TRANSFORM list is `node_id, owner, next, previous, rotation_matrix[9],
+translation_vector, scale, flag, perspective_vector, precision`.
+`translation_vector` and `perspective_vector` are three-double vectors.
+`precision` is a status-framed pointer. Neither a constant matrix nor a
+sentinel perspective vector changes those field roles.
+
+The LIST list is `node_id, list_type, notransmit, owner, next, previous,
+list_length, block_length, finger_index, finger_block, list_block`.
+`list_type` is a byte and `notransmit` is a logical. The POINTER_LIS_BLOCK
+list is `n_entries, index_map_offset, next_block, entries[count]`. Its
+variable count precedes the XMT identity; `next_block` is independent of the
+counted entries. These node names correspond to types 70 and 74.
+
+The fifteen-field WORLD list is `assembly, attribute, body, transform,
+surface, curve, point, alive, attrib_def, attdef_list, highest_id, current_id,
+index_map_offset, index_map, schema_embedding_map`. The eighteen-field list
+inserts `mesh, polyline` before `alive` and appends `mesh_offset_data`.
+The nineteen-field list additionally inserts `lattice` after `polyline`.
+Every field except logical `alive` and the three u32 integer words is a
+status-framed pointer. The pointer counts are eleven, fourteen, and fifteen,
+respectively. Every first instance ends after its final declared pointer
+status. A following PMARK packet owns its own fields.
 
 The union of the transmit header, terminal null-reference trailer, those events, tagged-reference lanes,
 the leading PARTITION/current-PMARK pair, historical PMARK packets, reference/type maps,
-reference-marker packets, and inline schema declarations defines the typed
+reference-marker packets, and complete first-use schema nodes defines the typed
 deltas-event coverage. Each maximal nonempty complement interval in the
 inflated stream is one residual span. Residual spans retain their exact offset,
 length, and SHA-256 independently of the containing compressed stream.
@@ -1338,9 +1407,10 @@ embedded type-125 payload header may carry the same envelope escape before its
 payload xmt. Multiplicity and knot references in type 136 are
 sequential encoded xmts, so an extended multiplicity reference shifts the knot
 reference. Type 136 admits dimensions 2, 3, and 4; dimension 4 is homogeneous
-three-dimensional control data. Its status-framed form continues after the form
-byte with either `00 00 00 01` or `00 00 01 04` and three `ref, 00` entries
-ordered as term-use, multiplicity, and knot references. Every reference is
+three-dimensional control data. The periodic, closed, and rational fields are
+binary logical bytes; the curve-form field is one byte. The curve-form byte
+does not select reference cardinality. The status-framed form has three
+`ref, 00` entries ordered as control-array, multiplicity, and knot references. Every reference is
 non-null and may use compact or extended XMT encoding. The complete form ends
 after the knot-reference status.
 
@@ -1352,7 +1422,7 @@ Degree, pole-count, and distinct-knot-count fields have no additional numeric ce
 
 ### 6.3 Procedural intersection curves (type 38 / `0x5a`)
 
-NX stores freeform edges and blend rails as construction relations with branch witnesses. A type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`.
+NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`.
 
 The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, six construction references, record form, and inflated-stream offset. The record form distinguishes type 38 from the single-byte `0x5a` delta twin.
 
@@ -1470,7 +1540,8 @@ Each physical direct or escaped CHART_s record remains a distinct typed source r
 **LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count,
 XMT, the one-byte limit type and inserted one-byte `term_use` field, and exactly
 that many Hvec rows. Their two bytes form the endpoint discriminator.
-Count `1` uses form `L?`; count `2` uses `TF` or `TS`. Partition `xyz3` rows
+Form `L?` has count `1`; forms `TF` and `TS` have count `2`. The count and
+discriminator remain separate fields. Partition `xyz3` rows
 contain three model-space coordinates in metres. Deltas `ext11` rows contain
 `x, y, z, u0, u1, v0, v1, tx, ty, tz, t`, all big-endian binary64. The support
 parameter pairs are `(u0,v0)` and `(u1,v1)`. Only `x,y,z` are model lengths and

@@ -18,6 +18,7 @@ pub(crate) mod test_pmarks;
 pub(crate) mod test_prt;
 pub(crate) mod test_streams;
 pub(crate) mod test_wire;
+pub(crate) mod world;
 
 pub(crate) fn with_decode_context<T>(
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,

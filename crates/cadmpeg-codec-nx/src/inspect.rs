@@ -225,15 +225,15 @@ pub(super) fn summarize(
                         )),
                     )?;
                 }
-                if !census.inline_schema_declarations.is_empty() {
+                if !census.schema_nodes.is_empty() {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
-                        "records.delta.inline_schema_declarations",
+                        "records.delta.schema_nodes",
                         "",
                         false,
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            census.inline_schema_declarations.len(),
+                            census.schema_nodes.len(),
                         )),
                     )?;
                 }

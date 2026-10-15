@@ -55,10 +55,9 @@ use super::om::{
 };
 use super::parasolid::{
     ParasolidAttributeDefinition, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
-    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
-    ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasPartitionPrefix,
+    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasPartitionPrefix,
     ParasolidDeltasPmarkPacket, ParasolidDeltasRecord, ParasolidDeltasReferenceMarkerPacket,
-    ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
+    ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan, ParasolidDeltasSchemaNode,
     ParasolidDeltasTaggedReferenceLane, ParasolidDeltasTerminalNullReferences,
     ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidDeltasType150StatePacket,
     ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
@@ -676,16 +675,12 @@ impl StreamNoted for ParasolidDeltasType150StatePacket {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasInlineSchemaDeclaration {
+impl StreamNoted for ParasolidDeltasSchemaNode {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
-impl StreamNoted for ParasolidDeltasInlineBodyState {
-    fn stream_note(&self) -> (&str, u32, u64) {
-        (&self.id, self.stream_ordinal, self.inflated_offset)
-    }
-}
+
 impl StreamNoted for ParasolidDeltasResidualSpan {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
@@ -1542,37 +1537,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_deltas_inline_schema_declarations",
+        arena: "parasolid_deltas_schema_nodes",
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {
-            tag: Some("DELTAS_INLINE_SCHEMA"),
+            tag: Some("DELTAS_SCHEMA_NODE"),
             note: |ctx, m, r, tag, a| {
-                note_per_stream(
-                    ctx,
-                    &m.parasolid.deltas_inline_schema_declarations,
-                    r,
-                    tag,
-                    a,
-                )
+                note_per_stream(ctx, &m.parasolid.deltas_schema_nodes, r, tag, a)
             },
         },
-        emit: |ctx, m, r, ns| {
-            emit_arena(ctx, &m.parasolid.deltas_inline_schema_declarations, r, ns)
-        },
-        len: |m| m.parasolid.deltas_inline_schema_declarations.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "parasolid_deltas_inline_body_states",
-        exactness: Exactness::ByteExact,
-        phase: Phase::GroupA {
-            tag: Some("DELTAS_INLINE_BODY_STATE"),
-            note: |ctx, m, r, tag, a| {
-                note_per_stream(ctx, &m.parasolid.deltas_inline_body_states, r, tag, a)
-            },
-        },
-        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_inline_body_states, r, ns),
-        len: |m| m.parasolid.deltas_inline_body_states.len(),
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.parasolid.deltas_schema_nodes, r, ns),
+        len: |m| m.parasolid.deltas_schema_nodes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

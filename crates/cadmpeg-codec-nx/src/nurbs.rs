@@ -1245,10 +1245,10 @@ fn curve_descriptor_at(
     let periodic = logical_at(bytes, pos + curve_desc::PERIODIC + shift)?;
     ((poles > 0) && matches!(dimension, 2..=4) && (distinct > 0) && valid_knot_type(knot_type))
         .then_some(())?;
-    if matches!(
-        bytes.get(pos + curve_desc::PERIODIC + shift..pos + curve_desc::LEN + shift),
-        Some([0, 0, 0, 1] | [0, 0, 1, 4])
-    ) {
+    let flags = bytes.get(pos + curve_desc::PERIODIC + shift..pos + curve_desc::LEN + shift)?;
+    // The primary array declares three logical flags and one byte. The form
+    // byte does not restrict the following complete status-reference array.
+    if matches!(flags, [0 | 1, 0 | 1, 0 | 1, _]) {
         let status_references = (|| {
             let mut at = pos + curve_desc::LEN + shift;
             let mut read_reference = || {
@@ -1279,7 +1279,9 @@ fn curve_descriptor_at(
                 at,
             ));
         }
-        allow_compact_fallback.then_some(())?;
+        if matches!(flags, [0, 0, 0, 1] | [0, 0, 1, 4]) {
+            allow_compact_fallback.then_some(())?;
+        }
     }
     let (mult, mult_len) = read_xmt(bytes, pos + 23 + shift)?;
     let (knots, knots_len) = read_xmt(bytes, pos + 23 + shift + mult_len)?;

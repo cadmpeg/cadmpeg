@@ -40,7 +40,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §6.3 "The chart/start-term/end-term witness slots" and `siemens_nx.md` §6.3 "A FIN-carried SP_CURVE is a serialized terminal-branch witness" define endpoint witnesses and ordered procedural-curve branches. They do not define this folded terminal case.
 
-**Need.** We must know the branch to preserve both endpoints and the curve orientation. The count-2 `T?` form also needs an ownership and branch-admission rule; a complete finite Hvec lane alone does not establish either relation.
+**Need.** We must know the branch to preserve both endpoints and the curve orientation. The count-1 `H?` and `T?` forms and the count-2 `T?` form also need ownership and branch-admission rules; a complete finite Hvec lane alone does not establish either relation.
 
 **Note.** A terminal singularity and its nearby branch selector have distinct serialized native parameters. Accumulated chart chords can fall on either side of the selector parameter and do not establish the singularity parameter. Complete physical LIMIT field roles are defined in `siemens_nx.md` §6.3 "**LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count,".
 
@@ -76,30 +76,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the tail fields to transfer the complete body revision state.
 
-### PS-10. Deltas type 45
-
-**Question.** What is the canonical node-type name of deltas type 45 (`002d`), and what does each value mean?
-
-**Known.** `siemens_nx.md` §4.2 "Type 45 has the complete deltas record" defines its count-selected binary64 grammar and record boundary.
-
-**Need.** We must know the name and value roles to transfer the record as typed Parasolid state.
-
-### PS-11. Deltas type 70
-
-**Question.** What is the canonical node-type name of deltas type 70 (`0046`), and what does each field mean?
-
-**Known.** `siemens_nx.md` §4.2 "Type 70 has the complete deltas record" defines its XMT identity, node ID, reference lanes, count, constants, and boundary.
-
-**Need.** We must know the name and field roles to relate the record to its owner and referenced entities.
-
-### PS-12. `ATTDEF_LIST` sentinel reference
-
-**Question.** What is the semantic role of the leading sentinel reference in deltas type 74 `ATTDEF_LIST`?
-
-**Known.** `siemens_nx.md` §4.2 "Type 74 `ATTDEF_LIST` has the complete deltas record" defines the record, active-count rule, sentinel value, slots, and boundary.
-
-**Need.** We must know the role to represent the complete attribute-definition list without an untyped reference.
-
 ### PS-13. Deltas type 90 `GROUP`
 
 **Question.** What does each of the five references and the `02|04` mode in deltas type 90 `GROUP` mean?
@@ -115,14 +91,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Question.** What is the canonical node-type name of deltas type 91 (`005b`), and what does each field mean?
 
 **Known.** `siemens_nx.md` §4.2 "Type-91 records are" defines its XMT identity, binary flag, six status-framed references, and boundary.
-
-**Need.** We must know the name and field roles to transfer the record as typed Parasolid state.
-
-### PS-15. Deltas type 101
-
-**Question.** What is the canonical node-type name of deltas type 101 (`0065`), and what does each field mean?
-
-**Known.** `siemens_nx.md` §4.2 "A complete type-101 record whose start lies inside a fixed-record candidate and" defines its boundary precedence. `siemens_nx.md` §4.2 "A repeated type-101 `WORLD` record is" defines the nineteen-field instance order and pointer projection.
 
 **Need.** We must know the name and field roles to transfer the record as typed Parasolid state.
 
@@ -166,27 +134,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to transfer the packet as typed type-150 state.
 
-### PS-24. Inline deltas schema declarations
-
-**Question.** What is the semantic role of each field in an inline deltas schema declaration?
-
-**Known.** `siemens_nx.md` §4.2 "An inline schema declaration begins with one of eight exact headers." defines the declaration variants, names, signatures, references, states, and byte boundaries.
-
-**Need.** We must know the field roles to construct a typed schema declaration instead of a framed declaration record.
-
 ### PS-25. Inline type-12 `BODY` instance state
 
-**Question.** What does each field in inline type-12 `BODY` instance state mean, and how do its counts constrain its lanes?
+**Question.** What are the dynamic roles and constraints of the BODY fields `attributes_features`, `lattice`, `mesh`, `polyline`, `boundary_lattice`, `boundary_mesh`, `boundary_polyline`, `child`, `lowest_node_id`, and `mesh_offset_data`?
 
-**Known.** `siemens_nx.md` §4.2 "A type-12 `BODY` header binds the immediately following instance state." defines its reference lanes, count fields, scalar lanes, state bytes, and boundary.
+**Known.** `siemens_nx.md` §4.2 "The BODY effective field order with both lattice fields is:" defines the complete effective-field order and the 27-, 29-, 34-, 35-, and 36-field lists. The following paragraphs define pointer cardinalities, complete instance length, geometry and topology chain heads, resolution scalars, body and nominal-geometry enums, and indexed-transmit roles. Section 3.2 defines field extent and the first-instance count and index. Field names, pointer classes, XMT identities, and status bytes define the storage of the remaining fields.
 
-**Need.** We must know the roles and cardinality rules to transfer the complete inline body state.
+**Need.** We must know how the remaining links and the lower node-id field constrain the body and its referenced nodes to assign their semantic roles.
 
 ### PS-09. Delta tag `0x5a` name
 
 **Question.** What is the canonical later-schema node-type name for delta tag `0x5a`?
 
-**Known.** `siemens_nx.md` §4.1 "Type 38 is the XT `INTERSECTION` node." and `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" define tag `0x5a` as the `intersection_data` layout shared with type 38.
+**Known.** `siemens_nx.md` §4.1 "Type 38 is the XT `INTERSECTION` node." and `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after the construction references in their effective field array" define tag `0x5a` as the `intersection_data` layout shared with type 38.
 
 **Need.** We must know the name to give the node one stable schema identity.
 
@@ -272,7 +232,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What anchors a standalone `0x5a` intersection record in a deltas stream?
 
-**Known.** `siemens_nx.md` §4.2 "The type-38 form has the header" gives the exact schema prefix, in which the name `intersection_data` precedes the `0x5a` tag at a fixed distance. `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" states that these records occur standalone and need no following recognized tag.
+**Known.** `siemens_nx.md` §4.2 "The INTERSECTION list is" defines the appended `intersection_data` field and the endpoint of its first instance. An edit program and that instance are separate from a later `0x5a` record. `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after the construction references in their effective field array" states that these records occur standalone and need no following recognized tag.
 
 **Need.** We must know the anchor to admit exactly the real records. The decoder treats every `0x5a` byte as a candidate and accepts it when a header reference equals one, or when the name occurs anywhere in about eighty preceding bytes. Neither condition is the fixed prefix. A record whose header is farther upstream is dropped, and a payload byte run that satisfies the structural tests enters the model as a curve.
 

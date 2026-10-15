@@ -265,10 +265,12 @@ fn world_record(escaped: bool) -> Vec<u8> {
 }
 
 #[test]
-fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate() {
+fn deltas_declared_world_record_takes_precedence_over_an_overlapping_fixed_candidate() {
     let type_101 = world_record(false);
 
-    let mut stream = 13u16.to_be_bytes().to_vec();
+    let mut stream = crate::test_support::world::first_node(19);
+    let declaration_len = stream.len();
+    stream.extend_from_slice(&13u16.to_be_bytes());
     stream.extend(encoded_xmt(256));
     stream.extend_from_slice(&1u32.to_be_bytes());
     for reference in [1u32, 2, 1, 3, 1, 1, 4] {
@@ -290,8 +292,8 @@ fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate()
             .collect::<Vec<_>>(),
         [101]
     );
-    assert_eq!(census.records[0].offset, 29);
-    assert_eq!(census.bytes_decoded(), type_101.len());
+    assert_eq!(census.records[0].offset, declaration_len + 29);
+    assert_eq!(census.bytes_decoded(), declaration_len + type_101.len());
 }
 
 #[test]
@@ -731,7 +733,7 @@ fn deltas_walks_group_records_without_leading_statuses() {
 }
 
 #[test]
-fn deltas_walks_complete_attdef_lists() {
+fn deltas_walks_complete_pointer_list_blocks() {
     let mut direct = vec![0, 74];
     direct.extend_from_slice(&3u32.to_be_bytes());
     direct.extend_from_slice(&10u16.to_be_bytes());
@@ -755,7 +757,7 @@ fn deltas_walks_complete_attdef_lists() {
     assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["ATTDEF_LIST"],
+            ["POINTER_LIS_BLOCK"],
         1
     );
     assert_eq!(census.bytes_decoded(), direct_len);
@@ -802,8 +804,10 @@ fn deltas_walks_complete_attdef_lists() {
 }
 
 #[test]
-fn deltas_walks_complete_type_101_records() {
-    let mut direct = world_record(false);
+fn deltas_walks_complete_declared_world_records() {
+    let mut direct = crate::test_support::world::first_node(19);
+    let declaration_len = direct.len();
+    direct.extend_from_slice(&world_record(false));
     let direct_len = direct.len();
     direct.extend_from_slice(&[0xfe, 0xdc]);
 
@@ -818,10 +822,12 @@ fn deltas_walks_complete_type_101_records() {
         census.records[0].family.references(),
         (3u32..18).collect::<Vec<_>>()
     );
-    assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["TYPE_101"],
+        census.records[0].canonical_bytes,
+        direct[declaration_len..direct_len]
+    );
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["WORLD"],
         1
     );
     assert_eq!(census.bytes_decoded(), direct_len);
@@ -830,10 +836,14 @@ fn deltas_walks_complete_type_101_records() {
         crate::deltas::semantic_residual(ctx, &direct)
     })
     .unwrap();
-    assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[..declaration_len], &direct[..declaration_len]);
+    assert!(residual[declaration_len..direct_len]
+        .iter()
+        .all(|byte| *byte == 0xff));
     assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
 
-    let mut escaped = world_record(true);
+    let mut escaped = crate::test_support::world::first_node(19);
+    escaped.extend_from_slice(&world_record(true));
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
             .unwrap()
@@ -843,15 +853,15 @@ fn deltas_walks_complete_type_101_records() {
     );
 
     // WORLD alive follows ten status-framed pointers after kind/envelope/XMT.
-    escaped[35] = 2;
+    escaped[declaration_len + 35] = 2;
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
             .unwrap()
             .records
             .is_empty()
     );
-    escaped[35] = 1;
-    escaped[7] = 2; // Unknown first-pointer status.
+    escaped[declaration_len + 35] = 1;
+    escaped[declaration_len + 7] = 2; // Unknown first-pointer status.
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &escaped))
             .unwrap()
@@ -998,13 +1008,13 @@ mod intersection_and_auxiliary_records;
 
 #[test]
 fn deltas_walks_complete_type_45_records() {
-    fn record(escape: bool, xmt: u32, values: &[f64], count_offset: usize) -> Vec<u8> {
+    fn record(escape: bool, xmt: u32, values: &[f64]) -> Vec<u8> {
         let mut bytes = 45u16.to_be_bytes().to_vec();
         if escape {
             bytes.push(0xff);
         }
         bytes.extend_from_slice(
-            &u32::try_from(values.len() - count_offset)
+            &u32::try_from(values.len())
                 .expect("test value count")
                 .to_be_bytes(),
         );
@@ -1015,8 +1025,8 @@ fn deltas_walks_complete_type_45_records() {
         bytes
     }
 
-    let direct = record(false, 33_000, &[1.0, -2.0, 3.0, 4.0, 5.0], 1);
-    let escaped = record(true, 40_000, &[0.0, 0.25, -0.5, 0.75, 1.0], 1);
+    let direct = record(false, 33_000, &[1.0, -2.0, 3.0, 4.0, 5.0]);
+    let escaped = record(true, 40_000, &[0.0, 0.25, -0.5, 0.75, 1.0]);
     let mut stream = direct.clone();
     stream.extend_from_slice(&escaped);
     let decoded_len = stream.len();
@@ -1042,7 +1052,7 @@ fn deltas_walks_complete_type_45_records() {
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[direct, escaped].concat()));
 
-    let mut counted = record(false, 41_000, &[1.0, 2.0, 3.0], 0);
+    let mut counted = record(false, 41_000, &[1.0, 2.0, 3.0]);
     let counted_end = counted.len();
     let mut surface_header = 125u16.to_be_bytes().to_vec();
     surface_header.extend(encoded_xmt(42_000));
@@ -1068,7 +1078,7 @@ fn deltas_walks_complete_type_45_records() {
         [(45, 0, counted_end), (125, counted_end, counted.len())]
     );
 
-    let mut counted = record(false, 41_001, &[1.0, 2.0, 3.0], 0);
+    let mut counted = record(false, 41_001, &[1.0, 2.0, 3.0]);
     let counted_end = counted.len();
     let mut curve_header = 135u16.to_be_bytes().to_vec();
     curve_header.extend(encoded_xmt(42_001));
@@ -1088,7 +1098,7 @@ fn deltas_walks_complete_type_45_records() {
         [(45, 0, counted_end), (135, counted_end, counted.len())]
     );
 
-    let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN], 1);
+    let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN]);
     nonfinite.extend_from_slice(&[0xfe, 0xdc]);
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
@@ -1099,7 +1109,7 @@ fn deltas_walks_complete_type_45_records() {
         .is_empty()
     );
 
-    let subnormal = record(false, 12, &[1.0, 2.0, f64::from_bits(1)], 0);
+    let subnormal = record(false, 12, &[1.0, 2.0, f64::from_bits(1)]);
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
             ctx, &subnormal
@@ -1112,7 +1122,7 @@ fn deltas_walks_complete_type_45_records() {
 
 #[test]
 fn deltas_walks_complete_type_70_records() {
-    fn record(escape: bool, xmt: u32, count: u16, trailing_reference: u32) -> Vec<u8> {
+    fn record(escape: bool, xmt: u32, count: u32, trailing_reference: u32) -> Vec<u8> {
         let mut bytes = 70u16.to_be_bytes().to_vec();
         if escape {
             bytes.push(0xff);
@@ -1120,9 +1130,10 @@ fn deltas_walks_complete_type_70_records() {
         bytes.extend(encoded_xmt(xmt));
         bytes.extend_from_slice(&0u32.to_be_bytes());
         bytes.push(4);
-        for reference in [3u32, 1, 1, 0] {
-            bytes.push(1);
+        bytes.push(1); // notransmit
+        for reference in [3u32, 1, 1] {
             bytes.extend(encoded_xmt(reference));
+            bytes.push(1);
         }
         bytes.extend_from_slice(&count.to_be_bytes());
         bytes.extend_from_slice(&20u32.to_be_bytes());
@@ -1144,27 +1155,30 @@ fn deltas_walks_complete_type_70_records() {
             .unwrap();
 
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["TYPE_70"],
+        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()["LIST"],
         2
     );
     assert_eq!(census.bytes_decoded(), stream.len());
     assert_eq!(census.records[0].canonical_bytes, direct);
     assert_eq!(census.records[0].family.node_id(), Some(0));
-    assert_eq!(census.records[0].family.references(), [3, 1, 1, 0, 52, 52]);
+    assert_eq!(census.records[0].family.references(), [3, 1, 1, 52, 52]);
     assert_eq!(census.records[1].canonical_bytes, escaped);
     assert_eq!(census.records[1].xmt, 40_000);
 
-    let mut mismatched = record(false, 7, 11, 52);
-    let end = mismatched.len();
-    mismatched[end - 2] = 53;
+    let mut distinct = record(false, 7, 65_538, 52);
+    let end = distinct.len();
+    distinct[end - 2] = 53;
+    let census =
+        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &distinct))
+            .unwrap();
+    assert_eq!(census.records[0].family.references(), [3, 1, 1, 52, 53]);
+    let mut invalid = distinct.clone();
+    invalid[end - 1] = 1; // head pointer must retain status zero
     assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx,
-            &mismatched
-        ))
-        .unwrap()
-        .records
-        .is_empty()
+        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &invalid))
+            .unwrap()
+            .records
+            .is_empty()
     );
 }
 
@@ -1387,6 +1401,8 @@ fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
     assert_eq!(census.records[2].family.node_id(), Some(42));
     assert_eq!(census.records[2].family.position(), Some([1.0, 2.0, 3.0]));
 }
+
+mod fixed_envelopes;
 
 #[test]
 fn merged_deltas_full_record_replaces_partition_node() {

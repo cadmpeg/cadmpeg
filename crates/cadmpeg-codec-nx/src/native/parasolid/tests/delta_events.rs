@@ -2,11 +2,9 @@
 use crate::parasolid::Stream;
 use cadmpeg_core::CodecError;
 
-use crate::deltas::inline_schema_fields::InlineSchemaFields;
-
 fn deltas_type_45(xmt: u16) -> Vec<u8> {
     let mut bytes = 45u16.to_be_bytes().to_vec();
-    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&2u32.to_be_bytes());
     bytes.extend_from_slice(&xmt.to_be_bytes());
     bytes.extend_from_slice(&1.25f64.to_be_bytes());
     bytes.extend_from_slice(&2.5f64.to_be_bytes());
@@ -91,11 +89,7 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     let revision_state_tail = [0xde, 0xad, 0xbe, 0xef];
     bytes.extend_from_slice(&revision_state_tail);
     let type_45_offset = bytes.len();
-    bytes.extend_from_slice(&45u16.to_be_bytes());
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    bytes.extend_from_slice(&10u16.to_be_bytes());
-    bytes.extend_from_slice(&1.25f64.to_be_bytes());
-    bytes.extend_from_slice(&2.5f64.to_be_bytes());
+    bytes.extend(deltas_type_45(10));
     bytes.extend_from_slice(&[0xdd, 0xee]);
     let tombstone_offset = bytes.len();
     bytes.extend_from_slice(&[0, 29, 0, 11, 0, 1]);
@@ -537,7 +531,7 @@ fn deltas_events_subtract_reference_marker_packets_from_residuals() {
 }
 
 #[test]
-fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
+fn deltas_events_subtract_schema_nodes_from_residuals() {
     let mut bytes = [0xaa, 0xbb].to_vec();
     bytes.extend(deltas_type_45(10));
     let declaration_offset = bytes.len();
@@ -552,6 +546,12 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
         bytes.extend_from_slice(&reference.to_be_bytes());
         bytes.push(1);
     }
+    for reference in [10u16, 11] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(0);
+    }
+    bytes.push(b'S');
+    bytes.extend_from_slice(&[0, 3, 1]);
     let declaration_end = bytes.len();
     bytes.extend(deltas_type_45(11));
     let suffix_offset = bytes.len();
@@ -568,17 +568,30 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.inline_schema_declarations.len(), 1);
-    let declaration = &events.inline_schema_declarations[0];
+    assert_eq!(events.schema_nodes.len(), 1);
+    let declaration = &events.schema_nodes[0];
+    let fields = serde_json::to_value(&declaration.fields).unwrap();
+    assert_eq!(fields["definition"]["kind"], 19);
+    assert_eq!(fields["definition"]["fields"].as_array().unwrap().len(), 9);
+    assert_eq!(fields["schema_byte_len"], 33);
+    assert_eq!(fields["xmt"], 11);
     assert_eq!(
-        declaration.fields,
-        InlineSchemaFields::Region {
-            xmt: 11u32.try_into().unwrap(),
-            state_word: 5,
-            references: [1, 3, 1, 9],
-        }
+        fields["values"][0],
+        serde_json::json!([{"type":"integer","value":5}])
     );
-    assert_eq!(declaration.byte_len, 51);
+    assert_eq!(
+        fields["values"][6],
+        serde_json::json!([{"type":"pointer","value":{"target":11,"status":false}}])
+    );
+    assert_eq!(
+        fields["values"][7],
+        serde_json::json!([{"type":"char","value":83}])
+    );
+    assert_eq!(
+        fields["values"][8],
+        serde_json::json!([{"type":"pointer","value":{"target":3,"status":true}}])
+    );
+    assert_eq!(declaration.byte_len, 61);
     assert_eq!(
         declaration.inflated_offset,
         cadmpeg_core::decode::u64_from_index(declaration_offset)

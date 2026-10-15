@@ -1993,7 +1993,7 @@ note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sen
 name = "intersection_type_38"
 kind = "byte"
 section = "6.3"
-anchor = "A type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`."
+anchor = "The modern type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`."
 size = 31
 endianness = "big"
 note = "§4.1's fixed-record table has no row for type 38; the 31-byte total here is the parser's constant, which the six stated reference offsets close exactly. Recorded in the pull request."
@@ -2192,6 +2192,30 @@ size = 4
 note = "Type tag and the encoded XMT identity."
 
 [[record]]
+name = "nurbs_control_array_count_prefix"
+kind = "byte"
+section = "4.2"
+anchor = "Without the optional envelope, the count starts at offset 2 and the XMT"
+size = 6
+endianness = "big"
+note = "Relative to the type tag without the optional ff envelope. The variable-width XMT identity follows this prefix at offset 6."
+
+[[record.field]]
+name = "type_tag"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "`002d [ff], count:u32 BE, xmt, value[count]:f64 BE`"
+value = 45
+
+[[record.field]]
+name = "count"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "Without the optional envelope, the count starts at offset 2 and the XMT"
+
+[[record]]
 name = "nurbs_curve_descriptor_prefix"
 kind = "byte"
 section = "6.2"
@@ -2278,7 +2302,7 @@ anchor = "A compact-index lane is a concatenation of entries."
 
 [[not_applicable]]
 area = "`b5`-style deltas record grammars (§4.2, §9.2-§9.4)"
-reason = "Every reference slot is a variable-width encoded XMT index followed by a status byte, so field positions shift per record. The spec states field order and inline schema-header byte strings, not offsets."
+reason = "Every reference slot is a variable-width encoded XMT index followed by a status byte, so field positions shift per record. Effective schema programs determine field order and variable extents, so these productions have no fixed byte offsets."
 section = "4.2"
 anchor = "Records are not length-prefixed; they self-delimit by typed decode."
 

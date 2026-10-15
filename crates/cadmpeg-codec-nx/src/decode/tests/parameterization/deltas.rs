@@ -88,7 +88,17 @@ fn decode_reports_status_framed_deltas_records_and_tombstones() {
 
 #[test]
 fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
-    let stream = variable_status_framed_deltas_stream();
+    let ambiguous = variable_status_framed_deltas_stream();
+    let ambiguous_census = crate::test_support::with_decode_context(|ctx| {
+        crate::deltas::census::walk(ctx, &ambiguous)
+    })
+    .unwrap();
+    assert!(ambiguous_census
+        .records
+        .iter()
+        .all(|record| record.kind() != 15));
+    let mut stream = deltas_loop_partition_stream();
+    stream.extend_from_slice(&ambiguous[DELTAS_PREAMBLE.len()..]);
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let attributes = &result

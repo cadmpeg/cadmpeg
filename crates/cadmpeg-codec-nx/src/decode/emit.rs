@@ -2139,12 +2139,12 @@ pub(super) fn source_meta(
                 census.reference_marker_packets.len(),
             )?;
         }
-        if !census.inline_schema_declarations.is_empty() {
+        if !census.schema_nodes.is_empty() {
             insert_source_attribute(
                 ctx,
                 &mut attributes,
-                format_args!("deltas.{index}.inline_schema_declarations"),
-                census.inline_schema_declarations.len(),
+                format_args!("deltas.{index}.schema_nodes"),
+                census.schema_nodes.len(),
             )?;
         }
         for (name, count) in census.full_counts(ctx)? {
