@@ -477,7 +477,11 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
         .expect("service resource budget"));
     assert_eq!(
         quotient.find(1).expect("service forest traversal"),
@@ -541,7 +545,11 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         MeshQuotient::new((0..6).map(|_| Arc::new(HashSet::from([0, 1, 2]))).collect());
 
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
         .expect("service resource budget"));
     assert_eq!(
         quotient.find(1).expect("service forest traversal"),
@@ -601,7 +609,11 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
     );
 
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
         .expect("service resource budget"));
     assert_eq!(
         quotient.find(1).expect("service forest traversal"),
@@ -667,7 +679,11 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         13
     );
     assert!(search
-        .propagate_forced_face_equations(&mut quotient)
+        .propagate_forced_face_equations_from(
+            &mut quotient,
+            None,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
         .expect("service resource budget"));
     assert_eq!(
         quotient.root_count().expect("service quotient traversal"),
