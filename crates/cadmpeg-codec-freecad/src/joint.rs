@@ -235,8 +235,51 @@ pub(crate) fn transfer_neutral(
     if records.is_empty() {
         return Ok(Vec::new());
     }
+    let needs_occurrence_index = !occurrences.is_empty()
+        && ctx
+            .find_by(
+                &mut records.iter(),
+                |record| {
+                    Ok(match &record.body {
+                        JointBody::Grounded { reference, .. } => {
+                            reference.as_ref().is_some_and(|reference| {
+                                reference.object().is_some() && reference.document().is_none()
+                            })
+                        }
+                        JointBody::Pair { connectors, .. } => {
+                            match (&connectors[0].reference, &connectors[1].reference) {
+                                (Some(first), Some(second))
+                                    if first.object().is_some() && second.object().is_some() =>
+                                {
+                                    first.document().is_none() || second.document().is_none()
+                                }
+                                _ => false,
+                            }
+                        }
+                    })
+                },
+                "fcstd joint occurrence demand",
+            )?
+            .is_some();
     let mut occurrence_by_native = BTreeMap::new();
-    let mut occurrence_indexed = false;
+    if needs_occurrence_index {
+        let mut input = occurrences.iter();
+        while input.len() != 0 {
+            let Some(occurrence) = ctx.next_charged(&mut input, "fcstd joint occurrences")? else {
+                break;
+            };
+            if let Some(native) = occurrence.native_ref.as_deref() {
+                lookup_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut occurrence_by_native,
+                        native,
+                        &occurrence.id,
+                        "fcstd joint occurrence index",
+                    )
+                })?;
+            }
+        }
+    }
     let mut output = Vec::new();
     let mut records = records.iter();
     while records.len() != 0 {
@@ -259,41 +302,13 @@ pub(crate) fn transfer_neutral(
                 }
             }
         };
-        if !occurrence_indexed
-            && usable_references.is_some_and(|references| {
-                references
-                    .into_iter()
-                    .flatten()
-                    .any(|reference| reference.document().is_none())
-            })
-        {
-            let mut input = occurrences.iter();
-            while input.len() != 0 {
-                let Some(occurrence) = ctx.next_charged(&mut input, "fcstd joint occurrences")?
-                else {
-                    break;
-                };
-                if let Some(native) = occurrence.native_ref.as_deref() {
-                    lookup_storage.with_storage(|| {
-                        ctx.insert_btree_map(
-                            &mut occurrence_by_native,
-                            native,
-                            &occurrence.id,
-                            "fcstd joint occurrence index",
-                        )
-                    })?;
-                }
-            }
-            occurrence_indexed = true;
-        }
         let id = usable_references
             .map(|_| {
-                JointId::mint(crate::native::model_id_charged(
+                JointId::mint_for_decode(
                     ctx,
-                    "joint",
-                    record.object(),
-                    "constraint",
-                )?)
+                    crate::native::model_id_charged(ctx, "joint", record.object(), "constraint")?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)
             })
             .transpose()?;
