@@ -89,14 +89,7 @@ fn point_index(points: &[cadmpeg_ir::features::FinitePoint3]) -> HashMap<[i64; 3
     super::super::point_index(points).expect("service budget")
 }
 
-fn merge_pcurve_candidate(
-    pcurves: &mut BTreeMap<u32, B5Pcurve>,
-    conflicts: &mut HashSet<u32>,
-    candidate: B5Pcurve,
-) {
-    super::super::merge_pcurve_candidate(pcurves, conflicts, candidate);
-}
-
+use super::super::merge_pcurve_candidate;
 use super::super::merge_surface_candidate;
 
 fn resolve_surface_aliases(

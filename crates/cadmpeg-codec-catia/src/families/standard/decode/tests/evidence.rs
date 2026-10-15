@@ -23,7 +23,7 @@ use crate::families::standard::decode::standard_line_pair_solution_is_simple_cac
 use crate::families::standard::decode::standard_native_support_endpoint_pair;
 use crate::families::standard::decode::standard_object_evidence_from_streams;
 use crate::families::standard::decode::standard_plane_normals_from_face_frames;
-use crate::families::standard::decode::standard_shared_boundary_group_domains as charged_shared_boundary_group_domains;
+use crate::families::standard::decode::standard_shared_boundary_group_domains;
 use crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::standard_surface_evidence;
 use crate::families::standard::decode::StandardEdgeSupport;
@@ -60,22 +60,6 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
-
-fn standard_shared_boundary_group_domains(
-    supports: &[StandardCurveSupport],
-    original: &[Vec<[usize; 2]>],
-    filtered: &mut [Vec<[usize; 2]>],
-    edge_identity_evidence: &[bool],
-    boundary_witnesses: &[bool],
-) {
-    charged_shared_boundary_group_domains(
-        supports,
-        original,
-        filtered,
-        edge_identity_evidence,
-        boundary_witnesses,
-    );
-}
 
 fn standard_shared_nurbs_boundary_pair_options(
     left: &SurfaceGeometry,

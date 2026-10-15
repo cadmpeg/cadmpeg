@@ -2463,14 +2463,12 @@ fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)
 #[cfg(test)]
 mod tests {
     use super::{
-        oriented_closed_model_endpoints as oriented_endpoints_with_context, zero_entity_cone,
-        zero_entity_cylinder, zero_entity_edge_strides, zero_entity_fixed_logical_length,
-        zero_entity_loops_from_records as loops_with_context,
+        oriented_closed_model_endpoints, zero_entity_cone, zero_entity_cylinder,
+        zero_entity_edge_strides, zero_entity_fixed_logical_length, zero_entity_loops_from_records,
         zero_entity_model_curve as model_curve_with_context, zero_entity_model_curve_construction,
-        zero_entity_neutral_pcurve as neutral_pcurve_with_context,
-        zero_entity_nurbs_layout as nurbs_layout_with_context, zero_entity_nurbs_shape,
-        zero_entity_oriented_use_pairs, zero_entity_ownership_root, zero_entity_ownership_roots,
-        zero_entity_record_inventory as inventory_with_context, zero_entity_records,
+        zero_entity_neutral_pcurve as neutral_pcurve_with_context, zero_entity_nurbs_layout,
+        zero_entity_nurbs_shape, zero_entity_oriented_use_pairs, zero_entity_ownership_root,
+        zero_entity_ownership_roots, zero_entity_record_inventory, zero_entity_records,
         zero_entity_support_occurrence as support_occurrence_with_context,
         zero_entity_support_runs, zero_entity_surface_at as surface_at_with_context,
         zero_entity_surface_point, zero_entity_surfaces, zero_entity_torus,
@@ -2489,17 +2487,6 @@ mod tests {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::scalar::FiniteReal;
     use std::num::NonZeroUsize;
-
-    fn zero_entity_record_inventory(data: &[u8]) -> Vec<super::ZeroEntityRecordIdentity> {
-        inventory_with_context(data)
-    }
-
-    fn zero_entity_nurbs_layout(
-        data: &[u8],
-        record: usize,
-    ) -> Option<super::ZeroEntityNurbsLayout> {
-        nurbs_layout_with_context(data, record)
-    }
 
     fn zero_entity_surface_at(
         data: &[u8],
@@ -2546,20 +2533,6 @@ mod tests {
             model_curve_with_context(ctx, surface, pcurve, uv_endpoints, record, refusal)
         })
         .expect("test model curve fits the service profile")
-    }
-
-    fn zero_entity_loops_from_records(
-        data: &[u8],
-        records: &[super::ZeroEntityRecord],
-    ) -> Vec<super::ZeroEntityLoop> {
-        loops_with_context(data, records)
-    }
-
-    fn oriented_closed_model_endpoints(
-        endpoints: &[Option<[FinitePoint3; 2]>],
-        forward_senses: &[bool],
-    ) -> Option<Vec<[FinitePoint3; 2]>> {
-        oriented_endpoints_with_context(endpoints, forward_senses)
     }
 
     #[test]
