@@ -864,22 +864,23 @@ pub(crate) fn project_spatial_sketch_design(
         );
     }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
-    let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
+    let mut entities_by_sketch = HashMap::<_, Vec<_>>::new();
     for entity in &entities {
-        if !spatial_ids.contains(&entity.sketch) {
-            spatial_ids.insert(entity.sketch.clone());
-        }
+        entities_by_sketch
+            .entry(&entity.sketch)
+            .or_default()
+            .push(entity);
     }
     let mut sketches = Vec::new();
     let mut capped_profile_searches = 0usize;
     for placement in placements {
         let id = crate::ids::neutral_spatial_sketch_id(placement);
-        if !spatial_ids.contains(&id) {
+        let Some(sketch_entities) = entities_by_sketch.get(&id) else {
             continue;
-        }
+        };
         let budget = cadmpeg_core::decode::WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK);
         let profiles = if let Some(profiles) =
-            closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance, &budget)?
+            closed_spatial_sketch_profiles(ctx, sketch_entities, linear_tolerance, &budget)?
         {
             profiles
         } else {
@@ -928,11 +929,11 @@ pub(crate) fn project_spatial_sketch_constraints(
         SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
+    let spatial_ids: HashSet<_> = entities.iter().map(|entity| &entity.sketch).collect();
     let mut sketches = HashMap::new();
     for placement in placements {
         let id = crate::ids::neutral_spatial_sketch_id(placement);
-        {}
-        if !entities.iter().any(|entity| entity.sketch == id) {
+        if !spatial_ids.contains(&id) {
             continue;
         }
         let Some((key, value)) = (|| {
@@ -994,10 +995,10 @@ pub(crate) fn project_spatial_sketch_constraints(
                     .copied()?;
                 semantic_entities.push(entity);
             }
-            let mut members = Vec::new();
-            for entity in &semantic_entities {
-                members.push(entity.id().clone());
-            }
+            let members: Vec<_> = semantic_entities
+                .iter()
+                .map(|entity| entity.id().clone())
+                .collect();
             let mut distinct = HashSet::new();
             for member in &members {
                 distinct.insert(member);

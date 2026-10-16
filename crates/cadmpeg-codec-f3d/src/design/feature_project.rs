@@ -1118,9 +1118,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             );
                             let bodies = match selection {
                                 cadmpeg_ir::features::BodySelection::Resolved { bodies, native } => {
-                                    for body in bodies.as_slice() {
-                                        inserted_bodies.push(body.clone());
-                                    }
+                                    inserted_bodies.extend_from_slice(bodies.as_slice());
                                     cadmpeg_ir::features::InsertedBodies::Resolved { native }
                                 }
                                 _ => cadmpeg_ir::features::InsertedBodies::Native(
@@ -5751,9 +5749,7 @@ fn resolved_surface_patch_path(
                     edges: group_edges, ..
                 } = path
                 {
-                    for edge in group_edges {
-                        edges.push(edge.clone());
-                    }
+                    edges.extend_from_slice(group_edges);
                 }
             }
             let members = cadmpeg_ir::features::SelectionMembers::try_from(edges);
@@ -5773,9 +5769,7 @@ fn resolved_surface_patch_path(
         let mut edges = Vec::new();
         for path in &paths {
             if let PathRef::Edges(group_edges) = path {
-                for edge in group_edges {
-                    edges.push(edge.clone());
-                }
+                edges.extend_from_slice(group_edges);
             }
         }
         return Ok(PathRef::Edges(edges));
@@ -6828,10 +6822,10 @@ fn project_boundary_fill(
             return None;
         }
     }
-    let mut selected_cells = Vec::new();
-    for cell in cells {
-        selected_cells.push(BodySelection::Native(cell.id.clone()));
-    }
+    let selected_cells: Vec<_> = cells
+        .iter()
+        .map(|cell| BodySelection::Native(cell.id.clone()))
+        .collect();
     let selected_cells = selected_cells.try_into().ok()?;
     Some(FeatureDefinition::Operation(
         FeatureOperation::BoundaryFill {
@@ -8107,8 +8101,7 @@ pub(super) const SPATIAL_PROFILE_SEARCH_WORK: usize = 1 << 24;
 /// exhausts `budget`.
 pub(super) fn closed_spatial_sketch_profiles(
     ctx: &DecodeContext<'_>,
-    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
-    entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+    entities: &[&cadmpeg_ir::sketches::SpatialSketchEntity],
     tolerance: f64,
     budget: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<Vec<cadmpeg_ir::sketches::SpatialSketchProfile>>, CodecError> {
@@ -8123,7 +8116,8 @@ pub(super) fn closed_spatial_sketch_profiles(
     let mut edges = Vec::new();
     for entity in entities
         .iter()
-        .filter(|entity| entity.sketch == *sketch && !entity.construction)
+        .copied()
+        .filter(|entity| !entity.construction)
     {
         match entity.geometry.definition() {
             SpatialSketchGeometryDefinition::Circle {

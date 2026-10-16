@@ -1304,11 +1304,7 @@ fn resolved_face_operand(
     }
     let candidates = face_operand_candidates(operand);
     if !operand.alternate_selector_candidate_faces.is_empty() {
-        let mut faces = Vec::new();
-        for face in candidates {
-            faces.push(face.clone());
-        }
-        return Ok(Some(faces));
+        return Ok(Some(candidates.to_vec()));
     }
     if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face {
         let mut referenced = Vec::new();
@@ -1326,11 +1322,7 @@ fn resolved_face_operand(
     if !operand.unreferenced_candidate_faces.is_empty()
         && complete_counted_face_recipe(operand).is_some()
     {
-        let mut faces = Vec::new();
-        for face in candidates {
-            faces.push(face.clone());
-        }
-        return Ok(Some(faces));
+        return Ok(Some(candidates.to_vec()));
     }
     let [face] = candidates else { return Ok(None) };
     Ok(Some(vec![face.clone()]))
@@ -1348,11 +1340,7 @@ fn explicit_bounded_face_candidates(
         return None;
     }
     if !operand.candidate_faces.is_empty() && operand.unreferenced_candidate_faces.is_empty() {
-        let mut candidates = Vec::new();
-        for face in &operand.candidate_faces {
-            candidates.push(face.clone());
-        }
-        return Some(candidates);
+        return Some(operand.candidate_faces.clone());
     }
 
     let mut lanes = HashMap::<i64, Vec<cadmpeg_ir::ids::FaceId>>::new();
@@ -1387,11 +1375,7 @@ fn explicit_bounded_face_candidates(
     if next.first().is_some_and(|other| other.len() == lane.len()) {
         return None;
     }
-    let mut selected = Vec::new();
-    for face in lane {
-        selected.push(face.clone());
-    }
-    Some(selected)
+    Some(lane.clone())
 }
 
 fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
@@ -1940,26 +1924,24 @@ pub(crate) fn historical_face_operand_candidates(
     operand: &DesignFaceOperand,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
     if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face {
-        let mut referenced = Vec::new();
-        for candidate in operand.recipe_references.iter().flat_map(|reference| {
-            reference
-                .candidate_faces
-                .iter()
-                .chain(&reference.alternate_selector_faces)
-        }) {
-            referenced.push(candidate.clone());
-        }
+        let mut referenced: Vec<_> = operand
+            .recipe_references
+            .iter()
+            .flat_map(|reference| {
+                reference
+                    .candidate_faces
+                    .iter()
+                    .chain(&reference.alternate_selector_faces)
+            })
+            .cloned()
+            .collect();
         referenced.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         referenced.dedup();
         if !referenced.is_empty() {
             return referenced;
         }
     }
-    let mut candidates = Vec::new();
-    for candidate in face_operand_candidates(operand) {
-        candidates.push(candidate.clone());
-    }
-    candidates
+    face_operand_candidates(operand).to_vec()
 }
 
 pub(crate) fn historical_face_operand_candidate_iter(
@@ -2057,11 +2039,7 @@ fn extrude_start_plane_geometry_candidates(
     {
         return None;
     }
-    let mut candidates = Vec::new();
-    for face in faces {
-        candidates.push(face.id.clone());
-    }
-    Some(candidates)
+    Some(faces.iter().map(|face| face.id.clone()).collect())
 }
 
 fn extrude_profile_sketch_id(
@@ -2155,9 +2133,7 @@ pub(crate) fn bind_extrude_start_planes(
                     candidates.clear();
                     break;
                 }
-                for face in face_operand_candidates(operand) {
-                    candidates.push(face.clone());
-                }
+                candidates.extend_from_slice(face_operand_candidates(operand));
             }
             candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             candidates.dedup();
