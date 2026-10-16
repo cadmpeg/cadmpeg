@@ -239,6 +239,10 @@ fn attach_indexed_om_unknowns(
     Ok(())
 }
 
+/// Attach the native object model completely or not at all.
+///
+/// A resource refusal propagates. Any other failure restores every value
+/// [`attach_records`] wrote and reports one loss that names the failure.
 pub(super) fn attach(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -248,6 +252,143 @@ pub(super) fn attach(
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let snapshot = AttachSnapshot::capture(ir, annotations, unknowns, losses);
+    match attach_records(ctx, ir, model, scan, annotations, unknowns, losses) {
+        Ok(()) => Ok(()),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => {
+            snapshot.restore(ir, annotations, unknowns, losses);
+            losses.push(NxLossCode::NativeAttachmentFailed.note(format!(
+                "Native object-model attachment failed: {error}. Decoded geometry and \
+                 topology are kept. None of the attachment's features, sketches, parameters, \
+                 configurations, appearances, attributes, display tessellations, native \
+                 records, or container passthrough records are kept."
+            )));
+            Ok(())
+        }
+    }
+}
+
+/// Geometry arenas moved out of a model while the rest is copied.
+///
+/// [`attach_records`] reads these arenas and writes only face colors.
+struct GeometryArenas {
+    bodies: Vec<cadmpeg_ir::topology::Body>,
+    regions: Vec<cadmpeg_ir::topology::Region>,
+    shells: Vec<cadmpeg_ir::topology::Shell>,
+    faces: Vec<cadmpeg_ir::topology::Face>,
+    loops: Vec<cadmpeg_ir::topology::Loop>,
+    coedges: Vec<cadmpeg_ir::topology::Coedge>,
+    edges: Vec<cadmpeg_ir::topology::Edge>,
+    vertices: Vec<cadmpeg_ir::topology::Vertex>,
+    points: Vec<cadmpeg_ir::topology::Point>,
+    surfaces: Vec<cadmpeg_ir::geometry::Surface>,
+    curves: Vec<cadmpeg_ir::geometry::Curve>,
+    pcurves: Vec<cadmpeg_ir::geometry::pcurve::Pcurve>,
+    procedural_surfaces: Vec<cadmpeg_ir::geometry::ProceduralSurface>,
+    procedural_curves: Vec<cadmpeg_ir::geometry::ProceduralCurve>,
+}
+
+impl GeometryArenas {
+    fn take(model: &mut cadmpeg_ir::document::Model) -> Self {
+        Self {
+            bodies: std::mem::take(&mut model.bodies),
+            regions: std::mem::take(&mut model.regions),
+            shells: std::mem::take(&mut model.shells),
+            faces: std::mem::take(&mut model.faces),
+            loops: std::mem::take(&mut model.loops),
+            coedges: std::mem::take(&mut model.coedges),
+            edges: std::mem::take(&mut model.edges),
+            vertices: std::mem::take(&mut model.vertices),
+            points: std::mem::take(&mut model.points),
+            surfaces: std::mem::take(&mut model.surfaces),
+            curves: std::mem::take(&mut model.curves),
+            pcurves: std::mem::take(&mut model.pcurves),
+            procedural_surfaces: std::mem::take(&mut model.procedural_surfaces),
+            procedural_curves: std::mem::take(&mut model.procedural_curves),
+        }
+    }
+
+    fn put(self, model: &mut cadmpeg_ir::document::Model) {
+        model.bodies = self.bodies;
+        model.regions = self.regions;
+        model.shells = self.shells;
+        model.faces = self.faces;
+        model.loops = self.loops;
+        model.coedges = self.coedges;
+        model.edges = self.edges;
+        model.vertices = self.vertices;
+        model.points = self.points;
+        model.surfaces = self.surfaces;
+        model.curves = self.curves;
+        model.pcurves = self.pcurves;
+        model.procedural_surfaces = self.procedural_surfaces;
+        model.procedural_curves = self.procedural_curves;
+    }
+}
+
+/// Every value [`attach_records`] can write, as it was before the call.
+///
+/// The document is copied without its geometry arenas, so a write to any
+/// other arena, the native namespaces or the source metadata is undone by
+/// replacement. Unknown records and losses are only appended to.
+struct AttachSnapshot {
+    document: CadIr,
+    face_colors: Vec<Option<Color>>,
+    annotations: AnnotationBuilder,
+    unknowns: usize,
+    losses: usize,
+}
+
+impl AttachSnapshot {
+    fn capture(
+        ir: &mut CadIr,
+        annotations: &AnnotationBuilder,
+        unknowns: &[UnknownRecord],
+        losses: &[LossNote],
+    ) -> Self {
+        let geometry = GeometryArenas::take(&mut ir.model);
+        let document = ir.clone();
+        geometry.put(&mut ir.model);
+        Self {
+            document,
+            face_colors: ir.model.faces.iter().map(|face| face.color).collect(),
+            annotations: annotations.clone(),
+            unknowns: unknowns.len(),
+            losses: losses.len(),
+        }
+    }
+
+    fn restore(
+        self,
+        ir: &mut CadIr,
+        annotations: &mut AnnotationBuilder,
+        unknowns: &mut Vec<UnknownRecord>,
+        losses: &mut Vec<LossNote>,
+    ) {
+        let geometry = GeometryArenas::take(&mut ir.model);
+        *ir = self.document;
+        geometry.put(&mut ir.model);
+        for (face, color) in ir.model.faces.iter_mut().zip(self.face_colors) {
+            face.color = color;
+        }
+        *annotations = self.annotations;
+        unknowns.truncate(self.unknowns);
+        losses.truncate(self.losses);
+    }
+}
+
+fn attach_records(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    model: &crate::native::model::NativeModel,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    #[cfg(test)]
+    super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     for stream in &model.parasolid.attribute_definition_scan_bounded_streams {
         losses.push(NxLossCode::SourceScanBounded.note(format!(
@@ -399,6 +540,8 @@ pub(super) fn attach(
     NATIVE_CATALOGUE
         .emit_all(ctx, model, namespace)
         .map_err(CodecError::from)?;
+    #[cfg(test)]
+    super::attach_failure::check(super::attach_failure::Point::Exit)?;
     Ok(())
 }
 
