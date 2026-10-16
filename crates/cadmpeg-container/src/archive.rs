@@ -276,12 +276,12 @@ impl<'a> ArchiveSnapshot<'a> {
 
     /// Whether the bounded ZIP footer window contains an end-record signature.
     /// This is a probe hint; directory admission must still prove the archive.
-    pub fn has_footer(_ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
+    pub fn has_footer(bytes: &[u8]) -> bool {
         let tail = match bytes.len().checked_sub(65_557) {
             Some(start) => &bytes[start..],
             None => bytes,
         };
-        Ok(tail.windows(4).any(|signature| signature == b"PK\x05\x06"))
+        tail.windows(4).any(|signature| signature == b"PK\x05\x06")
     }
 
     /// Reads only directory and footer evidence for seekable source detection.

@@ -89,7 +89,7 @@ impl CodecBackend for StepCodec {
         let bytes = root.window();
         if archive::has_zip_magic(bytes)
             || (!starts_with_step_magic(bytes)
-                && cadmpeg_container::ArchiveSnapshot::has_footer(ctx, bytes)?)
+                && cadmpeg_container::ArchiveSnapshot::has_footer(bytes))
         {
             return inspect_zip(ctx, root);
         }
@@ -111,7 +111,7 @@ impl CodecBackend for StepCodec {
         let bytes = root.window();
         if archive::has_zip_magic(bytes)
             || (!starts_with_step_magic(bytes)
-                && cadmpeg_container::ArchiveSnapshot::has_footer(ctx, bytes)?)
+                && cadmpeg_container::ArchiveSnapshot::has_footer(bytes))
         {
             return decode_zip(ctx, root);
         }

@@ -303,7 +303,7 @@ fn patch_instance_colors(
     patched: &mut std::collections::BTreeSet<String>,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    let frames = cadmpeg_protein::framing::record_frames_for_edit(bytes)?;
+    let frames = cadmpeg_protein::framing::record_frames(bytes)?;
     let schema_driven = cadmpeg_protein::has_schemas(protein);
     let decoded = if schema_driven {
         let outcome = cadmpeg_protein::decode_frames_for_edit(protein, &frames)?;
@@ -583,16 +583,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let Some(instance) = instance_properties(ctx, protein)? else {
             continue;
         };
-        let record_frames =
-            cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
+        let record_frames = cadmpeg_protein::framing::record_frames(instance.window())?;
         let catalog = definition_catalog(ctx, protein)?;
         let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
         let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
-            let outcome = cadmpeg_protein::decode_frames_admitted(
-                ctx,
-                &mut schema_catalog,
-                record_frames.frames(),
-            )?;
+            let outcome =
+                cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, &record_frames)?;
             for rejected in &outcome.rejected {
                 let note = format!(
                     "Protein {} record {} rejected: {}",
@@ -611,12 +607,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 .iter()
                 .map(|appearance| appearance.id.as_str())
                 .collect::<std::collections::HashSet<_>>();
-            let mut fixed = decode_fixed_logical_records(record_frames.frames())?;
+            let mut fixed = decode_fixed_logical_records(&record_frames)?;
             fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
             decoded.append(&mut fixed);
             decoded
         } else {
-            decode_fixed_logical_records(record_frames.frames())?
+            decode_fixed_logical_records(&record_frames)?
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -1831,9 +1827,9 @@ fn definition_catalog<'a>(
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, entry.window())?;
+    let frames = cadmpeg_protein::framing::record_frames(entry.window())?;
     let mut definitions = std::collections::HashMap::new();
-    for frame in frames.frames() {
+    for frame in &frames {
         let definition = decode_definition_catalog_record(frame.bytes())?;
         merge_definition_catalog_record(&mut definitions, definition);
     }
