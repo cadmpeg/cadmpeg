@@ -13,7 +13,7 @@ use crate::solve::missing_edge::{
     standard_mesh_boundary_assignments, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
 };
 use crate::solve::union_find::UnionFind;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
@@ -523,33 +523,18 @@ pub(crate) struct TrimRecord {
     pub(crate) kind: u8,
 }
 
+/// Reconstruct face incidence from per-edge face slots and endpoint points.
+///
+/// `topology_budget` is the enclosing topology search budget; see
+/// [`StandardIncidenceSearch::budget`].
 pub(crate) fn reconstruct_incidence(
     ctx: &DecodeContext<'_>,
+    topology_budget: &WorkBudget,
     edge_rows: Vec<EdgeRow>,
     vertex_points: Vec<[f64; 3]>,
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
-) -> Result<Option<StandardTopologyDraft>, CodecError> {
-    reconstruct_incidence_with_edge_classes(
-        ctx,
-        edge_rows,
-        vertex_points,
-        edge_faces,
-        edge_points,
-        face_count,
-        None,
-    )
-}
-
-fn reconstruct_incidence_with_edge_classes(
-    ctx: &DecodeContext<'_>,
-    edge_rows: Vec<EdgeRow>,
-    vertex_points: Vec<[f64; 3]>,
-    edge_faces: &[[usize; 2]],
-    edge_points: &[[usize; 2]],
-    face_count: usize,
-    edge_classes: Option<&[usize]>,
 ) -> Result<Option<StandardTopologyDraft>, CodecError> {
     reconstruct_incidence_with_edge_classes_and_mesh(
         ctx,
@@ -558,15 +543,21 @@ fn reconstruct_incidence_with_edge_classes(
         edge_faces,
         edge_points,
         face_count,
-        StandardIncidenceEvidence {
-            edge_classes,
+        StandardIncidenceSearch {
+            budget: topology_budget,
+            edge_classes: None,
             mesh_bytes: None,
         },
     )
 }
 
+/// How one incidence reconstruction completes its duplicate face slots.
 #[derive(Clone, Copy)]
-pub(super) struct StandardIncidenceEvidence<'a> {
+pub(super) struct StandardIncidenceSearch<'a> {
+    /// The enclosing topology search budget. The duplicate-face completion
+    /// exhausts it when it reaches its own bound, so the caller reports the
+    /// bounded search instead of an unsolved incidence.
+    pub(super) budget: &'a WorkBudget,
     pub(super) edge_classes: Option<&'a [usize]>,
     pub(super) mesh_bytes: Option<&'a [u8]>,
 }
@@ -578,20 +569,15 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
-    evidence: StandardIncidenceEvidence<'_>,
+    search: StandardIncidenceSearch<'_>,
 ) -> Result<Option<StandardTopologyDraft>, CodecError> {
-    let StandardIncidenceEvidence {
-        edge_classes,
-        mesh_bytes,
-    } = evidence;
     let Some(completed_edge_faces) = complete_duplicate_face_slots(
         ctx,
         &edge_rows,
         edge_faces,
         edge_points,
         face_count,
-        edge_classes,
-        mesh_bytes,
+        search,
     )?
     else {
         return Ok(None);
@@ -649,17 +635,28 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
     }))
 }
 
+/// Bounds the face assignments the duplicate-face completion tries across both
+/// of its passes.
+const MAX_DUPLICATE_FACE_OPERATIONS: usize = 65_536;
+
+/// Complete the second face slot of every edge whose two slots name one face.
+///
+/// Returns `None` when no unique completion exists. When the search reaches
+/// [`MAX_DUPLICATE_FACE_OPERATIONS`] it also exhausts the search budget, so
+/// the enclosing topology search reports its bound instead of an unsolved
+/// incidence.
 pub(super) fn complete_duplicate_face_slots(
     ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
-    edge_classes: Option<&[usize]>,
-    mesh_bytes: Option<&[u8]>,
+    StandardIncidenceSearch {
+        budget: topology_budget,
+        edge_classes,
+        mesh_bytes,
+    }: StandardIncidenceSearch<'_>,
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    const MAX_DUPLICATE_FACE_OPERATIONS: usize = 65_536;
-
     struct SearchInputs<'a, 'ctx> {
         ctx: &'a DecodeContext<'ctx>,
         unresolved: &'a [usize],
@@ -676,13 +673,12 @@ pub(super) fn complete_duplicate_face_slots(
         assignment: &mut [usize],
         used: &mut [bool],
         solutions: &mut Vec<Vec<usize>>,
-        operations: &mut usize,
-        exhausted: &mut bool,
+        operations: &WorkBudget,
     ) -> Result<(), CodecError> {
         let _depth = inputs
             .ctx
             .enter_nested("catia_standard_duplicate_face_search")?;
-        if *exhausted || solutions.len() > 1 {
+        if operations.exhausted() || solutions.len() > 1 {
             return Ok(());
         }
         if used.iter().all(|value| *value) {
@@ -754,11 +750,9 @@ pub(super) fn complete_duplicate_face_slots(
             }
         }
         for (index, edge, face) in choices {
-            if *operations == MAX_DUPLICATE_FACE_OPERATIONS {
-                *exhausted = true;
+            if !operations.charge() {
                 return Ok(());
             }
-            *operations += 1;
             let [start, end] = inputs.edge_points[edge];
             let start_add = 1 + u8::from(start == end);
             let start_degree_before = duplicate_degree(&degrees[face], start);
@@ -781,15 +775,13 @@ pub(super) fn complete_duplicate_face_slots(
             }
             assignment[index] = face;
             used[index] = true;
-            search(
-                inputs, degrees, assignment, used, solutions, operations, exhausted,
-            )?;
+            search(inputs, degrees, assignment, used, solutions, operations)?;
             used[index] = false;
             restore_duplicate_degree(&mut degrees[face], start, start_degree_before);
             if start != end {
                 restore_duplicate_degree(&mut degrees[face], end, end_degree_before);
             }
-            if *exhausted || solutions.len() > 1 {
+            if operations.exhausted() || solutions.len() > 1 {
                 return Ok(());
             }
         }
@@ -868,8 +860,7 @@ pub(super) fn complete_duplicate_face_slots(
     }
 
     let mut solutions = Vec::new();
-    let mut operations = 0;
-    let mut exhausted = false;
+    let operations = WorkBudget::new(MAX_DUPLICATE_FACE_OPERATIONS);
     let inputs = SearchInputs {
         ctx,
         unresolved: &unresolved,
@@ -895,10 +886,10 @@ pub(super) fn complete_duplicate_face_slots(
         &mut assignment,
         &mut assigned,
         &mut solutions,
-        &mut operations,
-        &mut exhausted,
+        &operations,
     )?;
-    if exhausted {
+    if operations.exhausted() {
+        topology_budget.exhaust();
         return Ok(None);
     }
     if solutions.len() > 1 {
@@ -931,10 +922,10 @@ pub(super) fn complete_duplicate_face_slots(
             &mut assignment,
             &mut assigned,
             &mut solutions,
-            &mut operations,
-            &mut exhausted,
+            &operations,
         )?;
-        if exhausted {
+        if operations.exhausted() {
+            topology_budget.exhaust();
             return Ok(None);
         }
     }

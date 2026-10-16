@@ -70,9 +70,17 @@ fn radial_orientation_solves_each_face_boundary_independently() {
         [8, 10],
         [9, 11],
     ];
-    let topology = reconstruct_incidence(&ctx, rows, points, &edge_faces, &edge_points, 9)
-        .expect("reconstruct incidence")
-        .expect("orientable multi-boundary shell");
+    let topology = reconstruct_incidence(
+        &ctx,
+        &crate::test_support::topology_budget(),
+        rows,
+        points,
+        &edge_faces,
+        &edge_points,
+        9,
+    )
+    .expect("reconstruct incidence")
+    .expect("orientable multi-boundary shell");
     assert_eq!(
         topology.body_kinds(&[9]).expect("classify the bodies"),
         Some(vec![BodyKind::Solid])
