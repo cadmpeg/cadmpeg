@@ -127,6 +127,9 @@ loss_codes! {
     /// Indexed OM object records reached the identity graph work bound and
     /// were kept without a stable identity.
     ObjectRecordIdentityBounded => ("native.record-identity-bounded", Warning, MetadataNotTransferred),
+    /// An arithmetic-coded Display-JT lane reached its decoder work bound and
+    /// was left undecoded.
+    DisplayJtArithmeticLaneBounded => ("container.display-jt-arithmetic-lane-bounded", Warning, ObjectRecordsUntransferred),
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
 }
@@ -217,6 +220,7 @@ mod tests {
                 "annotation.semantic-order-unstatable",
                 "source.scan-bounded",
                 "native.record-identity-bounded",
+                "container.display-jt-arithmetic-lane-bounded",
                 "native.attachment-failed",
             ]
         );
