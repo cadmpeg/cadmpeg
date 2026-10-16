@@ -19,6 +19,7 @@ pub mod detection;
 pub mod edit;
 pub mod golden;
 pub mod native_serialization;
+pub mod polyhedron;
 pub mod refusal;
 pub mod roundtrip;
 pub mod unknown_keys;

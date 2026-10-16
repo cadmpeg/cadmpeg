@@ -1068,6 +1068,31 @@ pub(super) fn validate_source_less_design_links(
 pub(super) fn validate_source_less_body_kinds(
     model: &cadmpeg_ir::document::Model,
 ) -> Result<(), CodecError> {
+    let edges = model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let curves = model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<HashMap<_, _>>();
+    // A curveless edge is written with a null curve reference, so a decoder
+    // reads it back as collapsed when both endpoints name one vertex.
+    let collapsed = |edge: &cadmpeg_ir::ids::EdgeId| {
+        edges.get(edge).is_some_and(|edge| {
+            edge.start == edge.end
+                && edge.curve().is_none_or(|curve| {
+                    curves.get(curve).is_some_and(|curve| {
+                        matches!(
+                            curve.geometry,
+                            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+                        )
+                    })
+                })
+        })
+    };
     for body in &model.bodies {
         let shell_ids = model
             .regions
@@ -1098,22 +1123,19 @@ pub(super) fn validate_source_less_body_kinds(
             .filter(|loop_| loop_ids.contains(&loop_.id))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .collect::<BTreeSet<_>>();
-        let mut uses = BTreeMap::<&cadmpeg_ir::ids::EdgeId, usize>::new();
-        for coedge in model
-            .coedges
-            .iter()
-            .filter(|coedge| coedge_ids.contains(&coedge.id))
-        {
-            *uses.entry(&coedge.edge).or_default() += 1;
-        }
         let derived = if face_ids.is_empty() {
             cadmpeg_ir::topology::BodyKind::Wire
         } else if has_wires {
             cadmpeg_ir::topology::BodyKind::General
-        } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
-            cadmpeg_ir::topology::BodyKind::Solid
         } else {
-            cadmpeg_ir::topology::BodyKind::Sheet
+            cadmpeg_asm::brep::geometry::faced_body_kind(
+                model
+                    .coedges
+                    .iter()
+                    .filter(|coedge| coedge_ids.contains(&coedge.id))
+                    .map(|coedge| (&coedge.edge, coedge.sense)),
+                collapsed,
+            )
         };
         if body.kind != derived {
             return Err(CodecError::InvalidInput(format!(

@@ -333,6 +333,9 @@ pub(crate) enum StepLossCode {
     EdgeStartVertexMissing,
     /// An edge was omitted because its end vertex is missing.
     EdgeEndVertexMissing,
+    /// A non-manifold edge of a closed shell was written as one edge per
+    /// forward and reversed use pair.
+    NonManifoldEdgeSplit,
 }
 
 impl StepLossCode {
@@ -491,6 +494,7 @@ impl StepLossCode {
         Self::EdgeRecordMissing,
         Self::EdgeStartVertexMissing,
         Self::EdgeEndVertexMissing,
+        Self::NonManifoldEdgeSplit,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -669,6 +673,7 @@ impl StepLossCode {
             Self::EdgeRecordMissing => "topology.edge-record-missing",
             Self::EdgeStartVertexMissing => "topology.edge-start-vertex-missing",
             Self::EdgeEndVertexMissing => "topology.edge-end-vertex-missing",
+            Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
         }
     }
 
@@ -724,7 +729,8 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
-            | Self::SourceNativeRecordOmitted => Severity::Info,
+            | Self::SourceNativeRecordOmitted
+            | Self::NonManifoldEdgeSplit => Severity::Info,
             _ => Severity::Warning,
         }
     }
@@ -830,7 +836,8 @@ impl StepLossCode {
             | Self::LoopNoContinuousOrdering
             | Self::EdgeRecordMissing
             | Self::EdgeStartVertexMissing
-            | Self::EdgeEndVertexMissing => LossTaxonomy::TopologyNotTransferred,
+            | Self::EdgeEndVertexMissing
+            | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
@@ -1071,6 +1078,7 @@ mod tests {
                 "topology.edge-record-missing",
                 "topology.edge-start-vertex-missing",
                 "topology.edge-end-vertex-missing",
+                "topology.non-manifold-edge-split",
             ]
         );
     }
