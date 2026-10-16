@@ -69,9 +69,11 @@ fn decode_container<'a>(
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty();
     let mut admitted_entities = 0_u64;
-    let (design_parameters, unresolved_design_parameters) =
+    let parameter_projection =
         crate::design::project_parameters(ctx, &design_inventory, &mut admitted_entities)?;
-    ir.model.parameters = design_parameters;
+    let unresolved_design_parameters = parameter_projection.unresolved;
+    let bounded_design_parameters = parameter_projection.bounded;
+    ir.model.parameters = parameter_projection.parameters;
     let sketch_projection = crate::sketch::project(ctx, &sketch_inventory, &ir.model.parameters)?;
     let unresolved_sketches = sketch_projection.unresolved_sketches;
     let unresolved_sketch_entities = sketch_projection.unresolved_entities;
@@ -743,6 +745,9 @@ fn decode_container<'a>(
                 "Retained {unresolved_design_parameters} Inventor parameter record(s) whose unit or expression graph is not closed."
             )));
         }
+        losses.extend(crate::design::bounded_expression_loss(
+            bounded_design_parameters,
+        ));
         if unresolved_sketches != 0
             || unresolved_sketch_entities != 0
             || unresolved_sketch_constraints != 0
