@@ -1011,6 +1011,119 @@ fn topology_field_tolerances_require_finite_native_values() {
 }
 
 #[test]
+fn ownership_admission_matches_pairwise_overlap() {
+    let span = |kind, xmt: u32, pos: usize, len: usize| NodeCandidate {
+        kind,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+        pos,
+        end: pos + len,
+        shift: 0,
+    };
+    // Typed spans in key order, with one long span that reaches past later
+    // starts, so the admission cannot rely on sorted or disjoint input.
+    let mut selected = Vec::new();
+    for index in 0..1024_usize {
+        let xmt = u32::try_from(1024 - index).unwrap() + 1;
+        selected.push(span(NodeKind::Point, xmt, 97 * index, 40 + index % 7));
+    }
+    selected.push(span(NodeKind::Line, 2, 20_000, 9_000));
+    let ownership = (0..1024_usize)
+        .map(|index| {
+            let xmt = u32::try_from(index).unwrap() + 2;
+            span(NodeKind::Body, xmt, 13 * index * 7 + 40, 24)
+        })
+        .collect::<Vec<_>>();
+
+    let pairwise = ownership
+        .iter()
+        .copied()
+        .filter(|candidate| {
+            selected
+                .iter()
+                .all(|typed| !(typed.pos < candidate.end && candidate.pos < typed.end))
+        })
+        .collect::<Vec<_>>();
+    let admitted = Graph::admit_disjoint_ownership(ownership, &selected);
+    assert!(!admitted.is_empty() && admitted.len() < 1024);
+    assert_eq!(admitted, pairwise);
+}
+
+/// A body-shape SHELL whose first FACE is `face`; `last_face` 1 is null.
+fn shell_record(xmt: u16, face: u16, last_face: u16) -> Vec<u8> {
+    let mut shell = record(13, 24);
+    put_ref(&mut shell, 2, xmt);
+    for (at, value) in [(8, 1), (10, 2), (12, 1), (14, face), (16, 1), (18, 1)] {
+        put_ref(&mut shell, at, value);
+    }
+    put_ref(&mut shell, 20, 12);
+    put_ref(&mut shell, 22, last_face);
+    shell
+}
+
+fn face_record(xmt: u16, next_face: u16, shell: u16) -> Vec<u8> {
+    let mut face = record(14, 39);
+    put_ref(&mut face, 2, xmt);
+    put_f64(&mut face, 10, 0.000_2);
+    for (at, value) in [
+        (8, 1),
+        (18, next_face),
+        (20, 1),
+        (22, 5),
+        (24, shell),
+        (26, 6),
+    ] {
+        put_ref(&mut face, at, value);
+    }
+    face[28] = b'+';
+    face
+}
+
+// Fixture identities stay in 0x0100..=0x09ff: no high byte is a record tag,
+// so no reference field frames a second record.
+#[test]
+fn cyclic_shell_face_chains_are_rejected_in_one_lap() {
+    const SHELLS: u16 = 1024;
+    let mut stream = Vec::new();
+    for index in 0..SHELLS {
+        let (shell, face) = (0x100 + 2 * index, 0x101 + 2 * index);
+        stream.extend(shell_record(shell, face, 1));
+        stream.extend(face_record(face, face, shell));
+    }
+    stream.extend(shell_record(0x900, 0x901, 1));
+    stream.extend(face_record(0x901, 0x902, 0x900));
+    stream.extend(face_record(0x902, 1, 0x900));
+
+    let graph = Graph::parse(&stream);
+    assert_eq!(graph.kind_count(NodeKind::Shell), usize::from(SHELLS) + 1);
+    let shells = graph.body_shape_shells().collect::<Vec<_>>();
+    assert_eq!(shells.len(), 1);
+    assert_eq!(shells[0].xmt(), 0x900);
+    assert_eq!(graph.body_shape_face_count(), 2);
+    assert_eq!(graph.shell_face_xmts(shells[0]), Some(vec![0x901, 0x902]));
+}
+
+#[test]
+fn last_face_shells_count_their_faces_from_the_shell_index() {
+    const SHELLS: u16 = 512;
+    let mut stream = Vec::new();
+    for index in 0..SHELLS {
+        let (shell, face) = (0x100 + 3 * index, 0x101 + 3 * index);
+        stream.extend(shell_record(shell, face, face));
+        stream.extend(face_record(face, 1, shell));
+        stream.extend(face_record(face + 1, 1, shell));
+    }
+
+    let graph = Graph::parse(&stream);
+    let shells = graph.body_shape_shells().collect::<Vec<_>>();
+    assert_eq!(shells.len(), usize::from(SHELLS));
+    assert_eq!(graph.body_shape_face_count(), 2 * usize::from(SHELLS));
+    for shell in shells {
+        let face = shell.xmt() + 1;
+        assert_eq!(graph.shell_face_xmts(shell), Some(vec![face, face + 1]));
+    }
+}
+
+#[test]
 fn identical_domain_selection_materializes_node_payloads_once() {
     let mut stream = Vec::new();
     for xmt in 100..200 {

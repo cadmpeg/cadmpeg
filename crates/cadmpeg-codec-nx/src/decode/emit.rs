@@ -176,26 +176,22 @@ pub(super) fn emit_topology(
             }
         }
     }
-    let mut body_xmts = BTreeSet::new();
+    let mut first_body_shells = BTreeMap::new();
     for shell in graph.body_shape_shells() {
         if let Some(body) = shell
             .shell_fields()
             .and_then(|fields| fields.body.map(u32::from))
         {
-            body_xmts.insert(body);
+            first_body_shells.entry(body).or_insert(shell);
         }
     }
     let mut bodies: BTreeMap<u32, BodyId> = BTreeMap::new();
-    for body_xmt in body_xmts {
+    for (body_xmt, shell) in first_body_shells {
         let id: BodyId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
             annotate_node(annotations, id.as_str(), source_stream, node, "BODY");
-        } else if let Some(shell) = graph.body_shape_shells().find(|shell| {
-            shell
-                .shell_fields()
-                .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
-        }) {
+        } else {
             annotations.note(
                 id.as_str(),
                 source_stream,
