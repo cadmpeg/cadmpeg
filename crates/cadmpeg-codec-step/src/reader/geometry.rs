@@ -142,7 +142,6 @@ pub(super) fn infer_edge_parameter_ranges(
         else {
             continue;
         };
-
         let Some(geometry) = model_index
             .curves(curve.as_str(), cadmpeg_ir::index::StandardIndex)
             .map(|curve| &curve.geometry)

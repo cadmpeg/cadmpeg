@@ -204,7 +204,6 @@ fn inspect_parsed_exchange(
                 .references()
                 .iter()
                 .map(|entry| entry.uri.as_str())
-                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
         );
@@ -245,8 +244,7 @@ fn inspect_parsed_exchange(
     for (index, (entity_count, counts)) in section_counts.into_iter().enumerate() {
         let unknown = counts
             .iter()
-            .map(|(&name, &count)| CountItem { name, count })
-            .map(|value| value.to_string())
+            .map(|(&name, &count)| CountItem { name, count }.to_string())
             .collect::<Vec<_>>()
             .join(",");
         let mut attributes = std::collections::BTreeMap::new();
@@ -270,7 +268,6 @@ fn inspect_parsed_exchange(
             "dependencies".to_owned(),
             external_dependencies
                 .map(String::as_str)
-                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
         );
@@ -404,7 +401,6 @@ fn inspect_zip(
         .entries
         .iter()
         .map(|entry| entry.name.as_str())
-        .map(std::string::ToString::to_string)
         .collect::<Vec<_>>()
         .join(",");
     let mut entries = archive.container_entries(ctx, archive::classify_entry)?;

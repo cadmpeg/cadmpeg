@@ -50,6 +50,28 @@ pub(super) struct ProductData {
     pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
+/// One expanded occurrence's place on its assembly path.
+struct PathLink {
+    /// The occurrence's product definition.
+    definition: u64,
+    /// The parent occurrence's link, or `None` for a root occurrence.
+    parent: Option<usize>,
+    /// Product definitions on the path from the root through this one.
+    length: usize,
+}
+
+/// Whether `definition` lies on the path that ends at link `at`.
+fn path_contains(links: &[PathLink], at: usize, definition: u64) -> bool {
+    let mut next = Some(at);
+    while let Some(link) = next.and_then(|at| links.get(at)) {
+        if link.definition == definition {
+            return true;
+        }
+        next = link.parent;
+    }
+    false
+}
+
 fn join_product_references(ids: impl IntoIterator<Item = u64>) -> String {
     ids.into_iter()
         .map(|id| format!("#{id}"))
@@ -336,7 +358,7 @@ pub(super) fn decode(
         child_definitions.insert(usage.child_definition);
     }
 
-    let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
+    let mut path_links = Vec::<PathLink>::new();
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
     let mut output_truncated_at = None;
@@ -383,8 +405,12 @@ pub(super) fn decode(
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
 
-        occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
-        pending_occurrences.push_back((definition, id));
+        pending_occurrences.push_back((definition, id, path_links.len()));
+        path_links.push(PathLink {
+            definition,
+            parent: None,
+            length: 1,
+        });
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -427,7 +453,6 @@ pub(super) fn decode(
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
         let grouped = usages_by_parent.entry(usage.parent_definition).or_default();
-
         grouped.push(usage_id);
     }
     let had_roots = !pending_occurrences.is_empty();
@@ -435,10 +460,13 @@ pub(super) fn decode(
     // occurrence path length directly.
     let depth_limit = ctx.policy().limits.max_recursion_depth;
     let mut depth_truncated = None::<(u64, usize)>;
-    'expansion: while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
+    'expansion: while let Some((parent_definition, parent, parent_link)) =
+        pending_occurrences.pop_front()
+    {
         if output_truncated_at.is_some() {
             break;
         }
+        let parent_length = path_links.get(parent_link).map_or(0, |link| link.length);
         for &usage_id in usages_by_parent
             .get(&parent_definition)
             .into_iter()
@@ -455,19 +483,17 @@ pub(super) fn decode(
                 )));
                 continue;
             };
-            let parent_path = occurrence_paths.get(&parent);
-            if parent_path.is_some_and(|path| u64_from_index(path.len()) >= depth_limit) {
+            if u64_from_index(parent_length) >= depth_limit {
                 let (_, skipped) = depth_truncated.get_or_insert((usage_id, 0));
                 *skipped += 1;
                 continue;
             }
-            if parent_path.is_some_and(|path| path.contains(&usage.child_definition)) {
+            if path_contains(&path_links, parent_link, usage.child_definition) {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} closes an assembly definition cycle"
                 )));
                 continue;
             }
-
             let instance = usage_instances.entry(usage_id).or_default();
             *instance += 1;
             let suffix = if *instance == 1 {
@@ -485,7 +511,6 @@ pub(super) fn decode(
                 output_truncated_at = Some(format!("NAUO #{usage_id}"));
                 break 'expansion;
             }
-
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
             let transform = if let Some(transform) = placements.get(&usage_id).copied() {
                 transform
@@ -524,16 +549,12 @@ pub(super) fn decode(
             *ordinal = ordinal.checked_add(1).ok_or_else(|| {
                 CodecError::malformed("STEP child occurrence ordinal exceeds u32")
             })?;
-            let mut path = BTreeSet::new();
-            if let Some(parent_path) = parent_path {
-                for &definition in parent_path {
-                    path.insert(definition);
-                }
-            }
-            path.insert(usage.child_definition);
-
-            occurrence_paths.insert(id.clone(), path);
-            pending_occurrences.push_back((usage.child_definition, id));
+            pending_occurrences.push_back((usage.child_definition, id, path_links.len()));
+            path_links.push(PathLink {
+                definition: usage.child_definition,
+                parent: Some(parent_link),
+                length: parent_length + 1,
+            });
             typed.insert(usage_id);
         }
     }

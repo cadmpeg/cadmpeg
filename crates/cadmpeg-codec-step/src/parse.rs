@@ -67,7 +67,6 @@ pub(crate) enum Value {
 
 fn try_clone_value(value: &Value, budget: &DecodeContext<'_>) -> Result<Value, CodecError> {
     let _depth = budget.enter_nested("step_value_copy_depth")?;
-
     Ok(match value {
         Value::Reference(id) => Value::Reference(*id),
         Value::ExternalReference(id) => Value::ExternalReference(*id),
@@ -77,10 +76,7 @@ fn try_clone_value(value: &Value, budget: &DecodeContext<'_>) -> Result<Value, C
         Value::Real(value) => Value::Real(*value),
         Value::UninterpretedLiteral => Value::UninterpretedLiteral,
         Value::Enumeration(text) => Value::Enumeration(text.to_owned()),
-        Value::String(bytes) => {
-            let copied = bytes.clone();
-            Value::String(copied)
-        }
+        Value::String(bytes) => Value::String(bytes.clone()),
         Value::Binary(binary) => Value::Binary(binary.clone()),
         Value::Resource(text) => Value::Resource(text.to_owned()),
         Value::Omitted => Value::Omitted,
@@ -2397,22 +2393,77 @@ impl From<CodecError> for ResolveError {
     }
 }
 
+/// What an item's expansion is known to do before it copies anything.
+enum KnownOutcome {
+    /// Every expansion in the item fits the remaining nodes.
+    Fits,
+    /// The item stops at this bound.
+    Bounded(String),
+    /// Only a full expansion decides the item.
+    Unknown,
+}
+
+/// The bounds that one top-level expansion met before. An expansion that
+/// starts from an empty reference stack checks the same bounds in the same
+/// order at every budget, so a node-limit bound recurs at every smaller
+/// budget and any other bound, met before the node limit, recurs at every
+/// larger budget.
+#[derive(Default)]
+struct ExpansionBounds {
+    /// The largest budget at which the expansion passed the node limit.
+    node_limit_at: Option<usize>,
+    /// The smallest budget at which the expansion met another bound, with
+    /// that bound.
+    other_at: Option<(usize, String)>,
+}
+
+impl ExpansionBounds {
+    fn record(&mut self, budget: usize, bound: &str, node_limit: &str) {
+        if bound == node_limit {
+            self.node_limit_at = Some(self.node_limit_at.map_or(budget, |at| at.max(budget)));
+        } else if self.other_at.as_ref().is_none_or(|(at, _)| budget < *at) {
+            self.other_at = Some((budget, bound.to_owned()));
+        }
+    }
+
+    fn bound_at(&self, budget: usize, node_limit: &str) -> Option<String> {
+        if self.node_limit_at.is_some_and(|at| budget <= at) {
+            return Some(node_limit.to_owned());
+        }
+        self.other_at
+            .as_ref()
+            .filter(|(at, _)| *at <= budget)
+            .map(|(_, bound)| bound.clone())
+    }
+}
+
 struct AnchorResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
     memo: BTreeMap<&'a str, (Value, usize)>,
+    bounds: BTreeMap<&'a str, ExpansionBounds>,
     remaining_nodes: usize,
+    /// Value nodes that omitted items may still copy; `None` once spent.
+    discard_allowance: Option<usize>,
+    /// Value nodes that the current item has copied or counted.
+    item_nodes: usize,
     budget: &'ctx DecodeContext<'arena>,
 }
 
 impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     /// Value nodes that anchor expansion may copy across the whole exchange.
     const MAX_EXPANDED_NODES: usize = 1_000_000;
+    /// Value nodes that items omitted at the node limit may copy across the
+    /// whole exchange before their expansion stopped.
+    const MAX_DISCARDED_EXPANDED_NODES: usize = 16 * Self::MAX_EXPANDED_NODES;
 
     fn new(anchors: &'a BTreeMap<String, Value>, budget: &'ctx DecodeContext<'arena>) -> Self {
         Self {
             anchors,
             memo: BTreeMap::new(),
+            bounds: BTreeMap::new(),
             remaining_nodes: Self::MAX_EXPANDED_NODES,
+            discard_allowance: Some(Self::MAX_DISCARDED_EXPANDED_NODES),
+            item_nodes: 0,
             budget,
         }
     }
@@ -2424,18 +2475,72 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         &mut self,
         values: impl Iterator<Item = &'v mut Value>,
     ) -> Result<Option<String>, ResolveError> {
+        let values = values.collect::<Vec<_>>();
+        match self.known_outcome(&values) {
+            KnownOutcome::Bounded(bound) => return Ok(Some(bound)),
+            KnownOutcome::Unknown if self.discard_allowance.is_none() => {
+                return Ok(Some(Self::discard_limit_bound()));
+            }
+            KnownOutcome::Fits | KnownOutcome::Unknown => {}
+        }
         let remaining = self.remaining_nodes;
+        self.item_nodes = 0;
         for value in values {
             match self.resolve_root(value) {
                 Ok(resolved) => *value = resolved,
                 Err(ResolveError::Bounded(bound)) => {
                     self.remaining_nodes = remaining;
+                    self.discard_allowance = self
+                        .discard_allowance
+                        .and_then(|allowance| allowance.checked_sub(self.item_nodes));
                     return Ok(Some(bound));
                 }
                 Err(error) => return Err(error),
             }
         }
         Ok(None)
+    }
+
+    /// Decides the item from earlier expansions of its top-level
+    /// references, without copying.
+    fn known_outcome(&self, values: &[&mut Value]) -> KnownOutcome {
+        let node_limit = Self::node_limit_bound();
+        let mut budget = self.remaining_nodes;
+        let mut pending = values
+            .iter()
+            .rev()
+            .map(|value| &**value)
+            .collect::<Vec<_>>();
+        while let Some(value) = pending.pop() {
+            match value {
+                Value::Resource(name) => {
+                    let Some(name) = name
+                        .strip_prefix('#')
+                        .filter(|name| self.anchors.contains_key(*name))
+                    else {
+                        continue;
+                    };
+                    if let Some((_, nodes)) = self.memo.get(name) {
+                        let Some(rest) = budget.checked_sub(*nodes) else {
+                            return KnownOutcome::Bounded(node_limit);
+                        };
+                        budget = rest;
+                    } else if let Some(bound) = self
+                        .bounds
+                        .get(name)
+                        .and_then(|bounds| bounds.bound_at(budget, &node_limit))
+                    {
+                        return KnownOutcome::Bounded(bound);
+                    } else {
+                        return KnownOutcome::Unknown;
+                    }
+                }
+                Value::List(values) => pending.extend(values.iter().rev()),
+                Value::Typed(_, value) => pending.push(value),
+                _ => {}
+            }
+        }
+        KnownOutcome::Fits
     }
 
     fn resolve_root(&mut self, value: &Value) -> Result<Value, ResolveError> {
@@ -2448,11 +2553,30 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         Ok(value)
     }
 
-    fn node_limit_error() -> ResolveError {
-        ResolveError::Bounded(format!(
+    fn node_limit_bound() -> String {
+        format!(
             "anchor expansion exceeds {} value nodes",
             Self::MAX_EXPANDED_NODES
-        ))
+        )
+    }
+
+    fn node_limit_error() -> ResolveError {
+        ResolveError::Bounded(Self::node_limit_bound())
+    }
+
+    fn discard_limit_bound() -> String {
+        format!(
+            "anchor expansions omitted at the node limit already copied {} value nodes",
+            Self::MAX_DISCARDED_EXPANDED_NODES
+        )
+    }
+
+    fn count_item_nodes(&mut self, nodes: usize) -> Result<(), ResolveError> {
+        self.item_nodes = self
+            .item_nodes
+            .checked_add(nodes)
+            .ok_or_else(Self::node_limit_error)?;
+        Ok(())
     }
 
     fn resolve(
@@ -2462,6 +2586,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         budget: usize,
     ) -> Result<(Value, usize, usize), ResolveError> {
         let _nested = self.budget.enter_nested("step_anchor_reference")?;
+        self.count_item_nodes(1)?;
         if let Value::Resource(name) = value {
             if let Some((name, source)) = name
                 .strip_prefix('#')
@@ -2472,23 +2597,26 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     if *nodes > budget {
                         return Err(Self::node_limit_error());
                     }
-                    return Ok((try_clone_value(value, self.budget)?, *nodes, *nodes));
+                    let (value, nodes) = (try_clone_value(value, self.budget)?, *nodes);
+                    self.count_item_nodes(nodes)?;
+                    return Ok((value, nodes, nodes));
                 }
                 if stack.contains(&name) {
                     let message = format!("cyclic anchor binding <{name}>");
                     return Err(message.into());
                 }
-                value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
-                stack.push(name);
-                let resolved = self.resolve(source, stack, budget);
-                stack.pop();
-                let (value, nodes, _) = resolved?;
-                if nodes > budget {
-                    return Err(Self::node_limit_error());
+                let top_level = stack.is_empty();
+                let expanded = self.expand(name, source, stack, budget);
+                if top_level {
+                    if let Err(ResolveError::Bounded(bound)) = &expanded {
+                        self.bounds.entry(name).or_default().record(
+                            budget,
+                            bound,
+                            &Self::node_limit_bound(),
+                        );
+                    }
                 }
-                let memo = try_clone_value(&value, self.budget)?;
-                self.memo.insert(name, (memo, nodes));
-                return Ok((value, nodes, nodes));
+                return expanded;
             }
         }
         match value {
@@ -2524,6 +2652,33 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             value => Ok((try_clone_value(value, self.budget)?, 1, 0)),
         }
     }
+
+    /// Expands anchor `name`, which is not memoized and not on `stack`.
+    fn expand(
+        &mut self,
+        name: &'a str,
+        source: &Value,
+        stack: &mut Vec<&'a str>,
+        budget: usize,
+    ) -> Result<(Value, usize, usize), ResolveError> {
+        let counted = value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget);
+        self.count_item_nodes(
+            counted
+                .as_ref()
+                .map_or(Self::MAX_EXPANDED_NODES, |nodes| *nodes),
+        )?;
+        counted?;
+        stack.push(name);
+        let resolved = self.resolve(source, stack, budget);
+        stack.pop();
+        let (value, nodes, _) = resolved?;
+        if nodes > budget {
+            return Err(Self::node_limit_error());
+        }
+        let memo = try_clone_value(&value, self.budget)?;
+        self.memo.insert(name, (memo, nodes));
+        Ok((value, nodes, nodes))
+    }
 }
 
 struct ReferenceResolver<'a, 'ctx, 'arena> {
@@ -2531,7 +2686,14 @@ struct ReferenceResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
     omitted_anchors: &'a BTreeSet<String>,
     stack: Vec<ReferenceName>,
+    /// Value nodes that each top-level occurrence used when it expanded.
+    used: BTreeMap<ReferenceName, usize>,
+    bounds: BTreeMap<ReferenceName, ExpansionBounds>,
     remaining_nodes: usize,
+    /// Value nodes that omitted items may still copy; `None` once spent.
+    discard_allowance: Option<usize>,
+    /// Value nodes that the current item has copied.
+    item_nodes: usize,
     budget: &'ctx DecodeContext<'arena>,
 }
 
@@ -2539,6 +2701,9 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     /// Value nodes that REFERENCE expansion may copy across the whole
     /// exchange.
     const MAX_MATERIALIZED_NODES: usize = 1_000_000;
+    /// Value nodes that items omitted at the node limit may copy across the
+    /// whole exchange before their expansion stopped.
+    const MAX_DISCARDED_MATERIALIZED_NODES: usize = 16 * Self::MAX_MATERIALIZED_NODES;
 
     fn new(
         references: &'a [ReferenceEntry],
@@ -2555,16 +2720,35 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             anchors,
             omitted_anchors,
             stack: Vec::new(),
+            used: BTreeMap::new(),
+            bounds: BTreeMap::new(),
             remaining_nodes: Self::MAX_MATERIALIZED_NODES,
+            discard_allowance: Some(Self::MAX_DISCARDED_MATERIALIZED_NODES),
+            item_nodes: 0,
             budget,
         }
     }
 
-    fn node_limit_error() -> ResolveError {
-        ResolveError::Bounded(format!(
+    fn node_limit_bound() -> String {
+        format!(
             "external reference expansion exceeds {} value nodes",
             Self::MAX_MATERIALIZED_NODES
-        ))
+        )
+    }
+
+    fn node_limit_error() -> ResolveError {
+        ResolveError::Bounded(Self::node_limit_bound())
+    }
+
+    fn omitted_anchor_bound(key: ReferenceName, fragment: &str) -> String {
+        format!("REFERENCE {key} names anchor <{fragment}>, omitted at its expansion limit")
+    }
+
+    fn discard_limit_bound() -> String {
+        format!(
+            "external reference expansions omitted at the node limit already copied {} value nodes",
+            Self::MAX_DISCARDED_MATERIALIZED_NODES
+        )
     }
 
     /// Resolves every value of one anchor or instance. A value that passes
@@ -2574,18 +2758,86 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         &mut self,
         values: impl Iterator<Item = &'v mut Value>,
     ) -> Result<Option<String>, ResolveError> {
+        let values = values.collect::<Vec<_>>();
+        match self.known_outcome(&values) {
+            KnownOutcome::Bounded(bound) => return Ok(Some(bound)),
+            KnownOutcome::Unknown if self.discard_allowance.is_none() => {
+                return Ok(Some(Self::discard_limit_bound()));
+            }
+            KnownOutcome::Fits | KnownOutcome::Unknown => {}
+        }
         let remaining = self.remaining_nodes;
+        self.item_nodes = 0;
         for value in values {
             match self.resolve_value(value) {
                 Ok(resolved) => *value = resolved,
                 Err(ResolveError::Bounded(bound)) => {
                     self.remaining_nodes = remaining;
+                    self.discard_allowance = self
+                        .discard_allowance
+                        .and_then(|allowance| allowance.checked_sub(self.item_nodes));
                     return Ok(Some(bound));
                 }
                 Err(error) => return Err(error),
             }
         }
         Ok(None)
+    }
+
+    /// Decides the item from earlier expansions of its top-level
+    /// occurrences, without copying.
+    fn known_outcome(&self, values: &[&mut Value]) -> KnownOutcome {
+        let node_limit = Self::node_limit_bound();
+        let mut budget = self.remaining_nodes;
+        let mut pending = values
+            .iter()
+            .rev()
+            .map(|value| &**value)
+            .collect::<Vec<_>>();
+        while let Some(value) = pending.pop() {
+            let key = match value {
+                Value::Reference(id) => ReferenceName::Entity(*id),
+                Value::ExternalReference(id) => ReferenceName::Value(*id),
+                Value::List(values) => {
+                    pending.extend(values.iter().rev());
+                    continue;
+                }
+                Value::Typed(_, value) => {
+                    pending.push(value);
+                    continue;
+                }
+                _ => continue,
+            };
+            let Some(fragment) = self
+                .bindings
+                .get(&key)
+                .and_then(|uri| uri.split_once('#'))
+                .and_then(|(path, fragment)| path.is_empty().then_some(fragment))
+            else {
+                continue;
+            };
+            if self.omitted_anchors.contains(fragment) {
+                return KnownOutcome::Bounded(Self::omitted_anchor_bound(key, fragment));
+            }
+            if !self.anchors.contains_key(fragment) {
+                continue;
+            }
+            if let Some(used) = self.used.get(&key) {
+                let Some(rest) = budget.checked_sub(*used) else {
+                    return KnownOutcome::Bounded(node_limit);
+                };
+                budget = rest;
+            } else if let Some(bound) = self
+                .bounds
+                .get(&key)
+                .and_then(|bounds| bounds.bound_at(budget, &node_limit))
+            {
+                return KnownOutcome::Bounded(bound);
+            } else {
+                return KnownOutcome::Unknown;
+            }
+        }
+        KnownOutcome::Fits
     }
 
     fn clone_leaf(&mut self, value: &Value) -> Result<Value, ResolveError> {
@@ -2595,6 +2847,10 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
 
     fn resolve_value(&mut self, value: &Value) -> Result<Value, ResolveError> {
         let _nested = self.budget.enter_nested("step_reference_expansion")?;
+        self.item_nodes = self
+            .item_nodes
+            .checked_add(1)
+            .ok_or_else(Self::node_limit_error)?;
         match value {
             Value::Reference(id) => self.resolve_occurrence(ReferenceName::Entity(*id), value),
             Value::ExternalReference(id) => {
@@ -2638,8 +2894,8 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             return self.clone_leaf(&Value::Omitted);
         }
         if self.omitted_anchors.contains(fragment) {
-            return Err(ResolveError::Bounded(format!(
-                "REFERENCE {key} names anchor <{fragment}>, omitted at its expansion limit"
+            return Err(ResolveError::Bounded(Self::omitted_anchor_bound(
+                key, fragment,
             )));
         }
         let Some(anchor) = self.anchors.get(fragment) else {
@@ -2649,9 +2905,28 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 self.clone_leaf(&Value::Omitted)
             };
         };
+        let top_level = self.stack.is_empty();
+        let remaining = self.remaining_nodes;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor);
         self.stack.pop();
+        if top_level {
+            match &resolved {
+                Ok(_) => {
+                    if let Some(used) = remaining.checked_sub(self.remaining_nodes) {
+                        self.used.insert(key, used);
+                    }
+                }
+                Err(ResolveError::Bounded(bound)) => {
+                    self.bounds.entry(key).or_default().record(
+                        remaining,
+                        bound,
+                        &Self::node_limit_bound(),
+                    );
+                }
+                Err(_) => {}
+            }
+        }
         let resolved = resolved?;
         if let Value::Resource(uri) = &resolved {
             return if uri.contains('#') {

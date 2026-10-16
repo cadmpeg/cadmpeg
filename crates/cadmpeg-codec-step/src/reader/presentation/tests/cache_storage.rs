@@ -50,8 +50,13 @@ fn terminal_style_domains_resolve_without_recursion() {
             (3, super::super::StyleDomain::Surface),
         ] {
             assert!(
-                super::super::style_domain(id, &exchange, ctx)
-                    .expect("terminal domain has no recursion state")
+                super::super::style_domain(
+                    id,
+                    &exchange,
+                    &mut std::collections::BTreeMap::new(),
+                    ctx
+                )
+                .expect("terminal domain has no recursion state")
                     == expected
             );
         }

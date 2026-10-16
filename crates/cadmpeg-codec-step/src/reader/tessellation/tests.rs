@@ -12,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::StepLossCode;
 use crate::parse::parse_inner;
@@ -20,6 +21,7 @@ use crate::test_support::with_service_context;
 use crate::StepCodec;
 
 mod normals;
+mod shared_walks;
 
 const EPS_SAME_POINT: f64 = 1.0e-12;
 
@@ -39,6 +41,13 @@ fn decode_tessellation_under_policy(
     records: &str,
     policy: DecodePolicy,
 ) -> Result<CadIr, CodecError> {
+    decode_tessellation_stage(records, policy).map(|(ir, _)| ir)
+}
+
+fn decode_tessellation_stage(
+    records: &str,
+    policy: DecodePolicy,
+) -> Result<(CadIr, Vec<LossNote>), CodecError> {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
@@ -61,8 +70,8 @@ fn decode_tessellation_under_policy(
         .value;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)?;
-    super::decode(&exchange, &geometry, &topology, &mut ir, &ctx)?;
-    Ok(ir)
+    let outcome = super::decode(&exchange, &geometry, &topology, &mut ir, &ctx)?;
+    Ok((ir, outcome.losses))
 }
 
 #[test]

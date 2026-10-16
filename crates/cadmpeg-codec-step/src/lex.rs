@@ -446,7 +446,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         kind
     }
 
-    fn name(&mut self) -> std::string::String {
+    fn name(&mut self) -> String {
         let start = self.at;
         self.at += 1;
         while self.input.get(self.at).is_some_and(|b| {

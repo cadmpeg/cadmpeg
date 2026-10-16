@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Topology cache identity and carrier lookup resource scaling.
+//! Topology cache identity and carrier lookup.
 
 use std::fmt::Write;
 
@@ -55,7 +55,7 @@ fn cached_void_roots_preserve_the_outer_shell_role() {
 }
 
 #[test]
-fn pcurve_index_is_shared_across_shells_and_coedges() {
+fn pcurves_resolve_on_every_shell_of_one_root() {
     let mut shells = String::new();
     let mut records = String::new();
     for id in 1_000..1_100 {
@@ -88,13 +88,10 @@ fn pcurve_index_is_shared_across_shells_and_coedges() {
         });
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    // One shared carrier index and all 100 drafts fit; 200 complete model
-    // indexes would consume more than this allowance.
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&ir);
-    super::super::decode(&exchange, &mut ir, &carriers, &ctx)
-        .expect("all shells share the admitted pcurve index");
+    super::super::decode(&exchange, &mut ir, &carriers, &ctx).expect("all shells decode");
     assert_eq!(ir.model.bodies.len(), 100);
     assert_eq!(ir.model.faces.len(), 100);
     assert_eq!(ir.model.coedges.len(), 400);
@@ -109,7 +106,7 @@ fn pcurve_index_is_shared_across_shells_and_coedges() {
 }
 
 #[test]
-fn pcurve_index_is_shared_across_independent_roots() {
+fn pcurves_resolve_on_every_independent_root() {
     let mut records = String::new();
     for id in 1_000..1_100 {
         writeln!(records, "#{id}=OPEN_SHELL('',(#54));").expect("write fixture shell");
@@ -141,13 +138,11 @@ fn pcurve_index_is_shared_across_independent_roots() {
         });
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    // The same carrier population and 100 topology drafts fit this bound.
-    // A complete identity index per root exceeds it before the roots finish.
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&ir);
     super::super::decode(&exchange, &mut ir, &carriers, &ctx)
-        .expect("all independent roots share the admitted pcurve index");
+        .expect("all independent roots decode");
     assert_eq!(ir.model.bodies.len(), 100);
     assert_eq!(ir.model.faces.len(), 100);
     assert_eq!(ir.model.coedges.len(), 400);

@@ -158,8 +158,11 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg`                | `src/query/mod.rs`                                 | `MAX_QUERY_INPUT_BYTES`                   | `256 * 1024 * 1024`                                     | N    | CLI `query` input file size; not a decode path.                                                                                                                                                                                                                              |
 | `cadmpeg`                | `src/inspect/numeric.rs`                           | `MAX_WIDTH`                               | `8`                                                     | N    | Widest scalar type `inspect read` decodes.                                                                                                                                                                                                                                   |
 | `cadmpeg-codec-step`     | `src/strings.rs`                                   | `MAX_STORED_STRING_OCTETS`                | `32_767`                                                | 2    | Encoded length of one string token before decoding. Excess is a `StringError` for that token.                                                                                                                                                                                |
-| `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_NODES`                      | `1_000_000`                                             | 4    | Anchor expansion node count across the exchange (`AnchorResolver`). An anchor or instance that passes the count is omitted with its exact source and `parse.expansion-bounded`, and its nodes go back to the count. Copies charge only `enter_nested`, not `retain_bytes`.   |
-| `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_MATERIALIZED_NODES`                  | `1_000_000`                                             | 4    | REFERENCE expansion node count across the exchange (`ReferenceResolver`). An anchor or instance that passes the count, or that names an omitted anchor, is omitted with its exact source and `parse.expansion-bounded`.                                                      |
+| `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_NODES`                      | `1_000_000`                                             | 4    | Anchor expansion node count across the exchange (`AnchorResolver`). An anchor or instance that passes the count is omitted with its exact source and `parse.expansion-bounded`, and its nodes go back to the count. Each top-level anchor reference records the count at which it failed or the nodes it used, so a later reference with a known outcome is decided before anything is copied. Copies charge only `enter_nested`, not `retain_bytes`. |
+| `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_DISCARDED_EXPANDED_NODES`            | `16 * MAX_EXPANDED_NODES`                               | 4    | Value nodes that anchor expansions omitted at `MAX_EXPANDED_NODES` may copy before they stop. Once it is spent, an instance whose outcome is not already recorded is omitted without expansion and reported with `parse.expansion-bounded`, naming this bound.            |
+| `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_MATERIALIZED_NODES`                  | `1_000_000`                                             | 4    | REFERENCE expansion node count across the exchange (`ReferenceResolver`). An anchor or instance that passes the count, or that names an omitted anchor, is omitted with its exact source and `parse.expansion-bounded`. Each top-level reference records its node use or the count at which it failed, as for anchors. |
+| `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_DISCARDED_MATERIALIZED_NODES`        | `16 * MAX_MATERIALIZED_NODES`                           | 4    | Value nodes that REFERENCE expansions omitted at `MAX_MATERIALIZED_NODES` may copy before they stop. Once it is spent, an instance whose outcome is not already recorded is omitted without expansion and reported with `parse.expansion-bounded`, naming this bound.     |
+| `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCES`                 | `100_000`                                               | 4    | Occurrence expansion output (`OccurrenceExpansion::expand`). At the limit expansion stops and `reader.rs` reports `occurrence.expansion-output-truncated`.                                                                                                                   |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCE_DEPTH`            | `64`                                                    | 4    | Occurrence path depth; `reader::decode` takes `min` with `max_recursion_depth`, and each level charges `enter_nested`. At the limit the branch stops and `occurrence.expansion-depth-truncated` is reported.                                                                 |
@@ -356,22 +359,22 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 187.
+Production `MAX_*` constants: 190.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 64    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 76    |
+| 4    | Local work cap             | 79    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 187   |
+|      | Total                      | 190   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 1, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
-`cadmpeg-protein` 2, `cadmpeg` 2, `cadmpeg-codec-step` 4,
+`cadmpeg-protein` 2, `cadmpeg` 2, `cadmpeg-codec-step` 7,
 `cadmpeg-codec-iges` 14, `cadmpeg-codec-inventor` 2,
 `cadmpeg-codec-freecad` 9, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 13,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 16, `cadmpeg-codec-sldprt` 11,
@@ -400,11 +403,16 @@ Current codec routes:
 
 - STEP parse nesting, anchor and REFERENCE expansion, the reference walk,
   and the style, PMI, unit and pcurve graph walks charge `enter_nested` and
-  have no local depth constant. The anchor and REFERENCE node counts omit
-  the anchor or instance that passes them and report
-  `parse.expansion-bounded`. Assembly occurrence expansion stops at
-  `MAX_OCCURRENCES` or at a path of `max_recursion_depth` usages and
-  reports a loss.
+  have no local depth constant. The style, PMI and invisible-body walks keep
+  a visited set or a result per record, so one walk visits each shared
+  record once. The tessellation association walk follows a record
+  once per distinct inherited placement, up to `MAX_ITEM_PLACEMENTS` per
+  item. The anchor and REFERENCE node counts omit the anchor or instance
+  that passes them and report `parse.expansion-bounded`; recorded outcomes
+  and the `MAX_DISCARDED_*` allowances bound the work of repeated misses.
+  Assembly occurrence expansion stops at `MAX_OCCURRENCES` or at a path of
+  `max_recursion_depth` usages and reports a loss. Occurrence paths are
+  parent links, so their storage is linear in the occurrences.
 - IGES occurrence expansion, type-124 chains, and composite flattening
   charge `enter_nested`. The occurrence and type-124 depth limits take `min`
   with `max_recursion_depth`. At a local limit the walk stops and reports a

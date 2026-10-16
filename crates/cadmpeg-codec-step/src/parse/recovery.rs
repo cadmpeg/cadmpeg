@@ -274,7 +274,6 @@ fn statement_end(input: &[u8], start: usize, draft: bool) -> Result<usize, Parse
                     break;
                 }
                 digits |= byte.is_ascii_digit();
-
                 next += 1;
             }
             while input
@@ -327,7 +326,6 @@ fn statement_end(input: &[u8], start: usize, draft: bool) -> Result<usize, Parse
                         "statement recovery cannot establish a boundary: unterminated comment",
                     );
                 }
-
                 at += 1;
             }
             at += 2;
@@ -347,7 +345,6 @@ fn statement_end(input: &[u8], start: usize, draft: bool) -> Result<usize, Parse
                         "statement recovery cannot establish a boundary: unterminated literal",
                     );
                 };
-
                 if byte == delimiter {
                     if delimiter == b'\'' {
                         if let Some(end) =

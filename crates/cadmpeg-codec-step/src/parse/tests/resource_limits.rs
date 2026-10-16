@@ -246,6 +246,211 @@ fn bounded_anchor_item_gives_back_its_nodes() {
     });
 }
 
+/// Anchors `a0` to `a{last}`; each holds two copies of the one before, so
+/// `a{k}` expands to `2^(k+2) - 1` value nodes.
+fn doubling_anchor_values(last: usize) -> BTreeMap<String, Value> {
+    let mut anchors = BTreeMap::from([(
+        "a0".to_owned(),
+        Value::List(vec![Value::Integer(1), Value::Integer(1)]),
+    )]);
+    for index in 1..=last {
+        let previous = Value::Resource(format!("#a{}", index - 1));
+        anchors.insert(
+            format!("a{index}"),
+            Value::List(vec![previous.clone(), previous]),
+        );
+    }
+    anchors
+}
+
+#[test]
+fn repeated_bounded_anchor_items_stop_before_copying() {
+    with_service_context(b"", |_, ctx| {
+        let anchors = doubling_anchor_values(12);
+        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        resolver.remaining_nodes = 10_000;
+        let mut first = [Value::Resource("#a12".into())];
+        assert_eq!(
+            resolver
+                .resolve_item(first.iter_mut())
+                .expect("a node limit is not an error")
+                .as_deref(),
+            Some(ANCHOR_BOUND)
+        );
+        let allowance = resolver.discard_allowance;
+
+        for _ in 0..10_000 {
+            let mut item = [
+                Value::Resource("#a11".into()),
+                Value::Resource("#a12".into()),
+            ];
+            assert_eq!(
+                resolver
+                    .resolve_item(item.iter_mut())
+                    .expect("a node limit is not an error")
+                    .as_deref(),
+                Some(ANCHOR_BOUND)
+            );
+            assert_eq!(item[0], Value::Resource("#a11".into()));
+        }
+        assert_eq!(resolver.discard_allowance, allowance);
+        assert_eq!(resolver.remaining_nodes, 10_000);
+
+        let mut item = [Value::Resource("#a11".into())];
+        assert_eq!(
+            resolver
+                .resolve_item(item.iter_mut())
+                .expect("the item fits"),
+            None
+        );
+        assert_eq!(resolver.remaining_nodes, 10_000 - 8_191);
+    });
+}
+
+#[test]
+fn omitted_anchor_items_past_the_discard_allowance_are_skipped() {
+    const DISCARD_BOUND: &str =
+        "anchor expansions omitted at the node limit already copied 16000000 value nodes";
+    with_service_context(b"", |_, ctx| {
+        let mut anchors = doubling_anchor_values(4);
+        for name in ["f", "g"] {
+            anchors.insert(
+                name.into(),
+                Value::List(vec![
+                    Value::Resource("#a4".into()),
+                    Value::Resource("#a4".into()),
+                ]),
+            );
+        }
+        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        resolver.remaining_nodes = 100;
+        resolver.discard_allowance = Some(1);
+        let mut resolve = |value: Value| {
+            let mut item = [value];
+            resolver
+                .resolve_item(item.iter_mut())
+                .expect("a node limit is not an error")
+        };
+
+        assert_eq!(
+            resolve(Value::Resource("#f".into())).as_deref(),
+            Some(ANCHOR_BOUND)
+        );
+        assert_eq!(
+            resolve(Value::Resource("#g".into())).as_deref(),
+            Some(DISCARD_BOUND)
+        );
+        assert_eq!(
+            resolve(Value::Resource("#f".into())).as_deref(),
+            Some(ANCHOR_BOUND)
+        );
+        assert_eq!(resolve(Value::Resource("#a4".into())), None);
+        assert_eq!(resolve(Value::Integer(1)), None);
+        assert_eq!(resolver.discard_allowance, None);
+        assert_eq!(resolver.remaining_nodes, 100 - 63);
+    });
+}
+
+#[test]
+fn repeated_bounded_reference_items_stop_before_copying() {
+    with_service_context(b"", |_, ctx| {
+        let anchors = BTreeMap::from([(
+            "a".into(),
+            Value::List(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3),
+            ]),
+        )]);
+        let references = [ReferenceEntry {
+            name: ReferenceName::Value(2),
+            uri: "#a".into(),
+        }];
+        let omitted = BTreeSet::new();
+        let mut resolver = ReferenceResolver::new(&references, &anchors, &omitted, ctx);
+        resolver.remaining_nodes = 10;
+        let allowance = resolver.discard_allowance;
+        let mut first = [Value::ExternalReference(2), Value::ExternalReference(2)];
+        assert_eq!(
+            resolver
+                .resolve_item(first.iter_mut())
+                .expect("the item fits"),
+            None
+        );
+        assert_eq!(resolver.remaining_nodes, 2);
+        assert_eq!(resolver.discard_allowance, allowance);
+
+        for _ in 0..10_000 {
+            let mut item = [Value::Integer(7), Value::ExternalReference(2)];
+            assert_eq!(
+                resolver
+                    .resolve_item(item.iter_mut())
+                    .expect("a node limit is not an error")
+                    .as_deref(),
+                Some(REFERENCE_BOUND)
+            );
+            assert_eq!(item[1], Value::ExternalReference(2));
+        }
+        assert_eq!(resolver.discard_allowance, allowance);
+        assert_eq!(resolver.remaining_nodes, 2);
+    });
+}
+
+#[test]
+fn omitted_reference_items_past_the_discard_allowance_are_skipped() {
+    const DISCARD_BOUND: &str = "external reference expansions omitted at the node limit already copied 16000000 value nodes";
+    with_service_context(b"", |_, ctx| {
+        let anchors = BTreeMap::from([
+            ("big".into(), Value::List(vec![Value::Integer(1); 20])),
+            ("small".into(), Value::Integer(1)),
+        ]);
+        let references = [
+            ReferenceEntry {
+                name: ReferenceName::Value(1),
+                uri: "#big".into(),
+            },
+            ReferenceEntry {
+                name: ReferenceName::Value(2),
+                uri: "#big".into(),
+            },
+            ReferenceEntry {
+                name: ReferenceName::Value(3),
+                uri: "#small".into(),
+            },
+        ];
+        let omitted = BTreeSet::new();
+        let mut resolver = ReferenceResolver::new(&references, &anchors, &omitted, ctx);
+        resolver.remaining_nodes = 10;
+        resolver.discard_allowance = Some(1);
+        let mut resolve = |value: Value| {
+            let mut item = [value];
+            resolver
+                .resolve_item(item.iter_mut())
+                .expect("a node limit is not an error")
+        };
+
+        assert_eq!(
+            resolve(Value::ExternalReference(1)).as_deref(),
+            Some(REFERENCE_BOUND)
+        );
+        assert_eq!(
+            resolve(Value::ExternalReference(2)).as_deref(),
+            Some(DISCARD_BOUND)
+        );
+        assert_eq!(
+            resolve(Value::ExternalReference(1)).as_deref(),
+            Some(REFERENCE_BOUND)
+        );
+        assert_eq!(
+            resolve(Value::ExternalReference(3)).as_deref(),
+            Some(DISCARD_BOUND)
+        );
+        assert_eq!(resolve(Value::Integer(1)), None);
+        assert_eq!(resolver.discard_allowance, None);
+        assert_eq!(resolver.remaining_nodes, 10);
+    });
+}
+
 #[test]
 fn reference_output_node_slice_bounds_before_leaf_copy() {
     with_service_context(b"", |_, ctx| {

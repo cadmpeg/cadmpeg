@@ -152,6 +152,7 @@ fn measure_eval_refusal(depth_limit: u64, record: &str) -> CodecError {
         length_scale: 1.0,
         angle_scale: 1.0,
         losses: &mut losses,
+        measured: BTreeMap::new(),
     };
     super::super::measure(
         &crate::parse::Value::Reference(1),

@@ -55,3 +55,19 @@ fn repeated_pcurve_searches_share_one_admitted_seed_vector() {
         }
     });
 }
+
+#[test]
+fn seed_dedupe_keeps_first_finite_occurrences_in_linear_time() {
+    let mut seeds = vec![-0.0, 1.0, f64::NAN, 0.0, f64::INFINITY, 2.0, 1.0];
+    super::super::retain_distinct_finite(&mut seeds);
+    assert_eq!(seeds.len(), 3);
+    assert!(seeds[0] == 0.0 && seeds[0].is_sign_negative());
+    assert_eq!(seeds[1..], [1.0, 2.0]);
+
+    let count = 1 << 20;
+    let mut seeds = (0..count)
+        .map(|index| f64::from(index % (count / 2)))
+        .collect::<Vec<_>>();
+    super::super::retain_distinct_finite(&mut seeds);
+    assert_eq!(seeds, (0..count / 2).map(f64::from).collect::<Vec<_>>());
+}
