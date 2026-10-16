@@ -18,13 +18,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Parasolid streams
 
-### PS-01. Unmatched compact tombstones
+### PS-01. Deletion target relation
 
-**Question.** What target relation does a compact tombstone use when its explicit `(type, xmt)` key does not match a partition entity?
+**Question.** Once an enclosing deletion frame is established, which target
+relation applies when its explicit node key does not match a partition node?
 
-**Known.** `siemens_nx.md` §4.2 "Tombstones form descending contiguous xmt runs" and `siemens_nx.md` §7.2 "A compact deltas tombstone is" define exact-key deletion and chronological replacement in the final BODY revision. The current-revision tombstone run can span topology, geometry, and attribute record types.
+**Known.** `siemens_nx.md` §4.2 "**Deletion framing:** complete enclosing fields own their bytes." separates byte ownership, target identity, and change state. `siemens_nx.md` §7.2 "A deletion relation requires an established node frame, exact target key," requires the owning change. A descending reference/type-map run does not establish deletions.
 
-**Need.** We must know the target relation to apply an unmatched tombstone without deleting the wrong entity.
+**Need.** Establish the deletion grammar in PS-28 and the target's partition
+and pmark scope before applying any unmatched key.
 
 ### PS-02. Terminal procedural-intersection branches
 
@@ -64,17 +66,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What complete record grammar and semantics does each deltas node family that the specification does not define use?
 
-**Known.** `siemens_nx.md` §4.2 "A deltas stream is a schema-framed incremental edit log paired with a partition." and `siemens_nx.md` §4.2 "After complete record frames, compact tombstones, complete BODY revision" define the admitted deltas record families and their byte boundaries. A remaining byte region has no typed node grammar.
+**Known.** `siemens_nx.md` §4.2 "A deltas stream is a schema-framed incremental edit log paired with a partition." and `siemens_nx.md` §4.2 "After complete typed node frames, complete enclosing packets, and complete" define the admitted deltas record families and their byte boundaries. A remaining byte region has no typed node grammar.
 
 **Need.** We must know each grammar to delimit and transfer the remaining deltas records as typed data.
 
-### PS-08. Deltas BODY state tail
+### PS-08. BODY-associated change-state packets
 
-**Question.** What fields and semantics does the bounded state tail after the eight-reference deltas `BODY` prefix contain?
+**Question.** Which complete enclosing grammar separates a deltas BODY
+instance from adjacent rollback or change-state packets?
 
-**Known.** `siemens_nx.md` §7.2 "BODY (`00 0c`) records delimit body revisions." and `siemens_nx.md` §4.2 "The state tail of a validated BODY revision begins immediately after its" define the prefix, tail boundary, revision counter, and current-revision rule.
+**Known.** `siemens_nx.md` §4.2 "A BODY instance follows its effective field list." bounds the node through its declared fields. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the BODY chain head and current pmark identity. A recognized successor does not bound an otherwise unestablished state tail.
 
-**Need.** We must know the tail fields to transfer the complete body revision state.
+**Need.** Identify each packet's start, complete field cardinalities, and
+relation to the owning pmark edge before assigning body change-state roles.
 
 ### PS-13. Deltas type 90 `GROUP`
 
@@ -106,7 +110,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record owns each deltas tagged-reference lane, and what does each field mean?
 
-**Known.** `siemens_nx.md` §4.2 "After complete record frames, compact tombstones, complete BODY revision" defines the tagged-reference lane grammar, record-kind values, and exact byte identity.
+**Known.** `siemens_nx.md` §4.2 "After complete typed node frames, complete enclosing packets, and complete" defines the tagged-reference lane grammar, record-kind values, and exact byte identity.
 
 **Need.** We must know ownership and field roles to attach each lane to the correct typed record.
 
@@ -150,37 +154,29 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the name to give the node one stable schema identity.
 
-### PS-28. Compact tombstone boundary condition
+### PS-28. Deletion frame and byte extent
 
-**Question.** Which condition ends a compact tombstone, and does a following byte pair constrain it?
+**Question.** Which enclosing grammar establishes a deletion event, its exact
+byte extent, and its target identity?
 
-**Known.** `siemens_nx.md` §4.2 "**Tombstone:** a compact 6-byte deletion begins with `type:u16 BE`. A short XMT identity occupies" defines the tombstone as a self-delimiting six-byte form with two identity encodings. `siemens_nx.md` §4.2 "Tombstones form descending contiguous xmt runs that can span topology, geometry, attribute, intersection-auxiliary," defines the runs. Neither states a condition on the bytes after a tombstone.
+**Known.** `siemens_nx.md` §4.2 "**Deletion framing:** complete enclosing fields own their bytes." excludes deletion admission from a six-byte shape alone. `siemens_nx.md` §4.2 "A reference/type map begins with either" defines the complete map envelope. Opposite-aligned extended reference/type entries can form a descending apparent deletion run. A type-91 six-reference shape with a four-byte control of 2 also spans an apparent six-byte candidate; the role and admission of that control remain unestablished.
 
-**Need.** We must define the enclosing grammar or discriminator that distinguishes a six-byte tombstone from the same byte pattern inside another bounded payload. The following record family must not participate in tombstone identity.
+**Need.** Establish complete enclosing state and a discriminator for short and
+extended deletion forms. Keep bounded rival interpretations separate from a
+certified deletion grammar. Neither six-byte nor eight-byte extent follows
+from the apparent tag and XMT alone.
 
-### PS-29. Interleaved body revision sequences
+### PS-29. Aggregate pmark-edge selection
 
-**Question.** How does a deltas stream that holds more than one body sequence select the current revision of each body?
+**Question.** How does an aggregate deltas transmit bind each change's source
+and target pmarks to the owning partition's current state?
 
-**Known.** `siemens_nx.md` §7.2 "BODY (`00 0c`) records delimit body revisions. The record prefix is" defines the revision prefix, the monotonic `node_id` counter, and the rule that the final validated BODY envelope begins the current revision. `siemens_nx.md` §9.2 "A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body" states that a `node_id` reset begins another interleaved body sequence.
+**Known.** `siemens_nx.md` §7.2 "A delta contains a unidirectional change between two adjacent pmarks." defines a delta edge separately from the aggregate. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the current BODY and pmark roots. `highest_node_id` bounds kernel node identifiers; physical BODY order, XMT 3, and numerical resets do not identify a revision interval.
 
-**Need.** We must reconcile the two current-revision rules, or state that paired partition and deltas streams hold exactly one body sequence. The §7.2 last-envelope rule merges every other sequence's current-revision records as historical.
-
-**Conflict.** The two rules disagree when a stream holds interleaved sequences. The §7.2 rule takes the last envelope in the stream, which belongs to one sequence, so the current-revision records of every other sequence fall before that offset and merge as historical. The decoder applies the §7.2 rule and never reads `node_id` for sequencing. The §9.2 `xmt == 3` delimiter is also not enforced. We must reconcile the two sections, or state that paired partition and deltas streams hold exactly one body sequence.
-
-**Note.** The closure selects monotonic runs with `revision_direction`, which chooses the direction with fewer violations and uses the opposite transitions as resets. This is an order heuristic with no serialized sequence identity. An interleaved sequence such as alternating body revisions can be grouped as one run and lose a current revision. The synthetic tests do not establish the ownership rule.
-
-### PS-30. Fixed-record field shift selection
-
-**Question.** Which field establishes the escape and large-index shift of a fixed analytic record, and what bounds a record that the ownership graph does not own?
-
-**Known.** `siemens_nx.md` §4.1 "Lengths are logical, before escape/large-index shifts. Each code is a Parasolid XT node ty" defines the tags and the record lengths before escape and large-index shifts. `siemens_nx.md` §6 "All geometric doubles are finite binary64 values in meters" states that the format imposes no model-magnitude bound.
-
-**Need.** We must know the shift field so that recovery does not need a magnitude test. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run can enter the model as an analytic carrier.
-
-**Conflict.** The decoder recovers records that the ownership graph does not own by trying six field shifts in order and accepting the first whose payload passes a magnitude test. `crates/cadmpeg-codec-nx/src/geometry.rs` rejects a coordinate at or above `1.0e3` meters and a radius outside `1.0e-9` to `1.0e3`. Those bounds contradict §6. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run inside a payload can pass the test and enter the model as an analytic carrier. Recovered carriers are not separable from graph-resolved carriers in the model, and an unreferenced recovered surface or curve is never removed. We must know the shift field so that recovery does not need a magnitude test.
-
-**Note.** The closure replaces the shift scan with direct and escaped frame candidates and a parser-derived boundary check. No serialized field establishes the choice, and the successor boundary is itself recognized by the same candidate parser. If both candidates end at recognized tags, or neither does because of a trailer, a valid record is omitted; a false recognized successor can select the wrong reading.
+**Need.** Identify each constituent delta's complete enclosing frame, source
+pmark, target pmark, and partition ownership. Apply only edges that lead to
+the selected current state, including branches, undone changes, and multiple
+bodies. Keep an unestablished edge selection unresolved.
 
 ### PS-31. `OFFSET_SURF` discriminator and true-offset roles
 

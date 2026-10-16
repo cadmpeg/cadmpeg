@@ -725,6 +725,12 @@ and node-ID magnitude do not establish a record start. The complete u32
 an already framed node's semantic consistency; it does not select its frame.
 An unavailable preceding cursor or schema state leaves ownership unknown.
 
+Encoded widths accumulate per field. An extended node index and an extended
+owner pointer each add two bytes relative to their short forms. The node
+index does not set the width of any pointer field. A first-use schema-match
+byte adds its own byte independently of both extensions. Geometric doubles
+start only after every preceding declared field has consumed its full width.
+
 The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definition list (`attdef_list`), preview-mesh references (`mesh`/`polyline`/`lattice`), and index-map arrays (`index_map`, `node_id_index_map`, `schema_embedding_map`).
 
 ### 3.3 NX object-model framing
@@ -999,18 +1005,16 @@ record ends after the final declared field, independently of the next event.
 A WORLD-shaped byte run without established schema state does not select a
 layout.
 
-The state tail of a validated BODY revision begins immediately after its
-eight-reference prefix and ends at the next admitted deltas event or at the end
-of the inflated stream. The tail belongs to the revision envelope and retains
-its exact byte sequence independently of assigned field roles.
+A BODY instance follows its effective field list. Its highest node identifier
+and its pointer fields have separate roles. A following recognized tag does
+not define an otherwise unbounded BODY state tail.
 
-After complete record frames, compact tombstones, complete BODY revision
-envelopes, and complete LIMIT records are bounded, each maximal
-complement interval that consists entirely of one or more `kind:u16 BE, xmt`
-pairs is a tagged-reference lane. Each `kind` is a defined Parasolid record
-kind, including type 79 and type 80, and each XMT is a non-null compact or
-extended encoded index. The lane retains pair order and exact byte identity;
-field roles remain unassigned.
+After complete typed node frames, complete enclosing packets, and complete
+LIMIT records are bounded, each maximal complement interval that consists
+entirely of one or more `kind:u16 BE, xmt` pairs is a tagged-reference lane.
+Each `kind` is a defined Parasolid record kind, including type 79 and type 80,
+and each XMT is a non-null compact or extended encoded index. The lane retains
+pair order and exact byte identity; field roles remain unassigned.
 
 A reference/type map begins with either `ref(1), 0001` or `01, ref(1)` and
 continues with `entry[n]`, where `n > 0` and each entry is
@@ -1018,8 +1022,8 @@ continues with `entry[n]`, where `n > 0` and each entry is
 `ref(1), 0000`, optionally followed by `target_kind:u16 BE`. A targetless
 terminal closes at the end of the containing complement interval. A terminal
 with `target_kind` self-delimits the map independently of following bytes.
-A final entry may share its `kind` bytes with a complete record or compact
-tombstone beginning at that kind tag.
+A final entry may share its `kind` bytes with a complete record beginning at
+that kind tag.
 When a final type-82 entry is followed by a target-bearing terminal, the map
 owns the shared type-82 kind and terminal before counted-record framing is
 applied.
@@ -1198,22 +1202,18 @@ deltas-event coverage. Each maximal nonempty complement interval in the
 inflated stream is one residual span. Residual spans retain their exact offset,
 length, and SHA-256 independently of the containing compressed stream.
 
-**Full record:**
+**Full record:** a deltas node has a type code, its encoded XMT identity,
+and the transmitted fields selected by its effective schema. Each pointer
+field carries an encoded XMT and its status byte. FIN has no `node_id` field.
+The first u32 of BODY is `highest_node_id`; it is not a delta-stream ordinal
+or a revision counter.
 
-```text
-type:u16 BE
-xmt:encoded_index
-node_id:u32 BE                   0-based delta-stream ordinal
-<type signature fields>          reference slot = encoded_xmt + status:u8
-```
-
-FIN omits `node_id` and begins its nine signature references immediately after `xmt`. A binary status byte frames each reference. The record form carries the merge operation.
-
-**Tombstone:** a compact 6-byte deletion begins with `type:u16 BE`. A short XMT identity occupies `xmt:i16 BE` followed by `00 01`. A high-bit XMT identity occupies the remaining four bytes in the standard extended form: a negative signed remainder followed by quotient `1`, with `xmt = 32767 + abs(remainder)`. A whole-record tombstone has this complete form. In a full record, `xmt 01` is a reference and status byte.
-
-The complete six-byte tombstone is self-delimiting. Bytes after it do not constrain admission and do not belong to the deletion.
-
-Tombstones form descending contiguous xmt runs that can span topology, geometry, attribute, intersection-auxiliary, NURBS-auxiliary, and neutral retained record types. BODY revision envelopes divide the stream into historical revisions; only events at or after the final validated BODY envelope contribute to the current image. Partition topology remains authoritative. A current-revision tombstone does not remove a point, curve, or surface carrier still referenced by a surviving vertex, fin, edge, or face unless a later full deltas record replaces that carrier. Unreferenced exact-key records follow the last current-revision full-record or tombstone event.
+**Deletion framing:** complete enclosing fields own their bytes. A six-byte
+`kind, xmt, 00 01` shape does not establish a deletion event. An extended XMT
+reference followed by `kind` remains a reference/type-map entry even when an
+opposite-aligned reading forms a descending sequence of apparent deletions.
+The node type, target identity, byte extent, and enclosing change state are
+independent requirements for a deletion relation.
 
 ---
 
@@ -3019,28 +3019,23 @@ contains its owner token, UTF-8 title and value, schema type, PDM-ownership flag
 and record version. These part-level values transfer as document attributes;
 the native record retains the remaining ownership and schema fields.
 
-```text
-live = partition ∪ delta_full − tombstones
-```
+A delta contains a unidirectional change between two adjacent pmarks. An
+aggregate transmit can contain several such changes. Its physical node order
+is not a chronology of BODY snapshots. A BODY's `highest_node_id` bounds
+kernel node identifiers; neither its numerical direction nor BODY XMT 3
+selects a revision interval.
 
-- A full record with `xmt ∈ partition` replaces that partition record. Paired streams share one xmt namespace. This includes status-framed type-38 intersection constructions.
-- A full record with `xmt ∉ partition` (high range) adds a new entity.
-- The deltas stream adds entities through explicit high-range records.
+The WORLD `body` pointer identifies the head of the current BODY chain.
+BODY `owner`, `next`, and `previous` are separate pointers; they are not pmark
+identifiers. WORLD `current_id` identifies the current pmark, and `highest_id`
+is the highest pmark identifier in the partition. A change applies through its identified
+source and target pmarks in the owning partition, not through a source-order
+reset of an unrelated integer field.
 
-BODY (`00 0c`) records delimit body revisions. The record prefix is
-`type:u16 BE, xmt, node_id:u32 BE, ref_status[8]`; `xmt` is non-null and all
-reference statuses are `01`. Its bounded state tail extends to the next
-admitted deltas event or the end of the inflated stream. An `xmt == 3` BODY
-envelope is a snapshot delimiter. Snapshot `node_id` values form maximal
-source-order runs that are monotonic in one serialized direction. A transition
-against that direction starts the next body sequence. The final snapshot
-envelope in each run begins that sequence's current interval; the interval ends
-at the first snapshot envelope of the next run or at the stream end. Fixed
-records, tombstones, and procedural records outside these intervals are
-historical and do not contribute to the current image. A partition containing
-a validated body-shape SHELL is the authoritative current topology image.
-BODY through REGION records in its paired deltas stream do not replace or
-delete that topology image.
+Within an identified change, a full node with an existing `(type, xmt)` key
+replaces that node; a previously absent key adds a node. Equal numeric XMT
+values in separate partition namespaces do not identify one node. An
+unestablished change boundary supplies no current-state selection.
 
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table contains a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 
@@ -3057,7 +3052,9 @@ is omitted by membership.
 
 Across the ordered feature-history sections, the newest record area's last non-`DELETE` body-write frame for one body identity is that body's latest writer and current image. Older record areas retain historical write-state images. A segment-bound image exists before the retained operations when it has no decoded writer. The two body-object indices in a segment tuple are aliases for one body image and are interchangeable in operand fields. Plain cached-body aliases also use the body-identity namespace and bind equal body-write identities; partition-stream aliases do not. Alias equality closes transitively across tuples that share either index; the smallest index canonically identifies the connected alias component. A `DELETE` consumes its direct primary body. A later Boolean consumes each tool image; a later `SEW` or `TRIM BODY` consumes each typed body operand. Consumption applies only when the image's latest writer precedes the consuming operation, and a still later writer supersedes it. Every segment binding receives one terminal or consumed lineage status when the complete ordered history resolves atomically. A lineage mapping is complete only when one status exists for every validated segment binding and those bindings cover every emitted partition image. An empty ordered operation set is complete: each bound image is an initial terminal image. Missing or ambiguous status, or incomplete image coverage, leaves lineage selection unresolved and retains every emitted image. A complete mapping may retain every emitted body; this is a resolved all-terminal result, not an unresolved selection. Terminal selection retains at least one but fewer than all images; an all-terminal mapping is retained without pruning.
 
-A compact deltas tombstone is `type:u16 BE` followed by either the short XMT form and `00 01` or one four-byte extended XMT identity whose quotient is `1`. Outside the authoritative partition topology families, a matching key deletes the partition record and a full record replaces it. Repeated events within the final BODY revision are chronological; the last full record or tombstone for one key is current. A deltas topology image is assembled only when its partition has no validated body-shape SHELL.
+A deletion relation requires an established node frame, exact target key,
+and owning change. A type-looking byte run inside a complete node or map
+supplies none of those relations.
 
 A complete `GROUP` record retains its source stream, XMT identity, kernel node
 identity, ordered references, byte extent, and inflated-stream offset. A GROUP
@@ -3087,16 +3084,13 @@ Slot zero names the child `.prt`, slot one is the reference code, slot two is th
 
 ### 9.2 Stream and deltas framing
 
-The `00 ce` stream-root schema declares `index_map`, `node_id_index_map`, and `schema_embedding_map`; each serializes as a null or empty array and supplies no tombstone bridge.
+The `00 ce` stream-root schema declares `index_map`, `node_id_index_map`,
+and `schema_embedding_map`. An empty array supplies no relation between a
+reference and a deletion target.
 
-A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body
-snapshot. Its `node_id` is a monotonic revision counter within that body
-sequence. Snapshot records are partitioned into source-order monotonic runs;
-the final snapshot in each run starts the current interval for that sequence,
-and the interval ends at the next run's first snapshot or at the stream end. A
-transition against the established monotonic direction starts the next
-sequence. Deltas streams encode null-node deletions as descending contiguous
-xmt runs that can span topology, geometry, and attribute record types.
+BODY and WORLD field roles are defined in §4.2. The current partition roots
+and pmark identities select state; a BODY's highest node identifier and its
+physical position do not define a revision counter or a snapshot delimiter.
 
 ### 9.3 B-spline payloads
 
