@@ -12,7 +12,7 @@ use cadmpeg_ir::{
     document::Model,
     features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology},
     geometry::Surface,
-    products::AssemblyJoint,
+    products::{AssemblyJoint, Occurrence},
     report::loss::LossNote,
     sketches::{
         Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
@@ -24,8 +24,7 @@ use cadmpeg_ir::{
 };
 
 use super::prereqs::{
-    append_related_record_headers, collect_related_indices, history_ref_width,
-    parameter_owner_indices, ProductPrereqs,
+    append_related_record_headers, collect_related_indices, history_ref_width, ProductPrereqs,
 };
 use super::{push_loss_vec, F3dLossCode, MeshProjection};
 use crate::container::{self, ContainerScan};
@@ -42,7 +41,10 @@ use crate::records::{
         DesignDimensionPresentationFrame, DesignDimensionRecipeRecord,
     },
     entity_header::DesignFeatureTimeline,
-    feature::{scope::DesignParameterScope, work_geometry::DesignEdgeTreatmentVertexOperand},
+    feature::{
+        scope::DesignParameterScope, surface_ops::DesignSurfaceTrimOperation,
+        work_geometry::DesignEdgeTreatmentVertexOperand,
+    },
     parameters::DesignParameterCompanion,
     references::{LostEdgeReference, PersistentReference},
     sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchSurface, SketchText},
@@ -66,7 +68,16 @@ pub(super) struct DesignInputs<'a> {
     pub(super) ctx: &'a DecodeContext<'a>,
     pub(super) scan: &'a ContainerScan<'a>,
     pub(super) prereqs: &'a ProductPrereqs,
+    /// The decoded phase-1 timelines. Phase 2 does not run without them.
+    pub(super) timelines: &'a [DesignFeatureTimeline],
+    pub(super) products: DesignProducts<'a>,
     pub(super) geometry: DesignGeometry<'a>,
+}
+
+/// Product structure that Design features name.
+pub(super) struct DesignProducts<'a> {
+    pub(super) occurrences: &'a [Occurrence],
+    pub(super) assembly_joints: &'a [AssemblyJoint],
 }
 
 /// Decoded geometry that Design features bind to.
@@ -81,14 +92,18 @@ pub(super) struct DesignGeometry<'a> {
     pub(super) tolerances: &'a Tolerances,
     pub(super) persistent_design_links: &'a [PersistentDesignLink],
     pub(super) persistent_subentity_tags: &'a [PersistentSubentityTag],
-    pub(super) path: DesignPath<'a>,
+    /// Mesh bodies, projected before phase 2 on both paths.
+    pub(super) mesh_projection: &'a MeshProjection,
+    pub(super) path: DesignPath,
 }
 
-/// Session path as phase 2 sees it.
-pub(super) enum DesignPath<'a> {
-    /// A B-rep was transferred; mesh bodies are already projected.
-    Geometry { mesh_projection: &'a MeshProjection },
-    /// No B-rep; mesh bodies are projected after phase 2.
+/// Session path as phase 2 sees it. Phase 2 discards the history projection
+/// caches on the geometry path only.
+#[derive(Clone, Copy)]
+pub(super) enum DesignPath {
+    /// A B-rep was transferred.
+    Geometry,
+    /// No B-rep.
     Bodyless,
 }
 
@@ -106,7 +121,6 @@ pub(super) struct DesignNative {
     sketch_surfaces: Vec<SketchSurface>,
     pub(super) design_parameter_companions: Vec<DesignParameterCompanion>,
     design_face_source_groups: Vec<DesignFaceSourceGroup>,
-    design_feature_timelines: Vec<DesignFeatureTimeline>,
     design_canvas_images: Vec<DesignCanvasImage>,
     design_decal_images: Vec<DesignDecalImage>,
     design_construction_operand_groups: Vec<DesignConstructionOperandGroup>,
@@ -133,13 +147,16 @@ pub(super) struct DesignNative {
     /// Phase-1 scopes with their design-intent bindings. Supersedes the
     /// product-prerequisite scopes in native storage.
     design_parameter_scopes: Vec<DesignParameterScope>,
-    /// Phase-1 record headers with every header that design-intent decoding
-    /// reads. Supersedes the product-prerequisite headers in native storage.
+    /// While phase 2 runs, every header it reads, starting from the phase-1
+    /// headers. Phase 2 returns only the headers it added.
     design_record_headers: Vec<DesignRecordHeader>,
+    /// Surface-trim operations of the admitted scopes.
+    design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
 }
 
 impl DesignNative {
     /// Move every record into native storage, after the product prerequisites.
+    /// Record headers join the phase-1 headers.
     pub(super) fn store(self, native: &mut F3dNative) {
         let Self {
             asm_histories,
@@ -153,7 +170,6 @@ impl DesignNative {
             sketch_surfaces,
             design_parameter_companions,
             design_face_source_groups,
-            design_feature_timelines,
             design_canvas_images,
             design_decal_images,
             design_construction_operand_groups,
@@ -179,6 +195,7 @@ impl DesignNative {
             design_configurations,
             design_parameter_scopes,
             design_record_headers,
+            design_surface_trim_operations,
         } = self;
         native.asm_histories = asm_histories;
         native.asm_face_boundaries = asm_face_boundaries;
@@ -191,7 +208,6 @@ impl DesignNative {
         native.sketch_surfaces = sketch_surfaces;
         native.design_parameter_companions = design_parameter_companions;
         native.design_face_source_groups = design_face_source_groups;
-        native.design_feature_timelines = design_feature_timelines;
         native.design_canvas_images = design_canvas_images;
         native.design_decal_images = design_decal_images;
         native.design_construction_operand_groups = design_construction_operand_groups;
@@ -216,7 +232,9 @@ impl DesignNative {
         native.design_body_bounds = design_body_bounds;
         native.design_configurations = design_configurations;
         native.design_parameter_scopes = design_parameter_scopes;
-        native.design_record_headers = design_record_headers;
+        native.design_record_headers.extend(design_record_headers);
+        native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
+        native.design_surface_trim_operations = design_surface_trim_operations;
     }
 }
 
@@ -236,8 +254,6 @@ pub(super) struct DesignModel {
     pub(super) spatial_sketches: Vec<SpatialSketch>,
     pub(super) spatial_sketch_entities: Vec<SpatialSketchEntity>,
     pub(super) spatial_sketch_constraints: Vec<SpatialSketchConstraint>,
-    /// Joints read the `Component Insert` and joint-origin features.
-    pub(super) assembly_joints: Vec<AssemblyJoint>,
 }
 
 impl DesignModel {
@@ -255,7 +271,6 @@ impl DesignModel {
             spatial_sketches,
             spatial_sketch_entities,
             spatial_sketch_constraints,
-            assembly_joints,
         } = self;
         model.configurations = configurations;
         model.features = features;
@@ -268,7 +283,6 @@ impl DesignModel {
         model.spatial_sketches = spatial_sketches;
         model.spatial_sketch_entities = spatial_sketch_entities;
         model.spatial_sketch_constraints = spatial_sketch_constraints;
-        model.assembly_joints = assembly_joints;
     }
 }
 
@@ -344,11 +358,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ctx,
         scan,
         prereqs,
+        timelines,
+        ref products,
         ref geometry,
     } = inputs;
     let mut design = DesignNative {
         design_parameter_scopes: prereqs.design_parameter_scopes.clone(),
-        design_record_headers: prereqs.design_record_headers.clone(),
+        design_record_headers: prereqs.record_headers(),
         ..DesignNative::default()
     };
     let mut model = DesignModel::default();
@@ -366,9 +382,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(scan)?;
     design.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
         scan,
-        &design.design_record_headers,
+        &prereqs.design_record_headers,
     )?;
-    extend_related_design_records(ctx, scan, prereqs, geometry, &mut design)?;
+    extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     for history in &mut design.asm_histories {
         history.release_topologies();
     }
@@ -470,7 +486,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             native: &prereqs.design_parameters,
             owners: &prereqs.design_parameter_owners,
             scopes: &design.design_parameter_scopes,
-            timelines: &design.design_feature_timelines,
+            timelines,
             construction_groups: &design.design_construction_operand_groups,
             fillet_radius_groups: &design.design_fillet_radius_groups,
             edge_operands: &design.design_edge_operands,
@@ -500,18 +516,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             ),
         );
     }
+    design.design_surface_trim_operations =
+        crate::design::decode::surface_trim::decode_surface_trim_operations(
+            scan,
+            &design.design_parameter_scopes,
+        )?;
     crate::design::feature_project::bind_surface_trim_cell_selections(
         &mut model.features,
         &design.design_parameter_scopes,
-        &prereqs.design_surface_trim_operations,
+        &design.design_surface_trim_operations,
     );
-    if let DesignPath::Geometry { mesh_projection } = geometry.path {
-        super::bind_mesh_feature_definitions(
-            &mut model.features,
-            &design.design_parameter_scopes,
-            mesh_projection,
-        )?;
-    }
+    super::bind_mesh_feature_definitions(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        geometry.mesh_projection,
+    )?;
     crate::design::feature_project::form_cages::bind_form_cages(
         ctx,
         scan,
@@ -735,7 +754,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             ctx,
         },
     )?;
-    if matches!(geometry.path, DesignPath::Geometry { .. }) {
+    if matches!(geometry.path, DesignPath::Geometry) {
         crate::history::discard_projection_caches(&mut design.asm_histories);
     }
     let mut extrude_face_resolution = crate::design::face_resolve::ExtrudeFaceResolution {
@@ -839,12 +858,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     crate::design::components::bind_unresolved_component_insert_features(
         &mut model.features,
         &design.design_parameter_scopes,
+        products.occurrences,
     );
-    model.assembly_joints = crate::design::assembly::project_assembly_joints(
-        &design.design_parameter_scopes,
-        &prereqs.design_component_occurrences,
-        &model.features,
-    )?;
+    crate::design::assembly::bind_assembly_joint_features(
+        &mut model.features,
+        products.assembly_joints,
+    );
+    let phase_one_headers = prereqs
+        .design_record_headers
+        .iter()
+        .chain(&prereqs.design_owner_record_headers)
+        .map(|header| header.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    design
+        .design_record_headers
+        .retain(|header| !phase_one_headers.contains(header.id.as_str()));
     Ok(DesignOutputs {
         native: design,
         model,
@@ -882,18 +910,16 @@ fn extend_related_design_records(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     prereqs: &ProductPrereqs,
+    timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
 ) -> Result<(), CodecError> {
-    let mut indices =
-        collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
-            let scope =
-                crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-            relation
-                .all_member_indices()
-                .map(move |record_index| (scope, record_index))
-        }));
-    indices.extend(parameter_owner_indices(&prereqs.design_parameters));
+    let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
+        let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        relation
+            .all_member_indices()
+            .map(move |record_index| (scope, record_index))
+    }));
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     let indices =
         collect_related_indices(prereqs.design_parameter_owners.iter().flat_map(|owner| {
@@ -916,7 +942,6 @@ fn extend_related_design_records(
         scan,
         &design.design_parameter_scopes,
     )?;
-    design.design_feature_timelines = crate::design::decode::meta::decode_feature_timelines(scan)?;
     design.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &design.design_parameter_scopes)?;
     design.design_decal_images =
@@ -1280,7 +1305,7 @@ fn extend_related_design_records(
     );
     crate::history::bind_vertex_recipe_history(
         &mut design.design_parameter_scopes,
-        &design.design_feature_timelines,
+        timelines,
         &design.asm_histories,
     )?;
     design.design_face_operands = crate::design::decode::operands::decode_face_operands(
