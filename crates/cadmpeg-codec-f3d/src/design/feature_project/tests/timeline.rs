@@ -326,7 +326,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
     parameter
         .try_set_source(
             crate::records::parameters::DesignParameterSource::new(
-                parameter.source_kind().as_str().to_owned(),
+                parameter.source_kind_str().to_owned(),
                 Some(40),
                 parameter.family_discriminator(),
             )

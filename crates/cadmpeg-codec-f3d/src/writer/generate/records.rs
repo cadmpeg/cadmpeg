@@ -437,7 +437,7 @@ pub(super) fn encode_document_parameters(
     for parameter in parameters {
         let expected_discriminator =
             crate::design::decode::parameters::design_parameter_discriminator(
-                parameter.source_kind().as_str(),
+                parameter.source_kind_str(),
             );
         if parameter
             .family_discriminator()
