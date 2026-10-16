@@ -527,10 +527,10 @@ pub(crate) fn bind_extrude_profile_selections(
                                         )),
                                     };
                             } else {
-                                let mut group_ids = Vec::new();
-                                for group in &matching_groups {
-                                    group_ids.push(group.id.clone());
-                                }
+                                let group_ids: Vec<_> = matching_groups
+                                    .iter()
+                                    .map(|group| group.id.clone())
+                                    .collect();
                                 let sketch_id = spatial_sketch.id.clone();
                                 *profile = match ProfileRef::spatial_sketch_selection(
                                     sketch_id, group_ids,
@@ -591,10 +591,10 @@ pub(crate) fn bind_extrude_profile_selections(
                     {
                         merged
                     } else {
-                        let mut group_ids = Vec::new();
-                        for group in &matching_groups {
-                            group_ids.push(group.id.clone());
-                        }
+                        let group_ids: Vec<_> = matching_groups
+                            .iter()
+                            .map(|group| group.id.clone())
+                            .collect();
                         let sketch_id = sketch_id.clone();
                         let fallback =
                             match PlanarProfileRef::sketch_selection(sketch_id, group_ids) {
@@ -792,10 +792,7 @@ fn historical_face_profile_selection(
         );
         face_ids.push(id);
     }
-    let mut group_ids = Vec::new();
-    for group in groups {
-        group_ids.push(group.id.clone());
-    }
+    let group_ids: Vec<_> = groups.iter().map(|group| group.id.clone()).collect();
     Ok(PlanarProfileRef::historical_faces(
         crate::ids::feature_input_topology_id(feature_id, previous_state_id),
         face_ids,

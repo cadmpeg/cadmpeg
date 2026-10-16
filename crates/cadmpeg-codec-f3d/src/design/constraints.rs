@@ -508,10 +508,7 @@ fn exact_rectangular_pattern_instances(
         if !matched {
             return None;
         }
-        let mut entity_ids = Vec::new();
-        for entity in instance {
-            entity_ids.push(entity.id().clone());
-        }
+        let entity_ids: Vec<_> = instance.iter().map(|entity| entity.id().clone()).collect();
         if position % column_count == 0 {
             rows.push(Vec::new());
         }
@@ -773,20 +770,15 @@ fn exact_circular_pattern(
                     valid = false;
                     break;
                 };
-                let mut entity_ids = Vec::new();
-                for entity in instance {
-                    entity_ids.push(entity.id().clone());
-                }
+                let entity_ids: Vec<_> =
+                    instance.iter().map(|entity| entity.id().clone()).collect();
                 instances.push(SketchCircularPatternInstance {
                     angle,
                     entities: entity_ids,
                 });
             }
             if valid {
-                let mut seed_entities = Vec::new();
-                for entity in seed {
-                    seed_entities.push(entity.id().clone());
-                }
+                let seed_entities: Vec<_> = seed.iter().map(|entity| entity.id().clone()).collect();
                 let center = center.id().clone();
                 candidates.push((center, seed_entities, instances));
             }

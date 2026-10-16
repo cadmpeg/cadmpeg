@@ -46,11 +46,11 @@ fn fixture() -> (SpatialSketchId, Vec<SpatialSketchEntity>) {
 
 #[test]
 fn spatial_profile_closed_loop_and_circle_keep_order() {
-    let (sketch, entities) = fixture();
+    let (_, entities) = fixture();
+    let entities: Vec<_> = entities.iter().collect();
     let profiles = crate::test_support::with_decode_context(|decode_ctx| {
         closed_spatial_sketch_profiles(
             decode_ctx,
-            &sketch,
             &entities,
             EPS_PROFILE_CLOSE,
             &WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK),
@@ -65,10 +65,11 @@ fn spatial_profile_closed_loop_and_circle_keep_order() {
 
 #[test]
 fn spatial_profile_search_skips_the_sketch_when_its_cap_runs_out() {
-    let (sketch, entities) = fixture();
+    let (_, entities) = fixture();
+    let entities: Vec<_> = entities.iter().collect();
     let budget = WorkBudget::new(1);
     let profiles = crate::test_support::with_decode_context(|decode_ctx| {
-        closed_spatial_sketch_profiles(decode_ctx, &sketch, &entities, EPS_PROFILE_CLOSE, &budget)
+        closed_spatial_sketch_profiles(decode_ctx, &entities, EPS_PROFILE_CLOSE, &budget)
     })
     .unwrap();
     assert_eq!(profiles, None);

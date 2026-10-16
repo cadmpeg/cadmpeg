@@ -482,10 +482,7 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             {
-                let mut ids = Vec::new();
-                for entity in &entities {
-                    ids.push(entity.id().clone());
-                }
+                let ids: Vec<_> = entities.iter().map(|entity| entity.id().clone()).collect();
                 return Some(Definition::Distance {
                     entities: ids,
                     parameter,

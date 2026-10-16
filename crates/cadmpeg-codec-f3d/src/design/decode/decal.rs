@@ -82,14 +82,12 @@ pub(crate) fn project_decal_images(
         }) else {
             continue;
         };
-        let mut faces = Vec::new();
-        for face in operand
+        let mut faces: Vec<_> = operand
             .references()
             .iter()
             .flat_map(|reference| reference.candidate_faces.iter())
-        {
-            faces.push(face.clone());
-        }
+            .cloned()
+            .collect();
         faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         faces.dedup();
         if faces.is_empty() {
