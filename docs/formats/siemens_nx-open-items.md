@@ -30,7 +30,7 @@ and pmark scope before applying any unmatched key.
 
 ### PS-02. Terminal procedural-intersection branches
 
-**Question.** How does a terminal type-38 or `0x5a` procedural intersection select a finite branch when it has no usable support-parameter lane or paired FIN-carried `SP_CURVE` witnesses?
+**Question.** How does a terminal type-38 procedural intersection select a finite branch when it has no usable support-parameter lane or paired FIN-carried `SP_CURVE` witnesses?
 
 **Known.** `siemens_nx.md` §6.3 "NX stores freeform edges and blend rails as construction relations with branch witnesses." `siemens_nx.md` §6.3 "The chart/start-term/end-term witness slots" and `siemens_nx.md` §6.3 "A FIN-carried SP_CURVE is a serialized terminal-branch witness" define procedural-intersection framing, support relations, endpoint witnesses, and accepted exact branches.
 
@@ -146,14 +146,6 @@ relation to the owning pmark edge before assigning body change-state roles.
 
 **Need.** We must know how the remaining links and the lower node-id field constrain the body and its referenced nodes to assign their semantic roles.
 
-### PS-09. Delta tag `0x5a` name
-
-**Question.** What is the canonical later-schema node-type name for delta tag `0x5a`?
-
-**Known.** `siemens_nx.md` §4.1 "Type 38 is the XT `INTERSECTION` node." and `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after the construction references in their effective field array" define tag `0x5a` as the `intersection_data` layout shared with type 38.
-
-**Need.** We must know the name to give the node one stable schema identity.
-
 ### PS-28. Deletion frame and byte extent
 
 **Question.** Which enclosing grammar establishes a deletion event, its exact
@@ -176,7 +168,7 @@ and target pmarks to the owning partition's current state?
 **Need.** Identify each constituent delta's complete enclosing frame, source
 pmark, target pmark, and partition ownership. Apply only edges that lead to
 the selected current state, including branches, undone changes, and multiple
-bodies. Keep an unestablished edge selection unresolved.
+bodies. Keep an unestablished edge selection unresolved. This includes repeated type-38 intersection states: first-use and subsequent record spelling must not select their chart or carrier relations.
 
 ### PS-33. MESH FILE chart layout
 
@@ -198,16 +190,6 @@ bodies. Keep an unestablished edge selection unresolved.
 
 **Need.** Define the complete enclosing Deltas sequence, including transitions between control records and status-framed instance fields. The sequence must establish first-use state before admitting either local interpretation and must retain independent state for each transmit stream.
 
-### PS-36. Standalone `0x5a` record anchor
-
-**Question.** What anchors a standalone `0x5a` intersection record in a deltas stream?
-
-**Known.** `siemens_nx.md` §4.2 "The INTERSECTION list is" defines the appended `intersection_data` field and the endpoint of its first instance. An edit program and that instance are separate from a later `0x5a` record. `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after the construction references in their effective field array" states that these records occur standalone and need no following recognized tag.
-
-**Need.** We must know the anchor to admit exactly the real records. The decoder treats every `0x5a` byte as a candidate and accepts it when a header reference equals one, or when the name occurs anywhere in about eighty preceding bytes. Neither condition is the fixed prefix. A record whose header is farther upstream is dropped, and a payload byte run that satisfies the structural tests enters the model as a curve.
-
-**Note.** The closure introduces an exact header constant and a stream-global `schema_anchor_seen` flag. The tests construct the header from that same constant. A valid variant header may be rejected, and an unrelated later `0x5a` can be admitted after one earlier anchor. Scope and alternate forms need independent serialized evidence.
-
 ### PS-37. NURBS record count and degree limits
 
 **Question.** What bounds the counts, degrees, and pole counts of B-spline support records?
@@ -227,17 +209,6 @@ bodies. Keep an unestablished edge selection unresolved.
 **Need.** We must know the discriminator before indexing a candidate by `(type, XMT)` or discarding an overlapping candidate. A wrong choice changes topology ownership and every dependent geometry relation.
 
 **Note.** `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs:718-856` accepts the highest-ranked candidate after reference filtering and falls back to heuristic ranking when no candidate resolves. `crates/cadmpeg-codec-nx/src/framing.rs:24-77` supplies multiple complete interpretations. **Evidence:** the comparator uses body-shape, recognized-boundary, reference-count, and node-quality preferences; no serialized discriminator is read. **Counter-evidence:** reference-consistency checks and equal-score rejection discard some ambiguous candidates, and the ranking can be intended as recovery for malformed streams. **Failure:** if an incidental `00 kind` sequence occurs inside a valid record, or if direct and escaped readings both end at recognized boundaries, the comparator can retain one reading without a serialized discriminator, changing topology ownership and dependent geometry. This is a new selection debt found in the 2026-08-10 hostile sweep.
-
-### PS-39. Cross-form intersection XMT identity
-
-**Question.** Can a type-38 construction and a schema-anchored single-byte `0x5a` construction share one stream-local XMT, and if so, which construction owns the chart and carrier relations?
-
-**Known.** `siemens_nx.md` §6.3 distinguishes the type-38 and `intersection_data` construction forms. The decoder uses stream-local XMT values for chart, construction, and carrier lookup. The specification does not define collision handling across the two construction forms.
-
-**Need.** We must know whether the two forms share one identity namespace or are mutually exclusive before joining charts and emitting native construction records.
-
-**Note.** `crates/cadmpeg-codec-nx/src/intersection.rs:367-376` chains both forms, `crates/cadmpeg-codec-nx/src/native/parasolid.rs:1391-1414` emits both under one intersection-record identity stem, and `crates/cadmpeg-codec-nx/src/decode.rs:1317-1331` and `1468-1476` use last-write-wins maps keyed only by XMT. **Evidence:** the construction forms share the stream-local XMT key and no cross-form collision check exists. **Counter-evidence:** the format may guarantee that the forms are mutually exclusive or that their XMT namespaces cannot collide; no raw record establishes either rule. **Failure:** if both forms occur with one XMT, iteration order selects one chart and one carrier relation without rejecting the ambiguity. This issue was found in the hostile sweep.
-
 
 ## 2. Object model and body composition
 

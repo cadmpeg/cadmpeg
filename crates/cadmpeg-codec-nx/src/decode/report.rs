@@ -359,9 +359,11 @@ pub(super) fn build_geometry_report(
             push_report_loss(ctx, &mut losses, NxLossCode::DeltasApplied, format_args!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
-                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, INTERSECTION, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
+                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
-                 each key within each current body-sequence interval. Validated partition topology remained authoritative, including any \
+                 each key within each current body-sequence interval. Type-38 records and deletion \
+                 candidates remained in the native ledger without replay; the paired partition's \
+                 current relation remained authoritative. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
                  attribute extraction. Every completely bounded full record, compact tombstone, \
@@ -378,14 +380,16 @@ pub(super) fn build_geometry_report(
                  Spans outside those events were retained with exact inflated-stream bounds and \
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
-                 terminal tombstone resolved to an exact current or earlier-added key.",
+                 terminal tombstone considered for replay resolved to an exact current or earlier-added key.",
                 scan.count(ctx, StreamKind::Deltas)?
             ))?;
         } else {
             push_report_loss(ctx, &mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
-                    Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
-                 event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
+                    Equal-schema deltas were paired with the preceding partition. Type-38 records and deletion \
+                 candidates remained in the native ledger without replay; the paired partition's \
+                 current relation remained authoritative. Other exact-key revisions in current body-sequence intervals were applied using the last \
+                 event for each key, but {unmatched_tombstones} terminal tombstone(s) considered for replay have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
                 scan.count(ctx, StreamKind::Deltas)?
             ))?;

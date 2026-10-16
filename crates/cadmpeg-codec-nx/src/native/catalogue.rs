@@ -844,11 +844,7 @@ fn note_parasolid_parasolid_intersection_records(
             &record.id,
             &source_stream,
             record.inflated_offset,
-            Some(if record.delta_twin {
-                "INTERSECTION_DATA"
-            } else {
-                "INTERSECTION"
-            }),
+            Some("INTERSECTION"),
         )?;
         a.exactness(ctx, &record.id, Exactness::ByteExact)?;
     }

@@ -32,9 +32,8 @@ use offset_surface_state::OffsetSurfaceState;
 pub(crate) mod surface_curve_state;
 use surface_curve_state::SurfaceCurveState;
 
-/// Exact inline schema header for the `intersection_data` one-byte record
-/// family. Its terminal `5a` is also the standalone record tag when the
-/// following fields form a complete shared record.
+/// Type-38 first-use edit adding the support-UV `intersection_data` pointer.
+/// The terminal ASCII `Z` ends the declaration; index data follows it.
 pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
     0x00, 0x26, 0x0c, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x41, 0x11,
     0x69, 0x6e, 0x74, 0x65, 0x72, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x64, 0x61, 0x74,
@@ -663,8 +662,6 @@ pub(crate) struct CompositeCurve {
     pub(crate) sense: bool,
     /// Six ordered construction references.
     pub(crate) references: [Option<XmtTarget>; 6],
-    /// Whether the record uses the single-byte delta-twin tag.
-    pub(crate) delta_twin: bool,
     /// Record type-tag offset in the inflated stream.
     pub(crate) pos: usize,
 }
@@ -704,7 +701,6 @@ impl Graph {
                         header_references: header.map(XmtTarget::from_wire),
                         sense,
                         references: references.map(XmtTarget::from_wire),
-                        delta_twin: false,
                         pos: node.pos(),
                     })
             }),
@@ -713,60 +709,46 @@ impl Graph {
     }
 }
 
-/// Decode single-byte `0x5a` intersection-data construction records.
-pub(crate) fn intersection_data_curves(
+/// Decode compact first instances bound to their complete type-38 declaration.
+/// Status-framed Deltas instances belong to the schema-node reader.
+pub(crate) fn declared_composite_curves(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
 ) -> Result<Vec<CompositeCurve>, CodecError> {
+    if matches!(
+        crate::parasolid::classify(stream),
+        crate::parasolid::StreamBody::Parasolid {
+            subtype: crate::parasolid::ParasolidSubtype::Deltas
+                | crate::parasolid::ParasolidSubtype::Unresolved,
+            ..
+        }
+    ) {
+        return Ok(Vec::new());
+    }
     let mut out = Vec::new();
-    let mut seen = BTreeSet::new();
-    let mut schema_anchor_seen = false;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(stream.len()),
-        "scan NX intersection data",
+        "scan NX intersection declarations",
     )?;
-    for (pos, byte) in stream.iter().enumerate() {
-        schema_anchor_seen |= intersection_data_schema_header_at(stream, pos);
-        if *byte != 0x5a || !schema_anchor_seen {
+    for (pos, header) in stream.windows(TYPE_38_SCHEMA_HEADER.len()).enumerate() {
+        if header != TYPE_38_SCHEMA_HEADER {
             continue;
         }
-        let Some((curve, _)) = intersection_data_curve_at(stream, pos, schema_anchor_seen) else {
+        let Some(curve) = declared_composite_curve_at(stream, pos) else {
             continue;
         };
-        if seen.contains(&curve.xmt) {
-            continue;
-        }
-        ctx.insert_btree_set(&mut seen, curve.xmt, "NX intersection identities")?;
-        ctx.reserve_vec(&mut out, 1, "NX intersection data curves")?;
-        out.push(curve);
+        ctx.push_vec(&mut out, curve, "NX declared intersection curves")?;
     }
     Ok(out)
 }
 
-/// Return whether the complete type-38 schema header starts at `offset`.
-pub(crate) fn intersection_data_schema_header_at(stream: &[u8], offset: usize) -> bool {
-    offset
-        .checked_add(TYPE_38_SCHEMA_HEADER.len())
-        .and_then(|end| stream.get(offset..end))
-        == Some(TYPE_38_SCHEMA_HEADER)
-}
-
-pub(crate) fn intersection_data_curve_at(
-    stream: &[u8],
-    pos: usize,
-    schema_anchor_seen: bool,
-) -> Option<(CompositeCurve, usize)> {
-    (stream.get(pos) == Some(&0x5a)).then_some(())?;
-    schema_anchor_seen.then_some(())?;
-    let (xmt, xmt_extra) = read_xmt(stream, pos.checked_add(1)?)?;
+fn declared_composite_curve_at(stream: &[u8], pos: usize) -> Option<CompositeCurve> {
+    let identity_at = pos.checked_add(TYPE_38_SCHEMA_HEADER.len())?;
+    (stream.get(pos..identity_at) == Some(TYPE_38_SCHEMA_HEADER)).then_some(())?;
+    let (xmt, xmt_extra) = read_xmt(stream, identity_at)?;
     (xmt > 1).then_some(())?;
-    let mut at = pos.checked_add(7 + xmt_extra)?;
-    let mut header_references = [0u32; 5];
-    for reference in &mut header_references {
-        let (value, extra) = read_xmt(stream, at)?;
-        *reference = value;
-        at += 2 + extra;
-    }
+    let mut at = identity_at.checked_add(6 + xmt_extra)?;
+    let header_references = read_sequence_at::<5>(stream, &mut at)?;
     (header_references[0] == 1).then_some(())?;
     let sense = match stream.get(at) {
         Some(b'+') => true,
@@ -774,29 +756,19 @@ pub(crate) fn intersection_data_curve_at(
         _ => return None,
     };
     at += 1;
-    let mut references = [0u32; 6];
-    for reference in &mut references {
-        let (value, extra) = read_xmt(stream, at)?;
-        *reference = value;
-        at += 2 + extra;
-    }
+    let references = read_sequence_at::<6>(stream, &mut at)?;
     let complete_witness = references[2..=4].iter().all(|reference| *reference > 1);
     let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
     (references.iter().all(|reference| *reference != 0)
         && (complete_witness || null_witness)
         && (references[0] > 1 || references[1] > 1))
-        .then_some(())?;
-    Some((
-        CompositeCurve {
+        .then_some(CompositeCurve {
             xmt,
             header_references: header_references.map(XmtTarget::from_wire),
             sense,
             references: references.map(XmtTarget::from_wire),
-            delta_twin: true,
             pos,
-        },
-        at,
-    ))
+        })
 }
 
 /// Decode validated type-56 rolling-ball blend surfaces.

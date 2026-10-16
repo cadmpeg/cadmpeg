@@ -20,7 +20,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::NxLossCode;
 use crate::topology::{
-    intersection_data_curves, FaceLoopError, FaceLoopFailure, Graph, Node, NodeCandidate,
+    declared_composite_curves, FaceLoopError, FaceLoopFailure, Graph, Node, NodeCandidate,
     TYPE_38_SCHEMA_HEADER,
 };
 use crate::NxCodec;
@@ -1140,41 +1140,51 @@ fn topology_rejects_status_framed_delta_as_fixed_record() {
 }
 
 #[test]
-fn intersection_data_requires_complete_schema_header() {
-    let source = deltas_intersection_curve_stream();
-    let header_start = source
-        .windows(TYPE_38_SCHEMA_HEADER.len())
-        .position(|window| window == TYPE_38_SCHEMA_HEADER)
-        .expect("schema header");
-    let after_header = header_start + TYPE_38_SCHEMA_HEADER.len();
-    let record_start = source[after_header..]
-        .iter()
-        .position(|byte| *byte == 0x5a)
-        .map(|offset| after_header + offset)
-        .expect("standalone intersection-data record");
-
-    let mut incomplete_header =
-        source[header_start..header_start + TYPE_38_SCHEMA_HEADER.len() - 1].to_vec();
-    incomplete_header.push(0xfe);
-    incomplete_header.extend_from_slice(&source[record_start..]);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| intersection_data_curves(
-            ctx,
-            &incomplete_header
-        ))
-        .unwrap()
-        .is_empty()
+fn declared_intersection_requires_its_own_complete_schema() {
+    // Compact first instance: XMT12, node7, five common references, sense,
+    // then six construction references. Z terminates the declaration.
+    let mut instance = Vec::new();
+    instance.extend_from_slice(&12u16.to_be_bytes());
+    instance.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        instance.extend_from_slice(&reference.to_be_bytes());
+    }
+    instance.push(b'+');
+    for reference in [6u16, 7, 20, 21, 22, 23] {
+        instance.extend_from_slice(&reference.to_be_bytes());
+    }
+    let mut source = TYPE_38_SCHEMA_HEADER.to_vec();
+    source.extend_from_slice(&instance);
+    // A later compact-shaped Z is not a second record.
+    source.extend_from_slice(&[0xa5; 100]);
+    source.push(b'Z');
+    source.extend_from_slice(&instance);
+    let curves =
+        crate::test_support::with_decode_context(|ctx| declared_composite_curves(ctx, &source))
+            .unwrap();
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].pos, 0);
+    assert_eq!(curves[0].xmt, 12);
+    assert_eq!(
+        curves[0]
+            .references
+            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
+        [6, 7, 20, 21, 22, 23]
     );
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(
-            ctx,
-            &incomplete_header
-        ))
+    for at in [16, TYPE_38_SCHEMA_HEADER.len() - 1] {
+        let mut mutated = source.clone();
+        mutated[at] = 0xfe;
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            declared_composite_curves(ctx, &mutated)
+        })
         .unwrap()
-        .records
-        .iter()
-        .all(|record| record.kind() != 90)
-    );
+        .is_empty());
+    }
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        declared_composite_curves(ctx, &deltas_intersection_curve_stream())
+    })
+    .unwrap()
+    .is_empty());
 }
 
 #[test]

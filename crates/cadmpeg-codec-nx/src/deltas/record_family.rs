@@ -195,9 +195,6 @@ pub(crate) enum RecordFamily {
         selector: GroupSelector,
         linked_reference_status: GroupReferenceStatus,
     },
-    IntersectionData {
-        references: [u32; 11],
-    },
     Type91 {
         references: [u32; 6],
     },
@@ -280,7 +277,6 @@ impl Serialize for RecordFamilyReferences<'_> {
             )
             .serialize(serializer),
             RecordFamily::Group { references, .. } => references.serialize(serializer),
-            RecordFamily::IntersectionData { references, .. } => references.serialize(serializer),
             RecordFamily::Type91 { references, .. } => references.serialize(serializer),
             RecordFamily::World { references, .. } => references.values().serialize(serializer),
             RecordFamily::BSurface { references, .. } => references.serialize(serializer),
@@ -414,7 +410,7 @@ impl RecordFamily {
             Self::Entity58 => RecordKind::Entity58,
             Self::Entity59 => RecordKind::Entity59,
             Self::Entity62 => RecordKind::Entity62,
-            Self::Group { .. } | Self::IntersectionData { .. } => RecordKind::Group,
+            Self::Group { .. } => RecordKind::Group,
             Self::Type91 { .. } => RecordKind::Type91,
             Self::World { .. } => RecordKind::World,
             Self::BSurface { .. } => RecordKind::BSurface,
@@ -477,7 +473,6 @@ impl RecordFamily {
             | Self::Entity58
             | Self::Entity59
             | Self::Entity62
-            | Self::IntersectionData { .. }
             | Self::Type91 { .. }
             | Self::World { .. }
             | Self::BSurfaceData
@@ -510,10 +505,7 @@ impl RecordFamily {
 
     /// Stable family name used by the deltas census and native records.
     pub(crate) const fn family_name(&self) -> &'static str {
-        match self {
-            Self::IntersectionData { .. } => "INTERSECTION_DATA",
-            _ => self.record_kind().name(),
-        }
+        self.record_kind().name()
     }
 
     /// Ordered references retained by this record layout.
@@ -553,7 +545,6 @@ impl RecordFamily {
                 .chain(trailing_references.values().iter().copied())
                 .collect(),
             Self::Group { references, .. } => references.to_vec(),
-            Self::IntersectionData { references, .. } => references.to_vec(),
             Self::Type91 { references, .. } => references.to_vec(),
             Self::World { references, .. } => references.values().to_vec(),
             Self::BSurface { references, .. } => references.to_vec(),
@@ -876,9 +867,6 @@ impl RecordFamily {
                 node_id: node_id?,
                 selector: group_selector?,
                 linked_reference_status: group_linked_reference_status?,
-            },
-            "INTERSECTION_DATA" => Self::IntersectionData {
-                references: references.try_into().ok()?,
             },
             "TYPE_91" => Self::Type91 {
                 references: references.try_into().ok()?,

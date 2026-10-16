@@ -874,10 +874,11 @@ this ownership transitively through their typed support, spine, basis, pcurve,
 and original-curve slots. A fixed-record-shaped byte run with no such owner is
 not part of the body topology image.
 
-Type 38 is the XT `INTERSECTION` node. The canonical later-schema name of a
-single-byte delta `0x5a` record is `INTERSECTION_DATA`; it uses the
-`intersection_data` layout and is distinct from the two-byte type-90 `GROUP`
-record.
+Type 38 is the XT `INTERSECTION` node. A first-use declaration may append
+an `intersection_data` pointer to type 204 (`00cc`) support-UV data. The
+terminal ASCII `Z` (`5a`) ends that declaration; the first type-38 instance's
+index follows it. It is not a separate node tag. Type 90 `GROUP` has the
+two-byte nodetype `005a`.
 
 ### 4.2 Deltas-stream framing
 
@@ -922,7 +923,7 @@ Type-91 records are `type:005b [ff], xmt, flag:u32 BE, reference_status[6]`. The
 
 Types 45, 67, 70, 74, 90, 91, 101, and 141 use an explicit optional `ff` envelope before their body. When `ff` follows the type tag, a complete escaped body owns that byte. The direct body applies only when the escaped family grammar is incomplete. This decision uses no bytes after the selected body.
 
-Status-framed type-38 `INTERSECTION` records end after the construction references in their effective field array and do not require a following recognized tag. The V13 base has five construction pointers; a declaration that appends `intersection_data` adds the sixth pointer. Single-byte `5a` `INTERSECTION_DATA` records use the layout in section 6.3 and end after their sixth construction reference. Both participate in the deltas byte ledger and remain in the semantic lane.
+Status-framed type-38 `INTERSECTION` records end after the construction references in their effective field array and do not require a following recognized tag. The V13 base has five construction pointers; a declaration that appends `intersection_data` adds the sixth pointer. The first instance after an embedded-schema edit belongs to that same type 38 and uses the Deltas reference/status grammar. The declaration terminator is not an additional record in the byte ledger.
 
 A complete type-101 record whose start lies inside a fixed-record candidate and
 whose end extends beyond that candidate takes precedence over the fixed
@@ -994,7 +995,7 @@ limit. Part-file LIST entries reference ATTRIBUTE instances, type 81.
 The optional envelope precedes the array count. The record ends after the
 complete declared entry lane and participates in the deltas byte ledger.
 
-Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, ref 01, ref 01, ref 01, ref 01, mode, ref status`. The XMT identity is non-null, `mode` is `02`, `04`, or `09`, and the final status is binary. The optional `ff` envelope byte precedes the XMT identity. The record ends after the final status byte, participates in the deltas byte ledger, and does not enter the procedural-intersection semantic lane. This two-byte type tag is distinct from the single-byte `5a` intersection record.
+Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, ref 01, ref 01, ref 01, ref 01, mode, ref status`. The XMT identity is non-null, `mode` is `02`, `04`, or `09`, and the final status is binary. The optional `ff` envelope byte precedes the XMT identity. The record ends after the final status byte, participates in the deltas byte ledger, and does not enter the procedural-intersection semantic lane. The low byte of this two-byte type tag has no standalone intersection-record meaning.
 
 A repeated type-101 `WORLD` record is `0065 [ff]` followed by the instance
 fields selected by the preceding WORLD schema. The fifteen-, eighteen-, and
@@ -1430,35 +1431,37 @@ The type-126 `u_periodic` and `v_periodic` bytes are binary logical flags at `+4
 
 Degree, pole-count, and distinct-knot-count fields have no additional numeric ceiling beyond their encoded integer widths. The basis cardinality and the complete counted control, multiplicity, and knot lanes are the validity bounds. Every distinct knot has a positive multiplicity, and the expanded knot count is exactly `pole_count + degree + 1` in each direction.
 
-### 6.3 Procedural intersection curves (type 38 / `0x5a`)
+### 6.3 Procedural intersection curves (type 38)
 
 NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`.
 
-The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, six construction references, record form, and inflated-stream offset. The record form distinguishes type 38 from the single-byte `0x5a` delta twin.
+The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, six construction references, and the type-38 nodetype’s inflated-stream offset. First-use and subsequent instances share one type identity.
 
-The `intersection_data` schema is established by the exact type-38 header
-`00260c43434343434343434343434111696e74657273656374696f6e5f6461746100cc0001`.
-The terminal `5a` of that header is the schema tag. A standalone `0x5a`
-record is admitted only after this exact prefix has occurred in the stream;
-the header reference values and nearby text do not substitute for the schema
-anchor. The record ends after its six construction references and needs no
-following recognized tag.
+A type-38 edit appending the type-204 pointer has this complete declaration:
+`00260c43434343434343434343434111696e74657273656374696f6e5f6461746100cc00015a`.
+Its final byte is ASCII `Z`, the end of the schema-edit program. The first
+instance begins immediately afterward, with compact references in a partition
+or plain transmit stream and reference/status pairs in a Deltas stream. A
+later unrelated `5a` byte is not an instance of that declaration. Subsequent
+instances begin with the ordinary two-byte nodetype `0026`.
 
 `cache_fit_tolerance` belongs to a separately solved 3D curve cache. An intersection represented directly by its procedural construction has no cache-fit tolerance; its incident edge tolerance bounds support-chart completion and transfers to each derived pcurve fit contract.
 
 CHART_s, term-use, support-UV, and blend-bound XMT identities are unique within one physical stream. A duplicate identity rejects that auxiliary relation. A second chart record may supply native parameters and support-UV lanes only when its point count and model-space points agree with the geometric chart within the larger chordal tolerance. When deltas history is merged into its paired partition, a later complete CHART_s record replaces an earlier record with the same XMT before intersection validation.
 
-The stream-local intersection-construction identity is the XMT regardless of
-whether the construction uses the type-38 or `intersection_data` form. Within
-one physical stream, a type-38 construction and an `intersection_data`
-construction with one XMT do not form a complete typed relation: neither
-construction enters the joined construction or chart-carrier lanes, and the
-collision remains an opaque intersection loss. During a paired deltas merge,
-the current complete construction replaces the partition construction with the
-same XMT before this uniqueness check. This replacement applies to both the
-status-framed type-38 form and the single-byte `intersection_data` form.
+The stream-local intersection-construction identity is the type-38 XMT. A
+first-use schema declaration and an ordinary subsequent nodetype do not create
+separate construction families or identity namespaces. A selected image has
+one construction per XMT. Duplicate XMTs leave that construction unresolved,
+including records with identical fields. Record spelling provides no priority. Repeated XMTs in a Deltas aggregate are
+saved states on pmark transitions. Their chart, supports, witnesses and sense
+belong to the selected type-38 state. Physical order alone does not identify
+the current state; the paired partition supplies its current image.
+An unselected Deltas type-38 image or deletion does not modify that partition
+relation. Its saved fields and event offset remain separate from the current
+construction.
 
-The chart/start-term/end-term witness slots `ref[2:5]` are atomic: all three are null reference `1`, or all three are non-null. Mixed null and non-null witness slots do not form a type-38 or `intersection_data` construction. Type-38 common-header `attributes` is null reference `1`. Deltas type-38 records append status byte `01` to every reference; transfer removes those status bytes before applying the partition-style construction grammar.
+The chart/start-term/end-term witness slots `ref[2:5]` are atomic: all three are null reference `1`, or all three are non-null. Mixed null and non-null witness slots do not form a complete intersection witness relation. Type-38 common-header `attributes` is null reference `1`. Deltas type-38 pointer fields carry binary status bytes (`00` or `01`); the status is separate from the reference identity.
 
 A topology-referenced record with a non-null chart reference that does not resolve remains a typed unresolved intersection only when at least one serialized support resolves as a surface and its endpoint relation is independently witnessed by both term-use records or by one unique edge-endpoint pair. The all-null witness form remains a typed construction when a serialized support resolves. A type marker with no resolved support, or with a non-null unresolved chart and no endpoint relation, is not an intersection construction.
 
@@ -1491,7 +1494,7 @@ the analytic surface parameters, solves the axial affine map, and applies the
 complete two-support forward check. Other cylindrical and conical endpoint
 relations do not become generator charts.
 
-A FIN-carried SP_CURVE is a serialized terminal-branch witness when its original-curve reference resolves to the same type-38/`0x5a` construction and its support reference is the FIN's FACE carrier. Two such witnesses establish the bounded parameterization when exactly one belongs to each ordered support, their effective trimmed parameter intervals are bit-identical and increasing, both interval endpoints reproduce the ordered EDGE vertices within the EDGE tolerance, and the sum of their finite SP_CURVE fit tolerances does not exceed the EDGE tolerance. The shared interval becomes the EDGE and tolerant-intersection parameter range. A witness running from the second EDGE vertex to the first is reflected over the shared interval before transfer. When both endpoint orders match, exactly one orientation must have a positive model-space tangent alignment with the 3D carrier at the interval start. Line, circle, harmonic, hyperbolic, polar-harmonic, polar-NURBS, and ordinary NURBS carriers have an exact reflection over any finite interval. A signed offset reflects its basis and negates its distance. Ellipse, parabola, and hyperbola carriers reflect without changing family when the interval endpoints sum exactly to zero; their positive transverse axes reverse. Over any other finite increasing interval, an ellipse reflects as exact first-order cosine/sine coefficients, a parabola as the exact degree-2 non-rational NURBS polynomial, and a hyperbola as exact first-order hyperbolic-cosine/hyperbolic-sine coefficients over that same interval. The two canonical pcurves retain their exact geometry; their fit contracts bound their separation throughout the interval through their common original curve. Missing, repeated, differently bounded, unreflectable, endpoint-inconsistent, or insufficiently precise witnesses do not select a branch.
+A FIN-carried SP_CURVE is a serialized terminal-branch witness when its original-curve reference resolves to the same type-38 construction and its support reference is the FIN's FACE carrier. Two such witnesses establish the bounded parameterization when exactly one belongs to each ordered support, their effective trimmed parameter intervals are bit-identical and increasing, both interval endpoints reproduce the ordered EDGE vertices within the EDGE tolerance, and the sum of their finite SP_CURVE fit tolerances does not exceed the EDGE tolerance. The shared interval becomes the EDGE and tolerant-intersection parameter range. A witness running from the second EDGE vertex to the first is reflected over the shared interval before transfer. When both endpoint orders match, exactly one orientation must have a positive model-space tangent alignment with the 3D carrier at the interval start. Line, circle, harmonic, hyperbolic, polar-harmonic, polar-NURBS, and ordinary NURBS carriers have an exact reflection over any finite interval. A signed offset reflects its basis and negates its distance. Ellipse, parabola, and hyperbola carriers reflect without changing family when the interval endpoints sum exactly to zero; their positive transverse axes reverse. Over any other finite increasing interval, an ellipse reflects as exact first-order cosine/sine coefficients, a parabola as the exact degree-2 non-rational NURBS polynomial, and a hyperbola as exact first-order hyperbolic-cosine/hyperbolic-sine coefficients over that same interval. The two canonical pcurves retain their exact geometry; their fit contracts bound their separation throughout the interval through their common original curve. Missing, repeated, differently bounded, unreflectable, endpoint-inconsistent, or insufficiently precise witnesses do not select a branch.
 
 | Ref | Role                                                                                       |
 | --- | ------------------------------------------------------------------------------------------ |
@@ -1500,7 +1503,7 @@ A FIN-carried SP_CURVE is a serialized terminal-branch witness when its original
 | 3/4 | `0x29` term_use start / end endpoint                                                       |
 | 5   | `0x00cc` values-array (support UV parameters)                                              |
 
-Both type-38 and one-byte `0x5a` constructions use the `0x00cc` marker to
+Type-38 constructions use the type-204 `0x00cc` marker to
 associate values with the original serialized support slots. Marker 2 stores
 one `(u,v)` lane for reference 0. Marker 3 stores one `(u,v)` lane for reference
 1 and makes that support primary. Marker 4 stores `(u0,v0,u1,v1)` tuples for
@@ -1670,7 +1673,7 @@ support order.
 - **Offset-intersection spine:** a type-38 whose two supports are both OFFSET_SURF, with base refs and offsets mirroring the blend's supports and `range` (`O_i = base_i + range_i · oriented_normal_i`). Freeform (NURBS-offset) bases.
 - **Direct-supports spine:** a type-38 on the original analytic supports directly.
 - **Fixed-curve spine:** an ELLIPSE (type 32); ellipse non-circularity encodes plane draft angle (`major/minor = 1/cos(draft)`).
-- **Tool-body delta spine:** a `0x5a` INTERSECTION_DATA record with a real (non-sentinel) `geometric_owner`.
+- **Tool-body delta spine:** a type-38 intersection with a real (non-sentinel) `geometric_owner`.
 
 **Canal law** `B(t,s)` uses the two supports, signed range, and the spine marker-4 UV chart:
 

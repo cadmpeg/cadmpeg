@@ -1757,12 +1757,12 @@ fn semantic_residual_with_census_matches_the_standalone_transform() {
 
 #[test]
 fn merge_masks_historical_interleaved_body_sequences() {
-    let mut first_historical = status_framed_deltas_intersection_stream();
+    let mut first_historical = status_framed_deltas_point_stream();
     first_historical[4..8].copy_from_slice(&1u32.to_be_bytes());
-    let mut first_current = status_framed_deltas_intersection_stream();
+    let mut first_current = status_framed_deltas_point_stream();
     first_current[4..8].copy_from_slice(&2u32.to_be_bytes());
-    let mut second_historical = status_framed_deltas_intersection_stream();
-    second_historical[2..4].copy_from_slice(&13u16.to_be_bytes());
+    let mut second_historical = status_framed_deltas_point_stream();
+    second_historical[2..4].copy_from_slice(&51u16.to_be_bytes());
     second_historical[4..8].copy_from_slice(&3u32.to_be_bytes());
     let mut second_current = second_historical.clone();
     second_current[4..8].copy_from_slice(&4u32.to_be_bytes());
@@ -1924,23 +1924,20 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
     let census =
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
             .unwrap();
-    let record = census
+    assert!(census
         .records
         .iter()
-        .find(|record| record.offset == prefix + 78)
-        .unwrap();
+        .all(|record| record.offset != prefix + 78));
     let trailer = census.terminal_null_references.unwrap();
-    assert_eq!(record.end, prefix + 108);
     assert_eq!(
         (trailer.offset(), trailer.end()),
         (prefix + 100, prefix + 108)
     );
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
-        vec![(prefix, prefix + 108)]
+        vec![(prefix, prefix + 78), (prefix + 100, prefix + 108)]
     );
-    assert_eq!(census.bytes_decoded(), 78 + 30 + 8);
-    assert_ne!(census.bytes_decoded(), 108);
+    assert_eq!(census.bytes_decoded(), 78 + 8);
 
     for stream in [
         two_support_ext11_charted_intersection_curve_stream(false),

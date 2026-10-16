@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "31",
+      "ir_version": "32",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -302,7 +302,6 @@
                 22,
                 1
               ],
-              "delta_twin": false,
               "header_references": [
                 1,
                 0,

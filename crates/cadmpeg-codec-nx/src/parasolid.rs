@@ -1256,7 +1256,7 @@ fn is_zlib_header(cmf: u8, flg: u8) -> bool {
 }
 
 /// Classify an inflated payload from its prologue text and read the schema token.
-fn classify(inflated: &[u8]) -> StreamBody {
+pub(crate) fn classify(inflated: &[u8]) -> StreamBody {
     if !inflated.starts_with(b"PS\x00\x00") {
         return StreamBody::Preview;
     }

@@ -960,7 +960,6 @@ fn consume_shared_record(
     stream: &[u8],
     offset: usize,
     records: &[Record],
-    intersection_schema_anchor_seen: bool,
     world_layout: Option<WorldLayout>,
     intersection_layout: intersection::IntersectionLayout,
 ) -> Result<Option<Record>, CodecError> {
@@ -976,14 +975,7 @@ fn consume_shared_record(
     if let Some(record) = consume_intersection_auxiliary(ctx, stream, record_offset)? {
         return Ok(Some(record));
     }
-    if let Some(record) = first_complete_record(
-        ctx,
-        stream,
-        record_offset,
-        intersection_schema_anchor_seen,
-        false,
-        world_layout,
-    )? {
+    if let Some(record) = first_complete_record(ctx, stream, record_offset, false, world_layout)? {
         return Ok(Some(record));
     }
     let Some(kind) = stream.get(offset).copied().map(u16::from) else {
@@ -1005,7 +997,6 @@ fn first_complete_record(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
-    intersection_schema_anchor_seen: bool,
     include_type_67: bool,
     world_layout: Option<WorldLayout>,
 ) -> Result<Option<Record>, CodecError> {
@@ -1032,7 +1023,7 @@ fn first_complete_record(
     if let Some(record) = consume_world(ctx, stream, offset, world_layout)? {
         return Ok(Some(record));
     }
-    consume_intersection_data(ctx, stream, offset, intersection_schema_anchor_seen)
+    Ok(None)
 }
 
 fn has_shareable_terminal(stream: &[u8], record: &Record) -> bool {
@@ -1211,11 +1202,10 @@ fn merge_records(
 
     let mut tombstones = BTreeMap::new();
     let mut tombstone_reservation = ctx.reserve_scoped(0, "NX deltas tombstone keys")?;
-    for tombstone in census
-        .tombstones
-        .iter()
-        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
-    {
+    for tombstone in census.tombstones.iter().filter(|tombstone| {
+        tombstone.kind != RecordKind::Intersection
+            && current_scope_contains(&current_scopes, tombstone.offset)
+    }) {
         let kind = tombstone.kind.code();
         if !tombstones.contains_key(&(kind, tombstone.xmt)) {
             ctx.charge_collection_items(1, "NX deltas tombstone keys")?;
@@ -1394,11 +1384,10 @@ fn collect_unmatched_events<'ctx>(
             },
         )?;
     }
-    for tombstone in census
-        .tombstones
-        .iter()
-        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
-    {
+    for tombstone in census.tombstones.iter().filter(|tombstone| {
+        tombstone.kind != RecordKind::Intersection
+            && current_scope_contains(&current_scopes, tombstone.offset)
+    }) {
         let kind = tombstone.kind.code();
         push_merge_event(
             ctx,
@@ -1460,6 +1449,12 @@ fn mergeable_record(
     let Ok(kind) = NodeKind::try_from(kind) else {
         return Ok(false);
     };
+    // Type-38 images in the rollback aggregate are saved transition states.
+    // A BODY revision run does not select that transition. Preserve the
+    // current partition relation and retain the saved fields in the ledger.
+    if kind == NodeKind::Intersection {
+        return Ok(false);
+    }
     crate::topology::Graph::has_canonical_record(ctx, &record.canonical_bytes, kind, record.xmt)
 }
 
@@ -1640,19 +1635,13 @@ pub(crate) fn semantic_residual_with_census(
         let is_semantic = matches!(
             record.kind(),
             40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
-        ) || record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a);
+        );
         is_current && is_semantic
     };
     let mut total_len = stream.len();
     for record in census.records.iter().filter(|record| is_semantic(record)) {
-        let prefix_len = if record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a) {
-            crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1
-        } else {
-            0
-        };
         total_len = total_len
-            .checked_add(prefix_len)
-            .and_then(|length| length.checked_add(record.canonical_bytes.len()))
+            .checked_add(record.canonical_bytes.len())
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "NX semantic residual bytes",
@@ -1674,11 +1663,15 @@ pub(crate) fn semantic_residual_with_census(
     for tombstone in &census.tombstones {
         residual[tombstone.offset..tombstone.offset + 6].fill(0xff);
     }
-    for record in census.records.iter().filter(|record| is_semantic(record)) {
-        if record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a) {
-            let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
-            residual.extend_from_slice(&crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]);
+    // A first-use type-38 schema event retains status-framed fields. It
+    // cannot become a compact construction when the residual is appended to
+    // a partition stream. Keep that saved state in the native schema arena.
+    for declaration in &census.schema_nodes {
+        if declaration.fields.kind() == 38 {
+            residual[declaration.offset..declaration.end].fill(0xff);
         }
+    }
+    for record in census.records.iter().filter(|record| is_semantic(record)) {
         residual.extend_from_slice(&record.canonical_bytes);
     }
     Ok(residual)
@@ -2553,41 +2546,6 @@ fn select_enveloped_layout<T>(
     } else {
         direct
     }
-}
-
-fn consume_intersection_data(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-    offset: usize,
-    intersection_schema_anchor_seen: bool,
-) -> Result<Option<Record>, CodecError> {
-    let Some((curve, end)) = crate::topology::intersection_data_curve_at(
-        stream,
-        offset,
-        intersection_schema_anchor_seen,
-    ) else {
-        return Ok(None);
-    };
-    let mut references = curve
-        .header_references
-        .map(crate::framing::xmt_reference::XmtTarget::to_wire)
-        .to_vec();
-    references.extend(
-        curve
-            .references
-            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
-    );
-    let Ok(references) = references.try_into() else {
-        return Ok(None);
-    };
-    admitted_record(
-        ctx,
-        stream,
-        offset,
-        end,
-        RecordFamily::IntersectionData { references },
-        curve.xmt,
-    )
 }
 
 fn consume_intersection_auxiliary(

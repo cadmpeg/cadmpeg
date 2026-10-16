@@ -143,7 +143,6 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
     let mut value_boundary = true;
     let mut referenced_value_offsets = None::<BTreeSet<usize>>;
     let mut referenced_offsets_guard = ctx.reserve_scoped(0, "NX referenced value offsets")?;
-    let mut intersection_schema_anchor_seen = false;
     let mut world_layout = None;
     let mut schema_seen = [false; 102];
     let supported_base = census
@@ -169,8 +168,6 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             }
         }
         ctx.charge_work(1, "walk NX deltas census")?;
-        intersection_schema_anchor_seen |=
-            crate::topology::intersection_data_schema_header_at(stream, offset);
         let declaration = if supported_base {
             inline_schema_node(ctx, stream, offset, stream.len(), &mut schema_seen)?
         } else {
@@ -237,7 +234,6 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             stream,
             offset,
             &census.records,
-            intersection_schema_anchor_seen,
             world_layout,
             intersection_layout,
         )?;
@@ -249,14 +245,7 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         let complete_record = if complete_record.is_some() {
             complete_record
         } else {
-            first_complete_record(
-                ctx,
-                stream,
-                offset,
-                intersection_schema_anchor_seen,
-                true,
-                world_layout,
-            )?
+            first_complete_record(ctx, stream, offset, true, world_layout)?
         };
         if let Some(record) = complete_record {
             census.bytes_decoded += record.end - offset;

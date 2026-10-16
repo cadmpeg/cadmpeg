@@ -2452,8 +2452,6 @@ pub(super) struct ParasolidIntersectionRecord {
     sense: bool,
     /// Six ordered support and witness references.
     construction_references: [u32; 6],
-    /// Whether the record uses the single-byte delta-twin tag.
-    pub(super) delta_twin: bool,
     /// Record tag offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -2488,7 +2486,6 @@ impl ParasolidStreamRecords for ParasolidIntersectionRecord {
             construction_references: row
                 .references
                 .map(crate::framing::xmt_reference::XmtTarget::to_wire),
-            delta_twin: row.delta_twin,
             inflated_offset: cadmpeg_core::decode::u64_from_index(row.pos),
         }
     }

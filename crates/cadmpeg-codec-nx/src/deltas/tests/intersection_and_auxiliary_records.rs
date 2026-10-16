@@ -28,7 +28,7 @@ fn deltas_point_normalizes_to_partition_record_framing() {
 }
 
 #[test]
-fn deltas_intersection_normalizes_during_full_record_merge() {
+fn deltas_intersection_normalizes_without_selecting_a_transition() {
     let mut stream = status_framed_deltas_intersection_stream();
     stream[10] = 0;
     let record_len = stream.len();
@@ -40,12 +40,8 @@ fn deltas_intersection_normalizes_during_full_record_merge() {
     assert_eq!(census.records[0].kind(), 38);
     assert_eq!(census.bytes_decoded(), record_len);
 
-    let merged = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::merge_full_records(ctx, &[], &stream)
-    })
-    .unwrap();
     let intersections = crate::test_support::with_decode_context(|ctx| {
-        crate::topology::composite_curves(ctx, &merged)
+        crate::topology::composite_curves(ctx, &census.records[0].canonical_bytes)
     })
     .unwrap();
     assert_eq!(intersections.len(), 1);
@@ -56,10 +52,15 @@ fn deltas_intersection_normalizes_during_full_record_merge() {
             .map(crate::framing::xmt_reference::XmtTarget::to_wire),
         [6, 7, 20, 21, 22, 23]
     );
+    let merged = crate::test_support::with_decode_context(|ctx| {
+        crate::deltas::merge_full_records(ctx, &[], &stream)
+    })
+    .unwrap();
+    assert!(merged.is_empty());
 }
 
 #[test]
-fn merge_replaces_a_partition_intersection_by_exact_xmt() {
+fn unselected_deltas_intersection_preserves_the_partition_state() {
     let partition = charted_intersection_curve_topology_partition_stream();
     let mut replacement = status_framed_deltas_intersection_stream();
     let sense = replacement
@@ -72,6 +73,7 @@ fn merge_replaces_a_partition_intersection_by_exact_xmt() {
         crate::deltas::merge_full_records(ctx, &partition, &replacement)
     })
     .unwrap();
+    assert_eq!(merged, partition);
     let [intersection] = crate::test_support::with_decode_context(|ctx| {
         crate::topology::composite_curves(ctx, &merged)
     })
@@ -80,99 +82,51 @@ fn merge_replaces_a_partition_intersection_by_exact_xmt() {
     .expect("one current intersection");
 
     assert_eq!(intersection.xmt, 12);
-    assert!(!intersection.sense);
+    assert!(intersection.sense);
 }
 
 #[test]
-fn deltas_walks_complete_single_byte_intersection_data_records() {
-    let mut stream = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
-    stream.extend_from_slice(&12u16.to_be_bytes());
-    stream.extend_from_slice(&7u32.to_be_bytes());
-    for reference in [1u16, 1, 1, 1, 1] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
+fn unselected_intersection_tombstone_preserves_both_partition_spellings() {
+    let partition = charted_intersection_curve_topology_partition_stream();
+    let mut declared = partition.clone();
+    let at = declared
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("partition intersection");
+    declared.splice(
+        at..at + 2,
+        crate::topology::TYPE_38_SCHEMA_HEADER.iter().copied(),
+    );
+    let mut deltas = crate::test_support::test_deltas::DELTAS_PREAMBLE.to_vec();
+    deltas.extend_from_slice(&[0, 38, 0, 12, 0, 1]);
+    let census =
+        crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &deltas))
+            .unwrap();
+    assert_eq!(census.tombstones.len(), 1);
+    assert_eq!(census.tombstones[0].kind.code(), 38);
+    for current in [partition, declared] {
+        let merged = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::merge_full_records(ctx, &current, &deltas)
+        })
+        .unwrap();
+        assert_eq!(merged, current);
     }
-    stream.push(b'-');
-    for reference in [6u16, 7] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
-    }
-    for reference in [15u16, 14, 13] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(0);
-    }
-    stream.extend_from_slice(&[0, 1, 1]);
-    let schema_end = stream.len();
-    stream.extend_from_slice(&[0xa5; 100]);
+}
 
-    let record_offset = stream.len();
-    stream.extend_from_slice(&[0x5a]);
-    stream.extend_from_slice(&12u16.to_be_bytes());
-    stream.extend_from_slice(&7u32.to_be_bytes());
-    for reference in [1u16, 2, 3, 4, 5] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-    }
-    stream.push(b'+');
-    for reference in [6u16, 6, 1, 1, 1, 1] {
-        stream.extend_from_slice(&reference.to_be_bytes());
-    }
-    let record_end = stream.len();
-    stream.extend_from_slice(&[0xfe, 0xdc]);
-
+#[test]
+fn deltas_do_not_admit_later_schema_terminal_payload_as_group_or_curve() {
+    let stream = deltas_intersection_curve_stream();
     let census =
         crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream))
             .unwrap();
-    assert_eq!(census.records.len(), 1);
-    assert_eq!(census.records[0].kind(), 90);
-    assert_eq!(census.records[0].family_name(), "INTERSECTION_DATA");
-    assert_eq!(census.records[0].xmt, 12);
-    assert_eq!(census.records[0].offset, record_offset);
-    assert_eq!(
-        census.records[0].family.references(),
-        [1, 2, 3, 4, 5, 6, 6, 1, 1, 1, 1]
-    );
-    assert_eq!(
-        census.records[0].canonical_bytes,
-        stream[record_offset..record_end]
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["INTERSECTION_DATA"],
-        1
-    );
-    assert_eq!(
-        census.bytes_decoded(),
-        schema_end + (record_end - record_offset)
-    );
-    let curves = crate::test_support::with_decode_context(|ctx| {
-        crate::topology::intersection_data_curves(ctx, &stream)
+    assert!(census.records.iter().all(|record| record.kind() != 90));
+    assert_eq!(census.schema_nodes.len(), 1);
+    assert_eq!(census.schema_nodes[0].fields.kind(), 38);
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::topology::declared_composite_curves(ctx, &stream)
     })
-    .unwrap();
-    assert_eq!(curves.len(), 1);
-    assert_eq!(
-        curves[0]
-            .references
-            .map(crate::framing::xmt_reference::XmtTarget::to_wire),
-        [6, 6, 1, 1, 1, 1]
-    );
-
-    let residual = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::semantic_residual(ctx, &stream)
-    })
-    .unwrap();
-    assert!(residual[record_offset..record_end]
-        .iter()
-        .all(|byte| *byte == 0xff));
-    let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
-    let appended_start = residual.len() - prefix_len - (record_end - record_offset);
-    assert_eq!(
-        &residual[appended_start..appended_start + prefix_len],
-        &crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]
-    );
-    assert_eq!(
-        &residual[appended_start + prefix_len..],
-        &stream[record_offset..record_end]
-    );
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -211,7 +165,7 @@ fn deltas_rejects_single_byte_intersection_data_before_its_schema_anchor() {
             .contains_key("INTERSECTION_DATA")
     );
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::topology::intersection_data_curves(ctx, &stream)
+        crate::topology::declared_composite_curves(ctx, &stream)
     })
     .unwrap()
     .is_empty());

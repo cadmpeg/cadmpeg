@@ -294,7 +294,7 @@ pub(crate) struct UnchartedIntersection {
 pub(crate) struct RejectionCounts {
     /// The construction did not resolve a valid primary support relation.
     pub(crate) missing_support: usize,
-    /// Two construction forms used one stream-local XMT identity.
+    /// Competing construction states used one stream-local XMT identity.
     pub(crate) duplicate_identity: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
     pub(crate) missing_chart: usize,
@@ -342,7 +342,7 @@ impl RejectionCounts {
 /// Complete chart-carrier scan result.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CurveScan {
-    /// Constructions remaining after cross-form collision selection and before
+    /// Constructions remaining after duplicate-identity rejection and before
     /// chart enrichment. Native record extraction reuses this lane
     /// so it does not parse the same graph a second time.
     pub(crate) source_constructions: Vec<CompositeCurve>,
@@ -445,7 +445,7 @@ struct Chart {
     ext_support_uv: SupportUv,
 }
 
-/// Decode type-38 and single-byte `0x5a` records whose referenced chart and
+/// Decode type-38 constructions whose referenced chart and
 /// endpoint witnesses form a complete solved cache.
 pub(crate) fn curves(
     ctx: &DecodeContext<'_>,
@@ -473,7 +473,7 @@ pub(crate) fn scan_with_graph(
 ) -> Result<CurveScan, CodecError> {
     let uv = uv_records(ctx, stream)?;
     let mut constructions = graph.composite_curves(ctx)?;
-    append_intersection_data_curves(ctx, stream, &mut constructions)?;
+    append_declared_composite_curves(ctx, stream, &mut constructions)?;
     scan_with_auxiliaries(
         ctx,
         AuxiliaryMaps {
@@ -484,18 +484,21 @@ pub(crate) fn scan_with_graph(
         },
         graph,
         constructions,
-        CrossFormCollision::Reject,
     )
 }
 
-fn append_intersection_data_curves(
+fn append_declared_composite_curves(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     constructions: &mut Vec<CompositeCurve>,
 ) -> Result<(), CodecError> {
-    let twins = topology::intersection_data_curves(ctx, stream)?;
-    ctx.reserve_vec(constructions, twins.len(), "NX intersection constructions")?;
-    constructions.extend(twins);
+    let declared = topology::declared_composite_curves(ctx, stream)?;
+    ctx.reserve_vec(
+        constructions,
+        declared.len(),
+        "NX intersection constructions",
+    )?;
+    constructions.extend(declared);
     Ok(())
 }
 
@@ -555,7 +558,7 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         )?;
     }
     let mut constructions = graph.composite_curves(ctx)?;
-    append_intersection_data_curves(ctx, stream, &mut constructions)?;
+    append_declared_composite_curves(ctx, stream, &mut constructions)?;
     scan_with_auxiliaries(
         ctx,
         AuxiliaryMaps {
@@ -566,7 +569,6 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         },
         graph,
         constructions,
-        CrossFormCollision::PreferDeltaTwin,
     )
 }
 
@@ -583,12 +585,6 @@ fn extend_replacement_map<T>(
 }
 
 #[derive(Clone, Copy)]
-enum CrossFormCollision {
-    Reject,
-    PreferDeltaTwin,
-}
-
-#[derive(Clone, Copy)]
 struct AuxiliaryMaps<'a> {
     charts: &'a BTreeMap<u32, Chart>,
     terms: &'a BTreeMap<u32, Point3>,
@@ -601,7 +597,6 @@ fn scan_with_auxiliaries(
     maps: AuxiliaryMaps<'_>,
     graph: &topology::Graph,
     constructions: Vec<CompositeCurve>,
-    cross_form_collision: CrossFormCollision,
 ) -> Result<CurveScan, CodecError> {
     let AuxiliaryMaps {
         charts,
@@ -611,41 +606,18 @@ fn scan_with_auxiliaries(
     } = maps;
     let referenced_curves = graph.referenced_curve_xmts(ctx)?;
     let mut result = CurveScan::default();
-    let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
+    let mut counts = BTreeMap::<u32, usize>::new();
     for construction in &constructions {
-        ctx.admit_btree_entry(
-            &forms_by_xmt,
-            &construction.xmt,
-            "NX intersection form keys",
-        )?;
-        let forms = forms_by_xmt.entry(construction.xmt).or_default();
-        ctx.insert_btree_set(
-            forms,
-            construction.delta_twin,
-            "NX intersection form values",
-        )?;
-    }
-    let mut cross_form_xmts = BTreeSet::new();
-    for (xmt, forms) in forms_by_xmt {
-        if forms.len() > 1 {
-            ctx.insert_btree_set(
-                &mut cross_form_xmts,
-                xmt,
-                "NX intersection cross-form identities",
-            )?;
-        }
+        ctx.admit_btree_entry(&counts, &construction.xmt, "NX intersection identity keys")?;
+        *counts.entry(construction.xmt).or_default() += 1;
     }
     let mut constructions = constructions;
     constructions.retain(|construction| {
-        if !cross_form_xmts.contains(&construction.xmt) {
-            return true;
-        }
-        match cross_form_collision {
-            CrossFormCollision::Reject => {
-                result.rejected.add(Rejection::DuplicateIdentity);
-                false
-            }
-            CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
+        if counts[&construction.xmt] == 1 {
+            true
+        } else {
+            result.rejected.add(Rejection::DuplicateIdentity);
+            false
         }
     });
     for construction in constructions.iter().copied() {

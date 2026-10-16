@@ -469,13 +469,12 @@ fn intersection_rejection_report_includes_support_and_identity_counts() {
 }
 
 #[test]
-fn intersection_rejects_cross_form_xmt_collision_atomically() {
-    let construction = |delta_twin, pos| crate::topology::CompositeCurve {
+fn intersection_rejects_duplicate_xmt_states_atomically() {
+    let construction = |pos| crate::topology::CompositeCurve {
         xmt: 12,
         header_references: [None; 5],
         sense: true,
         references: [6, 7, 20, 21, 22, 23].map(crate::framing::xmt_reference::XmtTarget::from_wire),
-        delta_twin,
         pos,
     };
     let scan = crate::test_support::with_decode_context(|ctx| {
@@ -488,8 +487,7 @@ fn intersection_rejects_cross_form_xmt_collision_atomically() {
                 bridges: &BTreeMap::new(),
             },
             &crate::topology::Graph::default(),
-            vec![construction(false, 10), construction(true, 20)],
-            super::CrossFormCollision::Reject,
+            vec![construction(10), construction(20)],
         )
     })
     .unwrap();
@@ -502,16 +500,9 @@ fn intersection_rejects_cross_form_xmt_collision_atomically() {
 }
 
 #[test]
-fn paired_delta_intersection_replaces_the_partition_form_by_xmt() {
+fn unanchored_delta_payload_does_not_replace_partition_intersection() {
     let base = charted_intersection_curve_topology_partition_stream();
-    let mut replacement = deltas_intersection_curve_stream();
-    let delta_twin = replacement
-        .iter()
-        .rposition(|byte| *byte == 0x5a)
-        .expect("single-byte intersection replacement");
-    for (ordinal, reference) in [6u16, 7, 20, 21, 22, 23].into_iter().enumerate() {
-        put_ref(&mut replacement, delta_twin + 18 + ordinal * 2, reference);
-    }
+    let replacement = deltas_intersection_curve_stream();
     let mut semantic = base.clone();
     semantic.extend_from_slice(
         &crate::test_support::with_decode_context(|ctx| {
@@ -519,7 +510,6 @@ fn paired_delta_intersection_replaces_the_partition_form_by_xmt() {
         })
         .unwrap(),
     );
-
     let scan = crate::test_support::with_decode_context(|ctx| {
         crate::intersection::scan_with_auxiliary_replacements(
             ctx,
@@ -529,16 +519,15 @@ fn paired_delta_intersection_replaces_the_partition_form_by_xmt() {
         )
     })
     .unwrap();
-
     let [construction] = scan.source_constructions.as_slice() else {
-        panic!("expected one current intersection construction");
+        panic!("one partition construction");
     };
     assert_eq!(construction.xmt, 12);
-    assert!(construction.delta_twin);
-    let [curve] = scan.curves.as_slice() else {
-        panic!("expected the replacement's charted carrier");
-    };
-    assert_eq!(curve.xmt, 12);
+    assert_eq!(
+        construction.pos,
+        base.windows(4).position(|w| w == [0, 38, 0, 12]).unwrap()
+    );
+    assert_eq!(scan.curves.len(), 1);
     assert_eq!(
         scan.rejected,
         crate::intersection::RejectionCounts::default()
@@ -903,8 +892,8 @@ fn intersection_chart_accepts_finite_model_coordinates_without_magnitude_bound()
 }
 
 #[test]
-fn intersection_support_order_follows_values_marker_in_both_construction_forms() {
-    for delta_twin in [false, true] {
+fn intersection_support_order_follows_values_marker_after_first_use_schema() {
+    for declared in [false, true] {
         for (marker, duplicate, present, primary) in [
             (2, false, true, 6),
             (3, false, true, 13),
@@ -936,7 +925,7 @@ fn intersection_support_order_follows_values_marker_in_both_construction_forms()
             if !present {
                 put_ref(&mut stream, construction + 29, 1);
             }
-            if delta_twin {
+            if declared {
                 stream.splice(
                     construction..construction + 2,
                     crate::topology::TYPE_38_SCHEMA_HEADER.iter().copied(),
@@ -947,7 +936,7 @@ fn intersection_support_order_follows_values_marker_in_both_construction_forms()
             })
             .unwrap();
             let [curve] = scan.curves.as_slice() else {
-                panic!("one charted intersection: {delta_twin}, {marker}, {duplicate}, {present}");
+                panic!("one charted intersection: {declared}, {marker}, {duplicate}, {present}");
             };
             assert_eq!(u32::from(curve.primary_support), primary);
             assert_eq!(
