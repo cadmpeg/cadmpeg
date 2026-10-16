@@ -34,6 +34,7 @@ path = "src/bin/fcstd_profile.rs"
 dist = false
 
 [dev-dependencies]
+cadmpeg-ir = { workspace = true, features = ["examples"] }
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
 # `tests/golden/step/` pins what this codec's documents export as. The STEP
