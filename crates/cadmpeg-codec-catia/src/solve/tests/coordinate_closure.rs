@@ -1267,7 +1267,6 @@ fn mesh_assignment_endpoint_cycles_preserve_unconstrained_boundaries() {
 
 #[test]
 fn mesh_endpoint_pair_support_propagates_across_incident_faces() {
-    catia_test_context!(ctx);
     let assignment = |edges: &[usize]| MeshFaceBoundaryAssignment {
         boundaries: vec![edges
             .iter()
@@ -1294,17 +1293,16 @@ fn mesh_endpoint_pair_support_propagates_across_incident_faces() {
         vec![[5, 0]],
     ];
 
-    assert!(
-        prune_mesh_endpoint_pair_support(&ctx, &mut assignments, &mut candidates,)
-            .expect("prune mesh endpoint pair support")
-    );
+    assert!(prune_mesh_endpoint_pair_support(
+        &mut assignments,
+        &mut candidates
+    ));
     assert_eq!(candidates[0], vec![[0, 1]]);
     assert_eq!(assignments[1], vec![assignment(&[0, 3, 4])]);
 }
 
 #[test]
 fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradiction() {
-    catia_test_context!(ctx);
     let mut assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -1316,12 +1314,10 @@ fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradictio
     let mut candidates = vec![vec![[0, 0]]];
 
     assert!(prune_mesh_endpoint_pair_support_with_limit(
-        &ctx,
         &mut assignments,
         &mut candidates,
         0,
-    )
-    .expect("prune mesh endpoint pair support"));
+    ));
 }
 
 #[test]
@@ -1499,11 +1495,11 @@ fn mesh_endpoint_pair_support_accepts_consistent_alternate_faces() {
             })
             .collect()],
     };
-    let assignments = vec![
+    let mut assignments = vec![
         vec![assignment(&[0, 1, 2])],
         vec![assignment(&[0, 3, 4]), assignment(&[0, 5, 6])],
     ];
-    let candidates = vec![
+    let mut candidates = vec![
         vec![[0, 1], [0, 3]],
         vec![[1, 2]],
         vec![[2, 0]],
@@ -1512,12 +1508,8 @@ fn mesh_endpoint_pair_support_accepts_consistent_alternate_faces() {
         vec![[3, 5]],
         vec![[5, 0]],
     ];
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        let mut assignments = assignments.clone();
-        let mut candidates = candidates.clone();
-        prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut candidates)
-    };
-    (assert!(
-        crate::test_support::with_service_context(run).expect("prune mesh endpoint pair support")
+    assert!(prune_mesh_endpoint_pair_support(
+        &mut assignments,
+        &mut candidates
     ));
 }

@@ -536,16 +536,10 @@ fn finish_decode(
         .legacy_entity_runs
         .iter()
         .map(|run| {
-            let evaluation_keys: HashSet<(u32, u64)> = run
-                .role_selectors
-                .iter()
-                .filter(|role| role.field_code == Some(0x17c4))
-                .filter_map(|role| {
-                    role.end_offset()
-                        .and_then(|offset| offset.checked_add(6))
-                        .map(|value_offset| (role.entity_id, value_offset))
-                })
-                .collect();
+            let evaluation_keys: HashSet<(u32, u64)> =
+                crate::native::legacy_evaluation_roles(&run.role_selectors)
+                    .map(|(entity_id, value_offset, _)| (entity_id, value_offset))
+                    .collect();
             run.scalar_values
                 .iter()
                 .filter(|value| {

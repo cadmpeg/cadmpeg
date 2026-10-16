@@ -6387,8 +6387,7 @@ fn validate_standard_topology(
     Ok(Some(edge_vertices))
 }
 
-/// The face's loop ids and their classification, built once from the boundary
-/// rows the solved topology states for this face.
+/// Mint a `catia:standard:{kind}#{key}` identity.
 fn standard_id<T>(
     kind: &'static str,
     key: std::fmt::Arguments<'_>,
@@ -6398,6 +6397,8 @@ fn standard_id<T>(
     mint(id).map_err(CodecError::malformed)
 }
 
+/// The face's loop ids and their classification, built once from the boundary
+/// rows the solved topology states for this face.
 fn standard_face_loops(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
@@ -6753,12 +6754,7 @@ refusal)?
                     })
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?;
-                let pcurves = match pcurve_use {
-                    Some(pcurve) => {
-                        vec![pcurve]
-                    }
-                    None => Vec::new(),
-                };
+                let pcurves: Vec<_> = pcurve_use.into_iter().collect();
                 admission.charge()?;
                 ir.model.coedges.push(Coedge {
                     id,
@@ -6877,23 +6873,21 @@ fn standard_native_support_endpoint_pair(
     if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
         return Ok(None);
     }
-    let point_for =
-        |expected: Point3| -> Result<Option<usize>, cadmpeg_core::decode::ResourceLimit> {
-            let mut selected = None;
-            for &candidate in candidates {
-                if points.get(candidate).is_some_and(|point| {
-                    point.position().get().distance_squared(expected).sqrt()
-                        <= VERTEX_MATCH_TOLERANCE
-                }) {
-                    if selected.is_some() {
-                        return Ok(None);
-                    }
-                    selected = Some(candidate);
+    let point_for = |expected: Point3| -> Option<usize> {
+        let mut selected = None;
+        for &candidate in candidates {
+            if points.get(candidate).is_some_and(|point| {
+                point.position().get().distance_squared(expected).sqrt() <= VERTEX_MATCH_TOLERANCE
+            }) {
+                if selected.is_some() {
+                    return None;
                 }
+                selected = Some(candidate);
             }
-            Ok(selected)
-        };
-    let pair = [point_for(first[0])?, point_for(first[1])?];
+        }
+        selected
+    };
+    let pair = [point_for(first[0]), point_for(first[1])];
     Ok(match pair {
         [Some(start), Some(end)] if start != end => {
             let pair = [start, end];
@@ -8725,17 +8719,8 @@ impl StandardCirclePairConstraint {
                     radius.to_bits(),
                     face,
                 );
-                ranges_by_face
-                    .entry(key)
-                    .or_default()
-                    .push(CircleRangeChoices {
-                        ranges: [[0.0; 2]; 2],
-                        len: 0,
-                    });
+                ranges_by_face.entry(key).or_default();
             }
-        }
-        for ranges in ranges_by_face.values_mut() {
-            ranges.clear();
         }
         Self {
             ranges_by_face: RefCell::new(ranges_by_face),
