@@ -211,9 +211,11 @@ the record grammar does not identify one construction.
 
 **Question.** Does a `TRUE` v-sense logical (`reverse_v`) negate the second pcurve chart coordinate of a plane, sphere, or torus, and does a `TRUE` cone u-sense logical (`reversed`) negate the first cone chart coordinate?
 
-**Known.** `asm.md` §6.2 states both negations. The `forward_v` plane, sphere, and torus charts and the `forward` cylinder chart reach their edge vertices. No stream contains a pcurve on a `reverse_v` plane, sphere, or torus, on a `reversed` cone, on a sphere with a negative radius, or on a torus with a negative minor radius. `analytic_support` in `nurbs/proc_curve.rs` implements the stated rule.
+**Known.** `asm.md` §6.2 states both negations. In authored streams, the `forward_v` plane, sphere, and torus charts and the `forward` cylinder chart reach their edge vertices. No authored stream has a face-bound pcurve on a `reverse_v` plane, sphere, or torus, on a `reversed` cone, on a sphere with a negative radius, or on a torus with a negative minor radius. In the fifteen available Fusion designs, face-bound pcurves lie only on `forward_v` planes, spheres, and tori and on `forward` cylinders; the 54 `reverse_v` plane faces and the 205 `reversed` cylinder faces carry none, and no face lies on a `reversed` cone with nonzero `sine`, a sphere with a negative radius, or a torus with a negative minor radius. `analytic_support` in `nurbs/proc_curve.rs` implements the stated rule.
 
-**Need.** A pcurve with known edge vertices on each of these supports confirms the rule. A wrong sign mirrors the pcurve in the support chart, and `cadmpeg check` reports the miss at the edge vertices.
+**Need.** A pcurve with known edge vertices on each of these supports, in a stream a modeller wrote, confirms the rule. A wrong sign mirrors the pcurve in the support chart, and `cadmpeg check` reports the miss at the edge vertices.
+
+**Note.** Builder fixtures do contain these pcurves. `nurbs/support_chart/tests.rs` has one on every listed support, `nurbs/pcurve/tests/side_charts.rs` has blend pcurves on `reverse_v` planes and on a `reversed` inward cylinder, and the `cadmpeg-codec-sat` decode tests have a triangle on a `reverse_v` plane. Each fixture places its vertices by the stated rule, so it tests that the decoder follows the rule; it is not evidence for the native convention.
 
 ### GC-39. Chart of the secondary blend pcurves
 
