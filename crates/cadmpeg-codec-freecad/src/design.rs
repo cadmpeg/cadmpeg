@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of `FCStd` construction history into neutral design entities.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, VecDeque};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
@@ -564,111 +565,157 @@ fn feature_ordinals<'a>(
         source_ordinals.push(cadmpeg_core::decode::u64_from_index(object.order));
     }
     source_ordinals.sort_unstable_by(Ord::cmp);
-    let mut emitted = BTreeSet::new();
+    let unresolved_cycle = || {
+        CodecError::malformed(
+            "design object ordering lost an un-emitted object while resolving a cycle",
+        )
+    };
+    let mut position_by_id = HashMap::new();
+    for (position, object) in design_objects.iter().enumerate() {
+        position_by_id.insert(object.id().as_str(), position);
+    }
+    if position_by_id.len() != design_objects.len() {
+        return Err(unresolved_cycle());
+    }
+
+    // Kahn's algorithm. `waiting` counts the distinct design objects that must
+    // still be emitted before each object is ready.
+    let mut waiting = Vec::new();
+    let mut dependents = Vec::new();
+    dependents.resize_with(design_objects.len(), Vec::new);
+    for (position, object) in design_objects.iter().enumerate() {
+        let dependencies = design_object_dependencies(
+            object,
+            properties_by_owner,
+            parent_by_member,
+            &object_by_feature,
+            &object_by_id,
+            &object_by_name,
+            &position_by_id,
+        );
+        waiting.push(dependencies.len());
+        for dependency in dependencies {
+            dependents[dependency].push(position);
+        }
+    }
+    let mut ready = BinaryHeap::new();
+    for (position, object) in design_objects.iter().enumerate() {
+        if waiting[position] == 0 {
+            ready.push(Reverse((object.order, position)));
+        }
+    }
+    let mut by_source_order = (0..design_objects.len()).collect::<Vec<_>>();
+    by_source_order.sort_unstable_by_key(|&position| (design_objects[position].order, position));
+    let mut cycle_candidates = by_source_order.into_iter();
+    let mut emitted = Vec::new();
+    emitted.resize(design_objects.len(), false);
     let mut ordinals = HashMap::new();
     let mut cycle_affected = BTreeSet::new();
 
-    while emitted.len() < design_objects.len() {
-        let next = design_objects
-            .iter()
-            .copied()
-            .filter(|object| !emitted.contains(object.id().as_str()))
-            .filter(|object| {
-                let parent_ready = parent_by_member
-                    .get(object.id().as_str())
-                    .and_then(|parent| object_by_feature.get(parent))
-                    .is_none_or(|parent| emitted.contains(parent));
-                if !parent_ready {
-                    return false;
-                }
-
-                let declared_ready = is_body(&object.type_name)
-                    || object.dependencies.iter().all(|dependency| {
-                        !object_by_id.contains_key(dependency.as_str())
-                            || emitted.contains(dependency.as_str())
-                    });
-                if !declared_ready {
-                    return false;
-                }
-                let expressions_ready = properties_by_owner
-                    .get(object.id().as_str())
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|property| property.values())
-                    .filter_map(|value| value.attributes.get("expression"))
-                    .flat_map(|expression| expression_identifiers(expression))
-                    .filter_map(|identifier| identifier.split_once('.').map(|(owner, _)| owner))
-                    .filter_map(|owner| object_by_name.get(owner))
-                    .all(|dependency| {
-                        dependency.id() == object.id() || emitted.contains(dependency.id().as_str())
-                    });
-                if !expressions_ready {
-                    return false;
-                }
-                if is_body(&object.type_name) {
-                    return true;
-                }
-
-                properties_by_owner
-                    .get(object.id().as_str())
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|property| {
-                        property
-                            .links()
-                            .iter()
-                            .map(move |link| (property.name.as_str(), link))
-                    })
-                    .filter_map(|(property_name, link)| {
-                        Some((property_name, link.as_ref()?.object()?))
-                    })
-                    .filter(|(property_name, dependency)| {
-                        object_by_id.get(dependency).is_some_and(|dependency| {
-                            matches!(
-                                *property_name,
-                                "Base"
-                                    | "BaseFeature"
-                                    | "Originals"
-                                    | "Path"
-                                    | "Profile"
-                                    | "Sketch"
-                                    | "Sections"
-                                    | "Source"
-                                    | "Spine"
-                            ) || dependency.order < object.order
-                        })
-                    })
-                    .all(|(_, dependency)| emitted.contains(dependency))
-            })
-            .min_by_key(|object| object.order);
-        let next = if let Some(next) = next {
-            next
+    for ordinal in source_ordinals {
+        // The ready object earliest in source order is emitted next. When none
+        // is ready, every un-emitted object is cycle-affected and the earliest
+        // one is emitted anyway.
+        let next = if let Some(Reverse((_, position))) = ready.pop() {
+            position
         } else {
-            for object in design_objects
-                .iter()
-                .copied()
-                .filter(|object| !emitted.contains(object.id().as_str()))
-            {
-                cycle_affected.insert(object.id().to_owned());
+            if cycle_affected.is_empty() {
+                for (position, object) in design_objects.iter().enumerate() {
+                    if !emitted[position] {
+                        cycle_affected.insert(object.id().to_owned());
+                    }
+                }
             }
-            design_objects
-                .iter()
-                .copied()
-                .filter(|object| !emitted.contains(object.id().as_str()))
-                .min_by_key(|object| object.order)
-                .ok_or_else(|| {
-                    CodecError::malformed(
-                        "design object ordering lost an un-emitted object while resolving a cycle",
-                    )
-                })?
+            cycle_candidates
+                .by_ref()
+                .find(|&position| !emitted[position])
+                .ok_or_else(unresolved_cycle)?
         };
-        let ordinal = source_ordinals[ordinals.len()];
-        emitted.insert(next.id().as_str());
-
-        ordinals.insert(next.id().as_str(), ordinal);
+        emitted[next] = true;
+        ordinals.insert(design_objects[next].id().as_str(), ordinal);
+        for &dependent in &dependents[next] {
+            let Some(remaining) = waiting[dependent].checked_sub(1) else {
+                continue;
+            };
+            waiting[dependent] = remaining;
+            if remaining == 0 && !emitted[dependent] {
+                ready.push(Reverse((design_objects[dependent].order, dependent)));
+            }
+        }
     }
 
     Ok((ordinals, cycle_affected))
+}
+
+/// Positions of the design objects that must be emitted before `object`.
+///
+/// They are its parent body, its declared dependencies (bodies excepted), the
+/// owners its expressions name other than itself, and, for an object that is
+/// not a body, its link targets that are profile-like or earlier in source order.
+fn design_object_dependencies(
+    object: &ObjectRecord,
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    parent_by_member: &HashMap<&str, FeatureId>,
+    object_by_feature: &HashMap<FeatureId, &str>,
+    object_by_id: &HashMap<&str, &ObjectRecord>,
+    object_by_name: &HashMap<&str, &ObjectRecord>,
+    position_by_id: &HashMap<&str, usize>,
+) -> BTreeSet<usize> {
+    let id = object.id().as_str();
+    let properties = properties_by_owner.get(id).map_or(&[][..], Vec::as_slice);
+    let mut dependencies = BTreeSet::new();
+    if let Some(parent) = parent_by_member
+        .get(id)
+        .and_then(|parent| object_by_feature.get(parent))
+    {
+        dependencies.extend(position_by_id.get(parent).copied());
+    }
+    if !is_body(&object.type_name) {
+        for dependency in &object.dependencies {
+            dependencies.extend(position_by_id.get(dependency.as_str()).copied());
+        }
+    }
+    for dependency in properties
+        .iter()
+        .flat_map(|property| property.values())
+        .filter_map(|value| value.attributes.get("expression"))
+        .flat_map(|expression| expression_identifiers(expression))
+        .filter_map(|identifier| identifier.split_once('.').map(|(owner, _)| owner))
+        .filter_map(|owner| object_by_name.get(owner))
+        .filter(|dependency| dependency.id() != object.id())
+    {
+        dependencies.extend(position_by_id.get(dependency.id().as_str()).copied());
+    }
+    if is_body(&object.type_name) {
+        return dependencies;
+    }
+    for property in properties {
+        for target in property
+            .links()
+            .iter()
+            .filter_map(|link| link.as_ref()?.object())
+        {
+            let Some(dependency) = object_by_id.get(target) else {
+                continue;
+            };
+            if matches!(
+                property.name.as_str(),
+                "Base"
+                    | "BaseFeature"
+                    | "Originals"
+                    | "Path"
+                    | "Profile"
+                    | "Sketch"
+                    | "Sections"
+                    | "Source"
+                    | "Spine"
+            ) || dependency.order < object.order
+            {
+                dependencies.extend(position_by_id.get(target).copied());
+            }
+        }
+    }
+    dependencies
 }
 
 /// Apply an operation's shape-refinement and boolean-tolerance controls.
