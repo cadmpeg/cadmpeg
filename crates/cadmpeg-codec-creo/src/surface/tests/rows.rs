@@ -53,9 +53,10 @@ fn lossy_prototype_family_formatter_preserves_utf8_replacement() {
 #[test]
 fn contour_surface_frames_without_rows_yield_no_records() {
     let payload = b"srf_array\0\xf8\x01";
-    let records =
-        crate::decode::with_service_context(|ctx| contour_records_for_rows(ctx, payload, &[]))
-            .expect("one frame admitted");
+    let records = crate::decode::with_service_context(|ctx| {
+        contour_records_for_rows(ctx, payload, &[], &mut Vec::new())
+    })
+    .expect("one frame admitted");
     assert!(records.is_empty());
 }
 
@@ -197,10 +198,9 @@ fn positional_spline_replay_uses_the_named_array_extents() {
     assert_eq!(later_parameter.boundary, SurfaceBodyBoundary::CompoundClose);
     assert!(later_parameter.body.len() > 1);
     let cache = scalar::ScalarCache::from_section(&payload);
-    let replay = super::with_decode_ctx(&payload, |ctx| {
-        decode_positional_spline_replay(ctx, &later_parameter.body, &prototype, &cache)
-    })
-    .unwrap();
+    let replay = decode_positional_spline_replay(&later_parameter.body, &prototype, &cache)
+        .expect("grid admission")
+        .unwrap();
     assert_eq!(replay.points().len(), 4);
     assert_eq!(replay.u_derivatives().len(), 4);
     assert_eq!(replay.v_derivatives().len(), 4);
@@ -254,10 +254,11 @@ fn positional_spline_replay_rejects_unordered_parameters_at_grid_admission() {
     let u_second = replay_body.len() - 3;
     assert_eq!(replay_body[u_second], 0xe4);
     replay_body[u_second] = 0x0f;
-    assert!(super::with_decode_ctx(&payload, |ctx| {
-        decode_positional_spline_replay(ctx, &replay_body, &prototype, &cache)
-    })
-    .is_none());
+    assert!(
+        decode_positional_spline_replay(&replay_body, &prototype, &cache)
+            .expect("grid admission")
+            .is_none()
+    );
 }
 
 #[test]
@@ -284,7 +285,7 @@ fn cross_section_plane_envelope_retains_its_namespace_geometry() {
     let payload = b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x22\x04\x01\x06\0\xe4\xe4\xe4\xe4\x0f\x0f\x0f\xe4\x0f\xe4\xe3";
 
     let envelopes = super::with_decode_ctx(payload, |ctx| {
-        crate::surface::cross_section_plane_envelopes(ctx, payload)
+        crate::surface::cross_section_plane_envelopes(ctx, payload, &mut Vec::new())
     });
     assert_eq!(envelopes.len(), 1);
     let planes = crate::surface::outline_planes(&envelopes);
@@ -319,7 +320,10 @@ fn plane_records_end_at_the_next_surface_family() {
     ));
     assert_eq!(
         super::with_decode_ctx(&payload, |ctx| plane_envelopes_for_rows(
-            ctx, &payload, &rows
+            ctx,
+            &payload,
+            &rows,
+            &mut Vec::new()
         ))
         .len(),
         1
@@ -999,6 +1003,7 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
                 SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
                 &body,
                 &scalar::ScalarCache::default(),
+                &mut Vec::new(),
             )
         })
         .expect("compound-close scan is admitted"),

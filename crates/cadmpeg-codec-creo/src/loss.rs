@@ -189,10 +189,12 @@ pub(crate) enum CreoLossCode {
     CurveExpressionSolveControlUnresolved,
     /// Prohibited datum-curve constructs across active curve-equation records.
     CurveExpressionKindProhibited,
-    /// Plane-support lane search stopped at its local variant cap.
+    /// Plane-support lane search stopped at its local variant or visit cap.
     PlaneSupportVariantsCapped,
     /// A section distance component had more sign branches than the local cap.
     SectionSignBranchesCapped,
+    /// Curve-equation relation values were dropped at a local string-text cap.
+    CurveExpressionTextCapped,
 }
 }
 
@@ -277,6 +279,7 @@ impl CreoLossCode {
             Self::CurveExpressionKindProhibited => "curve-expression.kind-prohibited",
             Self::PlaneSupportVariantsCapped => "geometry.plane-support-variants-capped",
             Self::SectionSignBranchesCapped => "section.sign-branches-capped",
+            Self::CurveExpressionTextCapped => "curve-expression.text-capped",
         }
     }
 
@@ -357,7 +360,8 @@ impl CreoLossCode {
             | Self::CurveExpressionSolveControlUnresolved
             | Self::CurveExpressionKindProhibited
             | Self::PlaneSupportVariantsCapped
-            | Self::SectionSignBranchesCapped => Severity::Warning,
+            | Self::SectionSignBranchesCapped
+            | Self::CurveExpressionTextCapped => Severity::Warning,
         }
     }
 
@@ -437,7 +441,8 @@ impl CreoLossCode {
             | Self::CurveExpressionSolveUnresolved
             | Self::CurveExpressionSolveControlUnresolved
             | Self::CurveExpressionKindProhibited
-            | Self::SectionSignBranchesCapped => LossTaxonomy::FeatureHistoryRetained,
+            | Self::SectionSignBranchesCapped
+            | Self::CurveExpressionTextCapped => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -552,6 +557,7 @@ mod tests {
                 "curve-expression.kind-prohibited",
                 "geometry.plane-support-variants-capped",
                 "section.sign-branches-capped",
+                "curve-expression.text-capped",
             ]
         );
     }
