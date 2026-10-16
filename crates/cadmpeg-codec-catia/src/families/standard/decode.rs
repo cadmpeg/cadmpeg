@@ -1957,8 +1957,13 @@ fn try_decode_standard_populations(
         )
     });
     if !all_fbb_rows_admitted {
-        merged.report.losses.push(CatiaLossCode::TopologyFbbRowsWithheld.note(format!(
-                "{} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have source-closed population bindings.",
+        merged
+            .report
+            .losses
+            .push(CatiaLossCode::TopologyFbbRowsWithheld.note(format!(
+                "{} candidate FBB face row(s) in {} marker group(s) were not admitted to the \
+                 standard topology population; only {} row(s) have source-closed population \
+                 bindings.",
                 scan.census.fbb_face_rows - scan.census.fbb_face_rows.min(admitted_face_rows),
                 scan.census.fbb_runs,
                 admitted_face_rows,
@@ -1977,8 +1982,13 @@ fn try_decode_standard_populations(
     for surface in &merged.ir.model.surfaces {
         typed.record(&surface.geometry);
     }
-    merged.report.losses.push(CatiaLossCode::GeometryCarrierSummary.note(format!(
-        "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and {} analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} sphere, {} torus.",
+    merged
+        .report
+        .losses
+        .push(CatiaLossCode::GeometryCarrierSummary.note(format!(
+        "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, \
+         identity world placement) and {} analytic surface carrier(s) were decoded from \
+         `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} sphere, {} torus.",
         merged.ir.model.vertices.len(),
         typed.total(),
         typed.plane,
@@ -6703,7 +6713,14 @@ refusal)?
                         format_args!("{face_index}:{loop_index}:{coedge_index}"),
                         PcurveId::mint,
                     )?;
-                    annotate(annotations, &id, "MainDataStream+SurfacicReps", u64_from_index(support.pos), "derived_surface_parameter_curve", Exactness::Derived)?;
+                    annotate(
+                        annotations,
+                        &id,
+                        "MainDataStream+SurfacicReps",
+                        u64_from_index(support.pos),
+                        "derived_surface_parameter_curve",
+                        Exactness::Derived,
+                    )?;
                     annotations.derived(&id, "geometry")?;
                     admission.charge()?;
                     ir.model.pcurves.push(Pcurve {
