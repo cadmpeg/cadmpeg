@@ -18,6 +18,10 @@ pub mod finite_json;
 
 use finite_json::{write_canonical_json, CanonicalJsonError};
 
+/// Bytes gathered before the hasher sees them; the pretty JSON writer emits one
+/// short write per token.
+const DIGEST_BUFFER_BYTES: usize = 64 * 1024;
+
 /// Borrowed unique owners. Repeated construction references have no owner.
 pub(crate) struct ProceduralOwners<'a, T>(HashMap<&'a str, Option<&'a T>>);
 
@@ -57,8 +61,12 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
 ) -> Result<String, DigestError> {
-    let mut writer = DigestWriter(Sha256::new());
-    write_canonical_json(ctx, &mut writer, value)?;
+    let mut buffered =
+        std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
+    write_canonical_json(ctx, &mut buffered, value)?;
+    let writer = buffered
+        .into_inner()
+        .map_err(|error| DigestError::Write(error.into_error()))?;
     Ok(digest::Sha256Digest::from_bytes(writer.0.finalize().into()).into())
 }
 
@@ -276,6 +284,17 @@ mod tests {
     use crate::native::{Native, NativeRecord};
     use crate::unknown::UnknownRecord;
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
+        let value: Vec<String> = (0..20_000).map(|index| format!("entry-{index}")).collect();
+        let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
+        assert!(json.len() > super::DIGEST_BUFFER_BYTES);
+        assert_eq!(
+            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &value).unwrap(),
+            crate::hash::sha256_hex(json.as_bytes())
+        );
+    }
 
     #[test]
     fn a_finite_float_digests() {
