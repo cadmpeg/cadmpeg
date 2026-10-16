@@ -38,11 +38,11 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -1212,6 +1212,9 @@ impl CodecBackend for FcstdCodec {
 
 impl EncoderBackend for FcstdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Writes the feature tree and patches retained sources, so design records
+    /// must be present.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 

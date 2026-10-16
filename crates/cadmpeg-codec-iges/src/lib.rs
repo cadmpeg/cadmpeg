@@ -35,12 +35,12 @@ mod writer;
 #[doc(hidden)]
 pub mod fuzz;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::hash::document_local_sha256;
@@ -194,6 +194,9 @@ impl CodecBackend for IgesCodec {
 
 impl EncoderBackend for IgesCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Writes B-rep and product data only; design arenas are refused, not
+    /// read.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(IgesVersion::TARGETS, Some(4));
 

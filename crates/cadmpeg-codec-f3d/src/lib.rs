@@ -113,11 +113,11 @@ mod xref;
 mod zip_write;
 
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -231,6 +231,9 @@ impl CodecBackend for F3dCodec {
 
 impl EncoderBackend for F3dCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Patches the retained source, so the history and design records it rewrites
+    /// must be present.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

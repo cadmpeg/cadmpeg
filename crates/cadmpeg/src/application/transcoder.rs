@@ -14,7 +14,7 @@ use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
 use crate::application::artifact_store::{self, FileDestination, SidecarPersistOutcome};
 use crate::application::document::{LoadOrigin, LoadedDocument};
-use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
+use crate::application::refusal::{ApplicationError, ConversionRefusal, DepthReport, RefusalStage};
 use crate::application::validators::validate_loaded;
 use crate::loader;
 
@@ -375,7 +375,8 @@ impl PreparedConversion {
                 if carried > 0 && !self.allow_errors {
                     return Err(self.check_refusal(carried));
                 }
-                if self.refuses_empty_geometry() {
+                let shallow = matches!(error, cadmpeg_core::CodecError::InsufficientDepth { .. });
+                if !shallow && self.refuses_empty_geometry() {
                     return Err(self.empty_geometry_refusal());
                 }
                 return Err(plan_refusal(
@@ -491,7 +492,8 @@ pub(crate) enum EmittedArtifact {
     StdoutWithoutSidecar,
 }
 
-/// Restates an unsupported target as a typed refusal.
+/// Restates an unsupported target or an insufficient decode depth as a typed
+/// refusal.
 ///
 /// Resource failures retain their typed evidence; other plan failures stay
 /// operational. Export-loss refusal needs a completed plan's typed loss rows.
@@ -509,6 +511,17 @@ fn plan_refusal(
             }
             .into()
         }
+        cadmpeg_core::CodecError::InsufficientDepth {
+            format,
+            needed,
+            recorded,
+        } => ConversionRefusal::InsufficientDepth {
+            format,
+            depth: DepthReport { needed, recorded },
+            decode_report,
+            validation,
+        }
+        .into(),
         _ => ApplicationError::from(error).at_stage(RefusalStage::Plan),
     }
 }
