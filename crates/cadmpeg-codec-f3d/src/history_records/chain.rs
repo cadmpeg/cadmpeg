@@ -6,8 +6,12 @@ use super::{
     AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
     AsmTopologyScope, AsmTransitionError,
 };
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
+
+mod membership;
+use membership::Memberships;
 
 /// One complete state as the diff reads it.
 #[derive(Clone, Copy)]
@@ -17,17 +21,19 @@ pub(crate) struct AsmStateSnapshot<'a> {
     pub(crate) versions: &'a BTreeMap<i64, i64>,
 }
 
+#[derive(Default)]
+pub(crate) struct AsmIdentityMemberships {
+    pub(crate) revisions: Vec<(usize, AsmEntityVersion)>,
+    pub(crate) entities: Vec<(usize, i64, AsmHistoricalEntityKind)>,
+    pub(crate) all_states_available: bool,
+}
+
 /// Derived state topologies. Clones start without materializations.
 #[derive(Default)]
 pub(crate) struct MaterializedTopologies {
-    states: OnceLock<Vec<OnceLock<Option<Box<MaterializedState>>>>>,
+    states: OnceLock<Vec<OnceLock<Option<Box<AsmHistoricalTopology>>>>>,
     order: OnceLock<Result<Option<Vec<usize>>, AsmTransitionError>>,
-}
-
-#[derive(Clone, Default)]
-struct MaterializedState {
-    topology: AsmHistoricalTopology,
-    versions: Vec<AsmEntityVersion>,
+    transition_validity: OnceLock<Vec<bool>>,
 }
 
 impl Clone for MaterializedTopologies {
@@ -66,17 +72,31 @@ fn entity_delta(
     if !strictly_sorted(newer.iter().copied()) || !strictly_sorted(older.iter().copied()) {
         return None;
     }
-    let new_keys: BTreeSet<_> = newer.iter().copied().collect();
-    let old_keys: BTreeSet<_> = older.iter().copied().collect();
-    Some(AsmHistoricalEntityDelta {
-        inserted: new_keys.difference(&old_keys).copied().collect(),
-        deleted: old_keys.difference(&new_keys).copied().collect(),
-        updated: new_keys
-            .intersection(&old_keys)
-            .copied()
-            .filter(|key| new.get(key) != old.get(key))
-            .collect(),
-    })
+    let mut result = AsmHistoricalEntityDelta::default();
+    let mut new_keys = newer.iter().peekable();
+    let mut old_keys = older.iter().peekable();
+    while let (Some(&newer), Some(&older)) = (new_keys.peek(), old_keys.peek()) {
+        match newer.cmp(older) {
+            std::cmp::Ordering::Less => {
+                result.inserted.push(*newer);
+                new_keys.next();
+            }
+            std::cmp::Ordering::Greater => {
+                result.deleted.push(*older);
+                old_keys.next();
+            }
+            std::cmp::Ordering::Equal => {
+                if new.get(newer) != old.get(older) {
+                    result.updated.push(*newer);
+                }
+                new_keys.next();
+                old_keys.next();
+            }
+        }
+    }
+    result.inserted.extend(new_keys);
+    result.deleted.extend(old_keys);
+    Some(result)
 }
 
 impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
@@ -85,20 +105,31 @@ impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
         {
             return None;
         }
-        let old: BTreeMap<_, _> = older.iter().map(|row| (row.key(), row)).collect();
-        let new: BTreeMap<_, _> = newer.iter().map(|row| (row.key(), row)).collect();
-        Some(Self {
-            set: newer
-                .iter()
-                .filter(|row| old.get(&row.key()).copied() != Some(*row))
-                .cloned()
-                .collect(),
-            removed: old
-                .keys()
-                .filter(|key| !new.contains_key(key))
-                .copied()
-                .collect(),
-        })
+        let mut result = Self::default();
+        let mut old = older.iter().peekable();
+        let mut new = newer.iter().peekable();
+        while let (Some(&older), Some(&newer)) = (old.peek(), new.peek()) {
+            match older.key().cmp(&newer.key()) {
+                std::cmp::Ordering::Less => {
+                    result.removed.push(older.key());
+                    old.next();
+                }
+                std::cmp::Ordering::Greater => {
+                    result.set.push(newer.clone());
+                    new.next();
+                }
+                std::cmp::Ordering::Equal => {
+                    if older != newer {
+                        result.set.push(newer.clone());
+                    }
+                    old.next();
+                    new.next();
+                }
+            }
+        }
+        result.removed.extend(old.map(R::key));
+        result.set.extend(new.cloned());
+        Some(result)
     }
 
     fn apply(&self, family: &mut Vec<R>) -> Result<(), AsmTransitionError> {
@@ -507,10 +538,7 @@ impl AsmHistoricalTransition {
         Ok(())
     }
 
-    fn apply_versions(
-        &self,
-        versions: &mut Vec<AsmEntityVersion>,
-    ) -> Result<(), AsmTransitionError> {
+    fn check_revision_coverage(&self) -> Result<(), AsmTransitionError> {
         check_delta_order(&self.records)?;
         if !strictly_sorted(self.record_revisions.iter().map(|row| row.entity_ref)) {
             return Err(AsmTransitionError::UnsortedFamily);
@@ -542,6 +570,49 @@ impl AsmHistoricalTransition {
         {
             return Err(AsmTransitionError::RevisionCoverage);
         }
+        Ok(())
+    }
+
+    fn apply_version_map(
+        &self,
+        versions: &mut BTreeMap<i64, i64>,
+    ) -> Result<(), AsmTransitionError> {
+        self.check_revision_coverage()?;
+        for revision in &self.record_revisions {
+            if self
+                .records
+                .inserted
+                .binary_search(&revision.entity_ref)
+                .is_ok()
+            {
+                if versions.contains_key(&revision.entity_ref) {
+                    return Err(AsmTransitionError::InsertedPresent);
+                }
+            } else if versions
+                .get(&revision.entity_ref)
+                .is_none_or(|old| *old == revision.record_ref)
+            {
+                return Err(AsmTransitionError::InvalidUpdate);
+            }
+        }
+        for slot in &self.records.deleted {
+            if versions.remove(slot).is_none() {
+                return Err(AsmTransitionError::DeletedAbsent);
+            }
+        }
+        versions.extend(
+            self.record_revisions
+                .iter()
+                .map(|row| (row.entity_ref, row.record_ref)),
+        );
+        Ok(())
+    }
+
+    fn apply_versions(
+        &self,
+        versions: &mut Vec<AsmEntityVersion>,
+    ) -> Result<(), AsmTransitionError> {
+        self.check_revision_coverage()?;
         let mut old = versions.iter().peekable();
         let mut inserted = self.records.inserted.iter().peekable();
         for revision in &self.record_revisions {
@@ -799,6 +870,35 @@ impl AsmHistory {
         Ok(())
     }
 
+    fn walk_memberships(
+        &self,
+        order: &[usize],
+        mut visit: impl FnMut(usize, &Memberships),
+    ) -> Vec<bool> {
+        let mut validity = vec![false; self.states.len()];
+        let mut versions = BTreeMap::new();
+        let mut membership = Memberships::default();
+        for &index in order.iter().rev() {
+            let Some(transition) = self.states[index].transition.as_ref() else {
+                break;
+            };
+            if transition.apply_version_map(&mut versions).is_err()
+                || membership.apply(transition).is_err()
+            {
+                break;
+            }
+            validity[index] = true;
+            visit(index, &membership);
+        }
+        validity
+    }
+
+    fn transition_validity(&self, order: &[usize]) -> &[bool] {
+        self.materialized
+            .transition_validity
+            .get_or_init(|| self.walk_memberships(order, |_, _| {}))
+    }
+
     /// Rebuild this member state's topology and cache only that state.
     pub(crate) fn topology(&self, state: &AsmDeltaState) -> Option<&AsmHistoricalTopology> {
         let index = self
@@ -812,6 +912,9 @@ impl AsmHistory {
             .as_ref()
             .ok()?
             .as_ref()?;
+        if !self.transition_validity(order).get(index).copied()? {
+            return None;
+        }
         let position = order.iter().position(|&ordinal| ordinal == index)?;
         let cache = self
             .materialized
@@ -820,7 +923,7 @@ impl AsmHistory {
         cache
             .get(index)?
             .get_or_init(|| {
-                let mut materialized = MaterializedState::default();
+                let mut materialized = AsmHistoricalTopology::default();
                 let mut older_position = order.len();
                 for (offset, &older) in order.iter().enumerate().skip(position + 1) {
                     if let Some(Some(cached)) = cache.get(older)?.get() {
@@ -831,46 +934,113 @@ impl AsmHistory {
                 }
                 for &ordinal in order.get(position..older_position)?.iter().rev() {
                     let transition = self.states.get(ordinal)?.transition.as_ref()?;
-                    transition.apply_versions(&mut materialized.versions).ok()?;
-                    transition.apply_topology(&mut materialized.topology).ok()?;
+                    transition.apply_topology(&mut materialized).ok()?;
                 }
                 Some(Box::new(materialized))
             })
             .as_deref()
             .filter(|state| {
-                self.topology_scope != AsmTopologyScope::Retained
-                    || state.topology.has_retained_rows()
+                self.topology_scope != AsmTopologyScope::Retained || state.has_retained_rows()
             })
-            .map(|state| &state.topology)
     }
 
-    /// Revisions of the topology's slots, sorted by stable slot.
-    pub(crate) fn entity_versions(&self, state: &AsmDeltaState) -> Vec<AsmEntityVersion> {
-        self.topology_versions(state).unwrap_or_default()
-    }
-
-    fn topology_versions(&self, state: &AsmDeltaState) -> Option<Vec<AsmEntityVersion>> {
-        let topology = self.topology(state)?;
-        let index = self
-            .states
-            .iter()
-            .position(|member| std::ptr::eq(member, state))?;
-        let cached = self
+    /// Requested revisions and entity kinds, in member-state order.
+    pub(crate) fn identity_memberships(
+        &self,
+        requested: &std::collections::HashSet<i64>,
+        entities: &std::collections::HashSet<i64>,
+    ) -> AsmIdentityMemberships {
+        let Some(order) = self
             .materialized
-            .states
-            .get()?
-            .get(index)?
-            .get()?
-            .as_ref()?;
-        let slots = topology.slots();
-        Some(
-            cached
-                .versions
-                .iter()
-                .filter(|row| slots.contains(&row.entity_ref))
-                .cloned()
-                .collect(),
-        )
+            .order
+            .get_or_init(|| self.bound_chain())
+            .as_ref()
+            .ok()
+            .and_then(Option::as_ref)
+        else {
+            return AsmIdentityMemberships::default();
+        };
+        let mut selected = BTreeMap::new();
+        let mut result = AsmIdentityMemberships::default();
+        let mut available = 0;
+        let validity = self.walk_memberships(order, |index, membership| {
+            if let Some(transition) = self.states[index].transition.as_ref() {
+                for slot in &transition.records.deleted {
+                    selected.remove(slot);
+                }
+                for version in &transition.record_revisions {
+                    if requested.contains(&version.record_ref) {
+                        selected.insert(version.entity_ref, version.record_ref);
+                    } else {
+                        selected.remove(&version.entity_ref);
+                    }
+                }
+            }
+            if self.topology_scope == AsmTopologyScope::Retained && !membership.has_retained_rows()
+            {
+                return;
+            }
+            available += 1;
+            for (kind, family) in membership.families() {
+                result.entities.extend(
+                    entities
+                        .iter()
+                        .filter(|slot| family.contains(slot))
+                        .map(|&slot| (index, slot, kind)),
+                );
+            }
+            result.revisions.extend(
+                selected
+                    .iter()
+                    .filter(|(slot, _)| membership.contains(**slot))
+                    .map(|(&entity_ref, &record_ref)| {
+                        (
+                            index,
+                            AsmEntityVersion {
+                                entity_ref,
+                                record_ref,
+                            },
+                        )
+                    }),
+            );
+        });
+        self.materialized
+            .transition_validity
+            .get_or_init(|| validity);
+        result
+            .revisions
+            .sort_by_key(|(index, version)| (*index, version.entity_ref));
+        result
+            .entities
+            .sort_by_key(|(index, slot, _)| (*index, *slot));
+        result.all_states_available = available == self.states.len();
+        result
+    }
+
+    /// Revisions of topology slots for independent reconstruction tests.
+    #[cfg(test)]
+    pub(crate) fn entity_versions(&self, state: &AsmDeltaState) -> Vec<AsmEntityVersion> {
+        let Some(topology) = self.topology(state) else {
+            return Vec::new();
+        };
+        let Ok(Some(order)) = self.bound_chain() else {
+            return Vec::new();
+        };
+        let mut versions = Vec::new();
+        for index in order.into_iter().rev() {
+            let Some(transition) = self.states[index].transition.as_ref() else {
+                return Vec::new();
+            };
+            if transition.apply_versions(&mut versions).is_err() {
+                return Vec::new();
+            }
+            if std::ptr::eq(std::ptr::from_ref(&self.states[index]), state) {
+                let slots = topology.slots();
+                versions.retain(|version| slots.contains(&version.entity_ref));
+                return versions;
+            }
+        }
+        Vec::new()
     }
 
     /// Drop all cached materializations.

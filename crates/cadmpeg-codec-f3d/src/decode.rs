@@ -2414,6 +2414,9 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_record_headers,
         )?;
         extend_related_design_records(self.ctx, scan, &mut self.native)?;
+        for history in &mut self.native.asm_histories {
+            history.release_topologies();
+        }
         self.native.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
         self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
         self.native.sketch_curve_identities =
