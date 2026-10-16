@@ -388,10 +388,11 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
-        let feature_ids = features
+        let features_by_id = features
             .iter()
-            .map(|record| record.id.as_str())
-            .collect::<HashSet<_>>();
+            .map(|record| (record.id.as_str(), record))
+            .collect::<HashMap<_, _>>();
+        let feature_ids = features_by_id.keys().copied().collect::<HashSet<_>>();
         let lane_ids = native
             .feature_input_lanes
             .iter()
@@ -746,9 +747,8 @@ impl SldprtNative {
                 }
                 let references = match usize::try_from(record.offset) {
                     Ok(offset) => {
-                        let feature_kind = features
-                            .iter()
-                            .find(|feature| feature.id == record.feature_ref)
+                        let feature_kind = features_by_id
+                            .get(record.feature_ref.as_str())
                             .map(|feature| feature.kind.as_str())
                             .unwrap_or_default();
                         crate::resolved_features::selections::compact_edge_reference_list_for_feature(
@@ -823,8 +823,7 @@ impl SldprtNative {
         let features = self
             .feature_histories
             .iter()
-            .flat_map(|history| &history.features)
-            .cloned()
+            .flat_map(|history| history.features.iter())
             .collect::<Vec<_>>();
         let feature_ids = features
             .iter()
@@ -880,7 +879,7 @@ impl SldprtNative {
                     )));
                 }
             }
-            let lane_features = FeatureSources::for_lane(&features, lane);
+            let lane_features = FeatureSources::for_lane_iter(features.iter().copied(), lane);
             for record in &lane.edge_selections {
                 let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())

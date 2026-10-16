@@ -84,6 +84,8 @@ pub(crate) enum SldprtLossCode {
     GeometryEdgeSupportCurveUntyped,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
+    /// A NURBS surface solver exhausted its local work cap; the derived pcurve is skipped.
+    GeometrySurfaceSolverWorkCapped,
     /// A spline carrier's pole and weight lanes do not pair.
     GeometrySplineLanesUnpaired,
     /// Current face records carry conflicting or incoherent color bindings.
@@ -92,6 +94,8 @@ pub(crate) enum SldprtLossCode {
     AppearanceAssignmentUnresolved,
     /// `DisplayLists` tessellation does not resolve to its B-rep face owners.
     TessellationFaceOwnershipUnresolved,
+    /// A planar trim arc would need more segments than the local work cap.
+    TessellationPlanarArcSegmentCap,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// One face owner has multiple non-equivalent face-use bridges.
@@ -180,10 +184,12 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPcurveAmbiguous,
+        Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
+        Self::TessellationPlanarArcSegmentCap,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceOwnerAmbiguous,
         Self::TopologyFaceUnclaimed,
@@ -241,10 +247,12 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
+            Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
+            Self::TessellationPlanarArcSegmentCap => "tessellation.planar-arc-segment-cap",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
@@ -314,10 +322,12 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryPcurveAmbiguous
+            | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::TessellationFaceOwnershipUnresolved
+            | Self::TessellationPlanarArcSegmentCap
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceOwnerAmbiguous
             | Self::TopologyFaceUnclaimed
@@ -358,7 +368,10 @@ impl SldprtLossCode {
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred => LossTaxonomy::GeometryNotTransferred,
-            Self::GeometryPcurveAmbiguous => LossTaxonomy::PcurveOmitted,
+            Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
+                LossTaxonomy::PcurveOmitted
+            }
+            Self::TessellationPlanarArcSegmentCap => LossTaxonomy::GeometryNotTransferred,
             Self::AppearanceFaceColorUnresolved | Self::AppearanceAssignmentUnresolved => {
                 LossTaxonomy::MaterialNotTransferred
             }
@@ -499,10 +512,12 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
                 "geometry.pcurve-ambiguous",
+                "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
                 "tessellation.face-ownership-unresolved",
+                "tessellation.planar-arc-segment-cap",
                 "topology.body-hierarchy-derived",
                 "topology.face-owner-ambiguous",
                 "topology.face-unclaimed",

@@ -18,22 +18,34 @@ pub(super) fn lane_added_source(
 }
 
 pub(crate) struct FeatureSources<'a> {
-    features: &'a [Feature],
+    features: Vec<&'a Feature>,
     added: HashMap<usize, FeatureSource>,
 }
 
 impl<'a> FeatureSources<'a> {
     pub(crate) fn new(features: &'a [Feature]) -> Self {
+        Self::from_refs(features.iter())
+    }
+
+    fn from_refs(features: impl IntoIterator<Item = &'a Feature>) -> Self {
         Self {
-            features,
+            features: features.into_iter().collect(),
             added: HashMap::new(),
         }
     }
 
     pub(crate) fn for_lane(features: &'a [Feature], lane: &FeatureInputLane) -> Self {
-        let mut view = Self::new(features);
+        Self::for_lane_iter(features.iter(), lane)
+    }
+
+    pub(crate) fn for_lane_iter(
+        features: impl IntoIterator<Item = &'a Feature>,
+        lane: &FeatureInputLane,
+    ) -> Self {
+        let mut view = Self::from_refs(features);
         if !lane.edge_selections.is_empty() || !lane.surface_selections.is_empty() {
-            view.added = features
+            view.added = view
+                .features
                 .iter()
                 .enumerate()
                 .filter_map(|(index, feature)| Some((index, lane_added_source(feature, lane)?)))
@@ -45,6 +57,7 @@ impl<'a> FeatureSources<'a> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = SourcedFeature<'a>> + '_ {
         self.features
             .iter()
+            .copied()
             .enumerate()
             .map(|(index, feature)| SourcedFeature {
                 feature,
