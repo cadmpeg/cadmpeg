@@ -6614,17 +6614,20 @@ pub(super) fn feature_sketch_fixed_points(
 pub(super) fn feature_sketch_point_groups(
     points: &[FeatureSketchPoint],
 ) -> Vec<FeatureSketchPointGroup> {
-    let mut grouped = BTreeSet::new();
+    let mut witnesses = BTreeMap::<(&str, &str), Vec<&FeatureSketchPoint>>::new();
+    for point in points {
+        witnesses
+            .entry((point.operation_label.as_str(), point.name.as_str()))
+            .or_default()
+            .push(point);
+    }
     let mut groups = Vec::new();
     for point in points {
         let key = (point.operation_label.as_str(), point.name.as_str());
-        if !grouped.insert(key) {
+        let Some(witnesses) = witnesses.remove(&key) else {
             continue;
-        }
-        let matches = |candidate: &&FeatureSketchPoint| {
-            candidate.operation_label == point.operation_label && candidate.name == point.name
         };
-        if points.iter().filter(&matches).any(|candidate| {
+        if witnesses.iter().any(|candidate| {
             candidate
                 .coordinates
                 .iter()
@@ -6634,11 +6637,7 @@ pub(super) fn feature_sketch_point_groups(
             continue;
         }
 
-        let members = points
-            .iter()
-            .filter(&matches)
-            .map(|witness| witness.id.clone())
-            .collect();
+        let members = witnesses.iter().map(|witness| witness.id.clone()).collect();
         let key = point.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let id = format!("nx:feature-history:sketch-point-group#{key}");
 
