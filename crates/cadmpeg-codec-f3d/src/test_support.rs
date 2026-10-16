@@ -181,3 +181,11 @@ pub(crate) mod procedural_test;
 pub(crate) mod history;
 
 pub(crate) mod history_stream;
+
+pub(crate) mod body_map_test;
+
+pub(crate) mod component_insert_test;
+
+pub(crate) mod lost_edge_test;
+
+pub(crate) mod step_conversion;

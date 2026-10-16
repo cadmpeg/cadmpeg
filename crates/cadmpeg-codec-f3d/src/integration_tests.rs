@@ -4,7 +4,9 @@
 mod attribute_colors;
 mod history_deltas;
 mod history_scale;
+mod inconsistent_records;
 mod optional_payloads;
+mod placement_history;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
