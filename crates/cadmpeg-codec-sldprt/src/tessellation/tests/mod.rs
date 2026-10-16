@@ -59,7 +59,7 @@ use cadmpeg_ir::topology::{
 
 mod display_references;
 mod display_tables;
-mod surface_admission;
+mod nurbs_display;
 
 macro_rules! assign_unique_surface_owners {
     ($model:expr) => {{

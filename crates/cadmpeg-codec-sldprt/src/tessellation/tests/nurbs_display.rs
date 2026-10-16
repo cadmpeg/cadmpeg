@@ -60,7 +60,7 @@ fn assign(model: &mut Model, policy: &DecodePolicy) -> Result<Vec<String>, Codec
 }
 
 #[test]
-fn geometric_nurbs_surface_route_assigns_the_admitted_face() {
+fn geometric_nurbs_surface_route_assigns_the_face() {
     let mut model = nurbs_display_model(false);
     assert_eq!(
         assign(&mut model, &DecodePolicy::service()).unwrap(),

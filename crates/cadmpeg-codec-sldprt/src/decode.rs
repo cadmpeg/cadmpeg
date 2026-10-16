@@ -148,9 +148,13 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
         .filter(|mesh| mesh.body.is_none() || mesh.faces.is_empty())
         .count();
     if unresolved > 0 {
-        report.losses.push(SldprtLossCode::TessellationFaceOwnershipUnresolved.note(format!(
-                "{unresolved} DisplayLists tessellation table(s) do not resolve to B-rep face ownership. Geometry and native channels are retained without fabricating body or face references."
-            )));
+        report.losses.push(
+            SldprtLossCode::TessellationFaceOwnershipUnresolved.note(format!(
+                "{unresolved} DisplayLists tessellation table(s) do not resolve to B-rep face \
+                 ownership. Geometry and native channels are retained without fabricating body or \
+                 face references."
+            )),
+        );
     }
 }
 
@@ -338,7 +342,7 @@ fn append_design_losses(
     ir: &CadIr,
     report: &mut DecodeBody,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::edge_treatments::FullRoundSideSelection;
+    use cadmpeg_ir::features::edge_treatments::{ChamferGroup, FullRoundSideSelection};
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
@@ -677,8 +681,18 @@ fn append_design_losses(
         || incoherent_parameter_dependencies > 0
         || incoherent_parameter_values > 0
     {
-        report.losses.push(SldprtLossCode::ParameterUnevaluated.note(format!(
-                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {unevaluable_parameter_expressions} parameter expression(s) cannot regenerate a finite typed value; {invalid_parameter_dependency_order} parameter record(s) contain missing or non-preceding dependency edges; {incoherent_parameter_dependencies} parameter record(s) have dependency edges inconsistent with their expressions; {incoherent_parameter_values} dependency-driven parameter(s) disagree with their evaluated expressions."
+        report
+            .losses
+            .push(SldprtLossCode::ParameterUnevaluated.note(format!(
+                "{incomplete_parameters} parameter(s) lack an evaluated scalar; \
+             {unresolved_parameter_references} parameter expression(s) contain unresolved, \
+             ambiguous, or malformed parameter references; {unevaluable_parameter_expressions} \
+             parameter expression(s) cannot regenerate a finite typed value; \
+             {invalid_parameter_dependency_order} parameter record(s) contain missing or \
+             non-preceding dependency edges; {incoherent_parameter_dependencies} parameter \
+             record(s) have dependency edges inconsistent with their expressions; \
+             {incoherent_parameter_values} dependency-driven parameter(s) disagree with their \
+             evaluated expressions."
             )));
     }
     let empty_parameter_names = ir
@@ -1090,6 +1104,13 @@ fn append_design_losses(
             incomplete_angular_termination(first) || incomplete_angular_termination(second)
         }
     };
+    let incomplete_chamfer_groups =
+        |groups: &cadmpeg_ir::features::NonEmptyMembers<ChamferGroup>| {
+            groups.is_empty()
+                || groups.iter().any(|group| {
+                    incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
+                })
+        };
     let incomplete_typed_features = evaluated_feature_states
         .iter()
         .filter(|state| {
@@ -1386,12 +1407,7 @@ fn append_design_losses(
                                 )
                         })
                 }
-                FeatureOperation::Chamfer { groups, .. } => {
-                    groups.is_empty()
-                        || groups.iter().any(|group| {
-                            incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
-                        })
-                }
+                FeatureOperation::Chamfer { groups, .. } => incomplete_chamfer_groups(groups),
                 FeatureOperation::FaceBlend { operands, radius } => {
                     let first_faces = operands.first_faces();
                     let second_faces = operands.second_faces();
@@ -3308,7 +3324,8 @@ fn build_geometry_report(
     }
     if s.ambiguous_pcurve_parameters > 0 {
         losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(
-            "{} pcurve(s) were withheld because more than one geometric parameter satisfies the stored edge or ruling geometry; the decoder does not choose by residual order.",
+            "{} pcurve(s) were withheld because more than one geometric parameter satisfies the \
+             stored edge or ruling geometry; the decoder does not choose by residual order.",
             s.ambiguous_pcurve_parameters
         )));
     }
