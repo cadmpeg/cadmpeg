@@ -18,6 +18,11 @@ use crate::records::feature::patterns;
 use crate::records::feature::patterns::DesignCircularPatternConstruction;
 use crate::records::feature::patterns::DesignRectangularPatternConstruction;
 use crate::records::feature::patterns::DesignRectangularPatternInstances;
+use crate::records::feature::patterns::RectangularPatternSearchCap;
+use crate::records::feature::patterns::{
+    MAX_RECTANGULAR_PATTERN_INSTANCES, MAX_RECTANGULAR_PATTERN_RECORD_BYTES,
+    MAX_RECTANGULAR_PATTERN_SCANNED_BYTES, RECTANGULAR_PATTERN_RUN_WORK,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::{View, WorkBudget};
@@ -28,9 +33,6 @@ const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
 
 const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1.0e-10;
 
-/// Transform comparisons one rectangular-pattern instance search may make
-/// before it leaves the instances unresolved.
-const RECTANGULAR_PATTERN_RUN_WORK: usize = 1 << 20;
 pub(super) fn exact_rectangular_pattern_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -85,7 +87,7 @@ pub(super) fn exact_rectangular_pattern_construction(
                     v_extent.evaluated_value_offset(),
                 ],
                 instances: None,
-                instance_search_capped: false,
+                instance_search_cap: None,
             },
         )
         .ok()?;
@@ -99,8 +101,8 @@ pub(super) fn exact_rectangular_pattern_construction(
             .try_set_instances(Some(*instances))
             .map_err(CodecError::malformed)?,
         InstanceSearch::Unresolved => {}
-        InstanceSearch::Capped => construction
-            .mark_instance_search_capped()
+        InstanceSearch::Capped(cap) => construction
+            .mark_instance_search_capped(cap)
             .map_err(CodecError::malformed)?,
     }
     Ok(Some(construction))
@@ -113,9 +115,8 @@ enum InstanceSearch {
     Resolved(Box<DesignRectangularPatternInstances>),
     /// No unique exact instance run.
     Unresolved,
-    /// The instance count, a record span, the aggregate span or the search
-    /// work exceeded its local cap.
-    Capped,
+    /// The search stopped at a local cap.
+    Capped(RectangularPatternSearchCap),
 }
 
 fn exact_rectangular_pattern_instances(
@@ -136,9 +137,10 @@ fn exact_rectangular_pattern_instances(
             return None;
         }
         let count = usize::try_from(count).ok()?;
-        // Instances past the search cap are left unresolved.
-        if count > 4_096 {
-            return Some(InstanceSearch::Capped);
+        if count > MAX_RECTANGULAR_PATTERN_INSTANCES {
+            return Some(InstanceSearch::Capped(
+                RectangularPatternSearchCap::Instances,
+            ));
         }
         if scope.reference_members().len() != count.checked_add(6)?
             || !scope
@@ -176,14 +178,20 @@ fn exact_rectangular_pattern_instances(
                 .filter_map(|(_, offset)| (*offset > start).then_some(*offset))
                 .min()?;
             let span = end.checked_sub(start)?;
-            // Spans past the scan caps leave the instances unresolved.
-            let Some(total) = scanned_bytes.checked_add(span) else {
-                return Some(InstanceSearch::Capped);
+            if span > MAX_RECTANGULAR_PATTERN_RECORD_BYTES {
+                return Some(InstanceSearch::Capped(
+                    RectangularPatternSearchCap::RecordBytes,
+                ));
+            }
+            let Some(total) = scanned_bytes
+                .checked_add(span)
+                .filter(|total| *total <= MAX_RECTANGULAR_PATTERN_SCANNED_BYTES)
+            else {
+                return Some(InstanceSearch::Capped(
+                    RectangularPatternSearchCap::ScannedBytes,
+                ));
             };
             scanned_bytes = total;
-            if span > 1_048_576 || scanned_bytes > 16_777_216 {
-                return Some(InstanceSearch::Capped);
-            }
             candidates.push(exact_rigid_transform_candidates(bytes, start, end)?);
         }
         let first_candidates = candidates.first()?;
@@ -193,7 +201,7 @@ fn exact_rectangular_pattern_instances(
         for first in first_candidates {
             for final_candidate in final_candidates {
                 if !budget.charge() {
-                    return Some(InstanceSearch::Capped);
+                    return Some(InstanceSearch::Capped(RectangularPatternSearchCap::RunWork));
                 }
                 if !same_transform_basis(&first.0, &final_candidate.0) {
                     continue;
@@ -214,7 +222,9 @@ fn exact_rectangular_pattern_instances(
                     let mut matched = None;
                     for candidate in record_candidates {
                         if !budget.charge() {
-                            return Some(InstanceSearch::Capped);
+                            return Some(InstanceSearch::Capped(
+                                RectangularPatternSearchCap::RunWork,
+                            ));
                         }
                         if same_transform_basis(&first.0, &candidate.0)
                             && translation_delta(&first.0, &candidate.0)

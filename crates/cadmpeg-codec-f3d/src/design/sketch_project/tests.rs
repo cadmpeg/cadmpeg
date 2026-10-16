@@ -1592,6 +1592,6 @@ fn capped_spatial_profile_search_reports_a_loss() {
     );
     assert_eq!(
         loss.message,
-        "1 spatial sketch(es) have no closed profiles because their profile search exceeded a local cap."
+        "1 spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK (16777216)."
     );
 }

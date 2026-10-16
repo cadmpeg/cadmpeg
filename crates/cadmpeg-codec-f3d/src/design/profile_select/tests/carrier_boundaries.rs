@@ -69,6 +69,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
                     &entities,
                     EPS_TRANSITION_PROFILE,
                     selections,
+                    &crate::design::geometry::ProfileGeometryWork::new(),
                     decode_ctx,
                 )
             })

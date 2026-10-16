@@ -5,6 +5,7 @@ use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_i64, truncate_f64_to
 use cadmpeg_core::decode::index_from_u32;
 
 use crate::design::profile_select::historical_face_points;
+use crate::loss::F3dLossCode;
 use crate::records::{
     sketch_relations::SketchRelationOperand,
     topology::extrude_selection::DesignExtrudeSelectionMember,
@@ -14,7 +15,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 const EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6: f64 = 1.0e-6;
@@ -31,9 +34,86 @@ macro_rules! geometric {
     };
 }
 
-/// Local work cap for arrangement edge retention walks. An exhausted cap
-/// skips the arrangement.
+/// Local work cap for arrangement edge retention walks, shared by every walk
+/// of one decode. An exhausted cap skips the arrangement.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
+
+/// Local cap on the certified tubes of one arc or NURBS span. A span that
+/// needs more skips the certification that uses it.
+const MAX_SUBDIVISIONS: f64 = 100_000.0;
+
+/// Local work caps of the sketch-profile geometry that binds extrude profile
+/// selections, and the selections that skipped a search at each cap.
+pub(crate) struct ProfileGeometryWork {
+    arrangement: WorkBudget,
+    arrangement_skipped: Cell<bool>,
+    densification_skipped: Cell<bool>,
+    arrangement_skipped_selections: Cell<usize>,
+    densification_skipped_selections: Cell<usize>,
+}
+
+impl ProfileGeometryWork {
+    pub(crate) fn new() -> Self {
+        Self::with_arrangement_work(MAX_ARRANGEMENT_WALK_WORK)
+    }
+
+    pub(crate) fn with_arrangement_work(limit: usize) -> Self {
+        Self {
+            arrangement: WorkBudget::new(limit),
+            arrangement_skipped: Cell::new(false),
+            densification_skipped: Cell::new(false),
+            arrangement_skipped_selections: Cell::new(0),
+            densification_skipped_selections: Cell::new(0),
+        }
+    }
+
+    /// Run `search` and return whether the densification cap skipped a
+    /// certification inside it. The skip also counts for the open selection.
+    fn densification_within<T>(&self, search: impl FnOnce() -> T) -> (T, bool) {
+        let earlier = self.densification_skipped.replace(false);
+        let value = search();
+        let skipped = self.densification_skipped.get();
+        self.densification_skipped.set(earlier || skipped);
+        (value, skipped)
+    }
+
+    /// Close one profile selection. Count it against each cap that skipped a
+    /// search since the previous selection closed.
+    pub(crate) fn finish_selection(&self) {
+        for (skipped, selections) in [
+            (
+                &self.arrangement_skipped,
+                &self.arrangement_skipped_selections,
+            ),
+            (
+                &self.densification_skipped,
+                &self.densification_skipped_selections,
+            ),
+        ] {
+            if skipped.take() {
+                selections.set(selections.get() + 1);
+            }
+        }
+    }
+
+    /// One loss for each cap that made a closed selection skip a search.
+    pub(crate) fn losses(&self) -> Vec<LossNote> {
+        let mut losses = Vec::new();
+        let arrangement = self.arrangement_skipped_selections.get();
+        if arrangement != 0 {
+            losses.push(F3dLossCode::FeatureProfileArrangementCapped.note(format!(
+                "{arrangement} extrude profile selection(s) skipped the sketch arrangement search because the arrangement walks exceeded MAX_ARRANGEMENT_WALK_WORK ({MAX_ARRANGEMENT_WALK_WORK})."
+            )));
+        }
+        let densification = self.densification_skipped_selections.get();
+        if densification != 0 {
+            losses.push(F3dLossCode::FeatureProfileDensificationCapped.note(format!(
+                "{densification} extrude profile selection(s) skipped a certified profile test because a curve span needed more than MAX_SUBDIVISIONS ({MAX_SUBDIVISIONS}) tubes."
+            )));
+        }
+        losses
+    }
+}
 
 #[derive(Clone)]
 struct SketchArrangementEdge {
@@ -52,12 +132,12 @@ pub(super) fn arrangement_region_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point2],
     tolerance: f64,
-    budget: &WorkBudget,
+    work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, budget, ctx)? else {
+    let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
     let mut boundary = None;
@@ -125,7 +205,7 @@ fn sketch_arrangement_faces(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-    budget: &WorkBudget,
+    work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
@@ -287,8 +367,9 @@ fn sketch_arrangement_faces(
         }
         edges.push(edge);
     }
-    arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget, ctx)?;
-    if budget.exhausted() {
+    arrangement_retain_cycle_edges(&mut edges, nodes.len(), &work.arrangement, ctx)?;
+    if work.arrangement.exhausted() {
+        work.arrangement_skipped.set(true);
         return Ok(None);
     }
     if edges.len() < 3 {
@@ -296,7 +377,7 @@ fn sketch_arrangement_faces(
     }
     let mut edge_tubes = Vec::new();
     for edge in &edges {
-        let Some(tubes) = arrangement_edge_tubes(edge, entities, tolerance, ctx)? else {
+        let Some(tubes) = arrangement_edge_tubes(edge, entities, tolerance, work, ctx)? else {
             return Ok(None);
         };
         edge_tubes.push(tubes);
@@ -1171,6 +1252,7 @@ fn arrangement_edge_tubes(
     edge: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
+    work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
@@ -1197,13 +1279,14 @@ fn arrangement_edge_tubes(
             edge.boundary.parameter_range.endpoints()[0],
             edge.boundary.parameter_range.endpoints()[1],
             target_error,
+            work,
         ),
         SketchGeometryDefinition::Nurbs { curve }
             if !curve.periodic()
                 && sketch_geometry_parameter_range(&entity.geometry)
                     == Some(edge.boundary.parameter_range.endpoints()) =>
         {
-            return certified_nurbs_tubes(curve, target_error, ctx);
+            return certified_nurbs_tubes(curve, target_error, work, ctx);
         }
         _ => None,
     })
@@ -1424,25 +1507,34 @@ pub(super) fn region_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
     tolerance: f64,
+    work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
     let mut boundaries = Vec::new();
     for profile in &sketch.profiles {
-        let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
+        let Some(boundary) = profile_boundary(profile, entities, tolerance, work, ctx)? else {
             return Ok(None);
         };
         boundaries.push(boundary);
     }
-    let mut containment = Vec::new();
-    for (outer_index, outer) in boundaries.iter().enumerate() {
-        let mut row = Vec::new();
-        for (inner_index, inner) in boundaries.iter().enumerate() {
-            let contains = outer_index != inner_index && outer.strictly_contains(inner);
-            row.push(contains);
+    let (containment, capped) = work.densification_within(|| {
+        let mut containment = Vec::new();
+        for (outer_index, outer) in boundaries.iter().enumerate() {
+            let mut row = Vec::new();
+            for (inner_index, inner) in boundaries.iter().enumerate() {
+                let contains = outer_index != inner_index && outer.strictly_contains(inner, work);
+                row.push(contains);
+            }
+            containment.push(row);
         }
-        containment.push(row);
+        containment
+    });
+    // A capped containment test answers "not contained" without a proof, so
+    // the matrix would be incomplete.
+    if capped {
+        return Ok(None);
     }
     let mut projected = Vec::new();
     for point in points {
@@ -1541,6 +1633,7 @@ pub(super) fn profile_loops_are_independent(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     profiles: &[u32],
     tolerance: f64,
+    work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let mut boundaries = Vec::new();
@@ -1551,14 +1644,14 @@ pub(super) fn profile_loops_are_independent(
         let Some(profile) = sketch.profiles.get(index) else {
             return Ok(false);
         };
-        let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
+        let Some(boundary) = profile_boundary(profile, entities, tolerance, work, ctx)? else {
             return Ok(false);
         };
         boundaries.push(boundary);
     }
     for (left_index, left) in boundaries.iter().enumerate() {
         for right in boundaries.iter().skip(left_index + 1) {
-            if !left.is_provably_disjoint(right) {
+            if !left.is_provably_disjoint(right, work) {
                 return Ok(false);
             }
         }
@@ -1629,7 +1722,7 @@ impl ProfileBoundary {
         }
     }
 
-    fn strictly_contains(&self, inner: &Self) -> bool {
+    fn strictly_contains(&self, inner: &Self, work: &ProfileGeometryWork) -> bool {
         match (self, inner) {
             (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
             (
@@ -1681,10 +1774,10 @@ impl ProfileBoundary {
                     })
             }
             (outer, inner) => {
-                let Some(outer) = outer.certified_loop() else {
+                let Some(outer) = outer.certified_loop(work) else {
                     return false;
                 };
-                let Some(inner) = inner.certified_loop() else {
+                let Some(inner) = inner.certified_loop(work) else {
                     return false;
                 };
                 outer.strictly_contains(&inner)
@@ -1692,7 +1785,7 @@ impl ProfileBoundary {
         }
     }
 
-    fn is_provably_disjoint(&self, other: &Self) -> bool {
+    fn is_provably_disjoint(&self, other: &Self, work: &ProfileGeometryWork) -> bool {
         let intersects = match (self, other) {
             (Self::Polygon(left), Self::Polygon(right)) => polygon_edges(left).any(|left_edge| {
                 polygon_edges(right).any(|right_edge| segments_intersect(left_edge, right_edge))
@@ -1726,18 +1819,25 @@ impl ProfileBoundary {
                 .any(|segment| point_boundary_segment_distance(*center, segment) <= radius.get()),
             (Self::CertifiedLoop(_), _) | (_, Self::CertifiedLoop(_)) => return false,
         };
-        !intersects && !self.strictly_contains(other) && !other.strictly_contains(self)
+        !intersects && !self.strictly_contains(other, work) && !other.strictly_contains(self, work)
     }
 
-    fn certified_loop(&self) -> Option<std::borrow::Cow<'_, CertifiedProfileLoop>> {
+    fn certified_loop(
+        &self,
+        work: &ProfileGeometryWork,
+    ) -> Option<std::borrow::Cow<'_, CertifiedProfileLoop>> {
         use std::borrow::Cow;
 
         match self {
             Self::Polygon(vertices) => {
                 CertifiedProfileLoop::from_vertices(vertices).map(Cow::Owned)
             }
-            Self::CircularArcLoop(segments) => certified_analytic_loop(segments).map(Cow::Owned),
-            Self::Circle { center, radius } => certified_circle(*center, *radius).map(Cow::Owned),
+            Self::CircularArcLoop(segments) => {
+                certified_analytic_loop(segments, work).map(Cow::Owned)
+            }
+            Self::Circle { center, radius } => {
+                certified_circle(*center, *radius, work).map(Cow::Owned)
+            }
             Self::CertifiedLoop(loop_) => Some(Cow::Borrowed(loop_)),
         }
     }
@@ -1793,6 +1893,7 @@ fn profile_boundary(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
+    work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ProfileBoundary>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
@@ -1812,14 +1913,17 @@ fn profile_boundary(
     if let Some(arc_loop) = circular_arc_profile_segments(profile, entities, tolerance) {
         return Ok(Some(ProfileBoundary::CircularArcLoop(arc_loop)));
     }
-    Ok(certified_profile_loop(profile, entities, tolerance, ctx)?
-        .map(ProfileBoundary::CertifiedLoop))
+    Ok(
+        certified_profile_loop(profile, entities, tolerance, work, ctx)?
+            .map(ProfileBoundary::CertifiedLoop),
+    )
 }
 
 fn certified_profile_loop(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
+    work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<CertifiedProfileLoop>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
@@ -1857,10 +1961,11 @@ fn certified_profile_loop(
                 *radius,
                 start_angle.get(),
                 end_angle.get(),
-                target_error
+                target_error,
+                work
             )),
             SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-                geometric!(certified_nurbs_tubes(curve, target_error, ctx)?)
+                geometric!(certified_nurbs_tubes(curve, target_error, work, ctx)?)
             }
             _ => return Ok(None),
         };
@@ -1887,7 +1992,10 @@ fn certified_profile_loop(
     Ok(CertifiedProfileLoop::new(tubes))
 }
 
-fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<CertifiedProfileLoop> {
+fn certified_analytic_loop(
+    segments: &[ProfileBoundarySegment],
+    work: &ProfileGeometryWork,
+) -> Option<CertifiedProfileLoop> {
     let scale = segments
         .iter()
         .flat_map(|segment| {
@@ -1909,7 +2017,7 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
                 radius,
                 start_angle,
                 end_angle,
-            } => certified_arc_tubes(*center, *radius, *start_angle, *end_angle, tolerance)?,
+            } => certified_arc_tubes(*center, *radius, *start_angle, *end_angle, tolerance, work)?,
         };
         for tube in segment_tubes {
             tubes.push(tube);
@@ -1918,10 +2026,14 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
     CertifiedProfileLoop::new(tubes)
 }
 
-fn certified_circle(center: Point2, radius: PositiveLength) -> Option<CertifiedProfileLoop> {
+fn certified_circle(
+    center: Point2,
+    radius: PositiveLength,
+    work: &ProfileGeometryWork,
+) -> Option<CertifiedProfileLoop> {
     let tolerance = EPS_GEOMETRY_CERTIFIED_CIRCLE_E6
         * (1.0 + center.u.abs().max(center.v.abs()).max(radius.get()));
-    let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance)?;
+    let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance, work)?;
     CertifiedProfileLoop::new(tubes)
 }
 
@@ -1931,13 +2043,14 @@ fn certified_arc_tubes(
     start: f64,
     end: f64,
     target_error: f64,
+    work: &ProfileGeometryWork,
 ) -> Option<Vec<CertifiedCurveTube>> {
     let sweep = end - start;
     if !sweep.is_finite() || sweep == 0.0 {
         return None;
     }
     let radius = radius.get();
-    let count = subdivision_count(radius * sweep.abs(), target_error)?;
+    let count = subdivision_count(radius * sweep.abs(), target_error, work)?;
     let count_float = f64_from_index(count)?;
     let error = radius * sweep.abs() / count_float;
     let mut tubes = Vec::new();
@@ -1963,6 +2076,7 @@ fn certified_arc_tubes(
 fn certified_nurbs_tubes(
     curve: &PcurveNurbs,
     target_error: f64,
+    work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     let speed = geometric!(nurbs_speed_bound(curve));
@@ -1983,7 +2097,7 @@ fn certified_nurbs_tubes(
         } else {
             return Ok(None);
         };
-        let subdivisions = geometric!(subdivision_count(travel_bound, target_error));
+        let subdivisions = geometric!(subdivision_count(travel_bound, target_error, work));
         let subdivisions_float = geometric!(f64_from_index(subdivisions));
         let error = travel_bound / subdivisions_float;
         for index in 0..subdivisions {
@@ -2024,9 +2138,11 @@ fn certified_nurbs_tubes(
     Ok((!tubes.is_empty()).then_some(tubes))
 }
 
-fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
-    // Format invariant: densification above this count is outside the reader.
-    const MAX_SUBDIVISIONS: f64 = 100_000.0;
+fn subdivision_count(
+    travel_bound: f64,
+    target_error: f64,
+    work: &ProfileGeometryWork,
+) -> Option<usize> {
     if !travel_bound.is_finite()
         || travel_bound < 0.0
         || !target_error.is_finite()
@@ -2035,9 +2151,11 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
         return None;
     }
     let count = (travel_bound / target_error).ceil().max(1.0);
-    (count <= MAX_SUBDIVISIONS)
-        .then(|| truncate_f64_to_usize(count))
-        .flatten()
+    if count > MAX_SUBDIVISIONS {
+        work.densification_skipped.set(true);
+        return None;
+    }
+    truncate_f64_to_usize(count)
 }
 
 fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {

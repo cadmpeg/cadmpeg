@@ -222,8 +222,11 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_TOP_LEVEL_MANIFEST_BYTES`            | `16 * 1024 * 1024`                                      | 2    | Size of one top-level manifest blob. Excess is `Malformed`.                                                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/container.rs`                                 | `MAX_ARCHIVE_BYTES`                       | `256 * 1024 * 1024`                                     | N    | Encode path only: total declared inflated size when Protein appearances are patched (`materials::patch_protein_appearances`).                                                                                                                                                |
 | `cadmpeg-codec-f3d`      | `src/container.rs`                                 | `MAX_INFLATED_ENTRY_BYTES`                | `128 * 1024 * 1024`                                     | N    | Encode path only: per-entry inflate limit of `read_entry_bounded`, used by the same patcher.                                                                                                                                                                                 |
-| `cadmpeg-codec-f3d`      | `src/design/geometry.rs`                           | `MAX_ARRANGEMENT_WALK_WORK`               | `1_000_000`                                             | 4    | `WorkBudget` created once in `decode.rs` and shared by every extrude profile arrangement walk. Exhaustion makes `design/geometry.rs` return `None` and the profile is not selected; nothing checks the budget afterwards, so no loss is reported.                            |
-| `cadmpeg-codec-f3d`      | `src/design/geometry.rs`                           | `MAX_SUBDIVISIONS`                        | `100_000.0`                                             | 4    | Arc and NURBS densification count for certified curve tubes. Above it `subdivision_count` returns `None` and the profile loop is not certified. The code comment calls this a format invariant; the behaviour is a skip of derived work.                                     |
+| `cadmpeg-codec-f3d`      | `src/design/geometry.rs`                           | `MAX_ARRANGEMENT_WALK_WORK`               | `1_000_000`                                             | 4    | `WorkBudget` in `ProfileGeometryWork`, created once in `decode/design_intent.rs` and shared by every extrude profile arrangement walk. Exhaustion skips the arrangement search; `feature.profile-arrangement-capped` counts the extrude profile selections that skipped it and names the constant. |
+| `cadmpeg-codec-f3d`      | `src/design/geometry.rs`                           | `MAX_SUBDIVISIONS`                        | `100_000.0`                                             | 4    | Certified tubes of one arc or NURBS span. Above it `subdivision_count` returns `None` and the certification that needed the span is skipped; a skipped containment test also skips the profile region. `feature.profile-densification-capped` counts the extrude profile selections that skipped one and names the constant. |
+| `cadmpeg-codec-f3d`      | `src/records/feature/patterns.rs`                  | `MAX_RECTANGULAR_PATTERN_INSTANCES`       | `4_096`                                                 | 4    | Instances in the active direction of the rectangular-pattern instance search. Excess leaves the instances unresolved; `feature.pattern-instance-search-capped` names the constant. |
+| `cadmpeg-codec-f3d`      | `src/records/feature/patterns.rs`                  | `MAX_RECTANGULAR_PATTERN_RECORD_BYTES`    | `1 << 20`                                               | 4    | Bytes one instance record spans in the same search. Same skip and loss. |
+| `cadmpeg-codec-f3d`      | `src/records/feature/patterns.rs`                  | `MAX_RECTANGULAR_PATTERN_SCANNED_BYTES`   | `1 << 24`                                               | 4    | Bytes the instance records of one search span together. Same skip and loss. |
 | `cadmpeg-codec-f3d`      | `src/design/decode/sketch.rs`                      | `MAX_RELATION_RUN`                        | `4096`                                                  | 1    | Counted runs in sketch relation, text and pattern records. A larger count rejects the framing candidate (`None`).                                                                                                                                                            |
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/sheet_metal.rs`          | `MAX_EDGE_WIDTH_DISTANCE_OWNERS`          | `2`                                                     | 1    | Width-distance owners in the single-edge flange frame. A frame with more is not recognized.                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/design/decode/presentation.rs`                | `MAX_ENVELOPE_GAP`                        | `8`                                                     | 1    | Zero padding admitted while a presentation envelope is located.                                                                                                                                                                                                              |
@@ -340,10 +343,10 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 | Crate                  | File                                                             | Limit                                  | Value                                        | Enforcement                                                                                                                                  |
 | ---------------------- | ---------------------------------------------------------------- | -------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg-codec-f3d`    | `src/design/decode/operands.rs` (four sites)                     | `RECIPE_SIDE_SEARCH_WORK`              | `1 << 22`                                    | Edge and face recipe side search. Exhaustion reports `feature.recipe-search-budget-exceeded`.                                                |
-| `cadmpeg-codec-f3d`    | `src/design/decode/scopes/pattern.rs`                            | `RECTANGULAR_PATTERN_RUN_WORK`         | `1 << 20`                                    | Rectangular pattern run search. A capped search reports `feature.pattern-instance-search-capped`.                                            |
-| `cadmpeg-codec-f3d`    | `src/design/feature_project.rs`                                  | `PARAMETER_ORDER_WORK`                 | `1 << 22`                                    | Parameter ordering. Exhaustion reports `parameter.order-budget-exceeded`.                                                                    |
-| `cadmpeg-codec-f3d`    | `src/design/sketch_project.rs`                                   | `SPATIAL_PROFILE_SEARCH_WORK`          | `1 << 24`                                    | Spatial sketch profile search. A capped sketch has no closed profiles and `sketch.profile-search-capped` is reported.                        |
+| `cadmpeg-codec-f3d`    | `src/design/decode/operands.rs` (four sites)                     | `RECIPE_SIDE_SEARCH_WORK`              | `1 << 22`                                    | Edge and face recipe side search. Exhaustion reports `feature.recipe-search-budget-exceeded`, which names the constant.                     |
+| `cadmpeg-codec-f3d`    | `src/design/decode/scopes/pattern.rs`                            | `RECTANGULAR_PATTERN_RUN_WORK`         | `1 << 20`                                    | Rectangular pattern run search; the constant is in `src/records/feature/patterns.rs`. A capped search reports `feature.pattern-instance-search-capped`, which names the constant. |
+| `cadmpeg-codec-f3d`    | `src/design/feature_project.rs`                                  | `PARAMETER_ORDER_WORK`                 | `1 << 22`                                    | Parameter ordering. Exhaustion reports `parameter.order-budget-exceeded`, which names the constant.                                         |
+| `cadmpeg-codec-f3d`    | `src/design/sketch_project.rs`                                   | `SPATIAL_PROFILE_SEARCH_WORK`          | `1 << 24`                                    | Spatial sketch profile search. A capped sketch has no closed profiles and `sketch.profile-search-capped`, which names the constant, is reported. |
 | `cadmpeg-codec-nx`     | `src/decode/build.rs`                                            | `transfer_limit`                       | 8 per chart, clamped to 1_024..=65_536       | Model-wide opposite-chart transfer budget (`completion_transfer_budget_limit`). Exhaustion reports `intersection.pcurve-completion-bounded`. |
 | `cadmpeg-codec-nx`     | `src/decode/build.rs` (three sites)                              | `support_uv_limit`                     | 8 per chart, clamped to 1_024..=65_536       | Serialized support-UV validation, direct and coupled support-UV completion budgets. Same loss.                                               |
 | `cadmpeg-codec-sldprt` | `src/brep/evaluation.rs` (two sites)                             | `SURFACE_SOLVER_LOCAL_WORK`            | `1_000_000`                                  | NURBS surface inversion and chord bound. Exhaustion skips the derived pcurve; no loss at this site.                                          |
@@ -356,16 +359,16 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 187.
+Production `MAX_*` constants: 190.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 64    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 76    |
+| 4    | Local work cap             | 79    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 187   |
+|      | Total                      | 190   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -373,7 +376,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 1, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
 `cadmpeg-protein` 2, `cadmpeg` 2, `cadmpeg-codec-step` 4,
 `cadmpeg-codec-iges` 14, `cadmpeg-codec-inventor` 2,
-`cadmpeg-codec-freecad` 9, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 13,
+`cadmpeg-codec-freecad` 9, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 16,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 16, `cadmpeg-codec-sldprt` 11,
 and `cadmpeg-codec-catia` 44.
 
@@ -421,7 +424,9 @@ Current codec routes:
   bound-specific losses. Standard-family topology search exhaustion is
   reported as the topology failure "the bounded topology search exhausted
   its operation or solution budget".
-- F3D recipe, pattern, parameter-order, spatial-profile, and history-binding
-  bounds report losses. History binding uses `retained_bytes_available()`.
+- F3D recipe, pattern, parameter-order, spatial-profile, extrude-profile
+  arrangement and densification, and history-binding bounds report losses.
+  The local work cap losses name the constant. History binding uses
+  `retained_bytes_available()`.
 - Inventor and FreeCAD have only kind 2 constants. `cadmpeg-codec-sat` has no
   production `MAX_*`.
