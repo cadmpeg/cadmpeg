@@ -30,6 +30,9 @@ toml = "1.1"
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
+# The test-support helpers build `cadmpeg_ir::examples`; the feature keeps
+# those fixtures out of the normal library build.
+cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [[bin]]
 name = "iges_stress"
