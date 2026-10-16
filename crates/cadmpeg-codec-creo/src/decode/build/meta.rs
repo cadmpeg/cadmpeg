@@ -7,7 +7,7 @@ use crate::container::ContainerScan;
 use crate::feature::definitions::{ScalarLane, VariableType};
 
 use super::super::expanded::feature_surface_replay_association_count;
-use super::super::sketch::coordinates::resolved_section_coordinates;
+use super::super::sketch::coordinates::resolved_section_coordinates_with_losses;
 use super::super::sketch::equations_scalar::resolved_section_scalar_values;
 use super::super::sketch::radii::resolved_section_radii;
 use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage, LegacyNumericCoverage};
@@ -25,10 +25,15 @@ fn insert_source_attribute(
     attributes.insert(key, value);
 }
 
+/// Source metadata and coverage counts. Resolving every feature definition's
+/// section coordinates can skip a distance component at a work cap; its loss
+/// goes to `losses`, and this is the one place in either build mode that
+/// reports it.
 pub(super) fn source_meta(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(SourceMeta, cadmpeg_ir::report::decode::Coverage), cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
@@ -738,7 +743,8 @@ pub(super) fn source_meta(
         .definitions
         .iter()
         .map(|definition| {
-            let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
+            let resolved_coordinates =
+                resolved_section_coordinates_with_losses(ctx, definition, losses)?;
             let resolved_radii = resolved_section_radii(ctx, definition)?;
             let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
             Ok::<_, cadmpeg_core::CodecError>(

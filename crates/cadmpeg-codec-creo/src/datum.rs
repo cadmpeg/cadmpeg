@@ -168,9 +168,10 @@ pub(crate) fn planes(payload: &[u8]) -> Vec<DatumPlaneRecord> {
 pub(crate) fn cylinders(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DatumCylinder>, CodecError> {
     let rows = crate::surface::rows(payload);
-    let parameters = crate::surface::parameter_records(ctx, payload)?;
+    let parameters = crate::surface::parameter_records_with_losses(ctx, payload, losses)?;
     let mut cylinders = Vec::new();
     for row in rows
         .iter()

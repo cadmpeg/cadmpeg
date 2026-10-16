@@ -1286,10 +1286,22 @@ fn plane_support_layout(values: &[f64; 12], saw_zero_slot_prefix: bool) -> Plane
     }
 }
 
-/// Loss note when plane-support lane search stops at [`MAX_PLANE_SUPPORT_LANE_VARIANTS`].
-pub(crate) fn plane_support_variants_capped_loss() -> cadmpeg_ir::report::loss::LossNote {
+/// Loss note when plane-support lane search stops at `cap`.
+fn plane_support_variants_capped_loss(
+    cap: PlaneSupportLaneCap,
+) -> cadmpeg_ir::report::loss::LossNote {
+    let (bound, value) = match cap {
+        PlaneSupportLaneCap::Variants => (
+            "MAX_PLANE_SUPPORT_LANE_VARIANTS",
+            MAX_PLANE_SUPPORT_LANE_VARIANTS,
+        ),
+        PlaneSupportLaneCap::Visits => (
+            "MAX_PLANE_SUPPORT_LANE_VISITS",
+            MAX_PLANE_SUPPORT_LANE_VISITS,
+        ),
+    };
     crate::loss::CreoLossCode::PlaneSupportVariantsCapped.note(format!(
-        "plane-support lane search stopped at MAX_PLANE_SUPPORT_LANE_VARIANTS ({MAX_PLANE_SUPPORT_LANE_VARIANTS}); later variants were not considered"
+        "plane-support lane search stopped at {bound} ({value}); later variants were not considered"
     ))
 }
 
@@ -1363,8 +1375,11 @@ pub(crate) fn decode_plane_support_local_system(
         )));
     }
     let (variants, capped) = decode_plane_support_lane_variants(ctx, body, cache)?;
-    if capped {
-        losses.push(plane_support_variants_capped_loss());
+    if let Some(cap) = capped {
+        let loss = plane_support_variants_capped_loss(cap);
+        if !losses.contains(&loss) {
+            losses.push(loss);
+        }
         return Ok(None);
     }
     let mut variants = variants.into_iter();
@@ -1388,11 +1403,36 @@ pub(crate) fn decode_plane_support_local_system(
 
 const MAX_PLANE_SUPPORT_LANE_VARIANTS: usize = 64;
 
-fn admit_plane_support_lane_variant(count: usize, capacity: usize, capped: &mut bool) -> bool {
-    if count >= capacity {
-        *capped = true;
+/// Search steps one plane-support lane search may take. A stored slot can
+/// branch up to four ways, so the walk is exponential in the number of
+/// ambiguous slots, and the frames it keeps depend on every value taken on
+/// the way, so steps from the same body position cannot share results.
+const MAX_PLANE_SUPPORT_LANE_VISITS: usize = 4096;
+
+/// The bound that stopped a plane-support lane search early.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlaneSupportLaneCap {
+    Variants,
+    Visits,
+}
+
+#[derive(Default)]
+struct PlaneSupportLaneSearch {
+    variants: usize,
+    visits: usize,
+    capped: Option<PlaneSupportLaneCap>,
+}
+
+fn admit_plane_support_lane_visit(search: &mut PlaneSupportLaneSearch, capacity: usize) -> bool {
+    if search.variants >= capacity {
+        search.capped.get_or_insert(PlaneSupportLaneCap::Variants);
         return false;
     }
+    if search.visits >= MAX_PLANE_SUPPORT_LANE_VISITS {
+        search.capped.get_or_insert(PlaneSupportLaneCap::Visits);
+        return false;
+    }
+    search.visits += 1;
     true
 }
 
@@ -1459,25 +1499,26 @@ fn plane_support_coordinate_variants(
     candidates
 }
 
+type PlaneSupportFrame = (FiniteVector<12>, PlaneSupportFrameLayout);
+
 fn decode_plane_support_lane_variants(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Result<(Vec<(FiniteVector<12>, PlaneSupportFrameLayout)>, bool), CodecError> {
+) -> Result<(Vec<PlaneSupportFrame>, Option<PlaneSupportLaneCap>), CodecError> {
     fn walk(
         ctx: &DecodeContext<'_>,
         body: &[u8],
         cache: &ScalarCache,
         values: &mut [f64; 12],
         position: (usize, usize, bool),
-        results: &mut [Option<(FiniteVector<12>, PlaneSupportFrameLayout)>;
-                 MAX_PLANE_SUPPORT_LANE_VARIANTS],
-        progress: &mut (usize, bool),
+        results: &mut [Option<PlaneSupportFrame>; MAX_PLANE_SUPPORT_LANE_VARIANTS],
+        progress: &mut PlaneSupportLaneSearch,
     ) -> Result<(), CodecError> {
         let (slot, cursor, saw_zero_slot_prefix) = position;
 
         let _depth = ctx.enter_nested("creo plane support variants depth")?;
-        if !admit_plane_support_lane_variant(progress.0, results.len(), &mut progress.1) {
+        if !admit_plane_support_lane_visit(progress, results.len()) {
             return Ok(());
         }
         if slot == values.len() {
@@ -1490,7 +1531,7 @@ fn decode_plane_support_lane_variants(
             let layout = plane_support_layout(values, saw_zero_slot_prefix);
             if matches!(layout, PlaneSupportFrameLayout::DirectNormalTriples)
                 && plane_support_values_have_valid_frame(values, layout)
-                && !results[..progress.0]
+                && !results[..progress.variants]
                     .iter()
                     .flatten()
                     .any(|(known, known_layout)| {
@@ -1502,8 +1543,8 @@ fn decode_plane_support_lane_variants(
                                 .all(|(known, value)| known.to_bits() == value.to_bits())
                     })
             {
-                results[progress.0] = Some((frame, layout));
-                progress.0 += 1;
+                results[progress.variants] = Some((frame, layout));
+                progress.variants += 1;
             }
             return Ok(());
         }
@@ -1614,7 +1655,7 @@ fn decode_plane_support_lane_variants(
 
     let mut values = [0.0; 12];
     let mut results = [None; MAX_PLANE_SUPPORT_LANE_VARIANTS];
-    let mut progress = (0usize, false);
+    let mut progress = PlaneSupportLaneSearch::default();
     walk(
         ctx,
         body,
@@ -1624,7 +1665,7 @@ fn decode_plane_support_lane_variants(
         &mut results,
         &mut progress,
     )?;
-    Ok((results.into_iter().flatten().collect(), progress.1))
+    Ok((results.into_iter().flatten().collect(), progress.capped))
 }
 
 /// Decode a positional plane support frame whose origin uses the named
@@ -2473,20 +2514,75 @@ mod tests {
     }
 
     #[test]
-    fn plane_support_lane_variant_cap_reports_the_bound() {
-        let mut capped = false;
-        assert!(!super::admit_plane_support_lane_variant(
+    fn plane_support_lane_caps_report_their_bound() {
+        use super::{PlaneSupportLaneCap, PlaneSupportLaneSearch};
+
+        let mut full = PlaneSupportLaneSearch {
+            variants: super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
+            ..PlaneSupportLaneSearch::default()
+        };
+        assert!(!super::admit_plane_support_lane_visit(
+            &mut full,
             super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
-            super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
-            &mut capped,
         ));
-        assert!(capped);
-        let loss = super::plane_support_variants_capped_loss();
+        assert_eq!(full.capped, Some(PlaneSupportLaneCap::Variants));
+        let mut spent = PlaneSupportLaneSearch {
+            visits: super::MAX_PLANE_SUPPORT_LANE_VISITS,
+            ..PlaneSupportLaneSearch::default()
+        };
+        assert!(!super::admit_plane_support_lane_visit(
+            &mut spent,
+            super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
+        ));
+        assert_eq!(spent.capped, Some(PlaneSupportLaneCap::Visits));
+        for (cap, bound) in [
+            (
+                PlaneSupportLaneCap::Variants,
+                "MAX_PLANE_SUPPORT_LANE_VARIANTS (64)",
+            ),
+            (
+                PlaneSupportLaneCap::Visits,
+                "MAX_PLANE_SUPPORT_LANE_VISITS (4096)",
+            ),
+        ] {
+            let loss = super::plane_support_variants_capped_loss(cap);
+            assert_eq!(
+                loss.code,
+                crate::loss::CreoLossCode::PlaneSupportVariantsCapped.kind()
+            );
+            assert!(loss.message.contains(bound), "{}", loss.message);
+        }
+    }
+
+    #[test]
+    fn plane_support_lane_visit_cap_skips_the_frame_with_one_loss() {
+        use super::PlaneSupportLaneCap;
+
+        // The lead coordinate leaves the primary frame invalid, and each
+        // following 0x18 slot branches the lane search.
+        let mut body = vec![0x46, 0xe0, 0, 0, 0, 0, 0, 0];
+        body.extend([0x18; 11]);
+        let cache = ScalarCache::default();
+        let (variants, capped) = crate::decode::with_service_context(|ctx| {
+            decode_plane_support_lane_variants(ctx, &body, &cache)
+        })
+        .expect("the visit cap is not a decode failure");
+        assert!(variants.is_empty());
+        assert_eq!(capped, Some(PlaneSupportLaneCap::Visits));
+        let mut losses = Vec::new();
+        for _ in 0..2 {
+            let decoded = crate::decode::with_service_context(|ctx| {
+                decode_plane_support_local_system(ctx, &body, &cache, &mut losses)
+            })
+            .expect("the visit cap is not a decode failure");
+            assert!(decoded.is_none());
+        }
         assert_eq!(
-            loss.code,
-            crate::loss::CreoLossCode::PlaneSupportVariantsCapped.kind()
+            losses,
+            [super::plane_support_variants_capped_loss(
+                PlaneSupportLaneCap::Visits
+            )]
         );
-        assert!(loss.message.contains("MAX_PLANE_SUPPORT_LANE_VARIANTS"));
     }
 
     fn with_context<T>(
