@@ -21,6 +21,118 @@ use cadmpeg_ir::topology::Vertex;
 use cadmpeg_ir::CadIr;
 
 #[test]
+fn degree_elevation_of_many_spans_counts_each_knot_run_once() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let spans = 1_u32 << 15;
+        let mut knots = vec![0.0; 3];
+        knots.extend((1..spans).map(f64::from));
+        knots.extend([f64::from(spans); 3]);
+        let points = (0..spans + 2)
+            .map(|index| Point3::new(f64::from(index), f64::from(index % 3), 0.0))
+            .collect();
+        let mut curve = NurbsCurve::from_lanes(2, knots, points, None, false).unwrap();
+
+        elevate_nurbs_to_degree(decode_ctx, &mut curve, [0.0, f64::from(spans)], 3, None)
+            .expect("elevation lanes pair");
+        assert_eq!(curve.degree(), 3);
+        assert_eq!(
+            curve.pole_count(),
+            3 * cadmpeg_core::decode::index_from_u32(spans) + 1
+        );
+    });
+}
+
+/// A clamped polynomial curve of `degree` with one span along x from `start`.
+fn single_span_line(degree: usize, start: f64) -> NurbsCurve {
+    let mut knots = vec![0.0; degree + 1];
+    knots.extend(vec![1.0; degree + 1]);
+    let step = 1.0 / f64::from(u32::try_from(degree).unwrap());
+    let points = (0..=u32::try_from(degree).unwrap())
+        .map(|index| Point3::new(start + f64::from(index) * step, 0.0, 0.0))
+        .collect();
+    NurbsCurve::from_lanes(u32::try_from(degree).unwrap(), knots, points, None, false).unwrap()
+}
+
+#[test]
+fn composite_elevation_over_the_blend_limit_is_refused_by_name() {
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let spans = 64_u32;
+        let mut knots = vec![0.0];
+        knots.extend((0..=spans).map(f64::from));
+        knots.push(f64::from(spans));
+        let points = (0..=spans)
+            .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
+            .collect();
+        let low = NurbsCurve::from_lanes(1, knots, points, None, false).unwrap();
+        let high = single_span_line(1024, f64::from(spans));
+
+        // 64 spans raised to degree 1024 need 64 * 1025² blends, over 2^26.
+        let error = concatenate_nurbs(
+            decode_ctx,
+            vec![(low, [0.0, f64::from(spans)], ()), (high, [0.0, 1.0], ())],
+            Some(0.001),
+        )
+        .expect_err("the elevation exceeds the blend limit");
+        assert!(matches!(
+            error,
+            crate::entities::composite::CompositeCurveError::ElevationBlendLimit { degree: 1024 }
+        ));
+        assert!(error.to_string().contains("MAX_BEZIER_BLENDS"));
+        assert!(error.non_resource().is_ok());
+    });
+}
+
+#[test]
+fn decode_reports_a_composite_whose_elevation_exceeds_the_blend_limit() {
+    use crate::test_support::test_curves_and_surfaces::planar_nurbs_parameters;
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let child = |label: &str, parameters: String| OwnedTestEntity {
+        entity_type: 126,
+        form: 0,
+        label: label.into(),
+        status: "00010000",
+        parameters,
+    };
+    let entities = [
+        child(
+            "LOW",
+            planar_nurbs_parameters(1, 64, false, |index| [f64::from(index), 0.0]),
+        ),
+        child(
+            "HIGH",
+            planar_nurbs_parameters(1024, 1, false, |index| {
+                [64.0 + f64::from(index) / 1024.0, 0.0]
+            }),
+        ),
+        OwnedTestEntity {
+            entity_type: 102,
+            form: 0,
+            label: "COMPOSIT".into(),
+            status: "00000000",
+            parameters: "102,2,1,3;".into(),
+        },
+    ];
+    let result = crate::IgesCodec
+        .decode(
+            &mut std::io::Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("MAX_BEZIER_BLENDS")),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         let interval = [-29.063_334_917_342_4, 2.000_000_000_000_02];

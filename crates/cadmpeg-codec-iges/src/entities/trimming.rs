@@ -7,6 +7,9 @@ use super::geometry::{
     planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
+use super::nurbs_controls::{
+    bezier_blends, bezier_span_count, BlendCheck, RefiningNet, MAX_BEZIER_BLENDS,
+};
 use super::{affine_parameter_map, pointer};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
@@ -1137,6 +1140,24 @@ fn planar_point_is_strictly_inside(point: [f64; 2], ring: &SimpleRing) -> bool {
     inside
 }
 
+/// The points that [`linear_boundary_rings`] validates in `space`: those of
+/// the leading candidates that lie in it.
+fn linear_boundary_ring_points(
+    candidates: &[Option<LinearBoundaryGeometry>],
+    space: BoundarySpace,
+) -> usize {
+    candidates
+        .iter()
+        .map_while(|candidate| match (space, candidate.as_ref()) {
+            (BoundarySpace::Parameter, Some(LinearBoundaryGeometry::Parameter(points)))
+            | (BoundarySpace::Model, Some(LinearBoundaryGeometry::Model(points))) => {
+                Some(points.len())
+            }
+            _ => None,
+        })
+        .sum()
+}
+
 fn linear_boundary_rings(
     candidates: &[Option<LinearBoundaryGeometry>],
     space: BoundarySpace,
@@ -1253,75 +1274,41 @@ struct HomogeneousPcurveSpan {
 
 type HomogeneousPcurveSplit = (Vec<[f64; 4]>, Vec<[f64; 4]>);
 
-fn insert_homogeneous_pcurve_knot(
-    degree: usize,
-    knots: &mut Vec<f64>,
-    controls: &mut Vec<[f64; 4]>,
-    knot: f64,
-) -> Option<()> {
-    let count = controls.len();
-    let upper = knots.partition_point(|candidate| *candidate <= knot);
-    if upper == 0 || upper == knots.len() {
-        return None;
-    }
-    let span = upper - 1;
-    let multiplicity = upper - knots.partition_point(|candidate| *candidate < knot);
-    if multiplicity >= degree {
-        return Some(());
-    }
-    let (left_end, tail_start) = span
-        .checked_sub(degree)
-        .zip(span.checked_sub(multiplicity))?;
-
-    for index in left_end + 1..=tail_start {
-        let denominator = knots[index + degree] - knots[index];
-        if !denominator.is_finite() || denominator <= 0.0 {
-            return None;
-        }
-    }
-
-    controls.push([0.0; 4]);
-    controls.copy_within(tail_start..count, tail_start + 1);
-    // Descending interpolation keeps both source controls unchanged until
-    // their final use. The shifted tail keeps the last source control too.
-    for index in (left_end + 1..=tail_start).rev() {
-        let denominator = knots[index + degree] - knots[index];
-        let alpha = (knot - knots[index]) / denominator;
-        controls[index] = std::array::from_fn(|axis| {
-            alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
-        });
-    }
-    knots.insert(span + 1, knot);
-    Some(())
-}
-
 fn homogeneous_pcurve_spans(
     degree: usize,
     knots: &[f64],
-    mut controls: Vec<[f64; 4]>,
-) -> Option<Vec<HomogeneousPcurveSpan>> {
-    let expected_knots = controls
+    controls: &[[f64; 4]],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<HomogeneousPcurveSpan>>, CodecError> {
+    let Some(expected_knots) = controls
         .len()
         .checked_add(degree)
-        .and_then(|value| value.checked_add(1))?;
+        .and_then(|value| value.checked_add(1))
+    else {
+        return Ok(None);
+    };
     if degree == 0
         || degree >= controls.len()
         || knots.len() != expected_knots
         || knots.iter().any(|knot| !knot.is_finite())
         || knots.windows(2).any(|pair| pair[0] > pair[1])
     {
-        return None;
+        return Ok(None);
     }
-    let domain = knots
+    let Some(domain) = knots
         .get(degree)
         .copied()
-        .zip(knots.get(controls.len()).copied())?;
+        .zip(knots.get(controls.len()).copied())
+    else {
+        return Ok(None);
+    };
     let domain = [domain.0, domain.1];
     if domain[0] >= domain[1] {
-        return None;
+        return Ok(None);
     }
-    let mut copied_knots = knots.to_vec();
-    let internal_slice = copied_knots.get(degree + 1..controls.len())?;
+    let Some(internal_slice) = knots.get(degree + 1..controls.len()) else {
+        return Ok(None);
+    };
     let mut internal = Vec::new();
     internal.extend(
         internal_slice
@@ -1331,33 +1318,55 @@ fn homogeneous_pcurve_spans(
     );
     internal.sort_by(f64::total_cmp);
     internal.dedup();
-    for knot in internal {
-        let multiplicity = knots.partition_point(|candidate| *candidate <= knot)
-            - knots.partition_point(|candidate| *candidate < knot);
-        for _ in multiplicity..degree {
-            insert_homogeneous_pcurve_knot(degree, &mut copied_knots, &mut controls, knot)?;
+    let multiplicity = |knot: f64| {
+        knots.partition_point(|candidate| *candidate <= knot)
+            - knots.partition_point(|candidate| *candidate < knot)
+    };
+    let mut insertions = 0_usize;
+    for knot in &internal {
+        let multiplicity = multiplicity(*knot);
+        if multiplicity < degree {
+            insertions += degree - multiplicity;
         }
     }
+    let mut net = RefiningNet::new(ctx, knots, controls, insertions)?;
+    for knot in internal {
+        for _ in multiplicity(knot)..degree {
+            if net.insert(knot, degree, BlendCheck::Denominator).is_none() {
+                return Ok(None);
+            }
+        }
+    }
+    let (refined_knots, refined_controls) = net.into_parts();
     let mut spans = Vec::new();
-    for span in degree..controls.len() {
-        let (start, end) = copied_knots
+    for span in degree..refined_controls.len() {
+        let Some((start, end)) = refined_knots
             .get(span)
             .copied()
-            .zip(copied_knots.get(span + 1).copied())?;
+            .zip(refined_knots.get(span + 1).copied())
+        else {
+            return Ok(None);
+        };
         if start >= end {
             continue;
         }
-        let start_index = span.checked_sub(degree)?;
-        let span_controls = controls.get(start_index..=span)?;
+        let Some(span_controls) = span
+            .checked_sub(degree)
+            .and_then(|start_index| refined_controls.get(start_index..=span))
+        else {
+            return Ok(None);
+        };
         let copied_controls = span_controls.to_vec();
         spans.push(HomogeneousPcurveSpan {
             domain: [start, end],
             controls: copied_controls,
         });
     }
-    (!spans.is_empty()).then_some(spans)
+    Ok((!spans.is_empty()).then_some(spans))
 }
 
+/// Splits a Bézier polygon at `parameter` with de Casteljau's levels, keeping
+/// only the level ends that the two halves use.
 fn split_homogeneous_pcurve(
     controls: &[[f64; 4]],
     parameter: f64,
@@ -1365,29 +1374,23 @@ fn split_homogeneous_pcurve(
     if controls.is_empty() || !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
         return None;
     }
-    let mut levels = Vec::new();
-    let first = controls.to_vec();
-    levels.push(first);
-    while levels.last().is_some_and(|level| level.len() > 1) {
-        let previous = levels.last()?;
-        let mut next = Vec::new();
-        for pair in previous.windows(2) {
-            next.push(std::array::from_fn(|axis| {
-                (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
-            }));
-        }
-        levels.push(next);
-    }
+    let mut level = controls.to_vec();
     let mut left = Vec::new();
     let mut right = Vec::new();
-    for level in &levels {
-        let point = level.first().copied()?;
-        left.push(point);
+    left.push(*level.first()?);
+    right.push(*level.last()?);
+    while level.len() > 1 {
+        for index in 0..level.len() - 1 {
+            let (first, second) = (level[index], level[index + 1]);
+            level[index] = std::array::from_fn(|axis| {
+                (1.0 - parameter) * first[axis] + parameter * second[axis]
+            });
+        }
+        level.pop();
+        left.push(*level.first()?);
+        right.push(*level.last()?);
     }
-    for level in levels.iter().rev() {
-        let point = level.last().copied()?;
-        right.push(point);
-    }
+    right.reverse();
     Some((left, right))
 }
 
@@ -1437,27 +1440,45 @@ fn pcurve_within_declared_bounds(
             .expect("test setup");
     let bounds = bounds
         .map(|bounds| bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0))));
-    pcurve_within_declared_intervals(geometry, range, bounds, periodic, &ctx).expect("test setup")
+    pcurve_declared_interval_bounds(geometry, range, bounds, periodic, &ctx).expect("test setup")
+        == PcurveBounds::Within
 }
 
-fn pcurve_within_declared_intervals(
+/// Whether a boundary pcurve stays inside the declared support intervals.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PcurveBounds {
+    Within,
+    Outside,
+    /// Restricting its Bézier spans would exceed [`MAX_BEZIER_BLENDS`].
+    Unchecked,
+}
+
+fn pcurve_declared_interval_bounds(
     geometry: &PcurveGeometry,
     range: [f64; 2],
     bounds: Option<[Option<DeclaredInterval>; 4]>,
     periodic: [bool; 2],
     ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> Result<PcurveBounds, CodecError> {
     let Some(bounds) = bounds else {
-        return Ok(true);
+        return Ok(PcurveBounds::Within);
     };
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
-        return Ok(false);
+        return Ok(PcurveBounds::Outside);
     };
     let Some(degree) = usize::try_from(nurbs.degree()).ok() else {
-        return Ok(false);
+        return Ok(PcurveBounds::Outside);
     };
     if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
-        return Ok(false);
+        return Ok(PcurveBounds::Outside);
+    }
+    let knots = nurbs.knots();
+    let span_count = knots
+        .get(degree)
+        .zip(knots.get(nurbs.pole_rows().count()))
+        .map_or(1, |(start, end)| bezier_span_count(knots, [*start, *end]));
+    if bezier_blends(span_count, degree).is_none_or(|blends| blends > MAX_BEZIER_BLENDS) {
+        return Ok(PcurveBounds::Unchecked);
     }
     let mut controls = Vec::new();
     for index in 0..nurbs.pole_rows().count() {
@@ -1466,15 +1487,33 @@ fn pcurve_within_declared_intervals(
             .point_at(index)
             .map(cadmpeg_ir::units::FinitePoint2::get)
         else {
-            return Ok(false);
+            return Ok(PcurveBounds::Outside);
         };
         let weight = nurbs.pole_rows().weight_at(index).unwrap_or(1.0);
         if weight <= 0.0 {
-            return Ok(false);
+            return Ok(PcurveBounds::Outside);
         }
         controls.push([weight, weight * point.u, weight * point.v, 0.0]);
     }
-    let Some(spans) = homogeneous_pcurve_spans(degree, nurbs.knots(), controls) else {
+    let within =
+        pcurve_spans_within_intervals(degree, knots, &controls, range, bounds, periodic, ctx)?;
+    Ok(if within {
+        PcurveBounds::Within
+    } else {
+        PcurveBounds::Outside
+    })
+}
+
+fn pcurve_spans_within_intervals(
+    degree: usize,
+    knots: &[f64],
+    controls: &[[f64; 4]],
+    range: [f64; 2],
+    bounds: [Option<DeclaredInterval>; 4],
+    periodic: [bool; 2],
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let Some(spans) = homogeneous_pcurve_spans(degree, knots, controls, ctx)? else {
         return Ok(false);
     };
     let Some(first_span) = spans.first() else {
@@ -1855,6 +1894,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
+    let planar_pairs = super::geometry::PlanarPairBudget::new();
 
     let carrier_index = ModelIndex::new_model_only(ir);
 
@@ -2417,29 +2457,51 @@ pub(super) fn project(
                     None => Vec::new(),
                 };
                 let mut pcurve_outside_support = false;
+                let mut pcurve_unchecked = false;
                 for ((geometry, range), sequence) in pcurves.iter().zip(&segment.pcurves) {
-                    if !pcurve_within_declared_intervals(
+                    let bounds = pcurve_declared_interval_bounds(
                         geometry,
                         *range,
                         support_parameter_intervals,
                         periodic_parameters,
                         ctx,
-                    )? && !source_curve_control_polygon_within_bounds(
-                        &carrier_index,
-                        &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
-                        &PcurveSupport {
-                            surface_id: &surface_id,
-                            geometry: &support_geometry,
-                            factor,
-                        },
-                        support_parameter_intervals,
-                        (&entries, &records),
-                        global.real_precision(),
-                        ctx,
-                    )? {
-                        pcurve_outside_support = true;
+                    )?;
+                    if bounds != PcurveBounds::Within
+                        && !source_curve_control_polygon_within_bounds(
+                            &carrier_index,
+                            &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
+                            &PcurveSupport {
+                                surface_id: &surface_id,
+                                geometry: &support_geometry,
+                                factor,
+                            },
+                            support_parameter_intervals,
+                            (&entries, &records),
+                            global.real_precision(),
+                            ctx,
+                        )?
+                    {
+                        pcurve_unchecked = bounds == PcurveBounds::Unchecked;
+                        pcurve_outside_support = !pcurve_unchecked;
                         break;
                     }
+                }
+                if pcurve_unchecked {
+                    if segment.parameter_curves_authoritative {
+                        super::push_geometry_loss(
+                            &mut losses,
+                            entry,
+                            format_args!("checking the boundary parameter curve against the support parameter bounds exceeds MAX_BEZIER_BLENDS"),
+                        );
+                        valid = false;
+                        break;
+                    }
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        format_args!("checking the alternate boundary parameter curve against the support parameter bounds exceeds MAX_BEZIER_BLENDS; model-space curve retained"),
+                    );
+                    pcurves.clear();
                 }
                 if pcurve_outside_support {
                     if segment.parameter_curves_authoritative {
@@ -2745,6 +2807,21 @@ pub(super) fn project(
             loop_ids.push(loop_id);
         }
         if !valid {
+            continue;
+        }
+        // At most one space has a leading candidate, so this sum counts the
+        // points of the one ring set `linear_boundary_rings` validates.
+        let ring_points =
+            linear_boundary_ring_points(&linear_boundary_candidates, BoundarySpace::Parameter)
+                + linear_boundary_ring_points(&linear_boundary_candidates, BoundarySpace::Model);
+        if !planar_pairs.admit(ring_points) {
+            super::push_geometry_loss(
+                &mut losses,
+                entry,
+                format_args!(
+                    "validating {ring_points} linear boundary points does not fit the pass's remaining MAX_PLANAR_POINT_PAIRS allowance"
+                ),
+            );
             continue;
         }
         let linear_rings =

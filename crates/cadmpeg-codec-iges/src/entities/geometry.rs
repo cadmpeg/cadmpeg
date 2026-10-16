@@ -109,6 +109,33 @@ pub(super) fn closed_polyline_has_duplicate<T>(
     false
 }
 
+/// Point pairs that the planar polyline checks of one projection pass compare.
+///
+/// The duplicate, self-intersection, ring-intersection and containment checks
+/// compare every pair of their points, and many items may name one boundary.
+/// An item whose pairs do not fit the remainder is not checked; its caller
+/// drops that item and reports a geometry loss naming this limit.
+pub(super) const MAX_PLANAR_POINT_PAIRS: usize = 1 << 30;
+
+/// The point-pair allowance of one projection pass's planar polyline checks.
+pub(super) struct PlanarPairBudget(cadmpeg_core::decode::WorkBudget);
+
+impl PlanarPairBudget {
+    pub(super) const fn new() -> Self {
+        Self(cadmpeg_core::decode::WorkBudget::new(
+            MAX_PLANAR_POINT_PAIRS,
+        ))
+    }
+
+    /// Charges the pairs of `points` points, or charges nothing and answers
+    /// `false` when they do not fit the remainder, so later items still fit.
+    pub(super) fn admit(&self, points: usize) -> bool {
+        points
+            .checked_mul(points)
+            .is_some_and(|pairs| pairs <= self.0.remaining() && self.0.charge_by(pairs))
+    }
+}
+
 pub(super) fn planar_segments_contain_point(point: [f64; 2], segment: [[f64; 2]; 2]) -> bool {
     planar_point_on_segment(point, segment[0], segment[1])
 }

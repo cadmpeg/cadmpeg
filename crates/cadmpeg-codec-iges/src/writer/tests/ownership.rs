@@ -431,6 +431,125 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
 }
 
 #[test]
+fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
+    for (file, path) in [
+        (
+            crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file(),
+            "B-rep",
+        ),
+        (
+            crate::test_support::test_surface_fixtures::trimmed_plane_file(),
+            "trimmed-sheet",
+        ),
+    ] {
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        ir.native = cadmpeg_ir::native::Native::default();
+        let topology_edge = ir.model.coedges[0].edge.clone();
+        let mut duplicate = ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id == topology_edge)
+            .unwrap()
+            .clone();
+        duplicate.id = "test:model:edge#duplicate".try_into().unwrap();
+        ir.model.edges.push(duplicate);
+        let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
+        assert!(ignored.edges.contains("test:model:edge#duplicate"));
+
+        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        let notes: Vec<_> = generated
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::IgesLossCode::WriterDuplicateCarrierOmitted.kind()
+            })
+            .map(|loss| loss.message.as_str())
+            .collect();
+        assert_eq!(
+            notes,
+            [format!(
+                "{} free edge record(s) duplicating a written carrier were not written on the {path} path",
+                ignored.edges.len()
+            )],
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_surface_fixtures::trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.native = cadmpeg_ir::native::Native::default();
+    let pcurve = &ir.model.pcurves[0];
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+        panic!("the boundary pcurve is NURBS");
+    };
+    let range = pcurve.parameter_range().unwrap().get();
+    let carrier = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        nurbs.degree(),
+        nurbs.knots().to_vec(),
+        nurbs
+            .control_points()
+            .iter()
+            .map(|point| Point3::new(point.u, point.v, 0.0))
+            .collect(),
+        nurbs
+            .weights()
+            .map(|weights| weights.iter().map(|weight| weight.get()).collect()),
+        nurbs.periodic(),
+    )
+    .unwrap();
+    let curve_id: cadmpeg_ir::ids::CurveId = "test:model:curve#duplicate".try_into().unwrap();
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: curve_id.clone(),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(carrier),
+        ),
+        parameter_range: None,
+        source_object: None,
+    });
+    let topology_edge = ir.model.coedges[0].edge.clone();
+    let mut duplicate = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == topology_edge)
+        .unwrap()
+        .clone();
+    duplicate.id = "test:model:edge#duplicate".try_into().unwrap();
+    duplicate.carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(range)).unwrap();
+    ir.model.edges.push(duplicate);
+    let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
+    assert!(ignored.curves.contains("test:model:curve#duplicate"));
+
+    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let notes: Vec<_> = generated
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::IgesLossCode::WriterDuplicateCarrierOmitted.kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(
+        notes,
+        [
+            "1 free edge record(s) duplicating a written carrier were not written on the trimmed-sheet path",
+            "1 free curve record(s) duplicating a written parameter curve were not written on the trimmed-sheet path",
+        ]
+    );
+}
+
+#[test]
 fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
     for (file, expected_pcurves) in [
         (
