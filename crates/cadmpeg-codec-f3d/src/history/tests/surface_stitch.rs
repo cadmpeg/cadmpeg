@@ -275,8 +275,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             body_recipe_operands: &[],
             histories: std::slice::from_ref(&history),
         },
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
         faces:
@@ -316,8 +315,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             body_recipe_operands: &[],
             histories: std::slice::from_ref(&history),
         },
-    )
-    .unwrap();
+    );
     assert!(matches!(
         ambiguous_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {

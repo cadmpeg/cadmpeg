@@ -3108,7 +3108,7 @@ fn project_face_selection(
                 group,
                 face_operands,
                 updated_face_slots,
-            )?
+            )
         }
     } else {
         None
@@ -3337,7 +3337,7 @@ pub(super) fn project_offset_faces(
         (Some(distance), None) | (None, Some(distance)) => distance,
         _ => return Ok(None),
     };
-    let faces = if let Some(faces) = direct_face_selection(scope, operands)? {
+    let faces = if let Some(faces) = direct_face_selection(scope, operands) {
         faces
     } else {
         let group = or_none!(single_operand_group(
@@ -3370,7 +3370,7 @@ pub(super) fn project_thicken(
     else {
         return Ok(None);
     };
-    let faces = if let Some(faces) = direct_face_selection(scope, operands)? {
+    let faces = if let Some(faces) = direct_face_selection(scope, operands) {
         faces
     } else {
         let mut candidates = groups.iter().filter(|group| {
@@ -3425,7 +3425,7 @@ pub(super) fn project_shell(
     };
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
         .map(|group| BodySelection::Native(group.id.clone()));
-    let removed_faces = if let Some(faces) = direct_face_selection(scope, operands)? {
+    let removed_faces = if let Some(faces) = direct_face_selection(scope, operands) {
         faces
     } else if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
         FaceSelection::Native(group.id.clone())
@@ -4285,7 +4285,7 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
 pub(crate) fn direct_face_selection(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
-) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+) -> Option<cadmpeg_ir::features::FaceSelection> {
     use cadmpeg_ir::features::FaceSelection;
 
     let mut matching = Vec::new();
@@ -4300,13 +4300,13 @@ pub(crate) fn direct_face_selection(
             .cmp(&right.scope_reference_ordinal)
     });
     if matching.is_empty() {
-        return Ok(None);
+        return None;
     }
     let mut members = Vec::new();
     for operand in &matching {
         members.push((operand.id.as_str(), operand.resolved_face_slots.as_slice()));
     }
-    let feature_id = crate::design::identity::neutral_feature_id(scope)?;
+    let feature_id = crate::ids::neutral_feature_id(scope);
     let historical_face = |previous_state_id, slot| {
         crate::ids::history_input_face_id(
             &crate::ids::feature_input_prefix(&feature_id, previous_state_id),
@@ -4358,7 +4358,7 @@ pub(crate) fn direct_face_selection(
         }
         _ => FaceSelection::Native(scope.id.clone()),
     };
-    Ok(Some(faces))
+    Some(faces)
 }
 
 /// Local work cap for ordering the parameters of one owner scope.
@@ -7210,7 +7210,7 @@ pub(super) fn project_split(
             let mut tools = if let Some(selection) = resolved_historical_face_operand(scope, tool) {
                 selection
             } else {
-                direct_face_selection(scope, face_operands)?
+                direct_face_selection(scope, face_operands)
                     .unwrap_or_else(|| FaceSelection::Native(String::new()))
             };
             match &mut tools {

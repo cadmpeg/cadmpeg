@@ -586,7 +586,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             body_recipe_operands: &design.design_body_recipe_operands,
             histories: &design.asm_histories,
         },
-    )?;
+    );
     crate::history::bind_feature_path_selections(
         &mut model.features,
         &design.design_parameter_scopes,
