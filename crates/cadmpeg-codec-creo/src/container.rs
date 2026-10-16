@@ -379,6 +379,8 @@ pub(crate) struct FramingScan<'a> {
     pub(crate) expanded_sections: Vec<ExpandedSection>,
     /// Bounded compressed sections whose payload could not be expanded.
     pub(crate) expansion_losses: Vec<SectionExpansionLoss>,
+    /// Local work-cap skips recorded while scanning plane support frames.
+    pub(crate) local_work_cap_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Identified layout family.
     pub(crate) layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
@@ -1645,10 +1647,11 @@ fn tabulated_cylinder_curve_replays(
 fn plane_local_systems(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     collect_section_records_result(
         sections.iter(),
-        |bytes| surface::plane_local_systems(ctx, bytes),
+        |bytes| surface::plane_local_systems(ctx, bytes, losses),
         |record, base| {
             record.offset += base;
             record.row_offset += base;
@@ -1660,10 +1663,11 @@ fn plane_local_systems(
 fn cross_section_plane_local_systems(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     collect_section_records_result(
         cross_sections(sections),
-        |bytes| surface::cross_section_plane_local_systems(ctx, bytes),
+        |bytes| surface::cross_section_plane_local_systems(ctx, bytes, losses),
         |record, base| {
             record.offset += base;
             record.row_offset += base;
@@ -2690,8 +2694,11 @@ pub(crate) fn scan_bytes<'a>(
     let cross_section_surface_contours = cross_section_surface_contours(ctx, sections)?;
     let tabulated_cylinder_curve_replays =
         tabulated_cylinder_curve_replays(&model_geometry_sections)?;
-    let plane_local_systems = plane_local_systems(ctx, &model_geometry_sections)?;
-    let cross_section_plane_local_systems = cross_section_plane_local_systems(ctx, sections)?;
+    let mut local_work_cap_losses = Vec::new();
+    let plane_local_systems =
+        plane_local_systems(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
+    let cross_section_plane_local_systems =
+        cross_section_plane_local_systems(ctx, sections, &mut local_work_cap_losses)?;
     let plane_envelopes = plane_envelopes(ctx, &model_geometry_sections)?;
     let cross_section_plane_envelopes = cross_section_plane_envelopes(ctx, sections)?;
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
@@ -2912,6 +2919,7 @@ pub(crate) fn scan_bytes<'a>(
             sections: retained_sections,
             expanded_sections,
             expansion_losses,
+            local_work_cap_losses,
             layout,
             census,
             principal_unit,

@@ -47,6 +47,7 @@ fn dimension_conversion_result(
         }],
         offset: 0,
         for_offset: 1,
+        work_cap: None,
     };
     let values = BTreeMap::from([(
         "length".to_owned(),
