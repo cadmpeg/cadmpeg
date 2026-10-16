@@ -35,6 +35,10 @@ pub(crate) enum TypedNative {
 
 /// Attach a pre-extracted [`crate::native::model::NativeModel`] to `ir`: annotations, namespace arenas,
 /// and semantic islands. Build the model with [`crate::native::model::NativeModel::extract`].
+///
+/// Attachment is all-or-nothing. A [`CodecError::ResourceLimit`] propagates.
+/// Any other failure leaves `ir`, `annotations`, `unknowns` and `losses` as
+/// they were and appends one `nx/native.attachment-failed` loss to `losses`.
 pub(crate) fn attach_annotations(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -57,4 +61,49 @@ pub(crate) fn attach_container_layer(
     typed_native: TypedNative,
 ) -> Result<(), CodecError> {
     attach::attach_container_layer(ctx, ir, scan, annotations, unknowns, typed_native)
+}
+
+/// Failure injection into [`attach_annotations`] for decode tests.
+#[cfg(test)]
+pub(crate) mod attach_failure {
+    use cadmpeg_core::CodecError;
+    use std::cell::Cell;
+
+    /// Where the injected failure occurs.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum Point {
+        /// Before attachment writes anything.
+        Entry,
+        /// After attachment has written everything.
+        Exit,
+    }
+
+    /// An injected failure: where it occurs and the error it returns.
+    type Injection = (Point, fn() -> CodecError);
+
+    std::thread_local! {
+        static INJECTED: Cell<Option<Injection>> = const { Cell::new(None) };
+    }
+
+    /// Clears the injected failure when dropped.
+    pub(crate) struct Injected(());
+
+    impl Drop for Injected {
+        fn drop(&mut self) {
+            INJECTED.set(None);
+        }
+    }
+
+    /// Fail attachment on this thread at `point` while the guard lives.
+    pub(crate) fn inject(point: Point, error: fn() -> CodecError) -> Injected {
+        INJECTED.set(Some((point, error)));
+        Injected(())
+    }
+
+    pub(super) fn check(point: Point) -> Result<(), CodecError> {
+        match INJECTED.get() {
+            Some((injected, error)) if injected == point => Err(error()),
+            _ => Ok(()),
+        }
+    }
 }
