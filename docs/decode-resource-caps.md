@@ -140,7 +140,7 @@ report a loss; a caller may report a general failure for the same item.
 
 | Crate                    | File                                               | Constant                                  | Value                                                   | Kind | Enforcement                                                                                                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 3    | Caps the Zstandard frame window at the decoder's addressable size; `window_ceiling` takes `min` with the raw `max_decompressed_bytes_per_expand`. A larger window refuses through `DecompressedBytes` and fuses.                                                             |
+| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first refuses a window above the per-expansion allowance through `DecompressedBytes`. A larger window that the allowance admits is `NotImplemented` and does not set the fuse.     |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |
 | `cadmpeg-ir`             | `src/geometry.rs`                                  | `MAX_GEOMETRY_NESTING`                    | `256`                                                   | 1    | Placed curve, surface and pcurve basis chain depth. `try_new` refuses a deeper chain.                                                                                                                                                                                        |
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_PATCHES`                             | `1_000_000`                                             | 4    | Patch-queue cap in NURBS surface start search, checked with the caller's `WorkBudget`. Exhaustion returns `None`; the caller owns the loss.                                                                                                                                  |
@@ -366,16 +366,15 @@ Production `MAX_*` constants: 193.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 27    |
+| 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 72    |
-| 3    | Session ceiling            | 1     |
+| 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 74    |
 | N    | Not a decode bound         | 19    |
 |      | Total                      | 193   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
-`MAX_*` constants. The one kind 3 constant, `MAX_DECODER_WINDOW`, is a
-decoder limit that the code folds into the per-expansion ceiling.
+`MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 1, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
 `cadmpeg-protein` 2, `cadmpeg` 2, `cadmpeg-codec-step` 10,
