@@ -210,9 +210,9 @@ pub(crate) fn decode(
 ///
 /// Each state carries its identity and chain links (state id, node index,
 /// previous and next references) and no bulletin boards, record table or
-/// bound transition. The index rejects a stream on the same header and
-/// framing conditions as [`decode`]; it does not read the bulletin boards,
-/// so a stream whose boards are malformed still has an index.
+/// bound transition. The index rejects a stream on the same header, framing
+/// and bulletin-board conditions as [`decode`]; it frames the boards without
+/// retaining them.
 pub(crate) fn decode_header_index(
     bytes: &[u8],
     stream: &str,
@@ -226,6 +226,7 @@ pub(crate) fn decode_header_index(
             DeltaStateHeaderRead::Unframed => continue,
             DeltaStateHeaderRead::Invalid => return None,
         };
+        walk_bulletin_boards(bytes, header.body_start, width, |_| {})?;
         states.push(header.into_state(
             header.record_id(stream),
             &framing.history_id,
@@ -7427,18 +7428,31 @@ pub(crate) fn materialize_record_table(
     Some(records)
 }
 
-fn decode_bulletin_boards(
+/// One framed item of a `BulletinBoard` chain, in stream order.
+enum BulletinBoardItem {
+    Board {
+        offset: usize,
+        owner_ref: i64,
+        number: i64,
+    },
+    /// A change of the most recent board.
+    Change {
+        offset: usize,
+        kind: AsmEntityChangeKind,
+    },
+}
+
+/// Walk the `BulletinBoard` chain at `position` and return the offset after
+/// it, or `None` when the chain is malformed.
+fn walk_bulletin_boards(
     bytes: &[u8],
     mut position: usize,
-    stream: &str,
-    state_offset: usize,
-    state_id: &str,
     width: RefWidth,
-) -> Option<(Vec<AsmBulletinBoard>, usize)> {
+    mut visit: impl FnMut(BulletinBoardItem),
+) -> Option<usize> {
     if bytes.get(position) == Some(&0x11) {
-        return Some((Vec::new(), position));
+        return Some(position);
     }
-    let mut boards = Vec::new();
     loop {
         let board_offset = position;
         let present = take_int(bytes, &mut position, 0x04, width)?;
@@ -7447,12 +7461,11 @@ fn decode_bulletin_boards(
         }
         let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
         let number = take_int(bytes, &mut position, 0x04, width)?;
-        let board_id = crate::ids::native_scoped_id(
-            stream,
-            "asm-bulletin-board",
-            format_args!("{state_offset:010}:{:06}", boards.len()),
-        );
-        let mut changes = Vec::new();
+        visit(BulletinBoardItem::Board {
+            offset: board_offset,
+            owner_ref,
+            number,
+        });
         loop {
             let change_offset = position;
             let present = take_int(bytes, &mut position, 0x04, width)?;
@@ -7467,36 +7480,64 @@ fn decode_bulletin_boards(
                 (true, true) => AsmEntityChangeKind::Update { old, new },
                 (false, false) => return None,
             };
-
-            let change_id = crate::ids::native_scoped_id(
-                stream,
-                "asm-entity-change",
-                format_args!(
-                    "{state_offset:010}:{:06}:{:06}",
-                    boards.len(),
-                    changes.len()
-                ),
-            );
-            let parent = board_id.clone();
-            changes.push(AsmEntityChange {
-                id: change_id,
-                parent,
-                byte_offset: u64_from_index(change_offset),
+            visit(BulletinBoardItem::Change {
+                offset: change_offset,
                 kind,
             });
         }
+    }
+    Some(position)
+}
 
-        let parent = state_id.to_owned();
-        boards.push(AsmBulletinBoard {
-            id: board_id,
-            parent,
-            byte_offset: u64_from_index(board_offset),
+fn decode_bulletin_boards(
+    bytes: &[u8],
+    position: usize,
+    stream: &str,
+    state_offset: usize,
+    state_id: &str,
+    width: RefWidth,
+) -> Option<(Vec<AsmBulletinBoard>, usize)> {
+    let mut boards = Vec::<AsmBulletinBoard>::new();
+    let end = walk_bulletin_boards(bytes, position, width, |item| match item {
+        BulletinBoardItem::Board {
+            offset,
             owner_ref,
             number,
-            changes,
-        });
-    }
-    Some((boards, position))
+        } => {
+            let id = crate::ids::native_scoped_id(
+                stream,
+                "asm-bulletin-board",
+                format_args!("{state_offset:010}:{:06}", boards.len()),
+            );
+            boards.push(AsmBulletinBoard {
+                id,
+                parent: state_id.to_owned(),
+                byte_offset: u64_from_index(offset),
+                owner_ref,
+                number,
+                changes: Vec::new(),
+            });
+        }
+        BulletinBoardItem::Change { offset, kind } => {
+            let (Some(ordinal), Some(board)) = (boards.len().checked_sub(1), boards.last_mut())
+            else {
+                return;
+            };
+            let id = crate::ids::native_scoped_id(
+                stream,
+                "asm-entity-change",
+                format_args!("{state_offset:010}:{ordinal:06}:{:06}", board.changes.len()),
+            );
+            let parent = board.id.clone();
+            board.changes.push(AsmEntityChange {
+                id,
+                parent,
+                byte_offset: u64_from_index(offset),
+                kind,
+            });
+        }
+    })?;
+    Some((boards, end))
 }
 
 fn decode_history_records(
