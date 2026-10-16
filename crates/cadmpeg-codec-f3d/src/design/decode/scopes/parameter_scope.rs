@@ -63,19 +63,33 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
+/// Design records that parameter-scope decoding reads.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ParameterScopeSources<'a> {
+    pub(crate) entities: &'a [crate::records::entity_header::DesignEntityHeader],
+    pub(crate) types: &'a [crate::records::entity_header::SegmentType],
+    pub(crate) parameters: &'a [crate::records::parameters::DesignParameter],
+    pub(crate) parameter_owners: &'a [crate::records::parameters::DesignParameterOwner],
+    pub(crate) component_occurrences:
+        &'a [crate::records::feature::assembly_features::DesignComponentOccurrence],
+    pub(crate) recipes: &'a [crate::records::recipes::ConstructionRecipe],
+}
+
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    native: &crate::native::F3dNative,
+    sources: &ParameterScopeSources<'_>,
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
-    let entities = &native.design_entity_headers;
-    let types = &native.design_types;
-    let parameters = &native.design_parameters;
-    let parameter_owners = &native.design_parameter_owners;
-    let component_occurrences = &native.design_component_occurrences;
-    let recipes = &native.construction_recipes;
+    let &ParameterScopeSources {
+        entities,
+        types,
+        parameters,
+        parameter_owners,
+        component_occurrences,
+        recipes,
+    } = sources;
     let mut out = Vec::new();
     for entry in scan
         .entries

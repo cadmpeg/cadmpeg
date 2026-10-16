@@ -72,7 +72,7 @@ fn generated_copy_paste_bodies_decode_parameter_scopes() {
             !crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,
-                &crate::native::F3dNative::default(),
+                &crate::design::decode::scopes::parameter_scope::ParameterScopeSources::default(),
             )
             .unwrap()
             .is_empty()
