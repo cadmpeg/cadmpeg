@@ -121,12 +121,12 @@ fn attribute_base(record: &Record) -> Option<AttributeBase> {
 /// owner`; a legacy attribute omits `marker`. Source-less streams written by
 /// older cadmpeg versions used a compact record whose first field was `next`;
 /// retain read compatibility with all three forms.
-fn attribute_next(record: &Record) -> Option<i64> {
+pub fn attribute_next(record: &Record) -> Option<i64> {
     record.ref_at(attribute_base(record)?.next())
 }
 
 /// The topology or parent-attribute owner of a current or legacy attribute.
-pub(super) fn attribute_owner(record: &Record) -> Option<i64> {
+pub fn attribute_owner(record: &Record) -> Option<i64> {
     record.ref_at(attribute_base(record)?.owner()?)
 }
 

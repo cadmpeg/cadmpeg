@@ -145,7 +145,7 @@ fn history_deltas_match_snapshots() {
                     header.width
                 });
             let bytes = scan.entry_bytes(&brep.name).unwrap();
-            if let Some(history) =
+            if let Some(mut history) =
                 crate::history::decode(&ctx, bytes, &brep.name, width, &mut allowance).unwrap()
             {
                 assert!(
@@ -156,8 +156,18 @@ fn history_deltas_match_snapshots() {
                     "{path}: unbound history {}",
                     history.id
                 );
+                let stats = crate::history::binding::bind(&ctx, history.states_mut(), bytes, width)
+                    .unwrap();
+                history.release_topologies();
+                let full_started = std::time::Instant::now();
                 let decoded = full_decode(&ctx, &history, bytes, width);
+                let full_elapsed = full_started.elapsed();
                 compare(&history, &decoded, false);
+                println!(
+                    "{path} history={} match steps={} fallbacks={:?} decoded_records={} full_records={} binding_seconds={:.3} full_decode_seconds={:.3}",
+                    history.id, stats.steps, stats.fallbacks, stats.decoded_records,
+                    stats.full_records, stats.elapsed.as_secs_f64(), full_elapsed.as_secs_f64(),
+                );
                 snapshots.push(decoded);
                 histories.push(history);
             }
