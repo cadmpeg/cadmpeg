@@ -692,7 +692,7 @@ fn b2_class5b5c_parser_retains_bounded_source_coordinates() {
     );
     let controls =
         crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
-            .expect("service decode");
+            .expect("decode the B2 class 5B and 5C control records");
     assert_eq!(
         controls
             .iter()

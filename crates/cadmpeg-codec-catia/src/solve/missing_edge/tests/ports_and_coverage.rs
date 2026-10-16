@@ -613,7 +613,7 @@ fn mesh_coverage_reports_one_gap_per_independent_cycle() {
     };
     let coverage =
         crate::test_support::with_service_context(|ctx| mesh_face_coverage(ctx, &analysis, &[]))
-            .expect("service decode")
+            .expect("build the mesh face coverage")
             .expect("uncovered cycles are valid");
     assert_eq!(coverage.len(), FACES);
     assert!(coverage
@@ -633,7 +633,7 @@ fn endpoint_pruning_with_known_domains_keeps_them() {
             &candidates,
         )
     })
-    .expect("service decode")
+    .expect("prune the mesh endpoint candidates")
     .expect("known domains admit the quad");
     assert_eq!(pruned, candidates);
 }

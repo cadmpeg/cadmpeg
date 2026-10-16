@@ -927,8 +927,8 @@ fn tessellation_association_depth_uses_the_session_limit() {
     }
     records.push_str("#16=TESSELLATED_SOLID('',(#15),$);");
     let service = DecodePolicy::service();
-    let accepted = decode_tessellation_under_policy(&records, service)
-        .expect("service depth admits the association chain");
+    let accepted =
+        decode_tessellation_under_policy(&records, service).expect("decode the tessellation");
     assert_eq!(accepted.model.tessellations.len(), 1);
     let mut limited = service;
     limited.limits.max_recursion_depth = 13;
@@ -953,8 +953,7 @@ fn tessellation_representation_body_walk_uses_the_session_limit() {
         .expect("write relationship");
     }
     let service = DecodePolicy::service();
-    decode_tessellation_under_policy(&records, service)
-        .expect("service depth admits the representation chain");
+    decode_tessellation_under_policy(&records, service).expect("decode the tessellation");
     let mut limited = service;
     limited.limits.max_recursion_depth = 13;
     let error = decode_tessellation_under_policy(&records, limited)

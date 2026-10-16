@@ -1971,7 +1971,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert_eq!(
             super::project(&ctx, &inventory, &design, &sketch, &[], &[])
                 .expect("feature projection")
@@ -2009,7 +2009,7 @@ mod tests {
                     && limit.operation == "project Inventor feature result topology"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert!(matches!(
             super::feature_result(&ctx, &source, 0, &index),
             Some(Ok(_))
@@ -2040,7 +2040,7 @@ mod tests {
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
     }
 
@@ -2106,7 +2106,7 @@ mod tests {
         ));
         assert_eq!(
             inventory_with_record(END_OF_FEATURES_TYPE, &[], DecodePolicy::service())
-                .expect("service issue")
+                .expect("build the record inventory")
                 .issues
                 .len(),
             1

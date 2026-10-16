@@ -1303,7 +1303,7 @@ mod tests {
                 &topology_budget,
                 &mut crate::nurbs::LaneRefusals::new(),
             )
-            .expect("service entity admission")
+            .expect("transfer the closed face topology")
         })
         .expect("complete topology without native ownership root");
         assert_eq!(no_root_counts.faces, 2);
@@ -1340,7 +1340,7 @@ mod tests {
                 &topology_budget,
                 &mut crate::nurbs::LaneRefusals::new(),
             )
-            .expect("service entity admission")
+            .expect("transfer the closed face topology")
         })
         .expect("complete topology");
         assert_eq!(counts.faces, 2);
@@ -1455,7 +1455,7 @@ mod tests {
                 &budget,
                 &mut crate::nurbs::LaneRefusals::new(),
             )
-            .expect("service entity admission")
+            .expect("transfer the closed face topology")
         })
         .expect("topology remains transferable");
 

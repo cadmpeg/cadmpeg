@@ -509,12 +509,12 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     .expect("forced deferred quotient");
 
     assert_eq!(
-        quotient.find(0).expect("service forest traversal"),
-        quotient.find(3).expect("service forest traversal")
+        quotient.find(0).expect("find the component root"),
+        quotient.find(3).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
 }
 
@@ -554,8 +554,8 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     .expect("unknown exact direction is deferred");
 
     assert_ne!(
-        quotient.find(0).expect("service forest traversal"),
-        quotient.find(3).expect("service forest traversal")
+        quotient.find(0).expect("find the component root"),
+        quotient.find(3).expect("find the component root")
     );
 }
 
@@ -596,20 +596,20 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     .expect("deferred gap quotient");
 
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(4).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(4).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(5).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(5).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(3).expect("service forest traversal"),
-        quotient.find(6).expect("service forest traversal")
+        quotient.find(3).expect("find the component root"),
+        quotient.find(6).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(7).expect("service forest traversal"),
-        quotient.find(0).expect("service forest traversal")
+        quotient.find(7).expect("find the component root"),
+        quotient.find(0).expect("find the component root")
     );
 }
 
@@ -638,11 +638,11 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
     quotient
         .merge(0, 1)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("first closed edge");
     quotient
         .merge(2, 3)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("second closed edge");
     let budget = WorkBudget::new(100);
 
@@ -657,8 +657,8 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     .expect("structural quotient");
 
     assert_eq!(
-        quotient.find(0).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(0).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
 }
 
@@ -695,10 +695,7 @@ fn ordered_face_preparation_does_not_sign_whole_mesh_alternatives() {
     .expect("locally viable face domains");
     assert!(ctx.resource_refusal().is_none());
 
-    assert_eq!(
-        quotient.root_count().expect("service quotient traversal"),
-        4
-    );
+    assert_eq!(quotient.root_count().expect("count the component roots"), 4);
     assert!(!budget.exhausted());
 }
 
@@ -792,12 +789,12 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     .expect("ordered component quotient");
 
     assert_eq!(
-        quotient.find(0).expect("service forest traversal"),
-        quotient.find(3).expect("service forest traversal")
+        quotient.find(0).expect("find the component root"),
+        quotient.find(3).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
 }
 
@@ -823,16 +820,16 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
     .expect("unordered component quotient");
 
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(3).expect("service forest traversal"),
-        quotient.find(4).expect("service forest traversal")
+        quotient.find(3).expect("find the component root"),
+        quotient.find(4).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(5).expect("service forest traversal"),
-        quotient.find(0).expect("service forest traversal")
+        quotient.find(5).expect("find the component root"),
+        quotient.find(0).expect("find the component root")
     );
 }
 
@@ -936,20 +933,20 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
     .expect("deferred component quotient");
 
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(4).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(4).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(5).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(5).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(3).expect("service forest traversal"),
-        quotient.find(6).expect("service forest traversal")
+        quotient.find(3).expect("find the component root"),
+        quotient.find(6).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(7).expect("service forest traversal"),
-        quotient.find(0).expect("service forest traversal")
+        quotient.find(7).expect("find the component root"),
+        quotient.find(0).expect("find the component root")
     );
 }
 

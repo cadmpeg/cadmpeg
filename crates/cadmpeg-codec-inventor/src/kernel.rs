@@ -345,7 +345,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (service, view) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
+                .expect("build the decode context");
         assert!(parse_carrier(
             &service,
             view,
@@ -363,7 +363,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (service, view) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
+                .expect("build the decode context");
         let carrier = parse_carrier(
             &service,
             view,
@@ -392,7 +392,7 @@ mod tests {
         let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
         assert!(matches!(
             select_active_carrier(&setup_ctx, &inventory.segments, &DocumentKind::Part)
-                .expect("service admission"),
+                .expect("select the active carrier"),
             ActiveCarrierState::Selected(_)
         ));
     }

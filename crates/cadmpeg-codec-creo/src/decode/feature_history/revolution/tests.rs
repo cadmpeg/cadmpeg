@@ -15,7 +15,8 @@ fn revolution_knot_range_reports_empty_knots_as_malformed() {
     assert!(matches!(error, CodecError::Malformed(message)
         if message == "FeatDefs saved spline at offset 17 has no knots"));
     assert_eq!(
-        super::directrix_parameter_range(17, &[0.0, 1.0]).expect("service error text admitted"),
+        super::directrix_parameter_range(17, &[0.0, 1.0])
+            .expect("resolve the directrix parameter range"),
         [0.0, 1.0]
     );
 }

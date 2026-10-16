@@ -595,7 +595,7 @@ pub(crate) fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
         data,
         std::iter::once(std::iter::once(SourceExtent::whole(data))),
     )
-    .expect("service decode")
+    .expect("read the consolidated records from the sources")
 }
 
 /// A physical record-source extent proved to lie inside the image it indexes.
@@ -652,7 +652,7 @@ pub(crate) fn consolidated_records_in_ranges(
             .filter_map(|range| SourceExtent::within(data, range.start, range.end))
             .map(std::iter::once),
     )
-    .expect("service decode")
+    .expect("read the consolidated records from the sources")
 }
 
 /// Inventory records in descriptor-scoped logical sources stated as byte
@@ -679,7 +679,7 @@ where
                 .collect::<Vec<_>>()
         }),
     )
-    .expect("service decode")
+    .expect("read the consolidated records from the sources")
 }
 
 /// Inventory records in descriptor-scoped logical sources. Physical extents
@@ -1260,7 +1260,7 @@ mod tests {
             &bytes,
             std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
         )
-        .expect("service decode");
+        .expect("read the consolidated records from the sources");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].class, 0x06);
     }

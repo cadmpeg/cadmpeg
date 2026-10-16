@@ -233,7 +233,7 @@ fn saved_line_joins_through_order_table() {
         &unique_saved_section_internal_ids(&incomplete),
         &BTreeSet::new(),
     )
-    .expect("service saved entity admission")
+    .expect("build the unresolved saved section entity")
     .expect("valid test fixture");
     assert_eq!(offset, 20);
     assert_eq!(

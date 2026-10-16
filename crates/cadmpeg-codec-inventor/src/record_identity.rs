@@ -275,7 +275,7 @@ mod tests {
         assert!(records.is_empty());
 
         let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service context");
+            .expect("build the decode context");
         super::push_record(
             &service,
             &mut records,
@@ -285,7 +285,7 @@ mod tests {
             1,
             "admit parsed record",
         )
-        .expect("service admission");
+        .expect("append the parsed record");
         assert_eq!(records.len(), 1);
     }
 }

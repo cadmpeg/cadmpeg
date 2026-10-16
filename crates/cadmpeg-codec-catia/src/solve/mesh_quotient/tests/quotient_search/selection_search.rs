@@ -484,21 +484,18 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         )
         .expect("propagate the forced face equations"));
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(3).expect("service forest traversal"),
-        quotient.find(4).expect("service forest traversal")
+        quotient.find(3).expect("find the component root"),
+        quotient.find(4).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(5).expect("service forest traversal"),
-        quotient.find(0).expect("service forest traversal")
+        quotient.find(5).expect("find the component root"),
+        quotient.find(0).expect("find the component root")
     );
-    assert_eq!(
-        quotient.root_count().expect("service quotient traversal"),
-        3
-    );
+    assert_eq!(quotient.root_count().expect("count the component roots"), 3);
 }
 
 #[test]
@@ -552,13 +549,10 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         )
         .expect("propagate the forced face equations"));
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
-    assert_eq!(
-        quotient.root_count().expect("service quotient traversal"),
-        5
-    );
+    assert_eq!(quotient.root_count().expect("count the component roots"), 5);
 }
 
 #[test]
@@ -616,17 +610,14 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         )
         .expect("propagate the forced face equations"));
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(3).expect("service forest traversal"),
-        quotient.find(0).expect("service forest traversal")
+        quotient.find(3).expect("find the component root"),
+        quotient.find(0).expect("find the component root")
     );
-    assert_eq!(
-        quotient.root_count().expect("service quotient traversal"),
-        4
-    );
+    assert_eq!(quotient.root_count().expect("count the component roots"), 4);
 }
 
 #[test]
@@ -670,12 +661,12 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     for edge in 0..13 {
         quotient
             .merge(edge * 2, edge * 2 + 1)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("closed port");
     }
 
     assert_eq!(
-        quotient.root_count().expect("service quotient traversal"),
+        quotient.root_count().expect("count the component roots"),
         13
     );
     assert!(search
@@ -685,10 +676,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
             &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
         .expect("propagate the forced face equations"));
-    assert_eq!(
-        quotient.root_count().expect("service quotient traversal"),
-        1
-    );
+    assert_eq!(quotient.root_count().expect("count the component roots"), 1);
 }
 
 #[test]

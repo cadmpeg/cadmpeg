@@ -745,7 +745,7 @@ fn in_range_section_extent_states_its_declared_end() {
 
     assert_eq!(section.end(), 48);
     assert_eq!(
-        super::frame_bound(&section, 8).expect("service frame-bound text admitted"),
+        super::frame_bound(&section, 8).expect("resolve the absolute frame address"),
         40
     );
     let error = super::frame_bound(&section, usize::MAX).expect_err("overrun bound is refused");

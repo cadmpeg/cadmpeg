@@ -14,7 +14,7 @@ fn dimension_arithmetic_preserves_service_values() {
             RelationEvaluationContext::default(),
         )
     })
-    .expect("service expression")
+    .expect("parse the relation expression")
     .expect("numeric result");
     assert!(matches!(
         result.kind,

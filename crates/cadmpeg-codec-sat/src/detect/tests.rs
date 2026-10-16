@@ -17,7 +17,7 @@ fn binary_classification_admits_an_asm_binary_header() {
     bytes.extend_from_slice(b"ASM");
     let arena = DecodeArena::new();
     let (service, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     assert!(matches!(
         super::classify(&service, &bytes).expect("header admitted"),
         Some(super::StreamKind::AsmBinary(_))

@@ -7,7 +7,7 @@ fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let rows: Vec<_> = (0..6)
         .map(|edge| {
             assert!(EdgeRow::new(

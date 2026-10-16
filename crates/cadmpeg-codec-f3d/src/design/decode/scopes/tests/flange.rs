@@ -97,7 +97,7 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
         "258",
         &references,
     )
-    .expect("service admission")
+    .expect("decode the exact edge flange operation")
     .expect("fixed EdgeFlange operation");
     assert_eq!(
         operation
@@ -194,7 +194,7 @@ fn edge_flange_scope_reads_the_shifted_header_form() {
             "258",
             &references,
         )
-        .expect("service admission")
+        .expect("decode the exact edge flange operation")
         .expect("fixed EdgeFlange operation");
         assert_eq!(
             operation.bend_position,
@@ -231,7 +231,7 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
             paired_class_tag,
             &references,
         )
-        .expect("service admission")
+        .expect("decode the exact edge flange operation")
         .expect("legacy classed EdgeFlange operation");
         assert_eq!(
             operation
@@ -303,7 +303,7 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
             paired_class_tag,
             &references,
         )
-        .expect("service admission")
+        .expect("decode the exact edge flange operation")
         .expect("legacy classed multi-edge EdgeFlange operation");
         assert_eq!(
             operation
@@ -376,7 +376,7 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
         "261",
         &references,
     )
-    .expect("service admission")
+    .expect("decode the exact edge flange operation")
     .expect("legacy class-364 per-edge width EdgeFlange operation");
     assert_eq!(
         operation
@@ -450,7 +450,7 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
             paired_class_tag,
             &references,
         )
-        .expect("service admission")
+        .expect("decode the exact edge flange operation")
         .expect("legacy two-sided per-edge EdgeFlange operation");
         assert_eq!(
             operation
@@ -532,7 +532,7 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
         "258",
         &references,
     )
-    .expect("service admission")
+    .expect("decode the exact edge flange operation")
     .expect("legacy class-286 EdgeFlange operation");
     assert_eq!(
         operation
@@ -612,7 +612,7 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
         "258",
         &references,
     )
-    .expect("service admission")
+    .expect("decode the exact edge flange operation")
     .expect("legacy extended class-286 EdgeFlange operation");
     assert_eq!(
         operation
@@ -717,7 +717,7 @@ fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
             "258",
             &references,
         )
-        .expect("service admission")
+        .expect("decode the exact edge flange operation")
         .is_none()
     );
 }
@@ -737,7 +737,7 @@ fn edge_flange_scope_reads_the_single_edge_to_object_form() {
             "258",
             &references,
         )
-        .expect("service admission")
+        .expect("decode the exact edge flange operation")
         .expect("fixed to-object EdgeFlange operation");
         assert_eq!(
             operation
@@ -791,7 +791,7 @@ fn edge_flange_scope_refuses_a_to_object_frame_with_a_table_reference_pair() {
             "258",
             &[201, 204, 207, 218, 221, 224, 240, 243, 251, 254, 270],
         )
-        .expect("service admission")
+        .expect("decode the exact edge flange operation")
         .is_none()
     );
 }
@@ -1121,7 +1121,7 @@ fn legacy_edge_flange_result_table_rejects_each_duplicate_without_heap_growth() 
             "258",
             &references,
         )
-        .expect("service admission")
+        .expect("decode the exact edge flange operation")
     };
     assert!(decode(&frame.bytes).is_some());
     for ordinal in 1..5 {

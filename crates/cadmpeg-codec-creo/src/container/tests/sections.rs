@@ -7,7 +7,7 @@ fn scan_bytes_retains_one_section() {
     let bytes = crate::test_support::build_prt("c", &[("VisibGeom", b"payload".to_vec())]);
     let service =
         crate::decode::with_service_context(|ctx| crate::container::scan_bytes(ctx, bytes.clone()))
-            .expect("service scan admitted");
+            .expect("scan the container");
     assert_eq!(service.framing.sections.len(), 1);
 }
 

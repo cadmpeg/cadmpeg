@@ -257,7 +257,7 @@ fn carrier_pcurve_branch_selects_incident_cylinder() {
     let domains = carrier_branch_domains();
     let mut selected = domains.clone();
     { select_stored_frame_carrier_pcurve_branches(&scan, &domains, &mut selected) }
-        .expect("service carrier branch admitted");
+        .expect("select the stored frame carrier pcurve branches");
     assert_eq!(selected[&1].len(), 1);
     assert_eq!(selected[&1][0].equation.origin, [0.0, 0.0, 0.0]);
 }
@@ -276,8 +276,7 @@ fn two_variable_plane_branch_scan() -> crate::container::ContainerScan<'static> 
 fn two_variable_plane_branches_keep_mirror_ambiguity() {
     let scan = two_variable_plane_branch_scan();
     let mut candidates = std::collections::BTreeMap::new();
-    select_stored_frame_branches(&scan, &mut candidates)
-        .expect("service two-plane branches admitted");
+    select_stored_frame_branches(&scan, &mut candidates).expect("select the stored frame branches");
     assert!(candidates.is_empty());
 }
 
@@ -352,7 +351,7 @@ fn plane_pcurve_discriminates_a_feature_frame_against_an_analytic_carrier() {
 #[test]
 fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
     let scan = stored_frame_branch_scan(true);
-    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("find the plane candidates");
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
@@ -368,7 +367,7 @@ fn stored_parameter_normal_branch_considers_every_bounded_frame_candidate() {
     later.slots[10] = Some(5.0);
     scan.planes.local_systems.push(later);
 
-    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("find the plane candidates");
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.origin, [0.0, 0.0, 0.0]);
@@ -386,7 +385,7 @@ fn stored_parameter_normal_branch_uses_unique_two_chart_endpoint_witness() {
             samples: vec![[[1.0, 1.0], [0.6, 0.8]], [[2.0, 1.0], [1.2, 1.6]]],
             offset: 30,
         });
-    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("find the plane candidates");
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
@@ -396,7 +395,7 @@ fn stored_parameter_normal_branch_uses_unique_two_chart_endpoint_witness() {
 #[test]
 fn stored_parameter_normal_branch_keeps_existing_frame_without_witness() {
     let scan = stored_frame_branch_scan(false);
-    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("find the plane candidates");
     let candidates = candidates.get(&1).expect("existing plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);

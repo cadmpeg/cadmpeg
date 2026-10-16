@@ -18,7 +18,7 @@ fn references_result() -> Result<BrepShellReferences, CodecError> {
 
 #[test]
 fn brep_shell_references_preserve_service_order() {
-    let references = references_result().expect("service shell references admitted");
+    let references = references_result().expect("build the shell references");
     assert_eq!(
         references.face_ids,
         vec![FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5)]

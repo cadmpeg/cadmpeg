@@ -7062,7 +7062,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-        .expect("service policy")
+        .expect("build the intersection support pcurve")
         .is_some());
     }
 

@@ -446,7 +446,7 @@ fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let points = [
         Point::new(
             PointId::mint("catia:test:point#on".to_string()).expect("identity grammar"),
@@ -473,7 +473,7 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let points = [
         Point::new(
             PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
@@ -516,7 +516,7 @@ fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let points = [
         Point::new(
             PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
@@ -953,7 +953,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("service decode context");
+    .expect("build the decode context");
     let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point::new(
@@ -985,7 +985,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
     let membership = standard_face_point_membership(&ctx, &ir, &bindings, &surface_indices, None)
-        .expect("service decode");
+        .expect("build the face point membership cache");
 
     assert!(membership[0][0]);
     assert!(!membership[0][1]);
@@ -1442,7 +1442,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
         &records,
         &mut crate::nurbs::LaneRefusals::new()
     )
-    .expect("service decode")
+    .expect("decode the A5 surfaces")
     .is_empty());
     assert!(
         !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)

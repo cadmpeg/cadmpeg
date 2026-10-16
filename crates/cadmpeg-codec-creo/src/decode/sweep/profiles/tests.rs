@@ -97,7 +97,8 @@ fn nurbs_profile_polyline_depth_refuses_before_recursive_span() {
             && refusal.operation == "creo NURBS profile sampling depth")
     );
     assert_eq!(
-        linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"),
+        linear_profile_polyline_with_policy(DecodePolicy::service())
+            .expect("build the linear profile polyline"),
         Some(vec![[0.0, 0.0], [1.0, 0.0]])
     );
 }
@@ -454,7 +455,7 @@ fn overflowing_circular_pcurve_records_refusal_text() {
         &"extrusion feature 11 cap",
         &mut refusal,
     )
-    .expect("service refusal text is admitted");
+    .expect("build the circular pcurve");
     assert!(absent.is_none());
     assert_eq!(
         refusal.take_records(),

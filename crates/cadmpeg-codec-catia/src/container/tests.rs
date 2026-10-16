@@ -1182,7 +1182,7 @@ fn contiguous_logical_streams_borrow_the_source_image() {
             .expect("synthetic outer directory admission");
     let streams =
         crate::test_support::with_service_context(|ctx| super::logical_record_streams(ctx, &scan))
-            .expect("service decode");
+            .expect("split the logical record streams");
     assert_eq!(streams.len(), 1);
     assert!(matches!(streams[0], std::borrow::Cow::Borrowed(_)));
 }
@@ -1209,7 +1209,7 @@ fn adjacent_descriptor_extents_borrow_one_root_window() {
     ];
     let streams =
         crate::test_support::with_service_context(|ctx| super::logical_record_streams(ctx, &scan))
-            .expect("service decode");
+            .expect("split the logical record streams");
     assert_eq!(streams.len(), 1);
     assert!(matches!(streams[0], std::borrow::Cow::Borrowed(_)));
 }

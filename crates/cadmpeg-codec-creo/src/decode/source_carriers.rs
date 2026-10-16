@@ -630,7 +630,7 @@ mod tests {
         crate::decode::with_service_context(|ctx| {
             carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
         })
-        .expect("service replacement");
+        .expect("replace the curve geometry");
         assert_eq!(carriers.curve_geometry(&curve), &geometry);
     }
 
@@ -670,7 +670,7 @@ mod tests {
         crate::decode::with_service_context(|ctx| {
             carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
         })
-        .expect("service replacement");
+        .expect("replace the surface geometry");
         assert_eq!(carriers.surface_geometry(&surface), &geometry);
     }
 
@@ -710,7 +710,7 @@ mod tests {
         crate::decode::with_service_context(|ctx| {
             carriers.admit_curve(ctx, &mut ir, curve.clone())
         })
-        .expect("service curve admission");
+        .expect("admit the curve");
         assert_eq!(ir.model.curves, vec![curve]);
         assert_eq!(
             carriers.curve_geometry(&ir.model.curves[0]),
@@ -755,7 +755,7 @@ mod tests {
         crate::decode::with_service_context(|ctx| {
             carriers.admit_surface(ctx, &mut ir, surface.clone())
         })
-        .expect("service surface admission");
+        .expect("admit the surface");
         assert_eq!(ir.model.surfaces, vec![surface]);
         assert_eq!(
             carriers.surface_geometry(&ir.model.surfaces[0]),

@@ -129,7 +129,7 @@ fn edge_row_admission_couples_table_kind_and_boundary_shape() {
 fn duplicate_face_sort_assigns_free_face_slots() {
     assert_eq!(
         crate::test_support::with_service_context(duplicate_face_slot_fixture)
-            .expect("service topology admission"),
+            .expect("complete the duplicate face slots"),
         Some(vec![[0, 1], [0, 1], [0, 1]])
     );
 }

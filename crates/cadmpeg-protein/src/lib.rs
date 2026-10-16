@@ -818,7 +818,7 @@ mod tests {
             DecodeContext::from_root_bytes(b"xml", &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
             super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3)
-                .expect("service admission"),
+                .expect("read the archive entry"),
             b"xml"
         );
     }

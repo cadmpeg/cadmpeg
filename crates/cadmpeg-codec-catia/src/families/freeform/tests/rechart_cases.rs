@@ -179,7 +179,7 @@ fn freeform_fallback_retains_exact_consolidated_spheres() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let carriers =
         freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .expect("service decode");
+            .expect("decode the freeform surface carriers");
     assert!(matches!(carriers.as_slice(), [carrier]
             if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if {
@@ -199,7 +199,7 @@ fn freeform_fallback_retains_exact_consolidated_tori() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let carriers =
         freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .expect("service decode");
+            .expect("decode the freeform surface carriers");
     assert!(matches!(carriers.as_slice(), [carrier]
             if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
             if {
@@ -246,7 +246,7 @@ fn a_cone_record_is_refused_when_read_or_builds_its_freeform_carrier() {
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
             freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-                .expect("service decode");
+                .expect("decode the freeform surface carriers");
         assert!(carriers.is_empty());
         assert!(
             crate::families::b2::records::b2_cones_from_records(&bytes, &records)
@@ -363,7 +363,7 @@ fn freeform_fallback_retains_range_origin_cylinder_carriers() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let carriers =
         freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .expect("service decode");
+            .expect("decode the freeform surface carriers");
     assert!(matches!(carriers.as_slice(), [carrier]
             if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if {
@@ -542,7 +542,7 @@ fn freeform_fallback_decodes_an_outer_body_sphere() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, file.clone())
     })
-    .expect("service scan");
+    .expect("scan the container");
     let service = crate::test_support::with_service_context(|ctx| {
         super::super::try_decode_freeform_surfaces(
             ctx,

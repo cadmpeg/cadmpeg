@@ -154,10 +154,10 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         profiles
     );
     assert!(area > 0.0);
-    assert!(profile_strictly_contains(&ctx, &profiles[0], [0.2, 0.2]).expect("service containment"));
-    assert!(
-        !profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0]).expect("service containment")
-    );
+    assert!(profile_strictly_contains(&ctx, &profiles[0], [0.2, 0.2])
+        .expect("check that the profile strictly contains the point"));
+    assert!(!profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0])
+        .expect("check that the profile strictly contains the point"));
     let diagonal = ProfileEntity::new(
         &ctx,
         SketchGeometry::nurbs(

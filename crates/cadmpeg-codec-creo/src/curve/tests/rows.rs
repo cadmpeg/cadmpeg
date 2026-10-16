@@ -35,7 +35,7 @@ use std::num::NonZeroU32;
 
 fn expression_helix(record: &crate::curve::CurveExpressionRecord) -> Option<CurveExpressionHelix> {
     crate::decode::with_service_context(|ctx| crate::curve::expression_helix(ctx, record))
-        .expect("service helix admission")
+        .expect("decode the expression helix")
 }
 
 fn one_prototype_pcurve_input() -> Vec<u8> {

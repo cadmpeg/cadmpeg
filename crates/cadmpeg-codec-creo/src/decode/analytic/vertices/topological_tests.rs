@@ -256,7 +256,7 @@ fn authoritative_vertex_result() -> Result<super::SolvedTopologicalVertices, Cod
 
 #[test]
 fn authoritative_two_chart_pcurve_places_both_vertices() {
-    let result = authoritative_vertex_result().expect("service authoritative solve");
+    let result = authoritative_vertex_result().expect("solve the topological vertices");
     assert_eq!(result.diagnostics.pcurve.accepted_records, 1);
     assert_eq!(result.diagnostics.pcurve_constraints, 1);
     assert_eq!(result.points.len(), 2);
@@ -264,20 +264,20 @@ fn authoritative_two_chart_pcurve_places_both_vertices() {
 
 #[test]
 fn repeated_pcurve_endpoints_leave_both_vertices_ambiguous() {
-    let result = ambiguous_vertex_result().expect("service ambiguous solve");
+    let result = ambiguous_vertex_result().expect("solve the topological vertices");
     assert_eq!(result.diagnostics.pcurve.accepted_records, 2);
     assert_eq!(result.diagnostics.pcurve_ambiguous_endpoint_vertices, 2);
 }
 
 #[test]
 fn two_incident_lines_give_an_analytic_domain_vertex() {
-    let result = analytic_vertex_result().expect("service analytic vertex solve");
+    let result = analytic_vertex_result().expect("solve the topological vertices");
     assert_eq!(result.diagnostics.analytic_domain_vertices, 1);
 }
 
 #[test]
 fn pcurve_endpoints_place_both_vertices() {
-    let result = pcurve_vertex_result().expect("service vertex solve");
+    let result = pcurve_vertex_result().expect("solve the topological vertices");
     assert_eq!(result.diagnostics.pcurve.accepted_records, 1);
     assert_eq!(result.diagnostics.pcurve_constraints, 1);
     assert_eq!(result.points.len(), 2);

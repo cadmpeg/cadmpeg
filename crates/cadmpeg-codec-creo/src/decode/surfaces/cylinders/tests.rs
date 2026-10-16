@@ -93,7 +93,7 @@ fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
 
     let selected =
         { unique_support_tangent_cylinder_frame(stored, &[tangent, unrelated_parallel]) }
-            .expect("service tangent search admitted");
+            .expect("find the unique support tangent cylinder frame");
     assert_eq!(selected.frame().origin(), [-29.8, -5.25, 6.76]);
 }
 
@@ -344,7 +344,7 @@ fn constant_round_radius_without_edges_transfers_nothing() {
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service round radius admitted")
+        .expect("transfer the positional cylinders")
         .transferred,
         0
     );
