@@ -4056,6 +4056,19 @@ pub(super) fn feature_operation_body_writes(
     Ok(writes)
 }
 
+/// The plain cached-body binding of each body alias, or `None` when the alias
+/// repeats.
+fn sole_plain_bindings_by_alias(
+    bindings: &[SegmentBodyBinding],
+) -> BTreeMap<u32, Option<&SegmentBodyBinding>> {
+    sole_by_key(
+        bindings
+            .iter()
+            .filter(|binding| binding.stream_kind == crate::parasolid::StreamKind::Plain),
+        |binding| binding.body_alias_object_index,
+    )
+}
+
 /// Join body-write identities to unique plain cached-body aliases.
 ///
 /// Partition aliases use a separate identity namespace and do not participate.
@@ -4065,21 +4078,18 @@ pub(super) fn feature_operation_body_image_segment_uses(
     writes: &[FeatureOperationBodyWrite],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureOperationBodyImageSegmentUse> {
+    let plain_bindings = sole_plain_bindings_by_alias(bindings);
     let mut output = Vec::new();
     for write in writes {
         let Some(body_image_data_block) = write.body_image_data_block.as_ref() else {
             continue;
         };
-        let mut matches = bindings.iter().filter(|binding| {
-            binding.stream_kind == crate::parasolid::StreamKind::Plain
-                && binding.body_alias_object_index == u32::from(write.frame.body_identity())
-        });
-        let Some(binding) = matches.next() else {
+        let Some(Some(binding)) = plain_bindings
+            .get(&u32::from(write.frame.body_identity()))
+            .copied()
+        else {
             continue;
         };
-        if matches.next().is_some() {
-            continue;
-        }
         let item = FeatureOperationBodyImageSegmentUse {
             id: write.id.replacen(
                 "operation-body-write",
@@ -4104,18 +4114,15 @@ pub(super) fn feature_operation_body_identity_segment_uses(
     writes: &[FeatureOperationBodyWrite],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureOperationBodyIdentitySegmentUse> {
+    let plain_bindings = sole_plain_bindings_by_alias(bindings);
     let mut output = Vec::new();
     for write in writes {
-        let mut matches = bindings.iter().filter(|binding| {
-            binding.stream_kind == crate::parasolid::StreamKind::Plain
-                && binding.body_alias_object_index == u32::from(write.frame.body_identity())
-        });
-        let Some(binding) = matches.next() else {
+        let Some(Some(binding)) = plain_bindings
+            .get(&u32::from(write.frame.body_identity()))
+            .copied()
+        else {
             continue;
         };
-        if matches.next().is_some() {
-            continue;
-        }
         let item = FeatureOperationBodyIdentitySegmentUse {
             id: write.id.replacen(
                 "operation-body-write",
@@ -4271,13 +4278,27 @@ pub(super) fn feature_body_write_group_partition_uses(
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
     group_members: &[crate::native::parasolid::ParasolidGroupMember],
 ) -> Vec<FeatureBodyWriteGroupPartitionUse> {
+    let mut groups_by_node = BTreeMap::<u32, Vec<_>>::new();
+    for group in groups {
+        groups_by_node.entry(group.node_id).or_default().push(group);
+    }
+    let mut members_by_partition_node = BTreeMap::<(u32, u32), Vec<_>>::new();
+    for member in group_members {
+        members_by_partition_node
+            .entry((member.partition_stream_ordinal, member.group_node_id))
+            .or_default()
+            .push(member);
+    }
     let mut output = Vec::new();
     for write in writes.iter().chain(unlabeled_writes) {
         let id = write.id.as_str();
         let group_node = write.frame.group_node().value();
+        let node_groups = groups_by_node
+            .get(&group_node)
+            .map_or(&[][..], Vec::as_slice);
         let mut partition = None;
         let mut valid = true;
-        for group in groups.iter().filter(|group| group.node_id == group_node) {
+        for group in node_groups {
             match (partition, group.origin.partition_stream_ordinal()) {
                 (None, Some(ordinal)) => partition = Some(ordinal),
                 (Some(expected), Some(actual)) if expected == actual => {}
@@ -4294,14 +4315,15 @@ pub(super) fn feature_body_write_group_partition_uses(
             continue;
         }
         let mut parasolid_group_records = Vec::new();
-        for group in groups.iter().filter(|group| group.node_id == group_node) {
+        for group in node_groups {
             parasolid_group_records.push(group.id.clone());
         }
         let mut parasolid_group_members = Vec::new();
-        for member in group_members.iter().filter(|member| {
-            member.partition_stream_ordinal == partition_stream_ordinal
-                && member.group_node_id == group_node
-        }) {
+        for member in members_by_partition_node
+            .get(&(partition_stream_ordinal, group_node))
+            .into_iter()
+            .flatten()
+        {
             parasolid_group_members.push(member.id.clone());
         }
         let use_record = FeatureBodyWriteGroupPartitionUse {
@@ -5241,6 +5263,20 @@ pub(super) fn feature_datum_csys_column_row_uses(
     output
 }
 
+/// The record of each key, or `None` when the key repeats.
+fn sole_by_key<'a, T, K: Ord>(
+    records: impl IntoIterator<Item = &'a T>,
+    key: impl Fn(&'a T) -> K,
+) -> BTreeMap<K, Option<&'a T>> {
+    let mut sole = BTreeMap::new();
+    for record in records {
+        sole.entry(key(record))
+            .and_modify(|existing| *existing = None)
+            .or_insert(Some(record));
+    }
+    sole
+}
+
 /// Retain inputs having exactly one slot-zero use in one complete column table.
 pub(super) fn feature_input_column_targets(
     inputs: &[FeatureInputBlock],
@@ -5248,20 +5284,21 @@ pub(super) fn feature_input_column_targets(
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
 ) -> Vec<FeatureInputColumnTarget> {
-    let mut output = Vec::new();
-    for input in inputs {
-        let mut targets = uses.iter().filter(|use_| {
-            use_.input_block == input.id
-                && use_.row_slot == ColumnRowSlot::Zero
+    let targets_by_input = sole_by_key(
+        uses.iter().filter(|use_| {
+            use_.row_slot == ColumnRowSlot::Zero
                 && use_.row_kind != ColumnIndexRowKind::Index
                 && use_.column_table.is_some()
-        });
-        let Some(target) = targets.next() else {
+        }),
+        |use_| use_.input_block.as_str(),
+    );
+    let linked_rows_by_id = sole_by_key(linked_rows, |row| row.id.as_str());
+    let target_rows_by_id = sole_by_key(target_rows, |row| row.id.as_str());
+    let mut output = Vec::new();
+    for input in inputs {
+        let Some(Some(target)) = targets_by_input.get(input.id.as_str()).copied() else {
             continue;
         };
-        if targets.next().is_some() {
-            continue;
-        }
         let Some(column_table) = target.column_table.as_ref() else {
             continue;
         };
@@ -5269,13 +5306,10 @@ pub(super) fn feature_input_column_targets(
             .row_kind
         {
             ColumnIndexRowKind::LinkedIndex => {
-                let mut rows = linked_rows.iter().filter(|row| row.id == target.column_row);
-                let Some(row) = rows.next() else {
+                let Some(Some(row)) = linked_rows_by_id.get(target.column_row.as_str()).copied()
+                else {
                     continue;
                 };
-                if rows.next().is_some() {
-                    continue;
-                }
                 let field_data_blocks = row.frame.indices().map(|token| token.target.to_owned());
                 (
                     FeatureInputColumnTargetRow::Linked {
@@ -5291,13 +5325,10 @@ pub(super) fn feature_input_column_targets(
                 )
             }
             ColumnIndexRowKind::TargetIndex => {
-                let mut rows = target_rows.iter().filter(|row| row.id == target.column_row);
-                let Some(row) = rows.next() else {
+                let Some(Some(row)) = target_rows_by_id.get(target.column_row.as_str()).copied()
+                else {
                     continue;
                 };
-                if rows.next().is_some() {
-                    continue;
-                }
                 let field_data_blocks = row.frame.indices().map(|token| token.target.to_owned());
                 (
                     FeatureInputColumnTargetRow::Target,
@@ -7244,18 +7275,26 @@ pub(super) fn feature_parameter_bindings(
 pub(super) fn feature_parameter_uses(
     bindings: &[FeatureParameterBinding],
 ) -> Vec<FeatureParameterUse> {
+    let mut occurrences_by_use = BTreeMap::<(&str, &str), Vec<&FeatureParameterBinding>>::new();
+    for binding in bindings {
+        if let Some(expression) = binding.expression.as_deref() {
+            occurrences_by_use
+                .entry((binding.operation_label.as_str(), expression))
+                .or_default()
+                .push(binding);
+        }
+    }
     let mut uses = Vec::new();
 
-    for (ordinal, binding) in bindings.iter().enumerate() {
+    for binding in bindings {
         let Some(expression) = binding.expression.as_deref() else {
             continue;
         };
-        if bindings[..ordinal].iter().any(|candidate| {
-            candidate.operation_label == binding.operation_label
-                && candidate.expression.as_deref() == Some(expression)
-        }) {
+        let Some(candidates) =
+            occurrences_by_use.remove(&(binding.operation_label.as_str(), expression))
+        else {
             continue;
-        }
+        };
         let operation_key = binding
             .operation_label
             .rsplit_once('#')
@@ -7267,10 +7306,7 @@ pub(super) fn feature_parameter_uses(
         let operation_label = binding.operation_label.clone();
         let expression_id = expression.to_owned();
         let mut occurrences = Vec::new();
-        for candidate in bindings.iter().filter(|candidate| {
-            candidate.operation_label == binding.operation_label
-                && candidate.expression.as_deref() == Some(expression)
-        }) {
+        for candidate in candidates {
             let binding_id = candidate.id.clone();
 
             occurrences.push(FeatureParameterUseBinding {
