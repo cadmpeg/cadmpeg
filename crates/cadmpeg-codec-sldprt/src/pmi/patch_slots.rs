@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{parse_value, ValueKind};
-use cadmpeg_core::decode::DecodeContext;
+use super::{parse_value, Parse, Shape, ValueKind, PMI_PARSE_WORK_PER_PAYLOAD_BYTE};
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use rmp::Marker;
 
@@ -23,14 +23,23 @@ fn dimension_field(payload: &[u8], offset: u64, field: &str) -> Result<FieldSpan
         ))
     };
     let mut cursor = usize::try_from(offset).map_err(|_| invalid())?;
-    let outer = parse_value(&ctx, payload, &mut cursor, 0)?.ok_or_else(invalid)?;
+    let work_limit = payload
+        .len()
+        .checked_mul(PMI_PARSE_WORK_PER_PAYLOAD_BYTE)
+        .ok_or_else(invalid)?;
+    let work = WorkBudget::new(work_limit);
+    let parse = Parse {
+        shape: Shape::Record,
+        work: &work,
+    };
+    let outer = parse_value(&ctx, payload, &mut cursor, 0, parse)?.ok_or_else(invalid)?;
     let ValueKind::Map(outer) = outer.kind else {
         return Err(invalid());
     };
-    let ValueKind::Array(items) = &outer.get("dimItems").ok_or_else(invalid)?.kind else {
+    let ValueKind::Array { first, .. } = &outer.get("dimItems").ok_or_else(invalid)?.kind else {
         return Err(invalid());
     };
-    let ValueKind::Map(item) = &items.first().ok_or_else(invalid)?.kind else {
+    let ValueKind::Map(item) = &first.as_deref().ok_or_else(invalid)?.kind else {
         return Err(invalid());
     };
     let value = item.get(field).ok_or_else(invalid)?;

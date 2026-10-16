@@ -48,8 +48,14 @@ pub(crate) enum SldprtLossCode {
     PmiDimensionUnbound,
     /// `PMISemanticDataDB` `MessagePack` map failed to parse into a dimension.
     PmiSemanticRecordMalformed,
+    /// A `PMISemanticDataDB` section reached its parse work cap; later
+    /// candidate maps were not read.
+    PmiSemanticParseCapped,
     /// SWIFT annotation class has no format-neutral PMI representation.
     PmiSwiftAnnotationUnsupported,
+    /// A SWIFT feature walk met a feature only past its depth or work bound;
+    /// the targets or nominal values it feeds stay unresolved.
+    PmiSwiftFeatureWalkCapped,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
     /// Feature record has missing, repeated, or non-preceding tree edges.
@@ -168,7 +174,9 @@ impl SldprtLossCode {
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
         Self::PmiSemanticRecordMalformed,
+        Self::PmiSemanticParseCapped,
         Self::PmiSwiftAnnotationUnsupported,
+        Self::PmiSwiftFeatureWalkCapped,
         Self::HistoryIncompleteReferences,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
@@ -232,7 +240,9 @@ impl SldprtLossCode {
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
             Self::PmiSemanticRecordMalformed => "pmi.semantic-record-malformed",
+            Self::PmiSemanticParseCapped => "pmi.semantic-parse-capped",
             Self::PmiSwiftAnnotationUnsupported => "pmi.swift-annotation-unsupported",
+            Self::PmiSwiftFeatureWalkCapped => "pmi.swift-feature-walk-capped",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
@@ -308,7 +318,9 @@ impl SldprtLossCode {
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
             | Self::PmiSemanticRecordMalformed
+            | Self::PmiSemanticParseCapped
             | Self::PmiSwiftAnnotationUnsupported
+            | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
@@ -396,7 +408,9 @@ impl SldprtLossCode {
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
             | Self::PmiSemanticRecordMalformed
+            | Self::PmiSemanticParseCapped
             | Self::PmiSwiftAnnotationUnsupported
+            | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
@@ -561,7 +575,9 @@ mod tests {
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
                 "pmi.semantic-record-malformed",
+                "pmi.semantic-parse-capped",
                 "pmi.swift-annotation-unsupported",
+                "pmi.swift-feature-walk-capped",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
