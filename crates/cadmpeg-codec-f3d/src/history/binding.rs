@@ -49,7 +49,8 @@ pub(crate) fn bind(
         .and_then(|header| header.metadata.entity_count)
         .and_then(|count| i64::try_from(count).ok());
     let mut binder = Binder::new(&archive, saved_limit);
-    let mut newer: Option<(usize, AsmHistoricalTopology, BTreeMap<i64, i64>)> = None;
+    let mut newer: Option<(usize, AsmHistoricalTopology)> = None;
+    let mut newer_versions = BTreeMap::new();
     let mut transitions = Vec::new();
     let mut complete = true;
     let mut failure = None;
@@ -58,9 +59,8 @@ pub(crate) fn bind(
             return;
         }
         stats.full_records += versions.len();
-        let decoded = if let Some((newer_index, topology, _)) = &newer {
-            stats.steps += 1;
-            let changed = states[*newer_index]
+        let changed: Slots = if let Some((newer_index, _)) = &newer {
+            states[*newer_index]
                 .bulletin_boards
                 .iter()
                 .flat_map(|board| &board.changes)
@@ -77,7 +77,12 @@ pub(crate) fn bind(
                         _ => true,
                     }
                 })
-                .collect();
+                .collect()
+        } else {
+            versions.keys().copied().collect()
+        };
+        let decoded = if let Some((_, topology)) = &mut newer {
+            stats.steps += 1;
             binder.incremental(ctx, topology, &changed, versions, bytes, &mut stats)
         } else {
             let slots = versions.keys().copied().collect();
@@ -100,7 +105,7 @@ pub(crate) fn bind(
                 return;
             }
         };
-        if let Some((newer_index, newer_topology, newer_versions)) = newer.take() {
+        if let Some((newer_index, newer_topology)) = newer.take() {
             let older = crate::history_records::AsmStateSnapshot {
                 state_id: states[ordinal].state_id,
                 topology: &topology,
@@ -111,13 +116,22 @@ pub(crate) fn bind(
                 topology: &newer_topology,
                 versions: &newer_versions,
             };
-            let Some(transition) = AsmHistoricalTransition::between(Some(older), new) else {
+            let Some(transition) =
+                transition_for_changes(older, new, &changed, binder.changed_rows.as_ref())
+            else {
                 complete = false;
                 return;
             };
             transitions.push((newer_index, transition));
         }
-        newer = Some((ordinal, topology, versions.clone()));
+        for slot in &changed {
+            if let Some(revision) = versions.get(slot) {
+                newer_versions.insert(*slot, *revision);
+            } else {
+                newer_versions.remove(slot);
+            }
+        }
+        newer = Some((ordinal, topology));
     });
     if let Some(error) = failure {
         return Err(error);
@@ -125,13 +139,13 @@ pub(crate) fn bind(
     if !walked || !complete {
         return Ok(stats);
     }
-    if let Some((ordinal, topology, versions)) = newer {
+    if let Some((ordinal, topology)) = newer {
         let Some(transition) = AsmHistoricalTransition::between(
             None,
             crate::history_records::AsmStateSnapshot {
                 state_id: states[ordinal].state_id,
                 topology: &topology,
-                versions: &versions,
+                versions: &newer_versions,
             },
         ) else {
             return Ok(stats);
@@ -145,28 +159,83 @@ pub(crate) fn bind(
     Ok(stats)
 }
 
-#[derive(Clone, Copy, Default)]
+struct ChangedRows {
+    entities: Slots,
+    containers: Slots,
+}
+
+/// Compare the same rows the dependency closure can replace.
+fn transition_for_changes(
+    older: crate::history_records::AsmStateSnapshot<'_>,
+    newer: crate::history_records::AsmStateSnapshot<'_>,
+    changed: &Slots,
+    rows: Option<&ChangedRows>,
+) -> Option<AsmHistoricalTransition> {
+    let Some(rows) = rows else {
+        return AsmHistoricalTransition::between(Some(older), newer);
+    };
+    let mut old_topology = AsmHistoricalTopology::default();
+    let mut new_topology = AsmHistoricalTopology::default();
+    for (source, target) in [
+        (older.topology, &mut old_topology),
+        (newer.topology, &mut new_topology),
+    ] {
+        splice(target, source, &rows.entities, false);
+        splice(target, source, &rows.containers, true);
+    }
+    let mut slots = old_topology.slots();
+    slots.extend(new_topology.slots());
+    slots.extend(changed);
+    let project = |versions: &BTreeMap<i64, i64>| -> BTreeMap<_, _> {
+        slots
+            .iter()
+            .filter_map(|slot| versions.get(slot).map(|revision| (*slot, *revision)))
+            .collect()
+    };
+    let old_versions = project(older.versions);
+    let new_versions = project(newer.versions);
+    AsmHistoricalTransition::between(
+        Some(crate::history_records::AsmStateSnapshot {
+            topology: &old_topology,
+            versions: &old_versions,
+            ..older
+        }),
+        crate::history_records::AsmStateSnapshot {
+            topology: &new_topology,
+            versions: &new_versions,
+            ..newer
+        },
+    )
+}
+
+#[derive(Default)]
 struct Subtypes {
-    definitions: bool,
-    references: bool,
+    definitions: Vec<usize>,
+    references: Vec<Option<usize>>,
 }
 
 impl Subtypes {
     fn of(record: &Record) -> Self {
-        let mut flags = Self::default();
-        for pair in record.tokens.windows(2) {
-            if matches!(pair[0], Token::SubtypeOpen) {
-                match &pair[1] {
-                    Token::Ident(name) | Token::SubIdent(name) => {
-                        flags.references |= name == "ref";
-                        flags.definitions |= name != "ref";
-                    }
-                    Token::Long(_) => flags.references = true,
-                    _ => {}
+        let mut out = Self::default();
+        for (pos, token) in record.tokens.iter().enumerate() {
+            if !matches!(token, Token::SubtypeOpen) {
+                continue;
+            }
+            match record.tokens.get(pos + 1) {
+                Some(Token::Ident(name) | Token::SubIdent(name)) if name != "ref" => {
+                    out.definitions.push(pos);
                 }
+                Some(Token::Ident(name) | Token::SubIdent(name)) if name == "ref" => {
+                    out.references.push(match record.tokens.get(pos + 2) {
+                        Some(Token::Long(index)) => usize::try_from(*index).ok(),
+                        _ => None,
+                    });
+                }
+                Some(Token::Long(index)) => out.references.push(usize::try_from(*index).ok()),
+                _ => {}
             }
         }
-        flags
+        out
     }
 }
 
@@ -255,8 +324,7 @@ struct Live<'a> {
     kinds: BTreeMap<&'a str, Slots>,
     attributes: BTreeMap<i64, Slots>,
     incoming: BTreeMap<i64, Slots>,
-    subtype_references: Slots,
-    subtype_definitions: Slots,
+    subtype_references: BTreeMap<i64, Vec<Option<usize>>>,
 }
 
 impl<'a> Live<'a> {
@@ -266,8 +334,7 @@ impl<'a> Live<'a> {
             kinds: BTreeMap::new(),
             attributes: BTreeMap::new(),
             incoming: BTreeMap::new(),
-            subtype_references: Slots::new(),
-            subtype_definitions: Slots::new(),
+            subtype_references: BTreeMap::new(),
         }
     }
 
@@ -291,11 +358,10 @@ impl<'a> Live<'a> {
                 }
             }
             self.subtype_references.remove(&slot);
-            self.subtype_definitions.remove(&slot);
         }
     }
 
-    fn insert(&mut self, slot: i64, record: &'a Record, flags: Subtypes) {
+    fn insert(&mut self, slot: i64, record: &'a Record, references: Vec<Option<usize>>) {
         self.remove(slot);
         self.table.insert(slot, record);
         self.kinds.entry(record.head()).or_default().insert(slot);
@@ -311,11 +377,8 @@ impl<'a> Live<'a> {
                 }
             }
         }
-        if flags.references {
-            self.subtype_references.insert(slot);
-        }
-        if flags.definitions {
-            self.subtype_definitions.insert(slot);
+        if !references.is_empty() {
+            self.subtype_references.insert(slot, references);
         }
     }
 
@@ -528,12 +591,22 @@ fn container_unit(live: &Live<'_>, body: i64) -> Slots {
 }
 
 fn replace_rows<T: Clone>(old: &mut Vec<T>, new: &[T], keys: &Slots, key: impl Fn(&T) -> i64) {
+    if keys.is_empty() || (old.is_empty() && new.is_empty()) {
+        return;
+    }
     let retained = std::mem::take(old);
     let mut left = retained
         .into_iter()
         .filter(|row| !keys.contains(&key(row)))
         .peekable();
-    let mut right = new.iter().filter(|row| keys.contains(&key(row))).peekable();
+    let mut right = keys
+        .iter()
+        .flat_map(|slot| {
+            let start = new.partition_point(|row| key(row) < *slot);
+            let end = new.partition_point(|row| key(row) <= *slot);
+            new[start..end].iter()
+        })
+        .peekable();
     while let (Some(a), Some(b)) = (left.peek(), right.peek()) {
         if key(a) <= key(b) {
             if let Some(row) = left.next() {
@@ -579,19 +652,29 @@ fn decode_slots(
     slots: &Slots,
     bytes: &[u8],
     stats: &mut Statistics,
+    subtypes: Option<&cadmpeg_asm::nurbs::toks::SubtypeTable>,
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
     let records = slots
         .iter()
         .filter_map(|slot| live.table.get(slot).map(|record| (*record).clone()))
         .collect::<Vec<_>>();
     stats.decoded_records += records.len();
-    let decoded =
-        match crate::brep::decode_history_topology(ctx, &records, bytes, crate::ids::ID_FORMAT) {
-            Ok(decoded) => decoded,
-            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
-            Err(_) => return Ok(None),
-        };
+    let result = match subtypes {
+        Some(table) => crate::brep::decode_history_with_subtypes(ctx, &records, bytes, table),
+        None => crate::brep::decode_history_topology(ctx, &records, bytes, crate::ids::ID_FORMAT),
+    };
+    let decoded = match result {
+        Ok(decoded) => decoded,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
     historical_topology_with_tags(&decoded)
+}
+
+struct Definition {
+    owner: (i64, usize),
+    tokens: std::sync::Arc<[Token]>,
+    position: usize,
 }
 
 struct Binder<'a> {
@@ -599,19 +682,29 @@ struct Binder<'a> {
     archive: &'a HistoricalRecordArchive,
     units: Units,
     containers: BTreeMap<i64, Slots>,
-    flags: HashMap<i64, Subtypes>,
+    container_reverse: BTreeMap<i64, Slots>,
+    wires: Slots,
+    revision_subtypes: HashMap<i64, Subtypes>,
     saved_limit: Option<i64>,
+    subtype_table: Option<cadmpeg_asm::nurbs::toks::SubtypeTable>,
+    definitions: Vec<Definition>,
+    changed_rows: Option<ChangedRows>,
 }
 
 impl<'a> Binder<'a> {
     fn new(archive: &'a HistoricalRecordArchive, saved_limit: Option<i64>) -> Self {
         Self {
             saved_limit,
+            subtype_table: None,
+            definitions: Vec::new(),
+            changed_rows: None,
             archive,
             live: Live::new(),
             units: Units::default(),
             containers: BTreeMap::new(),
-            flags: archive
+            container_reverse: BTreeMap::new(),
+            wires: Slots::new(),
+            revision_subtypes: archive
                 .iter()
                 .map(|(&revision, record)| (revision, Subtypes::of(record)))
                 .collect(),
@@ -619,17 +712,123 @@ impl<'a> Binder<'a> {
     }
 
     fn update(&mut self, changed: &Slots, versions: &BTreeMap<i64, i64>) -> Option<()> {
+        if changed.iter().any(|slot| {
+            self.definitions
+                .binary_search_by_key(slot, |definition| definition.owner.0)
+                .is_ok()
+                || versions
+                    .get(slot)
+                    .and_then(|r| self.revision_subtypes.get(r))
+                    .is_some_and(|s| !s.definitions.is_empty())
+        }) {
+            self.subtype_table = None;
+        }
         for &slot in changed {
+            let start = self.definitions.partition_point(|d| d.owner.0 < slot);
+            let end = self.definitions.partition_point(|d| d.owner.0 <= slot);
+            let definitions = versions
+                .get(&slot)
+                .and_then(|revision| {
+                    Some((
+                        self.archive.get(revision)?,
+                        self.revision_subtypes.get(revision)?,
+                    ))
+                })
+                .into_iter()
+                .flat_map(|(record, meta)| {
+                    meta.definitions
+                        .iter()
+                        .enumerate()
+                        .map(move |(ordinal, &position)| Definition {
+                            owner: (slot, ordinal),
+                            tokens: record.tokens.clone(),
+                            position,
+                        })
+                });
+            self.definitions.splice(start..end, definitions);
             self.live.remove(slot);
             if let Some(revision) = versions.get(&slot) {
                 let record = self.archive.get(revision)?;
                 if i64::try_from(record.index).ok() != Some(slot) {
                     return None;
                 }
-                self.live.insert(slot, record, *self.flags.get(revision)?);
+                self.live.insert(
+                    slot,
+                    record,
+                    self.revision_subtypes.get(revision)?.references.clone(),
+                );
             }
         }
         self.live.valid_changes(changed).then_some(())
+    }
+
+    fn resolution_changes(&self, changed: &Slots, versions: &BTreeMap<i64, i64>) -> Slots {
+        let mut next: BTreeMap<_, _> = self
+            .live
+            .subtype_references
+            .iter()
+            .map(|(&slot, references)| (slot, references.as_slice()))
+            .collect();
+        for slot in changed {
+            next.remove(slot);
+            if let Some(meta) = versions
+                .get(slot)
+                .and_then(|r| self.revision_subtypes.get(r))
+            {
+                if !meta.references.is_empty() {
+                    next.insert(*slot, meta.references.as_slice());
+                }
+            }
+        }
+        let old: Vec<_> = self
+            .definitions
+            .iter()
+            .map(|definition| definition.owner)
+            .collect();
+        let mut new = old.clone();
+        for &slot in changed {
+            let start = new.partition_point(|&(owner, _)| owner < slot);
+            let end = new.partition_point(|&(owner, _)| owner <= slot);
+            let count = versions
+                .get(&slot)
+                .and_then(|revision| self.revision_subtypes.get(revision))
+                .map_or(0, |meta| meta.definitions.len());
+            new.splice(start..end, (0..count).map(|ordinal| (slot, ordinal)));
+        }
+        let mut out = changed.clone();
+        let mut users: BTreeMap<i64, Slots> = BTreeMap::new();
+        let resolution = |references: &[Option<usize>], defs: &[(i64, usize)]| -> Vec<_> {
+            references
+                .iter()
+                .map(|index| index.and_then(|i| defs.get(i).copied()))
+                .collect()
+        };
+        for (&slot, meta) in &next {
+            let before = self
+                .live
+                .subtype_references
+                .get(&slot)
+                .map(|meta| resolution(meta, &old))
+                .unwrap_or_default();
+            let after = resolution(meta, &new);
+            if before != after || before.iter().chain(&after).any(Option::is_none) {
+                out.insert(slot);
+            }
+            for &(owner, _) in before.iter().chain(&after).flatten() {
+                users.entry(owner).or_default().insert(slot);
+            }
+        }
+        // A definition can itself refer to a changed definition. Propagate
+        // through its owning record before choosing face and container units.
+        let mut pending: Vec<_> = out.iter().copied().collect();
+        while let Some(owner) = pending.pop() {
+            for &slot in users.get(&owner).into_iter().flatten() {
+                if out.insert(slot) {
+                    pending.push(slot);
+                }
+            }
+        }
+        out
     }
 
     fn rebuild_units(&mut self) {
@@ -637,11 +836,61 @@ impl<'a> Binder<'a> {
         for face in self.live.kind("face") {
             self.units.insert(face, face_unit(&self.live, face));
         }
-        self.containers = self
+        self.wires = wire_slots(&self.live);
+        self.containers.clear();
+        self.container_reverse.clear();
+        let bodies: Vec<_> = self.live.kind("body").collect();
+        for body in bodies {
+            self.replace_container(body, container_unit(&self.live, body));
+        }
+    }
+
+    fn replace_container(&mut self, body: i64, unit: Slots) {
+        if let Some(old) = self.containers.remove(&body) {
+            for slot in old {
+                if let Some(bodies) = self.container_reverse.get_mut(&slot) {
+                    bodies.remove(&body);
+                    if bodies.is_empty() {
+                        self.container_reverse.remove(&slot);
+                    }
+                }
+            }
+        }
+        if self
             .live
-            .kind("body")
-            .map(|body| (body, container_unit(&self.live, body)))
-            .collect();
+            .table
+            .get(&body)
+            .is_some_and(|record| record.head() == "body")
+        {
+            for &slot in &unit {
+                self.container_reverse.entry(slot).or_default().insert(body);
+            }
+            self.containers.insert(body, unit);
+        }
+    }
+
+    fn container_targets(&self, changed: &Slots) -> Slots {
+        let mut bodies = Slots::new();
+        let mut pending: Vec<_> = changed.iter().copied().collect();
+        let mut visited = Slots::new();
+        while let Some(slot) = pending.pop() {
+            if !visited.insert(slot) {
+                continue;
+            }
+            bodies.extend(self.container_reverse.get(&slot).into_iter().flatten());
+            if let Some(record) = self.live.table.get(&slot) {
+                match record.head() {
+                    "body" => {
+                        bodies.insert(slot);
+                    }
+                    "lump" | "region" => pending.extend(record.ref_at(5)),
+                    "shell" => pending.extend(record.ref_at(7)),
+                    "subshell" => pending.extend(record.ref_at(3)),
+                    _ => {}
+                }
+            }
+        }
+        bodies
     }
 
     fn attribute_targets(&self, changed: &Slots) -> Slots {
@@ -665,15 +914,19 @@ impl<'a> Binder<'a> {
         out
     }
 
+    /// Reuse the prior topology vectors; keep its replaced rows for the diff.
     fn incremental(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        previous: &AsmHistoricalTopology,
+        previous: &mut AsmHistoricalTopology,
         changed: &Slots,
         versions: &BTreeMap<i64, i64>,
         bytes: &[u8],
         stats: &mut Statistics,
     ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
+        let revisions = changed;
+        let expanded = self.resolution_changes(changed, versions);
+        let changed = &expanded;
         let saved_containers = previous.bodies.iter().any(|slot| {
             self.live
                 .table
@@ -685,45 +938,27 @@ impl<'a> Binder<'a> {
             .kind("shell")
             .chain(self.live.kind("lump"))
             .chain(self.live.kind("region"))
-            .any(|slot| !self.containers.values().any(|unit| unit.contains(&slot)));
+            .any(|slot| !self.container_reverse.contains_key(&slot));
         let old_targets = self.attribute_targets(changed);
         let mut dirty = self.units.touching(&old_targets);
-        let mut definition_changed = false;
-        for slot in changed {
-            definition_changed |= self.live.subtype_definitions.contains(slot);
-            if let Some(flags) = versions
-                .get(slot)
-                .and_then(|revision| self.flags.get(revision))
-            {
-                definition_changed |= flags.definitions;
-            }
-        }
-        let old_face_edges: Slots = self
-            .units
-            .edge_users
-            .keys()
-            .filter(|&&slot| {
-                self.saved_limit
-                    .is_some_and(|limit| (1..limit).contains(&slot))
-                    && self
-                        .live
-                        .table
-                        .get(&slot)
-                        .is_some_and(|record| matches!(record.head(), "edge" | "tedge"))
+        let old_changed_edges: Slots = revisions
+            .iter()
+            .filter(|slot| {
+                self.live
+                    .table
+                    .get(slot)
+                    .is_some_and(|record| matches!(record.head(), "edge" | "tedge"))
             })
             .copied()
             .collect();
-        let old_eligible_edges: Slots = self
-            .live
-            .kind("edge")
-            .chain(self.live.kind("tedge"))
-            .filter(|slot| {
-                self.saved_limit
-                    .is_some_and(|limit| (1..limit).contains(slot))
-            })
+        let mut affected_bodies = self.container_targets(changed);
+        let old_container_covered: Slots = changed
+            .iter()
+            .filter(|slot| self.container_reverse.contains_key(slot))
+            .copied()
             .collect();
-        let old_wire_slots = wire_slots(&self.live);
-        if self.update(changed, versions).is_none() {
+        let mut wire_changed = !changed.is_disjoint(&self.wires);
+        if self.update(revisions, versions).is_none() {
             return Ok(None);
         }
         let targets = self.attribute_targets(changed);
@@ -750,39 +985,71 @@ impl<'a> Binder<'a> {
                 next_units.push((face, face_unit(&self.live, face)));
             }
         }
-        let old_container_slots: Slots = self.containers.values().flatten().copied().collect();
-        let next_containers: BTreeMap<_, _> = self
-            .live
-            .kind("body")
-            .map(|body| (body, container_unit(&self.live, body)))
-            .collect();
-        let new_container_slots: Slots = next_containers.values().flatten().copied().collect();
+        affected_bodies.extend(self.container_targets(changed));
         let mut container_keys = Slots::new();
-        let affected_bodies: Slots = self
-            .containers
-            .iter()
-            .chain(&next_containers)
-            .filter(|(_, unit)| !unit.is_disjoint(changed))
-            .map(|(&body, _)| body)
-            .collect();
         let mut container_input = Slots::new();
-        for body in &affected_bodies {
-            if let Some(unit) = self.containers.get(body) {
+        for body in affected_bodies {
+            if let Some(unit) = self.containers.get(&body) {
                 container_keys.extend(unit);
             }
-            if let Some(unit) = next_containers.get(body) {
-                container_keys.extend(unit);
-                container_input.extend(unit);
-            }
+            let unit = if self
+                .live
+                .table
+                .get(&body)
+                .is_some_and(|record| record.head() == "body")
+            {
+                container_unit(&self.live, body)
+            } else {
+                Slots::new()
+            };
+            container_keys.extend(&unit);
+            container_input.extend(&unit);
+            self.replace_container(body, unit);
         }
-        let wire_changed =
-            !changed.is_disjoint(&old_wire_slots) || !changed.is_disjoint(&wire_slots(&self.live));
+        if wire_changed
+            || revisions.iter().any(|slot| {
+                self.live
+                    .table
+                    .get(slot)
+                    .is_some_and(|record| record.head() == "wire")
+            })
+        {
+            self.wires = wire_slots(&self.live);
+            wire_changed |= !changed.is_disjoint(&self.wires);
+        }
         let old_covered = changed.iter().all(|slot| {
             self.units.reverse.contains_key(slot)
-                || old_container_slots.contains(slot)
-                || new_container_slots.contains(slot)
+                || old_container_covered.contains(slot)
+                || self.container_reverse.contains_key(slot)
                 || next_units.iter().any(|(_, unit)| unit.slots.contains(slot))
         });
+        // Only a rebuilt face unit can change an edge's face ownership.
+        let old_edge_ownership: BTreeMap<_, _> = dirty
+            .iter()
+            .filter_map(|face| self.units.edges_by_face.get(face))
+            .flatten()
+            .copied()
+            .chain(
+                next_units
+                    .iter()
+                    .flat_map(|(_, unit)| unit.reached_edges.iter().copied()),
+            )
+            .filter(|slot| {
+                self.saved_limit
+                    .is_some_and(|limit| (1..limit).contains(slot))
+            })
+            .filter(|slot| {
+                if revisions.contains(slot) {
+                    old_changed_edges.contains(slot)
+                } else {
+                    self.live
+                        .table
+                        .get(slot)
+                        .is_some_and(|record| matches!(record.head(), "edge" | "tedge"))
+                }
+            })
+            .map(|slot| (slot, self.units.edge_users.contains_key(&slot)))
+            .collect();
         let mut first = dirty.clone();
         first.extend(self.units.neighbours(&dirty));
         let old_first = self.units.slots(&first);
@@ -801,13 +1068,12 @@ impl<'a> Binder<'a> {
         old_second.extend(self.units.neighbours(&first));
         old_second.extend(first);
         let input = self.units.slots(&old_second);
-        self.containers = next_containers;
-        let saved_ownership_changed = old_eligible_edges.iter().any(|slot| {
+        let saved_ownership_changed = old_edge_ownership.iter().any(|(slot, was_reached)| {
             self.live
                 .table
                 .get(slot)
                 .is_some_and(|record| matches!(record.head(), "edge" | "tedge"))
-                && old_face_edges.contains(slot) != self.units.edge_users.contains_key(slot)
+                && *was_reached != self.units.edge_users.contains_key(slot)
         });
         let orphan_containers = orphan_containers
             || self
@@ -815,7 +1081,7 @@ impl<'a> Binder<'a> {
                 .kind("shell")
                 .chain(self.live.kind("lump"))
                 .chain(self.live.kind("region"))
-                .any(|slot| !self.containers.values().any(|unit| unit.contains(&slot)));
+                .any(|slot| !self.container_reverse.contains_key(&slot));
         let reason = if orphan_containers {
             Some("orphan-container")
         } else if saved_containers && !container_keys.is_empty() {
@@ -824,12 +1090,6 @@ impl<'a> Binder<'a> {
             Some("saved-edge-ownership")
         } else if wire_changed {
             Some("wire-change")
-        } else if definition_changed && !self.live.subtype_references.is_empty() {
-            Some("changed-subtype-definition")
-        } else if !input.is_disjoint(&self.live.subtype_references)
-            || !container_input.is_disjoint(&self.live.subtype_references)
-        {
-            Some("subset-subtype-reference")
         } else if !old_covered {
             Some("uncovered-change")
         } else if input.iter().any(|slot| {
@@ -874,19 +1134,60 @@ impl<'a> Binder<'a> {
             *stats.fallbacks.entry(reason).or_default() += 1;
             return self.full(ctx, bytes, stats);
         }
-        let Some(part) = decode_slots(ctx, &self.live, &input, bytes, stats)? else {
+        if self.subtype_table.is_none() {
+            let definitions = self
+                .definitions
+                .iter()
+                .map(|definition| (definition.tokens.clone(), definition.position))
+                .collect();
+            let version = cadmpeg_asm::asm_header::parse(ctx, bytes)?
+                .and_then(|h| h.metadata.save_format_version);
+            self.subtype_table = Some(
+                cadmpeg_asm::nurbs::toks::SubtypeTable::from_definitions(definitions)
+                    .with_save_format_version(version),
+            );
+        }
+        let Some(part) = decode_slots(
+            ctx,
+            &self.live,
+            &input,
+            bytes,
+            stats,
+            self.subtype_table.as_ref(),
+        )?
+        else {
             *stats.fallbacks.entry("subset-decode").or_default() += 1;
             return self.full(ctx, bytes, stats);
         };
-        let mut topology = previous.clone();
-        splice(&mut topology, &part, &keys, false);
-        if !container_keys.is_empty() {
-            let Some(part) = decode_slots(ctx, &self.live, &container_input, bytes, stats)? else {
+        let container_part = if container_keys.is_empty() {
+            None
+        } else {
+            let Some(part) = decode_slots(
+                ctx,
+                &self.live,
+                &container_input,
+                bytes,
+                stats,
+                self.subtype_table.as_ref(),
+            )?
+            else {
                 *stats.fallbacks.entry("container-decode").or_default() += 1;
                 return self.full(ctx, bytes, stats);
             };
+            Some(part)
+        };
+        let mut prior = AsmHistoricalTopology::default();
+        splice(&mut prior, previous, &keys, false);
+        splice(&mut prior, previous, &container_keys, true);
+        let mut topology = std::mem::replace(previous, prior);
+        splice(&mut topology, &part, &keys, false);
+        if let Some(part) = container_part {
             splice(&mut topology, &part, &container_keys, true);
         }
+        self.changed_rows = Some(ChangedRows {
+            entities: keys,
+            containers: container_keys,
+        });
         Ok(Some(topology))
     }
 
@@ -948,12 +1249,14 @@ impl<'a> Binder<'a> {
         bytes: &[u8],
         stats: &mut Statistics,
     ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
+        self.changed_rows = None;
         decode_slots(
             ctx,
             &self.live,
             &self.live.table.keys().copied().collect(),
             bytes,
             stats,
+            None,
         )
     }
 }

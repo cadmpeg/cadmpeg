@@ -129,11 +129,19 @@ fn compare_step(
         .update(&a.keys().copied().collect(), &versions_a)
         .unwrap();
     binder.rebuild_units();
-    let previous = binder.full(&ctx, &bytes, &mut stats).unwrap().unwrap();
+    let mut previous = binder.full(&ctx, &bytes, &mut stats).unwrap().unwrap();
+    let full_previous = previous.clone();
     assert!(!previous.faces.is_empty());
     assert!(!previous.coedges.is_empty());
     let actual = binder
-        .incremental(&ctx, &previous, changed, &versions_b, &bytes, &mut stats)
+        .incremental(
+            &ctx,
+            &mut previous,
+            changed,
+            &versions_b,
+            &bytes,
+            &mut stats,
+        )
         .unwrap();
     let expected = decode_slots(
         &ctx,
@@ -141,9 +149,36 @@ fn compare_step(
         &b.keys().copied().collect(),
         &bytes,
         &mut Statistics::default(),
+        None,
     )
     .unwrap();
     assert_eq!(actual, expected);
+    if let Some(expected) = expected.as_ref() {
+        let old_snapshot = || crate::history_records::AsmStateSnapshot {
+            state_id: 1,
+            topology: expected,
+            versions: &versions_b,
+        };
+        let new_snapshot = || crate::history_records::AsmStateSnapshot {
+            state_id: 2,
+            topology: &previous,
+            versions: &versions_a,
+        };
+        let full_new_snapshot = || crate::history_records::AsmStateSnapshot {
+            state_id: 2,
+            topology: &full_previous,
+            versions: &versions_a,
+        };
+        assert_eq!(
+            super::transition_for_changes(
+                old_snapshot(),
+                new_snapshot(),
+                changed,
+                binder.changed_rows.as_ref()
+            ),
+            super::AsmHistoricalTransition::between(Some(old_snapshot()), full_new_snapshot()),
+        );
+    }
     stats
 }
 
@@ -221,7 +256,7 @@ fn uncovered_record_falls_back() {
 }
 
 #[test]
-fn changed_subtype_definition_falls_back() {
+fn changed_definition_with_uncovered_reference_falls_back() {
     let mut a = fixture();
     a.insert(
         40,
@@ -250,11 +285,11 @@ fn changed_subtype_definition_falls_back() {
     ]
     .into();
     let stats = compare_step(&a, &b, &Slots::from([11]), None);
-    assert_eq!(stats.fallbacks.get("changed-subtype-definition"), Some(&1));
+    assert_eq!(stats.fallbacks.get("uncovered-change"), Some(&1));
 }
 
 #[test]
-fn subset_subtype_reference_falls_back() {
+fn subset_reference_uses_unchanged_external_definition() {
     let mut a = fixture();
     a.insert(
         40,
@@ -278,7 +313,7 @@ fn subset_subtype_reference_falls_back() {
     let mut b = a.clone();
     set_ref(&mut b, 13, 5, -1);
     let stats = compare_step(&a, &b, &Slots::from([13]), None);
-    assert_eq!(stats.fallbacks.get("subset-subtype-reference"), Some(&1));
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
 }
 
 #[test]
@@ -413,4 +448,89 @@ fn losing_face_admission_changes_saved_edge_ownership() {
     set_ref(&mut b, 20, 5, -1);
     let stats = compare_step(&a, &b, &Slots::from([20]), Some(30));
     assert_eq!(stats.fallbacks.get("saved-edge-ownership"), Some(&1));
+}
+
+fn append_subtype(records: &mut BTreeMap<i64, Record>, slot: i64, name: &str, index: i64) {
+    let record = records.get_mut(&slot).unwrap();
+    let mut tokens = record.tokens.to_vec();
+    tokens.extend([
+        Token::SubtypeOpen,
+        Token::Ident(name.into()),
+        Token::Long(index),
+        Token::SubtypeClose,
+    ]);
+    record.tokens = tokens.into();
+}
+
+fn assert_reference_dirty(a: &BTreeMap<i64, Record>, b: &BTreeMap<i64, Record>, changed: &Slots) {
+    let mut archive: HistoricalRecordArchive = a.iter().map(|(&s, r)| (s, r.clone())).collect();
+    let versions_a = a.keys().map(|&s| (s, s)).collect();
+    let versions_b = b
+        .iter()
+        .map(|(&s, r)| {
+            archive.insert(s + 1000, r.clone());
+            (s, s + 1000)
+        })
+        .collect();
+    let mut binder = Binder::new(&archive, None);
+    binder
+        .update(&a.keys().copied().collect(), &versions_a)
+        .unwrap();
+    assert!(binder
+        .resolution_changes(changed, &versions_b)
+        .contains(&21));
+}
+
+#[test]
+fn inserted_definition_dirties_unchanged_reference_outside_changed_face() {
+    let mut a = fixture();
+    set_ref(&mut a, 13, 5, -1);
+    set_ref(&mut a, 23, 5, -1);
+    append_subtype(&mut a, 17, "example", 0);
+    append_subtype(&mut a, 21, "ref", 0);
+    let mut b = a.clone();
+    append_subtype(&mut b, 11, "inserted", 0);
+    let changed = Slots::from([11]);
+    assert_reference_dirty(&a, &b, &changed);
+    let stats = compare_step(&a, &b, &changed, None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+}
+
+#[test]
+fn definition_content_change_dirties_unchanged_reference() {
+    let mut a = fixture();
+    append_subtype(&mut a, 11, "example", 0);
+    append_subtype(&mut a, 21, "ref", 0);
+    let mut b = a.clone();
+    let tokens = std::sync::Arc::make_mut(&mut b.get_mut(&11).unwrap().tokens);
+    tokens[6] = Token::Long(1);
+    let changed = Slots::from([11]);
+    assert_reference_dirty(&a, &b, &changed);
+    let stats = compare_step(&a, &b, &changed, None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+}
+
+#[test]
+fn definition_reference_dependencies_propagate_between_records() {
+    let mut a = fixture();
+    append_subtype(&mut a, 11, "first", 0);
+    append_subtype(&mut a, 17, "second", 0);
+    append_subtype(&mut a, 17, "ref", 0);
+    append_subtype(&mut a, 21, "ref", 1);
+    let mut b = a.clone();
+    std::sync::Arc::make_mut(&mut b.get_mut(&11).unwrap().tokens)[6] = Token::Long(1);
+    let changed = Slots::from([11]);
+    assert_reference_dirty(&a, &b, &changed);
+    let stats = compare_step(&a, &b, &changed, None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+}
+
+#[test]
+fn container_owner_insertion_updates_closure_without_a_forward_link() {
+    let a = fixture();
+    let mut b = a.clone();
+    b.insert(40, refs(40, "lump", &[(4, 3), (5, 1)]));
+    set_ref(&mut b, 3, 7, 40);
+    let stats = compare_step(&a, &b, &Slots::from([3, 40]), None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
 }
