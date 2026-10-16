@@ -147,6 +147,72 @@ fn decode_skips_a_nurbs_surface_over_its_pole_limit() {
 }
 
 #[test]
+fn decode_skips_a_revolution_surface_over_its_pole_limit() {
+    // A full-circle angular basis has 9 controls; 111_112 generatrix poles
+    // yield 1_000_008 surface poles, one above MAX_SURFACE_POLES.
+    let k = 111_111_usize;
+    let control_count = k + 1;
+    let mut parameters = format!("126,{k},1,1,0,1,0");
+    parameters.push_str(",0,0");
+    for index in 1..k {
+        parameters.push(',');
+        parameters.push_str(&index.to_string());
+    }
+    parameters.push(',');
+    parameters.push_str(&k.to_string());
+    parameters.push(',');
+    parameters.push_str(&k.to_string());
+    for _ in 0..control_count {
+        parameters.push_str(",1");
+    }
+    for index in 0..control_count {
+        parameters.push(',');
+        parameters.push_str(&index.to_string());
+        parameters.push_str(",0,0");
+    }
+    parameters.push_str(",0,");
+    parameters.push_str(&k.to_string());
+    parameters.push(';');
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "AXIS".into(),
+                    status: "00010000",
+                    parameters: "110,0,0,0,0,0,1;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 126,
+                    form: 0,
+                    label: "PROFILE".into(),
+                    status: "00010000",
+                    parameters,
+                },
+                OwnedTestEntity {
+                    entity_type: 120,
+                    form: 0,
+                    label: "REVOLVE".into(),
+                    status: "00000000",
+                    parameters: "120,1,3,0,6.283185307179586;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
+            && loss
+                .message
+                .contains("revolution pole count exceeds 1000000")
+    }));
+}
+
+#[test]
 fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
     let basis = angular_basis(0.0, std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13)
         .expect("a near-full finite sweep has an exact rational basis");
