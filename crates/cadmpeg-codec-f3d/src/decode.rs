@@ -1829,22 +1829,27 @@ fn report_design_projection_gaps(
         &native.design_edge_operands,
         &native.design_face_operands,
     )?;
-    let capped_pattern_searches = native
-        .design_parameter_scopes
-        .iter()
-        .filter_map(
-            crate::records::feature::scope::DesignParameterScope::rectangular_pattern_construction,
-        )
-        .filter(|construction| construction.instance_search_capped())
-        .count();
-    if capped_pattern_searches != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::FeaturePatternInstanceSearchCapped, format_args!(
-            "{capped_pattern_searches} rectangular pattern(s) have no instance transforms or direction because their instance search exceeded a local cap."
-        ),);
+    for cap in crate::records::feature::patterns::RectangularPatternSearchCap::ALL {
+        let capped_pattern_searches = native
+            .design_parameter_scopes
+            .iter()
+            .filter_map(
+                crate::records::feature::scope::DesignParameterScope::rectangular_pattern_construction,
+            )
+            .filter(|construction| construction.instance_search_cap() == Some(cap))
+            .count();
+        if capped_pattern_searches != 0 {
+            push_loss_vec(&mut report.losses, F3dLossCode::FeaturePatternInstanceSearchCapped, format_args!(
+                "{capped_pattern_searches} rectangular pattern(s) have no instance transforms or direction because their instance search exceeded the local cap {} ({}).",
+                cap.name(),
+                cap.limit(),
+            ),);
+        }
     }
     if recipe_search_skips != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::RecipeSideSearchBudgetExceeded, format_args!(
-            "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded its work cap."
+            "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded the local work cap RECIPE_SIDE_SEARCH_WORK ({}).",
+            crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
         ),);
     }
     for error in native
