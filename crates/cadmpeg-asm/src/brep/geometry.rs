@@ -20,11 +20,12 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
-use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use std::collections::{HashMap, HashSet};
 
 use super::AsmBrep;
+use crate::ids::IdFormat;
 const EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9: f64 = 1.0e-9;
 const EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10: f64 = 1.0e-10;
@@ -1044,7 +1045,79 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
     Ok(())
 }
 
-pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
+/// Solid or sheet kind of a faced body without wire topology, from the edge
+/// and sense of each coedge use.
+///
+/// The faces bound a volume when every edge that does not collapse to a point
+/// has as many forward as reversed uses. A non-manifold edge closes the faces
+/// in the same way as a two-use edge. A collapsed edge bounds no area, so its
+/// uses do not open the faces. A body with no counted edge is a sheet.
+pub fn faced_body_kind<'a>(
+    uses: impl IntoIterator<Item = (&'a EdgeId, Sense)>,
+    collapsed: impl Fn(&EdgeId) -> bool,
+) -> BodyKind {
+    let mut balance = HashMap::<&EdgeId, (usize, usize)>::new();
+    for (edge, sense) in uses {
+        if collapsed(edge) {
+            continue;
+        }
+        let (forward, reversed) = balance.entry(edge).or_default();
+        match sense {
+            Sense::Forward => *forward += 1,
+            Sense::Reversed => *reversed += 1,
+        }
+    }
+    if !balance.is_empty()
+        && balance
+            .values()
+            .all(|(forward, reversed)| forward == reversed)
+    {
+        BodyKind::Solid
+    } else {
+        BodyKind::Sheet
+    }
+}
+
+/// Kept edges that collapse to one point: both vertex references name the
+/// same vertex and the curve reference is null or names a `degenerate_curve`.
+///
+/// An undecoded curve also leaves the neutral edge without a carrier, so the
+/// test reads the native curve reference.
+pub(super) fn collapsed_edges(
+    records: &[Record],
+    by_index: &HashMap<i64, &Record>,
+    kept_edges: &HashSet<i64>,
+    format: IdFormat,
+) -> Result<HashSet<EdgeId>, cadmpeg_core::CodecError> {
+    let mut collapsed = HashSet::new();
+    for record in records {
+        if !is_edge_record(record) {
+            continue;
+        }
+        let index = i64::try_from(record.index).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
+        })?;
+        if !kept_edges.contains(&index) {
+            continue;
+        }
+        let (Some(start), Some(end)) = (record.ref_at(3), record.ref_at(5)) else {
+            continue;
+        };
+        let point_carrier = match record.chunk(8) {
+            Some(Token::Ref(curve)) if *curve < 0 => true,
+            Some(Token::Ref(curve)) => by_index
+                .get(curve)
+                .is_some_and(|curve| curve.head() == "degenerate_curve"),
+            _ => false,
+        };
+        if start == end && point_carrier {
+            collapsed.insert(EdgeId::from(super::id(format, index)));
+        }
+    }
+    Ok(collapsed)
+}
+
+pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>) {
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
         for shell in &region.shells {
@@ -1086,31 +1159,28 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
             coedge_bodies.insert(coedge, body);
         }
     }
-    let mut edge_use_counts = HashMap::<_, HashMap<&EdgeId, usize>>::new();
+    let mut body_uses = HashMap::<_, Vec<(&EdgeId, Sense)>>::new();
     for coedge in &out.coedges {
         if let Some(body) = coedge_bodies.get(&coedge.id).copied() {
-            let counts = edge_use_counts.entry(body).or_default();
-
-            *counts.entry(&coedge.edge).or_default() += 1;
+            body_uses
+                .entry(body)
+                .or_default()
+                .push((&coedge.edge, coedge.sense));
         }
     }
     for body in &mut out.bodies {
         if !body_has_faces.contains(&body.id) {
-            body.kind = cadmpeg_ir::topology::BodyKind::Wire;
+            body.kind = BodyKind::Wire;
             continue;
         }
         if body_has_wires.contains(&body.id) {
-            body.kind = cadmpeg_ir::topology::BodyKind::General;
+            body.kind = BodyKind::General;
             continue;
         }
-        let counts = edge_use_counts.get(&body.id);
-        body.kind = if counts
-            .is_some_and(|counts| !counts.is_empty() && counts.values().all(|count| *count == 2))
-        {
-            cadmpeg_ir::topology::BodyKind::Solid
-        } else {
-            cadmpeg_ir::topology::BodyKind::Sheet
-        };
+        body.kind = faced_body_kind(
+            body_uses.get(&body.id).into_iter().flatten().copied(),
+            |edge| collapsed.contains(edge),
+        );
     }
 }
 

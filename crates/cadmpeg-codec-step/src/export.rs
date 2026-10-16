@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface,
 };
-use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId, ShellId};
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
     PmiQuantity, PmiTarget,
@@ -32,6 +32,7 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+mod non_manifold;
 mod ownership;
 mod wire;
 
@@ -228,6 +229,9 @@ struct WrittenSurface {
     reversed_chart: bool,
 }
 
+/// Pcurve, surface and face of one coedge's parameter-space use of its edge.
+type PcurveUse<'a> = (&'a str, &'a str, &'a str);
+
 pub(crate) struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
@@ -247,11 +251,20 @@ pub(crate) struct Builder<'a> {
     pcurves: HashMap<&'a str, &'a Pcurve>,
     procedural_surfaces: HashMap<&'a str, &'a ProceduralSurface>,
     procedural_curves: HashMap<&'a str, &'a ProceduralCurve>,
-    edge_coedges: HashMap<&'a str, Vec<(&'a str, &'a str, &'a str)>>,
+    edge_coedges: HashMap<&'a str, Vec<PcurveUse<'a>>>,
+    coedge_faces: HashMap<&'a str, (&'a str, &'a str)>,
 
     surface_refs: HashMap<String, WrittenSurface>,
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Ref>,
+    /// Written edge occurrence of each coedge whose edge a closed shell uses
+    /// more than twice. A STEP closed shell admits two uses per edge, so each
+    /// forward and reversed use pair gets its own `EDGE_CURVE`.
+    coedge_edge_occurrences: HashMap<&'a str, usize>,
+    /// Pcurve uses of each split edge occurrence.
+    edge_occurrence_pcurves: HashMap<(&'a str, usize), Vec<PcurveUse<'a>>>,
+    edge_occurrence_refs: HashMap<(&'a str, usize), Ref>,
+    split_edges: BTreeSet<&'a str>,
     vertex_refs: HashMap<String, Ref>,
     point_refs: HashMap<String, Ref>,
     pcurve_context: Option<Ref>,
@@ -423,9 +436,14 @@ impl<'a> Builder<'a> {
                 })
                 .collect(),
             edge_coedges,
+            coedge_faces,
             surface_refs: HashMap::new(),
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
+            coedge_edge_occurrences: HashMap::new(),
+            edge_occurrence_pcurves: HashMap::new(),
+            edge_occurrence_refs: HashMap::new(),
+            split_edges: BTreeSet::new(),
             vertex_refs: HashMap::new(),
             point_refs: HashMap::new(),
             pcurve_context: None,
@@ -1639,6 +1657,9 @@ impl<'a> Builder<'a> {
                 self.empty_regions.insert(region.id.as_str().to_owned());
                 continue;
             };
+            if closed {
+                self.split_non_manifold_edges(&region.shells);
+            }
             let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
@@ -2330,6 +2351,58 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Assign each coedge of an edge that these closed shells use more than
+    /// twice to a forward and reversed use pair written as its own edge.
+    fn split_non_manifold_edges(&mut self, shells: &'a [ShellId]) {
+        let mut uses = BTreeMap::<&'a str, Vec<&'a Coedge>>::new();
+        for shell in shells {
+            let Some(shell) = self.shells.get(shell.as_str()).copied() else {
+                continue;
+            };
+            for face in shell.faces() {
+                let Some(face) = self.faces.get(face.as_str()).copied() else {
+                    continue;
+                };
+                for loop_id in &face.loops {
+                    let Some(lp) = self.loops.get(loop_id.as_str()).copied() else {
+                        continue;
+                    };
+                    for coedge in lp.coedges() {
+                        if let Some(coedge) = self.coedges.get(coedge.as_str()).copied() {
+                            uses.entry(coedge.edge.as_str()).or_default().push(coedge);
+                        }
+                    }
+                }
+            }
+        }
+        for (edge, coedges) in uses {
+            if coedges.len() <= 2 {
+                continue;
+            }
+            let Some(pairs) = non_manifold::use_pairs(&coedges) else {
+                continue;
+            };
+            for (occurrence, pair) in pairs.into_iter().enumerate() {
+                let mut pcurves = Vec::new();
+                for coedge in pair {
+                    self.coedge_edge_occurrences
+                        .insert(coedge.id.as_str(), occurrence);
+                    if let Some((surface, face)) = self.coedge_faces.get(coedge.id.as_str()) {
+                        pcurves.extend(
+                            coedge
+                                .pcurves
+                                .iter()
+                                .map(|pcurve| (pcurve.pcurve.as_str(), *surface, *face)),
+                        );
+                    }
+                }
+                self.edge_occurrence_pcurves
+                    .insert((edge, occurrence), pcurves);
+            }
+            self.split_edges.insert(edge);
+        }
+    }
+
     fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<Ref> {
         let shell = self.shells.get(shell_id).copied()?;
         let face_ids: Vec<String> = shell
@@ -2459,7 +2532,7 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
-            let Some(edge_ref) = self.emit_edge(coedge.edge.as_str()) else {
+            let Some(edge_ref) = self.emit_coedge_edge(coedge) else {
                 self.topology_relation_loss(
                     format!("loop:{loop_id}:edge:{}", coedge.edge),
                     StepLossCode::LoopEdgeNotWritable,
@@ -2653,10 +2726,39 @@ impl<'a> Builder<'a> {
         )
     }
 
+    /// The written edge a coedge uses: its own use pair's edge when its edge
+    /// was split, else the edge shared by all its uses.
+    fn emit_coedge_edge(&mut self, coedge: &'a Coedge) -> Option<Ref> {
+        let edge_id = coedge.edge.as_str();
+        let Some(occurrence) = self.coedge_edge_occurrences.get(coedge.id.as_str()) else {
+            return self.emit_edge(edge_id);
+        };
+        let key = (edge_id, *occurrence);
+        if let Some(r) = self.edge_occurrence_refs.get(&key) {
+            return Some(*r);
+        }
+        let associated = self
+            .edge_occurrence_pcurves
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
+        let r = self.emit_edge_curve(edge_id, associated)?;
+        self.edge_occurrence_refs.insert(key, r);
+        self.edge_refs.entry(edge_id.to_owned()).or_insert(r);
+        Some(r)
+    }
+
     fn emit_edge(&mut self, edge_id: &str) -> Option<Ref> {
         if let Some(r) = self.edge_refs.get(edge_id) {
             return Some(*r);
         }
+        let associated = self.edge_coedges.get(edge_id).cloned().unwrap_or_default();
+        let r = self.emit_edge_curve(edge_id, associated)?;
+        self.edge_refs.insert(edge_id.to_string(), r);
+        Some(r)
+    }
+
+    fn emit_edge_curve(&mut self, edge_id: &str, associated: Vec<PcurveUse<'a>>) -> Option<Ref> {
         let Some(edge) = self.edges.get(edge_id).copied() else {
             self.topology_relation_loss(
                 format!("edge:{edge_id}:record"),
@@ -2717,7 +2819,6 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let associated = self.edge_coedges.get(edge_id).cloned().unwrap_or_default();
         let mut pcurve_refs = Vec::new();
         for (pcurve_id, surface_id, face_id) in associated {
             if let Some(pcurve) = self.emit_pcurve(pcurve_id, surface_id) {
@@ -2743,11 +2844,10 @@ impl<'a> Builder<'a> {
         };
         // same_sense = .T.: the edge runs start→end along the curve's own
         // parameterization, the convention IR curves follow.
-        let r = self
-            .emitter
-            .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T."));
-        self.edge_refs.insert(edge_id.to_string(), r);
-        Some(r)
+        Some(
+            self.emitter
+                .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T.")),
+        )
     }
 
     fn emit_pcurve(&mut self, pcurve_id: &str, surface_id: &str) -> Option<Ref> {
@@ -4110,6 +4210,17 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        if !self.split_edges.is_empty() {
+            self.loss(
+                StepLossCode::NonManifoldEdgeSplit,
+                format!(
+                    "{} non-manifold edge(s) of closed shells were each written as one coincident \
+                     EDGE_CURVE per forward and reversed use pair (a STEP closed shell admits two \
+                     uses per edge)",
+                    self.split_edges.len()
+                ),
+            );
+        }
         if !self.unknown_surface_faces.is_empty() {
             self.loss(
                 StepLossCode::UnknownSurfaceFaceOmitted,
@@ -4925,3 +5036,5 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
 mod accounting_tests;
 #[cfg(test)]
 mod construction_tests;
+#[cfg(test)]
+mod non_manifold_tests;
