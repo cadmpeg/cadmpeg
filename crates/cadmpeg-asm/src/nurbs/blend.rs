@@ -1590,7 +1590,7 @@ mod variable_blend_value_tests {
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
             .expect("generated two-ends value")
-            .expect("resource allocation did not fail");
+            .expect("decode the variable blend value");
         assert_eq!(cur.pos(), toks.len());
         assert!(decoded.modern_flag);
         assert_eq!(decoded.payload.discriminator(), 7);
@@ -1618,7 +1618,7 @@ mod variable_blend_value_tests {
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
             .expect("generated recursive const value")
-            .expect("resource allocation did not fail");
+            .expect("decode the variable blend value");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
             panic!("expected constant payload")
@@ -1652,7 +1652,7 @@ mod variable_blend_value_tests {
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
             .expect("generated fixed-width value")
-            .expect("resource allocation did not fail");
+            .expect("decode the variable blend value");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::FixedWidth {
             parameters, width, ..
@@ -1717,7 +1717,7 @@ mod variable_blend_value_tests {
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
             .expect("generated enum-tagged interp value")
-            .expect("resource allocation did not fail");
+            .expect("decode the variable blend value");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated {
             enum_count,
@@ -1796,7 +1796,7 @@ mod variable_blend_value_tests {
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
             .expect("generated interp value with unset derivatives")
-            .expect("resource allocation did not fail");
+            .expect("decode the variable blend value");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
             panic!("expected interpolated payload")

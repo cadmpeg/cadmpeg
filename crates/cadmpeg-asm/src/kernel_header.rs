@@ -269,14 +269,14 @@ mod tests {
                 crate::acis_header::parse
             };
             let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-                .expect("service policy admits header")
+                .expect("parse the binary header")
                 .expect("recognized partial header");
             assert_eq!(header.metadata.linear, Some(0.125));
             assert_eq!(header.metadata.angular, None);
             bytes.push(6);
             bytes.extend_from_slice(&0.25_f64.to_le_bytes());
             let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-                .expect("service policy admits header")
+                .expect("parse the binary header")
                 .expect("recognized complete header");
             assert_eq!(header.metadata.linear, Some(0.125));
             assert_eq!(header.metadata.angular, Some(0.25));

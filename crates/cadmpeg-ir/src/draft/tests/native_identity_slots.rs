@@ -97,10 +97,10 @@ fn committed_native_cache_checks_identity_after_path_hash_matches() {
         vec![NativeRecord::new(Identity::new(stored).unwrap(), serde_json::Map::new()).unwrap()],
     );
     let index = std::collections::HashMap::from([(
-        crate::index::identity_hash(missing),
+        crate::draft::identity_hash(missing),
         vec![crate::draft::CommittedIdentity::Native {
-            namespace_hash: crate::index::identity_hash("native"),
-            arena_hash: crate::index::identity_hash("records"),
+            namespace_hash: crate::draft::identity_hash("native"),
+            arena_hash: crate::draft::identity_hash("records"),
             record: 0,
         }],
     )]);

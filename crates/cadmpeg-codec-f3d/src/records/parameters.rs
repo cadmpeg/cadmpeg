@@ -361,8 +361,13 @@ impl DesignParameter {
         }
     }
 
+    /// The source kind as text.
+    pub(crate) fn source_kind_str(&self) -> &str {
+        self.source_kind().as_str()
+    }
+
     pub(crate) fn kind(&self) -> DesignParameterKind {
-        design_parameter_kind_from_source(self.source_kind().as_str())
+        design_parameter_kind_from_source(self.source_kind_str())
     }
 
     pub(crate) fn owner_record_index(&self) -> Option<u32> {
@@ -414,7 +419,7 @@ impl Serialize for DesignParameter {
             owner_record_index: self.owner_record_index(),
             expression: self.expression.as_str(),
             expression_offset: self.expression_offset,
-            source_kind: self.source_kind().as_str(),
+            source_kind: self.source_kind_str(),
             source_kind_offset: self.source_kind_offset,
             kind: self.kind(),
             unit: self.unit.as_ref().map(|field| field.value.as_str()),

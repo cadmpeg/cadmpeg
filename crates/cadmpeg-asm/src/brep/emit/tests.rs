@@ -478,7 +478,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             &table,
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .unwrap();
         assert_eq!(
             nurbs_curve_parameter_domain(&parsed.curve),
@@ -1138,6 +1138,6 @@ fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
         &reach,
         crate::asm_format!("f3d"),
     )
-    .expect("service profile admits unknown source");
+    .expect("emit the passthrough unknown record");
     assert_eq!(out.unknowns.len(), 1);
 }

@@ -12,6 +12,13 @@ use super::EvaluationFailure;
 
 const INDEPENDENT_EVALUATION_DEPTH: usize = 256;
 
+/// Local work cap for one model evaluation under a decode session.
+///
+/// Model carriers may share a support below two readers, and the cycle check
+/// covers only the active path, so a carrier chain stated by a few records
+/// can request work exponential in the session's nesting depth.
+const MAX_MODEL_EVALUATION_WORK: usize = 1 << 24;
+
 /// Why an evaluation work charge was not admitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvaluationRefusal {
@@ -84,6 +91,8 @@ impl<'ctx, 'arena> From<&'ctx DecodeContext<'arena>> for EvaluationAdmission<'ct
 
 impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     /// Model carriers share the caller's depth, cycle path and work slice.
+    /// A decode admission without a slice evaluates under a fresh slice of
+    /// [`MAX_MODEL_EVALUATION_WORK`].
     pub(super) fn within_model<T, R>(
         self,
         run: impl for<'frame> FnOnce(
@@ -101,7 +110,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             scratch.settle(result)
         };
         if let Self::Decode(_) = self {
-            let work = WorkBudget::new(usize::MAX);
+            let work = WorkBudget::new(MAX_MODEL_EVALUATION_WORK);
             self.within_work_slice(&work, evaluate)
         } else {
             evaluate(self)
@@ -291,14 +300,6 @@ impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
     fn work(&self, count: usize, _operation: &'static str) -> Result<(), EvaluationRefusal> {
         EvaluationAdmission::work(*self, count)
     }
-    fn equal(
-        &self,
-        first: &str,
-        second: &str,
-        operation: &'static str,
-    ) -> Result<bool, EvaluationRefusal> {
-        crate::ids::comparison::equal(self, first, second, operation)
-    }
 }
 
 pub(super) enum EvaluationDepthGuard<'scratch> {
@@ -333,7 +334,7 @@ mod tests {
             let parent = WorkBudget::new(allowance);
             let result: Result<bool, EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
                 .within_work_slice(&parent, |admission| {
-                    crate::index::IndexQuery::equal(
+                    crate::ids::comparison::equal(
                         &admission,
                         "alpha",
                         "alpha",
@@ -484,6 +485,131 @@ mod tests {
             Err(EvaluationFailure::NoValue)
         );
         assert!(ctx.finish_session().is_ok());
+    }
+
+    /// A line, then `levels` tolerant intersections. Each intersection reads
+    /// two axis revolutions of the curve below, so a point of the top curve
+    /// reads the bottom line `2^levels` times.
+    fn doubling_model(levels: usize) -> (crate::CadIr, crate::ids::CurveId) {
+        use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
+        use crate::geometry::surface_payloads::AxisRevolutionSurfaceConstruction;
+        use crate::geometry::{
+            Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+            ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+            SurfaceGeometry, TolerantIntersectionConstruction,
+            TolerantIntersectionParameterization,
+        };
+        use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+        use crate::math::{Point2, Point3, Vector3};
+
+        let line = |id: &CurveId| Curve {
+            parameter_range: None,
+            id: id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        };
+        let pcurve = PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        );
+        let mut ir = crate::CadIr::empty();
+        let mut below = CurveId::mint("test:model:curve#0").unwrap();
+        ir.model.curves.push(line(&below));
+        for level in 1..=levels {
+            let supports = [0, 1]
+                .map(|side| SurfaceId::mint(format!("test:model:surface#{level}-{side}")).unwrap());
+            for (side, support) in supports.iter().enumerate() {
+                ir.model.surfaces.push(Surface {
+                    id: support.clone(),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                        crate::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    )),
+                    source_object: None,
+                });
+                ir.model
+                    .add_procedural_surface(
+                        support,
+                        ProceduralSurface::new(
+                            ProceduralSurfaceId::mint(format!(
+                                "test:model:procedural#surface-{level}-{side}"
+                            ))
+                            .unwrap(),
+                            ProceduralSurfaceDefinition::AxisRevolution(
+                                AxisRevolutionSurfaceConstruction::try_new(
+                                    below.clone(),
+                                    Point3::new(0.0, 0.0, 0.0),
+                                    Vector3::new(0.0, 0.0, 1.0),
+                                )
+                                .unwrap(),
+                            ),
+                            None,
+                        ),
+                    )
+                    .unwrap();
+            }
+            let curve = CurveId::mint(format!("test:model:curve#{level}")).unwrap();
+            ir.model.curves.push(line(&curve));
+            ir.model
+                .add_procedural_curve(
+                    &curve,
+                    ProceduralCurve::new(
+                        ProceduralCurveId::mint(format!("test:model:procedural#curve-{level}"))
+                            .unwrap(),
+                        ProceduralCurveDefinition::TolerantIntersection {
+                            construction: TolerantIntersectionConstruction::try_new(
+                                supports,
+                                [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                                1.0e-9,
+                            )
+                            .unwrap(),
+                            parameterization: Some(
+                                TolerantIntersectionParameterization::try_new(
+                                    [pcurve.clone(), pcurve.clone()],
+                                    [-1.0, 1.0],
+                                )
+                                .unwrap(),
+                            ),
+                            cache: None,
+                        },
+                    ),
+                )
+                .unwrap();
+            below = curve;
+        }
+        (ir, below)
+    }
+
+    #[test]
+    fn decode_model_evaluation_has_a_local_work_cap() {
+        let evaluate = |levels| {
+            let (ir, curve) = doubling_model(levels);
+            let index = crate::index::ModelIndex::build(&ir);
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = crate::eval::model_curve_point_by_id(
+                EvaluationAdmission::Decode(&ctx),
+                &index,
+                &curve,
+                0.5,
+            );
+            // Exhausting the cap skips the evaluation; the session continues.
+            assert_eq!(ctx.resource_refusal(), None);
+            assert!(ctx.finish_session().is_ok());
+            result
+        };
+        assert!(evaluate(2).is_ok());
+        assert_eq!(evaluate(18), Err(EvaluationFailure::WorkExhausted));
     }
 
     #[test]

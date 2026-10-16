@@ -338,8 +338,15 @@ pub(crate) fn write_semantic_with_records(
 /// records reach the output through the native history lanes, synchronized
 /// from the neutral arenas declared `Written`; the other document arenas are
 /// not read.
+/// `appearances`, `appearance_bindings` and `attributes` are `Reported` because
+/// `WriterUnboundAppearancesOmitted`, `WriterAppearanceBindingsOmitted` and
+/// `WriterAttributesOmitted` account for their withheld records, respectively.
+/// `curves` is `Reported` unless `retained_brep` is true because
+/// `WriterSphereSeamCurvesOmitted` accounts for withheld degenerate sphere-seam curves.
+/// `tessellations` stays `Written`: every mesh is written, and
+/// `WriterTessellationMetadataOmitted` charges only fields of written meshes.
 fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
-    use ArenaDisposition::{Dropped, Omitted, Written};
+    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
     let brep_carried = if retained_brep { Written } else { Omitted };
     ArenaDispositions {
         bodies: Written,
@@ -352,7 +359,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         vertices: Written,
         points: Written,
         surfaces: Written,
-        curves: Written,
+        curves: if retained_brep { Written } else { Reported },
         subds: Dropped,
         pcurves: brep_carried,
         procedural_surfaces: brep_carried,
@@ -378,9 +385,9 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Written,
-        appearances: Written,
-        appearance_bindings: Written,
-        attributes: Written,
+        appearances: Reported,
+        appearance_bindings: Reported,
+        attributes: Reported,
         pmi: if patched { Written } else { Omitted },
         presentation_layers: Omitted,
     }

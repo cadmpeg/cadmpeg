@@ -2276,7 +2276,7 @@ mod tests {
             .expect("empty test input fits input limit");
         header
             .as_kernel_header(&ctx)
-            .expect("service profile admits header copy")
+            .expect("copy the text header into a kernel header")
     }
 
     #[test]
@@ -2294,7 +2294,7 @@ mod tests {
         assert_eq!(limit.dimension, ResourceDimension::Entities);
         assert_eq!(
             parse(&source)
-                .expect("service profile admits point")
+                .expect("parse the point stream")
                 .records
                 .len(),
             1

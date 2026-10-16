@@ -791,7 +791,7 @@ mod tests {
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
         super::admit_subtype_references(&ctx, &records, &table)
-            .expect("service profile admits finite chain");
+            .expect("admit the finite subtype reference chain");
     }
 
     #[test]

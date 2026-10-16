@@ -67,7 +67,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .unwrap_or_else(|| panic!("offset surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
             let (definition, _) = decoded.into_parts();
@@ -146,7 +146,7 @@ fn offset_surface_rejects_nested_cache_substitution() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .is_none()
         );
     }
@@ -218,7 +218,7 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural surface")
         .unwrap_or_else(|| panic!("revision deformable surface at width {int_width}"));
         assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
         let (definition, _) = decoded.into_parts();
@@ -329,7 +329,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .unwrap_or_else(|| panic!("taper surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
             let (definition, _) = decoded.into_parts();
@@ -401,7 +401,7 @@ fn taper_surface_rejects_nested_cache_substitution() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .is_none()
         );
     }
@@ -440,7 +440,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural surface")
         .unwrap_or_else(|| panic!("compound surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
         let (definition, _) = decoded.into_parts();
@@ -511,7 +511,7 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
                     &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
                 )
                 .transpose()
-                .expect("resource allocation did not fail")
+                .expect("decode the procedural surface")
                 .is_none()
             );
         }
@@ -557,7 +557,7 @@ fn loft_surface_walks_bridge_to_direct_cache() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .unwrap_or_else(|| panic!("loft surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
             let (definition, _) = decoded.into_parts();
@@ -632,7 +632,7 @@ fn loft_surface_rejects_nested_cache_substitution() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .is_none()
         );
     }
@@ -667,7 +667,7 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
             let (definition, _) = decoded.into_parts();
@@ -732,7 +732,7 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
                     &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
                 )
                 .transpose()
-                .expect("resource allocation did not fail")
+                .expect("decode the procedural surface")
                 .is_none()
             );
         }
@@ -764,7 +764,7 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural surface")
         .unwrap_or_else(|| panic!("ruled surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
         let (definition, _) = decoded.into_parts();
@@ -809,7 +809,7 @@ fn ruled_surface_rejects_nested_profile_substitution() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .is_none()
         );
     }
@@ -841,7 +841,7 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural surface")
         .unwrap_or_else(|| panic!("sum surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
         let (definition, _) = decoded.into_parts();
@@ -902,7 +902,7 @@ fn sum_surface_rejects_nested_curve_substitution() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .is_none()
         );
     }
@@ -934,7 +934,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural surface")
         .unwrap_or_else(|| panic!("revolution surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
         let (definition, _) = decoded.into_parts();
@@ -1000,7 +1000,7 @@ fn revolution_surface_rejects_nested_profile_substitution() {
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .is_none()
         );
     }
@@ -1039,7 +1039,7 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural surface")
         .unwrap_or_else(|| panic!("revision revolution surface at width {int_width}"));
         let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Revolution {
@@ -1086,7 +1086,7 @@ fn surface_cache_resolves_width4_subtype_ref() {
             .expect("valid single-record byte fixture"),
     )
     .transpose()
-    .expect("resource allocation")
+    .expect("resolve the surface cache reference")
     .expect("resolved width-4 ref");
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
 }
@@ -1116,7 +1116,7 @@ fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
                 .expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation")
+        .expect("resolve the surface cache reference")
         .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
         assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
     }
@@ -1354,7 +1354,7 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
             &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, flag) =
             decoded.construction
@@ -1447,7 +1447,7 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
                 &table,
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural curve")
             .unwrap_or_else(|| panic!("cacheless support intersection at {int_width}: {form}"));
             let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, _) =
                 &decoded.construction
@@ -1469,7 +1469,7 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
                 &table
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the selected pcurve with its chart")
             .is_some());
             assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
                 &asm_decode_ctx,
@@ -1478,7 +1478,7 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
                 &table
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the selected pcurve with its chart")
             .is_none());
         }
     }
@@ -1531,7 +1531,7 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
             &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
             EmbeddedSurfaceCurve::Blend(
@@ -1617,7 +1617,7 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
             &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
             EmbeddedSurfaceCurve::Parametric(
