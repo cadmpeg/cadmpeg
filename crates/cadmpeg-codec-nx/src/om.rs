@@ -3924,7 +3924,7 @@ fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSect
 pub(crate) fn indexed_sections<'a>(
     bytes: &'a [u8],
     budget: &WorkBudget,
-) -> Result<Vec<IndexedSection<'a>>, CodecError> {
+) -> Vec<IndexedSection<'a>> {
     let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
     let mut product_record_ranges = Vec::new();
@@ -4039,14 +4039,10 @@ pub(crate) fn indexed_sections<'a>(
         // table; malformed payloads commonly satisfy the cheap monotonicity
         // checks while carrying no self-framed NX record at all.
         let product_record_count =
-            product_record_count_within(&product_record_ranges, first, second)
-                .checked_add(product_record_count_within(
-                    &product_record_ranges,
-                    second,
-                    third,
-                ))
-                .ok_or_else(|| CodecError::Malformed("NX product record count overflow".into()))?;
-        if product_record_count != 1 {
+            product_record_count_within(&product_record_ranges, first, second).checked_add(
+                product_record_count_within(&product_record_ranges, second, third),
+            );
+        if product_record_count != Some(1) {
             continue;
         }
         let Some(index) = OffsetIndex::new(
@@ -4075,7 +4071,7 @@ pub(crate) fn indexed_sections<'a>(
         }
         sections.push(materialize_indexed_candidate(candidate));
     }
-    Ok(sections)
+    sections
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.

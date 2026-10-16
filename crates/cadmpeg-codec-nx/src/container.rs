@@ -433,16 +433,16 @@ impl<'a> Container<'a> {
     }
 
     /// Parse and cache the indexed object-model sections of every entry.
-    fn indexed_section_cache(&self) -> Result<&IndexedSectionCache<'a>, CodecError> {
+    fn indexed_section_cache(&self) -> &IndexedSectionCache<'a> {
         if let Some(cache) = self.indexed_section_layouts.get() {
-            return Ok(cache);
+            return cache;
         }
         let cache = match &self.data {
             SourceImage::Borrowed(view) => {
                 let bytes = view.window();
                 let bytes: &'a [u8] = bytes;
                 let (sections, _, bounded_entries) =
-                    parse_indexed_section_cache(bytes, &self.entries, false)?;
+                    parse_indexed_section_cache(bytes, &self.entries, false);
                 let mut blocks = BTreeMap::new();
                 for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
                     let Some((control, _, records)) = section.as_offset_only() else {
@@ -478,37 +478,35 @@ impl<'a> Container<'a> {
             }
             SourceImage::Owned(bytes) => {
                 let (_, layouts, bounded_entries) =
-                    parse_indexed_section_cache(bytes, &self.entries, true)?;
+                    parse_indexed_section_cache(bytes, &self.entries, true);
                 IndexedSectionCache::Owned {
                     layouts,
                     bounded_entries,
                 }
             }
         };
-        Ok(self.indexed_section_layouts.get_or_init(|| cache))
+        self.indexed_section_layouts.get_or_init(|| cache)
     }
 
     /// Name the entries whose indexed-section search reached its work bound,
     /// so their remaining sections were skipped.
-    pub(crate) fn bounded_indexed_om_entries(&self) -> Result<Vec<&DirEntry>, CodecError> {
+    pub(crate) fn bounded_indexed_om_entries(&self) -> Vec<&DirEntry> {
         let (IndexedSectionCache::Borrowed {
             bounded_entries, ..
         }
         | IndexedSectionCache::Owned {
             bounded_entries, ..
-        }) = self.indexed_section_cache()?;
-        Ok(bounded_entries
+        }) = self.indexed_section_cache();
+        bounded_entries
             .iter()
             .filter_map(|index| self.entries.get(*index))
-            .collect())
+            .collect()
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
-    pub(crate) fn indexed_om_sections(
-        &self,
-    ) -> Result<Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)>, CodecError> {
+    pub(crate) fn indexed_om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)> {
         let mut result = Vec::new();
-        match self.indexed_section_cache()? {
+        match self.indexed_section_cache() {
             IndexedSectionCache::Borrowed { sections, .. } => {
                 for (entry_index, section) in sections {
                     if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
@@ -524,7 +522,7 @@ impl<'a> Container<'a> {
                 }
             }
         }
-        Ok(result)
+        result
     }
 
     /// Return the cached bytes and source offsets of every borrowed offset-store block.
@@ -1096,7 +1094,7 @@ fn parse_indexed_section_cache<'bytes>(
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> Result<(IndexedSections<'bytes>, IndexedSectionLayouts, Vec<usize>), CodecError> {
+) -> (IndexedSections<'bytes>, IndexedSectionLayouts, Vec<usize>) {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     let mut bounded_entries = Vec::new();
@@ -1115,7 +1113,7 @@ fn parse_indexed_section_cache<'bytes>(
             continue;
         };
         let budget = WorkBudget::new(crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK);
-        let parsed = crate::om::indexed_sections(payload, &budget)?;
+        let parsed = crate::om::indexed_sections(payload, &budget);
         if budget.exhausted() {
             bounded_entries.push(entry_index);
         }
@@ -1142,7 +1140,7 @@ fn parse_indexed_section_cache<'bytes>(
             sections.push((entry_index, section));
         }
     }
-    Ok((sections, layouts, bounded_entries))
+    (sections, layouts, bounded_entries)
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].

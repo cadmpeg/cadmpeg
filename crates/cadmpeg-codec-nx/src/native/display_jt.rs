@@ -2321,22 +2321,6 @@ fn jt9_topology_high_degree_lane_count(
     representation: &[u8],
     expected_vertex_bindings: u64,
 ) -> Result<Option<usize>, CodecError> {
-    let result = jt9_topology_high_degree_lane_count_inner(
-        ctx,
-        work_bound,
-        representation,
-        expected_vertex_bindings,
-    )?;
-
-    Ok(result)
-}
-
-fn jt9_topology_high_degree_lane_count_inner(
-    ctx: &DecodeContext<'_>,
-    work_bound: &ArithmeticWorkBound,
-    representation: &[u8],
-    expected_vertex_bindings: u64,
-) -> Result<Option<usize>, CodecError> {
     const PREFIX_PACKET_COUNT: usize = 21;
     let mut prefix_end = 0usize;
     for _ in 0..PREFIX_PACKET_COUNT {

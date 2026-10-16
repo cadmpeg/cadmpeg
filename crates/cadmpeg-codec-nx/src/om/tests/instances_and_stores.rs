@@ -1365,7 +1365,7 @@ fn om_index_accepts_length_framed_root_version_text() {
         let value = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) + 1;
         bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
     }
-    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget());
     assert_eq!(sections.len(), 1);
     assert!(sections[0].as_fixed().expect("fixed store")[0]
         .bytes
@@ -1375,7 +1375,7 @@ fn om_index_accepts_length_framed_root_version_text() {
 #[test]
 fn om_index_discards_nested_indexed_interpretation() {
     let bytes = fixed_indexed_section_with_embedded_section(true);
-    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget());
 
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].as_fixed().expect("fixed store").len(), 2);
@@ -1386,7 +1386,7 @@ fn om_index_retains_disjoint_indexed_sections() {
     let mut bytes = indexed_om_section();
     bytes.extend_from_slice(&indexed_om_section());
 
-    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget());
 
     assert_eq!(sections.len(), 2);
     assert!(sections[0].entity_index_offset < sections[1].entity_index_offset);
@@ -1395,7 +1395,7 @@ fn om_index_retains_disjoint_indexed_sections() {
 #[test]
 fn om_index_retains_partially_overlapping_indexed_interpretations() {
     let bytes = fixed_indexed_section_with_embedded_section(false);
-    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget());
 
     assert_eq!(sections.len(), 2);
     assert_ne!(
@@ -1415,7 +1415,7 @@ fn om_store_version_can_follow_control_prefix() {
 #[test]
 fn om_offset_only_index_bounds_storage_blocks() {
     let bytes = offset_only_indexed_om_section();
-    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget());
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 0);
     let (control, column_storage, records) =
@@ -1443,7 +1443,6 @@ fn om_offset_only_index_bounds_storage_blocks() {
 fn om_indexed_layout_materializes_both_store_forms_without_semantic_drift() {
     for bytes in [indexed_om_section(), offset_only_indexed_om_section()] {
         let section = indexed_sections(&bytes, &section_budget())
-            .unwrap()
             .into_iter()
             .next()
             .expect("indexed fixture has one section");
@@ -1459,18 +1458,18 @@ fn om_indexed_section_search_skips_candidates_past_its_registry_budget() {
     let bytes = offset_only_indexed_om_section();
     let budget = cadmpeg_core::decode::WorkBudget::new(0);
 
-    assert!(indexed_sections(&bytes, &budget).unwrap().is_empty());
+    assert!(indexed_sections(&bytes, &budget).is_empty());
     assert!(budget.exhausted());
 
     let budget = section_budget();
-    assert_eq!(indexed_sections(&bytes, &budget).unwrap().len(), 1);
+    assert_eq!(indexed_sections(&bytes, &budget).len(), 1);
     assert!(!budget.exhausted());
 }
 
 #[test]
 fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
     let bytes = control_root_offset_only_indexed_om_section();
-    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget());
 
     assert_eq!(sections.len(), 1);
     let (control, _, records) = sections[0].as_offset_only().expect("offset-only store");
@@ -1500,10 +1499,7 @@ fn om_offset_only_index_ignores_product_marker_crossing_record_boundary() {
     bytes[first - split..first].copy_from_slice(&product[..split]);
     bytes[first..first + product.len() - split].copy_from_slice(&product[split..]);
 
-    assert_eq!(
-        indexed_sections(&bytes, &section_budget()).unwrap().len(),
-        1
-    );
+    assert_eq!(indexed_sections(&bytes, &section_budget()).len(), 1);
 }
 
 #[test]
@@ -1531,9 +1527,7 @@ fn om_offset_only_index_requires_one_supported_product_record() {
     let duplicate_product = b"\x04\x01\x0eNX 2027.3102\0";
     duplicate[first_column..first_column + duplicate_product.len()]
         .copy_from_slice(duplicate_product);
-    assert!(indexed_sections(&duplicate, &section_budget())
-        .unwrap()
-        .is_empty());
+    assert!(indexed_sections(&duplicate, &section_budget()).is_empty());
 
     let mut unsupported = control_root_offset_only_indexed_om_section();
     let product = unsupported
@@ -1541,9 +1535,7 @@ fn om_offset_only_index_requires_one_supported_product_record() {
         .position(|window| window == b"\x05\x01\x0eNX 2027.3102\0")
         .expect("product record");
     unsupported[product] = 0x03;
-    assert!(indexed_sections(&unsupported, &section_budget())
-        .unwrap()
-        .is_empty());
+    assert!(indexed_sections(&unsupported, &section_budget()).is_empty());
 }
 
 #[test]

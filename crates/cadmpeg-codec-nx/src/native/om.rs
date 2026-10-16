@@ -3485,7 +3485,7 @@ fn registry_definitions<T>(
     project: impl Fn(RegistryDefinition) -> T,
 ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
     let framed_sections = container.om_sections()?;
-    let indexed_sections = container.indexed_om_sections()?;
+    let indexed_sections = container.indexed_om_sections();
     let framed = framed_sections
         .into_iter()
         .map(|(entry, section)| (entry, section.offset, section.types, section.fields, true));
@@ -3638,7 +3638,7 @@ pub(super) fn object_records(
     let mut output = Vec::new();
     let mut bounded_sections = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
@@ -3825,7 +3825,7 @@ fn assign_rmfastload_object_id_identities(
 pub(super) fn data_blocks(
     container: &Container,
 ) -> Result<Vec<DataBlock>, cadmpeg_core::CodecError> {
-    let sections = container.indexed_om_sections()?;
+    let sections = container.indexed_om_sections();
     let mut identity_counts = BTreeMap::<[u8; 32], usize>::new();
     for (entry, section) in &sections {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -3890,7 +3890,7 @@ pub(super) fn data_block_control_forms(
 ) -> Result<Vec<DataBlockControlForm>, CodecError> {
     let mut forms = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -3959,7 +3959,7 @@ pub(super) fn data_block_control_values(
 ) -> Result<Vec<DataBlockControlValue>, CodecError> {
     let mut rows = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -4006,7 +4006,7 @@ pub(super) fn data_block_control_class_references(
     container: &Container,
 ) -> Result<Vec<DataBlockControlClassReference>, CodecError> {
     let framed_sections = container.om_sections()?;
-    let indexed_sections = container.indexed_om_sections()?;
+    let indexed_sections = container.indexed_om_sections();
     let mut rows = Vec::new();
     for (section_ordinal, (entry, section)) in indexed_sections.iter().enumerate() {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -4077,7 +4077,7 @@ pub(super) fn data_block_control_index_values(
 ) -> Result<Vec<DataBlockControlIndexValue>, CodecError> {
     let mut rows = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -4165,7 +4165,7 @@ pub(super) fn data_block_control_references(
 ) -> Result<Vec<DataBlockControlReference>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((control, _, _)) = section.as_offset_only() else {
             continue;
@@ -4283,7 +4283,7 @@ pub(super) fn data_block_references(
     }
     let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -4337,7 +4337,7 @@ pub(super) fn part_color_tables(
     let mut definitions = Vec::new();
 
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
             continue;
@@ -4531,7 +4531,7 @@ pub(super) fn store_headers(
 ) -> Result<Vec<StoreHeader>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let candidate = match &section.store {
             IndexedStore::Fixed { records } => records.iter().find_map(|record| {
@@ -4578,7 +4578,7 @@ pub(super) fn string_values(
 ) -> Result<Vec<StringValue>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
@@ -4623,7 +4623,7 @@ pub(super) fn object_references(
 ) -> Result<Vec<ObjectReference>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
@@ -4818,7 +4818,7 @@ pub(super) fn expression_declarations(
 ) -> Result<Vec<ExpressionDeclaration>, CodecError> {
     let mut declarations = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         if !section
             .types
@@ -4875,7 +4875,7 @@ pub(super) fn expressions(
             .or_default()
             .push(declaration);
     }
-    let sections = container.indexed_om_sections()?;
+    let sections = container.indexed_om_sections();
     let mut indexed = BTreeMap::<(&str, usize), (u32, usize, usize)>::new();
     for (section_ordinal, (entry, section)) in sections.into_iter().enumerate() {
         let Some(directory_entry) = container.entries.get(entry.index()) else {

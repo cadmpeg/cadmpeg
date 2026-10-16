@@ -1165,7 +1165,7 @@ fn package_lane_references(
 pub(in crate::native) fn feature_hole_package_construction_group_lanes(
     container: &Container,
 ) -> Result<Vec<FeatureHolePackageConstructionGroupLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut lanes = Vec::new();
     visit_feature_history_operation_records(
         container,

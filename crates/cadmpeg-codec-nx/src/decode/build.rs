@@ -1328,7 +1328,7 @@ pub(super) fn try_decode_geometry(
     for losses in [carrier_refusals, topology_losses, native_losses] {
         report.losses.extend(losses);
     }
-    report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available)?;
+    report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
     Ok(Some((ir, report, annotations, unknowns)))
 }
 

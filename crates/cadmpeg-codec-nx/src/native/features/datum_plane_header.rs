@@ -67,7 +67,7 @@ pub(in crate::native) fn feature_datum_plane_headers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureDatumPlaneHeader>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let inputs = feature_input_blocks(container)?;
     let mut headers = Vec::new();
     let mut failure = None;

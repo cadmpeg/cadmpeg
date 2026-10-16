@@ -711,7 +711,7 @@ pub(in crate::native) fn feature_draft_construction_references(
 pub(in crate::native) fn feature_draft_construction_index_lanes(
     container: &Container,
 ) -> Result<Vec<FeatureDraftConstructionIndexLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut lanes = Vec::new();
     visit_feature_history_operation_records(
         container,

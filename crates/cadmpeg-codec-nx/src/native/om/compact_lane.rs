@@ -38,7 +38,7 @@ pub(in crate::native) fn data_block_counted_index_lanes(
 ) -> Result<Vec<DataBlockCountedIndexLane>, CodecError> {
     let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((_, _, records)) = section.as_offset_only() else {
             continue;
@@ -84,7 +84,7 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
 ) -> Result<Vec<DataBlockAbrReferenceLane>, CodecError> {
     let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
             continue;
