@@ -155,6 +155,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-asm`            | `src/nurbs/core.rs`                                | `MAX_RECOVERY_SURFACE_POLES`              | `200_000`                                               | 2    | Cached B-spline surface grid size. A larger grid is not recovered and the surface keeps its native carrier.                                                                                                                                                                  |
 | `cadmpeg-protein`        | `src/lib.rs`                                       | `MAX_SCHEMA_BYTES`                        | `128 * 1024 * 1024`                                     | 2    | Declared and streamed size of one schema entry before and during `begin_expand`. Excess returns `NotImplemented`; Inventor turns it into a package issue and drops Protein instances. Expansion also charges the session.                                                    |
 | `cadmpeg-protein`        | `src/lib.rs`                                       | `MAX_RECOVERY_VALUES`                     | `1_024`                                                 | 2    | Declared value count of one property. Excess is `Malformed`; the record goes to `rejected`.                                                                                                                                                                                  |
+| `cadmpeg-protein`        | `src/lib.rs`                                       | `MAX_INHERITED_PROPERTIES`                | `1 << 18`                                               | 4    | Property entries one `SchemaCatalog` materializes across all inherited schema closures, checked before each closure is cloned. A schema that would pass it is not resolved and its record goes to `rejected`; Inventor reports `protein.asset-rejected` and F3D a note.      |
 | `cadmpeg`                | `src/query/mod.rs`                                 | `MAX_QUERY_INPUT_BYTES`                   | `256 * 1024 * 1024`                                     | N    | CLI `query` input file size; not a decode path.                                                                                                                                                                                                                              |
 | `cadmpeg`                | `src/inspect/numeric.rs`                           | `MAX_WIDTH`                               | `8`                                                     | N    | Widest scalar type `inspect read` decodes.                                                                                                                                                                                                                                   |
 | `cadmpeg-codec-step`     | `src/strings.rs`                                   | `MAX_STORED_STRING_OCTETS`                | `32_767`                                                | 2    | Encoded length of one string token before decoding. Excess is a `StringError` for that token.                                                                                                                                                                                |
@@ -356,22 +357,22 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 187.
+Production `MAX_*` constants: 188.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 64    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 76    |
+| 4    | Local work cap             | 77    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 187   |
+|      | Total                      | 188   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 1, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
-`cadmpeg-protein` 2, `cadmpeg` 2, `cadmpeg-codec-step` 4,
+`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 4,
 `cadmpeg-codec-iges` 14, `cadmpeg-codec-inventor` 2,
 `cadmpeg-codec-freecad` 9, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 13,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 16, `cadmpeg-codec-sldprt` 11,
