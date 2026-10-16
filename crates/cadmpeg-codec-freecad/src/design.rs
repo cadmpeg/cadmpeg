@@ -2577,38 +2577,76 @@ fn bind_parameter_dependencies(
     Ok(parameter_cycle_features)
 }
 
+/// Order parameters so each follows the parameters it depends on.
+///
+/// The earliest ready parameter in the current order is emitted next. A
+/// dependency on an id is met once any parameter with that id is emitted.
+/// When none is ready, the rest keep their order after the emitted ones and
+/// their owners are returned as cycle-affected.
 fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
-    let mut known = BTreeSet::new();
+    let mut dependents = BTreeMap::<&ParameterId, Vec<usize>>::new();
     for parameter in parameters.iter() {
-        if !known.contains(&parameter.id) {
-            known.insert(parameter.id.clone());
+        dependents.entry(&parameter.id).or_default();
+    }
+    for (position, parameter) in parameters.iter().enumerate() {
+        for dependency in &parameter.dependencies {
+            if let Some(waiters) = dependents.get_mut(dependency) {
+                waiters.push(position);
+            }
         }
     }
-    let mut remaining = std::mem::take(parameters);
-    let mut emitted = BTreeSet::new();
-    let mut cycle_features = BTreeSet::new();
-    while !remaining.is_empty() {
-        let Some(index) = remaining.iter().position(|parameter| {
+    let mut waiting = parameters
+        .iter()
+        .map(|parameter| {
             parameter
                 .dependencies
                 .iter()
-                .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
-        }) else {
-            for owner in remaining
-                .iter()
-                .filter_map(|parameter| parameter.owner.as_ref())
-            {
-                if !cycle_features.contains(owner) {
-                    cycle_features.insert(owner.clone());
-                }
+                .filter(|dependency| dependents.contains_key(dependency))
+                .count()
+        })
+        .collect::<Vec<_>>();
+    let mut ready = BinaryHeap::new();
+    for (position, &count) in waiting.iter().enumerate() {
+        if count == 0 {
+            ready.push(Reverse(position));
+        }
+    }
+    let mut emitted_ids = BTreeSet::new();
+    let mut emitted = Vec::new();
+    emitted.resize(parameters.len(), false);
+    let mut order = Vec::new();
+    while let Some(Reverse(position)) = ready.pop() {
+        emitted[position] = true;
+        order.push(position);
+        let id = &parameters[position].id;
+        if !emitted_ids.insert(id) {
+            continue;
+        }
+        for &dependent in dependents.get(id).into_iter().flatten() {
+            let Some(remaining) = waiting[dependent].checked_sub(1) else {
+                continue;
+            };
+            waiting[dependent] = remaining;
+            if remaining == 0 && !emitted[dependent] {
+                ready.push(Reverse(dependent));
             }
-            parameters.append(&mut remaining);
-            break;
-        };
-        let parameter = remaining.remove(index);
-        emitted.insert(parameter.id.clone());
-
-        parameters.push(parameter);
+        }
+    }
+    let mut cycle_features = BTreeSet::new();
+    for (position, parameter) in parameters.iter().enumerate() {
+        if !emitted[position] {
+            order.push(position);
+            if let Some(owner) = &parameter.owner {
+                cycle_features.insert(owner.clone());
+            }
+        }
+    }
+    let mut slots = std::mem::take(parameters)
+        .into_iter()
+        .map(Some)
+        .collect::<Vec<_>>();
+    for position in order {
+        parameters.extend(slots[position].take());
     }
     cycle_features
 }
