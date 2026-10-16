@@ -4366,7 +4366,7 @@ pub(crate) fn direct_face_selection(
 /// Each ordering round scans every unresolved parameter and its dependencies,
 /// so a dependency chain makes the ordering quadratic in the scope's
 /// parameter count.
-const PARAMETER_ORDER_WORK: usize = 1 << 22;
+pub(crate) const PARAMETER_ORDER_WORK: usize = 1 << 22;
 
 /// Order every owner scope's parameters and return how many scopes exceeded
 /// [`PARAMETER_ORDER_WORK`].

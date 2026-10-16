@@ -192,7 +192,7 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
         .iter()
         .find(|loss| loss.code == F3dLossCode::RecipeSideSearchBudgetExceeded.kind())
         .expect("recipe search loss");
-    assert_eq!(loss.message, "1 Design recipe program(s) retain no recipe structure because their side-sequence search exceeded its work cap.");
+    assert_eq!(loss.message, "1 Design recipe program(s) retain no recipe structure because their side-sequence search exceeded the local work cap RECIPE_SIDE_SEARCH_WORK (4194304).");
 }
 
 #[test]
@@ -218,7 +218,9 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
                     owner_record_indices: [11, 12, 13, 14],
                     value_offsets: [101, 102, 103, 104],
                     instances: None,
-                    instance_search_capped: true,
+                    instance_search_cap: Some(
+                        crate::records::feature::patterns::RectangularPatternSearchCap::RunWork,
+                    ),
                 },
             )
             .unwrap(),
@@ -246,7 +248,7 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
         .iter()
         .find(|loss| loss.code == F3dLossCode::FeaturePatternInstanceSearchCapped.kind())
         .expect("pattern instance search loss");
-    assert_eq!(loss.message, "1 rectangular pattern(s) have no instance transforms or direction because their instance search exceeded a local cap.");
+    assert_eq!(loss.message, "1 rectangular pattern(s) have no instance transforms or direction because their instance search exceeded the local cap RECTANGULAR_PATTERN_RUN_WORK (1048576).");
 }
 
 #[test]

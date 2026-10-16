@@ -15,7 +15,7 @@ fn certified_boundary_borrows_its_loop() {
     let loop_ = super::super::CertifiedProfileLoop::from_vertices(&triangle()).unwrap();
     let boundary = super::super::ProfileBoundary::CertifiedLoop(loop_);
     assert!(matches!(
-        boundary.certified_loop(),
+        boundary.certified_loop(&super::local_profile_work()),
         Some(std::borrow::Cow::Borrowed(_))
     ));
 }

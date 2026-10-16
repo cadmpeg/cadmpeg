@@ -88,7 +88,7 @@ fn rectangular_scope() -> DesignParameterScope {
                     owner_record_indices: [11, 12, 13, 14],
                     value_offsets: [101, 102, 103, 104],
                     instances: None,
-                    instance_search_capped: false,
+                    instance_search_cap: None,
                 },
             )
             .unwrap(),
