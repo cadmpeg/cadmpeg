@@ -5,6 +5,7 @@
 //! record vectors into domain sub-structs. JT graph admission rejects
 //! inconsistent owners before attachment.
 
+use crate::jt::ArithmeticWorkBound;
 use crate::native::features::draft::feature_draft_construction_binary32_lanes;
 use crate::native::features::draft::feature_draft_construction_fixed_lanes;
 use crate::native::features::draft::feature_draft_construction_graph_payloads;
@@ -53,10 +54,11 @@ use super::display_jt::{
     DisplayJtGeometricTransformAttribute, DisplayJtGroupNodeData, DisplayJtIndex,
     DisplayJtInitialFaceDegreeSymbols, DisplayJtInstanceNode, DisplayJtMaterialAttribute,
     DisplayJtPartitionNode, DisplayJtPolygonMesh, DisplayJtRangeLodNode, DisplayJtShapeLodBinding,
-    DisplayJtStringPropertyAtom, DisplayJtTopologyArrays, DisplayJtTopologyPacketSequence,
-    DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode, DisplayJtVertexColors,
-    DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates, DisplayJtVertexFlagInputs,
-    DisplayJtVertexFlags, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
+    DisplayJtStringPropertyAtom, DisplayJtTextureCoordinateInputs, DisplayJtTopologyArrays,
+    DisplayJtTopologyPacketSequence, DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode,
+    DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates,
+    DisplayJtVertexFlagInputs, DisplayJtVertexFlags, DisplayJtVertexNormals,
+    DisplayJtVertexTextureCoordinates,
 };
 use super::features::construction_records::{
     data_block_object_frames, feature_block_construction_payloads,
@@ -285,6 +287,9 @@ pub(in crate::native) struct DisplayJtRecords {
     pub(super) partition_nodes: Vec<DisplayJtPartitionNode>,
     pub(super) range_lod_nodes: Vec<DisplayJtRangeLodNode>,
     pub(super) tri_strip_shape_nodes: Vec<DisplayJtTriStripShapeNode>,
+    /// Whether an arithmetic-coded JT lane was left undecoded at
+    /// [`crate::jt::MAX_ARITHMETIC_WORK`].
+    pub(super) arithmetic_lane_work_bounded: bool,
 }
 
 /// Records extracted from the `parasolid` domain.
@@ -890,17 +895,32 @@ impl NativeModel {
             display_jt_shape_lod_elements(ctx, container, &display_jt_segments)?;
         let display_jt_tri_strip_lod_headers =
             display_jt_tri_strip_lod_headers(ctx, container, &display_jt_shape_lod_elements)?;
-        let display_jt_initial_face_degree_symbols =
-            display_jt_initial_face_degree_symbols(ctx, container, &display_jt_shape_lod_elements)?;
+        let jt_work_bound = ArithmeticWorkBound::default();
+        let display_jt_initial_face_degree_symbols = display_jt_initial_face_degree_symbols(
+            ctx,
+            &jt_work_bound,
+            container,
+            &display_jt_shape_lod_elements,
+        )?;
         let DisplayJtTopologyArrays {
             sequences: display_jt_topology_packet_sequences,
             vertex_headers: display_jt_vertex_records_headers,
             coordinate_headers: display_jt_coordinate_array_headers,
-        } = display_jt_topology_packet_sequences(ctx, container, &display_jt_shape_lod_elements)?;
-        let display_jt_vertex_coordinates =
-            display_jt_vertex_coordinates(ctx, container, &display_jt_coordinate_array_headers)?;
+        } = display_jt_topology_packet_sequences(
+            ctx,
+            &jt_work_bound,
+            container,
+            &display_jt_shape_lod_elements,
+        )?;
+        let display_jt_vertex_coordinates = display_jt_vertex_coordinates(
+            ctx,
+            &jt_work_bound,
+            container,
+            &display_jt_coordinate_array_headers,
+        )?;
         let display_jt_vertex_normals = display_jt_vertex_normals(
             ctx,
+            &jt_work_bound,
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
@@ -908,6 +928,7 @@ impl NativeModel {
         )?;
         let display_jt_vertex_colors = display_jt_vertex_colors(
             ctx,
+            &jt_work_bound,
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
@@ -916,15 +937,19 @@ impl NativeModel {
         )?;
         let display_jt_vertex_texture_coordinates = display_jt_vertex_texture_coordinates(
             ctx,
-            container,
-            &display_jt_vertex_records_headers,
-            &display_jt_coordinate_array_headers,
-            &display_jt_vertex_coordinates,
-            &display_jt_vertex_normals,
-            &display_jt_vertex_colors,
+            &jt_work_bound,
+            DisplayJtTextureCoordinateInputs {
+                container,
+                vertex_headers: &display_jt_vertex_records_headers,
+                coordinate_headers: &display_jt_coordinate_array_headers,
+                coordinates: &display_jt_vertex_coordinates,
+                normals: &display_jt_vertex_normals,
+                colors: &display_jt_vertex_colors,
+            },
         )?;
         let display_jt_vertex_flags = display_jt_vertex_flags(
             ctx,
+            &jt_work_bound,
             DisplayJtVertexFlagInputs {
                 container,
                 vertex_headers: &display_jt_vertex_records_headers,
@@ -1354,6 +1379,7 @@ impl NativeModel {
                 partition_nodes: display_jt_partition_nodes,
                 range_lod_nodes: display_jt_range_lod_nodes,
                 tri_strip_shape_nodes: display_jt_tri_strip_shape_nodes,
+                arithmetic_lane_work_bounded: jt_work_bound.reached(),
             },
             parasolid: ParasolidRecords {
                 group_records: parasolid_group_records,

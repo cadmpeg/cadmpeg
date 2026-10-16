@@ -405,6 +405,13 @@ fn attach_records(
             section.records
         )));
     }
+    if model.display_jt.arithmetic_lane_work_bounded {
+        losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(format!(
+            "An arithmetic-coded Display-JT lane needed more than {} decoder table lookups; \
+             the lanes above that bound were left undecoded.",
+            crate::jt::MAX_ARITHMETIC_WORK
+        )));
+    }
     let has_object_sections = !scan.container.indexed_om_sections()?.is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     if model.is_empty() && !has_object_sections {
