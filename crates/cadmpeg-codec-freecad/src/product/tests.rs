@@ -891,6 +891,80 @@ fn product_record_identity_rejects_duplicates() {
     ));
 }
 
+fn stated_link_array(element_count: &str) -> String {
+    format!(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="{element_count}"/></Property>
+</Properties></Object></ObjectData></Document>"#
+    )
+}
+
+#[test]
+fn link_array_occurrences_are_admitted_before_they_are_built() {
+    let document = stated_link_array("1000");
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+        .expect("stated link array without carriers");
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence.native_ref.as_deref() == Some("fcstd:native:object#Occurrence")
+            })
+            .count(),
+        1000
+    );
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 500;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(archive(&document)), &options)
+        .expect_err("stated link elements above max_entities must refuse");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                    && limit.operation == "admit FCStd link occurrences"
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn link_array_element_count_above_the_named_limit_is_malformed() {
+    let limit = super::MAX_LINK_ARRAY_ELEMENTS;
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&stated_link_array("2"))),
+            &DecodeOptions::default(),
+        )
+        .expect("small link array");
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&stated_link_array(&(limit + 1).to_string()))),
+            &DecodeOptions::default(),
+        )
+        .expect_err("element count above MAX_LINK_ARRAY_ELEMENTS");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
+                if message.contains(&format!("exceeds {limit}"))
+        ),
+        "{error:?}"
+    );
+}
+
 #[test]
 fn rejects_populated_link_arrays_when_element_count_is_zero() {
     let decode = |array_property: &str, entry: Option<(&str, Vec<u8>)>| {

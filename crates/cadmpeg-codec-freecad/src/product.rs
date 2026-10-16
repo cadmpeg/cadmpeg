@@ -26,6 +26,9 @@ use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 
+/// Elements one link array may state or infer. A larger count is malformed.
+const MAX_LINK_ARRAY_ELEMENTS: usize = 1_000_000;
+
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
@@ -321,6 +324,7 @@ pub(crate) fn transfer_neutral(
             .get(record.object.as_str())
             .map(|object| container_occurrence_id(object))
             .transpose()?;
+        let mut record_prototype_transform = None;
         for index in 0..count {
             let element = count > 1;
             let element_transform = record.element_transforms().get(index).copied();
@@ -334,13 +338,16 @@ pub(crate) fn transfer_neutral(
                         .unwrap_or_default(),
                 )
                 .map_err(|error| malformed(error.to_string()))?;
-            let prototype_transform = linked_prototype_transform(
-                ctx,
-                record,
-                &record_by_object,
-                &placements_by_object,
-                &mut Vec::new(),
-            )?;
+            let prototype_transform = match record_prototype_transform {
+                Some(transform) => transform,
+                None => *record_prototype_transform.insert(linked_prototype_transform(
+                    ctx,
+                    record,
+                    &record_by_object,
+                    &placements_by_object,
+                    &mut Vec::new(),
+                )?),
+            };
             let element_scale = record
                 .element_scales()
                 .get(index)
@@ -599,13 +606,31 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<NonZeroUsize, CodecErr
             record.id
         ))
     })?;
-    if count.get() > 1_000_000 || u32::try_from(count.get()).is_err() {
+    if count.get() > MAX_LINK_ARRAY_ELEMENTS || u32::try_from(count.get()).is_err() {
         return Err(CodecError::malformed(format_args!(
-            "{} link-array count limit exceeded",
+            "{} link-array element count {count} exceeds {MAX_LINK_ARRAY_ELEMENTS}",
             record.id
         )));
     }
     Ok(count)
+}
+
+/// Link occurrences that [`transfer_neutral`] builds from these records.
+///
+/// The decoder admits this count against the entity ceiling before it builds
+/// any occurrence.
+pub(crate) fn link_occurrence_count(records: &[ProductNodeRecord]) -> Result<u64, CodecError> {
+    let mut total = 0_u64;
+    for record in records
+        .iter()
+        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
+    {
+        let count = cadmpeg_core::decode::u64_from_index(occurrence_count(record)?.get());
+        total = total
+            .checked_add(count)
+            .ok_or_else(|| CodecError::malformed("FCStd link occurrence count overflows u64"))?;
+    }
+    Ok(total)
 }
 
 fn copy_on_change_policy(value: &NativeCopyOnChangePolicy) -> CopyOnChangePolicy {

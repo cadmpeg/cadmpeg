@@ -5,6 +5,7 @@ pub(crate) mod booleans_patterns;
 pub(crate) mod construction;
 mod history;
 pub(crate) mod holes_extrude;
+mod ordering;
 pub(crate) mod primitives;
 mod resource_admission;
 pub(crate) mod sketches;

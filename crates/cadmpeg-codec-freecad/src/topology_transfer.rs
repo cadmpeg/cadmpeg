@@ -1601,41 +1601,65 @@ fn normalize_pcurve_parameter_range(
     Some(range)
 }
 
+/// Partition faces into the classes of the transitive "shares a key" relation.
+///
+/// Components are ordered by their lowest face index, and each lists its faces
+/// in ascending order.
 fn connected_components(
     ctx: &DecodeContext<'_>,
     connectivity: &[HashSet<String>],
 ) -> Result<Vec<Vec<usize>>, CodecError> {
-    let mut assigned = ctx.alloc_filled(
+    let mut parent = ctx.alloc_filled(
         connectivity.len(),
-        false,
-        "freecad connected-component assignment",
+        0_usize,
+        "freecad connected-component parent",
     )?;
-    let mut components = Vec::new();
-    for seed in 0..connectivity.len() {
-        if assigned[seed] {
-            continue;
-        }
-        assigned[seed] = true;
-        let mut component = Vec::new();
-        let mut stack = Vec::new();
-        stack.push(seed);
-        while let Some(current) = stack.pop() {
-            component.push(current);
-            for candidate in 0..connectivity.len() {
-                if assigned[candidate] {
-                    continue;
+    for (face, slot) in parent.iter_mut().enumerate() {
+        *slot = face;
+    }
+    let mut first_face_by_key = HashMap::<&str, usize>::new();
+    for (face, keys) in connectivity.iter().enumerate() {
+        for key in keys {
+            match first_face_by_key.entry(key.as_str()) {
+                std::collections::hash_map::Entry::Occupied(first) => {
+                    let left = component_root(&mut parent, *first.get());
+                    let right = component_root(&mut parent, face);
+                    parent[left.max(right)] = left.min(right);
                 }
-                if !connectivity[current].is_disjoint(&connectivity[candidate]) {
-                    assigned[candidate] = true;
-                    stack.push(candidate);
+                std::collections::hash_map::Entry::Vacant(first) => {
+                    first.insert(face);
                 }
             }
         }
-        component.sort_unstable_by(Ord::cmp);
-
-        components.push(component);
+    }
+    let mut component_by_root = ctx.alloc_filled(
+        connectivity.len(),
+        None::<usize>,
+        "freecad connected-component index",
+    )?;
+    let mut components = Vec::<Vec<usize>>::new();
+    for face in 0..connectivity.len() {
+        let root = component_root(&mut parent, face);
+        let component = if let Some(component) = component_by_root[root] {
+            component
+        } else {
+            let component = components.len();
+            components.push(Vec::new());
+            component_by_root[root] = Some(component);
+            component
+        };
+        components[component].push(face);
     }
     Ok(components)
+}
+
+/// Root of `face` in a union-find forest, halving the path on the way.
+fn component_root(parent: &mut [usize], mut face: usize) -> usize {
+    while parent[face] != face {
+        parent[face] = parent[parent[face]];
+        face = parent[face];
+    }
+    face
 }
 
 /// The pcurve placed onto its support's parameter frame.
