@@ -2682,7 +2682,7 @@ fn check_feature_references(
                     Some(_) => {}
                 }
             }
-            for reference in regeneration_references(state.definition.operation())? {
+            for reference in regeneration_references(state.definition.operation()) {
                 match features.get(reference.as_str()) {
                     None => ref_error(
                         findings,
@@ -2768,7 +2768,7 @@ fn check_feature_references(
     let mut reported_plane_cycles = Vec::new();
     for feature in &ir.model.features {
         let mut path: Vec<(&str, cadmpeg_core::decode::DepthGuard<'_>)> = Vec::new();
-        let mut positions = BorrowedIdentities::build(|_| Ok(()))?;
+        let mut positions = BorrowedIdentities::new();
         let mut cursor = feature.id.as_str();
         loop {
             if let Some(&cycle_start) = positions.get(cursor) {
@@ -2837,7 +2837,7 @@ fn check_feature_references(
         }
         Ok(())
     })?;
-    let mut topology_owners = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut topology_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_input_topologies {
         if !features.contains(state.input_of.as_str()) {
             ref_error(
@@ -2857,7 +2857,7 @@ fn check_feature_references(
             );
         }
     }
-    let mut result_owners = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut result_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_result_topologies {
         if !features.contains(state.output_of.as_str()) {
             ref_error(
@@ -4255,8 +4255,8 @@ where
 
 fn regeneration_references(
     definition: &crate::features::FeatureOperation,
-) -> Result<Vec<&crate::features::FeatureId>, CodecError> {
-    let mut references = BorrowedIdentities::build(|_| Ok(()))?;
+) -> Vec<&crate::features::FeatureId> {
+    let mut references = BorrowedIdentities::new();
     match definition {
         // A datum offset plane regenerates from its reference only when that
         // reference names a feature; a face-supported plane carries its frame
@@ -4326,7 +4326,7 @@ fn regeneration_references(
     }
     let mut ordered = (references.values()).copied().collect::<Vec<_>>();
     ordered.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-    Ok(ordered)
+    ordered
 }
 
 fn definition_profiles(
@@ -4457,7 +4457,7 @@ fn check_configuration_state_closure(
         }
         Ok(())
     })?;
-    let mut closure = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut closure = BorrowedIdentities::new();
     let mut pending = Vec::new();
     for (feature, state) in &configuration.feature_states {
         if !state.evaluation.is_suppressed() && closure.insert_unique(feature.as_str(), ()) {
@@ -4641,7 +4641,7 @@ fn check_feature_sketch_references(
         }
         Ok(())
     })?;
-    let mut owners = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut owners = BorrowedIdentities::new();
     for feature in &ir.model.features {
         let sketch = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Sketch {

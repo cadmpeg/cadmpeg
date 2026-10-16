@@ -107,7 +107,7 @@ mod tests {
             point: "test:model:point#missing".try_into().unwrap(),
             tolerance: None,
         });
-        let identities = super::BorrowedIdentities::build(|_| Ok(())).unwrap();
+        let identities = super::BorrowedIdentities::new();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
@@ -144,7 +144,7 @@ mod tests {
                 bodies: vec![target.try_into().unwrap(), target.try_into().unwrap()],
                 native_ref: None,
             });
-        let identities = super::BorrowedIdentities::build(|_| Ok(())).unwrap();
+        let identities = super::BorrowedIdentities::new();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
