@@ -216,8 +216,14 @@ fn solve_synchronization_copies_assignment_and_solve_values() {
             }],
             offset: 0,
             for_offset: 2,
+            work_cap: None,
         }];
-        super::super::synchronize_solve_blocks(&mut blocks, &[evaluated.clone()], &solutions);
+        super::super::synchronize_solve_blocks(
+            &mut blocks,
+            &[evaluated.clone()],
+            &solutions,
+            &BTreeMap::new(),
+        );
         assert_eq!(blocks[0].assignments[0], evaluated);
         assert_eq!(
             blocks[0].unknowns[0].solution.as_ref(),

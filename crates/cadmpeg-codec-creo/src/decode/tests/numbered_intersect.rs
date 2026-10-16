@@ -493,6 +493,7 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
             &equations,
             &stored,
             &[(1, 3, SectionAxis::U, 3.0), (3, 2, SectionAxis::U, 7.0)],
+            &mut Vec::new(),
         ))
         .expect("test section solve"),
         BTreeMap::from([((3, SectionAxis::U), 3.0)])
@@ -503,6 +504,7 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
             &[SectionEquationFixture::point_value(1, SectionAxis::U, 0.0)],
             &BTreeMap::from([((1, SectionAxis::U), 0.0)]),
             &[(1, 2, SectionAxis::U, 3.0)],
+            &mut Vec::new(),
         ))
         .expect("test section solve"),
         BTreeMap::new()

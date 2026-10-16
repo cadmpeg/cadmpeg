@@ -29,6 +29,9 @@ use crate::decode::sketch_transfer::recipe::{
     feature_recipe, feature_revolution_extent, unique_feature_revolution_extent,
 };
 use crate::decode::source_carriers::SourceUnitCarriers;
+use crate::identity::{
+    compose_checked, FEATURE_EXTRUSION_VERTEX_ORBIT, FEATURE_REVOLUTION_VERTEX_ORBIT,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -533,7 +536,12 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 let geometry = CurveGeometry::try_from(geometry)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 pending.push((
-                    crate::identity::compose_checked::<CurveId>(&crate::identity::FEATURE_REVOLUTION_VERTEX_ORBIT, format_args!("{feature_id}:profile{profile_index}:vertex{vertex_index}"))?,
+                    compose_checked::<CurveId>(
+                        &FEATURE_REVOLUTION_VERTEX_ORBIT,
+                        format_args!(
+                            "{feature_id}:profile{profile_index}:vertex{vertex_index}"
+                        ),
+                    )?,
                     geometry,
                     transform.offset,
                     format!("FeatDefs:revolution#{feature_id}:profile{profile_index}:vertex{vertex_index}"),
@@ -625,7 +633,12 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                     continue;
                 };
                 pending.push((
-                    crate::identity::compose_checked::<CurveId>(&crate::identity::FEATURE_EXTRUSION_VERTEX_ORBIT, format_args!("{feature_id}:profile{profile_index}:vertex{vertex_index}"))?,
+                    compose_checked::<CurveId>(
+                        &FEATURE_EXTRUSION_VERTEX_ORBIT,
+                        format_args!(
+                            "{feature_id}:profile{profile_index}:vertex{vertex_index}"
+                        ),
+                    )?,
                     geometry,
                     transform.offset,
                     format!("FeatDefs:extrusion#{feature_id}:profile{profile_index}:vertex{vertex_index}"),

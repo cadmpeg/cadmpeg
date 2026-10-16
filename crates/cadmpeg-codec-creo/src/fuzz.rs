@@ -10,10 +10,7 @@
 use crate::scalar::{decode, decode_in_lane, ScalarCache};
 
 /// Exercise Creo datum plane decoders.
-pub fn datum(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
+pub fn datum(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let _probe = crate::datum::planes(data);
     let _probe = crate::datum::named_plane(data);
     Ok(())
@@ -30,19 +27,13 @@ pub fn curve_prototypes(
 }
 
 /// Exercise Creo surface namespace row extraction.
-pub fn surface_rows(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
+pub fn surface_rows(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let _probe = crate::surface::rows(data);
     Ok(())
 }
 
 /// Exercise Creo PSB scalar decoding.
-pub fn scalar(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
+pub fn scalar(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let cache = ScalarCache::from_section_checked(data);
     let mut offset = 0usize;
     while offset < data.len() {
@@ -88,14 +79,11 @@ pub fn container_scan(
 mod tests {
     #[test]
     fn wrappers_accept_empty() {
-        crate::decode::with_service_context(|ctx| super::datum(ctx, &[]))
-            .expect("datum fuzz wrapper");
+        super::datum(&[]).expect("datum fuzz wrapper");
         crate::decode::with_service_context(|ctx| super::curve_prototypes(ctx, &[]))
             .expect("curve fuzz wrapper");
-        crate::decode::with_service_context(|ctx| super::surface_rows(ctx, &[]))
-            .expect("surface row fuzz wrapper");
-        crate::decode::with_service_context(|ctx| super::scalar(ctx, &[]))
-            .expect("scalar fuzz wrapper");
+        super::surface_rows(&[]).expect("surface row fuzz wrapper");
+        super::scalar(&[]).expect("scalar fuzz wrapper");
         super::compact_int(&[]);
         super::psb_tokens(&[]);
         super::short_form_float(&[]);
@@ -105,14 +93,11 @@ mod tests {
     #[test]
     fn wrappers_accept_fixture() {
         let data = crate::test_support::build_prt("1.0", &[]);
-        crate::decode::with_service_context(|ctx| super::datum(ctx, &data))
-            .expect("datum fuzz wrapper");
+        super::datum(&data).expect("datum fuzz wrapper");
         crate::decode::with_service_context(|ctx| super::curve_prototypes(ctx, &data))
             .expect("curve fuzz wrapper");
-        crate::decode::with_service_context(|ctx| super::surface_rows(ctx, &data))
-            .expect("surface row fuzz wrapper");
-        crate::decode::with_service_context(|ctx| super::scalar(ctx, &data))
-            .expect("scalar fuzz wrapper");
+        super::surface_rows(&data).expect("surface row fuzz wrapper");
+        super::scalar(&data).expect("scalar fuzz wrapper");
         super::compact_int(&data);
         super::psb_tokens(&data);
         super::short_form_float(&data);

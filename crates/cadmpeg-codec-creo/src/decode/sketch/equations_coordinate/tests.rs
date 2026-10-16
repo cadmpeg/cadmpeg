@@ -38,6 +38,7 @@ fn unsigned_value_fixture(
         &equations,
         &stored,
         &[(1, 2, SectionAxis::U, 1.0)],
+        &mut Vec::new(),
     )
 }
 
@@ -62,7 +63,13 @@ fn unsigned_distance_branches_resolve_only_a_fully_anchored_chain() {
             .collect::<Vec<_>>();
         let stored = BTreeMap::from([((1, SectionAxis::U), 0.0)]);
         let solved = crate::decode::with_service_context(|ctx| {
-            super::solve_unsigned_dimension_coordinates(ctx, &equations, &stored, &distances)
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &equations,
+                &stored,
+                &distances,
+                &mut Vec::new(),
+            )
         })
         .expect("4096 sign choices share one system");
         let expected = if fully_anchored {
@@ -153,4 +160,29 @@ fn numerical_followup_equal_length_tangency_states_its_off_axis_root() {
             expected
         );
     }
+}
+
+#[test]
+fn sign_branch_cap_skips_the_component_and_names_the_bound() {
+    let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 0.0)];
+    let distances = (1..=13)
+        .map(|point| (point, point + 1, SectionAxis::U, 1.0))
+        .collect::<Vec<_>>();
+    let stored = BTreeMap::from([((1, SectionAxis::U), 0.0)]);
+    let mut losses = Vec::new();
+    let solved = crate::decode::with_service_context(|ctx| {
+        super::solve_unsigned_dimension_coordinates(
+            ctx,
+            &equations,
+            &stored,
+            &distances,
+            &mut losses,
+        )
+    })
+    .expect("a local sign-branch cap is not a decode failure");
+    assert!(solved.is_empty());
+    assert!(losses.iter().any(|loss| {
+        loss.code == crate::loss::CreoLossCode::SectionSignBranchesCapped.kind()
+            && loss.message.contains("MAX_SIGNED_BRANCHES")
+    }));
 }

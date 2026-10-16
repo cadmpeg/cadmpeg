@@ -969,6 +969,7 @@ fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
         }],
         offset: 0,
         for_offset: 1,
+        work_cap: None,
     };
     let values = BTreeMap::from([(
         "length".to_owned(),

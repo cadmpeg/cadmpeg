@@ -5940,7 +5940,8 @@ fn plane_local_system_compound_close(
     }
     for close in start..end {
         if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
-            && complete_plane_local_system(ctx, &payload[start..close], cache)?.is_some()
+            && complete_plane_local_system(ctx, &payload[start..close], cache, &mut Vec::new())?
+                .is_some()
         {
             return Ok(Some(close));
         }
@@ -6559,10 +6560,13 @@ fn plane_envelope_boundary_has_local_system(
     else {
         return Ok(false);
     };
-    Ok(
-        complete_plane_local_system(ctx, &body[local_system_start..local_system_close], cache)?
-            .is_some(),
-    )
+    Ok(complete_plane_local_system(
+        ctx,
+        &body[local_system_start..local_system_close],
+        cache,
+        &mut Vec::new(),
+    )?
+    .is_some())
 }
 
 fn slot_equality(first: &(Option<f64>, &[u8]), second: &(Option<f64>, &[u8])) -> Option<bool> {
@@ -6882,15 +6886,18 @@ fn complete_plane_local_system_slots(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<[f64; 12]> {
-    crate::decode::with_service_context(|ctx| complete_plane_local_system(ctx, body, cache))
-        .expect("plane local system fits service limits")
-        .map(|(slots, _)| slots.get())
+    crate::decode::with_service_context(|ctx| {
+        complete_plane_local_system(ctx, body, cache, &mut Vec::new())
+    })
+    .expect("plane local system fits service limits")
+    .map(|(slots, _)| slots.get())
 }
 
-fn complete_plane_local_system(
+pub(crate) fn complete_plane_local_system(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<
     Option<(
         cadmpeg_ir::units::FiniteVector<12>,
@@ -6903,31 +6910,34 @@ fn complete_plane_local_system(
         let mut normalized = Vec::new();
         normalized.extend_from_slice(prefix);
         normalized.push(0x0f);
-        return scalar::decode_plane_support_local_system(ctx, &normalized, cache);
+        return scalar::decode_plane_support_local_system(ctx, &normalized, cache, losses);
     }
-    scalar::decode_plane_support_local_system(ctx, frame_body, cache)
+    scalar::decode_plane_support_local_system(ctx, frame_body, cache, losses)
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
 pub(crate) fn plane_local_systems(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
-    plane_local_systems_for_rows(ctx, payload, &rows(payload))
+    plane_local_systems_for_rows(ctx, payload, &rows(payload), losses)
 }
 
 /// Decode plane local-system chunks from a DEPDB cross-section namespace.
 pub(crate) fn cross_section_plane_local_systems(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
-    plane_local_systems_for_rows(ctx, payload, &cross_section_rows(payload))
+    plane_local_systems_for_rows(ctx, payload, &cross_section_rows(payload), losses)
 }
 
 fn plane_local_systems_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     struct Candidate<'a> {
         scanner_owned: bool,
@@ -6981,7 +6991,7 @@ fn plane_local_systems_for_rows(
                 continue;
             }
             let body = &payload[chunk_start..chunk_end];
-            let decoded = complete_plane_local_system(ctx, body, &cache)?;
+            let decoded = complete_plane_local_system(ctx, body, &cache, losses)?;
             let slots = decoded
                 .as_ref()
                 .map_or([None; 12], |(slots, _)| slots.get().map(Some));

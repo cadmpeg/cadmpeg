@@ -129,6 +129,7 @@ pub(in super::super) fn build_report(
             &message.message,
         );
     }
+    losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. Identity itself is authored once, in
@@ -178,7 +179,19 @@ pub(in super::super) fn build_report(
         placed_plane_count,
     );
     push_structural_layer_notes(&mut losses, scan);
-    push_coverage_drop_losses(&mut losses, &coverage)?;
+    let mut solve_work_caps = Vec::new();
+    for bound in scan
+        .curves
+        .expressions
+        .iter()
+        .flat_map(|record| &record.solve_blocks)
+        .filter_map(|block| block.work_cap)
+    {
+        if !solve_work_caps.contains(&bound) {
+            solve_work_caps.push(bound);
+        }
+    }
+    push_coverage_drop_losses(&mut losses, &coverage, &solve_work_caps)?;
 
     Ok(DecodeBody {
         transfer: if container_only {

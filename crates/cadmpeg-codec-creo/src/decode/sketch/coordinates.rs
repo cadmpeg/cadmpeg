@@ -267,6 +267,14 @@ pub(in crate::decode) fn resolved_section_coordinates(
     ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
+    resolved_section_coordinates_with_losses(ctx, definition, &mut Vec::new())
+}
+
+pub(in crate::decode) fn resolved_section_coordinates_with_losses(
+    ctx: &DecodeContext<'_>,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
     let crate::feature::definitions::ReconciledPoints {
         points,
         ambiguous: ambiguous_point_ids,
@@ -680,6 +688,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &equations,
         &stored_coordinates,
         &unsigned_dimension_candidates,
+        losses,
     )?;
     for ((point, coordinate), value) in unsigned_coordinates {
         push_coordinate_equation(
@@ -728,6 +737,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &equations,
         &stored_coordinates,
         &unsigned_dimension_candidates,
+        losses,
     )?;
     for ((point, coordinate), value) in second_unsigned_coordinates {
         push_coordinate_equation(

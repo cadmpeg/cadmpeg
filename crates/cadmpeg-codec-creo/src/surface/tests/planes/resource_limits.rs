@@ -168,7 +168,12 @@ fn normalized_plane_frame_reads_local_system() {
         0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00, 0x00, 0x0c, 0x98,
     ];
     let frame = with_surface_ctx(&body, |ctx| {
-        crate::surface::complete_plane_local_system(ctx, &body, &scalar::ScalarCache::default())
+        crate::surface::complete_plane_local_system(
+            ctx,
+            &body,
+            &scalar::ScalarCache::default(),
+            &mut Vec::new(),
+        )
     })
     .expect("twelve normalized bytes are admitted");
     assert!(frame.is_some());
