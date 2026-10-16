@@ -563,7 +563,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
     assert!(
         point_on_sketch_entity(Point2::new(2.0, 1.0), nurbs, EPS_CONTAINMENT_DISTANCE,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
     assert!(point_lies_on_sketch_geometry(
         Point2::new(2.0, 1.0),

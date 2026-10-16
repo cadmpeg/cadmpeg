@@ -988,11 +988,11 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     );
     assert!(
         point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, EPS_CONTAINMENT_LINEAR,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
     assert!(
         !point_on_sketch_entity(Point2::new(-2.0, 0.0), &arc, EPS_CONTAINMENT_LINEAR,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
     let clockwise_arc = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -1029,15 +1029,15 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     );
     assert!(
         point_on_sketch_entity(Point2::new(-1.0, -1.0), &ellipse, EPS_CONTAINMENT_LINEAR,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
     assert!(
         !point_on_sketch_entity(Point2::new(3.0, -1.0), &ellipse, EPS_CONTAINMENT_LINEAR,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
     assert!(
         !point_on_sketch_entity(Point2::new(-1.0, -0.9), &ellipse, EPS_CONTAINMENT_LINEAR,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
 
     let nurbs = entity(SketchGeometry::nurbs(
@@ -1056,11 +1056,11 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     ));
     assert!(
         point_on_sketch_entity(Point2::new(3.0, 2.0), &nurbs, EPS_CONTAINMENT_LINEAR,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
     assert!(
         !point_on_sketch_entity(Point2::new(2.0, 4.0), &nurbs, EPS_CONTAINMENT_LINEAR,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
@@ -1078,7 +1078,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     .unwrap();
     assert!(
         point_on_sketch_entity(*interior.as_raw(), &nurbs, EPS_CONTAINMENT_DISTANCE,)
-            .expect("resource allocation did not fail")
+            .expect("check point membership on the sketch entity")
     );
 }
 
