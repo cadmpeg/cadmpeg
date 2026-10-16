@@ -6,12 +6,23 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::DecodeArena;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::Edge;
+use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::topology::Vertex;
+use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
 
@@ -143,6 +154,146 @@ fn decode_skips_a_nurbs_surface_over_its_pole_limit() {
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("surface pole count exceeds 1000000")
+    }));
+}
+
+#[test]
+fn project_skips_a_revolution_surface_over_its_pole_limit() {
+    // A full-circle angular basis has 9 controls; 111_112 generatrix poles
+    // yield 1_000_008 surface poles, one above MAX_SURFACE_POLES. The poles
+    // live on an in-memory NURBS so the skip does not parse a megabyte of
+    // Type 126 Parameter Data.
+    let pole_count = 111_112_usize;
+    let last = u32::try_from(pole_count - 1).unwrap();
+    assert!(super::revolution_pole_count_exceeds_limit(pole_count, 9));
+    assert!(!super::revolution_pole_count_exceeds_limit(2, 9));
+
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "PROFILE".into(),
+            status: "00010000",
+            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,1,1,0,0,0,1,0,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 120,
+            form: 0,
+            label: "REVOLVE".into(),
+            status: "00000000",
+            parameters: "120,1,3,0,6.283185307179586;".into(),
+        },
+    ]);
+    let scan = crate::card::scan(&bytes).unwrap();
+    let (global, _) = crate::test_support::parse_global(&scan).unwrap();
+    let (directory, parameters) = crate::test_support::with_service_context(&bytes, |ctx| {
+        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)?;
+        let parameters = crate::parameter::assemble(&scan, &directory, &quarantined, &global)?;
+        Ok::<_, CodecError>((directory, parameters))
+    })
+    .unwrap();
+
+    let mut knots = vec![0.0, 0.0];
+    for index in 1..last {
+        knots.push(f64::from(index));
+    }
+    knots.push(f64::from(last));
+    knots.push(f64::from(last));
+    let mut points = Vec::new();
+    for index in 0..pole_count {
+        let x = f64::from(u32::try_from(index).unwrap());
+        points.push(Point3::new(x, 0.0, 0.0));
+    }
+    let generatrix = NurbsCurve::from_lanes(1, knots, points, None, false).unwrap();
+    let interval = [0.0, f64::from(last)];
+
+    let axis_id = crate::ids::curve(&crate::ids::Stem::directory(1_u32));
+    let generatrix_id = crate::ids::curve(&crate::ids::Stem::directory(3_u32));
+    let generatrix_stem = crate::ids::Stem::directory(3_u32);
+    let start_point = crate::ids::point(&generatrix_stem.tail(crate::ids::Word::Start));
+    let end_point = crate::ids::point(&generatrix_stem.tail(crate::ids::Word::End));
+    let start_vertex = crate::ids::vertex(&generatrix_stem.tail(crate::ids::Word::Start));
+    let end_vertex = crate::ids::vertex(&generatrix_stem.tail(crate::ids::Word::End));
+    let edge_id = crate::ids::edge(&generatrix_stem);
+
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        parameter_range: None,
+        id: axis_id,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        parameter_range: None,
+        id: generatrix_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(generatrix)),
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point::new(
+            start_point.clone(),
+            FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            None,
+        ),
+        Point::new(
+            end_point.clone(),
+            FinitePoint3::new(Point3::new(f64::from(last), 0.0, 0.0)).unwrap(),
+            None,
+        ),
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: start_vertex.clone(),
+            point: start_point,
+            tolerance: None,
+        },
+        Vertex {
+            id: end_vertex.clone(),
+            point: end_point,
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: edge_id,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(generatrix_id), Some(interval))
+            .unwrap(),
+        start: start_vertex,
+        end: end_vertex,
+        tolerance: None,
+    });
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let outcome = super::project(
+        &mut ir,
+        &directory,
+        &parameters.records,
+        &global.length_context().unwrap(),
+        &ctx,
+        &mut super::super::geometry::SourceSequences::default(),
+    )
+    .unwrap();
+
+    assert!(ir.model.surfaces.is_empty());
+    assert!(!outcome.decoded.contains(&5_u32));
+    assert!(outcome.losses.iter().any(|loss| {
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
+            && loss
+                .message
+                .contains("revolution pole count exceeds 1000000")
     }));
 }
 
