@@ -3136,7 +3136,12 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities)
         );
         assert_eq!(
-            decode_v1(&data).expect("decode v1").ir.model.bodies.len(),
+            decode_v1(&data)
+                .expect("decode the version 1 archive")
+                .ir
+                .model
+                .bodies
+                .len(),
             1
         );
     }
@@ -3145,20 +3150,41 @@ mod tests {
     fn v1_omitted_typecode_reports_one_loss() {
         let mut data = archive(&[]);
         data.extend(chunk(0x1234_5678, b"unsupported"));
-        assert_eq!(decode_v1(&data).expect("decode v1").body.losses.len(), 1);
+        assert_eq!(
+            decode_v1(&data)
+                .expect("decode the version 1 archive")
+                .body
+                .losses
+                .len(),
+            1
+        );
     }
 
     #[test]
     fn v1_malformed_direct_record_adds_a_diagnostic_note() {
         let mut data = archive(&[]);
         data.extend(chunk(TCODE_TEXT_BLOCK, b"invalid direct record"));
-        assert_eq!(decode_v1(&data).expect("decode v1").body.notes.len(), 3);
+        assert_eq!(
+            decode_v1(&data)
+                .expect("decode the version 1 archive")
+                .body
+                .notes
+                .len(),
+            3
+        );
     }
 
     #[test]
     fn v1_empty_archive_reports_eight_coverage_nodes() {
         let data = archive(&[]);
-        assert_eq!(decode_v1(&data).expect("decode v1").body.coverage.len(), 8);
+        assert_eq!(
+            decode_v1(&data)
+                .expect("decode the version 1 archive")
+                .body
+                .coverage
+                .len(),
+            8
+        );
     }
 
     #[test]
@@ -3167,7 +3193,7 @@ mod tests {
         data.extend(rhinoio_curve_object());
         assert_eq!(
             decode_v1(&data)
-                .expect("decode v1")
+                .expect("decode the version 1 archive")
                 .ir
                 .native
                 .namespace("rhino")
@@ -3312,7 +3338,7 @@ mod tests {
         data.extend(v1_annotation_records().remove(1));
         assert_eq!(
             decode_v1(&data)
-                .expect("decode v1")
+                .expect("decode the version 1 archive")
                 .ir
                 .native
                 .namespace("rhino")
@@ -3772,7 +3798,12 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities)
         );
         assert_eq!(
-            decode_v1(&data).expect("decode v1").ir.model.curves.len(),
+            decode_v1(&data)
+                .expect("decode the version 1 archive")
+                .ir
+                .model
+                .curves
+                .len(),
             1
         );
     }
@@ -3792,7 +3823,12 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities)
         );
         assert_eq!(
-            decode_v1(&data).expect("decode v1").ir.model.bodies.len(),
+            decode_v1(&data)
+                .expect("decode the version 1 archive")
+                .ir
+                .model
+                .bodies
+                .len(),
             1
         );
     }
@@ -3801,7 +3837,12 @@ mod tests {
     fn v1_face_archive_decodes_one_body() {
         let data = legacy_face_archive();
         assert_eq!(
-            decode_v1(&data).expect("decode v1").ir.model.bodies.len(),
+            decode_v1(&data)
+                .expect("decode the version 1 archive")
+                .ir
+                .model
+                .bodies
+                .len(),
             1
         );
     }

@@ -299,7 +299,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &sketch_id,
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
@@ -325,7 +325,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &sketch_id,
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
@@ -351,7 +351,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices")
+        .expect("find the connected sketch profile vertices")
         .is_empty()
     );
 }

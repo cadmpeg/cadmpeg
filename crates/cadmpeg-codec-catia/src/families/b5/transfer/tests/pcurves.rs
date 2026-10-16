@@ -1565,7 +1565,7 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.25,
     )
-    .expect("compute the NURBS surface isocurve")
+    .expect("build the NURBS surface isocurve")
     .expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());

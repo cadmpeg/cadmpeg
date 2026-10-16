@@ -56,7 +56,7 @@ fn adjacent_nurbs_entities_cannot_cross_away_from_shared_endpoints() {
             ctx,
             vec![vec![first, second]]
         ))
-        .expect("compute the ordered extrusion profiles")
+        .expect("order the extrusion profiles")
         .is_none()
     );
 }
@@ -69,7 +69,7 @@ fn empty_extrusion_profile_is_withheld_before_containment() {
             ctx,
             vec![vec![], vec![entity]]
         ))
-        .expect("compute the ordered extrusion profiles")
+        .expect("order the extrusion profiles")
         .is_none()
     );
 }
@@ -115,7 +115,7 @@ fn circular_profile_contains_point_outside_quadrant_diamond() {
         assert!(super::profile_strictly_contains(ctx, &outer, [0.7, 0.7]).expect("containment"));
         let hole = vec![circle(Point2::new(0.7, 0.7), 0.001, true)];
         assert!(super::ordered_extrusion_profiles(ctx, vec![outer, hole])
-            .expect("compute the ordered extrusion profiles")
+            .expect("order the extrusion profiles")
             .is_some());
     });
 }

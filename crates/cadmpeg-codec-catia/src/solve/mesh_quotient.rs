@@ -9183,7 +9183,7 @@ fn coordinate_root_closure_distinguishes_symmetric_assignments() {
     ]);
     let outcome = quotient
         .coordinate_root_closure_outcome(&ctx, 2, &[vec![[0, 1]]], None, None)
-        .expect("compute the coordinate root closure outcome");
+        .expect("resolve the coordinate root closure");
 
     assert_eq!(
         outcome,
@@ -9203,7 +9203,7 @@ fn coordinate_root_closure_rejects_a_single_prefix_after_budget_refusal() {
     assert_eq!(
         quotient
             .coordinate_root_closure_outcome(&ctx, 2, &[vec![[0, 1]]], None, Some(&budget),)
-            .expect("compute the coordinate root closure outcome"),
+            .expect("resolve the coordinate root closure"),
         MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
     );
     assert!(budget.exhausted());
@@ -9252,7 +9252,7 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
             Some((&edge_faces, &boundary_domains)),
             Some(&refused_budget),
         )
-        .expect("compute the coordinate root closure outcome");
+        .expect("resolve the coordinate root closure");
     assert_eq!(
         refused,
         MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
@@ -9267,7 +9267,7 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
             Some((&edge_faces, &boundary_domains)),
             Some(&complete_budget),
         )
-        .expect("compute the coordinate root closure outcome");
+        .expect("resolve the coordinate root closure");
     assert!(matches!(complete, MeshSolve::Solved(_)));
     assert!(!complete_budget.exhausted());
 }
@@ -9379,7 +9379,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
                 None,
                 Some(&shared_budget),
             )
-            .expect("compute the coordinate root closure outcome"),
+            .expect("resolve the coordinate root closure"),
         MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
     );
 
@@ -9397,7 +9397,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
             },
             Some(&shared_incidence_budget),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_none());
     assert!(shared_incidence_budget.exhausted());
 
@@ -9707,7 +9707,7 @@ mod direct_matching_tests {
         ];
         let port_identities = vec![[0, 1], [1, 2], [2, 0]];
         let quotient = initial_mesh_quotient(&edge_candidates, 3, &port_identities)
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("triangle quotient");
         let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
@@ -9725,7 +9725,7 @@ mod direct_matching_tests {
 
         let singleton_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
         let singleton_quotient = initial_mesh_quotient(&singleton_candidates, 3, &port_identities)
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("three singleton edge pairs form a triangle quotient");
         let run = |ctx: &DecodeContext<'_>| {
             let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -9951,10 +9951,10 @@ fn initial_quotient_requires_candidate_points_below_point_count() {
     let candidates = [vec![[0, 1]]];
     let identities = [[10, 11]];
     assert!(initial_mesh_quotient(&candidates, 1, &identities)
-        .expect("compute the initial mesh quotient")
+        .expect("build the initial mesh quotient")
         .is_none());
     assert!(initial_mesh_quotient(&candidates, 2, &identities)
-        .expect("compute the initial mesh quotient")
+        .expect("build the initial mesh quotient")
         .is_some());
 }
 
@@ -9964,7 +9964,7 @@ fn initial_quotient_merges_ports_with_a_shared_identity() {
     let candidates = [vec![[0, 1]], vec![[0, 1]]];
     let identities = [[10, 11], [10, 12]];
     assert!(initial_mesh_quotient(&candidates, 2, &identities)
-        .expect("compute the initial mesh quotient")
+        .expect("build the initial mesh quotient")
         .is_some());
 }
 
@@ -10623,7 +10623,7 @@ fn coordinate_root_closure_solves_a_merged_two_point_quotient() {
     };
     assert!(matches!(
         crate::test_support::with_service_context(run)
-            .expect("compute the coordinate root closure outcome"),
+            .expect("resolve the coordinate root closure"),
         MeshSolve::Solved(_)
     ));
 }
@@ -10641,7 +10641,7 @@ fn coordinate_root_closure_rejects_out_of_range_root_points() {
     assert!(matches!(
         make_quotient()
             .coordinate_root_closure_outcome(&service_ctx, 2, &candidates, None, None)
-            .expect("compute the coordinate root closure outcome"),
+            .expect("resolve the coordinate root closure"),
         MeshSolve::Failed(MeshCandidateFailure::Rejected(()))
     ));
 }
@@ -10672,7 +10672,7 @@ fn coordinate_root_preparation_admits_two_roots_on_one_edge() {
     catia_test_context!(service_ctx);
     assert!(make_quotient()
         .prepare_coordinate_root_domains(&service_ctx, 2, &candidates, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .is_some());
 }
 

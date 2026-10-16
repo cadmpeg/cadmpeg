@@ -54,7 +54,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("compute the remaining equation merge capacity"),
+            .expect("count the possible remaining equation merges"),
         Some(2)
     );
 }
@@ -103,7 +103,7 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("compute the remaining equation merge capacity"),
+            .expect("count the possible remaining equation merges"),
         None
     );
 }
@@ -142,7 +142,7 @@ fn remaining_equation_components_require_a_coordinate_matching() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("compute the remaining equation merge capacity"),
+            .expect("count the possible remaining equation merges"),
         None
     );
 }
@@ -181,7 +181,7 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("compute the remaining equation merge capacity"),
+            .expect("count the possible remaining equation merges"),
         None
     );
 }

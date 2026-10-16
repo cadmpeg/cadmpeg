@@ -86,7 +86,7 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("compute the edge vertices")
+            .expect("resolve the edge vertices")
             .expect("edge vertices")[0],
         [0, 1]
     );
@@ -110,7 +110,7 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("compute the edge vertices")
+            .expect("resolve the edge vertices")
             .expect("edge vertices")[0],
         [1, 0]
     );
@@ -331,10 +331,10 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
 
     assert!(!search
         .candidate_fits(0, [0, 1])
-        .expect("check candidate fits"));
+        .expect("check that the candidate fits"));
     assert!(search
         .candidate_fits(0, [0, 2])
-        .expect("check candidate fits"));
+        .expect("check that the candidate fits"));
 }
 
 #[test]
@@ -383,12 +383,12 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
 
     assert!(search
         .candidate_fits(0, [0, 1])
-        .expect("check candidate fits"));
+        .expect("check that the candidate fits"));
     assert!(!budget.exhausted());
     search.assignment[1] = Some([0, 1]);
     assert!(!search
         .candidate_fits(0, [0, 1])
-        .expect("check candidate fits"));
+        .expect("check that the candidate fits"));
 }
 
 #[test]
@@ -399,11 +399,11 @@ fn incidence_component_caches_implicit_frontier_support() {
     let face_edges = vec![vec![0, 1]];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [0, 1]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("implicit coordinate domains");
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -437,7 +437,7 @@ fn incidence_component_caches_implicit_frontier_support() {
 
     assert!(search
         .candidate_fits(0, [0, 1])
-        .expect("check candidate fits"));
+        .expect("check that the candidate fits"));
     assert_eq!(
         *search.degree_support_witnesses.borrow(),
         HashMap::from([((0, 0), vec![(1, [0, 1])]), ((0, 1), vec![(1, [0, 1])]),])
@@ -483,7 +483,7 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
 
     assert!(search
         .candidate_fits(0, [0, 1])
-        .expect("check candidate fits"));
+        .expect("check that the candidate fits"));
     assert!(!budget.exhausted());
     assert!(degree_budget.exhausted());
     search.search().expect("search the incidence choices");
@@ -528,7 +528,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
 
     assert!(!search
         .candidate_fits(0, [0, 1])
-        .expect("check candidate fits"));
+        .expect("check that the candidate fits"));
 }
 
 #[test]
@@ -539,11 +539,11 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
     let face_edges = vec![vec![0, 1]];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[10, 10], [11, 12]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("implicit coordinate domains");
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
@@ -588,7 +588,7 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
 
     assert!(!search
         .candidate_fits(0, [0, 0])
-        .expect("check candidate fits"));
+        .expect("check that the candidate fits"));
     assert!(!propagation_budget.exhausted());
 }
 

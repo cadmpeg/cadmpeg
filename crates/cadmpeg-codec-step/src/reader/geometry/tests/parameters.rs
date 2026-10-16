@@ -307,7 +307,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         start_seed,
     )
-    .expect("compute the NURBS curve parameter near point")
+    .expect("find the NURBS curve parameter near the point")
     .expect("start witness")
     .get();
     let start_seed_end = nurbs_curve_parameter_near_point(
@@ -317,7 +317,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         start,
     )
-    .expect("compute the NURBS curve parameter near point")
+    .expect("find the NURBS curve parameter near the point")
     .expect("unanchored end witness")
     .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
@@ -329,7 +329,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         end_seed,
     )
-    .expect("compute the NURBS curve parameter near point")
+    .expect("find the NURBS curve parameter near the point")
     .expect("end witness")
     .get();
 

@@ -3635,7 +3635,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("compute the E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .expect("reflected plane boundary");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
@@ -4215,7 +4215,7 @@ mod route_tests {
             &topology(vec![face(1, 10)], vec![10]),
             &[(None, vec![1])],
         )
-        .expect("compute the E5 ownership plan")
+        .expect("build the E5 ownership plan")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1]]);
@@ -4225,7 +4225,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(None, vec![1, 2])],
         )
-        .expect("compute the E5 ownership plan")
+        .expect("build the E5 ownership plan")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Solid);
         assert_eq!(plan[0].components, vec![vec![1, 2]]);
@@ -4235,7 +4235,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 11)], vec![10, 11]),
             &[(None, vec![1, 2])],
         )
-        .expect("compute the E5 ownership plan")
+        .expect("build the E5 ownership plan")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1], vec![2]]);
@@ -4245,7 +4245,7 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 10), face(3, 11)], vec![10, 11]),
             &[(None, vec![1, 2, 3])],
         )
-        .expect("compute the E5 ownership plan")
+        .expect("build the E5 ownership plan")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::General);
         assert_eq!(plan[0].components, vec![vec![1, 2], vec![3]]);
@@ -4255,18 +4255,18 @@ mod route_tests {
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(Some(1), vec![1]), (Some(2), vec![2])],
         )
-        .expect("compute the E5 ownership plan")
+        .expect("build the E5 ownership plan")
         .is_none());
         assert!(e5_ownership_plan(
             &ctx,
             &topology(vec![face(1, 10)], vec![10, 11]),
             &[(None, vec![1])],
         )
-        .expect("compute the E5 ownership plan")
+        .expect("build the E5 ownership plan")
         .is_none());
         assert!(
             e5_ownership_plan(&ctx, &topology(Vec::new(), Vec::new()), &[])
-                .expect("compute the E5 ownership plan")
+                .expect("build the E5 ownership plan")
                 .is_none()
         );
     }
@@ -4347,7 +4347,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("compute the E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .expect("cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
@@ -4402,7 +4402,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("compute the E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .expect("near-isoparametric cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })
@@ -4456,7 +4456,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("compute the E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .expect("cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })
@@ -4498,7 +4498,7 @@ mod route_tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("compute the E5 boundary curve")
+        .expect("build the E5 boundary curve")
         .expect("finite nonzero plane line");
         assert!(matches!(
             curve,

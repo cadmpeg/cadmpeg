@@ -122,7 +122,7 @@ fn nested_fbb_spine_precedes_a_coherent_e5_stream() {
             &scan.census,
             true,
         ))
-        .expect("identify variant"),
+        .expect("identify the container variant"),
         Variant::StandardNested
     );
 }
@@ -137,7 +137,7 @@ fn coherent_e5_stream_overrides_zero_entity_markers() {
         crate::test_support::with_service_context(|ctx| identify_variant(
             ctx, None, None, None, &census, true
         ))
-        .expect("identify variant"),
+        .expect("identify the container variant"),
         Variant::E5Stream
     );
 }
@@ -171,7 +171,7 @@ fn coherent_e5_stream_overrides_an_inner_body_without_brep_streams() {
             &Census::default(),
             true
         ))
-        .expect("identify variant"),
+        .expect("identify the container variant"),
         Variant::E5Stream
     );
 }
@@ -209,7 +209,7 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
             &census,
             false
         ))
-        .expect("identify variant"),
+        .expect("identify the container variant"),
         Variant::FbbOnly
     );
 }
@@ -248,7 +248,7 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
             &census,
             false
         ))
-        .expect("identify variant"),
+        .expect("identify the container variant"),
         Variant::Unknown
     );
 
@@ -266,7 +266,7 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
             &no_vertex_census,
             false,
         ))
-        .expect("identify variant"),
+        .expect("identify the container variant"),
         Variant::Unknown
     );
 }
@@ -293,7 +293,7 @@ fn coherent_e5_stream_precedes_a_partial_fbb_spine() {
             &census,
             true
         ))
-        .expect("identify variant"),
+        .expect("identify the container variant"),
         Variant::E5Stream
     );
 }

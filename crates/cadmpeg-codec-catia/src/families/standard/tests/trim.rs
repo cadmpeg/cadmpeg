@@ -286,7 +286,7 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
     assert_ne!(left_candidate, right_candidate);
     assert!(
         mesh_candidates_equivalent(&ctx, &left_candidate, &right_candidate, None)
-            .expect("check mesh candidates equivalent")
+            .expect("check that the mesh candidates are equivalent")
     );
     let left = canonicalize_mesh_vertex_labels(&ctx, &left_candidate.0, &left_candidate.1)
         .expect("canonicalize mesh vertex labels");
@@ -344,7 +344,7 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
 
     assert_ne!(left, right);
     assert!(mesh_candidates_equivalent(&ctx, &left, &right, None)
-        .expect("check mesh candidates equivalent"));
+        .expect("check that the mesh candidates are equivalent"));
 }
 
 #[test]
@@ -407,7 +407,7 @@ fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
 
     assert_ne!(left, right);
     assert!(mesh_candidates_equivalent(&ctx, &left, &right, None)
-        .expect("check mesh candidates equivalent"));
+        .expect("check that the mesh candidates are equivalent"));
 }
 
 #[test]
@@ -473,7 +473,7 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
     let right = (topology(true), vec![0, 1, 2]);
 
     assert!(!mesh_candidates_equivalent(&ctx, &left, &right, None)
-        .expect("check mesh candidates equivalent"));
+        .expect("check that the mesh candidates are equivalent"));
 }
 
 #[test]
@@ -558,7 +558,7 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     let edge_identity_evidence = [false, false];
 
     assert!(!mesh_candidates_equivalent(&ctx, &left, &right, None)
-        .expect("check mesh candidates equivalent"));
+        .expect("check that the mesh candidates are equivalent"));
     assert!(mesh_candidates_equivalent_with_gauge(
         &ctx,
         &left,
@@ -587,7 +587,7 @@ fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
     );
 
     assert!(!mesh_candidates_equivalent(&ctx, &invalid, &invalid, None)
-        .expect("check mesh candidates equivalent"));
+        .expect("check that the mesh candidates are equivalent"));
 }
 
 #[test]
@@ -647,7 +647,7 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
         let topology = crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::parse_standard(ctx, spine)
         })
-        .expect("parse standard")
+        .expect("parse the standard topology")
         .expect("complete group topology");
         group.face_count() == 1 && topology.face_count() == 1 && topology.edge_rows().len() == 4
     }));
@@ -659,7 +659,7 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::parse_standard(ctx, &bytes)
     })
-    .expect("parse standard")
+    .expect("parse the standard topology")
     .is_none());
 }
 
@@ -724,7 +724,7 @@ fn standard_helpers_share_the_source_closed_face_population() {
         crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::parse_standard(ctx, &bytes)
         })
-        .expect("parse standard")
+        .expect("parse the standard topology")
         .expect("selected topology")
         .face_count(),
         1

@@ -128,7 +128,7 @@ fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
             &nurbs,
             [[9.0, 8.0, 3.0], [1.0, 2.0, 3.0]],
         )
-        .expect("compute the nonperiodic NURBS edge parameter range"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         Some([2.0, 5.0])
     );
     assert_eq!(
@@ -137,7 +137,7 @@ fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
             &nurbs,
             [[9.0, 8.0, 3.0], [1.0, 2.1, 3.0]],
         )
-        .expect("compute the nonperiodic NURBS edge parameter range"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 }
@@ -206,7 +206,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &nurbs,
             [[3.0, 3.0, 0.0], [1.0, 0.0, 0.0]],
         )
-        .expect("compute the nonperiodic NURBS edge parameter range"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         Some([3.5, 7.0])
     );
     assert_eq!(
@@ -215,7 +215,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &nurbs,
             [[3.0, 3.0, 0.0], [1.0, 0.1, 0.0]],
         )
-        .expect("compute the nonperiodic NURBS edge parameter range"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 
@@ -235,7 +235,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &translated,
             [[100_000_001.0, 0.01, 0.0], [100_000_003.0, 0.0, 0.0]],
         )
-        .expect("compute the nonperiodic NURBS edge parameter range"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 
@@ -256,7 +256,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &self_intersecting,
             [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         )
-        .expect("compute the nonperiodic NURBS edge parameter range"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 
@@ -278,7 +278,7 @@ fn degree_one_nurbs_recovers_unique_bounded_parameters() {
             &constant_span,
             [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
         )
-        .expect("compute the nonperiodic NURBS edge parameter range"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 }
@@ -307,7 +307,7 @@ fn periodic_nurbs_does_not_imply_a_full_edge_trim() {
             &nurbs,
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
         )
-        .expect("compute the nonperiodic NURBS edge parameter range"),
+        .expect("find the nonperiodic NURBS edge parameter range"),
         None
     );
 
@@ -351,7 +351,7 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
             .expect("root");
             periodic_conic_edge_parameter_range(&ctx, &circle, points, [root_two, root_two, 0.0])
         })
-        .expect("compute the periodic conic edge parameter range"),
+        .expect("find the periodic conic edge parameter range"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert_eq!(
@@ -365,7 +365,7 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
             .expect("root");
             periodic_conic_edge_parameter_range(&ctx, &circle, points, [-root_two, -root_two, 0.0])
         })
-        .expect("compute the periodic conic edge parameter range"),
+        .expect("find the periodic conic edge parameter range"),
         Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
     );
     assert_eq!(
@@ -384,7 +384,7 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
                 [-2.0, 0.0, 0.0],
             )
         })
-        .expect("compute the periodic conic edge parameter range"),
+        .expect("find the periodic conic edge parameter range"),
         Some([0.0, std::f64::consts::TAU])
     );
     assert_eq!(
@@ -398,7 +398,7 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
             .expect("root");
             periodic_conic_edge_parameter_range(&ctx, &circle, [points[0], points[0]], points[0])
         })
-        .expect("compute the periodic conic edge parameter range"),
+        .expect("find the periodic conic edge parameter range"),
         None
     );
 }
@@ -429,7 +429,7 @@ fn conic_parameters_preserve_ellipse_axis_scales() {
                 [2.0 * root_two, root_two, 0.0],
             )
         })
-        .expect("compute the periodic conic edge parameter range"),
+        .expect("find the periodic conic edge parameter range"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert_eq!(
@@ -448,7 +448,7 @@ fn conic_parameters_preserve_ellipse_axis_scales() {
                 [-2.0 * root_two, -root_two, 0.0],
             )
         })
-        .expect("compute the periodic conic edge parameter range"),
+        .expect("find the periodic conic edge parameter range"),
         Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
     );
     assert_eq!(
@@ -467,7 +467,7 @@ fn conic_parameters_preserve_ellipse_axis_scales() {
                 [-4.0, 0.0, 0.0],
             )
         })
-        .expect("compute the periodic conic edge parameter range"),
+        .expect("find the periodic conic edge parameter range"),
         Some([0.0, std::f64::consts::TAU])
     );
 }

@@ -47,7 +47,7 @@ fn e5_circle_parser_reads_framed_carrier() {
     }
     let surfaces =
         crate::families::e5::records::e5_surfaces(&stream, &mut crate::nurbs::LaneRefusals::new())
-            .expect("compute the E5 surfaces");
+            .expect("decode the E5 surfaces");
     assert!(
         matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius().get() == 2.5 })
     );
@@ -59,7 +59,7 @@ fn e5_circle_parser_reads_framed_carrier() {
         &small,
         &mut crate::nurbs::LaneRefusals::new()
     )
-    .expect("compute the E5 surfaces")
+    .expect("decode the E5 surfaces")
     .is_empty());
 
     let mut zero = e5_circle_stream();
@@ -69,7 +69,7 @@ fn e5_circle_parser_reads_framed_carrier() {
         &zero,
         &mut crate::nurbs::LaneRefusals::new()
     )
-    .expect("compute the E5 surfaces")
+    .expect("decode the E5 surfaces")
     .is_empty());
 }
 
@@ -326,7 +326,7 @@ fn e5_surface_parser_reads_framed_torus() {
         &e5_torus_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("compute the E5 surfaces");
+    .expect("decode the E5 surfaces");
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
@@ -352,7 +352,7 @@ fn e5_surface_parser_reads_framed_torus() {
     assert!(matches!(
         crate::families::e5::records::e5_surfaces(
             &large, &mut crate::nurbs::LaneRefusals::new()
-        ).expect("compute the E5 surfaces")[0].geometry,
+        ).expect("decode the E5 surfaces")[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
     if {
         (torus_surface.major_radius().get() == 2_000_000.0)
@@ -366,7 +366,7 @@ fn e5_surface_parser_reads_framed_torus() {
         &tiny,
         &mut crate::nurbs::LaneRefusals::new()
     )
-    .expect("compute the E5 surfaces")
+    .expect("decode the E5 surfaces")
     .is_empty());
 }
 
