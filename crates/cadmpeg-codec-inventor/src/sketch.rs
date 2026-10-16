@@ -1946,15 +1946,18 @@ fn line_component(
     lines: &[&SketchEntity],
     adjacency: &HashMap<&str, Vec<usize>>,
 ) -> HashSet<usize> {
-    let mut component = HashSet::new();
+    let mut component = HashSet::from([start]);
+    let mut expanded = HashSet::new();
     let mut pending = vec![start];
     while let Some(index) = pending.pop() {
-        if !component.insert(index) {
-            continue;
-        }
         for point in &lines[index].endpoint_refs {
-            if let Some(neighbours) = adjacency.get(point.as_str()) {
-                pending.extend(neighbours);
+            if !expanded.insert(point.as_str()) {
+                continue;
+            }
+            for &neighbour in adjacency.get(point.as_str()).into_iter().flatten() {
+                if component.insert(neighbour) {
+                    pending.push(neighbour);
+                }
             }
         }
     }
@@ -2070,6 +2073,43 @@ mod tests {
             ("point-b", vec![0_usize]),
         ]);
         assert_eq!(super::line_component(0, &[&entity], &adjacency).len(), 1);
+    }
+
+    #[test]
+    fn lines_sharing_one_endpoint_form_one_component_and_no_profile() {
+        const LINES: u32 = 1 << 14;
+        let lines = (0..LINES)
+            .map(|ordinal| {
+                cadmpeg_ir::sketches::SketchEntity::new(
+                    cadmpeg_ir::sketches::SketchEntityId::mint(format!(
+                        "inventor:test:entity#{ordinal}"
+                    ))
+                    .expect("entity id"),
+                    cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1")
+                        .expect("sketch id"),
+                    cadmpeg_ir::sketches::SketchGeometry::try_from(
+                        cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
+                            start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                            end: cadmpeg_ir::math::Point2::new(1.0, f64::from(ordinal)),
+                        },
+                    )
+                    .expect("line geometry"),
+                )
+                .with_endpoint_refs(vec!["hub".to_owned(), format!("tip-{ordinal}")])
+            })
+            .collect::<Vec<_>>();
+        let entities = lines.iter().collect::<Vec<_>>();
+        let mut adjacency = std::collections::HashMap::<&str, Vec<usize>>::new();
+        for (index, line) in lines.iter().enumerate() {
+            for endpoint in &line.endpoint_refs {
+                adjacency.entry(endpoint.as_str()).or_default().push(index);
+            }
+        }
+
+        let component = super::line_component(0, &entities, &adjacency);
+
+        assert_eq!(component, (0..entities.len()).collect());
+        assert!(super::build_profiles(&entities).is_empty());
     }
 
     #[test]
