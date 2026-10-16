@@ -1372,15 +1372,15 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             crate::settings::UnitBinding::Unavailable
         );
         assert_eq!(context.archive(), archive);
-        assert!(context
+        context
             .append_link(0, "rhino:curve#2")
-            .expect("admitted link"));
-        assert!(context
+            .expect("admitted link");
+        context
             .append_link(0, "rhino:curve#1")
-            .expect("admitted link"));
-        assert!(context
+            .expect("admitted link");
+        context
             .append_link(0, "rhino:curve#2")
-            .expect("admitted link"));
+            .expect("admitted link");
         assert_eq!(
             context.unknown(0).expect("required invariant").links(),
             vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
@@ -1390,7 +1390,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .expect("required invariant")
             .id()
             .to_string();
-        assert!(context
+        context
             .append_links(
                 0,
                 &[
@@ -1400,7 +1400,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
                     "rhino:curve#0".to_string(),
                 ],
             )
-            .expect("admitted links"));
+            .expect("admitted links");
         assert_eq!(
             context.unknown(0).expect("required invariant").links(),
             [
@@ -1437,6 +1437,119 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .expect("validate the neutral model");
         assert_eq!(validation.error_count(), 0);
     });
+}
+
+#[test]
+fn expansion_undo_restores_touched_links_and_statuses_exactly() {
+    let archive = ArchiveVersion::V5;
+    let objects = [
+        object_record(archive, 1, [0; 16]),
+        object_record(archive, 1, [0; 16]),
+        object_record(archive, 1, [0; 16]),
+    ];
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &objects),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("required invariant");
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
+        context
+            .append_links(0, &["rhino:curve#5", "rhino:curve#1"])
+            .expect("admitted links");
+        assert!(context.mark_decoded(2));
+        let links = |context: &DecodeContext<'_>| {
+            (0..3)
+                .map(|order| {
+                    context
+                        .unknown(order)
+                        .expect("required invariant")
+                        .links()
+                        .to_vec()
+                })
+                .collect::<Vec<_>>()
+        };
+        let before = links(&context);
+
+        context.expansion_undo = Some(super::ExpansionUndo::default());
+        context
+            .append_links(
+                0,
+                &[
+                    "rhino:curve#9",
+                    "rhino:curve#1",
+                    "rhino:curve#3",
+                    "rhino:curve#3",
+                ],
+            )
+            .expect("admitted links");
+        context
+            .append_link(1, "rhino:curve#0")
+            .expect("admitted link");
+        assert!(context.mark_decoded(1));
+        assert!(!context.mark_failed(2));
+        assert_ne!(links(&context), before);
+        let undo = context.expansion_undo.take().expect("active undo log");
+        assert_eq!(undo.links.len(), 3);
+        context.undo_expansion(undo).expect("undo expansion");
+
+        assert_eq!(links(&context), before);
+        assert!(context.mark_failed(1));
+        assert!(!context.mark_decoded(2));
+    });
+}
+
+#[test]
+fn appending_a_descending_link_batch_merges_once() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let incoming = (0..1_usize << 16)
+        .rev()
+        .map(|index| format!("rhino:curve#{index:08}"))
+        .collect::<Vec<_>>();
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
+        context.append_links(0, &incoming).expect("admitted links");
+        context.append_links(0, &incoming).expect("admitted links");
+        let links = context.unknown(0).expect("required invariant").links();
+        assert_eq!(links.len(), incoming.len());
+        assert!(links.iter().rev().eq(incoming.iter()));
+    });
+}
+
+#[test]
+fn source_record_links_refuse_retained_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let length = scan.objects[0].range().len();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(length + 16);
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+            .expect("test scan fits the root limit");
+    let mut context = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))
+        .expect("source record bytes fit the retained limit");
+    context
+        .append_link(0, "rhino:curve#1")
+        .expect("a short link fits the retained limit");
+    let error = context
+        .append_link(0, "rhino:curve#with-a-long-identity")
+        .expect_err("the link copy exceeds the retained limit");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino source record link"
+        ),
+        "unexpected refusal: {error}"
+    );
+    assert_eq!(
+        context.unknown(0).expect("required invariant").links(),
+        ["rhino:curve#1"]
+    );
 }
 
 #[test]

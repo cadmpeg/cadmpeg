@@ -19,11 +19,13 @@ use crate::layout::compressed_buffer_prologue as compressed;
 use crate::layout::long_chunk_header_wide as long_wide;
 use crate::test_support::test_archive::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
-    line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
+    class_wrapper, line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
     polycurve_payload, polyline_payload, singular_seam_brep_payload, ARC_CLASS, BREP_CLASS,
     EXTRUSION_CLASS, LINE_CLASS, POINT_CLOUD_CLASS, POLYCURVE_CLASS, POLYLINE_CLASS,
 };
-use crate::test_support::test_dump::{MESH_CLASS, POINT_CLASS, SUBD_CLASS};
+use crate::test_support::test_dump::{
+    MESH_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, REV_SURFACE_CLASS, SUBD_CLASS,
+};
 use crate::RhinoCodec;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -330,6 +332,66 @@ fn polycurve_nested_past_the_curve_depth_cap_fails_one_object() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("curve recursion limit exceeded")));
+}
+
+#[test]
+fn revolution_profile_over_the_join_degree_cap_fails_one_object() {
+    // Order 66 is degree 65, one above `MAX_JOIN_DEGREE`.
+    let order = 66_i32;
+    let mut nurbs = vec![0x10];
+    for value in [3, 0, order, order, 0, 0] {
+        nurbs.extend(value.to_le_bytes());
+    }
+    nurbs.extend([0_u8; 48]);
+    nurbs.extend((2 * order - 2).to_le_bytes());
+    for index in 0..2 * order - 2 {
+        let knot = if index < order - 1 { 1.0_f64 } else { 2.0 };
+        nurbs.extend(knot.to_le_bytes());
+    }
+    nurbs.extend(order.to_le_bytes());
+    for index in 0..order {
+        for value in [f64::from(index), 1.0, 0.0] {
+            nurbs.extend(value.to_le_bytes());
+        }
+    }
+    let profile = polycurve_payload(
+        &[0.0, 1.0, 2.0],
+        &[
+            (
+                LINE_CLASS,
+                line_payload([0.0, 1.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0]),
+            ),
+            (NURBS_CURVE_CLASS, nurbs),
+        ],
+    );
+    let mut revolution = vec![0x20];
+    for value in [
+        0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, -10.0, -10.0, -10.0, 10.0, 10.0, 10.0,
+    ] {
+        revolution.extend(f64::to_le_bytes(value));
+    }
+    revolution.extend(0_i32.to_le_bytes());
+    revolution.push(1);
+    revolution.extend(class_wrapper(POLYCURVE_CLASS, &profile));
+    let result = decode(&archive(&[
+        object_record(8, REV_SURFACE_CLASS, &revolution),
+        object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0])),
+    ]));
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result.ir().model.surfaces.iter().all(|surface| matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+    )));
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("MAX_JOIN_DEGREE")),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 #[test]

@@ -603,17 +603,12 @@ fn record_identity(
     identity: &crate::objects::SourceIdentity,
     source_order: usize,
     admitted_key: Option<String>,
-) -> (
-    std::vec::Vec<std::string::String>,
-    std::string::String,
-    std::string::String,
-) {
-    let mut links = Vec::new();
+) -> (Vec<String>, String, String) {
     let key = match admitted_key {
         Some(key) => key,
         None => source_key(identity, source_order),
     };
-    links.push(format!("rhino:object:record#{source_order:06}"));
+    let links = vec![format!("rhino:object:record#{source_order:06}")];
     (links, key, format!("{}", identity.object_id))
 }
 

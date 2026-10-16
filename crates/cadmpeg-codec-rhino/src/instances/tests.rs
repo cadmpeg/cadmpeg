@@ -1691,6 +1691,131 @@ fn instance_reference_limit_retains_the_reference() {
 }
 
 #[test]
+fn instance_copy_element_limit_retains_references_and_stays_exhausted() {
+    let archive = ArchiveVersion::V5;
+    let small_definition = [0x43; 16];
+    let large_definition = [0x44; 16];
+    let small_member_id = [0x33; 16];
+    let large_member_ids: Vec<[u8; 16]> = (0..64_u8)
+        .map(|index| [index, 0x34, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x34])
+        .collect();
+    let point =
+        |x| object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([x, 0.0, 0.0]));
+    let reference = |definition, x| {
+        object_record_with_payload(
+            archive,
+            0x1000,
+            INSTANCE_REFERENCE_CLASS,
+            &instance_reference_payload(definition, transform(1.0, [x, 0.0, 0.0])),
+        )
+    };
+    let mut objects = vec![
+        reference(small_definition, 10.0),
+        reference(large_definition, 20.0),
+        reference(small_definition, 30.0),
+        point(1.0),
+    ];
+    let mut identities = vec![[0x53; 16], [0x54; 16], [0x55; 16], small_member_id];
+    for &id in &large_member_ids {
+        objects.push(point(2.0));
+        identities.push(id);
+    }
+    let mut scan = scan_with_objects(&objects);
+    set_test_units(&mut scan, 1.0);
+    for (source_order, id) in identities.into_iter().enumerate() {
+        set_identity(
+            &mut scan,
+            source_order,
+            id,
+            &format!("copy-{source_order}"),
+            None,
+            true,
+        );
+    }
+    install_definitions(
+        &mut scan,
+        vec![
+            static_definition(small_definition, &[small_member_id]),
+            static_definition(large_definition, &large_member_ids),
+        ],
+    );
+    crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+        // Two small copies fit; the large definition does not. A restored
+        // count would let the second small reference expand.
+        context.set_copy_element_limit(100);
+        context
+            .decode_geometry()
+            .expect("references over the copy element limit are retained");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        let points = &result.ir().model.points;
+        assert_eq!(points.len(), 1, "{points:?}");
+        assert_eq!(points[0].position().get(), Point3::new(11.0, 0.0, 0.0));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.message.contains("2 decode warnings")
+                && loss.message.contains("MAX_INSTANCE_COPY_ELEMENTS")
+        }));
+    });
+}
+
+#[test]
+fn nested_instance_copy_limit_stops_exponential_expansion() {
+    // Definition `level` holds two references to definition `level + 1`; the
+    // last holds one point, so the top reference would make 2^16 copies.
+    const LEVELS: u8 = 16;
+    let archive = ArchiveVersion::V5;
+    let point_id = [0xf0; 16];
+    let reference = |definition| {
+        object_record_with_payload(
+            archive,
+            0x1000,
+            INSTANCE_REFERENCE_CLASS,
+            &instance_reference_payload(definition, transform(1.0, [1.0, 0.0, 0.0])),
+        )
+    };
+    let mut objects = vec![
+        object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([0.0; 3])),
+        reference([1; 16]),
+    ];
+    let mut identities = vec![point_id, [0x7f; 16]];
+    let mut definitions = Vec::new();
+    for level in 1..=LEVELS {
+        let child = [level + 1; 16];
+        let pair = [[0x80 | level; 16], [0xc0 | level; 16]];
+        for id in pair {
+            objects.push(reference(child));
+            identities.push(id);
+        }
+        definitions.push(static_definition([level; 16], &pair));
+    }
+    definitions.push(static_definition([LEVELS + 1; 16], &[point_id]));
+    let mut scan = scan_with_objects(&objects);
+    set_test_units(&mut scan, 1.0);
+    for (source_order, id) in identities.into_iter().enumerate() {
+        set_identity(&mut scan, source_order, id, "nested", None, true);
+    }
+    install_definitions(&mut scan, definitions);
+    crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
+        context.set_copy_element_limit(1 << 12);
+        context
+            .decode_geometry()
+            .expect("the exponential reference is retained at the copy limit");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        assert!(result.ir().model.points.is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("MAX_INSTANCE_COPY_ELEMENTS")));
+    });
+}
+
+#[test]
 fn instance_local_depth_limit_retains_the_reference() {
     let archive = ArchiveVersion::V5;
     let definitions: Vec<_> = (1u8..=65)
