@@ -1478,10 +1478,12 @@ fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) -> String {
 /// turn identity extraction into a stack overflow. Persistent handles remain
 /// serialized bytes: no cross-record owner relation proves that they are
 /// position-independent. A local work cap shared by the section's records
-/// returns no identity when canonicalization would exceed it.
-fn stable_object_record_identities(source_entry: &str, records: &[&[u8]]) -> Vec<Option<String>> {
-    const MAX_GRAPH_WORK: usize = 8 * 1024 * 1024;
-
+/// returns no identity when canonicalization would exceed it; the second value
+/// counts the records skipped at that cap.
+fn stable_object_record_identities(
+    source_entry: &str,
+    records: &[&[u8]],
+) -> (Vec<Option<String>>, usize) {
     let mut references = Vec::new();
     for bytes in records {
         let parsed = crate::om::counted_record_references(bytes, 0, records.len());
@@ -1492,37 +1494,71 @@ fn stable_object_record_identities(source_entry: &str, records: &[&[u8]]) -> Vec
                 .collect::<Vec<_>>(),
         );
     }
-    let mut graph_work = MAX_GRAPH_WORK;
+    let mut graph_work = StableGraphWork {
+        remaining: MAX_STABLE_GRAPH_WORK,
+        refused: false,
+    };
 
     let mut identities = Vec::new();
+    let mut bounded = 0;
     for root in 0..records.len() {
         let identity = if references[root].is_empty() {
             Some(stable_object_record_identity(source_entry, records[root]))
         } else {
-            stable_object_record_graph_identity(
+            graph_work.refused = false;
+            let identity = stable_object_record_graph_identity(
                 source_entry,
                 records,
                 &references,
                 root,
                 &mut graph_work,
-            )
+            );
+            if graph_work.refused {
+                bounded += 1;
+            }
+            identity
         };
         identities.push(identity);
     }
-    identities
+    (identities, bounded)
 }
 
-fn consume_stable_object_graph_work(work: &mut usize, amount: usize) -> Option<()> {
-    *work = work.checked_sub(amount)?;
-    Some(())
+/// Canonicalization work shared by one indexed section's object records.
+pub(super) const MAX_STABLE_GRAPH_WORK: usize = 8 * 1024 * 1024;
+
+/// Remaining graph-identity work for one section.
+///
+/// A refused charge keeps the remainder for later, smaller graphs and marks
+/// the record being canonicalized as skipped at the cap.
+struct StableGraphWork {
+    remaining: usize,
+    refused: bool,
+}
+
+impl StableGraphWork {
+    fn charge(&mut self, amount: usize) -> Option<()> {
+        let Some(remaining) = self.remaining.checked_sub(amount) else {
+            self.refused = true;
+            return None;
+        };
+        self.remaining = remaining;
+        Some(())
+    }
+}
+
+/// Indexed OM records in one section left without a stable identity at
+/// [`MAX_STABLE_GRAPH_WORK`].
+pub(super) struct IdentityBoundedSection {
+    pub(super) source_entry: String,
+    pub(super) records: usize,
 }
 
 fn append_stable_object_graph_node(
     digest: &mut Sha256,
-    graph_work: &mut usize,
+    graph_work: &mut StableGraphWork,
     node_id: u64,
 ) -> Option<()> {
-    consume_stable_object_graph_work(graph_work, 9)?;
+    graph_work.charge(9)?;
     digest.update([STABLE_GRAPH_NODE_START]);
     digest.update(node_id.to_le_bytes());
     Some(())
@@ -1536,7 +1572,7 @@ fn stable_object_record_graph_identity(
     records: &[&[u8]],
     references: &[Vec<(usize, usize)>],
     root: usize,
-    graph_work: &mut usize,
+    graph_work: &mut StableGraphWork,
 ) -> Option<String> {
     #[derive(Debug)]
     struct Frame {
@@ -1550,7 +1586,7 @@ fn stable_object_record_graph_identity(
     const REFERENCE_NEW: u8 = 0xf3;
     const REFERENCE_BACK: u8 = 0xf4;
 
-    consume_stable_object_graph_work(graph_work, source_entry.len().checked_add(32)?)?;
+    graph_work.charge(source_entry.len().checked_add(32)?)?;
     let mut digest = Sha256::new();
     digest.update(b"nx:om:object-record-graph\0");
     digest.update(cadmpeg_core::decode::u64_from_index(source_entry.len()).to_le_bytes());
@@ -1584,7 +1620,7 @@ fn stable_object_record_graph_identity(
             }
             let raw = record_bytes.get(raw_cursor..reference_offset)?;
             let raw_work = raw.len().checked_add(9)?;
-            consume_stable_object_graph_work(graph_work, raw_work)?;
+            graph_work.charge(raw_work)?;
             digest.update([RAW]);
             digest.update(cadmpeg_core::decode::u64_from_index(raw.len()).to_le_bytes());
             digest.update(raw);
@@ -1595,7 +1631,7 @@ fn stable_object_record_graph_identity(
             frame.raw_cursor = reference_end;
 
             if let Some(&target_id) = node_ids.get(&target) {
-                consume_stable_object_graph_work(graph_work, 9)?;
+                graph_work.charge(9)?;
                 digest.update([REFERENCE_BACK]);
                 digest.update(target_id.to_le_bytes());
             } else {
@@ -1616,7 +1652,7 @@ fn stable_object_record_graph_identity(
             }
             let raw = record_bytes.get(raw_cursor..)?;
             let raw_work = raw.len().checked_add(1)?;
-            consume_stable_object_graph_work(graph_work, raw_work)?;
+            graph_work.charge(raw_work)?;
             digest.update([RAW]);
             digest.update(cadmpeg_core::decode::u64_from_index(raw.len()).to_le_bytes());
             digest.update(raw);
@@ -3594,11 +3630,13 @@ fn object_record_relation_ids(
         .collect()
 }
 
-/// Catalog every externally bounded NX OM entity record.
+/// Catalog every externally bounded NX OM entity record, with the sections
+/// whose identity graph work reached [`MAX_STABLE_GRAPH_WORK`].
 pub(super) fn object_records(
     container: &Container,
-) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
+) -> Result<(Vec<ObjectRecord>, Vec<IdentityBoundedSection>), cadmpeg_core::CodecError> {
     let mut output = Vec::new();
+    let mut bounded_sections = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections()?.into_iter().enumerate()
     {
@@ -3613,7 +3651,14 @@ pub(super) fn object_records(
             .iter()
             .map(|record| record.bytes)
             .collect::<Vec<_>>();
-        let stable_identities = stable_object_record_identities(&entry.name, &record_bytes);
+        let (stable_identities, bounded) =
+            stable_object_record_identities(&entry.name, &record_bytes);
+        if bounded != 0 {
+            bounded_sections.push(IdentityBoundedSection {
+                source_entry: entry.name.clone(),
+                records: bounded,
+            });
+        }
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
         for (source, record) in records.iter().enumerate() {
@@ -3690,7 +3735,7 @@ pub(super) fn object_records(
             record.stable_identity = None;
         }
     }
-    Ok(output)
+    Ok((output, bounded_sections))
 }
 
 /// Retain the complete counted `RMFastLoad` active-object membership table.
@@ -5046,7 +5091,8 @@ mod object_record_identity_tests {
     fn unique_indexed_object_records_receive_stable_identities() {
         let container = crate::container::scan_bytes(prt_with_indexed_om_section())
             .expect("required invariant");
-        let records = (super::object_records(&container)).unwrap();
+        let (records, bounded_sections) = (super::object_records(&container)).unwrap();
+        assert!(bounded_sections.is_empty());
         assert_eq!(records.len(), 2);
         assert!(records
             .iter()
@@ -5055,7 +5101,9 @@ mod object_record_identity_tests {
     }
 
     fn stable_identities_for_test(records: &[&[u8]]) -> Vec<Option<String>> {
-        super::stable_object_record_identities("/entry", records)
+        let (identities, bounded) = super::stable_object_record_identities("/entry", records);
+        assert_eq!(bounded, 0);
+        identities
     }
 
     #[test]
@@ -5082,6 +5130,54 @@ mod object_record_identity_tests {
         let changed = [reordered_first, &[0x01, 0x02, 0x90, 0x00, 0x00, 0xc0][..]];
         let changed_identities = stable_identities_for_test(&changed);
         assert_ne!(original_identities[0], changed_identities[1]);
+    }
+
+    #[test]
+    fn graph_identity_work_bound_skips_records_and_keeps_the_remainder() {
+        // Two records that reference each other carry tails longer than half
+        // the section's graph work, so neither graph fits. The small pair after
+        // them still fits in what the refused charges left.
+        let tail = vec![0xa0; super::MAX_STABLE_GRAPH_WORK / 2 + 1];
+        let mut first = vec![0x01, 0x02, 0x90, 0x00, 0x01];
+        first.extend_from_slice(&tail);
+        let mut second = vec![0x01, 0x02, 0x90, 0x00, 0x00];
+        second.extend_from_slice(&tail);
+        let records: [&[u8]; 4] = [
+            &first,
+            &second,
+            &[0x01, 0x02, 0x90, 0x00, 0x03, 0xa0],
+            &[0x01, 0x02, 0x90, 0x00, 0x02, 0xb0],
+        ];
+
+        let (identities, bounded) = super::stable_object_record_identities("/entry", &records);
+
+        assert_eq!(bounded, 2);
+        assert!(identities[..2].iter().all(Option::is_none));
+        assert!(identities[2..].iter().all(Option::is_some));
+    }
+
+    #[test]
+    fn graph_identity_work_bound_reports_its_loss() {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        let tail = vec![0xa0; super::MAX_STABLE_GRAPH_WORK];
+        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            crate::test_support::test_om::indexed_om_section_with_expression_tail(&tail),
+        )]);
+        let result = crate::NxCodec
+            .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+            .expect("a bounded identity graph is not a decode error");
+
+        let bounded = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::NxLossCode::ObjectRecordIdentityBounded.kind())
+            .collect::<Vec<_>>();
+        assert_eq!(bounded.len(), 1);
+        assert!(bounded[0].message.contains("/Root/UG_PART/UG_PART"));
+        assert!(bounded[0].message.contains("1 of its object records"));
     }
 }
 

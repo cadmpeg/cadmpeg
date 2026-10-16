@@ -248,7 +248,7 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container = container::scan_bytes(file).expect("required invariant");
 
-    assert!((super::object_records(&container)).unwrap().is_empty());
+    assert!((super::object_records(&container)).unwrap().0.is_empty());
     let blocks = super::data_blocks(&container).unwrap();
     assert_eq!(blocks.len(), 3);
     assert_eq!(blocks[0].block_ordinal, 0);

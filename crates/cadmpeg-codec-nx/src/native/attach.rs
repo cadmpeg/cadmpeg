@@ -396,6 +396,15 @@ fn attach_records(
              the stream's attribute definitions were skipped."
         )));
     }
+    for section in &model.om.object_record_identity_bounded_sections {
+        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
+            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
+             {} of its object records were kept without a stable identity.",
+            section.source_entry,
+            crate::native::om::MAX_STABLE_GRAPH_WORK,
+            section.records
+        )));
+    }
     let has_object_sections = !scan.container.indexed_om_sections()?.is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     if model.is_empty() && !has_object_sections {
