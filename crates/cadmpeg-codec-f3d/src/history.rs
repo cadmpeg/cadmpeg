@@ -733,7 +733,6 @@ pub(crate) fn bind_feature_outputs(
         }
         let order = history
             .states_oldest_first()
-            .filter(|order| order.len() == history.states().len())
             .unwrap_or_else(|| (0..history.states().len()).collect());
         let mut body_closures: Option<(usize, Option<HistoricalBodyClosures>)> = None;
         for index in order {
@@ -772,7 +771,7 @@ pub(crate) fn bind_feature_outputs(
                 ))
             })();
             body_closures = next_body_closures;
-            history.retain_newest_topology();
+            history.retain_topology(index);
             let Some((state_id, outputs)) = outputs else {
                 continue;
             };
@@ -2681,11 +2680,49 @@ fn bind_entity_selection_path(
     }
 }
 
-struct FeatureInputTopologyJob {
-    feature_position: usize,
-    history_index: usize,
-    state_index: usize,
-    previous_state_id: i64,
+/// Visit `(history index, state index, job)` entries oldest first within each
+/// history and keep only the visited state materialized after each visit.
+fn visit_states_oldest_first<J>(
+    histories: &mut [AsmHistory],
+    mut jobs: Vec<(usize, usize, J)>,
+    mut visit: impl FnMut(&AsmHistory, &AsmDeltaState, J),
+) {
+    let orders = histories
+        .iter()
+        .map(AsmHistory::states_oldest_first)
+        .collect::<Vec<_>>();
+    jobs.sort_by_cached_key(|&(history_index, state_index, _)| {
+        let position = orders
+            .get(history_index)
+            .and_then(Option::as_ref)
+            .and_then(|order| order.iter().position(|&index| index == state_index))
+            .unwrap_or(usize::MAX);
+        (history_index, position)
+    });
+    for (history_index, state_index, job) in jobs {
+        let Some(history) = histories.get_mut(history_index) else {
+            continue;
+        };
+        if let Some(state) = history.states().get(state_index) {
+            visit(history, state, job);
+        }
+        history.retain_topology(state_index);
+    }
+}
+
+fn history_state_indexes(
+    histories: &[AsmHistory],
+    history: &AsmHistory,
+    state: &AsmDeltaState,
+) -> Option<(usize, usize)> {
+    let history_index = histories
+        .iter()
+        .position(|item| std::ptr::eq(item, history))?;
+    let state_index = history
+        .states()
+        .iter()
+        .position(|item| std::ptr::eq(item, state))?;
+    Some((history_index, state_index))
 }
 
 pub(crate) fn project_feature_input_topologies(
@@ -2695,8 +2732,6 @@ pub(crate) fn project_feature_input_topologies(
     edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
     scope_histories: &HashMap<String, String>,
 ) -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
-    use cadmpeg_ir::features::FeatureInputTopology;
-
     let mut jobs = Vec::new();
     for (feature_position, feature) in features.iter().enumerate() {
         let histories = &*histories;
@@ -2739,84 +2774,67 @@ pub(crate) fn project_feature_input_topologies(
         else {
             continue;
         };
-        let Some(history_index) = histories
-            .iter()
-            .position(|item| std::ptr::eq(item, history))
+        let Some((history_index, state_index)) = history_state_indexes(histories, history, state)
         else {
             continue;
         };
-        let Some(state_index) = history
-            .states()
-            .iter()
-            .position(|item| std::ptr::eq(item, state))
-        else {
-            continue;
-        };
-        jobs.push(FeatureInputTopologyJob {
-            feature_position,
+        jobs.push((
             history_index,
             state_index,
-            previous_state_id,
-        });
+            (feature_position, previous_state_id),
+        ));
     }
-
-    let orders = histories
-        .iter()
-        .map(AsmHistory::states_oldest_first)
-        .collect::<Vec<_>>();
-    jobs.sort_by_key(|job| {
-        let position = orders[job.history_index]
-            .as_ref()
-            .and_then(|order| order.iter().position(|&index| index == job.state_index))
-            .unwrap_or(usize::MAX);
-        (job.history_index, position)
-    });
-
     let mut projected = Vec::new();
-    for job in jobs {
-        let history = &mut histories[job.history_index];
-        let projection = (|| {
-            let feature = &features[job.feature_position];
-            let state = &history.states()[job.state_index];
-            let topology = history.topology(state)?;
-            let previous_state_id = job.previous_state_id;
-            let prefix = crate::ids::feature_input_prefix(&feature.id, previous_state_id);
-            let bodies = project_input_members(&topology.bodies, |slot| {
-                crate::ids::history_input_body_id(&prefix, slot)
-            })?;
-            let faces = project_input_members(&topology.faces, |slot| {
-                crate::ids::history_input_face_id(&prefix, slot)
-            })?;
-            let edges = project_input_members(&topology.edges, |slot| {
-                crate::ids::history_input_edge_id(&prefix, slot)
-            })?;
-            let vertices = project_input_members(&topology.vertices, |slot| {
-                crate::ids::history_input_vertex_id(&prefix, slot)
-            })?;
-            let id = crate::ids::history_input_state_id(&prefix);
-            let input_of = feature.id.clone();
-            let native_ref = state.id.clone();
-
-            Some(FeatureInputTopology {
-                id,
-                input_of,
-                bodies,
-                faces,
-                edges,
-                vertices,
-                native_ref: Some(native_ref),
-            })
-        })();
-        history.retain_newest_topology();
-        if let Some(topology) = projection {
-            projected.push((job.feature_position, topology));
-        }
-    }
+    visit_states_oldest_first(
+        histories,
+        jobs,
+        |history, state, (feature_position, previous_state_id)| {
+            let Some(feature) = features.get(feature_position) else {
+                return;
+            };
+            if let Some(input) = project_input_topology(feature, history, state, previous_state_id)
+            {
+                projected.push((feature_position, input));
+            }
+        },
+    );
     projected.sort_by_key(|(position, _)| *position);
-    projected
-        .into_iter()
-        .map(|(_, topology)| topology)
-        .collect()
+    projected.into_iter().map(|(_, input)| input).collect()
+}
+
+fn project_input_topology(
+    feature: &cadmpeg_ir::features::Feature,
+    history: &AsmHistory,
+    state: &AsmDeltaState,
+    previous_state_id: i64,
+) -> Option<cadmpeg_ir::features::FeatureInputTopology> {
+    let topology = history.topology(state)?;
+    let prefix = crate::ids::feature_input_prefix(&feature.id, previous_state_id);
+    let bodies = project_input_members(&topology.bodies, |slot| {
+        crate::ids::history_input_body_id(&prefix, slot)
+    })?;
+    let faces = project_input_members(&topology.faces, |slot| {
+        crate::ids::history_input_face_id(&prefix, slot)
+    })?;
+    let edges = project_input_members(&topology.edges, |slot| {
+        crate::ids::history_input_edge_id(&prefix, slot)
+    })?;
+    let vertices = project_input_members(&topology.vertices, |slot| {
+        crate::ids::history_input_vertex_id(&prefix, slot)
+    })?;
+    let id = crate::ids::history_input_state_id(&prefix);
+    let input_of = feature.id.clone();
+    let native_ref = state.id.clone();
+
+    Some(cadmpeg_ir::features::FeatureInputTopology {
+        id,
+        input_of,
+        bodies,
+        faces,
+        edges,
+        vertices,
+        native_ref: Some(native_ref),
+    })
 }
 
 fn project_input_members<T: Eq + std::hash::Hash>(

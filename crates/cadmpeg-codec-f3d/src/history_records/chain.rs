@@ -911,22 +911,13 @@ impl AsmHistory {
         Some(order.iter().rev().copied().collect())
     }
 
-    /// Drop cached materializations except the newest cached state in chain order.
-    pub(crate) fn retain_newest_topology(&mut self) {
-        let Some(Ok(Some(order))) = self.materialized.order.get_mut() else {
-            return;
-        };
+    /// Drop cached materializations except the state at `index`.
+    pub(crate) fn retain_topology(&mut self, index: usize) {
         let Some(cache) = self.materialized.states.get_mut() else {
             return;
         };
-        let newest = order.iter().copied().find(|&index| {
-            cache
-                .get_mut(index)
-                .and_then(OnceLock::get_mut)
-                .is_some_and(|topology| topology.is_some())
-        });
-        for (index, state) in cache.iter_mut().enumerate() {
-            if Some(index) != newest {
+        for (ordinal, state) in cache.iter_mut().enumerate() {
+            if ordinal != index {
                 *state = OnceLock::new();
             }
         }
