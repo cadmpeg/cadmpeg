@@ -20,7 +20,7 @@ use crate::decode::sketch::geometry::section_arc_geometry;
 use crate::decode::sketch::intersect::intersect_incident_section_carriers;
 use crate::decode::sketch::radii::trim_segment_id;
 use crate::decode::sketch_transfer::identity::materialized_saved_section_external_ids;
-use crate::decode::sketch_transfer::profiles::resolved_profile_chains as resolved_profile_chains_admitted;
+use crate::decode::sketch_transfer::profiles::resolved_profile_chains;
 use crate::decode::surfaces::intersection_candidates::{
     axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
 };
@@ -55,17 +55,6 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;
 
 const EPS_CONIC_INTERSECTION: f64 = 1.0e-12;
-
-fn resolved_profile_chains(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    sketch: &SketchId,
-    emitted: &BTreeSet<u32>,
-) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
-    crate::decode::with_service_context(|ctx| {
-        resolved_profile_chains_admitted(ctx, definition, sketch, emitted)
-    })
-    .expect("compute the resolved profile chains")
-}
 
 #[test]
 fn ordered_face_loops_keep_a_single_loop_with_one_boundary_point() {
@@ -176,11 +165,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
         saved_section: None,
         offset: 1,
     };
-    let profiles = resolved_profile_chains(
-        &definition,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
-    );
+    let profiles = crate::decode::with_service_context(|ctx| {
+        resolved_profile_chains(
+            ctx,
+            &definition,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        )
+    })
+    .expect("compute the resolved profile chains");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 4);
     assert_eq!(
@@ -201,12 +194,16 @@ fn profile_chain_follows_trim_vertex_incidence() {
             decoded_entry_count: Some(3),
             offset: 5,
         });
-    assert!(resolved_profile_chains(
-        &incomplete,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_service_context(|ctx| resolved_profile_chains(
+            ctx,
+            &incomplete,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        ))
+        .expect("compute the resolved profile chains")
+        .is_empty()
+    );
     assert_eq!(
         trim_segment_id(
             &incomplete,
@@ -215,12 +212,16 @@ fn profile_chain_follows_trim_vertex_incidence() {
         None
     );
 
-    assert!(resolved_profile_chains(
-        &definition,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10_u32, 11_u32, 12_u32]),
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_service_context(|ctx| resolved_profile_chains(
+            ctx,
+            &definition,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32]),
+        ))
+        .expect("compute the resolved profile chains")
+        .is_empty()
+    );
 
     let mut incomplete_trim_graph = definition.clone();
     incomplete_trim_graph.segments = Some(crate::feature::definitions::FeatureSegmentTable {
@@ -255,11 +256,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .expect("trim table")
         .rows
         .retain(|row| row.external_id != 13);
-    let profiles = resolved_profile_chains(
-        &incomplete_trim_graph,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
-    );
+    let profiles = crate::decode::with_service_context(|ctx| {
+        resolved_profile_chains(
+            ctx,
+            &incomplete_trim_graph,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        )
+    })
+    .expect("compute the resolved profile chains");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 3);
 
@@ -308,11 +313,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .collect(),
         offset: 4,
     });
-    let arc_profile = resolved_profile_chains(
-        &arcs,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10, 11]),
-    );
+    let arc_profile = crate::decode::with_service_context(|ctx| {
+        resolved_profile_chains(
+            ctx,
+            &arcs,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10, 11]),
+        )
+    })
+    .expect("compute the resolved profile chains");
     assert_eq!(arc_profile.len(), 1);
     assert!(arc_profile[0].iter().all(|entity| entity.reversed));
 
@@ -350,11 +359,15 @@ fn profile_chain_follows_trim_vertex_incidence() {
         .collect(),
         offset: 4,
     });
-    let segment_profile = resolved_profile_chains(
-        &segment_graph,
-        &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
-        &BTreeSet::from([10, 11, 12, 13, 20]),
-    );
+    let segment_profile = crate::decode::with_service_context(|ctx| {
+        resolved_profile_chains(
+            ctx,
+            &segment_graph,
+            &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
+            &BTreeSet::from([10, 11, 12, 13, 20]),
+        )
+    })
+    .expect("compute the resolved profile chains");
     assert_eq!(segment_profile.len(), 1);
     assert_eq!(segment_profile[0].len(), 4);
     assert!(!segment_profile[0][0].reversed);
