@@ -134,8 +134,10 @@ pub(crate) fn plan(
 /// and attributes are `Dropped` because `prepare_write` refuses non-empty arenas.
 /// Topology is written as Brep and point objects or refused as orphaned;
 /// unowned pcurves are refused.
+/// `points` and `curves` are `Reported` because
+/// `WriterSupportGeometryWithheld` accounts for withheld support records.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Dropped, Omitted, Written};
+    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -145,9 +147,9 @@ const COVERAGE: ArenaDispositions = {
         coedges: Written,
         edges: Written,
         vertices: Written,
-        points: Written,
+        points: Reported,
         surfaces: Written,
-        curves: Written,
+        curves: Reported,
         subds: Dropped,
         pcurves: Written,
         procedural_surfaces: Dropped,
