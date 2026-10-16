@@ -64,7 +64,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             })
             .collect::<Vec<_>>()
     );
-    ({ attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations) })
+    attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations)
         .expect("valid exactness fields");
     assert_eq!(ir.model.parameters.len(), 3);
     for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
@@ -128,7 +128,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
         Some("inch")
     );
     assert!(
-        ({ crate::decode::feature_completeness::incomplete_expression_parameters(&ir) })
+        crate::decode::feature_completeness::incomplete_expression_parameters(&ir)
             .unwrap()
             .is_empty()
     );
@@ -166,7 +166,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         Some("custom/unit")
     );
     assert_eq!(
-        ({ crate::decode::feature_completeness::incomplete_expression_parameters(&ir) }).unwrap(),
+        crate::decode::feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
         [ir.model.parameters[0].id.clone()].into()
     );
 }

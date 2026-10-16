@@ -68,7 +68,6 @@ fn planar_dimension_output_keeps_unplaced_constraints() {
         &[],
         &[],
         vec![constraint.clone()],
-    )
-    .unwrap();
+    );
     assert_eq!(output, [constraint]);
 }

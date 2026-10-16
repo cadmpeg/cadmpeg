@@ -44,7 +44,7 @@ fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_
         None,
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("independent same-face cycle solutions");
 
     assert_eq!(solutions.len(), 4);
@@ -64,7 +64,7 @@ fn incidence_component_composition_does_not_allocate_the_declared_point_product(
         None,
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("sparse component degree state");
 
     assert_eq!(solutions, vec![vec![[usize::MAX - 1, usize::MAX - 1]]]);
@@ -92,7 +92,7 @@ fn incidence_component_preflight_retains_fixed_chain_frontiers() {
         None,
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("fixed-chain component frontier");
 
     assert_eq!(solutions, vec![vec![[0, 1], [1, 3], [3, 4], [4, 0]]]);
@@ -315,7 +315,7 @@ fn incidence_components_solve_coupled_face_vertex_closures() {
         None,
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("component closure solution");
     assert!(solutions
         .iter()
@@ -356,7 +356,7 @@ fn incidence_components_reject_degree_cycles_in_the_wrong_edge_order() {
         None,
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("ordered component solution");
 
     assert_eq!(solutions.len(), 1);
@@ -386,7 +386,7 @@ fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
         None,
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("connected cycle solution");
 
     assert_eq!(solutions, vec![vec![[0, 1], [1, 2], [2, 3], [0, 3]]]);
@@ -494,7 +494,7 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let budget = WorkBudget::new(100);
 
@@ -509,12 +509,12 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     .expect("forced deferred quotient");
 
     assert_eq!(
-        quotient.find(0).expect("service forest traversal"),
-        quotient.find(3).expect("service forest traversal")
+        quotient.find(0).expect("find the component root"),
+        quotient.find(3).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
 }
 
@@ -539,7 +539,7 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let budget = WorkBudget::new(100);
 
@@ -554,8 +554,8 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     .expect("unknown exact direction is deferred");
 
     assert_ne!(
-        quotient.find(0).expect("service forest traversal"),
-        quotient.find(3).expect("service forest traversal")
+        quotient.find(0).expect("find the component root"),
+        quotient.find(3).expect("find the component root")
     );
 }
 
@@ -596,20 +596,20 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     .expect("deferred gap quotient");
 
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(4).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(4).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(5).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(5).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(3).expect("service forest traversal"),
-        quotient.find(6).expect("service forest traversal")
+        quotient.find(3).expect("find the component root"),
+        quotient.find(6).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(7).expect("service forest traversal"),
-        quotient.find(0).expect("service forest traversal")
+        quotient.find(7).expect("find the component root"),
+        quotient.find(0).expect("find the component root")
     );
 }
 
@@ -638,11 +638,11 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
     quotient
         .merge(0, 1)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("first closed edge");
     quotient
         .merge(2, 3)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("second closed edge");
     let budget = WorkBudget::new(100);
 
@@ -657,8 +657,8 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     .expect("structural quotient");
 
     assert_eq!(
-        quotient.find(0).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(0).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
 }
 
@@ -695,10 +695,7 @@ fn ordered_face_preparation_does_not_sign_whole_mesh_alternatives() {
     .expect("locally viable face domains");
     assert!(ctx.resource_refusal().is_none());
 
-    assert_eq!(
-        quotient.root_count().expect("service quotient traversal"),
-        4
-    );
+    assert_eq!(quotient.root_count().expect("count the component roots"), 4);
     assert!(!budget.exhausted());
 }
 
@@ -753,7 +750,7 @@ fn ordered_cycle_final_search_retains_domain_forced_directions() {
         None,
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("the final search retains the correlated cycle");
     assert_eq!(solutions, vec![vec![[0, 1], [0, 1]]]);
 }
@@ -792,12 +789,12 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     .expect("ordered component quotient");
 
     assert_eq!(
-        quotient.find(0).expect("service forest traversal"),
-        quotient.find(3).expect("service forest traversal")
+        quotient.find(0).expect("find the component root"),
+        quotient.find(3).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
 }
 
@@ -823,16 +820,16 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
     .expect("unordered component quotient");
 
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(3).expect("service forest traversal"),
-        quotient.find(4).expect("service forest traversal")
+        quotient.find(3).expect("find the component root"),
+        quotient.find(4).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(5).expect("service forest traversal"),
-        quotient.find(0).expect("service forest traversal")
+        quotient.find(5).expect("find the component root"),
+        quotient.find(0).expect("find the component root")
     );
 }
 
@@ -847,14 +844,14 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
         &[Some([0, 1]), Some([1, 2]), Some([2, 0]), None, None],
         None,
     )
-    .expect("check compact boundary domain viable"));
+    .expect("check that the compact boundary domain is viable"));
     assert!(compact_boundary_domain_viable(
         &ctx,
         &domain,
         &[Some([0, 1]), Some([1, 2]), Some([2, 3]), None, None],
         None,
     )
-    .expect("check compact boundary domain viable"));
+    .expect("check that the compact boundary domain is viable"));
     assert!(compact_boundary_domain_viable(
         &ctx,
         &domain,
@@ -867,7 +864,7 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
         ],
         None,
     )
-    .expect("check compact boundary domain viable"));
+    .expect("check that the compact boundary domain is viable"));
 }
 
 #[test]
@@ -878,7 +875,7 @@ fn compact_unordered_boundary_refuses_degree_overflow() {
     assignment.push(None);
     assert!(
         !compact_boundary_domain_viable(&ctx, &domain, &assignment, None)
-            .expect("check compact boundary domain viable")
+            .expect("check that the compact boundary domain is viable")
     );
 }
 
@@ -936,20 +933,20 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
     .expect("deferred component quotient");
 
     assert_eq!(
-        quotient.find(1).expect("service forest traversal"),
-        quotient.find(4).expect("service forest traversal")
+        quotient.find(1).expect("find the component root"),
+        quotient.find(4).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(5).expect("service forest traversal"),
-        quotient.find(2).expect("service forest traversal")
+        quotient.find(5).expect("find the component root"),
+        quotient.find(2).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(3).expect("service forest traversal"),
-        quotient.find(6).expect("service forest traversal")
+        quotient.find(3).expect("find the component root"),
+        quotient.find(6).expect("find the component root")
     );
     assert_eq!(
-        quotient.find(7).expect("service forest traversal"),
-        quotient.find(0).expect("service forest traversal")
+        quotient.find(7).expect("find the component root"),
+        quotient.find(0).expect("find the component root")
     );
 }
 
@@ -976,7 +973,7 @@ fn deferred_faces_share_one_endpoint_quotient() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
 
@@ -1029,7 +1026,7 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
         4,
         &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
 
@@ -1071,7 +1068,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     let assignment = [Some([0, 1]), Some([0, 1])];
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
     let first = domain(false);
@@ -1192,7 +1189,7 @@ fn independent_component_choices_yield_every_pair_solution() {
     crate::test_support::with_service_context(|ctx| {
         assert_eq!(
             run(ctx)
-                .expect("compute the component incidence pair solutions")
+                .expect("find the component incidence pair solutions")
                 .expect("solutions")
                 .len(),
             4
@@ -1269,7 +1266,7 @@ fn compact_unordered_cycle_rejects_a_closed_triangle_subtour() {
     catia_test_context!(service_ctx);
     assert!(
         !compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
-            .expect("check compact boundary domain viable")
+            .expect("check that the compact boundary domain is viable")
     );
 }
 
@@ -1280,7 +1277,7 @@ fn compact_unordered_triangle_cycle_is_viable() {
     catia_test_context!(service_ctx);
     assert!(
         compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
-            .expect("check compact boundary domain viable")
+            .expect("check that the compact boundary domain is viable")
     );
 }
 

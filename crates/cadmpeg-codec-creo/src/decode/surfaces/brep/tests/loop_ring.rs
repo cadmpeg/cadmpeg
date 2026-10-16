@@ -20,7 +20,7 @@ fn native_loop() -> crate::topology::Loop {
 
 #[test]
 fn brep_native_loop_ring_preserves_service_order() {
-    let ring = (native_loop_ring(&native_loop(), 5)).expect("service native ring admitted");
+    let ring = (native_loop_ring(&native_loop(), 5)).expect("build the native loop ring");
     assert_eq!(
         ring.coedges()
             .iter()

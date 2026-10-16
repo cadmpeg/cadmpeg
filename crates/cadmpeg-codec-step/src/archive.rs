@@ -37,7 +37,7 @@ pub(crate) fn has_root_marker(
 ) -> Result<bool, CodecError> {
     // The root name is evidence only in the structured central directory.
 
-    if !has_zip_magic(prefix.window()) && !ArchiveSnapshot::has_footer(ctx, prefix.window())? {
+    if !has_zip_magic(prefix.window()) && !ArchiveSnapshot::has_footer(prefix.window()) {
         return Ok(false);
     }
     match ArchiveSnapshot::contains_matching_name(ctx, prefix, |name| name == ROOT_NAME) {

@@ -97,8 +97,6 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         parameter.clone(),
         0.0
     )
-    .transpose()
-    .unwrap()
     .is_none());
     assert!(matches!(
         crate::design::dimensions::directional_point_dimension(
@@ -106,9 +104,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
             40.0,
             parameter.clone(),
             0.0
-        )
-        .transpose()
-        .unwrap(),
+        ),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     let rounded = entity(
@@ -124,9 +120,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
             40.0,
             parameter,
             1.0e-6
-        )
-        .transpose()
-        .unwrap(),
+        ),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
 
@@ -409,7 +403,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
     ))
     .expect("synthetic tangent dimension");
     assert!(matches!(
-        crate::design::dimensions::presentation_dimension_definition("stream", &frame(vec![operand(306), operand(331)]), &projected, &tangent_span, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").expect("identity grammar"), 1.0e-6).transpose().unwrap(),
+        crate::design::dimensions::presentation_dimension_definition("stream", &frame(vec![operand(306), operand(331)]), &projected, &tangent_span, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").expect("identity grammar"), 1.0e-6),
         Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities.len() == 2
     ));
@@ -424,12 +418,12 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
     ))
     .expect("synthetic tangent radius dimension");
     assert!(matches!(
-        crate::design::dimensions::presentation_dimension_definition("stream", &frame(vec![operand(796)]), &projected, &tangent_radius, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"), 1.0e-6).transpose().unwrap(),
+        crate::design::dimensions::presentation_dimension_definition("stream", &frame(vec![operand(796)]), &projected, &tangent_radius, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"), 1.0e-6),
         Some(SketchConstraintDefinitionInput::Radius { entity, .. })
             if entity.as_str() == "generated:test:entity#796"
     ));
     assert!(matches!(
-        crate::design::dimensions::presentation_dimension_definition("stream", &frame(vec![operand(782), operand(796)]), &projected, &tangent_radius, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"), 1.0e-6).transpose().unwrap(),
+        crate::design::dimensions::presentation_dimension_definition("stream", &frame(vec![operand(782), operand(796)]), &projected, &tangent_radius, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16").expect("identity grammar"), 1.0e-6),
         Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities.len() == 2
     ));
@@ -452,8 +446,6 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
                 .expect("identity grammar"),
             1.0e-6
         )
-        .transpose()
-        .unwrap()
         .is_none()
     );
 
@@ -474,9 +466,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d32")
             .expect("identity grammar"),
         1.0e-6,
-    )
-    .transpose()
-    .unwrap();
+    );
     assert!(matches!(
         point_definition,
         Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
@@ -522,7 +512,7 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
             .expect("identity grammar");
 
     assert!(matches!(
-        crate::design::dimensions::symmetric_parallel_line_dimension_definition(&first, &second, (1, 1), &parameter, parameter_id.clone(), 1.0e-6).transpose().unwrap(),
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(&first, &second, (1, 1), &parameter, parameter_id.clone(), 1.0e-6),
         Some(SketchConstraintDefinitionInput::Distance { entities, parameter: actual })
             if entities == vec![first.id().clone(), second.id().clone()] && actual == parameter_id
     ));
@@ -538,8 +528,6 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
             parameter_id.clone(),
             1.0e-6
         )
-        .transpose()
-        .unwrap()
         .is_none()
     );
     assert!(
@@ -551,8 +539,6 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
             parameter_id,
             1.0e-6
         )
-        .transpose()
-        .unwrap()
         .is_none()
     );
 }
@@ -571,10 +557,8 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#distance")
         .expect("identity grammar");
 
-    let definition = directional_point_dimension(&[&first, &second], 2.0, parameter.clone(), 0.0)
-        .transpose()
-        .unwrap()
-        .unwrap();
+    let definition =
+        directional_point_dimension(&[&first, &second], 2.0, parameter.clone(), 0.0).unwrap();
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::VerticalDistance {
@@ -583,12 +567,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             parameter: ref parameter_id,
         } if first_id == first.id() && second_id == second.id() && parameter_id == &parameter
     ));
-    assert!(
-        directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0)
-            .transpose()
-            .unwrap()
-            .is_none()
-    );
+    assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 
     let diagonal = entity("generated:test:point#diagonal", Point2::new(7.0, 14.0));
     assert!(matches!(
@@ -598,9 +577,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#horizontal")
                 .expect("identity grammar"),
             0.0
-        )
-        .transpose()
-        .unwrap(),
+        ),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     let square = entity("generated:test:point#square", Point2::new(6.0, 18.0));
@@ -611,8 +588,6 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             .expect("identity grammar"),
         0.0
     )
-    .transpose()
-    .unwrap()
     .is_none());
 }
 
@@ -643,11 +618,9 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#distance")
         .expect("identity grammar");
 
-    assert!(exact_counted_dimension_relation(&[&point, &line])
-        .expect("resource allocation did not fail")
-        .is_none());
+    assert!(exact_counted_dimension_relation(&[&point, &line]).is_none());
     assert!(matches!(
-        two_locus_distance_dimension(&[&point, &line], parameter.clone()).transpose().unwrap(),
+        two_locus_distance_dimension(&[&point, &line], parameter.clone()),
         Some(SketchConstraintDefinitionInput::Distance {
             ref entities,
             parameter: ref actual_parameter,
@@ -728,33 +701,26 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
     );
 
     assert!(matches!(
-        exact_counted_dimension_relation(&[&horizontal, &vertical],)
-            .expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&horizontal, &vertical],),
         Some(SketchConstraintDefinitionInput::Perpendicular { .. })
     ));
     assert!(matches!(
-        exact_counted_dimension_relation(&[&horizontal, &parallel],)
-            .expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&horizontal, &parallel],),
         Some(SketchConstraintDefinitionInput::Parallel { .. })
     ));
     assert!(matches!(
-        exact_counted_dimension_relation(&[&horizontal, &point],)
-            .expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&horizontal, &point],),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        exact_counted_dimension_relation(&[&point, &duplicate_point],)
-            .expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&point, &duplicate_point],),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        exact_counted_dimension_relation(&[&arc_start, &arc],)
-            .expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&arc_start, &arc],),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
-    assert!(exact_counted_dimension_relation(&[&outside_arc, &arc])
-        .expect("resource allocation did not fail")
-        .is_none());
+    assert!(exact_counted_dimension_relation(&[&outside_arc, &arc]).is_none());
 }
 
 #[test]
@@ -1331,10 +1297,7 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     let Definition::RepeatedDistance {
         measurements,
         parameter: actual,
-    } = repeated_linear_dimension(&candidates, parameter.clone())
-        .transpose()
-        .unwrap()
-        .unwrap()
+    } = repeated_linear_dimension(&candidates, parameter.clone()).unwrap()
     else {
         panic!("expected repeated distance")
     };
@@ -1348,10 +1311,7 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     ));
 
     let ambiguous = vec![horizontal("a", "b"), horizontal("a", "c")];
-    assert!(repeated_linear_dimension(&ambiguous, parameter)
-        .transpose()
-        .unwrap()
-        .is_none());
+    assert!(repeated_linear_dimension(&ambiguous, parameter).is_none());
 }
 
 mod spatial_distance;

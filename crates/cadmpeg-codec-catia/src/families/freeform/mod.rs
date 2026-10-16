@@ -3795,7 +3795,7 @@ mod tests {
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
             freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-                .expect("service decode");
+                .expect("decode the freeform surface carriers");
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -4377,10 +4377,7 @@ mod tests {
             });
         }
 
-        assert_eq!(
-            ({ standard_carrier_surface_ids(&ir) }).get(&0x1234),
-            Some(&None)
-        );
+        assert_eq!(standard_carrier_surface_ids(&ir).get(&0x1234), Some(&None));
     }
 
     #[test]

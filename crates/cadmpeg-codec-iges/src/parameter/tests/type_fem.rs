@@ -255,13 +255,11 @@ fn malformed_fem_counted_spans_do_not_enable_generic_recovery() {
         let directory = BTreeMap::from([(1, &association), (sequence, &target)]);
         let record = token_record(sequence, &values);
         assert_eq!(entity_primary_end(&record, &directory), Some(values.len()));
-        assert!({
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        }
+        assert!(analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        )
         .groups()
         .is_none());
     }
@@ -277,13 +275,11 @@ fn element_results_boundary_rejects_an_incomplete_variable_item() {
         entity_primary_end(&record, &directory),
         Some(record.tokens.len())
     );
-    assert!({
-        analyze_trailing_pointer_groups_for_global_table(
-            &record,
-            &directory,
-            crate::global::GlobalTable::V5Later,
-        )
-    }
+    assert!(analyze_trailing_pointer_groups_for_global_table(
+        &record,
+        &directory,
+        crate::global::GlobalTable::V5Later,
+    )
     .groups()
     .is_none());
 }

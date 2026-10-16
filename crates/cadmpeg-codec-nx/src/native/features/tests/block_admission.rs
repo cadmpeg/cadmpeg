@@ -84,13 +84,12 @@ enum BlockFieldRoute {
 fn assert_block_field_admits(route: BlockFieldRoute) {
     let bytes = b"\x03\x08Point1\0\x50\x59\x66\x64\x00\x30\x43\x0c\xcc\xcc\xcc\xcd\x72";
     let (container, construction) = block_payload_input(bytes);
-    let payloads = ({
+    let payloads =
         crate::native::features::construction_records::feature_block_construction_payloads(
             &container,
             std::slice::from_ref(&construction),
         )
-    })
-    .expect("block construction payloads");
+        .expect("block construction payloads");
     let decode = || match route {
         BlockFieldRoute::Scalar => {
             crate::native::features::construction_records::feature_block_payload_scalars(

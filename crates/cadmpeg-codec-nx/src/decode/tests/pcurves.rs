@@ -77,7 +77,7 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(({ select_active_body(&mut ir, &body_node_ids, &[7]) }));
+    assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(
@@ -452,7 +452,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 point.get(),
                 parameter,
             )
-            .expect("compute the model curve parameter near point")
+            .expect("find the model curve parameter near the point")
             .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
             assert!((inverse.get() - parameter).abs() < 1.0e-10);
         }
@@ -1515,7 +1515,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
         None,
         0.01,
     )
-    .expect("check NURBS surface parameter within tolerance")
+    .expect("find the NURBS surface parameters within tolerance")
     .unwrap();
     let mapped = cadmpeg_ir::eval::decode::nurbs_surface_point(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,

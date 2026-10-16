@@ -83,7 +83,7 @@ fn join_text_brep_names(scan: &ContainerScan<'_>) -> String {
 
 fn container_only_dimension_parameters(
     native: &F3dNative,
-) -> Result<std::collections::HashSet<cadmpeg_ir::features::ParameterId>, CodecError> {
+) -> std::collections::HashSet<cadmpeg_ir::features::ParameterId> {
     let container_only = crate::design::dimensions::container_only_dimension_companions(
         &native.design_dimension_locus_pairs,
         &native.design_dimension_null_locus_pairs,
@@ -106,11 +106,11 @@ fn container_only_dimension_parameters(
             continue;
         };
         if parameters.next().is_none() {
-            let id = crate::design::identity::neutral_parameter_id(parameter)?;
+            let id = crate::ids::neutral_parameter_id(parameter);
             parameters_by_id.insert(id);
         }
     }
-    Ok(parameters_by_id)
+    parameters_by_id
 }
 
 fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize {
@@ -1344,7 +1344,7 @@ fn design_projection_gaps(
             .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
             .count(),
         unprojected_dimensions: {
-            let container_only = container_only_dimension_parameters(native)?;
+            let container_only = container_only_dimension_parameters(native);
             let relation_bearing_companions = native.design_parameter_companions
                 .iter()
                 .filter(|companion| {
@@ -1430,7 +1430,7 @@ fn design_projection_gaps(
                     {
                         return Ok(count);
                     }
-                    let id = crate::design::identity::neutral_parameter_id(parameter)?;
+                    let id = crate::ids::neutral_parameter_id(parameter);
                     Ok::<_, CodecError>(count + usize::from(
                         !projected_dimension_parameters.contains(&id)
                             && !container_only.contains(&id),
@@ -2518,7 +2518,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.ir.model.configurations = crate::design::configurations::project_configurations(
             &self.native.design_configurations,
         )?;
-        (self.ir.model.features, self.ir.model.parameters) =
+        let projected =
             crate::design::feature_project::project_parameter_design_with_edge_identities(
                 self.ctx,
                 &crate::design::feature_project::ProjectInputs {
@@ -2545,6 +2545,18 @@ impl<'a> F3dDecodeSession<'a> {
                     face_boundaries: &self.native.asm_face_boundaries,
                 },
             )?;
+        self.ir.model.features = projected.features;
+        self.ir.model.parameters = projected.parameters;
+        if projected.unordered_parameter_scopes != 0 {
+            push_loss_vec(
+                &mut self.report.losses,
+                F3dLossCode::ParameterOrderBudgetExceeded,
+                format_args!(
+                    "{} Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded its work cap.",
+                    projected.unordered_parameter_scopes
+                ),
+            );
+        }
         crate::design::feature_project::bind_surface_trim_cell_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -2705,7 +2717,7 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        )?;
+        );
         crate::design::profile_select::bind_surface_trim_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -2719,7 +2731,7 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        )?;
+        );
         crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
             scan,
             &self.native.design_construction_operand_groups,
@@ -2753,7 +2765,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.sketch_curve_identities,
                 &self.native.sketch_surfaces,
                 &self.ir.model.spatial_sketch_entities,
-            )?;
+            );
         crate::design::profile_select::bind_extrude_profile_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -2862,7 +2874,7 @@ impl<'a> F3dDecodeSession<'a> {
         crate::design::dimensions::bind_offset_dimension_parameters(
             &mut self.ir.model.sketch_constraints,
             &self.native.design_parameters,
-        )?;
+        );
         self.ir
             .model
             .sketch_constraints
@@ -4323,11 +4335,11 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note!(&entity.id, "design_sketch_placement");
-            let planar = crate::design::identity::neutral_sketch_id(entity)?;
+            let planar = crate::ids::neutral_sketch_id(entity);
             if planar_sketches.contains(planar.as_str()) {
                 note!(planar.as_str(), "sketch");
             }
-            let spatial = crate::design::identity::neutral_spatial_sketch_id(entity)?;
+            let spatial = crate::ids::neutral_spatial_sketch_id(entity);
             if spatial_sketches.contains(spatial.as_str()) {
                 note!(spatial.as_str(), "spatial_sketch");
             }
@@ -4347,10 +4359,8 @@ fn populate_annotations(
         for entity in &native.sketch_relations {
             note!(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
-                let constraint = crate::design::identity::neutral_sketch_constraint_id(
-                    &entity.id,
-                    entity.record_index,
-                )?;
+                let constraint =
+                    crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index);
                 note!(constraint.as_str(), "sketch_constraint");
             }
         }

@@ -497,20 +497,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::ROLE_0X10,
         );
     let split_groups = [tool_group, target_group];
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&split_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: &split_groups,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&split_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: &split_groups,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -533,7 +534,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (compact_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: compact_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&compact_split_scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -646,7 +650,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
-    let (plane_features, _) = crate::test_support::with_decode_context(|decode_ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: plane_features,
+        ..
+    } = crate::test_support::with_decode_context(|decode_ctx| {
         project_parameter_design_with_edge_identities(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {
@@ -674,7 +681,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     compact_split_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap();
-    let (mismatched_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: mismatched_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&compact_split_scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -1021,20 +1031,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     delete_face_operand =
         crate::records::topology::face::DesignFaceOperand::try_new(draft).unwrap();
     delete_face_operand.resolved_face_slots = vec![7];
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&delete_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&delete_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1042,21 +1053,22 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             heal: true,
         })
     );
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&delete_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                face_operands: std::slice::from_ref(&delete_face_operand),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&delete_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    face_operands: std::slice::from_ref(&delete_face_operand),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1078,20 +1090,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&delete_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&delete_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: true, .. })
@@ -1103,20 +1116,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&delete_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&delete_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1141,20 +1155,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&surface_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&surface_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1162,21 +1177,22 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             heal: false,
         })
     );
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&surface_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                face_operands: std::slice::from_ref(&delete_face_operand),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&surface_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    face_operands: std::slice::from_ref(&delete_face_operand),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1198,20 +1214,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&surface_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&surface_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: false, .. })
@@ -1227,20 +1244,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&surface_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&surface_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1275,20 +1293,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let (features, _) = crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&surface_scope);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    scopes,
-                    construction_groups: std::slice::from_ref(&delete_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+        let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+            crate::test_support::with_decode_context(|ctx| {
+                let scopes = std::slice::from_ref(&surface_scope);
+                let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        scopes,
+                        construction_groups: std::slice::from_ref(&delete_group),
+                        timelines: &timelines,
+                        ..Default::default()
+                    },
+                )
+                .expect("test projection has a synthetic exact timeline")
+            });
         assert!(matches!(
             features[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: false, .. })
@@ -1310,20 +1329,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&surface_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&surface_scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    construction_groups: std::slice::from_ref(&delete_group),
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1356,7 +1376,33 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let (features, _) = crate::test_support::with_decode_context(|ctx| {
+        let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+            crate::test_support::with_decode_context(|ctx| {
+                let scopes = std::slice::from_ref(&delete_scope);
+                let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        scopes,
+                        construction_groups: std::slice::from_ref(&delete_group),
+                        timelines: &timelines,
+                        ..Default::default()
+                    },
+                )
+                .expect("test projection has a synthetic exact timeline")
+            });
+        assert!(matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: true, .. })
+        ));
+    }
+
+    delete_scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
+    delete_scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
             let scopes = std::slice::from_ref(&delete_scope);
             let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
             crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -1370,30 +1416,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             )
             .expect("test projection has a synthetic exact timeline")
         });
-        assert!(matches!(
-            features[0].evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: true, .. })
-        ));
-    }
-
-    delete_scope.class_tag =
-        crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
-    delete_scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&delete_scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes,
-                construction_groups: std::slice::from_ref(&delete_group),
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {

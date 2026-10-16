@@ -97,7 +97,8 @@ fn nurbs_profile_polyline_depth_refuses_before_recursive_span() {
             && refusal.operation == "creo NURBS profile sampling depth")
     );
     assert_eq!(
-        linear_profile_polyline_with_policy(DecodePolicy::service()).expect("service polyline"),
+        linear_profile_polyline_with_policy(DecodePolicy::service())
+            .expect("build the linear profile polyline"),
         Some(vec![[0.0, 0.0], [1.0, 0.0]])
     );
 }
@@ -125,7 +126,7 @@ fn hole_profiles_inside_outer_profile_are_ordered() {
     ];
     assert!(
         crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(ctx, profiles))
-            .expect("compute the ordered extrusion profiles")
+            .expect("order the extrusion profiles")
             .is_some()
     );
 }
@@ -146,7 +147,7 @@ fn connected_profile_vertices_read_line_endpoints() {
             super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
                 .map(std::iter::Iterator::collect::<Vec<_>>)
         })
-        .expect("compute the connected sketch profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 }
@@ -161,8 +162,8 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    ({
-        carriers.admit_sketch_entities(
+    carriers
+        .admit_sketch_entities(
             &mut ir,
             vec![SketchEntity::new(
                 entity_id,
@@ -174,8 +175,7 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
                 .expect("source circle"),
             )],
         )
-    })
-    .expect("entity admission");
+        .expect("entity admission");
     let SketchGeometryDefinition::Circle { center, radius } =
         ir.model.sketch_entities[0].geometry.definition()
     else {
@@ -188,13 +188,13 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
             ctx, &ir, &carriers, &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[3.0, 0.0]])]
     );
     let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("compute the resolved sketch profiles")
+    .expect("resolve the sketch profiles")
     .expect("source profile");
     let super::ProfileGeometry::Circle { center, radius } = profiles[0][0].geometry() else {
         panic!("source profile changed family");
@@ -231,7 +231,7 @@ fn resolved_nurbs_profile_keeps_closed_source_geometry() {
     let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("compute the resolved sketch profiles")
+    .expect("resolve the sketch profiles")
     .expect("closed source profile");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 1);
@@ -257,7 +257,7 @@ fn resolved_profile_reads_closed_circle() {
     let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("compute the resolved sketch profiles")
+    .expect("resolve the sketch profiles")
     .expect("closed circle profile");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 1);
@@ -314,7 +314,7 @@ fn profile_joins_reject_duplicate_sketch_ids() {
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices")
+        .expect("find the connected sketch profile vertices")
         .is_empty()
     );
     assert!(
@@ -325,7 +325,7 @@ fn profile_joins_reject_duplicate_sketch_ids() {
             &sketch_id,
             1
         ))
-        .expect("compute the resolved sketch profiles")
+        .expect("resolve the sketch profiles")
         .is_none()
     );
 }
@@ -350,7 +350,7 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices")
+        .expect("find the connected sketch profile vertices")
         .is_empty()
     );
     assert!(
@@ -361,7 +361,7 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
             &sketch_id,
             1
         ))
-        .expect("compute the resolved sketch profiles")
+        .expect("resolve the sketch profiles")
         .is_none()
     );
 }
@@ -455,7 +455,7 @@ fn overflowing_circular_pcurve_records_refusal_text() {
         &"extrusion feature 11 cap",
         &mut refusal,
     )
-    .expect("service refusal text is admitted");
+    .expect("build the circular pcurve");
     assert!(absent.is_none());
     assert_eq!(
         refusal.take_records(),

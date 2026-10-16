@@ -453,34 +453,28 @@ pub(crate) fn project_parameters(
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
     let expressions = unique_index(inventory.expressions.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let units = unique_index(inventory.units.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let parameters = unique_index(inventory.parameters.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
@@ -1311,7 +1305,7 @@ mod tests {
         ));
         assert_eq!(
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], DecodePolicy::service())
-                .expect("service issue")
+                .expect("build the record inventory")
                 .issues
                 .len(),
             1

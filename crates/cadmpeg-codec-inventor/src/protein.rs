@@ -153,9 +153,8 @@ fn decode_instances_from(
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
         .map(|entry| {
             let instance = archive.open(ctx, &entry.name)?;
-            let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
-            let outcome =
-                cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
+            let frames = cadmpeg_protein::framing::record_frames(instance.window())?;
+            let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, &frames)?;
             Ok(ProteinInstanceRecords {
                 entry_name: entry.name.clone(),
                 records: outcome.records,
@@ -395,8 +394,8 @@ mod tests {
             archive,
             payload,
         };
-        let (_, issue) = decode_instances_with_issue(&setup, &package)
-            .expect("service policy retains semantic issue");
+        let (_, issue) =
+            decode_instances_with_issue(&setup, &package).expect("decode the Protein instances");
         assert!(issue.is_some());
     }
 

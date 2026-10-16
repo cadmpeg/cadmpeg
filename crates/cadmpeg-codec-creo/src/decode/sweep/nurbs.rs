@@ -1331,14 +1331,14 @@ mod tests {
                 crate::decode::with_service_context(|ctx| super::bspline_basis(
                     ctx, 0, 3, 0.5, knots, 4
                 ))
-                .expect("service basis"),
+                .expect("evaluate the B-spline basis"),
                 None
             );
             assert_eq!(
                 crate::decode::with_service_context(|ctx| super::bspline_basis_derivative(
                     ctx, 0, 3, 0.5, knots, 4
                 ))
-                .expect("service basis"),
+                .expect("evaluate the B-spline basis derivative"),
                 None
             );
         }

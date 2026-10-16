@@ -64,7 +64,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
     quotient
         .merge(4, 5)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("unrelated component merge");
     assert!(search
         .propagate_forced_face_equations_from(
@@ -76,7 +76,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
     quotient
         .merge(0, 4)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("component joined to a face port");
     assert!(search
         .propagate_forced_face_equations_from(
@@ -94,7 +94,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     }
     quotient
         .merge(1, 2)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("new face-component merge");
     assert!(search
         .propagate_forced_face_equations_from(

@@ -82,14 +82,12 @@ pub(crate) fn project_decal_images(
         }) else {
             continue;
         };
-        let mut faces = Vec::new();
-        for face in operand
+        let mut faces: Vec<_> = operand
             .references()
             .iter()
             .flat_map(|reference| reference.candidate_faces.iter())
-        {
-            faces.push(face.clone());
-        }
+            .cloned()
+            .collect();
         faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         faces.dedup();
         if faces.is_empty() {
@@ -98,7 +96,7 @@ pub(crate) fn project_decal_images(
         let Some(asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(scope)?;
+        let feature_id = crate::ids::neutral_feature_id(scope);
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };

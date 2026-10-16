@@ -205,7 +205,7 @@ fn native_parameter_loop_polygon_service(
             typed_nonlinear_curve_ids,
         )
     })
-    .expect("service native loop polygon")
+    .expect("build the native parameter loop polygon")
 }
 
 fn ordered_native_parameter_face_loops_service<'a>(
@@ -228,7 +228,7 @@ fn ordered_native_parameter_face_loops_service<'a>(
             curve_evidence,
         )
     })
-    .expect("service native face loop ordering")
+    .expect("order the native parameter face loops")
 }
 
 #[test]

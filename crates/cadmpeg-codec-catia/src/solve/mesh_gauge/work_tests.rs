@@ -90,7 +90,7 @@ fn signature_interning_orders_large_keys() {
     let colors = crate::test_support::with_service_context(|ctx| {
         super::intern_gauge_signatures(ctx, signatures)
     })
-    .expect("service decode");
+    .expect("group the gauge signatures");
     assert_eq!(colors, (0..1024).collect::<Vec<_>>());
 }
 
@@ -118,7 +118,7 @@ fn edgeless_relation_state_maps_unchanged() {
         crate::test_support::with_service_context(|ctx| {
             map_endpoint_relation_state(ctx, &state, gauge, &[])
         })
-        .expect("service work allowance"),
+        .expect("map the endpoint relation state"),
         Some(state)
     );
 }
@@ -146,7 +146,8 @@ fn identical_edge_rows_keep_the_identity_row_mapping() {
         vec![vec![MeshEndpointRelationSelection::Deferred; 128]],
     );
     assert_eq!(
-        relation_row_gauge_mapping(&state, gauge, &[0, 1]).expect("service work allowance"),
+        relation_row_gauge_mapping(&state, gauge, &[0, 1])
+            .expect("map the relation rows to the gauge"),
         Some(vec![0, 1])
     );
 }
@@ -175,7 +176,7 @@ fn equal_gauge_signatures_share_one_color() {
         crate::test_support::with_service_context(|ctx| {
             super::intern_gauge_signatures(ctx, signatures)
         })
-        .expect("service comparison work"),
+        .expect("group the gauge signatures"),
         vec![0, 0]
     );
 }
@@ -200,7 +201,7 @@ fn relation_selection_naming_an_edge_twice_does_not_map() {
     assert!(crate::test_support::with_service_context(|ctx| {
         map_endpoint_relation_state(ctx, &state, gauge, &[0, 1])
     })
-    .expect("service work")
+    .expect("map the endpoint relation state")
     .is_none());
 }
 
@@ -261,5 +262,5 @@ fn mesh_candidate_without_gauge_is_equivalent_to_itself() {
     assert!(crate::test_support::with_service_context(|ctx| {
         super::mesh_candidates_equivalent(ctx, &candidate, &candidate, None)
     })
-    .expect("service comparison"));
+    .expect("check that the mesh candidates are equivalent"));
 }

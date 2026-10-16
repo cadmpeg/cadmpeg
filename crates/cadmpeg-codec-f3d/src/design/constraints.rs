@@ -42,7 +42,7 @@ pub(crate) fn project_sketch_constraints(
 
     let mut sketches = HashMap::new();
     for placement in placements {
-        let id = crate::design::identity::neutral_sketch_id(placement)?;
+        let id = crate::ids::neutral_sketch_id(placement);
         {}
         if !entities.iter().any(|entity| entity.sketch == id) {
             continue;
@@ -161,7 +161,7 @@ pub(crate) fn project_sketch_constraints(
                 };
                 match loci {
                     Some(loci) => Some(loci),
-                    None => exact_atomic_constraint(kind, &semantic_entities)?,
+                    None => exact_atomic_constraint(kind, &semantic_entities),
                 }
             } else {
                 None
@@ -177,12 +177,12 @@ pub(crate) fn project_sketch_constraints(
                     parameters,
                     &input_entities,
                     &semantic_entities,
-                )?;
+                );
             }
             let definition = if definition.is_some() {
                 definition
             } else {
-                exact_offset_constraint(relation, scope, &projected).transpose()?
+                exact_offset_constraint(relation, scope, &projected)
             };
             let definition = match definition {
                 Some(definition) => Some(definition),
@@ -255,10 +255,7 @@ pub(crate) fn project_sketch_constraints(
                 return Ok(None);
             };
             Ok(Some(SketchConstraint {
-                id: crate::design::identity::neutral_sketch_constraint_id(
-                    &relation.id,
-                    relation.record_index,
-                )?,
+                id: crate::ids::neutral_sketch_constraint_id(&relation.id, relation.record_index),
                 sketch,
                 definition,
                 name: None,
@@ -322,10 +319,11 @@ fn exact_rectangular_pattern(
     let Some(SketchPatternDefinition::Rectangular { directions }) = pattern else {
         return Ok(None);
     };
-    let project_direction = |direction: &crate::records::sketch_relations::SketchPatternDirection| -> Result<Option<_>, CodecError> {
+    let project_direction =
+        |direction: &crate::records::sketch_relations::SketchPatternDirection| -> Option<_> {
             let source_direction = direction.direction.get();
             if source_direction[2].abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
-                return Ok(None);
+                return None;
             }
             let count_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
@@ -339,32 +337,32 @@ fn exact_rectangular_pattern(
             if count_parameter.is_some_and(|parameter| {
                 !scalar_close(parameter.evaluated_value().get(), f64::from(count))
             }) {
-                return Ok(None);
+                return None;
             }
             let distance = cadmpeg_ir::scalar::NonNegativeLength::new(
                 direction.evaluated_distance.get() * 10.0,
             );
-            let Some(distance) = distance else { return Ok(None); };
+            let distance = distance?;
             if (count == 1 && !scalar_close(distance.get(), 0.0))
                 || distance_parameter.is_some_and(|parameter| {
                     design_length(parameter)
                         .is_none_or(|value| !scalar_close(value.get(), distance.get()))
                 })
             {
-                return Ok(None);
+                return None;
             }
-            Ok(Some(RectangularPatternSourceDirection {
+            Some(RectangularPatternSourceDirection {
                 direction: [source_direction[0], source_direction[1]],
                 count,
                 distance,
-                distance_parameter: distance_parameter.map(crate::design::identity::neutral_parameter_id).transpose()?,
-                count_parameter: count_parameter.map(crate::design::identity::neutral_parameter_id).transpose()?,
-            }))
-    };
-    let Some(first) = project_direction(&directions[0])? else {
+                distance_parameter: distance_parameter.map(crate::ids::neutral_parameter_id),
+                count_parameter: count_parameter.map(crate::ids::neutral_parameter_id),
+            })
+        };
+    let Some(first) = project_direction(&directions[0]) else {
         return Ok(None);
     };
-    let Some(second) = project_direction(&directions[1])? else {
+    let Some(second) = project_direction(&directions[1]) else {
         return Ok(None);
     };
     let source = [first, second];
@@ -510,10 +508,7 @@ fn exact_rectangular_pattern_instances(
         if !matched {
             return None;
         }
-        let mut entity_ids = Vec::new();
-        for entity in instance {
-            entity_ids.push(entity.id().clone());
-        }
+        let entity_ids: Vec<_> = instance.iter().map(|entity| entity.id().clone()).collect();
         if position % column_count == 0 {
             rows.push(Vec::new());
         }
@@ -662,7 +657,7 @@ fn exact_circular_pattern(
     parameters: &[DesignParameter],
     members: &[&cadmpeg_ir::sketches::SketchEntity],
     returned: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use crate::records::sketch_relations::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
         SketchCircularPattern, SketchCircularPatternInstance,
@@ -673,7 +668,7 @@ fn exact_circular_pattern(
         || members.len() != relation.members().len()
         || returned.len() != relation.return_members().len()
     {
-        return Ok(None);
+        return None;
     }
     let pattern = relation.definition.pattern();
     let Some(SketchPatternDefinition::Circular {
@@ -683,7 +678,7 @@ fn exact_circular_pattern(
         evaluated_count,
     }) = pattern
     else {
-        return Ok(None);
+        return None;
     };
     let angle_parameter = parameters.iter().find(|parameter| {
         native_stream(&parameter.id) == Some(scope)
@@ -702,7 +697,7 @@ fn exact_circular_pattern(
             f64::from(evaluated_count.get()),
         )
     }) {
-        return Ok(None);
+        return None;
     }
     // Relation ordinals do not classify center/seed/generated; partition by
     // geometry when the member and returned id sets match.
@@ -718,7 +713,7 @@ fn exact_circular_pattern(
         || returned_ids.len() != returned.len()
         || member_ids != returned_ids
     {
-        return Ok(None);
+        return None;
     }
     let mut candidates = Vec::new();
     for center in members.iter().copied() {
@@ -738,7 +733,7 @@ fn exact_circular_pattern(
             patterned.push(entity);
         }
         let Ok(count) = usize::try_from(evaluated_count.get()) else {
-            return Ok(None);
+            return None;
         };
         if patterned.is_empty() || !patterned.len().is_multiple_of(count) {
             continue;
@@ -758,9 +753,7 @@ fn exact_circular_pattern(
             let mut instances = Vec::new();
             let mut valid = true;
             for (index, instance) in patterned.chunks_exact(arity).enumerate().skip(1) {
-                let Some(index) = f64_from_index(index) else {
-                    return Ok(None);
-                };
+                let index = f64_from_index(index)?;
                 let rotation = evaluated_angle.get() * index / divisor;
                 if !seed.iter().zip(instance).all(|(source, result)| {
                     rotated_sketch_geometry_matches(
@@ -777,20 +770,15 @@ fn exact_circular_pattern(
                     valid = false;
                     break;
                 };
-                let mut entity_ids = Vec::new();
-                for entity in instance {
-                    entity_ids.push(entity.id().clone());
-                }
+                let entity_ids: Vec<_> =
+                    instance.iter().map(|entity| entity.id().clone()).collect();
                 instances.push(SketchCircularPatternInstance {
                     angle,
                     entities: entity_ids,
                 });
             }
             if valid {
-                let mut seed_entities = Vec::new();
-                for entity in seed {
-                    seed_entities.push(entity.id().clone());
-                }
+                let seed_entities: Vec<_> = seed.iter().map(|entity| entity.id().clone()).collect();
                 let center = center.id().clone();
                 candidates.push((center, seed_entities, instances));
             }
@@ -798,24 +786,18 @@ fn exact_circular_pattern(
     }
     candidates.dedup();
     if candidates.len() != 1 {
-        return Ok(None);
+        return None;
     }
-    let Some((center, seed_entities, instances)) = candidates.pop() else {
-        return Ok(None);
-    };
+    let (center, seed_entities, instances) = candidates.pop()?;
     let pattern = SketchCircularPattern::new(
         center,
         angle,
-        angle_parameter
-            .map(crate::design::identity::neutral_parameter_id)
-            .transpose()?,
-        count_parameter
-            .map(crate::design::identity::neutral_parameter_id)
-            .transpose()?,
+        angle_parameter.map(crate::ids::neutral_parameter_id),
+        count_parameter.map(crate::ids::neutral_parameter_id),
         seed_entities,
         instances,
     );
-    Ok(pattern.map(|pattern| Definition::CircularPattern { pattern }))
+    pattern.map(|pattern| Definition::CircularPattern { pattern })
 }
 
 fn rotated_sketch_geometry_matches(

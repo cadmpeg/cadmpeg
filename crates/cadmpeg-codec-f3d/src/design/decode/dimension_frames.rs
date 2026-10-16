@@ -766,13 +766,11 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     record: &DesignDimensionRecipeRecord,
     operands: &[DesignEdgeOperand],
 ) -> Vec<String> {
-    let mut ids = Vec::new();
-    for operand in operands
+    let mut ids: Vec<_> = operands
         .iter()
         .filter(|operand| dimension_recipe_edge_matches(record, operand))
-    {
-        ids.push(operand.id.clone());
-    }
+        .map(|operand| operand.id.clone())
+        .collect();
     ids.sort();
     ids.dedup();
     ids

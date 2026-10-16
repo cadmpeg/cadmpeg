@@ -20,7 +20,7 @@ fn single_edge_class_choice_yields_a_search_constraint() {
     catia_test_context!(service_ctx);
     let choices = [vec![[0usize, 1usize]]];
     assert!(edge_class_search_constraint(&service_ctx, &[0], &choices)
-        .expect("service decode")
+        .expect("build the edge class search constraint")
         .is_some());
 }
 
@@ -63,7 +63,7 @@ fn selected_face_with_open_edge_direction_is_orientable() {
         };
         search.selected_orientable()
     };
-    assert!(run(&service_ctx).expect("service decode"));
+    assert!(run(&service_ctx).expect("check that the selected faces are orientable"));
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn remaining_face_with_fixed_edge_direction_is_orientable() {
     };
     assert!(search
         .fixed_remaining_faces_are_orientable()
-        .expect("service decode"));
+        .expect("check that the fixed remaining faces are orientable"));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)

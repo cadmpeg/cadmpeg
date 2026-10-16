@@ -1841,7 +1841,7 @@ mod endpoint_tests {
         assert_eq!(
             topology
                 .edge_vertices(&ctx)
-                .expect("compute the edge vertices"),
+                .expect("resolve the edge vertices"),
             Some(vec![[0, 1], [1, 2], [0, 2]])
         );
     }

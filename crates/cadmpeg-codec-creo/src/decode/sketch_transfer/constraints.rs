@@ -28,9 +28,7 @@ use super::super::sketch::equations_scalar::{
 };
 use super::super::sketch::radii::section_radius_relation_arc;
 use super::super::sketch::skamp::{section_segment_rows, unique_decoded_section_segment};
-use super::super::sketch_ids::{
-    sketch_constraint_id_admitted, sketch_entity_id_admitted, sketch_native_ref_admitted,
-};
+use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use crate::decode::sketch_transfer::identity::{
     opaque_section_segment_identity_suffix, section_entity_external_ids,
     section_segment_identity_suffix, unique_section_segment_external_ids,
@@ -72,7 +70,7 @@ fn equation_constraint(
     active: bool,
     offset: usize,
 ) -> Option<(SketchConstraint, usize)> {
-    let id = sketch_constraint_id_admitted(sketch, format_args!("equation:{equation_id}"))?;
+    let id = sketch_constraint_id(sketch, format_args!("equation:{equation_id}"))?;
     let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
     else {
         return None;
@@ -91,7 +89,7 @@ fn equation_constraint(
             label_distance: None,
             label_position: None,
             metadata: None,
-            native_ref: Some(sketch_native_ref_admitted(sketch)),
+            native_ref: Some(sketch_native_ref(sketch)),
         },
         offset,
     ))
@@ -132,7 +130,7 @@ pub(super) fn native_section_segment_verhor_definition(
     let entities = vec![entity];
     let operand_kind = "segtab_ptr".to_owned();
     let field = "ext_id".to_owned();
-    let native_ref = sketch_native_ref_admitted(sketch);
+    let native_ref = sketch_native_ref(sketch);
     let mut operands = Vec::new();
     operands.push(SketchNativeOperand {
         native_kind: cadmpeg_core::text::NonBlankString::new(operand_kind)
@@ -477,7 +475,7 @@ pub(in super::super) fn relation_incidence_entities(
     };
     let mut entities = Vec::new();
     for item in &incidence.items {
-        if let Some(entity) = sketch_entity_id_admitted(sketch, item.entity_id) {
+        if let Some(entity) = sketch_entity_id(sketch, item.entity_id) {
             entities.push(entity);
         }
     }
@@ -494,7 +492,7 @@ pub(in super::super) fn joined_relation_incidence_entities(
     };
     let mut entities = Vec::new();
     for item in &incidence.items {
-        if let Some(entity) = sketch_entity_id_admitted(sketch, item.entity_id) {
+        if let Some(entity) = sketch_entity_id(sketch, item.entity_id) {
             entities.push(entity);
         }
     }
@@ -548,8 +546,8 @@ fn section_angular_entities(
     if first == second {
         return None;
     }
-    let first = sketch_entity_id_admitted(sketch, first)?;
-    let second = sketch_entity_id_admitted(sketch, second)?;
+    let first = sketch_entity_id(sketch, first)?;
+    let second = sketch_entity_id(sketch, second)?;
     Some([first, second])
 }
 
@@ -572,7 +570,7 @@ fn segment_radius_operand(
             role: None,
         }),
         object_index: Some(object_index),
-        native_ref: Some(sketch_native_ref_admitted(sketch)),
+        native_ref: Some(sketch_native_ref(sketch)),
     })
 }
 
@@ -719,7 +717,7 @@ fn section_segment_radius_constraint(
     binding: SectionSegmentRadiusBinding,
     sketch: &SketchId,
 ) -> Result<Option<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
-    let Some(entity) = sketch_entity_id_admitted(sketch, &binding.suffix) else {
+    let Some(entity) = sketch_entity_id(sketch, &binding.suffix) else {
         return Ok(None);
     };
     let (definition, kind) = match binding.typed_circle {
@@ -746,8 +744,7 @@ fn section_segment_radius_constraint(
             },
         ),
     };
-    let Some(id) = sketch_constraint_id_admitted(sketch, format_args!("{kind}:{}", binding.suffix))
-    else {
+    let Some(id) = sketch_constraint_id(sketch, format_args!("{kind}:{}", binding.suffix)) else {
         return Ok(None);
     };
     let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
@@ -768,7 +765,7 @@ fn section_segment_radius_constraint(
             label_distance: None,
             label_position: None,
             metadata: None,
-            native_ref: Some(sketch_native_ref_admitted(sketch)),
+            native_ref: Some(sketch_native_ref(sketch)),
         },
         binding.offset,
     )))
@@ -832,7 +829,7 @@ fn reconcile_section_segment_radius_constraint(
     if entity_reconciled && parameter_reconciled {
         return Ok(true);
     }
-    let Some(entity) = sketch_entity_id_admitted(sketch, &binding.suffix) else {
+    let Some(entity) = sketch_entity_id(sketch, &binding.suffix) else {
         return Ok(false);
     };
     let native_definition = native_section_segment_radius_definition(
@@ -912,10 +909,10 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             continue;
         };
         for &external_id in entities {
-            let Some(entity) = sketch_entity_id_admitted(sketch, external_id) else {
+            let Some(entity) = sketch_entity_id(sketch, external_id) else {
                 continue;
             };
-            let Some(id) = sketch_constraint_id_admitted(
+            let Some(id) = sketch_constraint_id(
                 sketch,
                 format_args!("equation:{}:radius:{}", equation.equation_id, external_id),
             ) else {
@@ -941,7 +938,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
                     label_distance: None,
                     label_position: None,
                     metadata: None,
-                    native_ref: Some(sketch_native_ref_admitted(sketch)),
+                    native_ref: Some(sketch_native_ref(sketch)),
                 },
                 equation.offset,
             ));
@@ -1420,7 +1417,7 @@ pub(in super::super) fn section_equation_native_constraints(
             continue;
         }
         let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
-        let native_ref = sketch_native_ref_admitted(sketch);
+        let native_ref = sketch_native_ref(sketch);
         let mut native_properties = BTreeMap::new();
         insert_native_equation_property(
             &mut native_properties,
@@ -1464,10 +1461,9 @@ pub(in super::super) fn section_equation_native_constraints(
         }
         let operands =
             native_equation_operands(equation.equation_id, &equation.arguments, &native_ref)?;
-        let Some(id) = sketch_constraint_id_admitted(
-            sketch,
-            format_args!("equation:offset:{}", equation.offset),
-        ) else {
+        let Some(id) =
+            sketch_constraint_id(sketch, format_args!("equation:offset:{}", equation.offset))
+        else {
             continue;
         };
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
@@ -1614,7 +1610,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                 ) else {
                     return Ok(None);
                 };
-                let Some(entity) = sketch_entity_id_admitted(sketch, line_external_id) else {
+                let Some(entity) = sketch_entity_id(sketch, line_external_id) else {
                     return Ok(None);
                 };
                 Ok(equation_constraint(
@@ -1862,7 +1858,7 @@ fn native_section_dimension_constraint_definition(
     if !unique_relation_id {
         insert_relation_property(&mut native_properties, "relation_id", relation.relation_id);
     }
-    let native_ref = sketch_native_ref_admitted(sketch);
+    let native_ref = sketch_native_ref(sketch);
     let mut operands = Vec::new();
     if unique_relation_id {
         push_relation_operand(
@@ -2070,8 +2066,7 @@ pub(in super::super) fn section_dimension_constraints(
                                 && measured.vertical_horizontal == Some(expected_coordinate)
                                 && known_entities.contains(&measured.external_id)
                             {
-                                let entity =
-                                    sketch_entity_id_admitted(sketch, measured.external_id)?;
+                                let entity = sketch_entity_id(sketch, measured.external_id)?;
                                 return Some(if incidence.kind == 1 {
                                     SketchConstraintDefinitionInput::Horizontal { entity }
                                 } else {
@@ -2086,7 +2081,7 @@ pub(in super::super) fn section_dimension_constraints(
                     if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
                         let segment = section_radius_relation_arc(definition, relation)?;
                         return Some(circular_dimension_constraint(
-                            sketch_entity_id_admitted(sketch, segment.external_id)?,
+                            sketch_entity_id(sketch, segment.external_id)?,
                             parameter,
                             dimension.dimension_type,
                         ));
@@ -2124,7 +2119,7 @@ pub(in super::super) fn section_dimension_constraints(
                         )?;
                         known_entities.contains(&external_id).then_some(())?;
                         return Some(circular_dimension_constraint(
-                            sketch_entity_id_admitted(sketch, external_id)?,
+                            sketch_entity_id(sketch, external_id)?,
                             parameter,
                             dimension.dimension_type,
                         ));
@@ -2155,10 +2150,8 @@ pub(in super::super) fn section_dimension_constraints(
                                         crate::feature::definitions::FeatureSegmentKind::Line(_)
                                     ) && known_entities.contains(&measured.external_id)
                                     {
-                                        let entity = sketch_entity_id_admitted(
-                                            sketch,
-                                            measured.external_id,
-                                        )?;
+                                        let entity =
+                                            sketch_entity_id(sketch, measured.external_id)?;
                                         let [first, second] =
                                             if measured.point_ids() == [first_id, second_id] {
                                                 [
@@ -2290,12 +2283,12 @@ pub(in super::super) fn section_dimension_constraints(
                 (
                     SketchConstraint {
                         id: if unique_relation_id {
-                            sketch_constraint_id_admitted(
+                            sketch_constraint_id(
                                 sketch,
                                 format_args!("relation:{}", relation.relation_id),
                             )?
                         } else {
-                            sketch_constraint_id_admitted(
+                            sketch_constraint_id(
                                 sketch,
                                 format_args!("relation:offset:{}", relation.offset),
                             )?
@@ -2314,7 +2307,7 @@ pub(in super::super) fn section_dimension_constraints(
                         label_distance: None,
                         label_position: None,
                         metadata: None,
-                        native_ref: Some(sketch_native_ref_admitted(sketch)),
+                        native_ref: Some(sketch_native_ref(sketch)),
                     },
                     relation.offset,
                     relation_index,
@@ -2360,11 +2353,9 @@ mod tests {
             first: 10,
             second: 11,
         };
-        let rows = ({
-            super::collect_constraint_candidates([Ok(super::equation_constraint(
-                &sketch, 1, definition, true, 7,
-            ))])
-        })
+        let rows = super::collect_constraint_candidates([Ok(super::equation_constraint(
+            &sketch, 1, definition, true, 7,
+        ))])
         .expect("one equation row");
         assert_eq!(rows.len(), 1);
         assert_eq!(
@@ -2381,7 +2372,7 @@ mod tests {
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
         let admitted =
             super::native_section_segment_verhor_definition(&sketch, entity.clone(), 42, 2)
-                .expect("service verhor admission");
+                .expect("build the native section segment orientation constraint");
         let SketchConstraintDefinitionInput::Native {
             native_properties,
             entities,
@@ -2408,7 +2399,7 @@ mod tests {
             "radius",
             2,
         )
-        .expect("service radius admission");
+        .expect("build the native section segment radius constraint");
         let SketchConstraintDefinitionInput::Native {
             native_properties,
             entities,
@@ -2471,8 +2462,8 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let rows = ({ super::section_segment_radius_constraints(&definition, &sketch) })
-            .expect("radius row");
+        let rows =
+            super::section_segment_radius_constraints(&definition, &sketch).expect("radius row");
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows[0].0.id.as_str(),
@@ -2482,14 +2473,12 @@ mod tests {
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID")
         ]);
         assert_eq!(
-            ({
-                super::section_segment_radius_constraints_for_emitted(
-                    &definition,
-                    &sketch,
-                    &emitted,
-                    &BTreeSet::new(),
-                )
-            })
+            super::section_segment_radius_constraints_for_emitted(
+                &definition,
+                &sketch,
+                &emitted,
+                &BTreeSet::new(),
+            )
             .expect("emitted radius row")
             .len(),
             1
@@ -2523,7 +2512,7 @@ mod tests {
     fn native_equation_operands_name_each_argument() {
         let arguments = [None, Some(2), Some(3)];
         let operands = native_equation_operands(1, &arguments, "creo:featdefs:sketch#40")
-            .expect("service operands");
+            .expect("build the native equation operands");
         assert_eq!(operands.len(), 3);
         assert_eq!(operands[0].object_index, Some(1));
         assert_eq!(
@@ -2603,7 +2592,7 @@ mod tests {
         ({
             assert_eq!(
                 super::section_segment_radius_constraints(&definition, &sketch)
-                    .expect("service radius constraint")
+                    .expect("build the section segment radius constraints")
                     .len(),
                 1
             );
@@ -2614,7 +2603,7 @@ mod tests {
                     &BTreeSet::new(),
                     &BTreeSet::new()
                 )
-                .expect("service emitted radius constraint")
+                .expect("build the emitted section segment radius constraints")
                 .len(),
                 1
             );
@@ -2679,10 +2668,9 @@ mod tests {
         };
         let sketch =
             SketchId::mint("creo:model:sketch#angle-difference").expect("valid test fixture");
-        let constraints = ({
+        let constraints =
             section_equation_function_sixteen_angle_difference_constraints(&definition, &sketch)
-        })
-        .expect("section_equation_function_sixteen_angle_difference_constraints admitted");
+                .expect("section_equation_function_sixteen_angle_difference_constraints admitted");
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].1, 28);
         assert_eq!(constraints[0].0.active, Some(true));
@@ -2755,7 +2743,7 @@ mod tests {
         let sketch =
             SketchId::mint("creo:model:sketch#scalar-equality").expect("valid test fixture");
         let constraints =
-            ({ section_equation_function_five_scalar_equality_constraints(&definition, &sketch) })
+            section_equation_function_five_scalar_equality_constraints(&definition, &sketch)
                 .expect("section_equation_function_five_scalar_equality_constraints admitted");
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].0.active, Some(true));
@@ -2770,11 +2758,11 @@ mod tests {
         let mut conflicting = definition.clone();
         conflicting.variables.as_mut().expect("variables").rows[1].value =
             crate::feature::definitions::ScalarLane::Value(3.5);
-        assert!(({
+        assert!(
             section_equation_function_five_scalar_equality_constraints(&conflicting, &sketch)
-        })
-        .expect("section_equation_function_five_scalar_equality_constraints admitted")
-        .is_empty());
+                .expect("section_equation_function_five_scalar_equality_constraints admitted")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -2834,7 +2822,7 @@ mod tests {
             &BTreeSet::new(),
             &BTreeSet::new()
         )
-        .expect("service dimension fallback admission"));
+        .expect("reconcile the section dimension constraint"));
         assert!(matches!(
             constraint,
             SketchConstraintDefinitionInput::Native {
@@ -2859,7 +2847,7 @@ mod tests {
             &BTreeSet::from([emitted_entity]),
             &BTreeSet::new()
         )
-        .expect("service dimension fallback admission"));
+        .expect("reconcile the section dimension constraint"));
         assert!(matches!(
             missing_parameter,
             SketchConstraintDefinitionInput::Native {

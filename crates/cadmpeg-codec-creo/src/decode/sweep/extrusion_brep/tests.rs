@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    cap_coedge_ids_admitted, copy_ring_coedges, generated_extrusion_identity,
-    push_rejected_extrusion, refused_lane_message, sketch_profiles_cover_generated_extrusion_sides,
-    JoinedLaneRecords,
+    cap_coedge_ids, copy_ring_coedges, generated_extrusion_identity, push_rejected_extrusion,
+    refused_lane_message, sketch_profiles_cover_generated_extrusion_sides, JoinedLaneRecords,
 };
 use crate::decode::tests::surface_row;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -209,10 +208,10 @@ fn closed_extrusion_reaches_brep_admission() {
             &sketch_id,
             1,
         )
-        .expect("compute the resolved sketch profiles")
+        .expect("resolve the sketch profiles")
         .expect("profile geometry");
         assert!(super::ordered_extrusion_profiles(ctx, profiles)
-            .expect("compute the ordered extrusion profiles")
+            .expect("order the extrusion profiles")
             .is_some());
     });
     let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
@@ -329,8 +328,8 @@ fn extrusion_entity_id_copy_preserves_identity() {
 
 #[test]
 fn cap_coedge_ids_preserve_ring_order() {
-    let bottom = cap_coedge_ids_admitted(7, 0, 2, "bottom-cap", true).expect("bottom ring");
-    let top = cap_coedge_ids_admitted(7, 0, 2, "top-cap", false).expect("top ring");
+    let bottom = cap_coedge_ids(7, 0, 2, "bottom-cap", true).expect("bottom ring");
+    let top = cap_coedge_ids(7, 0, 2, "top-cap", false).expect("top ring");
     assert!(bottom[0].as_str().ends_with("#7:coedge:0:1:bottom-cap"));
     assert!(bottom[1].as_str().ends_with("#7:coedge:0:0:bottom-cap"));
     assert!(top[0].as_str().ends_with("#7:coedge:0:0:top-cap"));

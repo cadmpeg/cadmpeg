@@ -329,7 +329,7 @@ mod tests {
         let records = crate::decode::with_service_context(|ctx| {
             preserve_passthrough_sections(ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
         })
-        .expect("service records");
+        .expect("preserve the passthrough sections");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].id().as_str(), "creo:VisibGeom:section#0");
     }

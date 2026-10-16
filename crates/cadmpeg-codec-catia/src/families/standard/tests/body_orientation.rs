@@ -12,7 +12,7 @@ fn radial_orientation_solves_each_face_boundary_independently() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let rows = (0..18)
         .map(|edge| {
             assert!(EdgeRow::new(
@@ -74,13 +74,11 @@ fn radial_orientation_solves_each_face_boundary_independently() {
         .expect("reconstruct incidence")
         .expect("orientable multi-boundary shell");
     assert_eq!(
-        topology.body_kinds(&[9]).expect("compute the body kinds"),
+        topology.body_kinds(&[9]).expect("classify the bodies"),
         Some(vec![BodyKind::Solid])
     );
     assert_eq!(
-        topology
-            .body_kinds(&[4, 5])
-            .expect("compute the body kinds"),
+        topology.body_kinds(&[4, 5]).expect("classify the bodies"),
         None
     );
     assert_eq!(topology.faces[4].boundaries.len(), 2);
@@ -120,12 +118,12 @@ fn open_standard_edge_incidence_classifies_a_sheet_body() {
     };
 
     assert_eq!(
-        topology.body_kinds(&[1]).expect("compute the body kinds"),
+        topology.body_kinds(&[1]).expect("classify the bodies"),
         None
     );
     topology.edge_rows.pop();
     assert_eq!(
-        topology.body_kinds(&[1]).expect("compute the body kinds"),
+        topology.body_kinds(&[1]).expect("classify the bodies"),
         Some(vec![BodyKind::Sheet])
     );
 }
@@ -174,13 +172,11 @@ fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
         };
 
     assert_eq!(
-        topology
-            .body_kinds(&[2, 1])
-            .expect("compute the body kinds"),
+        topology.body_kinds(&[2, 1]).expect("classify the bodies"),
         Some(vec![BodyKind::Solid, BodyKind::Sheet])
     );
     assert_eq!(
-        topology.body_kinds(&[3]).expect("compute the body kinds"),
+        topology.body_kinds(&[3]).expect("classify the bodies"),
         Some(vec![BodyKind::General])
     );
     assert_eq!(

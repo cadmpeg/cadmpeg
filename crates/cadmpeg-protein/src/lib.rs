@@ -275,8 +275,8 @@ pub fn decode_detailed<'a>(
             properties: HashMap::new(),
         },
     };
-    let frames = framing::record_frames_admitted(ctx, instance.window())?;
-    decode_frames_admitted(ctx, &mut catalog, frames.frames())
+    let frames = framing::record_frames(instance.window())?;
+    decode_frames_admitted(ctx, &mut catalog, &frames)
 }
 
 /// Decode already framed records for source-retaining export edits.
@@ -818,7 +818,7 @@ mod tests {
             DecodeContext::from_root_bytes(b"xml", &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
             super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3)
-                .expect("service admission"),
+                .expect("read the archive entry"),
             b"xml"
         );
     }
@@ -934,8 +934,7 @@ mod tests {
             for value in [name, "guid", "base", ""] {
                 push_lp(&mut record, value);
             }
-            framing::record_frames_for_edit(&paged_stream(&[&record]))
-                .expect("fixture framing is valid")
+            framing::record_frames(&paged_stream(&[&record])).expect("fixture framing is valid")
         }
 
         let normal =
@@ -956,7 +955,7 @@ mod tests {
             push_lp(&mut record, value);
         }
         let stream = paged_stream(&[&record]);
-        let frames = framing::record_frames_for_edit(&stream).expect("fixture framing is valid");
+        let frames = framing::record_frames(&stream).expect("fixture framing is valid");
         let mut catalog = super::SchemaCatalog {
             schemas: std::collections::HashMap::from([
                 ("Good".into(), super::Schema::default()),
@@ -1072,7 +1071,7 @@ mod tests {
         within.extend_from_slice(&1_u32.to_le_bytes());
         within.extend_from_slice(&7_u32.to_le_bytes());
         let stream = paged_stream(&[&over, &within]);
-        let frames = framing::record_frames_for_edit(&stream).expect("fixture framing is valid");
+        let frames = framing::record_frames(&stream).expect("fixture framing is valid");
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
             .expect("build the decode context");
@@ -1091,7 +1090,7 @@ mod tests {
             push_lp(&mut record, value);
         }
         let stream = paged_stream(&[&record]);
-        let frames = framing::record_frames_for_edit(&stream).expect("fixture framing is valid");
+        let frames = framing::record_frames(&stream).expect("fixture framing is valid");
         let mut catalog = super::SchemaCatalog {
             schemas: std::collections::HashMap::new(),
             properties: std::collections::HashMap::new(),
@@ -1465,7 +1464,7 @@ mod tests {
             push_lp(&mut second, value);
         }
         let stream = paged_stream(&[&first, &second]);
-        let frames = framing::record_frames_for_edit(&stream).expect("stream is paged");
+        let frames = framing::record_frames(&stream).expect("stream is paged");
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[0].logical_offset(), 0);
         assert_eq!(frames[0].bytes(), [RECORD_MARKER, &first].concat());
@@ -1473,10 +1472,10 @@ mod tests {
         assert_eq!(frames[1].bytes(), [RECORD_MARKER, &second].concat());
         assert!(stream.len() > 16 + 3 * PAGE_SIZE, "record one spans pages");
 
-        assert!(framing::record_frames_for_edit(&[]).is_err());
+        assert!(framing::record_frames(&[]).is_err());
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
-        assert!(framing::record_frames_for_edit(&truncated).is_err());
+        assert!(framing::record_frames(&truncated).is_err());
     }
 
     #[test]
@@ -1500,7 +1499,7 @@ mod tests {
         stream.extend_from_slice(&record);
         stream.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
 
-        let frames = framing::record_frames_for_edit(&stream).expect("standalone terminal page");
+        let frames = framing::record_frames(&stream).expect("standalone terminal page");
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].logical_offset(), 0);
         assert_eq!(frames[0].bytes(), [RECORD_MARKER, &record].concat());

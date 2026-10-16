@@ -161,7 +161,7 @@ fn numerical_0922_wide_surface_chart_keeps_inverse_and_bound() {
             endpoints,
             [Point3::new(0., 0., 0.), Point3::new(1., 1., 0.)],
         )
-        .expect("compute the NURBS surface parameter segment chord bound");
+        .expect("bound the NURBS surface segment's chord deviation");
         let inverse = crate::eval::nurbs_surface_parameter_near_point(
             crate::eval::admission::EvaluationAdmission::Standard,
             &s,
@@ -190,7 +190,7 @@ fn numerical_0922_far_surface_query_keeps_inverse() {
             None,
             &budget,
         )
-        .expect("compute the NURBS surface closest parameter");
+        .expect("find the closest NURBS surface parameters");
         println!(
             "IR unit plane, query z={z:e}: {result:?}, budget {}",
             budget.consumed()
@@ -261,7 +261,7 @@ fn numerical_0922b_finite_chord_bound() {
             [Point2::new(0., 0.), Point2::new(1., 1.)],
             [Point3::new(0., 0., 0.), Point3::new(s, s, s)],
         )
-        .expect("compute the NURBS surface parameter segment chord bound");
+        .expect("bound the NURBS surface segment's chord deviation");
         println!("IR curved diagonal scale{s:e}:bound{r:?}");
         let bound = r.unwrap() / s;
         assert!((0.25..0.34).contains(&bound));
@@ -282,7 +282,7 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
                 Point2::new(0.5, 0.),
                 CHORD_BOUND_TOLERANCE,
             )
-            .expect("check NURBS pcurve contains point"),
+            .expect("check that the NURBS pcurve contains the point"),
             Some(true)
         );
         assert_eq!(
@@ -294,7 +294,7 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
                 Point2::new(0.5, 2.),
                 CHORD_BOUND_TOLERANCE,
             )
-            .expect("check NURBS pcurve contains point"),
+            .expect("check that the NURBS pcurve contains the point"),
             Some(false)
         );
     }

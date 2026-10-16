@@ -20,24 +20,18 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
         assert_eq!(content, original);
     }
     let mut content = FeatureContent::text(["text".to_owned(), "text".to_owned()]);
-    ({
-        content
-            .push(parameter.clone())
-            .map_err(cadmpeg_core::CodecError::from)
-    })
-    .unwrap();
-    ({
-        content
-            .push(child.clone())
-            .map_err(cadmpeg_core::CodecError::from)
-    })
-    .unwrap();
-    ({
-        content
-            .push(FeatureSourceContent::Text("text".into()))
-            .map_err(cadmpeg_core::CodecError::from)
-    })
-    .unwrap();
+    content
+        .push(parameter.clone())
+        .map_err(cadmpeg_core::CodecError::from)
+        .unwrap();
+    content
+        .push(child.clone())
+        .map_err(cadmpeg_core::CodecError::from)
+        .unwrap();
+    content
+        .push(FeatureSourceContent::Text("text".into()))
+        .map_err(cadmpeg_core::CodecError::from)
+        .unwrap();
     assert_eq!(
         (&*content),
         &[
@@ -79,13 +73,11 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
     feature.dependencies.insert(dependency.clone());
     let parameter =
         FeatureSourceContent::Parameter(ParameterId::mint("test:test:parameter#one").unwrap());
-    ({
-        feature
-            .source_content
-            .push(parameter.clone())
-            .map_err(cadmpeg_core::CodecError::from)
-    })
-    .unwrap();
+    feature
+        .source_content
+        .push(parameter.clone())
+        .map_err(cadmpeg_core::CodecError::from)
+        .unwrap();
     let original = serde_json::to_value(&feature).unwrap();
     assert_eq!(
         serde_json::from_value::<Feature>(original.clone()).unwrap(),

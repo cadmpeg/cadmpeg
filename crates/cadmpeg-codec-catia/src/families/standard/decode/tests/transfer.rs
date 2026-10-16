@@ -896,7 +896,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         &surface_bytes,
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service decode");
+    .expect("decode the A5 surfaces");
     let surface = &carriers[0].geometry;
     let domain = [
         surface.u_knots()[0],
@@ -960,7 +960,7 @@ fn decode_standard_transfers_construction_use_offset() {
         &surface_bytes,
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service decode");
+    .expect("decode the A5 surfaces");
     let surface = &carriers[0].geometry;
     let domain = [
         surface.u_knots()[0],
@@ -1107,7 +1107,7 @@ fn standard_catpart_decodes_as_a_standard_population() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, file.clone())
     })
-    .expect("service scan");
+    .expect("scan the container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::super::try_decode_standard_population(
             ctx,
@@ -1146,6 +1146,6 @@ fn copying_a_revolution_procedure_preserves_it() {
         },
     ));
     let service =
-        ({ super::super::copy_standard_procedure(&procedure) }).expect("copy standard procedure");
+        super::super::copy_standard_procedure(&procedure).expect("copy standard procedure");
     assert!(service == procedure);
 }

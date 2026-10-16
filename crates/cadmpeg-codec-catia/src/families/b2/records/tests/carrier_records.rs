@@ -447,7 +447,7 @@ fn an_offset_support_holds_only_increasing_domains_and_binds_them() {
         &a5_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service decode");
+    .expect("decode the A5 surfaces");
     assert_eq!(
         crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
         [Some(0)]

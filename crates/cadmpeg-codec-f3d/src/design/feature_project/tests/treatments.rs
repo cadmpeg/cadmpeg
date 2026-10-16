@@ -199,7 +199,8 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         .expect("authored Draft timeline")
     };
 
-    let (features, _) = project(&selection);
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        project(&selection);
     let FeatureDefinition::Operation(FeatureOperation::Draft {
         anchor:
             cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -245,7 +246,8 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             },
             face_slot: 159,
         });
-    let (features, _) = project(&selection);
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        project(&selection);
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -686,7 +688,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             chord_length_parameter_record_index: 121,
         }
     );
-    let (chord_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: chord_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -736,7 +741,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         chord_only_assignments[0].tangency_weight_parameter_record_index,
         None
     );
-    let (chord_only_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: chord_only_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -787,7 +795,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             offset_two_parameter_record_index: 151,
         }
     );
-    let (asymmetric_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: asymmetric_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -823,23 +834,24 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .lost_edge_references
         .push("f3d:native/BulkStream.dat:lost-edge-reference#1".into());
 
-    let (features, _) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = std::slice::from_ref(&scope);
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &parameters,
-                owners: &owners,
-                scopes,
-                construction_groups: &operand_groups,
-                fillet_radius_groups: &assignments,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = std::slice::from_ref(&scope);
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &parameters,
+                    owners: &owners,
+                    scopes,
+                    construction_groups: &operand_groups,
+                    fillet_radius_groups: &assignments,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[0].evaluation.definition()
     else {
@@ -1188,7 +1200,10 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         &variable_owners,
         &variable_parameters,
     );
-    let (variable_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: variable_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -1237,7 +1252,10 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
             .collect::<Vec<_>>(),
         vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
     );
-    let (unassigned_features, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: unassigned_features,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(

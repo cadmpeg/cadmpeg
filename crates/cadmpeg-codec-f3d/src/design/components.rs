@@ -570,7 +570,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             continue;
         }
 
-        let occurrence_id = crate::design::identity::neutral_component_insert_occurrence_id(scope)?;
+        let occurrence_id = crate::ids::neutral_component_insert_occurrence_id(scope);
         let feature_occurrence_id = occurrence_id.clone();
         let name = construction.neutron_role.clone();
         let native_ref = scope.id.clone();

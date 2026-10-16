@@ -145,8 +145,7 @@ mod tests {
             offset: 0,
         });
 
-        let native =
-            native_surface_id(&scan, 17).expect("service native surface identity admitted");
+        let native = native_surface_id(&scan, 17).expect("build the native surface identity");
         assert_eq!(native.as_str(), "creo:novisgeom:surface#17");
         let prefix = native_surface_namespace(&scan, 17).1;
         assert!(crate::identity::matches_numbered_identity(

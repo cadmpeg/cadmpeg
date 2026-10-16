@@ -1,6 +1,7 @@
 //! Component path resolution and selection value encoding.
 use cadmpeg_ir::features::PlanarProfileRef;
 
+use super::feature_sources::{FeatureSources, SourcedFeature};
 use super::operations::feature_inline_operation_fields;
 use super::scalars::feature_object_name;
 use crate::classification::{native_object_class, NativeClassKind};
@@ -19,7 +20,7 @@ enum ComponentProducer<'a> {
 
 fn component_producers<'feature>(
     components: &[FeatureInputComponentPathEntry],
-    features: impl IntoIterator<Item = &'feature crate::records::Feature>,
+    features: impl IntoIterator<Item = impl Into<SourcedFeature<'feature>>>,
 ) -> HashMap<u32, ComponentProducer<'feature>> {
     let mut by_source = HashMap::new();
     for component in components {
@@ -32,6 +33,7 @@ fn component_producers<'feature>(
         return by_source;
     }
     for feature in features {
+        let feature = feature.into();
         let Some(source) = feature.source_value() else {
             continue;
         };
@@ -39,7 +41,7 @@ fn component_producers<'feature>(
             continue;
         };
         *producer = match producer {
-            ComponentProducer::Missing => ComponentProducer::Unique(feature.id.as_str()),
+            ComponentProducer::Missing => ComponentProducer::Unique(feature.feature.id.as_str()),
             ComponentProducer::Unique(_) | ComponentProducer::Ambiguous => {
                 ComponentProducer::Ambiguous
             }
@@ -50,7 +52,7 @@ fn component_producers<'feature>(
 
 pub(super) fn component_path_features<'a>(
     components: &[FeatureInputComponentPathEntry],
-    features: impl IntoIterator<Item = &'a crate::records::Feature>,
+    features: impl IntoIterator<Item = impl Into<SourcedFeature<'a>>>,
 ) -> Vec<String> {
     let by_source = component_producers(components, features);
     let mut result: Vec<String> = Vec::new();
@@ -69,17 +71,19 @@ pub(super) fn component_path_features<'a>(
 }
 
 pub(super) fn component_path_consumer<'a>(
-    features: &'a [crate::records::Feature],
+    features: &FeatureSources<'a>,
     consumer_ref: &str,
-) -> Option<&'a crate::records::Feature> {
-    features.iter().find(|consumer| consumer.id == consumer_ref)
+) -> Option<SourcedFeature<'a>> {
+    features
+        .iter()
+        .find(|consumer| consumer.feature.id == consumer_ref)
 }
 
 pub(super) fn component_feature_precedes(
-    feature: &crate::records::Feature,
-    consumer: &crate::records::Feature,
+    feature: SourcedFeature<'_>,
+    consumer: SourcedFeature<'_>,
 ) -> bool {
-    if feature.parent != consumer.parent {
+    if feature.feature.parent != consumer.feature.parent {
         return false;
     }
     match (
@@ -87,16 +91,16 @@ pub(super) fn component_feature_precedes(
         consumer.source_value().filter(|source| *source != 0),
     ) {
         (Some(feature_source), Some(consumer_source)) => feature_source < consumer_source,
-        _ => feature.ordinal < consumer.ordinal,
+        _ => feature.feature.ordinal < consumer.feature.ordinal,
     }
 }
 
 pub(super) fn component_path_input_features(
     components: &[FeatureInputComponentPathEntry],
-    features: &[crate::records::Feature],
+    features: &FeatureSources<'_>,
     consumer_ref: &str,
 ) -> Vec<String> {
-    let mut producers = component_path_features(components, features);
+    let mut producers = component_path_features(components, features.iter());
     if producers.is_empty() {
         return producers;
     }
@@ -107,7 +111,7 @@ pub(super) fn component_path_input_features(
     for index in 0..producers.len() {
         let found = features
             .iter()
-            .find(|feature| feature.id == producers[index]);
+            .find(|feature| feature.feature.id == producers[index]);
         if let Some(feature) = found {
             if component_feature_precedes(feature, consumer) {
                 producers.swap(retained, index);
@@ -122,9 +126,9 @@ pub(super) fn component_path_input_features(
 pub(crate) fn surface_selection_producer_features(
     components: &[FeatureInputComponentPathEntry],
     terminal_feature_ref: Option<&str>,
-    features: &[crate::records::Feature],
+    features: &FeatureSources<'_>,
 ) -> Vec<String> {
-    let mut producers = component_path_features(components, features);
+    let mut producers = component_path_features(components, features.iter());
     if let Some(terminal) = terminal_feature_ref {
         if !producers.iter().any(|producer| producer == terminal) {
             producers.push(terminal.to_owned());
@@ -135,7 +139,7 @@ pub(crate) fn surface_selection_producer_features(
 
 pub(super) fn component_path_terminal_feature<'a>(
     components: &[FeatureInputComponentPathEntry],
-    features: impl IntoIterator<Item = &'a crate::records::Feature>,
+    features: impl IntoIterator<Item = impl Into<SourcedFeature<'a>>>,
 ) -> Option<String> {
     let by_source = component_producers(components, features);
     for component in components.iter().rev() {

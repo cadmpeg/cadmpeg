@@ -283,7 +283,7 @@ mod tests {
         surface: &SurfaceGeometry,
         rows: &[(cadmpeg_ir::ids::LoopId, Vec<Point3>)],
     ) -> FaceLoops {
-        ({ super::classify_planar_boundaries(surface, rows) }).expect("classify planar boundaries")
+        super::classify_planar_boundaries(surface, rows).expect("classify planar boundaries")
     }
 
     fn plane() -> SurfaceGeometry {

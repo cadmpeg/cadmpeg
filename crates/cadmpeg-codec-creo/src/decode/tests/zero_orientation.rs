@@ -1081,7 +1081,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                         nurbs.control_points().len(),
                     )
                 })
-                .expect("service basis")
+                .expect("evaluate the B-spline basis")
                 .expect("valid basis");
                 point[0] += basis * control.x;
                 point[1] += basis * control.y;
@@ -1106,7 +1106,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                         nurbs.control_points().len(),
                     )
                 })
-                .expect("service basis")
+                .expect("evaluate the B-spline basis derivative")
                 .expect("valid basis");
                 derivative[0] += basis * control.x;
                 derivative[1] += basis * control.y;

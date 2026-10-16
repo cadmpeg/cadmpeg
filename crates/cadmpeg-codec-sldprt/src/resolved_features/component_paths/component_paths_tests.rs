@@ -6,6 +6,7 @@ use super::{
 };
 use crate::records::FeatureSource;
 use crate::records::{Feature, FeatureInputComponentPathEntry};
+use crate::resolved_features::feature_sources::FeatureSources;
 use std::collections::BTreeMap;
 
 #[test]
@@ -69,7 +70,7 @@ fn component_path_type_identities_name_ordered_features() {
         surface_selection_producer_features(
             &mixed,
             Some("explicit"),
-            &[feature("producer", "42"), feature("other", "43")]
+            &FeatureSources::new(&[feature("producer", "42"), feature("other", "43")])
         ),
         ["producer", "other", "explicit"]
     );
@@ -128,7 +129,11 @@ fn component_path_type_identities_name_ordered_features() {
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        component_path_input_features(&path, &[prior, consumer, future], "consumer"),
+        component_path_input_features(
+            &path,
+            &FeatureSources::new(&[prior, consumer, future]),
+            "consumer"
+        ),
         ["prior"]
     );
 }

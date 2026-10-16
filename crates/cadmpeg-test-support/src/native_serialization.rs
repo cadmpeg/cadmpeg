@@ -28,9 +28,9 @@ pub fn assert_native_limit<T: Serialize>(record: &T, expected: impl Into<serde_j
     };
     let arena = DecodeArena::new();
     let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    let stored =
-        arena_from(&service, [Ok::<_, NativeConvertError>(&counted)]).expect("service admission");
+        .expect("build the decode context");
+    let stored = arena_from(&service, [Ok::<_, NativeConvertError>(&counted)])
+        .expect("serialize the native records");
     assert_eq!(visits.get(), 1);
     assert_eq!(
         serde_json::to_value(&stored[0]).expect("stored record"),

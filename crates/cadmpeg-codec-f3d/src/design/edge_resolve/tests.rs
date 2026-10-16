@@ -1259,16 +1259,13 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         )
         .unwrap()
     );
-    assert!({
-        partial_historical_edge_selection(
-            [("operand-a", Some(17)), ("operand-b", Some(18))],
-            41,
-            &feature,
-            FeatureInputTopologyId::mint("test:model:feature-input#state")
-                .expect("identity grammar"),
-            "group",
-        )
-    }
+    assert!(partial_historical_edge_selection(
+        [("operand-a", Some(17)), ("operand-b", Some(18))],
+        41,
+        &feature,
+        FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
+        "group",
+    )
     .is_none());
     assert_eq!(
         partial_historical_edge_selection(

@@ -129,7 +129,7 @@ pub(super) fn encode_design_bulkstream(
     )?;
     let decode_ctx = &decode_ctx;
 
-    let (_, projected_parameters) =
+    let projected_parameters =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {
@@ -153,7 +153,8 @@ pub(super) fn encode_design_bulkstream(
                 histories: &native.asm_histories,
                 face_boundaries: &native.asm_face_boundaries,
             },
-        )?;
+        )?
+        .parameters;
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),

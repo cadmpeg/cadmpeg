@@ -311,9 +311,9 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
-    assert!({
+    assert!(
         crate::curve::pcurve_endpoints(&scan.curves.parameters, &mismatched_topology).is_empty()
-    });
+    );
 }
 
 #[test]

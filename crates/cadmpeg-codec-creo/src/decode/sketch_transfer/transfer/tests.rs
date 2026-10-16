@@ -53,7 +53,7 @@ fn empty_section_transfer_preserves_sketch_and_feature() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service section transfer");
+    .expect("transfer the sketches");
     assert_eq!(ir.model.sketches.len(), 1);
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(ir.model.features[0].source_tag.as_deref(), Some("section"));
@@ -63,7 +63,7 @@ fn empty_section_transfer_preserves_sketch_and_feature() {
 fn sketch_native_reference_names_featdefs_sketch() {
     let sketch = SketchId::mint("creo:model:sketch#7").expect("valid sketch ID");
     assert_eq!(
-        crate::decode::sketch_ids::sketch_native_ref_admitted(&sketch),
+        crate::decode::sketch_ids::sketch_native_ref(&sketch),
         "creo:featdefs:sketch#7"
     );
 }
@@ -95,7 +95,7 @@ fn admit_constraint_row_appends_one_row() {
     crate::decode::with_service_context(|ctx| {
         admit_constraint_row(ctx, &mut rows, disabled_constraint())
     })
-    .expect("service row admitted");
+    .expect("admit the constraint row");
     assert_eq!(rows.len(), 1);
 }
 

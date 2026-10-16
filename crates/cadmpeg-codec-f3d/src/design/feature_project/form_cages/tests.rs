@@ -506,7 +506,7 @@ fn reads_class_325_cage_table_entries() {
             scope_record,
             [owner_record].into_iter()
         )
-        .expect("service admission"),
+        .expect("read the class 325 form cage objects"),
         Some((0..32u32).map(|ordinal| 1_000 + ordinal * 2).collect())
     );
     let mut duplicate_discriminator = bytes.clone();
@@ -518,7 +518,7 @@ fn reads_class_325_cage_table_entries() {
             scope_record,
             [owner_record].into_iter()
         )
-        .expect("service admission"),
+        .expect("read the class 325 form cage objects"),
         None
     );
 }

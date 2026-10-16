@@ -527,7 +527,7 @@ mod tests {
         let losses = {
             let mut losses = Vec::new();
             push_coverage_drop_losses(&mut losses, &two_untransferred_planes())
-                .expect("service report admitted");
+                .expect("record the coverage drop losses");
             losses
         };
         assert_eq!(losses.len(), 1);

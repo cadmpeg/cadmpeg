@@ -55,7 +55,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
             .collect::<BTreeMap<_, _>>()
     };
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native(ctx, &target).expect("service native validation")
+        crate::validate::validate_native(ctx, &target).expect("validate the native namespace")
     })
     .is_empty());
     let mut unordered = target.clone();

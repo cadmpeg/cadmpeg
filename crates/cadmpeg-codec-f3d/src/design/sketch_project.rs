@@ -14,7 +14,6 @@ use crate::records::{
     sketch_relations::{SketchConstraintKind, SketchRelation},
 };
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -254,7 +253,7 @@ pub(crate) fn project_sketch_design(
         let name = placement.entity_id.as_str().to_owned();
         let native_ref = placement.id.clone();
         sketches.push(Sketch {
-            id: crate::design::identity::neutral_sketch_id(placement)?,
+            id: crate::ids::neutral_sketch_id(placement),
             name: Some(name),
             configuration: None,
             visible: placement
@@ -283,7 +282,7 @@ pub(crate) fn project_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let sketch = crate::design::identity::neutral_sketch_id(placement)?;
+        let sketch = crate::ids::neutral_sketch_id(placement);
         let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: point.coordinates(),
         }) else {
@@ -293,16 +292,9 @@ pub(crate) fn project_sketch_design(
         entities.push(
             SketchEntity::new(
                 point.persistent_id().map_or_else(
-                    || {
-                        crate::design::identity::neutral_sketch_record_id(
-                            &sketch,
-                            point.record_index,
-                        )
-                    },
-                    |persistent_id| {
-                        crate::design::identity::neutral_sketch_point_id(&sketch, persistent_id)
-                    },
-                )?,
+                    || crate::ids::neutral_sketch_record_id(&sketch, point.record_index),
+                    |persistent_id| crate::ids::neutral_sketch_point_id(&sketch, persistent_id),
+                ),
                 sketch,
                 geometry,
             )
@@ -413,7 +405,7 @@ pub(crate) fn project_sketch_design(
             }
             _ => continue,
         };
-        let sketch = crate::design::identity::neutral_sketch_id(placement)?;
+        let sketch = crate::ids::neutral_sketch_id(placement);
         let native_ref = curve.id.clone();
         let entity_id = if shared_identities.contains(&(
             scope,
@@ -421,13 +413,9 @@ pub(crate) fn project_sketch_design(
             curve.primary_id.get(),
             curve.secondary_id,
         )) {
-            crate::design::identity::neutral_sketch_record_id(&sketch, curve.record_index)?
+            crate::ids::neutral_sketch_record_id(&sketch, curve.record_index)
         } else {
-            crate::design::identity::neutral_sketch_curve_id(
-                &sketch,
-                curve.primary_id.get(),
-                curve.secondary_id,
-            )?
+            crate::ids::neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id)
         };
         entities.push(
             SketchEntity::new(entity_id, sketch, geometry)
@@ -442,7 +430,7 @@ pub(crate) fn project_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, text.owner_reference)) else {
             continue;
         };
-        let sketch = crate::design::identity::neutral_sketch_id(placement)?;
+        let sketch = crate::ids::neutral_sketch_id(placement);
         let Some(text_value) = cadmpeg_core::text::NonBlankString::new(text.text.clone()) else {
             continue;
         };
@@ -475,16 +463,9 @@ pub(crate) fn project_sketch_design(
         entities.push(
             SketchEntity::new(
                 text.persistent_id.map_or_else(
-                    || {
-                        crate::design::identity::neutral_sketch_record_id(
-                            &sketch,
-                            text.record_index,
-                        )
-                    },
-                    |persistent_id| {
-                        crate::design::identity::neutral_sketch_text_id(&sketch, persistent_id)
-                    },
-                )?,
+                    || crate::ids::neutral_sketch_record_id(&sketch, text.record_index),
+                    |persistent_id| crate::ids::neutral_sketch_text_id(&sketch, persistent_id),
+                ),
                 sketch,
                 geometry,
             )
@@ -762,7 +743,7 @@ pub(crate) fn project_spatial_sketch_design(
                     }
                 }
             };
-        let sketch = crate::design::identity::neutral_spatial_sketch_id(placement)?;
+        let sketch = crate::ids::neutral_spatial_sketch_id(placement);
         let native_ref = curve.id.clone();
         let entity_id = if shared_identities.contains(&(
             scope,
@@ -770,13 +751,13 @@ pub(crate) fn project_spatial_sketch_design(
             curve.primary_id.get(),
             curve.secondary_id,
         )) {
-            crate::design::identity::neutral_spatial_sketch_record_id(&sketch, curve.record_index)?
+            crate::ids::neutral_spatial_sketch_record_id(&sketch, curve.record_index)
         } else {
-            crate::design::identity::neutral_spatial_sketch_curve_id(
+            crate::ids::neutral_spatial_sketch_curve_id(
                 &sketch,
                 curve.primary_id.get(),
                 curve.secondary_id,
-            )?
+            )
         };
         entities.push(
             SpatialSketchEntity::new(entity_id, sketch, geometry).with_native_ref(Some(native_ref)),
@@ -795,7 +776,7 @@ pub(crate) fn project_spatial_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let sketch = crate::design::identity::neutral_spatial_sketch_id(placement)?;
+        let sketch = crate::ids::neutral_spatial_sketch_id(placement);
         let depth = point.depth();
         let Ok(geometry) =
             SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
@@ -811,19 +792,11 @@ pub(crate) fn project_spatial_sketch_design(
         entities.push(
             SpatialSketchEntity::new(
                 point.persistent_id().map_or_else(
-                    || {
-                        crate::design::identity::neutral_spatial_sketch_record_id(
-                            &sketch,
-                            point.record_index,
-                        )
-                    },
+                    || crate::ids::neutral_spatial_sketch_record_id(&sketch, point.record_index),
                     |persistent_id| {
-                        crate::design::identity::neutral_spatial_sketch_point_id(
-                            &sketch,
-                            persistent_id,
-                        )
+                        crate::ids::neutral_spatial_sketch_point_id(&sketch, persistent_id)
                     },
-                )?,
+                ),
                 sketch,
                 geometry,
             )
@@ -840,11 +813,9 @@ pub(crate) fn project_spatial_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let sketch = crate::design::identity::neutral_spatial_sketch_id(placement)?;
-        let entity_id = crate::design::identity::neutral_spatial_sketch_surface_id(
-            &sketch,
-            surface.persistent_id.get(),
-        )?;
+        let sketch = crate::ids::neutral_spatial_sketch_id(placement);
+        let entity_id =
+            crate::ids::neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id.get());
         let u_knots = surface
             .geometry
             .u_knots
@@ -893,22 +864,23 @@ pub(crate) fn project_spatial_sketch_design(
         );
     }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
-    let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
+    let mut entities_by_sketch = HashMap::<_, Vec<_>>::new();
     for entity in &entities {
-        if !spatial_ids.contains(&entity.sketch) {
-            spatial_ids.insert(entity.sketch.clone());
-        }
+        entities_by_sketch
+            .entry(&entity.sketch)
+            .or_default()
+            .push(entity);
     }
     let mut sketches = Vec::new();
     let mut capped_profile_searches = 0usize;
     for placement in placements {
-        let id = crate::design::identity::neutral_spatial_sketch_id(placement)?;
-        if !spatial_ids.contains(&id) {
+        let id = crate::ids::neutral_spatial_sketch_id(placement);
+        let Some(sketch_entities) = entities_by_sketch.get(&id) else {
             continue;
-        }
+        };
         let budget = cadmpeg_core::decode::WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK);
         let profiles = if let Some(profiles) =
-            closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance, &budget)?
+            closed_spatial_sketch_profiles(ctx, sketch_entities, linear_tolerance, &budget)?
         {
             profiles
         } else {
@@ -951,17 +923,17 @@ pub(crate) fn project_spatial_sketch_constraints(
     curves: &[SketchCurveIdentity],
     surfaces: &[SketchSurface],
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
-) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchConstraint>, CodecError> {
+) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraint, SpatialSketchConstraintDefinitionInput as Definition,
         SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
+    let spatial_ids: HashSet<_> = entities.iter().map(|entity| &entity.sketch).collect();
     let mut sketches = HashMap::new();
     for placement in placements {
-        let id = crate::design::identity::neutral_spatial_sketch_id(placement)?;
-        {}
-        if !entities.iter().any(|entity| entity.sketch == id) {
+        let id = crate::ids::neutral_spatial_sketch_id(placement);
+        if !spatial_ids.contains(&id) {
             continue;
         }
         let Some((key, value)) = (|| {
@@ -1009,45 +981,35 @@ pub(crate) fn project_spatial_sketch_constraints(
     }
     let mut constraints = Vec::new();
     for relation in relations {
-        let Some(constraint) = (|| -> Result<Option<SpatialSketchConstraint>, CodecError> {
-            let Some(sole_kind) = crate::design::relation_kinds::sole_constraint_kind(relation)
-            else {
-                return Ok(None);
-            };
-            let Some(scope) = native_stream(&relation.id) else {
-                return Ok(None);
-            };
-            let Some((sketch, placement)) = sketches.get(&(scope, relation.owner_reference)) else {
-                return Ok(None);
-            };
+        let Some(constraint) = (|| -> Option<SpatialSketchConstraint> {
+            let sole_kind = crate::design::relation_kinds::sole_constraint_kind(relation)?;
+            let scope = native_stream(&relation.id)?;
+            let (sketch, placement) = sketches.get(&(scope, relation.owner_reference))?;
             // The second relation run is the semantic member order. The first
             // run interleaves per-member relation ordinals and has no role
             // order, so it cannot define a neutral spatial constraint.
             let mut semantic_entities = Vec::new();
             for member in relation.return_members().iter() {
-                let Some(entity) = projected
+                let entity = projected
                     .get(&(scope, member.reference.record_index()))
-                    .copied()
-                else {
-                    return Ok(None);
-                };
+                    .copied()?;
                 semantic_entities.push(entity);
             }
-            let mut members = Vec::new();
-            for entity in &semantic_entities {
-                members.push(entity.id().clone());
-            }
+            let members: Vec<_> = semantic_entities
+                .iter()
+                .map(|entity| entity.id().clone())
+                .collect();
             let mut distinct = HashSet::new();
             for member in &members {
                 distinct.insert(member);
             }
             if distinct.len() != members.len() {
-                return Ok(None);
+                return None;
             }
             let definition = match sole_kind {
                 SketchConstraintKind::Coincident => {
                     let [first, second] = semantic_entities.as_slice() else {
-                        return Ok(None);
+                        return None;
                     };
                     let point_on_surface =
                         match (first.geometry.definition(), second.geometry.definition()) {
@@ -1076,7 +1038,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                             },
                         ) = (first.geometry.definition(), second.geometry.definition())
                         else {
-                            return Ok(None);
+                            return None;
                         };
                         let scale = 1.0
                             + first_position
@@ -1094,7 +1056,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                             || (first_position.z - second_position.z).abs()
                                 > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
                         {
-                            return Ok(None);
+                            return None;
                         }
                         Definition::Coincident {
                             first: first.id().clone(),
@@ -1107,7 +1069,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                 }
                 SketchConstraintKind::Tangent => {
                     let [first, second] = semantic_entities.as_slice() else {
-                        return Ok(None);
+                        return None;
                     };
                     let curve = |geometry: &SpatialSketchGeometry| {
                         matches!(
@@ -1119,7 +1081,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                         )
                     };
                     if !curve(&first.geometry) || !curve(&second.geometry) {
-                        return Ok(None);
+                        return None;
                     }
                     Definition::Tangent {
                         first: first.id().clone(),
@@ -1128,7 +1090,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                 }
                 SketchConstraintKind::Midpoint => {
                     let [first, second] = semantic_entities.as_slice() else {
-                        return Ok(None);
+                        return None;
                     };
                     let (point, line, position, start, end) =
                         match (first.geometry.definition(), second.geometry.definition()) {
@@ -1140,7 +1102,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                                 SpatialSketchGeometryDefinition::Line { start, end },
                                 SpatialSketchGeometryDefinition::Point { position },
                             ) => (second, first, position, start, end),
-                            _ => return Ok(None),
+                            _ => return None,
                         };
                     let midpoint = Point3::new(
                         (start.x + end.x) * 0.5,
@@ -1155,7 +1117,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                         || (position.z - midpoint.z).abs()
                             > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
                     {
-                        return Ok(None);
+                        return None;
                     }
                     Definition::Midpoint {
                         point: point.id().clone(),
@@ -1164,12 +1126,12 @@ pub(crate) fn project_spatial_sketch_constraints(
                 }
                 kind @ (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical) => {
                     let [entity] = semantic_entities.as_slice() else {
-                        return Ok(None);
+                        return None;
                     };
                     let SpatialSketchGeometryDefinition::Line { start, end } =
                         *entity.geometry.definition()
                     else {
-                        return Ok(None);
+                        return None;
                     };
                     let column = usize::from(kind == SketchConstraintKind::Vertical);
                     let direction = Vector3::new(
@@ -1183,39 +1145,35 @@ pub(crate) fn project_spatial_sketch_constraints(
                         || cross.norm()
                             > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9 * line.norm()
                     {
-                        return Ok(None);
+                        return None;
                     }
                     Definition::ParallelToDirection {
                         entity: entity.id().clone(),
                         direction,
                     }
                 }
-                _ => return Ok(None),
+                _ => return None,
             };
             let Ok(definition) =
                 cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(definition)
             else {
-                return Ok(None);
+                return None;
             };
             let sketch = sketch.clone();
             let native_ref = relation.id.clone();
-            Ok(Some(SpatialSketchConstraint {
-                id: crate::design::identity::neutral_sketch_constraint_id(
-                    &relation.id,
-                    relation.record_index,
-                )?,
+            Some(SpatialSketchConstraint {
+                id: crate::ids::neutral_sketch_constraint_id(&relation.id, relation.record_index),
                 sketch,
                 definition,
                 native_ref: Some(native_ref),
-            }))
-        })()?
-        else {
+            })
+        })() else {
             continue;
         };
         constraints.push(constraint);
     }
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(constraints)
+    constraints
 }
 
 #[cfg(test)]

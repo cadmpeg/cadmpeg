@@ -1087,7 +1087,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             tiny * 0.5,
         )
-        .expect("compute the NURBS surface isocurve")
+        .expect("build the NURBS surface isocurve")
         .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
@@ -1134,7 +1134,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5
         )
-        .expect("compute the NURBS surface isocurve")
+        .expect("build the NURBS surface isocurve")
         .is_none());
     }
 

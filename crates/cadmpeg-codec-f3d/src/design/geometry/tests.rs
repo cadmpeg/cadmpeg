@@ -1006,12 +1006,11 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     assert!(point_lies_on_sketch_geometry(
         Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
         &clockwise_arc.geometry,
-    )
-    .expect("resource allocation did not fail"));
-    assert!(
-        !point_lies_on_sketch_geometry(Point2::new(-2.0, 0.0), &clockwise_arc.geometry,)
-            .expect("resource allocation did not fail")
-    );
+    ));
+    assert!(!point_lies_on_sketch_geometry(
+        Point2::new(-2.0, 0.0),
+        &clockwise_arc.geometry,
+    ));
 
     let ellipse = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {

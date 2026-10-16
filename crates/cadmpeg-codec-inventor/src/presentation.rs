@@ -1138,7 +1138,7 @@ mod tests {
         let face_keys = std::collections::HashMap::from([(face, 42)]);
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert!(
             super::project_bindings(&ctx, &inventory, &[], &[], &face_keys)
                 .expect("presentation projection")
@@ -1161,7 +1161,7 @@ mod tests {
         let (inventory, appearance, body) =
             default_binding_projection_fixture(&parse_ctx, default_root, style_root);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert_eq!(
             project_default_bindings(&ctx, &inventory, &[appearance], &[body])
                 .expect("default binding projection")
@@ -1195,7 +1195,7 @@ mod tests {
                     && limit.operation == "project Inventor default appearance binding"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert_eq!(
             project_default_bindings(&ctx, &inventory, &[appearance], &[body])
                 .expect("default binding projection")
@@ -1374,7 +1374,7 @@ mod tests {
                 &[],
                 DecodePolicy::service()
             )
-            .expect("service issue")
+            .expect("build the record inventory")
             .1
             .len(),
             1
@@ -1770,7 +1770,7 @@ mod tests {
             ));
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert_eq!(
             project_bindings(&ctx, &inventory, &[], &[], &face_keys)
                 .expect("face binding projection")

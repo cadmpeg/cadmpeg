@@ -2578,9 +2578,9 @@ fn check_feature_references(
                 if feature
                     .suppressed
                     .map_or(Ok::<_, CodecError>(false), |suppressed| {
-                        Ok::<_, CodecError>({
-                            suppressed_features.contains(feature.id.as_str()) != suppressed
-                        })
+                        Ok::<_, CodecError>(
+                            suppressed_features.contains(feature.id.as_str()) != suppressed,
+                        )
                     })?
                 {
                     super::record_finding(
@@ -3596,13 +3596,13 @@ fn check_feature_references(
                         ),
                         Some(_)
                             if !super::scans::any(ir.model.features.iter(), |candidate| {
-                                Ok::<_, CodecError>({
+                                Ok::<_, CodecError>(
                                     (candidate.id.as_str() == block.as_str())
                                         && matches!(
                                             candidate.evaluation.definition().operation(),
                                             FeatureOperation::SketchBlockDefinition { .. }
-                                        )
-                                })
+                                        ),
+                                )
                             })? =>
                         {
                             geometry_error(
@@ -3768,14 +3768,14 @@ fn check_feature_references(
                 },
                 PlanarProfileRef::Generated { curves, .. }
                     if super::scans::any(curves.iter(), |curve| {
-                        Ok::<_, CodecError>({
+                        Ok::<_, CodecError>(
                             features
                                 .get(curve.feature.as_str())
                                 .is_none_or(|ordinal| *ordinal >= feature.ordinal)
                                 || !super::scans::any(feature.dependencies.iter(), |dependency| {
                                     Ok(dependency.as_str() == curve.feature.as_str())
-                                })?
-                        })
+                                })?,
+                        )
                     })? =>
                 {
                     geometry_error(
@@ -3881,11 +3881,12 @@ fn check_feature_references(
                         || result_topologies_by_feature
                             .get(vertex.feature.as_str())
                             .map_or(Ok::<_, CodecError>(false), |state| {
-                                Ok::<_, CodecError>({
-                                    !super::scans::any(state.vertices().iter(), |id| {
+                                Ok::<_, CodecError>(!super::scans::any(
+                                    state.vertices().iter(),
+                                    |id| {
                                         Ok::<_, CodecError>(id.as_str() == vertex.local_id.as_str())
-                                    })?
-                                })
+                                    },
+                                )?)
                             })?
                     {
                         geometry_error(
@@ -3955,21 +3956,22 @@ fn check_feature_references(
                 EdgeSelection::Historical { .. } | EdgeSelection::HistoricalPartial { .. } => {}
                 EdgeSelection::Generated { edges, .. } => {
                     if super::scans::any(edges.iter(), |edge| {
-                        Ok::<_, CodecError>({
+                        Ok::<_, CodecError>(
                             !super::scans::any(feature.dependencies.iter(), |dependency| {
                                 Ok(dependency.as_str() == edge.feature.as_str())
                             })? || result_topologies_by_feature
                                 .get(edge.feature.as_str())
                                 .map_or(Ok::<_, CodecError>(false), |state| {
-                                    Ok::<_, CodecError>({
-                                        !super::scans::any(state.edges().iter(), |id| {
+                                    Ok::<_, CodecError>(!super::scans::any(
+                                        state.edges().iter(),
+                                        |id| {
                                             Ok::<_, CodecError>(
                                                 id.as_str() == edge.local_id.as_str(),
                                             )
-                                        })?
-                                    })
-                                })?
-                        })
+                                        },
+                                    )?)
+                                })?,
+                        )
                     })? {
                         geometry_error(
                             findings,
@@ -4019,21 +4021,22 @@ fn check_feature_references(
                 FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. } => {}
                 FaceSelection::Generated { faces, .. } => {
                     if super::scans::any(faces.iter(), |face| {
-                        Ok::<_, CodecError>({
+                        Ok::<_, CodecError>(
                             !super::scans::any(feature.dependencies.iter(), |dependency| {
                                 Ok(dependency.as_str() == face.feature.as_str())
                             })? || result_topologies_by_feature
                                 .get(face.feature.as_str())
                                 .map_or(Ok::<_, CodecError>(false), |state| {
-                                    Ok::<_, CodecError>({
-                                        !super::scans::any(state.faces().iter(), |id| {
+                                    Ok::<_, CodecError>(!super::scans::any(
+                                        state.faces().iter(),
+                                        |id| {
                                             Ok::<_, CodecError>(
                                                 id.as_str() == face.local_id.as_str(),
                                             )
-                                        })?
-                                    })
-                                })?
-                        })
+                                        },
+                                    )?)
+                                })?,
+                        )
                     })? {
                         geometry_error(
                             findings,
@@ -4109,21 +4112,22 @@ fn check_feature_references(
                 }
                 BodySelection::Generated { bodies, .. } => {
                     if super::scans::any(bodies.iter(), |body| {
-                        Ok::<_, CodecError>({
+                        Ok::<_, CodecError>(
                             !super::scans::any(feature.dependencies.iter(), |dependency| {
                                 Ok(dependency.as_str() == body.feature.as_str())
                             })? || result_topologies_by_feature
                                 .get(body.feature.as_str())
                                 .map_or(Ok::<_, CodecError>(false), |state| {
-                                    Ok::<_, CodecError>({
-                                        !super::scans::any(state.bodies().iter(), |id| {
+                                    Ok::<_, CodecError>(!super::scans::any(
+                                        state.bodies().iter(),
+                                        |id| {
                                             Ok::<_, CodecError>(
                                                 id.as_str() == body.local_id.as_str(),
                                             )
-                                        })?
-                                    })
-                                })?
-                        })
+                                        },
+                                    )?)
+                                })?,
+                        )
                     })? {
                         geometry_error(
                             findings,
@@ -4644,14 +4648,14 @@ fn check_feature_sketch_references(
                             Ok::<_, CodecError>(*owner == sketch.as_str())
                         })?
                     && super::scans::any(ir.model.sketch_entities.iter(), |entity| {
-                        Ok::<_, CodecError>({
+                        Ok::<_, CodecError>(
                             (entity.id().as_str() == point.as_str())
                                 && (entity.sketch.as_str() == sketch.as_str())
                                 && matches!(
                                     entity.geometry.definition(),
                                     crate::sketches::SketchGeometryDefinition::Point { .. }
-                                )
-                        })
+                                ),
+                        )
                     })?
             }
             SketchPointSelection::Spatial {
@@ -4667,14 +4671,14 @@ fn check_feature_sketch_references(
                             Ok::<_, CodecError>(*owner == sketch.as_str())
                         })?
                     && super::scans::any(ir.model.spatial_sketch_entities.iter(), |entity| {
-                        Ok::<_, CodecError>({
+                        Ok::<_, CodecError>(
                             (entity.id().as_str() == point.as_str())
                                 && (entity.sketch.as_str() == sketch.as_str())
                                 && matches!(
                                     entity.geometry.definition(),
                                     crate::sketches::SpatialSketchGeometryDefinition::Point { .. }
-                                )
-                        })
+                                ),
+                        )
                     })?
             }
             SketchPointSelection::Native(native) => non_blank_native_reference(native),
@@ -4826,9 +4830,9 @@ fn check_feature_sketch_references(
                         })?
                         .map_or(0, |sketch| sketch.profiles.len());
                     if super::scans::any(profiles.iter(), |index| {
-                        Ok::<_, CodecError>({
-                            cadmpeg_core::decode::index_from_u32(*index) >= sketch_profile_count
-                        })
+                        Ok::<_, CodecError>(
+                            cadmpeg_core::decode::index_from_u32(*index) >= sketch_profile_count,
+                        )
                     })? {
                         geometry_error(
                             findings,
@@ -4850,10 +4854,10 @@ fn check_feature_sketch_references(
                                 cadmpeg_core::decode::index_from_u32(loops.outer())
                                     >= sketch_profile_count
                                     || super::scans::any(loops.holes().iter(), |index| {
-                                        Ok::<_, CodecError>({
+                                        Ok::<_, CodecError>(
                                             cadmpeg_core::decode::index_from_u32(*index)
-                                                >= sketch_profile_count
-                                        })
+                                                >= sketch_profile_count,
+                                        )
                                     })?
                             }
                             crate::features::SketchProfileRegion::Trimmed {
@@ -4862,11 +4866,7 @@ fn check_feature_sketch_references(
                             } => {
                                 let valid_ring =
                                 |ring: &[crate::features::SketchProfileBoundaryUse]| -> Result<bool, CodecError> {
-                                    super::scans::all(ring.iter(), |use_| Ok::<_, CodecError>({
-                                        super::scans::any(ir.model.sketch_entities.iter(), |entity| Ok::<_, CodecError>({
-                                            (entity.id().as_str() == use_.entity.as_str()) && (entity.sketch.as_str() == sketch.as_str())
-                                        }))?
-                                    }))
+                                    super::scans::all(ring.iter(), |use_| super::scans::any(ir.model.sketch_entities.iter(), |entity| Ok::<_, CodecError>((entity.id().as_str() == use_.entity.as_str()) && (entity.sketch.as_str() == sketch.as_str()))))
                                 };
                                 !valid_ring(outer_boundary)?
                                     || super::scans::any(hole_boundaries.iter(), |ring| {
@@ -4881,13 +4881,11 @@ fn check_feature_sketch_references(
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
                     if super::scans::any(entities.iter(), |entity| {
-                        Ok::<_, CodecError>({
-                            sketch_entity_owners
-                                .get(entity.as_str())
-                                .map_or(Ok::<_, CodecError>(true), |owner| {
-                                    Ok::<_, CodecError>(*owner != sketch.as_str())
-                                })?
-                        })
+                        sketch_entity_owners
+                            .get(entity.as_str())
+                            .map_or(Ok::<_, CodecError>(true), |owner| {
+                                Ok::<_, CodecError>(*owner != sketch.as_str())
+                            })
                     })? {
                         geometry_error(findings, feature.id.as_str(), "sketch profile entities are empty, repeated, missing, or owned by another sketch");
                     }
@@ -4908,13 +4906,11 @@ fn check_feature_sketch_references(
         for path in paths {
             if let PathRef::SketchCurves { sketch, curves } = path {
                 let invalid = super::scans::any(curves.iter(), |curve| {
-                    Ok::<_, CodecError>({
-                        sketch_entity_owners
-                            .get(curve.as_str())
-                            .map_or(Ok::<_, CodecError>(true), |owner| {
-                                Ok::<_, CodecError>(*owner != sketch.as_str())
-                            })?
-                    })
+                    sketch_entity_owners
+                        .get(curve.as_str())
+                        .map_or(Ok::<_, CodecError>(true), |owner| {
+                            Ok::<_, CodecError>(*owner != sketch.as_str())
+                        })
                 })?;
                 if invalid {
                     geometry_error(
@@ -4931,13 +4927,11 @@ fn check_feature_sketch_references(
                 }
                 PathRef::SpatialSketchCurves { sketch, curves } => {
                     let invalid = super::scans::any(curves.iter(), |curve| {
-                        Ok::<_, CodecError>({
-                            spatial_sketch_entity_owners
-                                .get(curve.as_str())
-                                .map_or(Ok::<_, CodecError>(true), |owner| {
-                                    Ok::<_, CodecError>(*owner != sketch.as_str())
-                                })?
-                        })
+                        spatial_sketch_entity_owners
+                            .get(curve.as_str())
+                            .map_or(Ok::<_, CodecError>(true), |owner| {
+                                Ok::<_, CodecError>(*owner != sketch.as_str())
+                            })
                     })?;
                     if invalid {
                         geometry_error(findings, feature.id.as_str(), "spatial sketch path curves are empty, repeated, missing, or owned by another sketch");

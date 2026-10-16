@@ -1772,7 +1772,7 @@ mod tests {
             let policy = cadmpeg_core::decode::DecodePolicy::service();
             let ($ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                    .expect("service decode context");
+                    .expect("build the decode context");
         };
     }
 
@@ -1838,7 +1838,7 @@ mod tests {
         );
 
         let topology = parse_topology(&ctx, &bytes)
-            .expect("service decode")
+            .expect("parse the topology")
             .expect("closed E5 topology");
         assert_eq!(topology.faces[0].surface, 258);
         assert_eq!(
@@ -1870,7 +1870,7 @@ mod tests {
             tail: Vec::new(),
         };
         let supports = BTreeMap::from([(1, support([2, 3])), (2, support([1, 3]))]);
-        assert!(!{ curve_support_reference_closes(1, &pcurves, &supports) });
+        assert!(!curve_support_reference_closes(1, &pcurves, &supports));
     }
 
     #[test]
@@ -2217,7 +2217,8 @@ mod tests {
                 orientation_hint: hint,
             }],
         }];
-        assert!(solve_absolute_orientation(&ctx, &mut faces).expect("service decode"));
+        assert!(solve_absolute_orientation(&ctx, &mut faces)
+            .expect("solve the absolute face orientation"));
         let members = faces[0].loops[0]
             .resolved_members()
             .expect("exact digon anchor resolves the component");
@@ -2319,7 +2320,8 @@ mod tests {
             },
         ];
 
-        assert!(!solve_absolute_orientation(&ctx, &mut faces).expect("service decode"));
+        assert!(!solve_absolute_orientation(&ctx, &mut faces)
+            .expect("solve the absolute face orientation"));
         assert!(faces
             .iter()
             .flat_map(|face| &face.loops)
@@ -2339,7 +2341,8 @@ mod tests {
                 loops: vec![loop_(12, vec![1, 3])],
             },
         ];
-        assert!(solve_absolute_orientation(&ctx, &mut faces).expect("service decode"));
+        assert!(solve_absolute_orientation(&ctx, &mut faces)
+            .expect("solve the absolute face orientation"));
         let second = faces[1].loops[0]
             .resolved_members()
             .expect("required invariant");
@@ -2355,7 +2358,7 @@ mod tests {
         bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, 0x00]);
         assert_eq!(records(&bytes).count(), 0);
         assert!(parse_topology(&ctx, &bytes)
-            .expect("service decode")
+            .expect("parse the topology")
             .is_none());
     }
 

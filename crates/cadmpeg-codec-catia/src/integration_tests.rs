@@ -173,7 +173,7 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &topology)
     })
-    .expect("parse FBB")
+    .expect("parse the FBB topology")
     .is_none());
 
     let result = decode(fbb_only_quad_unmatched_edge_catpart());

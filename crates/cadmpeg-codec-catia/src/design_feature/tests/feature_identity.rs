@@ -178,7 +178,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
             native_ref: Some(child_entity_id),
         });
 
-    ({ transfer.assign_parameter_owners(&mut ir, &native) }).unwrap();
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(

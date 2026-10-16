@@ -704,17 +704,18 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                scopes: &scopes,
-                timelines: std::slice::from_ref(&timeline),
-                ..Default::default()
-            },
-        )
-    })
-    .expect("timeline projection through one internal scope");
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                decode_ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes: &scopes,
+                    timelines: std::slice::from_ref(&timeline),
+                    ..Default::default()
+                },
+            )
+        })
+        .expect("timeline projection through one internal scope");
     let mut native = F3dNative::default();
     native.design_parameter_scopes = scopes;
     native.design_feature_timelines = vec![timeline];
@@ -880,18 +881,13 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     .try_into()
     .expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-    assert!(container_only_dimension_parameters(&native)
-        .unwrap()
-        .is_empty());
+    assert!(container_only_dimension_parameters(&native).is_empty());
     let mut pairs = native.design_dimension_locus_pairs.to_vec();
     pairs[0].companion_record_index = 30;
     pairs[0].governing_companion_record_index = 99;
     native.design_dimension_locus_pairs = pairs.try_into().expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-    assert_eq!(
-        container_only_dimension_parameters(&native).unwrap().len(),
-        1
-    );
+    assert_eq!(container_only_dimension_parameters(&native).len(), 1);
 
     native.design_dimension_locus_pairs = Default::default();
     native.design_dimension_null_locus_pairs = vec![DesignDimensionLocusPair::try_new(

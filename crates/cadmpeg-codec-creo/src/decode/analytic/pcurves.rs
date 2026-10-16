@@ -2323,7 +2323,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve evidence");
+        .expect("resolve the pcurve edge endpoint evidence");
         assert_eq!(
             evidence.get(&7).map(|entry| entry.points),
             Some([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]])
@@ -2345,7 +2345,7 @@ mod tests {
                 &mut source_carriers,
             )
         })
-        .expect("service analytic pcurve transfer");
+        .expect("transfer the analytic pcurve carriers");
         assert_eq!(transferred.len(), 1);
         assert_eq!(ir.model.curves.len(), 1);
     }
@@ -2425,7 +2425,7 @@ mod tests {
                 &source_carriers,
             )
         })
-        .expect("service pcurve paths");
+        .expect("map the pcurve paths");
         assert_eq!(mapped.missing_surfaces, 0);
         assert_eq!(mapped.unevaluable_paths, 0);
         assert_eq!(mapped.mapped.len(), 1);
@@ -2627,7 +2627,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve evidence");
+        .expect("resolve the pcurve edge endpoint evidence");
 
         assert_eq!(diagnostics.two_chart_surface_mismatch_records, 1);
         assert_eq!(diagnostics.carrier_validated_paths, 2);
@@ -2727,7 +2727,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve evidence");
+        .expect("resolve the pcurve edge endpoint evidence");
         assert_eq!(
             evidence.get(&7).map(|value| (value.points, value.complete)),
             Some(([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]], true))
@@ -2823,7 +2823,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve evidence");
+        .expect("resolve the pcurve edge endpoint evidence");
         assert_eq!(
             evidence
                 .get(&846)
@@ -3006,7 +3006,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve evidence");
+        .expect("resolve the pcurve edge endpoint evidence");
         assert_eq!(
             evidence.get(&7).map(|value| (value.points, value.complete)),
             Some(([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], false)),
@@ -3240,7 +3240,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve paths");
+        .expect("map the pcurve paths");
         assert_eq!(mapped.unevaluable_paths, 0);
         assert_eq!(mapped.mapped.len(), 1);
         assert!(mapped.mapped[0].endpoints[0][0].is_nan());
@@ -3290,7 +3290,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve evidence");
+        .expect("resolve the pcurve edge endpoint evidence");
         assert_eq!(diagnostics.mapped_paths, 2);
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
@@ -3457,7 +3457,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve paths");
+        .expect("map the pcurve paths");
         assert_eq!(mapped.unevaluable_paths, 0);
         assert_eq!(mapped.mapped.len(), 1);
         assert_eq!(mapped.mapped[0].endpoints[0], [f64::INFINITY, 0.0, 0.0]);
@@ -3507,7 +3507,7 @@ mod tests {
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service pcurve evidence");
+        .expect("resolve the pcurve edge endpoint evidence");
         assert_eq!(diagnostics.mapped_paths, 2);
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));

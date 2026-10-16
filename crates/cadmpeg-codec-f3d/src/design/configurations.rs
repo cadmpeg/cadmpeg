@@ -5,7 +5,6 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::identity::neutral_configuration_id;
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -207,7 +206,7 @@ pub(crate) fn project_configurations(
             })?;
             let name = name.to_owned();
             projected.push(NeutralConfiguration {
-                id: neutral_configuration_id(table.entry_name(), &name)?,
+                id: crate::ids::neutral_configuration_id(table.entry_name(), &name),
                 ordinal,
                 active: active == Some(name.as_str()),
                 source_index: None,
@@ -218,7 +217,10 @@ pub(crate) fn project_configurations(
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 bodies: None,
-                native_ref: Some(super::identity::configuration_entry_id(table.entry_name())),
+                native_ref: Some(crate::ids::configuration_entry_id(
+                    table.entry_name(),
+                    &cadmpeg_ir::identity_component!("configuration"),
+                )),
             });
         }
     }

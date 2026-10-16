@@ -235,7 +235,7 @@ fn b5_closed_triangle_has_a_face_ownership_plan() {
     .expect("closed B5 triangle graph");
     crate::test_support::with_service_context(|ctx| {
         assert!(super::faces::ownership_plan(ctx, &graph)
-            .expect("service decode")
+            .expect("build the ownership plan")
             .is_some());
     });
 }
@@ -257,7 +257,7 @@ fn b5_closed_triangle_loops_orient_from_their_edge_senses() {
     crate::test_support::with_service_context(|ctx| {
         assert!(
             super::faces::orient_loop_members(ctx, &graph, reversed.clone())
-                .expect("service decode")
+                .expect("orient the loop members")
                 .is_some()
         );
     });

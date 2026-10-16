@@ -998,56 +998,46 @@ pub(crate) fn project(
 ) -> Result<SketchProjection, CodecError> {
     let raw_sketches = unique_index(inventory.sketches.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let raw_entities = unique_index(inventory.entities.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let transforms = unique_index(inventory.transforms.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let directions = unique_index(inventory.directions.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let raw_constraints = unique_index(inventory.constraints.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
@@ -2102,7 +2092,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert_eq!(
             project(&ctx, &inventory, &[])
                 .expect("sketch projection")
@@ -2157,7 +2147,7 @@ mod tests {
                     && limit.operation == "project Inventor sketch entity"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert!(project(&ctx, &inventory, &[]).is_ok());
     }
 
@@ -2272,10 +2262,10 @@ mod tests {
                     && limit.operation == "project Inventor sketch"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert_eq!(
             project(&ctx, &inventory, &[])
-                .expect("service sketch projection")
+                .expect("project the sketch inventory")
                 .sketches
                 .len(),
             1
@@ -2322,7 +2312,7 @@ mod tests {
                     && limit.operation == "project Inventor sketch constraint"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert!(matches!(
             super::project_constraint(&ctx, &constraint, &entities, &parameters),
             Some(Ok(_))
@@ -2388,7 +2378,7 @@ mod tests {
         ));
         assert_eq!(
             inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
-                .expect("service issue")
+                .expect("build the record inventory")
                 .issues
                 .len(),
             1

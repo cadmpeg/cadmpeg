@@ -206,7 +206,7 @@ fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::parse_standard(ctx, &standard_quad_topology_stream())
     })
-    .expect("parse standard")
+    .expect("parse the standard topology")
     .expect("valid standard topology");
 
     assert_eq!(topology.face_count(), 1);
@@ -232,7 +232,7 @@ fn compact_standard_topology_recovers_a_triangle_boundary_and_vertices() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::parse_standard(ctx, &bytes)
     })
-    .expect("parse standard")
+    .expect("parse the standard topology")
     .expect("valid compact standard topology");
 
     assert_eq!(topology.face_count(), 1);
@@ -303,7 +303,7 @@ fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::parse_standard(ctx, &bytes)
     })
-    .expect("parse standard")
+    .expect("parse the standard topology")
     .expect("two edge tables");
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
@@ -394,7 +394,7 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &bytes)
     })
-    .expect("parse FBB")
+    .expect("parse the FBB topology")
     .expect("valid FBB topology");
     assert_eq!(
         topology.edge_rows()[0].handles(),
@@ -435,7 +435,7 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     assert_eq!(
         quotient
             .edge_vertices(&ctx)
-            .expect("compute the edge vertices")
+            .expect("resolve the edge vertices")
             .expect("edge vertices"),
         native_ports.map(|pair| pair
             .map(|identity| usize::try_from(identity - 100).expect("required invariant")))
@@ -488,7 +488,7 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &bytes)
     })
-    .expect("parse FBB")
+    .expect("parse the FBB topology")
     .expect("valid FBB-only topology");
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.edge_rows().len(), 4);
@@ -511,7 +511,7 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("compute the edge vertices")
+            .expect("resolve the edge vertices")
             .expect("FBB-only edge endpoints"),
         ports
             .into_iter()
@@ -526,7 +526,7 @@ fn fbb_topology_recovers_unique_flanking_rows_without_reclassifying_complete_row
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &bytes)
     })
-    .expect("parse FBB")
+    .expect("parse the FBB topology")
     .expect("mixed FBB boundary topology");
     assert_eq!(topology.face_count(), 1);
     assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 5);
@@ -575,7 +575,7 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &bytes)
     })
-    .expect("parse FBB")
+    .expect("parse the FBB topology")
     .expect("valid u16 FBB topology");
     assert_eq!(topology.edge_rows()[0].handles(), vec![0x1010, 0x1011]);
     assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 4);
@@ -616,7 +616,7 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &bytes)
     })
-    .expect("parse FBB")
+    .expect("parse the FBB topology")
     .expect("valid u8 FBB topology");
     assert_eq!(topology.edge_rows()[0].handles(), vec![0x10, 0x11]);
     assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 4);
@@ -687,7 +687,7 @@ fn fbb_topology_requires_one_u16_delimiter_family() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::topology::parse_fbb(ctx, &bytes)
     })
-    .expect("parse FBB")
+    .expect("parse the FBB topology")
     .is_none());
 }
 
@@ -741,7 +741,7 @@ fn standard_topology_matches_edge_interiors_and_collapses_endpoint_ports() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::parse_standard(ctx, &bytes)
     })
-    .expect("parse standard")
+    .expect("parse the standard topology")
     .expect("interior-run topology");
     let coedges = &topology.faces[0].boundaries[0].coedges;
     assert_eq!(
@@ -789,7 +789,7 @@ fn standard_legacy_two_strip_packet_recovers_two_face_boundaries() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::parse_standard(ctx, &bytes)
     })
-    .expect("parse standard")
+    .expect("parse the standard topology")
     .expect("legacy B=2 packet");
     assert_eq!(topology.faces[0].boundaries.len(), 2);
     assert!(topology.faces[0]
@@ -861,7 +861,7 @@ fn standard_curve_support_table_recovers_leading_spline_and_widened_faces() {
     let rows = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::standard_curve_supports(ctx, &bytes, 300, Some(2))
     })
-    .expect("compute the standard curve supports");
+    .expect("read the standard curve supports");
     assert_eq!(rows.len(), 2);
     assert!(matches!(
         rows[0].geometry,
@@ -889,7 +889,7 @@ fn standard_curve_support_fallback_requires_one_complete_edge_run() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::standard_curve_supports(ctx, &longer_run, 2, Some(1))
     })
-    .expect("compute the standard curve supports")
+    .expect("read the standard curve supports")
     .is_empty());
 
     let mut separate_runs = line_row(3, [0, 1]);
@@ -898,14 +898,14 @@ fn standard_curve_support_fallback_requires_one_complete_edge_run() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::standard_curve_supports(ctx, &separate_runs, 2, Some(1))
     })
-    .expect("compute the standard curve supports")
+    .expect("read the standard curve supports")
     .is_empty());
 
     let unique_run = line_row(5, [0, 1]);
     let rows = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::standard_curve_supports(ctx, &unique_run, 2, None)
     })
-    .expect("compute the standard curve supports");
+    .expect("read the standard curve supports");
     assert_eq!(rows.len(), 1);
 }
 
@@ -921,7 +921,7 @@ fn topology_binds_logical_vertices_from_exact_edge_endpoint_pairs() {
     let topology = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::parse_standard(ctx, &standard_quad_topology_stream())
     })
-    .expect("parse standard")
+    .expect("parse the standard topology")
     .expect("quad topology");
     let assignment = topology
         .bind_vertex_points(&ctx, &[[0, 1], [1, 2], [2, 3], [3, 0]])
@@ -938,7 +938,7 @@ fn standard_circle_parser_rejects_non_support_marker() {
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::standard_curve_supports(ctx, &bytes, 1, Some(1))
     })
-    .expect("compute the standard curve supports")
+    .expect("read the standard curve supports")
     .is_empty());
 }
 
@@ -953,7 +953,7 @@ fn standard_circle_parser_has_no_model_size_cutoff() {
         crate::test_support::with_service_context(|ctx| {
             crate::families::standard::records::standard_curve_supports(ctx, &bytes, 2, Some(1))
         })
-        .expect("compute the standard curve supports")[0]
+        .expect("read the standard curve supports")[0]
             .geometry
     else {
         panic!("circle row");
@@ -972,7 +972,7 @@ fn standard_circle_parser_admits_finite_center_and_positive_radius() {
         crate::test_support::with_service_context(|ctx| {
             crate::families::standard::records::standard_curve_supports(ctx, &bytes, 2, Some(1))
         })
-        .expect("compute the standard curve supports")
+        .expect("read the standard curve supports")
     };
     let valid = circle_row([1.0, -2.0, 3.0, 4.0]);
     let StandardCurveGeometry::Circle { center, radius } = valid[0].geometry else {
@@ -1112,15 +1112,15 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
 
     let mut mismatched = populations.clone();
     mismatched[1] = population(2, 2, 200);
-    assert!({
+    assert!(
         crate::families::standard::records::pair_standard_populations(&layouts, &mismatched)
-    }
-    .is_none());
-    assert!({
+            .is_none()
+    );
+    assert!(
         crate::families::standard::records::pair_standard_populations(&layouts[..1], &populations)
-    }
-    .is_none());
-    assert!({ crate::families::standard::records::pair_standard_populations(&[], &[]) }.is_none());
+            .is_none()
+    );
+    assert!(crate::families::standard::records::pair_standard_populations(&[], &[]).is_none());
     let one = crate::families::standard::records::pair_standard_populations(
         &layouts[..1],
         &populations[..1],
@@ -1431,13 +1431,13 @@ fn standard_curve_supports_begin_after_the_surface_roster() {
     let rows = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::standard_curve_supports(ctx, &bytes, 1, Some(1))
     })
-    .expect("compute the standard curve supports");
+    .expect("read the standard curve supports");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].tag, 2);
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::standard_curve_supports(ctx, &bytes, 1, Some(2))
     })
-    .expect("compute the standard curve supports")
+    .expect("read the standard curve supports")
     .is_empty());
 }
 
@@ -1793,7 +1793,7 @@ fn standard_line_parser_reads_face_incidence() {
     let rows = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::standard_curve_supports(ctx, &bytes, 2, Some(1))
     })
-    .expect("compute the standard curve supports");
+    .expect("read the standard curve supports");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].tag, 0x03_0201);
     assert_eq!(rows[0].faces, [0, 1]);

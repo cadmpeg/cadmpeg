@@ -42,7 +42,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
         parameters,
         chord,
     )
-    .expect("compute the NURBS surface parameter segment chord bound")
+    .expect("bound the NURBS surface segment's chord deviation")
     .expect("rational Bézier residual bound");
 
     assert!(bound >= 1.0 / 3.0);
@@ -53,7 +53,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
         [parameters[1], parameters[0]],
         [chord[1], chord[0]],
     )
-    .expect("compute the NURBS surface parameter segment chord bound")
+    .expect("bound the NURBS surface segment's chord deviation")
     .expect("reversed rational Bézier residual bound");
     assert!((reverse_bound - bound).abs() < 1.0e-12);
     for index in 0..=100 {

@@ -895,7 +895,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     };
     let records = vec![plane(10), plane(20), plane(30)];
 
-    assert!({ standard_plane_normals_from_face_frames(&records, &[None, None, None]) }.is_empty());
+    assert!(standard_plane_normals_from_face_frames(&records, &[None, None, None]).is_empty());
     assert_eq!(
         standard_plane_normals_from_face_frames(
             &records,
@@ -920,17 +920,15 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     );
 
     let conflicting = vec![plane(10), plane(10)];
-    assert!({
-        standard_plane_normals_from_face_frames(
-            &conflicting,
-            &[
-                Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
-                Some(crate::test_support::test_b5::finite_vector([
-                    0.0, 0.0, -1.0,
-                ])),
-            ],
-        )
-    }
+    assert!(standard_plane_normals_from_face_frames(
+        &conflicting,
+        &[
+            Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
+            Some(crate::test_support::test_b5::finite_vector([
+                0.0, 0.0, -1.0,
+            ])),
+        ],
+    )
     .is_empty());
 }
 

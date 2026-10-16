@@ -499,7 +499,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
             },
         )
     })
-    .expect("compute the circle parameter range from surface branch")
+    .expect("find the circle parameter range from the surface branch")
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
@@ -560,7 +560,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
             },
         )
     })
-    .expect("compute the circle parameter range from surface branch")
+    .expect("find the circle parameter range from the surface branch")
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);
 }

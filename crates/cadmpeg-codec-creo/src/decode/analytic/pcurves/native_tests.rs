@@ -154,7 +154,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             .expect("root");
             linear_pcurve_carrier(&ctx, &plane, [[1.0, 2.0], [3.0, 4.0]])
         })
-        .expect("compute the linear pcurve carrier"),
+        .expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(matches!(
@@ -168,7 +168,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             .expect("root");
             linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [1.0, 4.0]])
         })
-        .expect("compute the linear pcurve carrier"),
+        .expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(matches!(
@@ -182,7 +182,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &cylinder, [[1.0, 2.0], [2.0, 2.0]]
                     )
             }
-        ).expect("compute the linear pcurve carrier"),
+        ).expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -199,7 +199,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
             .expect("root");
             linear_pcurve_carrier(&ctx, &cone, [[1.0, 2.0], [1.0, 4.0]])
         })
-        .expect("compute the linear pcurve carrier"),
+        .expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(matches!(
@@ -213,7 +213,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &cone, [[1.0, 2.0], [2.0, 2.0]]
                     )
             }
-        ).expect("compute the linear pcurve carrier"),
+        ).expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
             if {
                 let major_radius = ellipse_curve.major_radius().get();
@@ -230,7 +230,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         .expect("root");
         linear_pcurve_carrier(&ctx, &cylinder, [[1.0, 2.0], [2.0, 4.0]])
     })
-    .expect("compute the linear pcurve carrier")
+    .expect("build the linear pcurve carrier")
     .is_none());
     assert!(matches!(
         (
@@ -243,7 +243,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &sphere, [[1.0, 2.0], [1.0, 4.0]]
                     )
             }
-        ).expect("compute the linear pcurve carrier"),
+        ).expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -260,7 +260,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &sphere, [[1.0, 0.25], [2.0, 0.25]]
                     )
             }
-        ).expect("compute the linear pcurve carrier"),
+        ).expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -288,7 +288,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &torus, [[0.5, 0.0], [0.5, 1.0]]
                     )
             }
-        ).expect("compute the linear pcurve carrier"),
+        ).expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
@@ -305,7 +305,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                         &ctx, &torus, [[0.5, 0.0], [1.0, 0.0]]
                     )
             }
-        ).expect("compute the linear pcurve carrier"),
+        ).expect("build the linear pcurve carrier"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
     if {
         let radius = circle_curve.radius().get();
