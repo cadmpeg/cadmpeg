@@ -2092,7 +2092,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert_eq!(
             project(&ctx, &inventory, &[])
                 .expect("sketch projection")
@@ -2147,7 +2147,7 @@ mod tests {
                     && limit.operation == "project Inventor sketch entity"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert!(project(&ctx, &inventory, &[]).is_ok());
     }
 
@@ -2262,10 +2262,10 @@ mod tests {
                     && limit.operation == "project Inventor sketch"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert_eq!(
             project(&ctx, &inventory, &[])
-                .expect("service sketch projection")
+                .expect("project the sketch inventory")
                 .sketches
                 .len(),
             1
@@ -2312,7 +2312,7 @@ mod tests {
                     && limit.operation == "project Inventor sketch constraint"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
+            .expect("build the decode context");
         assert!(matches!(
             super::project_constraint(&ctx, &constraint, &entities, &parameters),
             Some(Ok(_))
@@ -2378,7 +2378,7 @@ mod tests {
         ));
         assert_eq!(
             inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
-                .expect("service issue")
+                .expect("build the record inventory")
                 .issues
                 .len(),
             1

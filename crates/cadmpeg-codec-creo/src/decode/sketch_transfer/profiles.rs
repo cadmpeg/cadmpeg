@@ -782,7 +782,7 @@ mod tests {
         let profiles = crate::decode::with_service_context(|ctx| {
             resolved_profile_chains(ctx, &definition, &sketch, &emitted)
         })
-        .expect("service trim profile");
+        .expect("resolve the profile chains");
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 1);
         assert_eq!(
@@ -822,7 +822,7 @@ mod tests {
         let profiles = crate::decode::with_service_context(|ctx| {
             resolved_profile_chains(ctx, &definition, &sketch, &emitted)
         })
-        .expect("service segment profile");
+        .expect("resolve the profile chains");
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 2);
         assert_eq!(

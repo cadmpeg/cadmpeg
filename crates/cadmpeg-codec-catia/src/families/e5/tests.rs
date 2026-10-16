@@ -25,7 +25,7 @@ macro_rules! e5_test_context {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let ($ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("service decode context");
+            .expect("build the decode context");
     };
 }
 
@@ -208,7 +208,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     append_e5_record(&mut bytes, 0x01, 800, &[0x81, 0x18, 188, 2]);
 
     let topology = crate::families::e5::graph::parse_topology(&ctx, &bytes)
-        .expect("service decode")
+        .expect("parse the topology")
         .expect("E5 graph");
     assert_eq!(topology.faces.len(), 2);
     assert_eq!(topology.faces[0].surface, 500);
@@ -275,7 +275,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     missing_support[support_start + 3] = 0x7f;
     assert!(
         crate::families::e5::graph::parse_topology(&ctx, &missing_support)
-            .expect("service decode")
+            .expect("parse the topology")
             .is_none()
     );
 
@@ -287,7 +287,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     missing_support_pcurve[support_start + 15..support_start + 17].copy_from_slice(&[0xff, 0x0f]);
     assert!(
         crate::families::e5::graph::parse_topology(&ctx, &missing_support_pcurve)
-            .expect("service decode")
+            .expect("parse the topology")
             .is_none()
     );
 
@@ -299,7 +299,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     missing_bounds[bounds_start + 3] = 0x7f;
     assert!(
         crate::families::e5::graph::parse_topology(&ctx, &missing_bounds)
-            .expect("service decode")
+            .expect("parse the topology")
             .is_none()
     );
 
@@ -315,7 +315,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .copy_from_slice(&[0x18, 0x84, 0x03]);
     assert!(
         crate::families::e5::graph::parse_topology(&ctx, &missing_pcurve_surface)
-            .expect("service decode")
+            .expect("parse the topology")
             .is_none()
     );
 }
@@ -583,7 +583,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     e5_test_context!(ctx);
     let stream = e5_torus_topology_stream();
     crate::families::e5::graph::parse_topology(&ctx, &stream)
-        .expect("service decode")
+        .expect("parse the topology")
         .expect("generated E5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(

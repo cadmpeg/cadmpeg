@@ -100,7 +100,7 @@ fn incidence_components_visit_every_independent_combination() {
             Ok(ControlFlow::Continue(()))
         },
     )
-    .expect("service decode");
+    .expect("visit the component incidence pair solutions");
 
     assert_eq!(
         outcome,
@@ -181,11 +181,11 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
     let mut quotient = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
     quotient
         .merge(0, 1)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("first closed edge");
     quotient
         .merge(2, 3)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("second closed edge");
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
@@ -235,7 +235,7 @@ fn incidence_components_preflight_quotient_impossible_domains() {
     for edge in 0..choices.len() {
         quotient
             .merge(edge * 2, edge * 2 + 1)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("closed edge");
     }
     let mut visited = false;

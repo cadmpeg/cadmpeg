@@ -1107,11 +1107,11 @@ fn complete_mesh_endpoint_candidates_from_quotient(
             let left = quotient
                 .union
                 .find(edge * 2)
-                .expect("service forest traversal");
+                .expect("find the component root");
             let right = quotient
                 .union
                 .find(edge * 2 + 1)
-                .expect("service forest traversal");
+                .expect("find the component root");
             let relation_count = if left == right {
                 quotient.domains[left].len()
             } else {
@@ -1960,7 +1960,7 @@ impl MeshQuotient {
                     };
                     let Some(root) = quotient
                         .merge(previous_end, current_start)
-                        .expect("service merge")
+                        .expect("merge the components")
                     else {
                         return;
                     };
@@ -2005,7 +2005,7 @@ impl MeshQuotient {
                     };
                     let Some(root) = quotient
                         .merge(last_end, first_start)
-                        .expect("service merge")
+                        .expect("merge the components")
                     else {
                         return;
                     };
@@ -9235,11 +9235,11 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
         );
         quotient
             .merge(0, 2)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("shared left endpoint");
         quotient
             .merge(1, 3)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("shared right endpoint");
         quotient
     };
@@ -9311,11 +9311,11 @@ fn coordinate_root_closure_refuses_recursive_walk_depth() {
     );
     quotient
         .merge(0, 2)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("shared left endpoint");
     quotient
         .merge(1, 3)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("shared right endpoint");
     let result = quotient.coordinate_root_closure_outcome(
         &ctx,
@@ -9350,11 +9350,11 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
         let point = component * 3;
         quotient
             .merge(node + 1, node + 2)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("disjoint coordinate roots merge");
         quotient
             .merge(node + 3, node + 4)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("disjoint coordinate roots merge");
         candidates.extend([
             vec![[point, point + 1]],
@@ -9989,7 +9989,7 @@ fn merging_an_edges_endpoints_reports_that_edge_as_changed() {
     let points = Arc::new(HashSet::from([0]));
     let left = MeshQuotient::new(vec![Arc::clone(&points), Arc::clone(&points)]);
     let mut right = left.clone();
-    assert!(right.merge(0, 1).expect("service merge").is_some());
+    assert!(right.merge(0, 1).expect("merge the components").is_some());
     assert_eq!(
         changed_quotient_edges(&left, &right).expect("compute the changed quotient edges"),
         HashSet::from([0])
@@ -10606,11 +10606,11 @@ fn coordinate_root_closure_solves_a_merged_two_point_quotient() {
         );
         quotient
             .merge(0, 2)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("shared left endpoint");
         quotient
             .merge(1, 3)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("shared right endpoint");
         let budget = WorkBudget::new(1_000);
         quotient.coordinate_root_closure_outcome(

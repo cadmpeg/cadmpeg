@@ -198,9 +198,8 @@ mod tests {
     fn checked_identity_preserves_compose_and_copy() {
         let composed =
             compose_checked::<ShellId>(&crate::identity::VISIBGEOM_SHELL, format_args!("1:{}", 2))
-                .expect("service identity admitted");
-        let copied =
-            copy_checked_id::<ShellId>(composed.as_str()).expect("service identity copy admitted");
+                .expect("compose the identity");
+        let copied = copy_checked_id::<ShellId>(composed.as_str()).expect("copy the identity");
         assert_eq!(
             composed,
             ShellId::compose(

@@ -392,7 +392,7 @@ mod tests {
             &std::collections::BTreeSet::new(),
             &std::collections::BTreeSet::new(),
         )
-        .expect("service admission")
+        .expect("build the unresolved saved section entity")
         .expect("saved dummy entity");
         assert_eq!(offset, 9);
         assert_eq!(

@@ -1214,7 +1214,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let mut graph = B5Graph {
         complete: true,
         faces: vec![B5Face {
@@ -1260,14 +1260,14 @@ fn body_kind_requires_unique_complete_loop_ownership() {
 
     assert_eq!(
         ownership_plan(&ctx, &graph)
-            .expect("service decode")
+            .expect("build the ownership plan")
             .expect("required invariant")
             .body_kind,
         BodyKind::Sheet
     );
     graph.faces[0].loops.push(2);
     assert!(ownership_plan(&ctx, &graph)
-        .expect("service decode")
+        .expect("build the ownership plan")
         .is_none());
     graph.faces[0].loops.pop();
     graph.faces.push(B5Face {
@@ -1277,7 +1277,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         terminal_control: None,
     });
     assert!(ownership_plan(&ctx, &graph)
-        .expect("service decode")
+        .expect("build the ownership plan")
         .is_none());
     graph.faces.pop();
 
@@ -1301,7 +1301,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .insert_edge(7, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])
         .expect("edge references select existing rows");
     let ownership = ownership_plan(&ctx, &graph)
-        .expect("service decode")
+        .expect("build the ownership plan")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
     assert_eq!(ownership.components().len(), 2);
@@ -1321,7 +1321,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         });
     assert_eq!(
         ownership_plan(&ctx, &graph)
-            .expect("service decode")
+            .expect("build the ownership plan")
             .expect("required invariant")
             .body_kind,
         BodyKind::General
@@ -1335,7 +1335,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
 
     graph.loops.get_mut(&6).expect("required invariant").members[0].edge = 3;
     let ownership = ownership_plan(&ctx, &graph)
-        .expect("service decode")
+        .expect("build the ownership plan")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
     assert_eq!(ownership.components().len(), 1);
@@ -1355,7 +1355,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
         object_id,
         members: test_loop_members(&vec![0; edges.len()], &edges),
@@ -1394,7 +1394,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         &graph,
         BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
     )
-    .expect("service decode")
+    .expect("orient the loop members")
     .expect("required invariant");
     assert_eq!(orientation[&1].member_order().collect::<Vec<_>>(), vec![0]);
     assert_eq!(
@@ -1448,7 +1448,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
             (3, vec![false; 2]),
         ]),
     )
-    .expect("service decode")
+    .expect("orient the loop members")
     .is_none());
 }
 

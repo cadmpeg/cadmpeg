@@ -68,7 +68,7 @@ fn rse_native_projection_projects_the_fixture() {
     assert_eq!(container.rse.segments.len(), 1);
     assert!(container.rse.segments[0].identity_issues.is_empty());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     rse_native_projection::project(&ctx, &container).expect("admitted RSe projection");
 }
 
@@ -82,7 +82,7 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
     };
     bulk.records = RecordFrameState::Unavailable("frame issue".into());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     rse_native_projection::project(&ctx, &container).expect("unframed records project");
 
     let token = container.rse.segments[0].pair.token.clone();
@@ -145,7 +145,7 @@ fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0])
         .expect("admitted occurrence");
     let mut policy = DecodePolicy::service();
@@ -196,10 +196,10 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
                 && limit.operation == "admit Inventor native assembly placement"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let wire = AssemblyPlacementRecordWire::from_placement(&inventory.placements[0]);
     assert!(admit_assembly_placement(&ctx, wire, &mut Vec::new())
-        .expect("service placement admission")
+        .expect("admit the assembly placement")
         .is_some());
 }
 
@@ -207,7 +207,7 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
 fn root_product_has_the_root_identity() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let mut admitted = 0;
     let product = project_root_product(
         &ctx,
@@ -257,7 +257,7 @@ fn preview_asset_refuses_entity_limit_before_creation() {
                 && limit.operation == "admit Inventor preview asset entity"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let asset = project_preview_asset(
         &ctx,
         &mut 0_u64,
@@ -292,7 +292,7 @@ fn preview_asset_charges_its_retained_copy() {
 fn absent_protein_state_names_the_root() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     assert!(matches!(
         project_protein_state(&ctx, &ProteinState::Absent).expect("admitted state"),
         crate::native::protein::ProteinRecord::Absent { id } if id == "inventor:protein:state#root"
@@ -330,7 +330,7 @@ fn protein_rejection_instance() -> Vec<ProteinInstanceRecords> {
 fn protein_asset_record_is_projected() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let records = project_protein_records(&ctx, protein_asset_instance()).expect("admitted asset");
     assert_eq!(records.assets.len(), 1);
     assert!(records.rejections.is_empty());
@@ -341,7 +341,7 @@ fn protein_asset_record_is_projected() {
 fn protein_rejection_record_is_projected() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let records =
         project_protein_records(&ctx, protein_rejection_instance()).expect("admitted rejection");
     assert!(records.assets.is_empty());
@@ -353,7 +353,7 @@ fn protein_rejection_record_is_projected() {
 fn absent_ufrx_state_names_the_root() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     assert!(matches!(
         project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new()).expect("admitted state"),
         UfrxRecord::Absent { id } if id == "inventor:ufrx:state#root"
@@ -393,7 +393,7 @@ fn ufrx_model_state_with_a_parameter_is_admitted() {
 fn structural_issue_keeps_scope_and_detail() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let issue = structural_issue(&ctx, "scope", "bad").expect("admitted issue");
     assert_eq!(issue.scope, "scope");
     assert_eq!(issue.detail, "bad");
@@ -403,7 +403,7 @@ fn structural_issue_keeps_scope_and_detail() {
 fn protein_conversion_failure_becomes_an_issue() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let wire = serde_json::from_value(serde_json::json!({
         "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
         "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
@@ -412,7 +412,7 @@ fn protein_conversion_failure_becomes_an_issue() {
     .expect("Protein asset wire fixture");
     let mut issues = Vec::new();
     assert!(crate::decode::admit_protein_asset(&ctx, wire, &mut issues)
-        .expect("service admission")
+        .expect("admit the Protein asset")
         .is_none());
     assert_eq!(issues.len(), 1);
 }
@@ -433,7 +433,7 @@ fn ufrx_model_state_conversion_failure_becomes_an_issue() {
     };
     let mut issues = Vec::new();
     assert!(project_ufrx_model_state(&ctx, 0, &state, &mut issues)
-        .expect("service admission")
+        .expect("project the UFRx model state")
         .is_none());
     assert_eq!(issues.len(), 1);
 }
@@ -459,7 +459,7 @@ fn external_reference(path: &str) -> InventorExternalReference {
 fn ufrx_external_reference_with_a_state_group_is_admitted() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     assert!(project_ufrx_external_reference(
         &ctx,
         0,
@@ -474,11 +474,11 @@ fn ufrx_external_reference_with_a_state_group_is_admitted() {
 fn ufrx_external_conversion_failure_becomes_an_issue() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let mut issues = Vec::new();
     assert!(
         project_ufrx_external_reference(&ctx, 0, &external_reference(""), &mut issues)
-            .expect("service admission")
+            .expect("project the UFRx external reference")
             .is_none()
     );
     assert_eq!(issues.len(), 1);
@@ -544,7 +544,7 @@ fn ufrx_representation_is_admitted() {
         active_model_state_state: [0; 2],
     };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     assert!(
         project_ufrx_representation(&ctx, &representation, &mut Vec::new())
             .expect("admitted representation")
@@ -583,7 +583,7 @@ fn native_validation_accepts_decoded_external_references() {
         .expect("Inventor fixture decodes");
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service validation context");
+        .expect("build the decode context");
     assert!(InventorCodec.validate_native(&ctx, decoded.ir()).is_ok());
 }
 
@@ -739,11 +739,11 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
     let mut issues = Vec::new();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let bad: AssemblyPlacementRecordWire =
         serde_json::from_value(wire.clone()).expect("wire fixture");
     assert!(admit_assembly_placement(&ctx, bad, &mut issues)
-        .expect("service admission")
+        .expect("admit the assembly placement")
         .is_none());
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].segment_token.as_str(), "segment");
@@ -753,7 +753,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
     wire["suffix_sha256"] = serde_json::json!("0".repeat(64));
     let good = serde_json::from_value(wire).expect("wire fixture");
     assert!(admit_assembly_placement(&ctx, good, &mut issues)
-        .expect("service admission")
+        .expect("admit the assembly placement")
         .is_some());
     assert_eq!(issues.len(), 1);
 }
@@ -774,11 +774,11 @@ fn placement_wire(suffix_len: u64, suffix_sha256: &str) -> AssemblyPlacementReco
 fn empty_placement_suffix_becomes_an_issue() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let mut issues = Vec::new();
     assert!(
         admit_assembly_placement(&ctx, placement_wire(0, &"0".repeat(64)), &mut issues)
-            .expect("service admission")
+            .expect("admit the assembly placement")
             .is_none()
     );
     assert_eq!(issues.len(), 1);
@@ -789,11 +789,11 @@ fn empty_placement_suffix_becomes_an_issue() {
 fn uppercase_placement_digest_becomes_an_issue() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let mut issues = Vec::new();
     assert!(
         admit_assembly_placement(&ctx, placement_wire(48, &"A".repeat(64)), &mut issues)
-            .expect("service admission")
+            .expect("admit the assembly placement")
             .is_none()
     );
     assert_eq!(issues.len(), 1);
@@ -950,7 +950,7 @@ fn external_references_stream() -> Vec<u8> {
 fn protein_admission_keeps_later_assets_and_rejections() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let mut issues = Vec::new();
     let assets = ["bad.bin", "assets/InstanceProperties.bin"]
         .into_iter()
@@ -961,7 +961,8 @@ fn protein_admission_keeps_later_assets_and_rejections() {
                     "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
             }))
             .expect("Protein asset wire fixture");
-            crate::decode::admit_protein_asset(&ctx, wire, &mut issues).expect("service admission")
+            crate::decode::admit_protein_asset(&ctx, wire, &mut issues)
+                .expect("admit the Protein asset")
         })
         .collect::<Vec<_>>();
     assert_eq!(assets.len(), 1);
@@ -981,7 +982,7 @@ fn protein_admission_keeps_later_assets_and_rejections() {
                 },
                 &mut issues,
             )
-            .expect("service admission")
+            .expect("admit the Protein rejection")
         })
         .collect::<Vec<_>>();
     assert_eq!(rejections.len(), 1);

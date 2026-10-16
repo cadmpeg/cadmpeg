@@ -20,7 +20,7 @@ fn curve_expression_frame_admits_only_finite_local_origin() {
 
     let helix =
         crate::decode::with_service_context(|ctx| crate::curve::expression_helix(ctx, &record))
-            .expect("service helix admission")
+            .expect("decode the expression helix")
             .expect("affine helix");
     assert!(super::curve_expression_helix_definition(&record, &helix).is_some());
 }
@@ -80,7 +80,7 @@ fn curve_expression_parameter_order_looks_up_named_dependencies() {
     let indices = std::collections::BTreeMap::from([("a".to_string(), 0)]);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service())
-        .expect("service input fits");
+        .expect("build the decode context");
     assert!(
         super::curve_expression_parameter_order(&ctx, &record, &indices)
             .expect("compute the curve expression parameter order")

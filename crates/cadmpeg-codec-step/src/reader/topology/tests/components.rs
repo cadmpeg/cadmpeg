@@ -19,7 +19,7 @@ fn unconnected_faces_form_separate_components() {
     let faces = faces();
     let arena = DecodeArena::new();
     let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let components =
         super::super::connected_face_components(&faces, &[], &[], &BTreeMap::new(), &service_ctx)
             .expect("compute the connected face components");
@@ -50,7 +50,7 @@ fn shared_vertex_joins_faces_into_one_component() {
     ];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     assert_eq!(
         super::super::connected_face_components(&faces, &loops, &[], &BTreeMap::new(), &ctx)
             .expect("shared vertex joins faces"),

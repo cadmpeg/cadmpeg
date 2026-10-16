@@ -13,7 +13,7 @@ fn container_summary_attribute_is_inserted() {
     let bytes = fixture(true);
     let arena = DecodeArena::new();
     let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
     let mut entries = snapshot.container_entries(classify);
     let entry = entries.first_mut().expect("fixture entry");
@@ -26,7 +26,7 @@ fn container_summary_search_finds_the_directory_entry() {
     let bytes = fixture(true);
     let arena = DecodeArena::new();
     let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
     let mut entries = snapshot.container_entries(classify);
     assert!(find_summary_entry(&mut entries, snapshot.entries()[0].directory_id()).is_some());

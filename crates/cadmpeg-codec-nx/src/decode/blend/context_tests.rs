@@ -59,7 +59,7 @@ fn closest_pcurve_parameters_fit_a_polynomial_line() {
     let result = crate::test_support::with_decode_context(|ctx| {
         super::closest_pcurve_parameters(ctx, &pcurve, Point2::new(0.5, 0.0), None)
     })
-    .expect("service admission")
+    .expect("find the closest pcurve parameters")
     .expect("linear closest parameter");
     assert_eq!(result, vec![0.5]);
 }

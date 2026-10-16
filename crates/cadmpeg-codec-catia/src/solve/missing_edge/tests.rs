@@ -367,7 +367,7 @@ fn repeated_handle_index_preserves_face_order() {
     let actual = crate::test_support::with_service_context(|ctx| {
         repeated_edge_face_handle_candidates_from_sets(ctx, &rows, &faces, &[[0, 0]])
     })
-    .expect("service decode");
+    .expect("find the repeated edge face handle candidates");
     assert_eq!(actual, Some(expected));
 }
 

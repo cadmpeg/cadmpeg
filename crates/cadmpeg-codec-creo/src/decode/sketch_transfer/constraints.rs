@@ -2372,7 +2372,7 @@ mod tests {
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
         let admitted =
             super::native_section_segment_verhor_definition(&sketch, entity.clone(), 42, 2)
-                .expect("service verhor admission");
+                .expect("build the native section segment orientation constraint");
         let SketchConstraintDefinitionInput::Native {
             native_properties,
             entities,
@@ -2399,7 +2399,7 @@ mod tests {
             "radius",
             2,
         )
-        .expect("service radius admission");
+        .expect("build the native section segment radius constraint");
         let SketchConstraintDefinitionInput::Native {
             native_properties,
             entities,
@@ -2512,7 +2512,7 @@ mod tests {
     fn native_equation_operands_name_each_argument() {
         let arguments = [None, Some(2), Some(3)];
         let operands = native_equation_operands(1, &arguments, "creo:featdefs:sketch#40")
-            .expect("service operands");
+            .expect("build the native equation operands");
         assert_eq!(operands.len(), 3);
         assert_eq!(operands[0].object_index, Some(1));
         assert_eq!(
@@ -2592,7 +2592,7 @@ mod tests {
         ({
             assert_eq!(
                 super::section_segment_radius_constraints(&definition, &sketch)
-                    .expect("service radius constraint")
+                    .expect("build the section segment radius constraints")
                     .len(),
                 1
             );
@@ -2603,7 +2603,7 @@ mod tests {
                     &BTreeSet::new(),
                     &BTreeSet::new()
                 )
-                .expect("service emitted radius constraint")
+                .expect("build the emitted section segment radius constraints")
                 .len(),
                 1
             );
@@ -2822,7 +2822,7 @@ mod tests {
             &BTreeSet::new(),
             &BTreeSet::new()
         )
-        .expect("service dimension fallback admission"));
+        .expect("reconcile the section dimension constraint"));
         assert!(matches!(
             constraint,
             SketchConstraintDefinitionInput::Native {
@@ -2847,7 +2847,7 @@ mod tests {
             &BTreeSet::from([emitted_entity]),
             &BTreeSet::new()
         )
-        .expect("service dimension fallback admission"));
+        .expect("reconcile the section dimension constraint"));
         assert!(matches!(
             missing_parameter,
             SketchConstraintDefinitionInput::Native {

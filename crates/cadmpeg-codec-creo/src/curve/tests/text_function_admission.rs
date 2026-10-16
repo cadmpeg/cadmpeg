@@ -13,7 +13,7 @@ fn relation_regex_preserves_service_match_and_invalid_pattern() {
             RelationEvaluationContext::default(),
         )
     })
-    .expect("service pattern");
+    .expect("parse the relation expression");
     assert_eq!(
         matched,
         Some(CurveExpressionValue::Number(
@@ -28,7 +28,7 @@ fn relation_regex_preserves_service_match_and_invalid_pattern() {
             RelationEvaluationContext::default(),
         )
     })
-    .expect("service invalid pattern");
+    .expect("parse the relation expression");
     assert_eq!(invalid, None);
 }
 
@@ -60,7 +60,7 @@ fn relation_power_rejects_text_without_copying_the_invalid_operand() {
             &BTreeMap::new(),
             RelationEvaluationContext::default(),
         ))
-        .expect("service text expression admission"),
+        .expect("parse the relation expression"),
         None
     );
     assert_eq!(
@@ -103,7 +103,7 @@ fn relation_unit_symbols_match_ascii_case_insensitively() {
                     RelationEvaluationContext::default(),
                 )
             )
-            .expect("service unit lookup"),
+            .expect("parse the relation expression"),
             expected,
             "{expression}"
         );

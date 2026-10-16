@@ -148,7 +148,7 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
     ))
-    .expect("service placed carriers")
+    .expect("resolve the placed carriers")
     .contains_key(&7));
 }
 
@@ -203,7 +203,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service placed carriers");
+    .expect("resolve the placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder))
@@ -268,7 +268,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service placed carriers");
+    .expect("resolve the placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder)) if cylinder.origin == [0.0, 0.0, 0.0]
@@ -324,7 +324,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
     ))
-    .expect("service placed carriers")
+    .expect("resolve the placed carriers")
     .contains_key(&7));
 }
 
@@ -342,7 +342,7 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service placed carriers");
+    .expect("resolve the placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder)) if cylinder.radius == 2.0
@@ -363,7 +363,7 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
     ))
-    .expect("service placed carriers")
+    .expect("resolve the placed carriers")
     .contains_key(&7));
 }
 
@@ -462,7 +462,7 @@ fn parameter_loop_classifier_orders_unique_outer() {
             &[inner_polygon.clone(), outer_polygon.clone()],
         )
     }
-    .expect("service parameter loop ordering");
+    .expect("order the parameter face loops");
     assert_eq!(ordered[0].half_edges()[0].curve_id, 10);
     assert_eq!(ordered[1].half_edges()[0].curve_id, 20);
 

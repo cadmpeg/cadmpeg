@@ -97,7 +97,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     )];
 
     let coverage = { surface_transfer_coverage(&rows, &surfaces, &procedural_surfaces) }
-        .expect("service surface coverage");
+        .expect("measure the surface transfer coverage");
 
     assert_eq!(coverage.unique_rows(), 3);
     assert_eq!(coverage.transferred_rows(), 2);
@@ -160,7 +160,8 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
         },
     ];
 
-    let coverage = curve_transfer_coverage(&rows, &curves).expect("service curve coverage");
+    let coverage =
+        curve_transfer_coverage(&rows, &curves).expect("measure the curve transfer coverage");
 
     assert_eq!(coverage.unique_rows(), 2);
     assert_eq!(coverage.transferred_rows(), 1);

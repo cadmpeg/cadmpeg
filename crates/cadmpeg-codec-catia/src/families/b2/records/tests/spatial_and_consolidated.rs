@@ -111,7 +111,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
         &a5_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service decode");
+    .expect("decode the A5 surfaces");
     let mut decoy = carriers[0].clone();
     edit::replace(&mut decoy.geometry, |previous| {
         let mut knots = previous.v_knots().to_vec();
@@ -169,7 +169,7 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
         &a5_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service decode");
+    .expect("decode the A5 surfaces");
     let surface = &mut carriers[0].geometry;
     edit::replace(surface, |previous| {
         let mut knots = previous.u_knots().to_vec();

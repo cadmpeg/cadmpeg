@@ -15,7 +15,7 @@ fn equal_endpoint_ports_produce_closed_edge_candidates() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let ports = [[10, 10], [10, 11]];
     let candidates = [vec![[0, 0], [1, 1], [2, 2]], vec![[1, 3], [2, 4]]];
     assert_eq!(
@@ -35,7 +35,7 @@ fn endpoint_port_domains_propagate_pair_correlation_to_a_fixpoint() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let ports = [[10, 11], [11, 12], [12, 13]];
     let candidates = [vec![[0, 1], [2, 3]], vec![[1, 4], [3, 5]], vec![[4, 6]]];
 
@@ -51,7 +51,7 @@ fn deferred_port_rows_do_not_constrain_open_face_components() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let ports = [[10, 11], [11, 12], [12, 13]];
     let candidates = [vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]];
 
@@ -77,7 +77,7 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let rows = (0..3)
         .map(|handle| {
             assert!(
@@ -111,7 +111,7 @@ fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let rows = (0..3)
         .map(|handle| {
             assert!(
@@ -149,7 +149,7 @@ fn independent_duplicate_face_slots_have_one_canonical_search_order() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let rows = (0..12)
         .map(|edge| {
             assert!(EdgeRow::new(1, vec![edge], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
@@ -229,7 +229,7 @@ fn duplicate_face_completion_rejects_out_of_range_faces() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let rows = vec![{
         assert!(EdgeRow::new(0, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
         EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
@@ -247,7 +247,7 @@ fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
+        .expect("build the decode context");
     let rows = vec![
         {
             assert!(EdgeRow::new(0, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
@@ -326,7 +326,7 @@ fn consistent_port_domains_keep_every_edge_candidate() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("service decode context");
+            .expect("build the decode context");
         assert_eq!(
             prune_edge_candidates_by_port_domains_with_deferred(
                 &ctx,

@@ -750,7 +750,7 @@ mod tests {
                 &[],
                 DecodePolicy::service()
             )
-            .expect("service issue")
+            .expect("build the record inventory")
             .2
             .len(),
             1

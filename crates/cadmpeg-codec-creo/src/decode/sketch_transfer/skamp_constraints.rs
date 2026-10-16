@@ -917,7 +917,7 @@ mod tests {
                 Some(&geometry),
             )
         })
-        .expect("service skamp collection");
+        .expect("build the section SKAMP constraints for the geometry");
         assert_eq!(constraints.len(), 1);
 
         let Some(relations) = definition.relations.as_mut() else {
@@ -953,7 +953,7 @@ mod tests {
                 Some(&geometry),
             )
         })
-        .expect("service typed loci");
+        .expect("build the section SKAMP constraints for the geometry");
         assert_eq!(constraints.len(), 1);
     }
 

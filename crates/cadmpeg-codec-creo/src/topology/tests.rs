@@ -113,7 +113,7 @@ fn duplicate_curve_identities_do_not_contribute_derived_topology() {
     assert!(half_edges.iter().all(|edge| edge.next.is_none()));
     assert!(loops.is_empty());
 
-    let components = face_components(&rows).expect("service face components");
+    let components = face_components(&rows).expect("find the face components");
     assert_eq!(components.len(), 1);
     assert_eq!(components[0].face_ids, [10, 20]);
     assert_eq!(components[0].curve_ids, [1]);
@@ -177,7 +177,7 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
     ];
 
     let vertices = vertex_orbits(&edges)
-        .expect("service vertex orbits")
+        .expect("find the vertex orbits")
         .vertices;
     assert!(vertices.iter().any(|vertex| vertex.half_edges()
         == vec![

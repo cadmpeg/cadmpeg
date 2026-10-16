@@ -39,7 +39,7 @@ fn extrusion_pcurve_returns_its_identity() {
         0,
         geometry,
     )
-    .expect("service pcurve");
+    .expect("add the extrusion pcurve");
     assert_eq!(result, id);
 }
 

@@ -36,7 +36,7 @@ fn parsed_compact_edge_endpoints(
 ) -> Vec<crate::families::consolidated::records::ConsolidatedCompactEdgeEndpoints> {
     crate::test_support::with_service_context(|ctx| {
         super::consolidated_compact_edge_endpoints_from_records(ctx, bytes, records)
-            .expect("service decode")
+            .expect("decode the consolidated compact edge endpoints")
     })
 }
 
@@ -46,7 +46,7 @@ fn parsed_owner_boundary_cycles(
 ) -> Vec<crate::families::consolidated::records::ConsolidatedOwnerBoundaryCycle> {
     crate::test_support::with_service_context(|ctx| {
         super::consolidated_owner_boundary_cycles_from_records(ctx, bytes, records)
-            .expect("service decode")
+            .expect("decode the consolidated owner boundary cycles")
     })
 }
 
@@ -65,12 +65,12 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
 
     assert_eq!(
         crate::families::consolidated::records::object_stream_vertices(&bytes)
-            .expect("service decode"),
+            .expect("decode the object stream vertices"),
         [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
     );
     assert!(
         crate::families::consolidated::records::object_stream_vertices(&bytes[5..])
-            .expect("service decode")
+            .expect("decode the object stream vertices")
             .is_empty()
     );
 
@@ -87,7 +87,7 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
     }
     assert_eq!(
         crate::families::consolidated::records::object_stream_vertices(&b5)
-            .expect("service decode"),
+            .expect("decode the object stream vertices"),
         [cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)]
     );
 }
@@ -152,7 +152,7 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
                 .collect::<Vec<_>>()
         };
     let one_shot = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
-        .expect("service decode");
+        .expect("resolve the consolidated edge blocks");
     let indexed = crate::test_support::with_service_context(|ctx| {
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             ctx,
@@ -160,7 +160,7 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect("service decode")
+        .expect("resolve the consolidated edge blocks")
     });
     assert_eq!(signature(&indexed), signature(&one_shot));
 }
@@ -1354,7 +1354,7 @@ fn object_stream_vertex_record_reads_one_xyz_point() {
     }
 
     let vertices = crate::families::consolidated::records::object_stream_vertices(&bytes)
-        .expect("service decode");
+        .expect("decode the object stream vertices");
     assert_eq!(vertices.len(), 1);
     assert_eq!(
         vertices[0].get(),

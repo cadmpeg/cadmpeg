@@ -1305,7 +1305,7 @@ mod tests {
         ));
         assert_eq!(
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], DecodePolicy::service())
-                .expect("service issue")
+                .expect("build the record inventory")
                 .issues
                 .len(),
             1

@@ -557,7 +557,7 @@ fn appearance_utf16_name_decodes() {
     )
     .expect("empty root");
     assert_eq!(
-        super::definitions(&ctx, &scan).expect("service appearance")[0].name,
+        super::definitions(&ctx, &scan).expect("decode the appearance definitions")[0].name,
         "ࠀ"
     );
 }

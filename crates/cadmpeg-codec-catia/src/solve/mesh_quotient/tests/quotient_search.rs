@@ -25,32 +25,31 @@ fn orientation_fingerprint_preserves_exact_quotient_and_direction_equality() {
     ];
     let mut left = MeshQuotient::new(domains.clone());
     let mut right = MeshQuotient::new(domains);
-    assert!(left.merge(0, 1).expect("service merge").is_some());
-    assert!(right.merge(1, 0).expect("service merge").is_some());
+    assert!(left.merge(0, 1).expect("merge the components").is_some());
+    assert!(right.merge(1, 0).expect("merge the components").is_some());
     let first = vec![vec![false, true]];
     let complement = vec![vec![true, false]];
     assert_eq!(
-        orientation_fingerprint(&left, &first).expect("service orientation"),
-        orientation_fingerprint(&right, &complement).expect("service orientation")
+        orientation_fingerprint(&left, &first).expect("build the orientation fingerprint"),
+        orientation_fingerprint(&right, &complement).expect("build the orientation fingerprint")
     );
     assert!(
         orientation_options_equivalent(&left, &first, &right, &complement)
-            .expect("service orientation")
+            .expect("check that the orientation options are equivalent")
     );
     assert!(
         !orientation_options_equivalent(&left, &first, &right, &[vec![false, false]])
-            .expect("service orientation")
+            .expect("check that the orientation options are equivalent")
     );
 
     let mut seen = HashMap::new();
     let mut output = Vec::new();
-    assert!(
-        admit_orientation_option(&mut seen, &output, &first, &left).expect("service orientation")
-    );
+    assert!(admit_orientation_option(&mut seen, &output, &first, &left)
+        .expect("admit the orientation option"));
     output.push((first.clone(), left.clone()));
     assert!(
         !admit_orientation_option(&mut seen, &output, &complement, &right)
-            .expect("service orientation")
+            .expect("admit the orientation option")
     );
 }
 
@@ -186,7 +185,7 @@ fn quotient_merge_preserves_physical_edge_pair_correlation() {
     );
     quotient
         .merge(1, 2)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("nonempty port intersection");
     assert!(!quotient
         .edge_domains_viable(&[vec![[0, 1]], vec![[0, 2]]])
@@ -423,7 +422,7 @@ fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
     assert!(
         quotient
             .coordinate_domain_preparation_limit(200, &candidates)
-            .expect("service quotient traversal")
+            .expect("determine the coordinate domain preparation limit")
             .expect("preparation limit")
             > crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS
     );
@@ -515,14 +514,14 @@ fn quotient_pair_domains_propagate_through_shared_components() {
     );
     let root = quotient
         .merge(0, 2)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("shared endpoint component");
 
     assert!(quotient
         .edge_domains_viable(&[vec![[0, 2]], vec![[0, 3], [1, 4]],])
         .expect("check edge domains viable"));
     assert_eq!(*quotient.domains()[root], HashSet::from([0]));
-    let third_root = quotient.find(3).expect("service forest traversal");
+    let third_root = quotient.find(3).expect("find the component root");
     assert_eq!(*quotient.domains()[third_root], HashSet::from([3]));
 }
 
@@ -807,7 +806,7 @@ fn quotient_point_existence_can_become_viable_after_a_root_merge() {
         .expect("check point assignment exists"));
     quotient
         .merge(0, 1)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("compatible roots merge");
     assert!(quotient
         .point_assignment_exists(&ctx, 3, &[vec![], vec![]], None)
@@ -861,9 +860,13 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
         face_equation_cache: RefCell::default(),
     };
 
-    assert!(!search.selected_orientable().expect("service decode"));
+    assert!(!search
+        .selected_orientable()
+        .expect("check that the selected faces are orientable"));
     search.selected[2] = Some((0, vec![vec![false, true]]));
-    assert!(search.selected_orientable().expect("service decode"));
+    assert!(search
+        .selected_orientable()
+        .expect("check that the selected faces are orientable"));
 }
 
 #[test]
@@ -971,11 +974,11 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
     };
     assert!(!search
         .fixed_remaining_faces_are_orientable()
-        .expect("service decode"));
+        .expect("check that the fixed remaining faces are orientable"));
     search.selected[1] = Some((0, vec![vec![false, true]]));
     assert!(search
         .fixed_remaining_faces_are_orientable()
-        .expect("service decode"));
+        .expect("check that the fixed remaining faces are orientable"));
 }
 
 #[test]
@@ -1024,7 +1027,7 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
 
     assert!(!search
         .fixed_remaining_faces_are_orientable()
-        .expect("service decode"));
+        .expect("check that the fixed remaining faces are orientable"));
 }
 
 #[test]
@@ -1092,7 +1095,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         .expect("initial quotient");
     quotient
         .merge(1, 2)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("selected face corner");
     let propagation_budget = WorkBudget::new(0);
     let changed_edges = HashSet::from([0]);
@@ -1102,10 +1105,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         .expect("prepare selected branch")
         .expect("partial quotient remains viable");
 
-    assert_eq!(
-        prepared.root_count().expect("service quotient traversal"),
-        3
-    );
+    assert_eq!(prepared.root_count().expect("count the component roots"), 3);
     assert!(propagation_budget.exhausted());
 }
 
@@ -1129,16 +1129,18 @@ fn mesh_assignment_distinguishes_quotient_work_from_direction_only_work() {
     };
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
-    assert!(mesh_assignment_can_merge(&assignment, &mut quotient).expect("service orientation"));
+    assert!(mesh_assignment_can_merge(&assignment, &mut quotient)
+        .expect("check that the mesh assignment can merge"));
     quotient
         .merge(1, 2)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("first boundary corner");
     quotient
         .merge(3, 0)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("second boundary corner");
-    assert!(!mesh_assignment_can_merge(&assignment, &mut quotient).expect("service orientation"));
+    assert!(!mesh_assignment_can_merge(&assignment, &mut quotient)
+        .expect("check that the mesh assignment can merge"));
 }
 
 #[test]
@@ -1194,7 +1196,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
     );
     quotient
         .merge(1, 2)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("first repeated equation");
     assert_eq!(
         search
@@ -1398,11 +1400,11 @@ fn single_full_quotient_alternative_merges_into_the_common_quotient() {
     let mut alternative = MeshQuotient::new(domains);
     alternative
         .merge(0, 2)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("shared domain");
     alternative
         .merge(1, 3)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("shared domain");
     let run = || {
         let mut quotient = base.clone();
@@ -1414,10 +1416,10 @@ fn single_full_quotient_alternative_merges_into_the_common_quotient() {
         Ok::<_, CodecError>((
             result,
             [
-                quotient.find(0).expect("service forest traversal"),
-                quotient.find(1).expect("service forest traversal"),
-                quotient.find(2).expect("service forest traversal"),
-                quotient.find(3).expect("service forest traversal"),
+                quotient.find(0).expect("find the component root"),
+                quotient.find(1).expect("find the component root"),
+                quotient.find(2).expect("find the component root"),
+                quotient.find(3).expect("find the component root"),
             ],
         ))
     };

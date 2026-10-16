@@ -50,7 +50,7 @@ fn presentation_default_native_record_refuses_entity_limit_before_creation() {
                 && limit.operation == "admit Inventor native default style"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     presentation_native_projection::project(&ctx, &mut inventory).expect("admitted default style");
 }
 
@@ -141,7 +141,7 @@ fn presentation_other_native_records_refuse_entity_limits_before_creation() {
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     presentation_native_projection::project(&ctx, &mut inventory)
         .expect("admitted presentation records");
     let mut entity_cap = 0;
@@ -216,7 +216,7 @@ fn rendering_conversion_issue_refuses_entity_limit_before_creation() {
                 && limit.operation == "admit Inventor rendering conversion issue"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+        .expect("build the decode context");
     presentation_native_projection::project(&ctx, &mut inventory)
         .expect("admitted rendering issue");
     assert_eq!(inventory.issues.len(), 1);

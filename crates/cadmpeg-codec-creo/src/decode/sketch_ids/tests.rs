@@ -38,7 +38,7 @@ fn sketch_constraint_identity_and_native_ref_name_the_sketch() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     assert_eq!(
         sketch_constraint_id(&sketch, "equation:offset:28")
-            .expect("service constraint ID")
+            .expect("build the sketch constraint identity")
             .as_str(),
         "creo:featdefs:sketch_constraint#40:equation:offset:28"
     );
@@ -51,7 +51,7 @@ fn section_owner_feature_identity_names_the_feature() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
     assert_eq!(
         section_owner_feature_id(&scan, 917, &sketch)
-            .expect("service owner ID")
+            .expect("build the section owner feature identity")
             .as_str(),
         "creo:model:sketch_feature#917"
     );
@@ -64,7 +64,7 @@ fn model_sketch_identity_uses_the_unique_definition_offset() {
     source.offset = 9;
     scan.features.definitions.push(source);
     let id = { model_sketch_id(&scan, &scan.features.definitions[0]) }
-        .expect("service identity admitted");
+        .expect("build the model sketch identity");
     assert_eq!(id.as_str(), "creo:model:sketch#offset:9");
 }
 

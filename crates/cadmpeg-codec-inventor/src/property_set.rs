@@ -948,7 +948,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (service, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
+                .expect("build the decode context");
         assert_eq!(
             parse_dictionary(&service, root, Some(1200))
                 .expect("dictionary admitted")
@@ -963,7 +963,7 @@ mod tests {
         let bytes = [0];
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("service context");
+            .expect("build the decode context");
         let error = Cursor::new(root, "OLE code-page string")
             .code_page_string(&ctx, 1, Some(65000), "value")
             .expect_err("unsupported code page");
@@ -979,7 +979,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (service, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
+                .expect("build the decode context");
         assert_eq!(
             Cursor::new(root, "OLE code-page string")
                 .code_page_string(&service, 2, Some(1252), "value")
@@ -994,7 +994,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (service, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
+                .expect("build the decode context");
         assert_eq!(
             Cursor::new(root, "OLE Unicode property")
                 .unicode_string(&service, 2, "value")
@@ -1009,7 +1009,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (service, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
+                .expect("build the decode context");
         assert_eq!(
             parse_property_set_stream(&service, root)
                 .expect("property set admitted")

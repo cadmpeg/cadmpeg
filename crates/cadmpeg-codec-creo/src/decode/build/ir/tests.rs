@@ -31,7 +31,7 @@ fn inch_strip(positions: Vec<[f64; 3]>) -> ContainerScan<'static> {
             None,
             vec![3],
         )
-        .expect("service strip"),
+        .expect("build the triangle strip"),
     );
     scan
 }
@@ -248,7 +248,7 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
     let carriers = crate::decode::with_service_context(|ctx| {
         crate::decode::analytic::carriers::placed_carriers(ctx, &scan, &ir, &source_carriers)
     })
-    .expect("service placed carriers");
+    .expect("resolve the placed carriers");
     let Some(crate::decode::analytic::equations::CarrierEquation::Plane(source_plane)) =
         carriers.get(&18)
     else {
@@ -297,7 +297,7 @@ fn placed_plane_stays_available_to_source_unit_carrier_analysis() {
     let carriers = crate::decode::with_service_context(|ctx| {
         crate::decode::analytic::carriers::placed_carriers(ctx, &scan, &ir, &source_carriers)
     })
-    .expect("service placed carriers");
+    .expect("resolve the placed carriers");
     let Some(crate::decode::analytic::equations::CarrierEquation::Plane(plane)) = carriers.get(&18)
     else {
         panic!("placed plane was lost before native topology transfer");

@@ -262,7 +262,7 @@ fn service_profile_admits_both_directory_regions() {
     file.extend_from_slice(&[0; 16]);
     file.extend_from_slice(&[0; 4]);
 
-    let container = container::scan_bytes(file.as_slice()).expect("service directory admission");
+    let container = container::scan_bytes(file.as_slice()).expect("scan the container");
     assert_eq!(container.entry_count(Region::Header), 1);
     assert_eq!(container.entry_count(Region::Footer), 1);
 }

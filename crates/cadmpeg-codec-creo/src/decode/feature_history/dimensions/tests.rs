@@ -105,7 +105,7 @@ fn dimension_transfer_records_parameter_for_external_id() {
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
-    .expect("service dimension transfer");
+    .expect("transfer the feature dimensions");
     assert_eq!(transferred, 1);
     assert_eq!(
         parameters.get("d3").map(ParameterId::as_str),

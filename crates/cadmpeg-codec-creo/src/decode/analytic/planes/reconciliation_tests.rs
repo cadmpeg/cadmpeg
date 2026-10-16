@@ -33,8 +33,8 @@ fn one_positional_plane_scan() -> crate::container::ContainerScan<'static> {
 #[test]
 fn positional_plane_admission_preserves_service_geometry() {
     let scan = one_positional_plane_scan();
-    let plane =
-        { crate::decode::analytic::planes::placed_planes(&scan) }.expect("service plane admitted");
+    let plane = { crate::decode::analytic::planes::placed_planes(&scan) }
+        .expect("resolve the placed planes");
     assert_eq!(
         plane.get(&7).map(|plane| plane.origin),
         Some([0.0, 0.0, 1.0])
@@ -611,7 +611,7 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
         crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems)
     };
 
-    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("find the plane candidates");
     let candidates = candidates.get(&42).expect("plane candidates");
     let (plane, u_axis, _) =
         agreed_plane_surface(candidates).expect("frame-selected outline plane");
@@ -674,7 +674,7 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
         crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems)
     };
 
-    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("find the plane candidates");
     let candidates = candidates.get(&42).expect("plane candidates");
     let (plane, u_axis, _) = agreed_plane_surface(candidates).expect("matrix frame plane");
     assert_eq!(plane.normal, [component, 0.0, component]);
@@ -776,7 +776,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
         offset: 60,
     });
 
-    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("find the plane candidates");
     let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
         panic!("one tangent branch must be selected");
     };
@@ -1044,7 +1044,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
         offset: 60,
     });
 
-    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("find the plane candidates");
     let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
         panic!("the reference-tangent branch must be selected");
     };

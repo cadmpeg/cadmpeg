@@ -394,8 +394,8 @@ mod tests {
             archive,
             payload,
         };
-        let (_, issue) = decode_instances_with_issue(&setup, &package)
-            .expect("service policy retains semantic issue");
+        let (_, issue) =
+            decode_instances_with_issue(&setup, &package).expect("decode the Protein instances");
         assert!(issue.is_some());
     }
 
