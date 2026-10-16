@@ -34,6 +34,42 @@ fn finite_tolerance_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2
     values.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())
 }
 
+/// An invalid configuration payload drops design intent and keeps geometry.
+/// Strict mode still refuses the document with the parser's message.
+fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expected: &str) {
+    let bytes = f3d_with_configuration(&synthetic_geometry_smbh(), name, payload);
+    let contained = F3dCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("an invalid configuration is contained");
+    let undecoded = contained
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::F3dLossCode::DesignIntentUndecoded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(undecoded.len(), 1, "{expected}");
+    assert!(
+        undecoded[0].message.contains(expected),
+        "{}",
+        undecoded[0].message
+    );
+    assert!(f3d_native(contained.ir()).design_configurations.is_empty());
+    assert!(contained.ir().model.configurations.is_empty());
+    assert!(!contained.ir().model.bodies.is_empty());
+
+    let mut strict = DecodeOptions::default();
+    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    let refused = F3dCodec.decode(&mut Cursor::new(bytes), &strict);
+    assert!(
+        matches!(
+            &refused,
+            Err(cadmpeg_ir::DecodeFailure::StrictRejected { rejection })
+                if rejection.loss().message.contains(expected)
+        ),
+        "{refused:?}"
+    );
+}
+
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
@@ -197,21 +233,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     assert_eq!(rule.payload()["activate"], "wide");
 
-    let invalid = F3dCodec.decode(
-        &mut Cursor::new(f3d_with_configuration(
-            &synthetic_geometry_smbh(),
-            name,
-            b"[]",
-        )),
-        &DecodeOptions::default(),
-    );
-    assert!(matches!(
-        invalid,
-        Err(cadmpeg_ir::DecodeFailure::Codec(
-            cadmpeg_core::CodecError::Malformed(message)
-        ))
-            if message.contains("configuration JSON must be an object")
-    ));
+    assert_invalid_configuration_is_contained(name, b"[]", "configuration JSON must be an object");
 
     for (payload, expected) in [
         (
@@ -231,21 +253,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             "material must be a string",
         ),
     ] {
-        let invalid = F3dCodec.decode(
-            &mut Cursor::new(f3d_with_configuration(
-                &synthetic_geometry_smbh(),
-                name,
-                payload,
-            )),
-            &DecodeOptions::default(),
-        );
-        assert!(matches!(
-            invalid,
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(message)
-            ))
-                if message.contains(expected)
-        ));
+        assert_invalid_configuration_is_contained(name, payload, expected);
     }
 
     let partial_rule = F3dCodec

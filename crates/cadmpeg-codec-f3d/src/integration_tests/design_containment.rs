@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: Apache-2.0
+//! A design-intent failure keeps the geometry and product document.
+
+use std::io::Cursor;
+
+use cadmpeg_core::decode::{DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+
+use super::{assert_valid, decode};
+use crate::decode::design_intent::inject_failure;
+use crate::loss::F3dLossCode;
+use crate::test_support::native_test::f3d_native;
+use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_test::f3d_with_smbh_and_protein;
+use crate::F3dCodec;
+
+fn design_archive() -> Vec<u8> {
+    f3d_with_smbh_and_protein(&synthetic_geometry_with_history_smbh())
+}
+
+fn malformed_design() -> CodecError {
+    CodecError::malformed("injected design-intent failure")
+}
+
+fn recursion_refusal() -> CodecError {
+    CodecError::ResourceLimit(ResourceLimit {
+        dimension: ResourceDimension::RecursionDepth,
+        reason: ResourceFailure::BudgetExceeded,
+        limit: 1,
+        used: 1,
+        additional: 1,
+        operation: "injected design-intent recursion",
+    })
+}
+
+#[test]
+fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
+    let full = decode(design_archive());
+    assert!(!f3d_native(full.ir()).asm_histories.is_empty());
+
+    inject_failure(malformed_design);
+    let contained = decode(design_archive());
+
+    assert_eq!(contained.ir().model.bodies, full.ir().model.bodies);
+    assert_eq!(contained.ir().model.faces, full.ir().model.faces);
+    assert_eq!(contained.ir().model.surfaces, full.ir().model.surfaces);
+    assert_eq!(
+        contained.ir().model.appearances,
+        full.ir().model.appearances
+    );
+    assert!(f3d_native(contained.ir()).asm_histories.is_empty());
+    assert!(contained.ir().model.features.is_empty());
+    assert!(contained.ir().model.sketches.is_empty());
+    let undecoded = contained
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(undecoded.len(), 1);
+    assert_eq!(undecoded[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert!(undecoded[0]
+        .message
+        .contains("injected design-intent failure"));
+    assert!(full
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert_valid(&contained);
+}
+
+#[test]
+fn strict_mode_refuses_a_contained_design_intent_failure() {
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    inject_failure(malformed_design);
+
+    let failure = F3dCodec
+        .decode(&mut Cursor::new(design_archive()), &options)
+        .expect_err("strict mode refuses the design-intent loss");
+
+    let DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        F3dLossCode::DesignIntentUndecoded.kind()
+    );
+}
+
+#[test]
+fn a_resource_refusal_in_design_intent_still_refuses_the_document() {
+    inject_failure(recursion_refusal);
+
+    let failure = F3dCodec
+        .decode(
+            &mut Cursor::new(design_archive()),
+            &DecodeOptions::default(),
+        )
+        .expect_err("a resource refusal is not contained");
+
+    assert!(
+        matches!(
+            &failure,
+            DecodeFailure::Codec(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RecursionDepth
+        ),
+        "{failure:?}"
+    );
+}
