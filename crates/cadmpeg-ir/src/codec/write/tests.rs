@@ -332,6 +332,7 @@ impl EncoderBackend for F3dCoverageEncoder {
 
 fn finding(entity: Option<&str>, message: &str, severity: Severity) -> Finding {
     Finding {
+        related: Vec::new(),
         check: Check::ReferentialIntegrity,
         severity,
         entity: entity.map(str::to_owned),
@@ -372,7 +373,7 @@ fn carried_errors_exclude_warnings_and_include_unlocated_errors() {
 }
 
 #[test]
-fn carried_errors_follow_model_coverage_and_message_locations() {
+fn carried_errors_follow_model_coverage_and_related_locations() {
     let ir = unit_cube().expect("valid cube");
     let face = ir.model.faces[0].identity();
     let edge = ir.model.edges[0].identity();
@@ -384,6 +385,8 @@ fn carried_errors_follow_model_coverage_and_message_locations() {
             Severity::Error,
         ),
     ]);
+    let mut report = report;
+    report.findings[1].related.push(edge.to_owned());
     for (disposition, carries_face) in [
         (ArenaDisposition::Written, true),
         (ArenaDisposition::Reported, true),

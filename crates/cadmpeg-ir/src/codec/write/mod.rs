@@ -308,7 +308,7 @@ impl ExportPlan {
     /// `ir` is the document this plan was built from. Only findings at or above
     /// `Severity::Error` are considered. Findings with no resolved entity are
     /// carried because they cannot be shown to be outside the output. A located
-    /// finding is carried if any entity or message location is carried. Model
+    /// finding is carried if any entity or related id location is carried. Model
     /// locations follow the plan's arena coverage. Native locations are carried
     /// by complete coverage or by their own format's encoder; a backend reads
     /// no native namespace other than its own format's.

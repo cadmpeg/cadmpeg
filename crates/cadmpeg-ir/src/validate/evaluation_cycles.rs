@@ -307,6 +307,12 @@ fn walk_cycles<'ir>(
                 Visit::Complete => {}
                 Visit::Active(start_index) => {
                     let finding = Finding {
+                        related: stack[start_index..]
+                            .iter()
+                            .map(|frame| frame.node)
+                            .filter(|id| *id != child)
+                            .map(str::to_owned)
+                            .collect(),
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
                         message: format!(

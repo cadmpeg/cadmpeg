@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Document locations named by validation findings.
+//! Document locations named by validation finding entities and related ids.
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
@@ -23,7 +23,7 @@ pub(crate) enum EntityLocation<'ir> {
 pub(crate) enum FindingScope<'ir> {
     /// The finding names no entity, or its entity resolves nowhere in the document.
     Unlocated,
-    /// Every location of the entity and each document identity in the message.
+    /// Every location of the entity and each related document identity.
     Located(Vec<EntityLocation<'ir>>),
 }
 
@@ -42,7 +42,7 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
                     .entity
                     .as_deref()
                     .into_iter()
-                    .chain(message_candidates(&finding.message))
+                    .chain(finding.related.iter().map(String::as_str))
             })
             .collect();
         let mut locations: HashMap<&'r str, Vec<EntityLocation<'ir>>> = HashMap::new();
@@ -88,8 +88,8 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
             return FindingScope::Unlocated;
         };
         let mut locations = locations.clone();
-        for identity in message_candidates(&finding.message) {
-            if let Some(entries) = self.locations.get(identity) {
+        for identity in &finding.related {
+            if let Some(entries) = self.locations.get(identity.as_str()) {
                 for &location in entries {
                     if !locations.contains(&location) {
                         locations.push(location);
@@ -103,21 +103,6 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
 
 fn arena_kind<T: EntitySchema>(_: &[T]) -> EntityKind {
     T::KIND
-}
-
-fn message_candidates(message: &str) -> impl Iterator<Item = &str> {
-    const TRIM: &[char] = &[
-        '`', '\'', '"', '(', ')', '[', ']', '{', '}', '<', '>', ',', ';',
-    ];
-    message.split_whitespace().flat_map(|token| {
-        let token = token.trim_matches(TRIM);
-        let stripped = token
-            .strip_suffix(['.', ':'])
-            .map(|id| id.trim_matches(TRIM));
-        std::iter::once(token)
-            .chain(stripped)
-            .filter(|id| id.contains(':') && id.contains('#'))
-    })
 }
 
 #[cfg(test)]
