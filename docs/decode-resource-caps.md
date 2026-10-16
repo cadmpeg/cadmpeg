@@ -105,6 +105,14 @@ storage are not retained bytes; per-input bounds, entity charges, and local
 work caps bound them. A new copy of bytes that the decoded document keeps
 must call `retain_bytes` before the copy.
 
+`parse_xml`, `parse_json_value` and `parse_json` scan the text before they
+parse it and bound the tree's storage by the per-expansion allowance. XML
+attributes, namespaces and text copies are estimated from the scan, and the
+rest of the allowance becomes roxmltree's node limit. A JSON tree is
+estimated from its delimiter counts as a `serde_json::Value` tree, also for
+typed parses. A tree that could exceed the allowance is `NotImplemented` and
+does not set the fuse.
+
 ## Retained-byte availability
 
 `DecodeContext::retained_bytes_available()` returns the retained-byte
@@ -140,7 +148,9 @@ report a loss; a caller may report a general failure for the same item.
 
 | Crate                    | File                                               | Constant                                  | Value                                                   | Kind | Enforcement                                                                                                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first refuses a window above the per-expansion allowance through `DecompressedBytes`. A larger window that the allowance admits is `NotImplemented` and does not set the fuse.     |
+| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first refuses a frame whose buffered output (its window, or its declared content size when that is smaller) is above the per-expansion allowance through `DecompressedBytes`. A declared window above this constant is `NotImplemented` and does not set the fuse. |
+| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess is `NotImplemented` for that text and does not set the fuse.                                                                  |
+| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess is `NotImplemented` and does not set the fuse.                                  |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |
 | `cadmpeg-ir`             | `src/geometry.rs`                                  | `MAX_GEOMETRY_NESTING`                    | `256`                                                   | 1    | Placed curve, surface and pcurve basis chain depth. `try_new` refuses a deeper chain.                                                                                                                                                                                        |
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_PATCHES`                             | `1_000_000`                                             | 4    | Patch-queue cap in NURBS surface start search, checked with the caller's `WorkBudget`. Exhaustion returns `None`; the caller owns the loss.                                                                                                                                  |
@@ -359,21 +369,21 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 190.
+Production `MAX_*` constants: 192.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
-| 2    | Per-input bound            | 64    |
+| 2    | Per-input bound            | 66    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 79    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 190   |
+|      | Total                      | 192   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 1, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
 `cadmpeg-protein` 2, `cadmpeg` 2, `cadmpeg-codec-step` 7,
 `cadmpeg-codec-iges` 14, `cadmpeg-codec-inventor` 2,
 `cadmpeg-codec-freecad` 9, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 13,
