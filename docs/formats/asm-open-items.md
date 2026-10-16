@@ -241,13 +241,13 @@ If one coedge of a valid pair is dropped because its face carrier is unavailable
 
 **Question.** Which native member gives an ASM body's `Solid`, `Sheet`, or `General` kind?
 
-**Known.** `asm.md` §5.2 documents the body flags/history field and topology links but does not define a body-kind member. `classify_body_kinds` in `brep/geometry.rs` sets `Wire` or `General` from visible topology, then labels a face-bearing body `Solid` when every counted edge has exactly two coedge uses and `Sheet` otherwise. It runs only after model transfer and records no inference or loss.
+**Known.** `asm.md` §5.2 documents the body flags/history field and topology links but does not define a body-kind member. `classify_body_kinds` in `brep/geometry.rs` sets `Wire` or `General` from visible topology, then labels a face-bearing body `Solid` through `faced_body_kind`: every counted edge has as many forward as reversed coedge uses, and at least one edge is counted. Edges that collapse to a point (null or `degenerate_curve` carrier and one vertex, `asm.md` §6.3) are not counted, because a point loop at a cone apex or sphere pole bounds no area. A non-manifold edge with a balanced partner cycle (`asm.md` §5.2) closes its faces like a two-use edge. Any other face-bearing body is `Sheet`. The rule runs only after model transfer and records no inference or loss. The source-less F3D writer applies the same rule to refuse a body whose declared kind contradicts its topology.
 
-If a closed sheet or a body with a non-manifold internal face has every edge counted twice, the rule emits `Solid`. If a solid has a missing coedge, it emits `Sheet`. The same topological count can therefore select different native body meanings without reading a source discriminator.
+Specimens with all faces single-sided and one lump and shell include closed bodies with apex point loops and with a four-use edge where two pieces of material touch along a line. An exact two-use rule labels both as `Sheet`. If a closed sheet or a body with a non-manifold internal face has balanced edge uses, the rule emits `Solid`. If a solid has a missing coedge, it emits `Sheet`. Face sidedness does not enter the rule, and no specimen has a closed body with double-sided faces. The same topological count can therefore still select different native body meanings without reading a source discriminator.
 
 **Need.** A body-kind field, an authoritative topology invariant, or a specimen with a body whose stored metadata separates solid and sheet states must settle the rule. Until then the neutral body kind is an inference from the output graph.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:1099-1168` and `crates/cadmpeg-asm/src/brep/mod.rs:673-681`. The edge-count rule is valid for ordinary two-manifold solids, but that does not establish it for all bodies.
+**Note.** QA sweep locations: `classify_body_kinds`, `faced_body_kind`, and `collapsed_edges` in `crates/cadmpeg-asm/src/brep/geometry.rs`, called from `decode_with_purpose` in `crates/cadmpeg-asm/src/brep/mod.rs`. The balance rule is valid for two-manifold solids, for touching-material edges, and for apex point loops, but that does not establish it for all bodies.
 
 ### TG-03. Normal sign of an analytic procedural carrier
 
