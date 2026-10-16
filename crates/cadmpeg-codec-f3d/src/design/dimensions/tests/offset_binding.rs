@@ -89,7 +89,7 @@ fn offset_binding_fixture() -> (Vec<SketchConstraint>, Vec<DesignParameter>) {
 #[test]
 fn offset_dimension_binding_preserves_parameter_and_removes_annotation() {
     let (mut constraints, parameters) = offset_binding_fixture();
-    bind_offset_dimension_parameters(&mut constraints, &parameters).unwrap();
+    bind_offset_dimension_parameters(&mut constraints, &parameters);
     assert_eq!(constraints.len(), 1);
     assert!(matches!(constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Offset { parameter: Some(driving), .. }

@@ -73,8 +73,7 @@ fn numerical_0922_long_lines_keep_perpendicular_relation() {
                     end: Point2::new(0., length),
                 },
             );
-            let r = exact_counted_dimension_relation(&[&a, &b])
-                .expect("resource allocation did not fail");
+            let r = exact_counted_dimension_relation(&[&a, &b]);
             println!("Fusion perpendicular lines length{length:e}: {r:?}");
             assert!(matches!(
                 r,

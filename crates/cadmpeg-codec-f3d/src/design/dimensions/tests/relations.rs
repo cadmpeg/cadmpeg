@@ -72,9 +72,7 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Concentric,
         SketchConstraintKind::Symmetry,
     ] {
-        let definition = exact_atomic_constraint(kind, &[&first, &axis_entity, &second])
-            .unwrap()
-            .unwrap();
+        let definition = exact_atomic_constraint(kind, &[&first, &axis_entity, &second]).unwrap();
         assert!(matches!(
             definition,
             SketchConstraintDefinitionInput::Symmetric {
@@ -99,7 +97,6 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Concentric,
         &[&first, &off_axis, &second]
     )
-    .unwrap()
     .is_none());
     let on_axis = entity(
         "generated:test:point#on-axis",
@@ -112,11 +109,7 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Concentric,
         SketchConstraintKind::Symmetry,
     ] {
-        assert!(
-            exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis])
-                .unwrap()
-                .is_none()
-        );
+        assert!(exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis]).is_none());
     }
 }
 
@@ -155,7 +148,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
     );
 
     assert!(matches!(
-        exact_counted_dimension_relation(&[&first, &axis, &second]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&first, &axis, &second]),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
@@ -169,11 +162,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
         radius: Length::new(2.0).unwrap(),
     })
     .unwrap();
-    assert!(
-        exact_counted_dimension_relation(&[&first, &axis, &mismatched])
-            .expect("resource allocation did not fail")
-            .is_none()
-    );
+    assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
 }
 
 #[test]
@@ -215,7 +204,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
     );
 
     assert!(matches!(
-        exact_counted_dimension_relation(&[&first, &axis, &second]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&first, &axis, &second]),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
@@ -231,11 +220,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
         end_angle: Angle::new(5.0 * std::f64::consts::FRAC_PI_4 + 0.1).unwrap(),
     })
     .unwrap();
-    assert!(
-        exact_counted_dimension_relation(&[&first, &axis, &mismatched])
-            .expect("resource allocation did not fail")
-            .is_none()
-    );
+    assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
 }
 
 #[test]
@@ -266,7 +251,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(&[&circle, &arc]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&circle, &arc]),
         Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == arc.id().clone()
     ));
@@ -280,7 +265,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(&[&circle, &coradial]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&circle, &coradial]),
         Some(SketchConstraintDefinitionInput::Coradial { first, second })
             if first == circle.id().clone() && second == coradial.id().clone()
     ));
@@ -299,7 +284,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(&[&circle, &ellipse]).expect("resource allocation did not fail"),
+        exact_counted_dimension_relation(&[&circle, &ellipse]),
         Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == ellipse.id().clone()
     ));
@@ -312,9 +297,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         end_angle: Angle::new(1.0).unwrap(),
     })
     .unwrap();
-    assert!(exact_counted_dimension_relation(&[&circle, &displaced])
-        .expect("resource allocation did not fail")
-        .is_none());
+    assert!(exact_counted_dimension_relation(&[&circle, &displaced]).is_none());
 }
 
 #[test]
@@ -372,11 +355,7 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
     })
     .unwrap()
     .is_none());
-    assert!(
-        exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line])
-            .unwrap()
-            .is_none()
-    );
+    assert!(exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line]).is_none());
 }
 
 #[test]
@@ -395,7 +374,7 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
     let second = entity("generated:test:point#1");
     let third = entity("generated:test:point#2");
     assert_eq!(
-        exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third]).unwrap(),
+        exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third]),
         Some(SketchConstraintDefinitionInput::Polygon {
             polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(vec![
                 first.id().clone(),
@@ -405,14 +384,9 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
             .expect("fixture collection admission")
         })
     );
-    assert!(
-        exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second])
-            .unwrap()
-            .is_none()
-    );
+    assert!(exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second]).is_none());
     assert!(
         exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &first])
-            .unwrap()
             .is_none()
     );
 }
@@ -527,10 +501,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         (("native", 4), &result_vertical),
     ]);
 
-    let definition = exact_offset_constraint(&relation, "native", &projected)
-        .transpose()
-        .unwrap()
-        .unwrap();
+    let definition = exact_offset_constraint(&relation, "native", &projected).unwrap();
     let SketchConstraintDefinitionInput::Offset {
         pairs,
         distance,
@@ -570,12 +541,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
             draft.return_members = returned.try_into().expect("uniform member resolution");
         })
         .unwrap();
-    assert!(
-        exact_offset_constraint(&repeated_pair, "native", &projected)
-            .transpose()
-            .unwrap()
-            .is_none()
-    );
+    assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
 }
 
 #[test]
@@ -705,8 +671,6 @@ fn single_curve_annotation_projects_parameterized_offset() {
         &projected,
         1.0e-6,
     )
-    .transpose()
-    .unwrap()
     .expect("single-curve annotation offset");
     assert!(matches!(
         definition,
@@ -771,8 +735,6 @@ fn single_curve_annotation_projects_parameterized_offset() {
         &projected,
         1.0e-6,
     )
-    .transpose()
-    .unwrap()
     .expect("explicit two-curve annotation offset");
     assert!(matches!(
         explicit_definition,
@@ -816,8 +778,6 @@ fn single_curve_annotation_projects_parameterized_offset() {
             &projected_with_duplicate,
             1.0e-6
         )
-        .transpose()
-        .unwrap()
         .is_none()
     );
 }
@@ -1217,7 +1177,7 @@ fn parallel_group_binds_one_common_axis_angle() {
         ParameterId::mint("generated:test:parameter#axis-angle").expect("identity grammar");
 
     assert!(matches!(
-        crate::design::dimensions::parallel_group_axis_angle_definition(&[&first, &second], &parameter, &parameter_id).transpose().unwrap(),
+        crate::design::dimensions::parallel_group_axis_angle_definition(&[&first, &second], &parameter, &parameter_id),
         Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity,
             axis: SketchAxis::Horizontal,
@@ -1230,8 +1190,6 @@ fn parallel_group_binds_one_common_axis_angle() {
             &parameter,
             &parameter_id
         )
-        .transpose()
-        .unwrap()
         .is_none()
     );
     assert!(
@@ -1240,8 +1198,6 @@ fn parallel_group_binds_one_common_axis_angle() {
             &parameter,
             &parameter_id
         )
-        .transpose()
-        .unwrap()
         .is_none()
     );
 }

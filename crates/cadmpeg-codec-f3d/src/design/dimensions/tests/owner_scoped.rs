@@ -101,8 +101,6 @@ fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
             &parameter_id,
             0.0
         )
-        .transpose()
-        .unwrap()
         .is_none()
     );
 }
@@ -176,12 +174,12 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
             .expect("identity grammar");
     assert!(matches!(
-        radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter.clone()).transpose().unwrap(),
+        radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter.clone()),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &radius_parameter
     ));
     assert!(matches!(
-        radial_dimension_definition(&entity, "Radial Dimension-3", 0.5, radius_parameter.clone()).transpose().unwrap(),
+        radial_dimension_definition(&entity, "Radial Dimension-3", 0.5, radius_parameter.clone()),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, .. })
             if actual == entity.id()
     ));
@@ -189,7 +187,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#diameter")
             .expect("identity grammar");
     assert!(matches!(
-        radial_dimension_definition(&entity, "Diameter Dimension-2", 1.0, diameter_parameter.clone()).transpose().unwrap(),
+        radial_dimension_definition(&entity, "Diameter Dimension-2", 1.0, diameter_parameter.clone()),
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
@@ -199,8 +197,6 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         0.5,
         diameter_parameter.clone()
     )
-    .transpose()
-    .unwrap()
     .is_none());
     let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
@@ -212,7 +208,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     ))
     .expect("diameter parameter");
     assert!(matches!(
-        owner_scoped_radial_dimension_definition(std::slice::from_ref(&entity), &entity.sketch, &parameter, &diameter_parameter, 1.0e-6).transpose().unwrap(),
+        owner_scoped_radial_dimension_definition(std::slice::from_ref(&entity), &entity.sketch, &parameter, &diameter_parameter, 1.0e-6),
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual,
             ..
@@ -243,7 +239,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     })
     .unwrap();
     assert!(matches!(
-        owner_scoped_radial_dimension_definition(&[entity.clone(), duplicate.clone()], &entity.sketch, &parameter, &diameter_parameter, 1.0e-6).transpose().unwrap(),
+        owner_scoped_radial_dimension_definition(&[entity.clone(), duplicate.clone()], &entity.sketch, &parameter, &diameter_parameter, 1.0e-6),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities,
             parameter,
@@ -261,7 +257,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     ))
     .expect("radial parameter");
     assert!(matches!(
-        owner_scoped_radial_dimension_definition(&[entity.clone(), duplicate.clone()], &entity.sketch, &radial_parameter, &radius_parameter, 1.0e-6).transpose().unwrap(),
+        owner_scoped_radial_dimension_definition(&[entity.clone(), duplicate.clone()], &entity.sketch, &radial_parameter, &radius_parameter, 1.0e-6),
         Some(SketchConstraintDefinitionInput::RepeatedRadius {
             entities,
             parameter,
@@ -278,8 +274,6 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     .unwrap();
     assert!(
         radial_dimension_definition(&entity, "Diameter Dimension", 1.0, diameter_parameter)
-            .transpose()
-            .unwrap()
             .is_some()
     );
     entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
@@ -293,10 +287,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     })
     .unwrap();
     assert!(
-        radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter)
-            .transpose()
-            .unwrap()
-            .is_none()
+        radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter).is_none()
     );
 }
 
@@ -330,7 +321,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
             .expect("identity grammar");
 
     assert!(matches!(
-        owner_scoped_line_length_dimension_definition(std::slice::from_ref(&first), &sketch, &parameter, &parameter_id, 1.0e-6).transpose().unwrap(),
+        owner_scoped_line_length_dimension_definition(std::slice::from_ref(&first), &sketch, &parameter, &parameter_id, 1.0e-6),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Start(ref entity),
             second: SketchLocus::End(ref other),
@@ -338,7 +329,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
         }) if entity == first.id() && other == first.id() && actual_parameter == &parameter_id
     ));
     assert!(matches!(
-        owner_scoped_line_length_dimension_definition(&[first.clone(), second.clone()], &sketch, &parameter, &parameter_id, 1.0e-6).transpose().unwrap(),
+        owner_scoped_line_length_dimension_definition(&[first.clone(), second.clone()], &sketch, &parameter, &parameter_id, 1.0e-6),
         Some(SketchConstraintDefinitionInput::RepeatedLength {
             entities,
             parameter,
@@ -377,7 +368,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
         .expect("identity grammar");
 
     assert!(matches!(
-        owner_scoped_angular_dimension_definition(&[horizontal.clone(), sloped.clone(), vertical.clone()], &sketch, &parameter, &parameter_id).transpose().unwrap(),
+        owner_scoped_angular_dimension_definition(&[horizontal.clone(), sloped.clone(), vertical.clone()], &sketch, &parameter, &parameter_id),
         Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
@@ -392,8 +383,6 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
         &parameter,
         &parameter_id
     )
-    .transpose()
-    .unwrap()
     .is_none());
 }
 
@@ -488,7 +477,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
     assert!(matches!(
-        preceding_incident_angular_dimension_definition(stream, &points, &curves, &projected, &sketch, (&parameter, &parameter_id)).transpose().unwrap(),
+        preceding_incident_angular_dimension_definition(stream, &points, &curves, &projected, &sketch, (&parameter, &parameter_id)),
         Some(SketchConstraintDefinitionInput::Angle {
             first,
             second,
@@ -527,7 +516,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
             .expect("identity grammar");
 
     assert!(matches!(
-        unique_point_class_dimension_definition(&[lower.clone(), lower_duplicate, upper.clone()], &sketch, &parameter, &parameter_id, 1.0e-6).transpose().unwrap(),
+        unique_point_class_dimension_definition(&[lower.clone(), lower_duplicate, upper.clone()], &sketch, &parameter, &parameter_id, 1.0e-6),
         Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
@@ -543,8 +532,6 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
         &parameter_id,
         1.0e-6
     )
-    .transpose()
-    .unwrap()
     .is_none());
 }
 
@@ -588,17 +575,17 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
         .expect("identity grammar");
 
     assert!(matches!(
-        radial_locus_dimension_definition(&[&measured, &annotation], &all, "Radial Dimension-2", 0.5, &parameter).transpose().unwrap(),
+        radial_locus_dimension_definition(&[&measured, &annotation], &all, "Radial Dimension-2", 0.5, &parameter),
         Some(SketchConstraintDefinitionInput::Radius { entity, .. }) if entity == measured.id().clone()
     ));
     let repeated = circle("synthetic:test:id#repeated", 12.0, 3.0, 5.0);
     assert!(matches!(
-        radial_locus_dimension_definition(&[&measured, &annotation, &repeated], &all, "Diameter Dimension-3", 1.0, &parameter).transpose().unwrap(),
+        radial_locus_dimension_definition(&[&measured, &annotation, &repeated], &all, "Diameter Dimension-3", 1.0, &parameter),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter { entities, parameter: actual })
             if entities == vec![measured.id().clone(), repeated.id().clone()] && actual == parameter
     ));
     assert!(matches!(
-        radial_locus_dimension_definition(&[&center], &all, "Diameter Dimension-2", 1.0, &parameter).transpose().unwrap(),
+        radial_locus_dimension_definition(&[&center], &all, "Diameter Dimension-2", 1.0, &parameter),
         Some(SketchConstraintDefinitionInput::Diameter { entity, .. }) if entity == measured.id().clone()
     ));
 }
@@ -699,14 +686,14 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         },
     ] {
         let geometry = SketchGeometry::try_from(definition).unwrap();
-        assert!(
-            !point_lies_on_sketch_geometry(Point2::new(short_length / 2.0, 0.0001), &geometry,)
-                .expect("resource allocation did not fail")
-        );
-        assert!(
-            point_lies_on_sketch_geometry(Point2::new(short_length / 2.0, 0.0), &geometry,)
-                .expect("resource allocation did not fail")
-        );
+        assert!(!point_lies_on_sketch_geometry(
+            Point2::new(short_length / 2.0, 0.0001),
+            &geometry,
+        ));
+        assert!(point_lies_on_sketch_geometry(
+            Point2::new(short_length / 2.0, 0.0),
+            &geometry,
+        ));
     }
     let ellipse = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(0.0, 0.0),
@@ -718,14 +705,14 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         bounds: None,
     })
     .unwrap();
-    assert!(
-        !point_lies_on_sketch_geometry(Point2::new(1e200, 0.0), &ellipse,)
-            .expect("resource allocation did not fail")
-    );
-    assert!(
-        point_lies_on_sketch_geometry(Point2::new(1.0, 0.0), &ellipse,)
-            .expect("resource allocation did not fail")
-    );
+    assert!(!point_lies_on_sketch_geometry(
+        Point2::new(1e200, 0.0),
+        &ellipse,
+    ));
+    assert!(point_lies_on_sketch_geometry(
+        Point2::new(1.0, 0.0),
+        &ellipse,
+    ));
 }
 
 #[test]
@@ -766,7 +753,6 @@ fn unique_spatial_parallel_line_pair_projects_their_distance() {
             &parameter,
             &parameter_id,
         )
-        .unwrap()
         .unwrap(),
         SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
             first: entities[0].id().clone(),
@@ -855,7 +841,6 @@ fn repeated_spatial_profile_sides_project_a_repeated_distance() {
             &parameter,
             &parameter_id,
         )
-        .unwrap()
         .unwrap(),
         SpatialSketchConstraintDefinitionInput::RepeatedParallelLineDistance {
             pairs: vec![pair(0, 2), pair(4, 6)],

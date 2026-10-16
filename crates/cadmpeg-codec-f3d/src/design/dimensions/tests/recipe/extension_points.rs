@@ -36,7 +36,6 @@ fn recipe_linear_dimension_candidates_include_extension_points() {
     ];
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
         &entities, &sketch, 2.0, &parameter, 0.0,
-    )
-    .unwrap();
+    );
     assert!(candidates.len() > 2);
 }
