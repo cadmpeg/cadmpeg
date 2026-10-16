@@ -153,30 +153,25 @@ fn partial_compact_assignment_viable(
             for (&edge, &points) in &selected {
                 edge_points[edge] = points;
             }
-            let mut compatible = ctx.alloc_filled(
-                closed_components.len(),
-                Vec::new(),
-                "catia_deferred_compatible_rows",
-            )?;
-            for (row, component) in compatible.iter_mut().zip(&closed_components) {
+            let mut compatible = Vec::new();
+            for component in &closed_components {
                 let incidence = incidence_cycles(component, &edge_points)?;
                 let Some([incidence]) = incidence.as_deref() else {
                     return Ok(false);
                 };
-                *row = ctx.alloc_filled(
-                    domain.cycles.len(),
-                    false,
-                    "catia_deferred_compatible_cycles",
-                )?;
-                for (slot, cycle) in row.iter_mut().zip(&domain.cycles) {
-                    *slot = deferred_boundary_cycle_matches(cycle, incidence.as_slice(), &missing);
-                }
+                compatible.push(
+                    domain
+                        .cycles
+                        .iter()
+                        .map(|cycle| {
+                            deferred_boundary_cycle_matches(cycle, incidence.as_slice(), &missing)
+                        })
+                        .collect::<Vec<_>>(),
+                );
             }
-            let mut matched =
-                ctx.alloc_filled(domain.cycles.len(), None, "catia_deferred_matched")?;
+            let mut matched = vec![None; domain.cycles.len()];
             for component in 0..closed_components.len() {
-                let mut visited =
-                    ctx.alloc_filled(domain.cycles.len(), false, "catia_deferred_augment_visit")?;
+                let mut visited = vec![false; domain.cycles.len()];
                 if !augment(ctx, component, &compatible, &mut visited, &mut matched)? {
                     return Ok(false);
                 }
@@ -1105,11 +1100,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                         if budget.is_some_and(|budget| !budget.charge_by(work)) {
                             return Ok(false);
                         }
-                        let mut selected = ctx.alloc_filled(
-                            edge_candidates.len(),
-                            None,
-                            "catia coordinate closure selected edges",
-                        )?;
+                        let mut selected = vec![None; edge_candidates.len()];
                         for (local_edge, &edge) in edge_ids.iter().enumerate() {
                             let [left, right] = edges[local_edge].map(|root| solution[root]);
                             selected[edge] = Some([left, right]);
@@ -1315,11 +1306,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             exhausted.set(true);
             return Ok(None);
         }
-        let mut counts = ctx.alloc_filled(
-            boundary_domains.len(),
-            0usize,
-            "catia_coordinate_closure_face_counts",
-        )?;
+        let mut counts = vec![0usize; boundary_domains.len()];
         for faces in edge_faces {
             for (rank, face) in faces.iter().copied().enumerate() {
                 if rank == 0 || face != faces[0] {
@@ -1331,7 +1318,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     } else {
         None
     };
-    let mut assignment = ctx.alloc_filled(roots.len(), None, "catia coordinate root assignment")?;
+    let mut assignment = vec![None; roots.len()];
     let shared_budget = budget;
     for component in components {
         let Some(support_count) = component
@@ -1417,11 +1404,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 for &edge in &edge_ids {
                     local_edge_faces.push(edge_faces[edge]);
                 }
-                let mut face_edges = ctx.alloc_filled(
-                    boundary_domains.len(),
-                    Vec::new(),
-                    "catia_coordinate_closure_face_edges",
-                )?;
+                let mut face_edges = vec![Vec::new(); boundary_domains.len()];
                 for (edge, faces) in local_edge_faces.iter().copied().enumerate() {
                     for (rank, face) in faces.into_iter().enumerate() {
                         if rank == 0 || face != faces[0] {
@@ -1447,11 +1430,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             let domain = domains[root].clone();
             local_domains.push(domain);
         }
-        let mut root_edges = ctx.alloc_filled(
-            component.len(),
-            Vec::new(),
-            "catia_coordinate_closure_root_edges",
-        )?;
+        let mut root_edges = vec![Vec::new(); component.len()];
         for (edge, [left, right]) in local_edges.iter().copied().enumerate() {
             root_edges[left].push(edge);
             if right != left {
@@ -1477,14 +1456,13 @@ pub(super) fn close_coordinate_roots_with_incidence(
         }
         let arc_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
         let arc_consistent = enforce_edge_arc_consistency(
-            ctx,
             &mut arc_domains,
             &local_edges,
             &edge_ids,
             &root_edges,
             edge_candidates,
             arc_budget.as_ref(),
-        )?;
+        );
         if arc_consistent {
             if let (Some(budget), Some(arc_budget)) = (budget, arc_budget.as_ref()) {
                 let work = budget.remaining() - arc_budget.remaining();
@@ -1511,11 +1489,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         let mut states = 0;
         let mut exhausted = false;
         let mut base_degrees = HashMap::new();
-        let mut local_assignment = ctx.alloc_filled(
-            component.len(),
-            None,
-            "catia coordinate component assignment",
-        )?;
+        let mut local_assignment = vec![None; component.len()];
         let mut point_degrees =
             ctx.alloc_filled(point_count, 0, "catia coordinate point degrees")?;
         walk(
