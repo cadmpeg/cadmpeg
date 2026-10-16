@@ -550,14 +550,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &model.features,
         &design.design_parameter_scopes,
-        &design.asm_histories,
+        &mut design.asm_histories,
         &design.design_edge_operands,
         &scope_histories,
     );
     crate::history::bind_feature_outputs(
         &mut model.features,
         &design.design_parameter_scopes,
-        &design.asm_histories,
+        &mut design.asm_histories,
         geometry.bodies,
     )?;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
@@ -584,7 +584,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             operands: &design.design_face_operands,
             entity_operands: &design.design_entity_selection_operands,
             body_recipe_operands: &design.design_body_recipe_operands,
-            histories: &design.asm_histories,
+            histories: &mut design.asm_histories,
         },
     )?;
     crate::history::bind_feature_path_selections(

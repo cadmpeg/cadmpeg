@@ -73,11 +73,11 @@ fn input_fixture() -> (
 }
 
 fn project() -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
-    let (feature, scope, history) = input_fixture();
+    let (feature, scope, mut history) = input_fixture();
     super::super::project_feature_input_topologies(
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
-        std::slice::from_ref(&history),
+        std::slice::from_mut(&mut history),
         &[],
         &std::collections::HashMap::new(),
     )
@@ -131,19 +131,19 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
             ..Default::default()
         };
     });
-    let histories = [history, other];
-    let project = |bindings: &std::collections::HashMap<String, String>| {
+    let mut histories = [history, other];
+    let project = |histories: &mut [_], bindings: &std::collections::HashMap<String, String>| {
         super::super::project_feature_input_topologies(
             std::slice::from_ref(&feature),
             std::slice::from_ref(&scope),
-            &histories,
+            histories,
             &[],
             bindings,
         )
     };
-    assert!(project(&std::collections::HashMap::new()).is_empty());
+    assert!(project(&mut histories, &std::collections::HashMap::new()).is_empty());
     let bindings = std::collections::HashMap::from([(scope.id.clone(), histories[0].id.clone())]);
-    let inputs = project(&bindings);
+    let inputs = project(&mut histories, &bindings);
     assert_eq!(inputs.len(), 1);
     assert_eq!(
         inputs[0].faces.as_slice(),
@@ -158,11 +158,11 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
     );
     let bindings =
         std::collections::HashMap::from([(scope.id.clone(), "f3d:missing:history#0".into())]);
-    assert!(project(&bindings).is_empty());
+    assert!(project(&mut histories, &bindings).is_empty());
     assert!(super::super::project_feature_input_topologies(
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
-        &histories[..1],
+        &mut histories[..1],
         &[],
         &bindings,
     )
