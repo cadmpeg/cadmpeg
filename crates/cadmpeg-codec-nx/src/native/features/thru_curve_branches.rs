@@ -213,7 +213,7 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
 pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
     container: &Container,
 ) -> Result<Vec<FeatureThruCurveConstructionBranchGroup>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut groups = Vec::new();
     visit_feature_history_operation_records(
         container,

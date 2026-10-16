@@ -274,8 +274,10 @@ fn point_lane_admits_fixture() {
     let container = point_lane_container();
     let headers =
         feature_point_construction_headers(&container).expect("point construction headers");
-    let decode = || feature_point_construction_scalar_lanes(&container, &headers);
-    assert_eq!(decode().expect("admitted point scalar lanes").len(), 1);
+    assert_eq!(
+        feature_point_construction_scalar_lanes(&container, &headers).len(),
+        1
+    );
 }
 
 #[test]

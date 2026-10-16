@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
@@ -58,12 +57,11 @@ impl BodyWriterHistory {
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
         dependencies: &mut Vec<FeatureId>,
-    ) -> Result<(), CodecError> {
-        let mut append = |writer: &FeatureId| -> Result<(), CodecError> {
+    ) {
+        let mut append = |writer: &FeatureId| {
             if !dependencies.contains(writer) {
                 dependencies.push(writer.clone());
             }
-            Ok(())
         };
         let mut has_output_writer = false;
         for output in outputs {
@@ -72,19 +70,18 @@ impl BodyWriterHistory {
                     continue;
                 }
                 has_output_writer = true;
-                append(writer)?;
+                append(writer);
             }
         }
         if !has_output_writer {
             if let Some(writer) = native_body.and_then(|body| self.native.get(&body)) {
-                append(writer)?;
+                append(writer);
             } else if let Some(writer) =
                 offset_store_body.and_then(|body| self.offset_store.get(body))
             {
-                append(writer)?;
+                append(writer);
             }
         }
-        Ok(())
     }
 
     pub(super) fn record_writer(
@@ -438,30 +435,24 @@ mod tests {
             history.record_writer(Some(7), None, std::slice::from_ref(&body), &first);
 
             let mut dependencies = Vec::new();
-            history
-                .extend_primary_dependencies(
-                    None,
-                    Some(8),
-                    None,
-                    std::slice::from_ref(&body),
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
+            history.extend_primary_dependencies(
+                None,
+                Some(8),
+                None,
+                std::slice::from_ref(&body),
+                &mut dependencies,
+            );
 
             assert_eq!(dependencies, [first]);
             assert!(history.native_writer(8).is_none());
             history.record_writer(Some(8), None, std::slice::from_ref(&body), &second);
             assert_eq!(history.native_writer(8), Some(&second));
             dependencies.clear();
-            history
-                .extend_primary_dependencies(None, Some(7), None, &[body], &mut dependencies)
-                .expect("admitted writer history");
+            history.extend_primary_dependencies(None, Some(7), None, &[body], &mut dependencies);
             assert_eq!(dependencies, [second]);
 
             dependencies.clear();
-            history
-                .extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies)
-                .expect("admitted writer history");
+            history.extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies);
             assert_eq!(
                 dependencies,
                 [FeatureId::mint("synthetic:test:id#first").expect("identity grammar")]
@@ -500,27 +491,23 @@ mod tests {
             ));
 
             let mut dependencies = Vec::new();
-            history
-                .extend_primary_dependencies(
-                    Some(&provisional),
-                    Some(7),
-                    None,
-                    std::slice::from_ref(&existing),
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
+            history.extend_primary_dependencies(
+                Some(&provisional),
+                Some(7),
+                None,
+                std::slice::from_ref(&existing),
+                &mut dependencies,
+            );
             assert_eq!(dependencies, [retained]);
 
             let mut dependencies = Vec::new();
-            history
-                .extend_primary_dependencies(
-                    Some(&provisional),
-                    Some(7),
-                    None,
-                    std::slice::from_ref(&created),
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
+            history.extend_primary_dependencies(
+                Some(&provisional),
+                Some(7),
+                None,
+                std::slice::from_ref(&created),
+                &mut dependencies,
+            );
             assert_eq!(
                 dependencies,
                 [FeatureId::mint("synthetic:test:id#retained").expect("identity grammar")]
@@ -542,26 +529,22 @@ mod tests {
             history.record_writer(None, Some("store-a:block#7"), &[], &first);
 
             let mut dependencies = Vec::new();
-            history
-                .extend_primary_dependencies(
-                    None,
-                    None,
-                    Some("store-a:block#7"),
-                    &[],
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
+            history.extend_primary_dependencies(
+                None,
+                None,
+                Some("store-a:block#7"),
+                &[],
+                &mut dependencies,
+            );
             assert_eq!(dependencies, [first]);
             dependencies.clear();
-            history
-                .extend_primary_dependencies(
-                    None,
-                    None,
-                    Some("store-b:block#7"),
-                    &[],
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
+            history.extend_primary_dependencies(
+                None,
+                None,
+                Some("store-b:block#7"),
+                &[],
+                &mut dependencies,
+            );
             assert!(dependencies.is_empty());
 
             history.record_writer(None, Some("store-a:block#7"), &[], &second);
@@ -570,15 +553,13 @@ mod tests {
                 Some(&second)
             );
             dependencies.clear();
-            history
-                .extend_primary_dependencies(
-                    None,
-                    None,
-                    Some("store-a:block#7"),
-                    &[],
-                    &mut dependencies,
-                )
-                .expect("admitted writer history");
+            history.extend_primary_dependencies(
+                None,
+                None,
+                Some("store-a:block#7"),
+                &[],
+                &mut dependencies,
+            );
             assert_eq!(dependencies, [second]);
         });
     }

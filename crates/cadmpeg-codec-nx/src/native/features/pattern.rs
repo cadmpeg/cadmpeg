@@ -929,7 +929,7 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
 pub(in crate::native) fn feature_pattern_references(
     container: &Container,
 ) -> Result<Vec<FeaturePatternReference>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
@@ -992,7 +992,7 @@ pub(in crate::native) fn feature_pattern_references(
 pub(in crate::native) fn feature_pattern_counted_reference_lanes(
     container: &Container,
 ) -> Result<Vec<FeaturePatternCountedReferenceLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut lanes = Vec::new();
     visit_feature_history_operation_records(
         container,

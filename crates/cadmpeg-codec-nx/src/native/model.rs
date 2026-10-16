@@ -5,6 +5,7 @@
 //! record vectors into domain sub-structs. JT graph admission rejects
 //! inconsistent owners before attachment.
 
+use crate::jt::ArithmeticWorkBound;
 use crate::native::features::draft::feature_draft_construction_binary32_lanes;
 use crate::native::features::draft::feature_draft_construction_fixed_lanes;
 use crate::native::features::draft::feature_draft_construction_graph_payloads;
@@ -53,10 +54,11 @@ use super::display_jt::{
     DisplayJtGeometricTransformAttribute, DisplayJtGroupNodeData, DisplayJtIndex,
     DisplayJtInitialFaceDegreeSymbols, DisplayJtInstanceNode, DisplayJtMaterialAttribute,
     DisplayJtPartitionNode, DisplayJtPolygonMesh, DisplayJtRangeLodNode, DisplayJtShapeLodBinding,
-    DisplayJtStringPropertyAtom, DisplayJtTopologyArrays, DisplayJtTopologyPacketSequence,
-    DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode, DisplayJtVertexColors,
-    DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates, DisplayJtVertexFlagInputs,
-    DisplayJtVertexFlags, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
+    DisplayJtStringPropertyAtom, DisplayJtTextureCoordinateInputs, DisplayJtTopologyArrays,
+    DisplayJtTopologyPacketSequence, DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode,
+    DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates,
+    DisplayJtVertexFlagInputs, DisplayJtVertexFlags, DisplayJtVertexNormals,
+    DisplayJtVertexTextureCoordinates,
 };
 use super::features::construction_records::{
     data_block_object_frames, feature_block_construction_payloads,
@@ -148,10 +150,10 @@ use super::om::{
     DataBlockReference, ExpressionDeclaration, ExternalReference, ExternalReferenceEmptyRecord,
     ExternalReferenceIndexedRecord, ExternalReferenceRecord, ExternalReferenceRecordChild,
     ExternalReferenceRecordStringUse, ExternalReferenceTailReferencePair, FieldDefinition,
-    MaterialTextureCatalogEntry, ObjectRecord, ObjectRecordHandlePair, ObjectReference,
-    OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage, OmRecordArea,
-    ParameterFormula, PartAttribute, PartColorDefinition, PartColorTable, PersistentHandle,
-    RmFastLoadObjectId, RmFastLoadObjectIdTable, StoreHeader, StringValue,
+    IdentityBoundedSection, MaterialTextureCatalogEntry, ObjectRecord, ObjectRecordHandlePair,
+    ObjectReference, OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage,
+    OmRecordArea, ParameterFormula, PartAttribute, PartColorDefinition, PartColorTable,
+    PersistentHandle, RmFastLoadObjectId, RmFastLoadObjectIdTable, StoreHeader, StringValue,
 };
 use super::parasolid::{
     parasolid_attribute_class_uses, parasolid_attribute_definitions,
@@ -285,6 +287,9 @@ pub(in crate::native) struct DisplayJtRecords {
     pub(super) partition_nodes: Vec<DisplayJtPartitionNode>,
     pub(super) range_lod_nodes: Vec<DisplayJtRangeLodNode>,
     pub(super) tri_strip_shape_nodes: Vec<DisplayJtTriStripShapeNode>,
+    /// Whether an arithmetic-coded JT lane was left undecoded at
+    /// [`crate::jt::MAX_ARITHMETIC_WORK`].
+    pub(super) arithmetic_lane_work_bounded: bool,
 }
 
 /// Records extracted from the `parasolid` domain.
@@ -509,6 +514,7 @@ pub(in crate::native) struct OmRecords {
     pub(super) classes: Vec<ClassDefinition>,
     pub(super) fields: Vec<FieldDefinition>,
     pub(super) object_records: Vec<ObjectRecord>,
+    pub(super) object_record_identity_bounded_sections: Vec<IdentityBoundedSection>,
     pub(super) rmfastload_object_id_tables: Vec<RmFastLoadObjectIdTable>,
     pub(super) rmfastload_object_ids: Vec<RmFastLoadObjectId>,
     pub(super) data_blocks: Vec<DataBlock>,
@@ -889,17 +895,32 @@ impl NativeModel {
             display_jt_shape_lod_elements(ctx, container, &display_jt_segments)?;
         let display_jt_tri_strip_lod_headers =
             display_jt_tri_strip_lod_headers(ctx, container, &display_jt_shape_lod_elements)?;
-        let display_jt_initial_face_degree_symbols =
-            display_jt_initial_face_degree_symbols(ctx, container, &display_jt_shape_lod_elements)?;
+        let jt_work_bound = ArithmeticWorkBound::default();
+        let display_jt_initial_face_degree_symbols = display_jt_initial_face_degree_symbols(
+            ctx,
+            &jt_work_bound,
+            container,
+            &display_jt_shape_lod_elements,
+        )?;
         let DisplayJtTopologyArrays {
             sequences: display_jt_topology_packet_sequences,
             vertex_headers: display_jt_vertex_records_headers,
             coordinate_headers: display_jt_coordinate_array_headers,
-        } = display_jt_topology_packet_sequences(ctx, container, &display_jt_shape_lod_elements)?;
-        let display_jt_vertex_coordinates =
-            display_jt_vertex_coordinates(ctx, container, &display_jt_coordinate_array_headers)?;
+        } = display_jt_topology_packet_sequences(
+            ctx,
+            &jt_work_bound,
+            container,
+            &display_jt_shape_lod_elements,
+        )?;
+        let display_jt_vertex_coordinates = display_jt_vertex_coordinates(
+            ctx,
+            &jt_work_bound,
+            container,
+            &display_jt_coordinate_array_headers,
+        )?;
         let display_jt_vertex_normals = display_jt_vertex_normals(
             ctx,
+            &jt_work_bound,
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
@@ -907,6 +928,7 @@ impl NativeModel {
         )?;
         let display_jt_vertex_colors = display_jt_vertex_colors(
             ctx,
+            &jt_work_bound,
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
@@ -915,15 +937,19 @@ impl NativeModel {
         )?;
         let display_jt_vertex_texture_coordinates = display_jt_vertex_texture_coordinates(
             ctx,
-            container,
-            &display_jt_vertex_records_headers,
-            &display_jt_coordinate_array_headers,
-            &display_jt_vertex_coordinates,
-            &display_jt_vertex_normals,
-            &display_jt_vertex_colors,
+            &jt_work_bound,
+            DisplayJtTextureCoordinateInputs {
+                container,
+                vertex_headers: &display_jt_vertex_records_headers,
+                coordinate_headers: &display_jt_coordinate_array_headers,
+                coordinates: &display_jt_vertex_coordinates,
+                normals: &display_jt_vertex_normals,
+                colors: &display_jt_vertex_colors,
+            },
         )?;
         let display_jt_vertex_flags = display_jt_vertex_flags(
             ctx,
+            &jt_work_bound,
             DisplayJtVertexFlagInputs {
                 container,
                 vertex_headers: &display_jt_vertex_records_headers,
@@ -1051,10 +1077,8 @@ impl NativeModel {
         let feature_identical_instance_output_lanes =
             feature_identical_instance_output_lanes(container)?;
         let feature_point_construction_headers = feature_point_construction_headers(container)?;
-        let feature_point_construction_scalar_lanes = feature_point_construction_scalar_lanes(
-            container,
-            &feature_point_construction_headers,
-        )?;
+        let feature_point_construction_scalar_lanes =
+            feature_point_construction_scalar_lanes(container, &feature_point_construction_headers);
         let feature_draft_construction_references =
             feature_draft_construction_references(container)?;
         let feature_draft_construction_index_lanes =
@@ -1214,7 +1238,7 @@ impl NativeModel {
         let expressions = expressions(container, &expression_declarations)?;
         let classes = class_definitions(container)?;
         let fields = field_definitions(container)?;
-        let object_records = object_records(container)?;
+        let (object_records, object_record_identity_bounded_sections) = object_records(container)?;
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
             match rmfastload_object_id_table(ctx, container)? {
                 Some((table, object_ids)) => (vec![table], object_ids),
@@ -1353,6 +1377,7 @@ impl NativeModel {
                 partition_nodes: display_jt_partition_nodes,
                 range_lod_nodes: display_jt_range_lod_nodes,
                 tri_strip_shape_nodes: display_jt_tri_strip_shape_nodes,
+                arithmetic_lane_work_bounded: jt_work_bound.reached(),
             },
             parasolid: ParasolidRecords {
                 group_records: parasolid_group_records,
@@ -1556,6 +1581,7 @@ impl NativeModel {
                 classes,
                 fields,
                 object_records,
+                object_record_identity_bounded_sections,
                 rmfastload_object_id_tables,
                 rmfastload_object_ids,
                 data_blocks,

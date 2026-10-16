@@ -505,11 +505,11 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 }
                 _ => continue,
             };
-            let lookup = |support: &SurfaceId| -> Result<_, cadmpeg_core::CodecError> {
+            let lookup = |support: &SurfaceId| {
                 let key = (owner.clone(), support.clone());
-                Ok(incident.get(&key).map(Vec::as_slice))
+                incident.get(&key).map(Vec::as_slice)
             };
-            let candidates = [lookup(&supports[0])?, lookup(&supports[1])?];
+            let candidates = [lookup(&supports[0]), lookup(&supports[1])];
             let [Some([(first_id, first_use_range)]), Some([(second_id, second_use_range)])] =
                 candidates
             else {

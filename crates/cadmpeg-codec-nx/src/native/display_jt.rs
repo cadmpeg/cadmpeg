@@ -42,7 +42,7 @@ use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
 use std::num::NonZeroU64;
 
-use crate::jt::QuantizedRange;
+use crate::jt::{ArithmeticWorkBound, QuantizedRange};
 use crate::jt_topology::Polygon;
 use crate::layout::jt_document_header as jt_hdr;
 use crate::layout::jt_toc_entry as jt_toc;
@@ -2317,17 +2317,7 @@ fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[
 
 fn jt9_topology_high_degree_lane_count(
     ctx: &DecodeContext<'_>,
-    representation: &[u8],
-    expected_vertex_bindings: u64,
-) -> Result<Option<usize>, CodecError> {
-    let result =
-        jt9_topology_high_degree_lane_count_inner(ctx, representation, expected_vertex_bindings)?;
-
-    Ok(result)
-}
-
-fn jt9_topology_high_degree_lane_count_inner(
-    ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     representation: &[u8],
     expected_vertex_bindings: u64,
 ) -> Result<Option<usize>, CodecError> {
@@ -2337,7 +2327,7 @@ fn jt9_topology_high_degree_lane_count_inner(
         let Some(bytes) = representation.get(prefix_end..) else {
             return Ok(None);
         };
-        let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
+        let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, work_bound, bytes, 0)? else {
             return Ok(None);
         };
         let Some(end) = prefix_end.checked_add(byte_len) else {
@@ -2353,7 +2343,7 @@ fn jt9_topology_high_degree_lane_count_inner(
         let Some(bytes) = representation.get(cursor..) else {
             break;
         };
-        let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
+        let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, work_bound, bytes, 0)? else {
             break;
         };
         let Some(end) = cursor.checked_add(byte_len) else {
@@ -2367,7 +2357,8 @@ fn jt9_topology_high_degree_lane_count_inner(
                 split_packets_valid = false;
                 break;
             };
-            let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
+            let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, work_bound, bytes, 0)?
+            else {
                 split_packets_valid = false;
                 break;
             };
@@ -3289,6 +3280,7 @@ pub(super) fn display_jt_tri_strip_lod_headers(
 /// Decode the initial face-degree packet from each JT 9 topological mesh.
 pub(super) fn display_jt_initial_face_degree_symbols(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     container: &Container,
     elements: &[DisplayJtShapeLodElement],
 ) -> Result<Vec<DisplayJtInitialFaceDegreeSymbols>, CodecError> {
@@ -3313,7 +3305,7 @@ pub(super) fn display_jt_initial_face_degree_symbols(
             return Ok(Vec::new());
         };
         let Some((residuals, packet_byte_len)) =
-            crate::jt::decode_int32_cdp2(ctx, representation, 0)?
+            crate::jt::decode_int32_cdp2(ctx, work_bound, representation, 0)?
         else {
             return Ok(Vec::new());
         };
@@ -3347,6 +3339,7 @@ pub(super) struct DisplayJtTopologyArrays {
 
 pub(super) fn display_jt_topology_packet_sequences(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     container: &Container,
     elements: &[DisplayJtShapeLodElement],
 ) -> Result<DisplayJtTopologyArrays, CodecError> {
@@ -3375,8 +3368,12 @@ pub(super) fn display_jt_topology_packet_sequences(
             return Ok(DisplayJtTopologyArrays::default());
         };
         let mut cursor = 0usize;
-        let Some(high_degree_lane_count) =
-            jt9_topology_high_degree_lane_count(ctx, representation, lod_vertex_bindings)?
+        let Some(high_degree_lane_count) = jt9_topology_high_degree_lane_count(
+            ctx,
+            work_bound,
+            representation,
+            lod_vertex_bindings,
+        )?
         else {
             return Ok(DisplayJtTopologyArrays::default());
         };
@@ -3406,7 +3403,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 return Ok(DisplayJtTopologyArrays::default());
             };
             let Some((value_count, codec, byte_len)) =
-                crate::jt::frame_int32_cdp2(ctx, remaining, 0)?
+                crate::jt::frame_int32_cdp2(ctx, work_bound, remaining, 0)?
             else {
                 return Ok(DisplayJtTopologyArrays::default());
             };
@@ -3421,7 +3418,7 @@ pub(super) fn display_jt_topology_packet_sequences(
             else {
                 return Ok(DisplayJtTopologyArrays::default());
             };
-            let values = match crate::jt::decode_int32_cdp2(ctx, packet, 0)? {
+            let values = match crate::jt::decode_int32_cdp2(ctx, work_bound, packet, 0)? {
                 Some((residuals, decoded_byte_len)) if decoded_byte_len == packet.len() => {
                     let predictor = match role {
                         TopologyPacketRole::VertexFlags | TopologyPacketRole::SplitFaceSymbols => {
@@ -3586,6 +3583,7 @@ pub(super) fn display_jt_topology_packet_sequences(
 /// Decode every complete JT 9 coordinate array.
 pub(super) fn display_jt_vertex_coordinates(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     container: &Container,
     headers: &[DisplayJtVertexCoordinateArrayHeader],
 ) -> Result<Vec<DisplayJtVertexCoordinates>, CodecError> {
@@ -3605,6 +3603,7 @@ pub(super) fn display_jt_vertex_coordinates(
             byte_len: consumed,
         }) = crate::jt::decode_vertex_coordinates(
             ctx,
+            work_bound,
             bytes,
             cadmpeg_core::decode::index_from_u32(header.unique_vertex_count),
             header.component_ranges,
@@ -3749,6 +3748,7 @@ pub(super) fn display_jt_polygon_meshes(
 /// Decode every complete JT 9 normal array following a coordinate array.
 pub(super) fn display_jt_vertex_normals(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
@@ -3786,6 +3786,7 @@ pub(super) fn display_jt_vertex_normals(
             byte_len,
         }) = crate::jt::decode_vertex_normals(
             ctx,
+            work_bound,
             bytes,
             cadmpeg_core::decode::index_from_u32(vertex_header.vertex_attribute_count),
             vertex_header.normal_quantization_factor,
@@ -3814,6 +3815,7 @@ pub(super) fn display_jt_vertex_normals(
 /// Decode every complete JT 9 color array after coordinates and optional normals.
 pub(super) fn display_jt_vertex_colors(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
@@ -3864,6 +3866,7 @@ pub(super) fn display_jt_vertex_colors(
             byte_len,
         }) = crate::jt::decode_vertex_colors(
             ctx,
+            work_bound,
             bytes,
             cadmpeg_core::decode::index_from_u32(vertex_header.vertex_attribute_count),
             vertex_header.color_quantization_bits,
@@ -3890,15 +3893,29 @@ pub(super) fn display_jt_vertex_colors(
 }
 
 /// Decode texture-coordinate channels after preceding coordinate, normal, and color arrays.
+#[derive(Clone, Copy)]
+pub(super) struct DisplayJtTextureCoordinateInputs<'a, 'b> {
+    pub(super) container: &'a Container<'b>,
+    pub(super) vertex_headers: &'a [DisplayJtCompressedVertexRecordsHeader],
+    pub(super) coordinate_headers: &'a [DisplayJtVertexCoordinateArrayHeader],
+    pub(super) coordinates: &'a [DisplayJtVertexCoordinates],
+    pub(super) normals: &'a [DisplayJtVertexNormals],
+    pub(super) colors: &'a [DisplayJtVertexColors],
+}
+
 pub(super) fn display_jt_vertex_texture_coordinates(
     ctx: &DecodeContext<'_>,
-    container: &Container,
-    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
-    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
-    coordinates: &[DisplayJtVertexCoordinates],
-    normals: &[DisplayJtVertexNormals],
-    colors: &[DisplayJtVertexColors],
+    work_bound: &ArithmeticWorkBound,
+    inputs: DisplayJtTextureCoordinateInputs<'_, '_>,
 ) -> Result<Vec<DisplayJtVertexTextureCoordinates>, CodecError> {
+    let DisplayJtTextureCoordinateInputs {
+        container,
+        vertex_headers,
+        coordinate_headers,
+        coordinates,
+        normals,
+        colors,
+    } = inputs;
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
         if !(0..8)
@@ -3963,6 +3980,7 @@ pub(super) fn display_jt_vertex_texture_coordinates(
                 byte_len,
             }) = crate::jt::decode_vertex_texture_coordinates(
                 ctx,
+                work_bound,
                 bytes,
                 cadmpeg_core::decode::index_from_u32(vertex_header.vertex_attribute_count),
                 vertex_header.texture_quantization_bits,
@@ -4009,6 +4027,7 @@ pub(super) struct DisplayJtVertexFlagInputs<'a, 'b> {
 
 pub(super) fn display_jt_vertex_flags(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     inputs: DisplayJtVertexFlagInputs<'_, '_>,
 ) -> Result<Vec<DisplayJtVertexFlags>, CodecError> {
     let DisplayJtVertexFlagInputs {
@@ -4086,6 +4105,7 @@ pub(super) fn display_jt_vertex_flags(
         };
         let Some((values, byte_len)) = crate::jt::decode_vertex_flags(
             ctx,
+            work_bound,
             bytes,
             cadmpeg_core::decode::index_from_u32(vertex_header.vertex_attribute_count),
         )?
@@ -5447,8 +5467,10 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 
 /// Every Display-JT tessellation the shape graph states.
 ///
-/// A record the graph does not shape as a mesh yields no tessellation and is
-/// not an error; a mesh whose lanes do not pair is.
+/// A mesh the graph does not resolve, or that renders no triangle, drops
+/// every Display-JT tessellation of the part and pushes a
+/// `carrier.display-jt-tessellations-dropped` loss naming it; it is not an
+/// error. A mesh whose lanes do not pair is.
 ///
 /// A shape node whose instance paths exceed [`MAX_JT_NODE_PATH_VISITS`]
 /// yields no tessellation and pushes a `source.scan-bounded` loss.
@@ -5462,14 +5484,6 @@ pub(super) fn display_jt_tessellations(
     inputs: &DisplayJtTessellationInputs<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<(Tessellation, u64)>, CodecError> {
-    macro_rules! required {
-        ($value:expr) => {
-            match $value {
-                Some(value) => value,
-                None => return Ok(Vec::new()),
-            }
-        };
-    }
     let DisplayJtTessellationInputs {
         meshes,
         coordinates,
@@ -5516,6 +5530,14 @@ pub(super) fn display_jt_tessellations(
     let mut scene_graphs = HashMap::<&str, Option<JtSceneGraph<'_>>>::new();
     let mut tessellations = Vec::new();
     for mesh in meshes {
+        macro_rules! required {
+            ($value:expr) => {
+                match $value {
+                    Some(value) => value,
+                    None => return Ok(dropped_display_jt_tessellations(losses, mesh)),
+                }
+            };
+        }
         let coordinate_header = required!(coordinate_headers
             .get(mesh.coordinate_header.as_str())
             .copied());
@@ -5538,13 +5560,14 @@ pub(super) fn display_jt_tessellations(
             None => None,
         };
         let Some(paths) = paths else {
-            if visits.exhausted() {
-                losses.push(NxLossCode::SourceScanBounded.note(format!(
-                    "The instance-path scan of Display-JT shape node {} reached its visit bound; \
-                     the part's Display-JT tessellations were skipped.",
-                    shape_node.object_id
-                )));
+            if !visits.exhausted() {
+                return Ok(dropped_display_jt_tessellations(losses, mesh));
             }
+            losses.push(NxLossCode::SourceScanBounded.note(format!(
+                "The instance-path scan of Display-JT shape node {} reached its visit bound; \
+                 the part's Display-JT tessellations were skipped.",
+                shape_node.object_id
+            )));
             return Ok(Vec::new());
         };
         let mut rendered = Vec::new();
@@ -5559,20 +5582,20 @@ pub(super) fn display_jt_tessellations(
             rendered.push((triangle, attributes));
         }
         if rendered.is_empty() {
-            return Ok(Vec::new());
+            return Ok(dropped_display_jt_tessellations(losses, mesh));
         }
         let vertex_header = required!(vertex_headers.get(shape_element.id.as_str()).copied());
         let normal_array = (vertex_header.vertex_bindings & 0x8 != 0)
             .then(|| normals.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
-            return Ok(Vec::new());
+            return Ok(dropped_display_jt_tessellations(losses, mesh));
         }
         let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
             .then(|| colors.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
-            return Ok(Vec::new());
+            return Ok(dropped_display_jt_tessellations(losses, mesh));
         }
         let mut texture_arrays = Vec::new();
         for channel in (0..8_u8)
@@ -5587,7 +5610,7 @@ pub(super) fn display_jt_tessellations(
             .then(|| vertex_flags.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
-            return Ok(Vec::new());
+            return Ok(dropped_display_jt_tessellations(losses, mesh));
         }
         for path in paths {
             let transform = path.matrix;
@@ -5624,7 +5647,7 @@ pub(super) fn display_jt_tessellations(
                     if !(1..=4).contains(&count)
                         || !array.values.iter().all(|value| value.len() == count)
                     {
-                        return Ok(Vec::new());
+                        return Ok(dropped_display_jt_tessellations(losses, mesh));
                     }
                     texture_component_counts.push(count);
                 }
@@ -5774,6 +5797,19 @@ pub(super) fn display_jt_tessellations(
         }
     }
     Ok(tessellations)
+}
+
+/// Report that `mesh` dropped every Display-JT tessellation of the part.
+fn dropped_display_jt_tessellations(
+    losses: &mut Vec<LossNote>,
+    mesh: &DisplayJtPolygonMesh,
+) -> Vec<(Tessellation, u64)> {
+    losses.push(NxLossCode::DisplayJtTessellationsDropped.note(format!(
+        "Display-JT polygon mesh {} did not resolve to a tessellation; \
+         the part's Display-JT tessellations were skipped.",
+        mesh.id
+    )));
+    Vec::new()
 }
 
 #[cfg(test)]

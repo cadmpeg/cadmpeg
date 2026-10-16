@@ -690,6 +690,12 @@ pub(super) fn composed_feature_history_inputs() -> ComposedInputs {
 }
 
 pub(crate) fn indexed_om_section() -> Vec<u8> {
+    indexed_om_section_with_expression_tail(&[])
+}
+
+/// [`indexed_om_section`] with `tail` appended to the expression record after
+/// its reference to the root record.
+pub(crate) fn indexed_om_section_with_expression_tail(tail: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0xaa; 32];
     let base = 8usize;
     let class_name = b"UGS::EXP_expression";
@@ -720,6 +726,7 @@ pub(crate) fn indexed_om_section() -> Vec<u8> {
     expression.extend_from_slice(b"\x66\x32\x03\x0cSKETCH_001\0");
     expression.extend_from_slice(b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0");
     expression.extend_from_slice(b"\x01\x02\x90\x00\x00");
+    expression.extend_from_slice(tail);
     let records = [root.as_slice(), expression.as_slice()];
     let table = bytes.len() + 4 * 4;
     let table_end = table + 4 + 3 * 4;

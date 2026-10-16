@@ -92,8 +92,7 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
         &scan,
         &mut body,
         crate::native::TypedNative::Available,
-    )
-    .unwrap();
+    );
 
     let bounded = body
         .losses

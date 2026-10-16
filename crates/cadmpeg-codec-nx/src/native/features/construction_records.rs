@@ -50,7 +50,7 @@ pub(super) fn resolved_feature_payload_references(
         u64,
     ) -> Option<Vec<(PayloadIndexToken, u64)>>,
 ) -> Result<Vec<ResolvedFeaturePayloadReference>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -256,7 +256,7 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
 pub(in crate::native) fn feature_point_construction_headers(
     container: &Container,
 ) -> Result<Vec<FeaturePointConstructionHeader>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut headers = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
@@ -319,8 +319,8 @@ pub(in crate::native) fn feature_point_construction_headers(
 pub(in crate::native) fn feature_point_construction_scalar_lanes(
     container: &Container,
     headers: &[FeaturePointConstructionHeader],
-) -> Result<Vec<FeaturePointConstructionScalarLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+) -> Vec<FeaturePointConstructionScalarLane> {
+    let indexed = container.indexed_om_sections();
     let mut lanes = Vec::new();
     for header in headers {
         let Some(expected_target) = header.data_block.as_deref() else {
@@ -429,7 +429,7 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             positions,
         });
     }
-    Ok(lanes)
+    lanes
 }
 
 /// Decode and resolve the exact common reference envelope in surface-feature
@@ -517,7 +517,7 @@ pub(in crate::native) fn feature_thru_curve_construction_envelopes(
 pub(in crate::native) fn feature_swp104_leading_branches(
     container: &Container,
 ) -> Result<Vec<FeatureSwp104LeadingBranch>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut branches = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
@@ -717,7 +717,7 @@ pub(in crate::native) fn feature_surface_construction_strings(
 pub(in crate::native) fn feature_extrude_profile_references(
     container: &Container,
 ) -> Result<Vec<FeatureExtrudeProfileReference>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     let mut refusal: Option<CodecError> = None;
     visit_feature_history_operation_records(
@@ -1110,7 +1110,7 @@ pub(in crate::native) fn feature_operation_body_11_continuations(
 pub(in crate::native) fn feature_operation_body_reference_lanes(
     container: &Container,
 ) -> Result<Vec<FeatureOperationBodyReferenceLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut lanes = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
@@ -1258,7 +1258,7 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
 pub(in crate::native) fn feature_extrude_payload_32_branches(
     container: &Container,
 ) -> Result<Vec<FeatureExtrudePayload32Branch>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut branches = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -1385,7 +1385,7 @@ pub(in crate::native) fn feature_extrude_32_constructions(
 pub(in crate::native) fn feature_block_construction_references(
     container: &Container,
 ) -> Result<Vec<FeatureBlockConstructionReference>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(

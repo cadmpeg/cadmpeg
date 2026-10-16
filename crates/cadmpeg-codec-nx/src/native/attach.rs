@@ -186,7 +186,7 @@ fn attach_indexed_om_unknowns(
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let object_sections = scan.container.indexed_om_sections()?;
+    let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         match &section.store {
@@ -396,7 +396,23 @@ fn attach_records(
              the stream's attribute definitions were skipped."
         )));
     }
-    let has_object_sections = !scan.container.indexed_om_sections()?.is_empty();
+    for section in &model.om.object_record_identity_bounded_sections {
+        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
+            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
+             {} of its object records were kept without a stable identity.",
+            section.source_entry,
+            crate::native::om::MAX_STABLE_GRAPH_WORK,
+            section.records
+        )));
+    }
+    if model.display_jt.arithmetic_lane_work_bounded {
+        losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(format!(
+            "An arithmetic-coded Display-JT lane needed more than {} decoder table lookups; \
+             the lanes above that bound were left undecoded.",
+            crate::jt::MAX_ARITHMETIC_WORK
+        )));
+    }
+    let has_object_sections = !scan.container.indexed_om_sections().is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     if model.is_empty() && !has_object_sections {
         return Ok(());
@@ -3974,7 +3990,7 @@ fn attach_feature_operations(
             offset_store_primary_body,
             &outputs,
             &mut dependencies,
-        )?;
+        );
         let block_placement = block_projection.map(|(_, placement)| placement);
         let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(

@@ -172,7 +172,7 @@ pub(in crate::native) fn feature_surface_construction_branches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureSurfaceConstructionBranch>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut branches = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
