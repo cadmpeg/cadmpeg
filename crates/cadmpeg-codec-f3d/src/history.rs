@@ -2113,7 +2113,7 @@ pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
     input: FeatureFaceSelectionInputs<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let FeatureFaceSelectionInputs {
         scopes,
         groups,
@@ -2125,159 +2125,100 @@ pub(crate) fn bind_feature_face_selections(
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
-        let mut edit_result = Ok(());
-        feature.evaluation.edit(|definition, _| {
-            macro_rules! admitted {
-                ($value:expr) => {
-                    if let Err(error) = $value {
-                        edit_result = Err(error);
-                        return;
-                    }
-                };
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
+            let Some(native_ref) = native_ref else {
+                break 'feature_edit;
+            };
+            let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+            let Some(scope) = matching_scopes.next() else {
+                break 'feature_edit;
+            };
+            if matching_scopes.next().is_some() {
+                break 'feature_edit;
             }
-            'feature_edit: {
-                let Some(native_ref) = native_ref else {
-                    break 'feature_edit;
-                };
-                let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-                let Some(scope) = matching_scopes.next() else {
-                    break 'feature_edit;
-                };
-                if matching_scopes.next().is_some() {
-                    break 'feature_edit;
-                }
-                let Some(state_id) = scope.history_state_id() else {
-                    break 'feature_edit;
-                };
-                let Some(previous_state_id) =
-                    effective_scope_previous_history_state_id(scope, histories)
-                else {
-                    break 'feature_edit;
-                };
-                let Some((history, state, previous)) =
-                    unique_history_state_pair(histories, state_id, previous_state_id)
-                else {
-                    break 'feature_edit;
-                };
-                let Some(transition) = &state.transition else {
-                    break 'feature_edit;
-                };
-                if transition.previous_state_id != Some(previous_state_id) {
-                    break 'feature_edit;
-                }
-                let Some(_topology) = history.topology(previous) else {
-                    break 'feature_edit;
-                };
-                match definition {
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Extrude { start, extent, .. },
-                    ) => {
-                        if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
-                            admitted!(selection::bind_face_selection(
-                                face,
-                                scope,
-                                groups,
-                                operands,
-                                &transition.topology.faces.updated,
-                            ));
-                            bind_entity_face_selection(
-                                face,
-                                FaceSelectionBinding {
-                                    feature_id,
-                                    previous_state_id,
-                                    operation_history_id: &history.id,
-                                    scope,
-                                    input_topologies: &mut *input_topologies,
-                                },
-                                groups,
-                                entity_operands,
-                            );
-                        }
-                        let sides = match extent {
-                            cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
-                            | cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => vec![side],
-                            cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
-                                vec![first, second]
-                            }
-                        };
-                        for side in sides {
-                            if let cadmpeg_ir::features::LinearTermination::ToFace {
-                                face, ..
-                            } = &mut side.termination
-                            {
-                                admitted!(selection::bind_face_selection(
-                                    face,
-                                    scope,
-                                    groups,
-                                    operands,
-                                    &transition.topology.faces.updated,
-                                ));
-                            }
-                        }
-                    }
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. },
-                    ) => {
-                        for seed in seeds {
-                            let cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) = seed
-                            else {
-                                continue;
-                            };
-                            admitted!(selection::bind_face_selection(
-                                faces,
-                                scope,
-                                groups,
-                                operands,
-                                &transition.topology.faces.updated,
-                            ));
-                            bind_entity_face_selection(
-                                faces,
-                                FaceSelectionBinding {
-                                    feature_id,
-                                    previous_state_id,
-                                    operation_history_id: &history.id,
-                                    scope,
-                                    input_topologies: &mut *input_topologies,
-                                },
-                                groups,
-                                entity_operands,
-                            );
-                        }
-                    }
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::MoveFace { faces, .. },
-                    ) => {
-                        admitted!(selection::bind_face_selection(
-                            faces,
+            let Some(state_id) = scope.history_state_id() else {
+                break 'feature_edit;
+            };
+            let Some(previous_state_id) =
+                effective_scope_previous_history_state_id(scope, histories)
+            else {
+                break 'feature_edit;
+            };
+            let Some((history, state, previous)) =
+                unique_history_state_pair(histories, state_id, previous_state_id)
+            else {
+                break 'feature_edit;
+            };
+            let Some(transition) = &state.transition else {
+                break 'feature_edit;
+            };
+            if transition.previous_state_id != Some(previous_state_id) {
+                break 'feature_edit;
+            }
+            let Some(_topology) = history.topology(previous) else {
+                break 'feature_edit;
+            };
+            match definition {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { start, extent, .. },
+                ) => {
+                    if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
+                        selection::bind_face_selection(
+                            face,
                             scope,
                             groups,
                             operands,
                             &transition.topology.faces.updated,
-                        ));
-                    }
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Thicken { faces, .. },
-                    ) => {
-                        admitted!(selection::bind_face_selection(
-                            faces,
-                            scope,
+                        );
+                        bind_entity_face_selection(
+                            face,
+                            FaceSelectionBinding {
+                                feature_id,
+                                previous_state_id,
+                                operation_history_id: &history.id,
+                                scope,
+                                input_topologies: &mut *input_topologies,
+                            },
                             groups,
-                            operands,
-                            &transition.topology.faces.updated,
-                        ));
-                        selection::bind_body_recipe_face_selection(
-                            faces,
-                            feature_id,
-                            previous_state_id,
-                            scope,
-                            groups,
-                            body_recipe_operands,
+                            entity_operands,
                         );
                     }
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
-                    ) => {
-                        bind_surface_stitch_face_selection(
+                    let sides = match extent {
+                        cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
+                        | cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => vec![side],
+                        cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
+                            vec![first, second]
+                        }
+                    };
+                    for side in sides {
+                        if let cadmpeg_ir::features::LinearTermination::ToFace { face, .. } =
+                            &mut side.termination
+                        {
+                            selection::bind_face_selection(
+                                face,
+                                scope,
+                                groups,
+                                operands,
+                                &transition.topology.faces.updated,
+                            );
+                        }
+                    }
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. },
+                ) => {
+                    for seed in seeds {
+                        let cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) = seed else {
+                            continue;
+                        };
+                        selection::bind_face_selection(
+                            faces,
+                            scope,
+                            groups,
+                            operands,
+                            &transition.topology.faces.updated,
+                        );
+                        bind_entity_face_selection(
                             faces,
                             FaceSelectionBinding {
                                 feature_id,
@@ -2290,40 +2231,84 @@ pub(crate) fn bind_feature_face_selections(
                             entity_operands,
                         );
                     }
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::SplitFace { targets, .. },
-                    ) => {
-                        admitted!(selection::bind_face_selection(
-                            targets,
-                            scope,
-                            groups,
-                            operands,
-                            &transition.topology.faces.updated,
-                        ));
-                    }
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Hole {
-                            face: Some(face), ..
-                        },
-                    ) => {
-                        bind_hole_face_selection(
-                            face,
-                            FaceSelectionBinding {
-                                feature_id,
-                                previous_state_id,
-                                operation_history_id: &history.id,
-                                scope,
-                                input_topologies: &mut *input_topologies,
-                            },
-                        );
-                    }
-                    _ => {}
                 }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::MoveFace { faces, .. },
+                ) => {
+                    selection::bind_face_selection(
+                        faces,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Thicken { faces, .. },
+                ) => {
+                    selection::bind_face_selection(
+                        faces,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
+                    selection::bind_body_recipe_face_selection(
+                        faces,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
+                ) => {
+                    bind_surface_stitch_face_selection(
+                        faces,
+                        FaceSelectionBinding {
+                            feature_id,
+                            previous_state_id,
+                            operation_history_id: &history.id,
+                            scope,
+                            input_topologies: &mut *input_topologies,
+                        },
+                        groups,
+                        entity_operands,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::SplitFace { targets, .. },
+                ) => {
+                    selection::bind_face_selection(
+                        targets,
+                        scope,
+                        groups,
+                        operands,
+                        &transition.topology.faces.updated,
+                    );
+                }
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Hole {
+                        face: Some(face), ..
+                    },
+                ) => {
+                    bind_hole_face_selection(
+                        face,
+                        FaceSelectionBinding {
+                            feature_id,
+                            previous_state_id,
+                            operation_history_id: &history.id,
+                            scope,
+                            input_topologies: &mut *input_topologies,
+                        },
+                    );
+                }
+                _ => {}
             }
         });
-        edit_result?;
     }
-    Ok(())
 }
 
 struct FaceSelectionBinding<'a> {

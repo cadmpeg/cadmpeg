@@ -9,14 +9,11 @@ use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::HashMap;
 
-fn split_face_case() -> Result<
-    (
-        Vec<cadmpeg_ir::features::Feature>,
-        cadmpeg_ir::ids::FaceId,
-        String,
-    ),
-    cadmpeg_core::CodecError,
-> {
+fn split_face_case() -> (
+    Vec<cadmpeg_ir::features::Feature>,
+    cadmpeg_ir::ids::FaceId,
+    String,
+) {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use crate::records::{
         feature::scope::DesignParameterScope,
@@ -192,15 +189,15 @@ fn split_face_case() -> Result<
             body_recipe_operands: &[],
             histories: &[history],
         },
-    )?;
+    );
 
-    Ok((features, face_id, group_id))
+    (features, face_id, group_id)
 }
 
 #[test]
 fn split_face_targets_bind_from_a_transition_predecessor() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-    let (features, face_id, group_id) = split_face_case().unwrap();
+    let (features, face_id, group_id) = split_face_case();
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -749,14 +746,11 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
 }
 
-fn hole_face_case() -> Result<
-    (
-        cadmpeg_ir::features::Feature,
-        Vec<cadmpeg_ir::features::FeatureInputTopology>,
-        cadmpeg_ir::features::FeatureId,
-    ),
-    cadmpeg_core::CodecError,
-> {
+fn hole_face_case() -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    cadmpeg_ir::features::FeatureId,
+) {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use crate::records::{
         feature::{
@@ -929,15 +923,15 @@ fn hole_face_case() -> Result<
             body_recipe_operands: &[],
             histories: &[history],
         },
-    )?;
+    );
 
-    Ok((feature, input_topologies, feature_id))
+    (feature, input_topologies, feature_id)
 }
 
 #[test]
 fn hole_face_selection_binds_to_the_feature_input_topology() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-    let (feature, input_topologies, feature_id) = hole_face_case().unwrap();
+    let (feature, input_topologies, feature_id) = hole_face_case();
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         face:
