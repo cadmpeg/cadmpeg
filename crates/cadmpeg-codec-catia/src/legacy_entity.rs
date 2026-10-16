@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity framing for the pre-`7C05` design stream.
 
+use std::collections::HashMap;
+
 use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 
@@ -525,9 +527,10 @@ fn parse_run_before(
 
         integer_values.append(&mut interval_integers);
     }
-    bind_value_names(data, &role_selectors, &text_fields, &mut scalar_values);
-    bind_value_names(data, &role_selectors, &text_fields, &mut string_values);
-    bind_value_names(data, &role_selectors, &text_fields, &mut integer_values);
+    let value_names = LegacyValueNames::new(data, &role_selectors, &text_fields);
+    bind_value_names(&value_names, &mut scalar_values);
+    bind_value_names(&value_names, &mut string_values);
+    bind_value_names(&value_names, &mut integer_values);
     let schema_program = parse_schema_program(data, catalog_offset, directory_offset);
     Some(LegacyEntityRun {
         catalog_offset,
@@ -832,12 +835,7 @@ impl LegacyNamedValue for LegacyIntegerValue {
 
 /// Bind the unique co-owned `name` text field onto every value packet that is
 /// the sole packet of its stored identity.
-fn bind_value_names<Value: LegacyNamedValue>(
-    data: &[u8],
-    roles: &[LegacyRoleSelector],
-    fields: &[LegacyTextField],
-    values: &mut [Value],
-) {
+fn bind_value_names<Value: LegacyNamedValue>(names: &LegacyValueNames<'_>, values: &mut [Value]) {
     let mut counts = std::collections::HashMap::<u32, usize>::new();
     for value in values.iter() {
         if let Some(count) = counts.get_mut(&value.entity_id()) {
@@ -850,9 +848,7 @@ fn bind_value_names<Value: LegacyNamedValue>(
         if counts.get(&value.entity_id()) != Some(&1) {
             continue;
         }
-        if let Some(name) =
-            unique_value_name(data, roles, fields, value.entity_id(), value.offset())
-        {
+        if let Some(name) = names.get(value.entity_id(), value.offset()) {
             value.bind_name(name.offset, name.value.clone());
         }
     }
@@ -933,62 +929,80 @@ fn parse_integer_values(
         .collect::<Vec<_>>()
 }
 
-fn unique_value_name<'a>(
-    data: &[u8],
-    roles: &[LegacyRoleSelector],
-    fields: &'a [LegacyTextField],
-    entity_id: u32,
-    value_offset: usize,
-) -> Option<&'a LegacyTextField> {
-    let mut names = fields.iter().filter(|field| {
-        field.entity_id == entity_id
-            && field
+/// Name bindings for one run. Duplicate roles or literal names map to `None`.
+struct LegacyValueNames<'a> {
+    literal_names: HashMap<u32, Option<&'a LegacyTextField>>,
+    evaluation_roles: HashMap<(u32, usize), Option<usize>>,
+    identifiers: HashMap<u32, Vec<&'a LegacyTextField>>,
+}
+
+impl<'a> LegacyValueNames<'a> {
+    fn new(data: &[u8], roles: &[LegacyRoleSelector], fields: &'a [LegacyTextField]) -> Self {
+        const EVALUATION_FIELD: &[u8] = b"\xe8\xc4\x17\x01\xfe\xfe";
+
+        let mut evaluation_roles = HashMap::new();
+        for role in roles {
+            if role.field_code != Some(0x17c4) {
+                continue;
+            }
+            let Some(end_offset) = role.end_offset() else {
+                continue;
+            };
+            let Some(value_offset) = end_offset.checked_add(EVALUATION_FIELD.len()) else {
+                continue;
+            };
+            if data.get(end_offset..value_offset) != Some(EVALUATION_FIELD) {
+                continue;
+            }
+            evaluation_roles
+                .entry((role.entity_id, value_offset))
+                .and_modify(|offset| *offset = None)
+                .or_insert(Some(role.offset));
+        }
+        let mut literal_names = HashMap::new();
+        let mut identifiers = HashMap::<u32, Vec<&LegacyTextField>>::new();
+        for field in fields {
+            if field
                 .role
                 .as_ref()
                 .is_some_and(|role| role.name.literal() == Some("name"))
-    });
-    if let Some(name) = names.next() {
-        return names.next().is_none().then_some(name);
+            {
+                literal_names
+                    .entry(field.entity_id)
+                    .and_modify(|name| *name = None)
+                    .or_insert(Some(field));
+            }
+            if valid_identifier(&field.value)
+                && field
+                    .role
+                    .as_ref()
+                    .is_some_and(|role| role.field_code == Some(0x1200))
+            {
+                identifiers.entry(field.entity_id).or_default().push(field);
+            }
+        }
+        for names in identifiers.values_mut() {
+            names.sort_by_key(|field| field.offset);
+        }
+        Self {
+            literal_names,
+            evaluation_roles,
+            identifiers,
+        }
     }
-    unique_evaluated_value_name(data, roles, fields, entity_id, value_offset)
-}
 
-fn unique_evaluated_value_name<'a>(
-    data: &[u8],
-    roles: &[LegacyRoleSelector],
-    fields: &'a [LegacyTextField],
-    entity_id: u32,
-    value_offset: usize,
-) -> Option<&'a LegacyTextField> {
-    const EVALUATION_FIELD: &[u8] = b"\xe8\xc4\x17\x01\xfe\xfe";
-
-    let mut evaluation_roles = roles.iter().filter(|role| {
-        role.entity_id == entity_id
-            && role.field_code == Some(0x17c4)
-            && role
-                .end_offset()
-                .and_then(|offset| offset.checked_add(EVALUATION_FIELD.len()))
-                == Some(value_offset)
-            && role
-                .end_offset()
-                .and_then(|offset| data.get(offset..value_offset))
-                == Some(EVALUATION_FIELD)
-    });
-    let evaluation_role = evaluation_roles.next()?;
-    if evaluation_roles.next().is_some() {
-        return None;
+    fn get(&self, entity_id: u32, value_offset: usize) -> Option<&'a LegacyTextField> {
+        if let Some(name) = self.literal_names.get(&entity_id) {
+            return *name;
+        }
+        let role_offset = self
+            .evaluation_roles
+            .get(&(entity_id, value_offset))?
+            .as_ref()?;
+        let names = self.identifiers.get(&entity_id)?;
+        let before_role = names.partition_point(|field| field.offset < *role_offset);
+        (before_role == 1).then(|| names.first().copied()).flatten()
     }
-    let mut names = fields.iter().filter(|field| {
-        field.entity_id == entity_id
-            && field.offset < evaluation_role.offset
-            && valid_identifier(&field.value)
-            && field
-                .role
-                .as_ref()
-                .is_some_and(|role| role.field_code == Some(0x1200))
-    });
-    let name = names.next()?;
-    names.next().is_none().then_some(name)
 }
 
 fn parse_relations(
