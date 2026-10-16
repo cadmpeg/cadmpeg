@@ -3924,7 +3924,7 @@ pub(super) fn feature_unlabeled_operation_body_writes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut writes = Vec::new();
     visit_feature_history_unlabeled_operation_records(
         container,
@@ -3984,7 +3984,7 @@ pub(super) fn feature_unlabeled_operation_body_writes(
 pub(super) fn feature_operation_body_writes(
     container: &Container,
 ) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut writes = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
@@ -4330,7 +4330,7 @@ pub(super) fn feature_operation_object_references(
             "operation-data-block-reference"
         }
     };
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -4390,7 +4390,7 @@ pub(super) fn feature_operation_object_references(
 pub(super) fn feature_operation_common_frames(
     container: &Container,
 ) -> Result<Vec<FeatureOperationCommonFrame>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -4447,7 +4447,7 @@ pub(super) fn feature_operation_terminal_frames(
     container: &Container,
     common_frames: &[FeatureOperationCommonFrame],
 ) -> Result<Vec<FeatureOperationTerminalFrame>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(
@@ -4968,7 +4968,7 @@ pub(super) fn feature_body_data_block_uses(
 pub(super) fn feature_input_blocks(
     container: &Container,
 ) -> Result<Vec<FeatureInputBlock>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut inputs = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -5336,7 +5336,7 @@ pub(super) fn feature_input_column_targets(
 pub(super) fn feature_datum_csys_constructions(
     container: &Container,
 ) -> Result<Vec<FeatureDatumCsysConstruction>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let inputs = feature_input_blocks(container)?;
     let mut constructions = Vec::new();
     let mut failure = None;
@@ -6215,7 +6215,7 @@ fn offset_data_block_bytes<'a>(
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
         return Ok(Cow::Borrowed(blocks));
     }
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
         return Ok(Cow::Borrowed(blocks));
     }
@@ -6659,7 +6659,7 @@ pub(super) fn offset_store_named_points(
 ) -> Result<Vec<OffsetStoreNamedPoint>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((_, _, records)) = section.as_offset_only() else {
             continue;
@@ -7132,7 +7132,7 @@ fn parse_sketch_point_name(value: &str) -> Option<u32> {
 pub(super) fn feature_sketch_references(
     container: &Container,
 ) -> Result<Vec<FeatureSketchReference>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     let mut failure = None;
     visit_feature_history_operation_records(

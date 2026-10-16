@@ -134,7 +134,7 @@ fn simple_hole_references_test(
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
-    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget());
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 8);
     let records = sections[0].as_fixed().expect("fixed store");

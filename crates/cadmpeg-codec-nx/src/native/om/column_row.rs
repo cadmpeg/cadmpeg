@@ -180,7 +180,7 @@ fn project_column_rows<R, F, T>(
 ) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections()?.into_iter().enumerate()
+        container.indexed_om_sections().into_iter().enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
             continue;

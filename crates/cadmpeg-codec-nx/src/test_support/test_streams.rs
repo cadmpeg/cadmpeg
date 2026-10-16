@@ -182,11 +182,17 @@ pub(crate) fn display_jt_basic_stream() -> Vec<u8> {
 /// object-type UUID, and tri-strip LOD header body decode
 /// `display_jt_shape_lod_elements` and `display_jt_tri_strip_lod_headers`.
 pub(crate) fn display_jt_shape_lod_stream() -> Vec<u8> {
+    display_jt_shape_lod_stream_with_representation(&[0xaa, 0xbb, 0xcc, 0xdd])
+}
+
+/// [`display_jt_shape_lod_stream`] with `representation` as the tri-strip
+/// LOD element's compressed representation.
+pub(crate) fn display_jt_shape_lod_stream_with_representation(representation: &[u8]) -> Vec<u8> {
     const TRI_STRIP_LOD_TYPE: [u8; 16] = [
         0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    // Tri-strip LOD header body: fixed version/binding fields then a short
+    // Tri-strip LOD header body: fixed version/binding fields then the
     // compressed-representation tail (only hashed, not decoded, by the header).
     let mut body = Vec::new();
     body.extend_from_slice(&1u16.to_le_bytes()); // base version
@@ -195,7 +201,7 @@ pub(crate) fn display_jt_shape_lod_stream() -> Vec<u8> {
     body.extend_from_slice(&1u16.to_le_bytes()); // topological mesh version
     body.extend_from_slice(&0u32.to_le_bytes()); // vertex records object id
     body.extend_from_slice(&1u16.to_le_bytes()); // compressed LOD version
-    body.extend_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]); // representation tail
+    body.extend_from_slice(representation); // representation tail
 
     let element = jt_scene_element(TRI_STRIP_LOD_TYPE, 4, 42, &body);
     let mut payload = element;
@@ -232,6 +238,29 @@ pub(crate) fn display_jt_shape_lod_stream() -> Vec<u8> {
     data.extend_from_slice(&7_u32.to_be_bytes()); // attribute type 7
     data.extend_from_slice(&segment);
     data
+}
+
+/// A JT Int32 packet whose arithmetic-coded lane declares one million values
+/// over a 65-entry probability table: 65 million decoder table lookups, above
+/// the per-lane work bound.
+pub(crate) fn jt_arithmetic_packet_above_the_work_bound() -> Vec<u8> {
+    let mut bits = Vec::new();
+    // Symbol, occurrence and value widths, then the value minimum.
+    for (value, width) in [(1_u32, 6), (0, 6), (0, 6), (0, 32)] {
+        bits.extend((0..width).rev().map(|shift| (value >> shift) & 1 != 0));
+    }
+    bits.extend([false; 65]);
+    let mut packet = 1_000_000_u32.to_le_bytes().to_vec();
+    packet.push(3); // arithmetic codec
+    packet.extend_from_slice(&0_u32.to_le_bytes()); // code bit length
+    packet.extend_from_slice(&65_u16.to_be_bytes()); // probability entries
+    for chunk in bits.chunks(8) {
+        let byte = chunk
+            .iter()
+            .fold(0_u8, |byte, bit| (byte << 1) | u8::from(*bit));
+        packet.push(byte << (8 - chunk.len()));
+    }
+    packet
 }
 
 /// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry whose single type-31

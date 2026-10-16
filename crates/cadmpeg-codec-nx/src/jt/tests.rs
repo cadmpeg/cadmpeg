@@ -3,14 +3,17 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::{decode_arithmetic, parse_probability_context};
+use super::{decode_arithmetic, parse_probability_context, ArithmeticWorkBound};
 use cadmpeg_ir::scalar::FiniteBinary32;
 
 fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, usize)> {
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::decode_int32_cdp2(ctx, bytes, depth).expect("the JT test stream decodes"),
+        |ctx| {
+            super::decode_int32_cdp2(ctx, &ArithmeticWorkBound::default(), bytes, depth)
+                .expect("the JT test stream decodes")
+        },
     )
 }
 
@@ -33,7 +36,7 @@ fn jt_int32_cdp2_refuses_nesting_at_caller_limit() {
             policy.limits.max_recursion_depth = 0;
         },
         |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
+            let error = super::decode_int32_cdp2(ctx, &ArithmeticWorkBound::default(), &packet, 0)
                 .expect_err("packet nesting exceeds zero levels");
             assert!(matches!(
                 error,
@@ -49,7 +52,10 @@ fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::frame_int32_cdp2(ctx, bytes, depth).expect("the JT test stream decodes"),
+        |ctx| {
+            super::frame_int32_cdp2(ctx, &ArithmeticWorkBound::default(), bytes, depth)
+                .expect("the JT test stream decodes")
+        },
     )
 }
 
@@ -63,9 +69,16 @@ fn decode_vertex_coordinates(
         bytes,
         |_| {},
         |ctx| {
-            super::decode_vertex_coordinates(ctx, bytes, count, ranges, bits)
-                .expect("the JT test stream decodes")
-                .map(|array| (array.values, array.hash, array.byte_len))
+            super::decode_vertex_coordinates(
+                ctx,
+                &ArithmeticWorkBound::default(),
+                bytes,
+                count,
+                ranges,
+                bits,
+            )
+            .expect("the JT test stream decodes")
+            .map(|array| (array.values, array.hash, array.byte_len))
         },
     )
 }
@@ -79,9 +92,15 @@ fn decode_vertex_texture_coordinates(
         bytes,
         |_| {},
         |ctx| {
-            super::decode_vertex_texture_coordinates(ctx, bytes, count, bits)
-                .expect("the JT test stream decodes")
-                .map(|array| (array.values, array.hash, array.byte_len))
+            super::decode_vertex_texture_coordinates(
+                ctx,
+                &ArithmeticWorkBound::default(),
+                bytes,
+                count,
+                bits,
+            )
+            .expect("the JT test stream decodes")
+            .map(|array| (array.values, array.hash, array.byte_len))
         },
     )
 }
@@ -95,7 +114,7 @@ fn decode_vertex_colors(
         bytes,
         |_| {},
         |ctx| {
-            super::decode_vertex_colors(ctx, bytes, count, bits)
+            super::decode_vertex_colors(ctx, &ArithmeticWorkBound::default(), bytes, count, bits)
                 .expect("the JT test stream decodes")
                 .map(|array| (array.values, array.hash, array.byte_len))
         },
@@ -106,7 +125,10 @@ fn decode_vertex_flags(bytes: &[u8], count: usize) -> Option<(Vec<u32>, usize)> 
     crate::test_support::with_decode_context_over(
         bytes,
         |_| {},
-        |ctx| super::decode_vertex_flags(ctx, bytes, count).expect("the JT test stream decodes"),
+        |ctx| {
+            super::decode_vertex_flags(ctx, &ArithmeticWorkBound::default(), bytes, count)
+                .expect("the JT test stream decodes")
+        },
     )
 }
 
@@ -297,7 +319,11 @@ fn jt_arithmetic_decode_bounds_table_lookup_work() {
         };
         65
     ];
-    assert!(decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries).is_none());
+    let work_bound = ArithmeticWorkBound::default();
+    assert!(
+        decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries, &work_bound).is_none()
+    );
+    assert!(work_bound.reached());
 }
 
 #[test]
@@ -321,7 +347,9 @@ fn jt_arithmetic_decode_rejects_normalization_past_declared_bits() {
     ];
     let code_word = 0x5555_0000_u32.to_le_bytes();
 
-    assert!(decode_arithmetic(&code_word, 16, 1, &entries).is_none());
+    let work_bound = ArithmeticWorkBound::default();
+    assert!(decode_arithmetic(&code_word, 16, 1, &entries, &work_bound).is_none());
+    assert!(!work_bound.reached());
 }
 
 #[test]
@@ -713,7 +741,31 @@ fn jt_arithmetic_local_work_limit_skips_the_lane() {
         };
         100
     ];
-    assert!(decode_arithmetic(&[], 0, 700_000, &entries).is_none());
+    let work_bound = ArithmeticWorkBound::default();
+    assert!(decode_arithmetic(&[], 0, 700_000, &entries, &work_bound).is_none());
+    assert!(work_bound.reached());
+}
+
+#[test]
+fn jt_packet_above_the_arithmetic_work_bound_marks_the_bound() {
+    let packet = crate::test_support::test_streams::jt_arithmetic_packet_above_the_work_bound();
+    crate::test_support::with_decode_context_over(
+        &packet,
+        |_| {},
+        |ctx| {
+            let decoded = ArithmeticWorkBound::default();
+            assert!(super::decode_int32_cdp2(ctx, &decoded, &packet, 0)
+                .expect("a bounded lane is not an error")
+                .is_none());
+            assert!(decoded.reached());
+
+            let framed = ArithmeticWorkBound::default();
+            assert!(super::frame_int32_cdp2(ctx, &framed, &packet, 0)
+                .expect("a bounded lane is not an error")
+                .is_none());
+            assert!(framed.reached());
+        },
+    );
 }
 
 fn single_symbol_probability_packet(raw: u32) -> (Vec<u8>, Vec<u8>) {

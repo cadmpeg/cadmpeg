@@ -124,6 +124,15 @@ loss_codes! {
     /// A record search reached its local work bound and skipped the records
     /// it was locating.
     SourceScanBounded => ("source.scan-bounded", Warning, ObjectRecordsUntransferred),
+    /// Indexed OM object records reached the identity graph work bound and
+    /// were kept without a stable identity.
+    ObjectRecordIdentityBounded => ("native.record-identity-bounded", Warning, MetadataNotTransferred),
+    /// An arithmetic-coded Display-JT lane reached its decoder work bound and
+    /// was left undecoded.
+    DisplayJtArithmeticLaneBounded => ("container.display-jt-arithmetic-lane-bounded", Warning, ObjectRecordsUntransferred),
+    /// A Display-JT polygon mesh did not resolve to a tessellation, so the
+    /// part's Display-JT tessellations were skipped.
+    DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
 }
@@ -213,6 +222,9 @@ mod tests {
                 "topology.face-loop-unresolved",
                 "annotation.semantic-order-unstatable",
                 "source.scan-bounded",
+                "native.record-identity-bounded",
+                "container.display-jt-arithmetic-lane-bounded",
+                "carrier.display-jt-tessellations-dropped",
                 "native.attachment-failed",
             ]
         );

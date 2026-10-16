@@ -96,9 +96,7 @@ fn data_block_control_form_route_projects_fixture() {
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container = crate::container::scan_bytes(file.as_slice()).expect("control form fixture");
-    container
-        .indexed_om_sections()
-        .expect("cached control form section");
+    container.indexed_om_sections();
     let forms = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_forms(ctx, &container)
     })
@@ -213,9 +211,7 @@ fn data_block_control_reference_route_projects_fixture() {
     )]);
     let container =
         crate::container::scan_bytes(file.as_slice()).expect("control reference fixture");
-    container
-        .indexed_om_sections()
-        .expect("cached control reference section");
+    container.indexed_om_sections();
     let references = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_references(ctx, &container)
     })
@@ -232,9 +228,7 @@ fn data_block_control_value_route_projects_fixture() {
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container =
         crate::container::scan_bytes(file.as_slice()).expect("offset-store control fixture");
-    container
-        .indexed_om_sections()
-        .expect("cached offset-store section");
+    container.indexed_om_sections();
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_values(ctx, &container)
     })
@@ -248,7 +242,7 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container = container::scan_bytes(file).expect("required invariant");
 
-    assert!((super::object_records(&container)).unwrap().is_empty());
+    assert!((super::object_records(&container)).unwrap().0.is_empty());
     let blocks = super::data_blocks(&container).unwrap();
     assert_eq!(blocks.len(), 3);
     assert_eq!(blocks[0].block_ordinal, 0);
@@ -398,9 +392,7 @@ fn data_block_control_index_value_route_projects_fixture() {
     )]);
     let container =
         crate::container::scan_bytes(file.as_slice()).expect("product-anchored control fixture");
-    container
-        .indexed_om_sections()
-        .expect("cached product-anchored section");
+    container.indexed_om_sections();
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_index_values(ctx, &container)
     })
@@ -420,9 +412,7 @@ fn data_block_control_index_value_resolves_in_range_target() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
     let container =
         crate::container::scan_bytes(file.as_slice()).expect("in-range control target fixture");
-    container
-        .indexed_om_sections()
-        .expect("cached in-range section");
+    container.indexed_om_sections();
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_index_values(ctx, &container)
     })

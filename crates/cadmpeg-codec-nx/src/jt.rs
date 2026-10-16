@@ -5,6 +5,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteBinary32;
 use serde::{Deserialize, Serialize};
+use std::cell::Cell;
 
 /// Ordered finite endpoints of one JT binary32 quantization interval.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -260,6 +261,7 @@ fn deering_normal(
 /// Decode one JT compressed normal array and its trailing hash.
 pub(crate) fn decode_vertex_normals(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
@@ -273,11 +275,19 @@ pub(crate) fn decode_vertex_normals(
         let normals = if expected_bits == 0 {
             let mut components = Vec::new();
             for _ in 0..3 {
-                let (exponents, exponent_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (exponents, exponent_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(exponent_len)?;
-                let (mantissae, mantissa_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (mantissae, mantissa_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(mantissa_len)?;
                 if exponents.len() != count || mantissae.len() != count {
                     return None;
@@ -292,8 +302,12 @@ pub(crate) fn decode_vertex_normals(
         } else {
             let mut codes = Vec::new();
             for _ in 0..4 {
-                let (values, byte_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (values, byte_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(byte_len)?;
                 if values.len() != count {
                     return None;
@@ -328,6 +342,7 @@ pub(crate) fn decode_vertex_normals(
 /// Decode one JT compressed texture-coordinate array and its trailing hash.
 pub(crate) fn decode_vertex_texture_coordinates(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
@@ -346,11 +361,19 @@ pub(crate) fn decode_vertex_texture_coordinates(
         let mut components = Vec::new();
         if expected_bits == 0 {
             for _ in 0..component_count {
-                let (exponents, exponent_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (exponents, exponent_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(exponent_len)?;
-                let (mantissae, mantissa_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (mantissae, mantissa_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(mantissa_len)?;
                 if exponents.len() != count || mantissae.len() != count {
                     return None;
@@ -370,8 +393,12 @@ pub(crate) fn decode_vertex_texture_coordinates(
                 cursor = cursor.checked_add(9)?;
             }
             for range in ranges {
-                let (residuals, byte_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (residuals, byte_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(byte_len)?;
                 if residuals.len() != count {
                     return None;
@@ -412,6 +439,7 @@ pub(crate) fn decode_vertex_texture_coordinates(
 /// Decode one JT compressed color array as RGBA values and its trailing hash.
 pub(crate) fn decode_vertex_colors(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
@@ -430,11 +458,19 @@ pub(crate) fn decode_vertex_colors(
         let colors = if expected_bits == 0 {
             let mut components = Vec::new();
             for _ in 0..component_count {
-                let (exponents, exponent_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (exponents, exponent_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(exponent_len)?;
-                let (mantissae, mantissa_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (mantissae, mantissa_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(mantissa_len)?;
                 if exponents.len() != count || mantissae.len() != count {
                     return None;
@@ -491,8 +527,12 @@ pub(crate) fn decode_vertex_colors(
             }
             let mut components = Vec::new();
             for component in 0..4 {
-                let (residuals, byte_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
+                let (residuals, byte_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(cursor..)?,
+                    0
+                ))?;
                 cursor = cursor.checked_add(byte_len)?;
                 if residuals.len() != count {
                     return None;
@@ -563,6 +603,7 @@ fn hsv_to_rgb(
 /// Decode one JT compressed vertex-flag array.
 pub(crate) fn decode_vertex_flags(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     bytes: &[u8],
     expected_count: usize,
 ) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
@@ -571,7 +612,8 @@ pub(crate) fn decode_vertex_flags(
         if count != expected_count {
             return None;
         }
-        let (values, byte_len) = propagate_resource!(decode_int32_cdp2(ctx, bytes.get(4..)?, 0))?;
+        let (values, byte_len) =
+            propagate_resource!(decode_int32_cdp2(ctx, work_bound, bytes.get(4..)?, 0))?;
         if values.len() != count {
             return None;
         }
@@ -606,74 +648,86 @@ fn dequantize_uniform(code: u32, range: QuantizedRange, bits: u8) -> Option<Fini
 /// Decode the component vectors and hash of one JT vertex-coordinate array.
 pub(crate) fn decode_vertex_coordinates(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     bytes: &[u8],
     vertex_count: usize,
     ranges: [QuantizedRange; 3],
     quantization_bits: [u8; 3],
 ) -> Result<Option<DecodedVertexArray<[FiniteBinary32; 3]>>, CodecError> {
-    let decoded: Option<Result<_, CodecError>> = (|| {
-        let mut cursor = 0usize;
-        let mut components = Vec::new();
-        for component in 0..3 {
-            if quantization_bits[component] == 0 {
-                let (exponent_residuals, exponent_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
-                cursor = cursor.checked_add(exponent_len)?;
-                let (mantissa_residuals, mantissa_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
-                cursor = cursor.checked_add(mantissa_len)?;
-                if exponent_residuals.len() != vertex_count
-                    || mantissa_residuals.len() != vertex_count
-                {
-                    return None;
-                }
-                components.push(lossless_coordinate_component(
-                    &unpack_predictor(&exponent_residuals, Predictor::Lag1),
-                    &unpack_predictor(&mantissa_residuals, Predictor::Lag1),
-                )?);
-            } else {
-                let (residuals, byte_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, 0))?;
-                cursor = cursor.checked_add(byte_len)?;
-                if residuals.len() != vertex_count {
-                    return None;
-                }
-                let mut values = Vec::new();
-                for code in unpack_predictor(&residuals, Predictor::Lag1)
-                    .iter()
-                    .copied()
-                {
-                    values.push(dequantize_uniform(
-                        u32::try_from(code).ok()?,
-                        ranges[component],
-                        quantization_bits[component],
+    let decoded: Option<Result<_, CodecError>> =
+        (|| {
+            let mut cursor = 0usize;
+            let mut components = Vec::new();
+            for component in 0..3 {
+                if quantization_bits[component] == 0 {
+                    let (exponent_residuals, exponent_len) = propagate_resource!(
+                        decode_int32_cdp2(ctx, work_bound, bytes.get(cursor..)?, 0)
+                    )?;
+                    cursor = cursor.checked_add(exponent_len)?;
+                    let (mantissa_residuals, mantissa_len) = propagate_resource!(
+                        decode_int32_cdp2(ctx, work_bound, bytes.get(cursor..)?, 0)
+                    )?;
+                    cursor = cursor.checked_add(mantissa_len)?;
+                    if exponent_residuals.len() != vertex_count
+                        || mantissa_residuals.len() != vertex_count
+                    {
+                        return None;
+                    }
+                    components.push(lossless_coordinate_component(
+                        &unpack_predictor(&exponent_residuals, Predictor::Lag1),
+                        &unpack_predictor(&mantissa_residuals, Predictor::Lag1),
                     )?);
+                } else {
+                    let (residuals, byte_len) = propagate_resource!(decode_int32_cdp2(
+                        ctx,
+                        work_bound,
+                        bytes.get(cursor..)?,
+                        0
+                    ))?;
+                    cursor = cursor.checked_add(byte_len)?;
+                    if residuals.len() != vertex_count {
+                        return None;
+                    }
+                    let mut values = Vec::new();
+                    for code in unpack_predictor(&residuals, Predictor::Lag1)
+                        .iter()
+                        .copied()
+                    {
+                        values.push(dequantize_uniform(
+                            u32::try_from(code).ok()?,
+                            ranges[component],
+                            quantization_bits[component],
+                        )?);
+                    }
+                    components.push(values);
                 }
-                components.push(values);
             }
-        }
-        let coordinate_hash = read_u32(bytes, cursor)?;
-        cursor = cursor.checked_add(4)?;
-        let mut points = Vec::new();
-        for index in 0..vertex_count {
-            points.push([
-                *components.first()?.get(index)?,
-                *components.get(1)?.get(index)?,
-                *components.get(2)?.get(index)?,
-            ]);
-        }
-        Some(Ok(DecodedVertexArray {
-            values: points,
-            hash: coordinate_hash,
-            byte_len: cursor,
-        }))
-    })();
+            let coordinate_hash = read_u32(bytes, cursor)?;
+            cursor = cursor.checked_add(4)?;
+            let mut points = Vec::new();
+            for index in 0..vertex_count {
+                points.push([
+                    *components.first()?.get(index)?,
+                    *components.get(1)?.get(index)?,
+                    *components.get(2)?.get(index)?,
+                ]);
+            }
+            Some(Ok(DecodedVertexArray {
+                values: points,
+                hash: coordinate_hash,
+                byte_len: cursor,
+            }))
+        })();
     decoded.transpose()
 }
 
 /// Bound one complete JT Int32 Compressed Data Packet Mk. 2 without interpreting its symbols.
+///
+/// An arithmetic-coded lane above [`MAX_ARITHMETIC_WORK`] leaves the packet
+/// unframed and marks `work_bound`.
 pub(crate) fn frame_int32_cdp2(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     bytes: &[u8],
     depth: u8,
 ) -> Result<Option<(u32, u8, usize)>, CodecError> {
@@ -693,8 +747,12 @@ pub(crate) fn frame_int32_cdp2(
         if codec == 4 {
             let &chop_bits = bytes.get(5)?;
             if chop_bits == 0 {
-                let (nested_count, _, nested_len) =
-                    propagate_resource!(frame_int32_cdp2(ctx, bytes.get(6..)?, depth + 1))?;
+                let (nested_count, _, nested_len) = propagate_resource!(frame_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(6..)?,
+                    depth + 1
+                ))?;
                 return (nested_count == value_count).then_some(Ok((
                     value_count,
                     codec,
@@ -705,10 +763,18 @@ pub(crate) fn frame_int32_cdp2(
             if chop_bits > span_bits || span_bits > 32 {
                 return None;
             }
-            let (msb_count, _, msb_len) =
-                propagate_resource!(frame_int32_cdp2(ctx, bytes.get(11..)?, depth + 1))?;
-            let (lsb_count, _, lsb_len) =
-                propagate_resource!(frame_int32_cdp2(ctx, bytes.get(11 + msb_len..)?, depth + 1))?;
+            let (msb_count, _, msb_len) = propagate_resource!(frame_int32_cdp2(
+                ctx,
+                work_bound,
+                bytes.get(11..)?,
+                depth + 1
+            ))?;
+            let (lsb_count, _, lsb_len) = propagate_resource!(frame_int32_cdp2(
+                ctx,
+                work_bound,
+                bytes.get(11 + msb_len..)?,
+                depth + 1
+            ))?;
             return (msb_count == value_count && lsb_count == value_count)
                 .then_some((value_count, codec, 11 + msb_len + lsb_len))
                 .map(Ok);
@@ -731,10 +797,15 @@ pub(crate) fn frame_int32_cdp2(
             code_bit_len,
             usize::try_from(value_count).ok()?,
             &entries,
+            work_bound,
         )?;
         let escape_count = symbols.iter().filter(|value| value.is_none()).count();
-        let (out_of_band_count, _, out_of_band_len) =
-            propagate_resource!(frame_int32_cdp2(ctx, bytes.get(cursor..)?, depth + 1))?;
+        let (out_of_band_count, _, out_of_band_len) = propagate_resource!(frame_int32_cdp2(
+            ctx,
+            work_bound,
+            bytes.get(cursor..)?,
+            depth + 1
+        ))?;
         if usize::try_from(out_of_band_count).ok()? != escape_count {
             return None;
         }
@@ -826,13 +897,25 @@ impl CodeBits<'_> {
 /// Upper bound on values a single arithmetic-coded lane may declare.
 const MAX_ARITHMETIC_VALUES: usize = 1_000_000;
 /// Upper bound on arithmetic decoder table lookups for one lane.
-const MAX_ARITHMETIC_WORK: usize = 64_000_000;
+pub(crate) const MAX_ARITHMETIC_WORK: usize = 64_000_000;
+
+/// Whether any arithmetic-coded lane was left undecoded at
+/// [`MAX_ARITHMETIC_WORK`].
+#[derive(Debug, Default)]
+pub(crate) struct ArithmeticWorkBound(Cell<bool>);
+
+impl ArithmeticWorkBound {
+    pub(crate) fn reached(&self) -> bool {
+        self.0.get()
+    }
+}
 
 fn decode_arithmetic(
     code_words: &[u8],
     code_bit_len: usize,
     value_count: usize,
     entries: &[ProbabilityEntry],
+    work_bound: &ArithmeticWorkBound,
 ) -> Option<Vec<Option<i32>>> {
     // Arithmetic symbols can consume zero code bits, so the stream length puts
     // no floor under `value_count`; an absolute cap bounds the allocation and
@@ -840,11 +923,15 @@ fn decode_arithmetic(
     if value_count > MAX_ARITHMETIC_VALUES {
         return None;
     }
-    // A lane above the lookup ceiling is left undecoded.
-    entries
+    // A lane above the lookup ceiling is left undecoded and marks the bound.
+    let within_work = entries
         .len()
         .checked_mul(value_count)
-        .filter(|work| *work <= MAX_ARITHMETIC_WORK)?;
+        .is_some_and(|work| work <= MAX_ARITHMETIC_WORK);
+    if !within_work {
+        work_bound.0.set(true);
+        return None;
+    }
     let total: u32 = entries
         .iter()
         .try_fold(0u32, |sum, entry| sum.checked_add(entry.occurrence_count))?;
@@ -979,8 +1066,12 @@ fn decode_bitlength(
 }
 
 /// Decode one complete JT Int32 Compressed Data Packet Mk. 2.
+///
+/// An arithmetic-coded lane above [`MAX_ARITHMETIC_WORK`] leaves the packet
+/// undecoded and marks `work_bound`.
 pub(crate) fn decode_int32_cdp2(
     ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
     bytes: &[u8],
     depth: u8,
 ) -> Result<Option<(Vec<i32>, usize)>, CodecError> {
@@ -1000,8 +1091,12 @@ pub(crate) fn decode_int32_cdp2(
         if codec == 4 {
             let &chop_bits = bytes.get(5)?;
             if chop_bits == 0 {
-                let (values, nested_len) =
-                    propagate_resource!(decode_int32_cdp2(ctx, bytes.get(6..)?, depth + 1))?;
+                let (values, nested_len) = propagate_resource!(decode_int32_cdp2(
+                    ctx,
+                    work_bound,
+                    bytes.get(6..)?,
+                    depth + 1
+                ))?;
                 return (values.len() == value_count).then_some(Ok((values, 6 + nested_len)));
             }
             let bias = read_u32(bytes, 6)?.cast_signed();
@@ -1009,10 +1104,15 @@ pub(crate) fn decode_int32_cdp2(
             if chop_bits > span_bits || span_bits > 32 {
                 return None;
             }
-            let (msb, msb_len) =
-                propagate_resource!(decode_int32_cdp2(ctx, bytes.get(11..)?, depth + 1))?;
+            let (msb, msb_len) = propagate_resource!(decode_int32_cdp2(
+                ctx,
+                work_bound,
+                bytes.get(11..)?,
+                depth + 1
+            ))?;
             let (lsb, lsb_len) = propagate_resource!(decode_int32_cdp2(
                 ctx,
+                work_bound,
                 bytes.get(11 + msb_len..)?,
                 depth + 1
             ))?;
@@ -1054,10 +1154,15 @@ pub(crate) fn decode_int32_cdp2(
         }
         let (entries, context_len) = parse_probability_context(bytes.get(cursor..)?)?;
         cursor += context_len;
-        let symbols = decode_arithmetic(code_words, code_bit_len, value_count, &entries)?;
+        let symbols =
+            decode_arithmetic(code_words, code_bit_len, value_count, &entries, work_bound)?;
         let escape_count = symbols.iter().filter(|value| value.is_none()).count();
-        let (out_of_band, oob_len) =
-            propagate_resource!(decode_int32_cdp2(ctx, bytes.get(cursor..)?, depth + 1))?;
+        let (out_of_band, oob_len) = propagate_resource!(decode_int32_cdp2(
+            ctx,
+            work_bound,
+            bytes.get(cursor..)?,
+            depth + 1
+        ))?;
         if out_of_band.len() != escape_count {
             return None;
         }

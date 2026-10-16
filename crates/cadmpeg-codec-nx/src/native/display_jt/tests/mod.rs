@@ -9,8 +9,13 @@ fn with_jt_context<T>(
 
 fn high_degree_lane_count(representation: &[u8], bindings: u64) -> Option<usize> {
     crate::test_support::with_decode_context(|ctx| {
-        super::jt9_topology_high_degree_lane_count(ctx, representation, bindings)
-            .expect("compute the JT9 topology high degree lane count")
+        super::jt9_topology_high_degree_lane_count(
+            ctx,
+            &crate::jt::ArithmeticWorkBound::default(),
+            representation,
+            bindings,
+        )
+        .expect("compute the JT9 topology high degree lane count")
     })
 }
 
@@ -1337,8 +1342,13 @@ fn jt9_topology_lookahead_returns_packet_nesting_refusal() {
             policy.limits.max_recursion_depth = 0;
         },
         |ctx| {
-            let error = super::jt9_topology_high_degree_lane_count(ctx, &representation, 10)
-                .expect_err("the packet frame exceeds the nesting limit");
+            let error = super::jt9_topology_high_degree_lane_count(
+                ctx,
+                &crate::jt::ArithmeticWorkBound::default(),
+                &representation,
+                10,
+            )
+            .expect_err("the packet frame exceeds the nesting limit");
             assert!(matches!(
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1777,8 +1787,13 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
     }];
 
     let sequences = crate::test_support::with_decode_context(|ctx| {
-        display_jt_topology_packet_sequences(ctx, &container, &elements)
-            .expect("compute the display JT topology packet sequences")
+        display_jt_topology_packet_sequences(
+            ctx,
+            &crate::jt::ArithmeticWorkBound::default(),
+            &container,
+            &elements,
+        )
+        .expect("compute the display JT topology packet sequences")
     })
     .sequences;
     assert_eq!(sequences.len(), 1);
@@ -1787,6 +1802,45 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
         .packets
         .iter()
         .all(|packet| packet.values == Some(Vec::new())));
+}
+
+#[test]
+fn display_jt_lane_above_the_arithmetic_work_bound_reports_its_loss() {
+    use crate::test_support::test_streams::{
+        display_jt_shape_lod_stream_with_representation, jt_arithmetic_packet_above_the_work_bound,
+        partition_stream,
+    };
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            crate::test_support::test_bytes::zlib_compress(&partition_stream()),
+        ),
+        (
+            "/Root/UG_PART/DisplayJT",
+            display_jt_shape_lod_stream_with_representation(
+                &jt_arithmetic_packet_above_the_work_bound(),
+            ),
+        ),
+    ]);
+    let result = crate::NxCodec
+        .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+        .expect("a bounded JT lane is not a decode error");
+
+    let namespace = result.ir().native.namespace("nx").expect("NX records");
+    assert!(!namespace.arenas()["display_jt_shape_lod_elements"].is_empty());
+    assert!(namespace
+        .arenas()
+        .get("display_jt_initial_face_degree_symbols")
+        .is_none_or(Vec::is_empty));
+    let bounded = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::NxLossCode::DisplayJtArithmeticLaneBounded.kind())
+        .count();
+    assert_eq!(bounded, 1);
 }
 
 mod scene_admission;

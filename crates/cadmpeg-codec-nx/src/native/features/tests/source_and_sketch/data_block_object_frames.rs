@@ -18,9 +18,7 @@ fn data_block_object_frame_route_admits_fixture() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
     let container = crate::container::scan_bytes(file.as_slice())
         .expect("synthetic data block object frame container");
-    container
-        .indexed_om_sections()
-        .expect("cached offset-store source");
+    container.indexed_om_sections();
     let records =
         crate::test_support::with_decode_context(|ctx| data_block_object_frames(ctx, &container))
             .expect("data block object frame projection");
