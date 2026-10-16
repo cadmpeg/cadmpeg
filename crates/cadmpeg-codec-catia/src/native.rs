@@ -3051,6 +3051,13 @@ impl CatiaEntityReference {
         }
     }
 
+    /// Bytes of entity and class text the reference holds.
+    fn text_len(&self) -> Option<usize> {
+        self.entity()
+            .map_or(0, str::len)
+            .checked_add(self.class_name().map_or(0, str::len))
+    }
+
     #[cfg(test)]
     fn with_entity_id(self, entity_id: u32) -> Self {
         match self {
@@ -5639,24 +5646,32 @@ fn entity_suffix_framing(suffix: &[u8]) -> Option<CatiaEntitySuffixFraming> {
     Some(framing)
 }
 
-fn object_production(
+fn object_production<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &CatiaEntityRecord,
-    object: &CatiaObjectRecord,
+    object: &'a CatiaObjectRecord,
     references: &CatiaEntityReferenceIndex<'_>,
     expressions: &HashMap<String, String>,
     expression_entities: &CatiaRelationExpressionEntityIndex,
-    parameters: &CatiaParameterBindingIndex,
-) -> Option<CatiaEntityObjectProduction> {
-    if let Some(instance) = relation_program_instance(
-        entity.entity_id,
-        object,
-        references,
-        expression_entities,
-        parameters,
-    ) {
-        return Some(CatiaEntityObjectProduction::RelationProgramInstance(
+    dependencies: &mut RelationDependencies<'a>,
+) -> Result<Option<CatiaEntityObjectProduction>, CodecError> {
+    if let Some((mut instance, selected_expression)) =
+        relation_program_instance(entity.entity_id, object, references, expression_entities)
+    {
+        if let Some((program_entity_id, expression)) = selected_expression {
+            instance.parameter_dependencies = dependencies.of(
+                ctx,
+                RelationExpressionKey::Entity(&object.parent, program_entity_id),
+                &expression.source,
+                &object.parent,
+            )?;
+            instance.inputs = expression.signature.as_ref().and_then(|signature| {
+                resolved_relation_program_inputs(signature, &instance.parameter_dependencies)
+            });
+        }
+        return Ok(Some(CatiaEntityObjectProduction::RelationProgramInstance(
             instance,
-        ));
+        )));
     }
     if let Some(record) = schema_configuration_record(
         entity.entity_id,
@@ -5666,8 +5681,8 @@ fn object_production(
         references.classes,
         references.terminal_nulls,
     ) {
-        return Some(CatiaEntityObjectProduction::SchemaConfigurationRecord(
-            record,
+        return Ok(Some(
+            CatiaEntityObjectProduction::SchemaConfigurationRecord(record),
         ));
     }
     if let Some(link) = schema_configuration_row_link(
@@ -5677,28 +5692,39 @@ fn object_production(
         references.classes,
         references.terminal_nulls,
     ) {
-        return Some(CatiaEntityObjectProduction::SchemaConfigurationRowLink(
-            link,
+        return Ok(Some(
+            CatiaEntityObjectProduction::SchemaConfigurationRowLink(link),
         ));
     }
-    formula_relation(
+    let Some((mut relation, expression_object, source)) = formula_relation(
         &entity.definition_schema_selections,
         entity.entity_id,
         object,
         expressions,
         references,
-        parameters,
-    )
-    .map(CatiaEntityObjectProduction::FormulaRelation)
+    ) else {
+        return Ok(None);
+    };
+    relation.parameter_dependencies = dependencies.of(
+        ctx,
+        RelationExpressionKey::ObjectRecord(expression_object),
+        source,
+        &object.parent,
+    )?;
+    Ok(Some(CatiaEntityObjectProduction::FormulaRelation(relation)))
 }
 
-fn relation_program_instance(
+/// A relation-program instance frame without its parameter dependencies or
+/// inputs, and the program entity and expression the frame selects.
+fn relation_program_instance<'e>(
     entity_id: u32,
     object: &CatiaObjectRecord,
     entity_references: &CatiaEntityReferenceIndex<'_>,
-    relation_expressions: &CatiaRelationExpressionEntityIndex,
-    parameter_bindings: &CatiaParameterBindingIndex,
-) -> Option<CatiaRelationProgramInstance> {
+    relation_expressions: &'e CatiaRelationExpressionEntityIndex,
+) -> Option<(
+    CatiaRelationProgramInstance,
+    Option<(u32, &'e CatiaRelationExpressionEntity)>,
+)> {
     if object.entity_id() != Some(entity_id)
         || object.owner_entity_id().is_none()
         || object.class_ref().is_none()
@@ -5743,18 +5769,6 @@ fn relation_program_instance(
         };
 
     let selected_expression = relation_expressions.get(&(object.parent.clone(), program_entity_id));
-    let parameter_dependencies = if let Some(expression) = selected_expression {
-        relation_parameter_dependencies(&expression.source, &object.parent, parameter_bindings)
-    } else {
-        Vec::new()
-    };
-    let inputs = if let Some(signature) =
-        selected_expression.and_then(|expression| expression.signature.as_ref())
-    {
-        resolved_relation_program_inputs(signature, &parameter_dependencies)
-    } else {
-        None
-    };
     let mut reference_incidences = Vec::new();
     for field in &object.payload.fields {
         let PayloadField::Reference { value, offset } = field else {
@@ -5772,7 +5786,7 @@ fn relation_program_instance(
             reference,
         });
     }
-    Some(CatiaRelationProgramInstance {
+    let instance = CatiaRelationProgramInstance {
         framing,
         program_entity: entity_reference(
             &object.parent,
@@ -5790,9 +5804,13 @@ fn relation_program_instance(
         ),
         reference_incidences,
         relation_expression: selected_expression.map(|expression| expression.entity.clone()),
-        parameter_dependencies,
-        inputs,
-    })
+        parameter_dependencies: Vec::new(),
+        inputs: None,
+    };
+    Some((
+        instance,
+        selected_expression.map(|expression| (program_entity_id, expression)),
+    ))
 }
 
 fn entity_reference(
@@ -6123,14 +6141,15 @@ fn relation_program_instance_lead_54(
     Some((*program_entity_id, *repeated_target, *trailing_entity_id))
 }
 
-fn formula_relation(
+/// A formula relation without its parameter dependencies, and the expression
+/// object and source text it selects.
+fn formula_relation<'a, 'e>(
     definitions: &[CatiaDefinitionSchemaSelection],
     entity_id: u32,
-    object: &CatiaObjectRecord,
-    relation_expressions: &HashMap<String, String>,
+    object: &'a CatiaObjectRecord,
+    relation_expressions: &'e HashMap<String, String>,
     entity_references: &CatiaEntityReferenceIndex<'_>,
-    parameter_bindings: &CatiaParameterBindingIndex,
-) -> Option<CatiaFormulaRelation> {
+) -> Option<(CatiaFormulaRelation, &'a str, &'e str)> {
     let [definition0, definition1] = definitions else {
         return None;
     };
@@ -6167,9 +6186,7 @@ fn formula_relation(
     }
     let expression_object = expression_reference.target()?;
     let source = relation_expressions.get(expression_object)?;
-    let parameter_dependencies =
-        relation_parameter_dependencies(source, &object.parent, parameter_bindings);
-    Some(CatiaFormulaRelation {
+    let relation = CatiaFormulaRelation {
         expression_entity: CatiaPayloadEntityReference {
             payload_offset: u64_from_index(*expression_offset),
             reference: entity_reference(
@@ -6198,8 +6215,9 @@ fn formula_relation(
                 }
             },
         },
-        parameter_dependencies,
-    })
+        parameter_dependencies: Vec::new(),
+    };
+    Some((relation, expression_object, source))
 }
 
 type CatiaRelationExpressionIndex = HashMap<String, String>;
@@ -6318,29 +6336,75 @@ fn semantic_entity_indices(
     ))
 }
 
-fn relation_parameter_dependencies(
-    source: &str,
-    graph: &str,
-    parameter_bindings: &CatiaParameterBindingIndex,
-) -> Vec<CatiaRelationParameterDependency> {
-    let mut dependencies = Vec::new();
-    for (source_offset, symbol) in relation_symbols(source) {
-        let mut candidates = Vec::new();
-        if let Some(bound) = parameter_bindings
-            .get(graph)
-            .and_then(|bindings| bindings.get(&symbol))
-        {
-            for candidate in bound {
-                candidates.push(candidate.clone());
+/// One relation expression, as a relation selects it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum RelationExpressionKey<'a> {
+    /// A formula expression selected by its object record.
+    ObjectRecord(&'a str),
+    /// A program expression selected by its graph and entity identity.
+    Entity(&'a str, u32),
+}
+
+/// Parameter dependencies of relation expressions.
+///
+/// Each expression is scanned for symbols once. Every relation copies the
+/// dependencies into its own record, so each copy charges its text as
+/// retained bytes before it is built.
+struct RelationDependencies<'a> {
+    parameter_bindings: &'a CatiaParameterBindingIndex,
+    symbols: HashMap<RelationExpressionKey<'a>, Vec<(u64, String)>>,
+}
+
+impl<'a> RelationDependencies<'a> {
+    fn new(parameter_bindings: &'a CatiaParameterBindingIndex) -> Self {
+        Self {
+            parameter_bindings,
+            symbols: HashMap::new(),
+        }
+    }
+
+    fn of(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        expression: RelationExpressionKey<'a>,
+        source: &str,
+        graph: &str,
+    ) -> Result<Vec<CatiaRelationParameterDependency>, CodecError> {
+        let symbols = self
+            .symbols
+            .entry(expression)
+            .or_insert_with(|| relation_symbols(source));
+        let bindings = self.parameter_bindings.get(graph);
+        let bound = |symbol: &str| {
+            bindings
+                .and_then(|bindings| bindings.get(symbol))
+                .map_or(&[][..], Vec::as_slice)
+        };
+        let mut retained = Some(0usize);
+        for (_, symbol) in symbols.iter() {
+            retained = retained.and_then(|total| total.checked_add(symbol.len()));
+            for candidate in bound(symbol) {
+                retained = retained
+                    .zip(candidate.text_len())
+                    .and_then(|(total, text)| total.checked_add(text));
             }
         }
-        dependencies.push(CatiaRelationParameterDependency {
-            source_offset,
-            symbol,
-            candidates,
-        });
+        let retained = retained.ok_or_else(|| {
+            CodecError::malformed("CATIA relation dependency text overflows usize")
+        })?;
+        ctx.retain_bytes(
+            u64_from_index(retained),
+            "retain CATIA relation parameter dependencies",
+        )?;
+        Ok(symbols
+            .iter()
+            .map(|(source_offset, symbol)| CatiaRelationParameterDependency {
+                source_offset: *source_offset,
+                symbol: symbol.clone(),
+                candidates: bound(symbol).to_vec(),
+            })
+            .collect())
     }
-    dependencies
 }
 
 /// Signature inputs keyed by parameter name.
@@ -6349,19 +6413,29 @@ fn relation_parameter_dependencies(
 /// parameter followed by optional ASCII whitespace and either nothing or a
 /// `/` and one or more ASCII digits.
 pub(crate) struct RelationInputIndex<'a> {
-    by_parameter: HashMap<&'a str, Vec<usize>>,
+    /// Inputs keyed by parameter without its trailing ASCII whitespace, each
+    /// with that trailing whitespace.
+    by_trimmed_parameter: HashMap<&'a str, Vec<(usize, &'a str)>>,
+}
+
+fn is_relation_space(character: char) -> bool {
+    character.is_ascii_whitespace()
 }
 
 impl<'a> RelationInputIndex<'a> {
     pub(crate) fn new(inputs: &'a [CatiaRelationTypeInput]) -> Self {
-        let mut by_parameter = HashMap::<&str, Vec<usize>>::new();
+        let mut by_trimmed_parameter = HashMap::<&str, Vec<(usize, &str)>>::new();
         for (index, input) in inputs.iter().enumerate() {
-            by_parameter
-                .entry(input.parameter.as_str())
+            let parameter = input.parameter.as_str();
+            let trimmed = parameter.trim_end_matches(is_relation_space);
+            by_trimmed_parameter
+                .entry(trimmed)
                 .or_default()
-                .push(index);
+                .push((index, &parameter[trimmed.len()..]));
         }
-        Self { by_parameter }
+        Self {
+            by_trimmed_parameter,
+        }
     }
 
     /// Indices of the inputs `dependency` matches, unordered.
@@ -6370,9 +6444,8 @@ impl<'a> RelationInputIndex<'a> {
         dependency: &'s CatiaRelationParameterDependency,
     ) -> impl Iterator<Item = usize> + 's {
         let symbol = dependency.symbol.as_str();
-        let is_space = |character: char| character.is_ascii_whitespace();
         // A parameter ends where the rest of the symbol is whitespace ...
-        let trailing_space = symbol.trim_end_matches(is_space).len()..=symbol.len();
+        let trailing_space = Some(symbol);
         // ... or whitespace and then a final `/` ordinal.
         let before_ordinal = symbol
             .rfind('/')
@@ -6380,12 +6453,27 @@ impl<'a> RelationInputIndex<'a> {
                 let ordinal = &symbol[slash + 1..];
                 !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
             })
-            .map(|slash| symbol[..slash].trim_end_matches(is_space).len()..=slash);
+            .map(|slash| &symbol[..slash]);
         trailing_space
-            .chain(before_ordinal.into_iter().flatten())
-            .filter_map(move |end| self.by_parameter.get(&symbol[..end]))
+            .into_iter()
+            .chain(before_ordinal)
+            .flat_map(move |head| self.parameters_ending_in_space_of(head))
+    }
+
+    /// Inputs whose parameter is `head` with some prefix of its trailing
+    /// whitespace.
+    fn parameters_ending_in_space_of<'s>(
+        &'s self,
+        head: &'s str,
+    ) -> impl Iterator<Item = usize> + 's {
+        let trimmed = head.trim_end_matches(is_relation_space);
+        let space = &head[trimmed.len()..];
+        self.by_trimmed_parameter
+            .get(trimmed)
+            .into_iter()
             .flatten()
-            .copied()
+            .filter(move |(_, tail)| space.starts_with(tail))
+            .map(|(index, _)| *index)
     }
 }
 
@@ -8815,6 +8903,7 @@ impl CatiaNative {
                 }
             }
         }
+        let mut relation_dependencies = RelationDependencies::new(&parameter_bindings);
         for entity in &mut entity_records {
             if let Some(signature) = entity.reference_signature.take() {
                 entity.reference_signature = Some(reference_signature(
@@ -8830,13 +8919,14 @@ impl CatiaNative {
                 continue;
             };
             entity.object_production = object_production(
+                ctx,
                 entity,
                 object,
                 &entity_references,
                 &relation_expressions,
                 &relation_expression_entities,
-                &parameter_bindings,
-            );
+                &mut relation_dependencies,
+            )?;
         }
         let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
         let schema_configuration_row_chains = derive_schema_configuration_row_chains(
