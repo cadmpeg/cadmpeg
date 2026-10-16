@@ -472,6 +472,7 @@ pub(super) fn emit_topology(
     }
     let mut curve_point_cache = CurvePointCache::default();
     let mut edges: BTreeMap<u32, EdgeId> = BTreeMap::new();
+    let mut edges_against_source: BTreeSet<u32> = BTreeSet::new();
     for node in graph
         .of_kind(NodeKind::Edge)
         .filter(|node| valid_edge_xmts.contains(&node.xmt()))
@@ -635,7 +636,7 @@ pub(super) fn emit_topology(
         let end_fin = fin_fields
             .other
             .filter(|target| u32::from(*target) > 1)
-            .or(fin_fields.forward);
+            .or(fin_fields.backward);
         let Some(end_fields) = graph
             .get_target(NodeKind::Fin, end_fin)
             .and_then(Node::fin_fields)
@@ -661,7 +662,20 @@ pub(super) fn emit_topology(
         let Some(end) = end else {
             continue;
         };
-        let (mut start, mut end) = (start, end);
+        // FIN.vertex closes its FIN: `start` is where EDGE.fin ends and `end`
+        // is where it begins. The IR edge runs along its curve.
+        let curve_forward = fields
+            .curve
+            .filter(|target| u32::from(*target) > 1)
+            .and_then(|target| curve_sense(graph, u32::from(target)))
+            != Some(cadmpeg_ir::topology::Sense::Reversed);
+        let (mut start, mut end) =
+            if (fin_fields.sense == cadmpeg_ir::topology::Sense::Forward) == curve_forward {
+                (end, start)
+            } else {
+                (start, end)
+            };
+        let mut against_source = !curve_forward;
         let id: EdgeId =
             scope.id_charged(ctx, &cadmpeg_ir::identity_component!("edge"), node.xmt())?;
         annotate_node(ctx, annotations, id.as_str(), source_stream, node, "EDGE")?;
@@ -707,6 +721,7 @@ pub(super) fn emit_topology(
                     param_range = Some(oriented);
                     if reverse_edge {
                         std::mem::swap(&mut start, &mut end);
+                        against_source = !against_source;
                     }
                 }
                 None => {
@@ -724,6 +739,13 @@ pub(super) fn emit_topology(
             tolerance: decoded_tolerance(fields.tolerance()),
         });
         ctx.insert_btree_map(&mut edges, node.xmt(), id, "nx emitted edge index")?;
+        if against_source {
+            ctx.insert_btree_set(
+                &mut edges_against_source,
+                node.xmt(),
+                "nx edges against source direction",
+            )?;
+        }
     }
     let mut edge_curves_by_id: BTreeMap<EdgeId, CurveId> = BTreeMap::new();
     for edge in &ir.model.edges {
@@ -1190,12 +1212,20 @@ pub(super) fn emit_topology(
                     .map_err(CodecError::malformed)?,
             });
         }
+        let sense = if fields
+            .edge
+            .is_some_and(|target| edges_against_source.contains(&u32::from(target)))
+        {
+            reversed(fields.sense)
+        } else {
+            fields.sense
+        };
         ir.model.coedges.push(Coedge {
             id: id.try_clone_for_decode(ctx, "nx coedge identity copy")?,
             owner_loop: loop_id.try_clone_for_decode(ctx, "nx coedge loop identity")?,
             edge,
             radial_next,
-            sense: fields.sense,
+            sense,
             pcurves: pcurve_uses,
             use_curve: None,
         });
@@ -1744,6 +1774,30 @@ impl CurvePointCache {
             }
         }
         Ok(point)
+    }
+}
+
+/// Sense of a curve carrier's common header relative to its parameterization.
+fn curve_sense(graph: &Graph, xmt: u32) -> Option<cadmpeg_ir::topology::Sense> {
+    [
+        NodeKind::Line,
+        NodeKind::Circle,
+        NodeKind::Ellipse,
+        NodeKind::Intersection,
+        NodeKind::BCurve,
+        NodeKind::TrimmedCurve,
+        NodeKind::SpCurve,
+    ]
+    .into_iter()
+    .find_map(|kind| graph.get(kind, xmt))
+    .and_then(Node::common_header)
+    .map(|(sense, _)| sense)
+}
+
+fn reversed(sense: cadmpeg_ir::topology::Sense) -> cadmpeg_ir::topology::Sense {
+    match sense {
+        cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
+        cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
     }
 }
 

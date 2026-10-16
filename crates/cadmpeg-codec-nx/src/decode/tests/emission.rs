@@ -26,6 +26,7 @@ use crate::test_support::test_prt::topology_part_prt;
 use crate::test_support::test_prt::without_footer;
 use crate::test_support::test_streams::external_reference_stream;
 use crate::test_support::test_streams::pcurve_topology_partition_stream;
+use crate::test_support::test_streams::quarter_disc_topology_partition_stream;
 use crate::test_support::test_streams::shared_region_shells_partition_stream;
 use crate::test_support::test_streams::topology_partition_stream;
 
@@ -1004,6 +1005,69 @@ fn decode_transfers_point_plane_cylinder_line() {
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn decode_runs_each_edge_along_its_curve_and_chains_loop_coedges() {
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_partition(&quarter_disc_topology_partition_stream())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let model = &result.ir().model;
+    let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+        let point = &model
+            .vertices
+            .iter()
+            .find(|candidate| &candidate.id == vertex)
+            .expect("vertex")
+            .point;
+        let position = model
+            .points
+            .iter()
+            .find(|candidate| &candidate.id == point)
+            .expect("point")
+            .position()
+            .get();
+        [position.x, position.y, position.z]
+    };
+    let edge = |suffix: &str| {
+        model
+            .edges
+            .iter()
+            .find(|edge| edge.id.as_str().ends_with(suffix))
+            .expect("edge")
+    };
+
+    assert_eq!(model.edges.len(), 3);
+    assert_eq!(position(&edge("#8").start), [10.0, 0.0, 0.0]);
+    assert_eq!(position(&edge("#8").end), [0.0, 10.0, 0.0]);
+    assert_eq!(position(&edge("#15").start), [0.0, 10.0, 0.0]);
+    assert_eq!(position(&edge("#16").start), [10.0, 0.0, 0.0]);
+    assert_eq!(position(&edge("#16").end), [0.0, 0.0, 0.0]);
+    let traversal = |coedge: &cadmpeg_ir::ids::CoedgeId| {
+        let coedge = model
+            .coedges
+            .iter()
+            .find(|candidate| &candidate.id == coedge)
+            .expect("coedge");
+        let edge = model
+            .edges
+            .iter()
+            .find(|candidate| candidate.id == coedge.edge)
+            .expect("edge");
+        match coedge.sense {
+            cadmpeg_ir::topology::Sense::Forward => (edge.start.clone(), edge.end.clone()),
+            cadmpeg_ir::topology::Sense::Reversed => (edge.end.clone(), edge.start.clone()),
+        }
+    };
+    let coedges = model.loops[0].coedges();
+    assert_eq!(coedges.len(), 3);
+    for (index, coedge) in coedges.iter().enumerate() {
+        let next = &coedges[(index + 1) % coedges.len()];
+        assert_eq!(traversal(coedge).1, traversal(next).0);
+    }
 }
 
 #[test]
