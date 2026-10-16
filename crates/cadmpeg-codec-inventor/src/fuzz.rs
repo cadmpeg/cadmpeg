@@ -9,8 +9,9 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 /// Desktop salvage ceilings for fuzz wrappers.
 ///
-/// `DecodePolicy::service()` tightens collection and entity limits 8–16× and
-/// would silently shrink coverage. Wrappers must not copy that profile.
+/// `DecodePolicy::service()` lowers the input, decompression, retained-byte
+/// and entity ceilings 8–16× and halves the recursion depth, which would
+/// silently shrink coverage. Wrappers must not copy that profile.
 fn fuzz_policy() -> DecodePolicy {
     DecodePolicy::default()
 }
