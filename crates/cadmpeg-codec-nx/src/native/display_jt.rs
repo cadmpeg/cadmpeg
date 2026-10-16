@@ -5483,8 +5483,10 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 
 /// Every Display-JT tessellation the shape graph states.
 ///
-/// A record the graph does not shape as a mesh yields no tessellation and is
-/// not an error; a mesh whose lanes do not pair is.
+/// A mesh the graph does not resolve, or that renders no triangle, drops
+/// every Display-JT tessellation of the part and pushes a
+/// `carrier.display-jt-tessellations-dropped` loss naming it; it is not an
+/// error. A mesh whose lanes do not pair is.
 ///
 /// A shape node whose instance paths exceed [`MAX_JT_NODE_PATH_VISITS`]
 /// yields no tessellation and pushes a `source.scan-bounded` loss.
@@ -5498,14 +5500,6 @@ pub(super) fn display_jt_tessellations(
     inputs: &DisplayJtTessellationInputs<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<(Tessellation, u64)>, CodecError> {
-    macro_rules! required {
-        ($value:expr) => {
-            match $value {
-                Some(value) => value,
-                None => return Ok(Vec::new()),
-            }
-        };
-    }
     let DisplayJtTessellationInputs {
         meshes,
         coordinates,
@@ -5552,6 +5546,14 @@ pub(super) fn display_jt_tessellations(
     let mut scene_graphs = HashMap::<&str, Option<JtSceneGraph<'_>>>::new();
     let mut tessellations = Vec::new();
     for mesh in meshes {
+        macro_rules! required {
+            ($value:expr) => {
+                match $value {
+                    Some(value) => value,
+                    None => return Ok(dropped_display_jt_tessellations(losses, mesh)),
+                }
+            };
+        }
         let coordinate_header = required!(coordinate_headers
             .get(mesh.coordinate_header.as_str())
             .copied());
@@ -5574,13 +5576,14 @@ pub(super) fn display_jt_tessellations(
             None => None,
         };
         let Some(paths) = paths else {
-            if visits.exhausted() {
-                losses.push(NxLossCode::SourceScanBounded.note(format!(
-                    "The instance-path scan of Display-JT shape node {} reached its visit bound; \
-                     the part's Display-JT tessellations were skipped.",
-                    shape_node.object_id
-                )));
+            if !visits.exhausted() {
+                return Ok(dropped_display_jt_tessellations(losses, mesh));
             }
+            losses.push(NxLossCode::SourceScanBounded.note(format!(
+                "The instance-path scan of Display-JT shape node {} reached its visit bound; \
+                 the part's Display-JT tessellations were skipped.",
+                shape_node.object_id
+            )));
             return Ok(Vec::new());
         };
         let mut rendered = Vec::new();
@@ -5595,20 +5598,20 @@ pub(super) fn display_jt_tessellations(
             rendered.push((triangle, attributes));
         }
         if rendered.is_empty() {
-            return Ok(Vec::new());
+            return Ok(dropped_display_jt_tessellations(losses, mesh));
         }
         let vertex_header = required!(vertex_headers.get(shape_element.id.as_str()).copied());
         let normal_array = (vertex_header.vertex_bindings & 0x8 != 0)
             .then(|| normals.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
-            return Ok(Vec::new());
+            return Ok(dropped_display_jt_tessellations(losses, mesh));
         }
         let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
             .then(|| colors.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
-            return Ok(Vec::new());
+            return Ok(dropped_display_jt_tessellations(losses, mesh));
         }
         let mut texture_arrays = Vec::new();
         for channel in (0..8_u8)
@@ -5623,7 +5626,7 @@ pub(super) fn display_jt_tessellations(
             .then(|| vertex_flags.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
-            return Ok(Vec::new());
+            return Ok(dropped_display_jt_tessellations(losses, mesh));
         }
         for path in paths {
             let transform = path.matrix;
@@ -5660,7 +5663,7 @@ pub(super) fn display_jt_tessellations(
                     if !(1..=4).contains(&count)
                         || !array.values.iter().all(|value| value.len() == count)
                     {
-                        return Ok(Vec::new());
+                        return Ok(dropped_display_jt_tessellations(losses, mesh));
                     }
                     texture_component_counts.push(count);
                 }
@@ -5810,6 +5813,19 @@ pub(super) fn display_jt_tessellations(
         }
     }
     Ok(tessellations)
+}
+
+/// Report that `mesh` dropped every Display-JT tessellation of the part.
+fn dropped_display_jt_tessellations(
+    losses: &mut Vec<LossNote>,
+    mesh: &DisplayJtPolygonMesh,
+) -> Vec<(Tessellation, u64)> {
+    losses.push(NxLossCode::DisplayJtTessellationsDropped.note(format!(
+        "Display-JT polygon mesh {} did not resolve to a tessellation; \
+         the part's Display-JT tessellations were skipped.",
+        mesh.id
+    )));
+    Vec::new()
 }
 
 #[cfg(test)]
