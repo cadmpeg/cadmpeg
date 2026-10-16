@@ -18,15 +18,6 @@ pub(crate) enum EntityLocation<'ir> {
     Native(&'ir str),
 }
 
-/// What one finding names in a document.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum FindingScope<'ir> {
-    /// The finding names no entity, or its entity resolves nowhere in the document.
-    Unlocated,
-    /// Every location of the entity and each related document identity.
-    Located(Vec<EntityLocation<'ir>>),
-}
-
 /// Document locations of the identities a set of findings names.
 pub(crate) struct FindingLocator<'ir, 'r> {
     locations: HashMap<&'r str, Vec<EntityLocation<'ir>>>,
@@ -78,15 +69,14 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
         Self { locations }
     }
 
-    /// Returns the scope of a finding supplied to `new`.
-    pub(crate) fn scope(&self, finding: &'r Finding) -> FindingScope<'ir> {
-        let Some(locations) = finding
+    /// Every location of the entity of a finding supplied to `new` and of its
+    /// related ids, or `None` when the finding names no entity or its entity
+    /// resolves nowhere in the document.
+    pub(crate) fn scope(&self, finding: &'r Finding) -> Option<Vec<EntityLocation<'ir>>> {
+        let locations = finding
             .entity
             .as_deref()
-            .and_then(|id| self.locations.get(id))
-        else {
-            return FindingScope::Unlocated;
-        };
+            .and_then(|id| self.locations.get(id))?;
         let mut locations = locations.clone();
         for identity in &finding.related {
             if let Some(entries) = self.locations.get(identity.as_str()) {
@@ -97,7 +87,7 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
                 }
             }
         }
-        FindingScope::Located(locations)
+        Some(locations)
     }
 }
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{EntityLocation, FindingLocator, FindingScope};
+use super::{EntityLocation, FindingLocator};
 use crate::examples::unit_cube;
 use crate::ids::Identity;
 use crate::report::check::{Check, Finding};
@@ -41,7 +41,7 @@ fn no_entity_is_unlocated_even_with_a_resolving_related_id() {
     let ir = unit_cube().expect("valid cube");
     let finding = finding(None, &[ir.model.faces[0].identity()], "invalid reference");
     let locator = FindingLocator::new(&ir, [&finding]);
-    assert_eq!(locator.scope(&finding), FindingScope::Unlocated);
+    assert_eq!(locator.scope(&finding), None);
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn absent_entity_is_unlocated_even_with_a_resolving_related_id() {
         "invalid reference",
     );
     let locator = FindingLocator::new(&ir, [&finding]);
-    assert_eq!(locator.scope(&finding), FindingScope::Unlocated);
+    assert_eq!(locator.scope(&finding), None);
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn model_entity_resolves_to_its_arena() {
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),
-        FindingScope::Located(vec![EntityLocation::Model(EntityKind::Face)])
+        Some(vec![EntityLocation::Model(EntityKind::Face)])
     );
 }
 
@@ -75,7 +75,7 @@ fn native_entity_resolves_to_its_namespace() {
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),
-        FindingScope::Located(vec![EntityLocation::Native("f3d")])
+        Some(vec![EntityLocation::Native("f3d")])
     );
 }
 
@@ -91,7 +91,7 @@ fn native_related_id_resolves_a_face() {
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),
-        FindingScope::Located(vec![
+        Some(vec![
             EntityLocation::Native("f3d"),
             EntityLocation::Model(EntityKind::Face),
         ])
@@ -109,7 +109,7 @@ fn unresolved_related_ids_are_ignored() {
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),
-        FindingScope::Located(vec![EntityLocation::Model(EntityKind::Face)])
+        Some(vec![EntityLocation::Model(EntityKind::Face)])
     );
 }
 
@@ -125,7 +125,7 @@ fn duplicate_identities_keep_each_distinct_location_once() {
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),
-        FindingScope::Located(vec![
+        Some(vec![
             EntityLocation::Model(EntityKind::Face),
             EntityLocation::Native("f3d"),
             EntityLocation::Native("step"),
@@ -146,7 +146,7 @@ fn distinct_related_ids_resolve_exactly() {
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),
-        FindingScope::Located(vec![
+        Some(vec![
             EntityLocation::Native("f3d"),
             EntityLocation::Native("step"),
         ])
@@ -170,11 +170,11 @@ fn multiple_findings_share_the_index_and_keep_related_order() {
     let locator = FindingLocator::new(&ir, &findings);
     assert_eq!(
         locator.scope(&findings[0]),
-        FindingScope::Located(vec![EntityLocation::Model(EntityKind::Face)])
+        Some(vec![EntityLocation::Model(EntityKind::Face)])
     );
     assert_eq!(
         locator.scope(&findings[1]),
-        FindingScope::Located(vec![
+        Some(vec![
             EntityLocation::Native("f3d"),
             EntityLocation::Model(EntityKind::Edge),
             EntityLocation::Model(EntityKind::Face),
@@ -190,6 +190,6 @@ fn message_only_identity_is_not_located() {
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),
-        FindingScope::Located(vec![EntityLocation::Native("f3d")])
+        Some(vec![EntityLocation::Native("f3d")])
     );
 }

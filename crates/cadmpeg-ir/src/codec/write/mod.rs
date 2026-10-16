@@ -29,7 +29,7 @@ mod coverage;
 mod loss;
 pub mod target;
 
-use carried::{EntityLocation, FindingLocator, FindingScope};
+use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
@@ -324,11 +324,12 @@ impl ExportPlan {
         let locator = FindingLocator::new(ir, errors.iter().copied());
         errors
             .into_iter()
-            .filter(|finding| match locator.scope(finding) {
-                FindingScope::Unlocated => true,
-                FindingScope::Located(locations) => locations
-                    .into_iter()
-                    .any(|location| self.carries_location(location)),
+            .filter(|finding| {
+                locator.scope(finding).is_none_or(|locations| {
+                    locations
+                        .into_iter()
+                        .any(|location| self.carries_location(location))
+                })
             })
             .collect()
     }
