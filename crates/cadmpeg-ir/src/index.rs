@@ -4,7 +4,6 @@
 pub(crate) mod identities;
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
 use cadmpeg_core::decode::{DecodeContext, DepthGuard, ResourceLimit};
@@ -89,12 +88,6 @@ pub(crate) fn public_result<T>(value: Result<T, std::convert::Infallible>) -> T 
         Ok(value) => value,
         Err(never) => match never {},
     }
-}
-
-pub(crate) fn identity_hash(identity: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    identity.hash(&mut hasher);
-    hasher.finish()
 }
 
 fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex<'_> {

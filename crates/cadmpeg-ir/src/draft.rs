@@ -3,6 +3,7 @@
 
 use std::borrow::BorrowMut;
 use std::collections::{BTreeMap, HashMap};
+use std::hash::{Hash, Hasher};
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
@@ -16,7 +17,6 @@ use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
 };
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
-use crate::index::identity_hash;
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::provenance::Exactness;
@@ -147,6 +147,12 @@ struct IdentitySlot {
 }
 
 type IdentityIndex = HashMap<u64, Vec<IdentitySlot>>;
+
+fn identity_hash(identity: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    identity.hash(&mut hasher);
+    hasher.finish()
+}
 
 fn insert_identity<T>(index: &mut HashMap<u64, Vec<T>>, hash: u64, value: T) {
     index.entry(hash).or_default().push(value);
