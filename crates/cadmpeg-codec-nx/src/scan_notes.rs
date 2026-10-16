@@ -34,8 +34,7 @@ pub(super) fn summarize(
         )?,
         crate::container::ContainerLayout::Modern {
             file_tag,
-            footer_offset,
-            footer_fingerprint,
+            footer: Some(footer),
             ..
         } => push_note(
             ctx,
@@ -43,10 +42,21 @@ pub(super) fn summarize(
             format_args!(
                 "SPLMSSTR container: file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
                 file_tag,
-                footer_offset,
+                footer.offset,
                 header_entry_count,
                 footer_entry_count,
-                assemble_u32_be(footer_fingerprint),
+                assemble_u32_be(footer.fingerprint),
+            ),
+        )?,
+        crate::container::ContainerLayout::Modern {
+            file_tag,
+            footer: None,
+            ..
+        } => push_note(
+            ctx,
+            &mut notes,
+            format_args!(
+                "SPLMSSTR container: file tag {file_tag}, no FOOTER region, {header_entry_count} HEADER directory entry/ies"
             ),
         )?,
     }

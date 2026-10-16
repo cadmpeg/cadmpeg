@@ -11,6 +11,7 @@ use crate::test_support::test_prt::prt_with_indexed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::rmfastload_prt;
 use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_prt::without_footer;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -48,11 +49,11 @@ fn container_parses_header_and_directory() {
     assert_eq!(c.layout.version(), 0x06);
     let ContainerLayout::Modern {
         file_tag,
-        footer_fingerprint,
+        footer: Some(footer),
         ..
     } = c.layout
     else {
-        panic!("SPLMSSTR input must have modern layout facts");
+        panic!("SPLMSSTR input must have modern layout facts and a FOOTER region");
     };
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| c.entry_count(ctx, Region::Header)).unwrap(),
@@ -63,7 +64,7 @@ fn container_parses_header_and_directory() {
         crate::test_support::with_decode_context(|ctx| c.entry_count(ctx, Region::Footer)).unwrap(),
         0
     );
-    assert_eq!(footer_fingerprint, [0; 4]);
+    assert_eq!(footer.fingerprint, [0; 4]);
     assert!(c
         .entries
         .iter()
@@ -587,13 +588,47 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
 #[test]
 fn container_rejects_footer_offset_beyond_the_file_image() {
     let mut bytes = single_part_prt();
-    bytes[0x11..0x17].copy_from_slice(&[0xff; 6]);
+    let beyond = cadmpeg_core::decode::u64_from_index(bytes.len() + 1);
+    bytes[0x11..0x17].copy_from_slice(&beyond.to_le_bytes()[..6]);
     let error = crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, bytes))
         .expect_err("required invariant");
     assert_eq!(
         error.to_string(),
         "malformed container: FOOTER offset exceeds the file image"
     );
+}
+
+#[test]
+fn container_reads_the_header_directory_alone_without_a_footer_region() {
+    let footed = crate::test_support::with_decode_context(|ctx| {
+        container::scan_bytes(ctx, single_part_prt())
+    })
+    .unwrap();
+    let footerless = crate::test_support::with_decode_context(|ctx| {
+        container::scan_bytes(ctx, without_footer(single_part_prt()))
+    })
+    .unwrap();
+    let ContainerLayout::Modern {
+        file_tag, footer, ..
+    } = footerless.layout
+    else {
+        panic!("SPLMSSTR input must have modern layout facts");
+    };
+    assert_eq!(file_tag, 0x33_22_11);
+    assert_eq!(footer, None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| footerless.entry_count(ctx, Region::Footer))
+            .unwrap(),
+        0
+    );
+    let span = |c: &Container<'_>| {
+        c.entries
+            .iter()
+            .find(|e| e.name == "/Root/UG_PART/UG_PART")
+            .and_then(DirEntry::file_span)
+    };
+    assert!(span(&footerless).is_some());
+    assert_eq!(span(&footerless), span(&footed));
 }
 
 #[test]
