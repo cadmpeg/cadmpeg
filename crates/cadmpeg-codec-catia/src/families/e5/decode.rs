@@ -225,7 +225,11 @@ parameter_range: None,
         }
         for (index, jet) in rolling_ball_jets.iter().enumerate() {
             let surface_index = surfaces.len() + index;
-            let surface_id = admitted!(crate::resource::compose_index_id(&cadmpeg_ir::identity_namespace!("catia", "e5", "surf"), surface_index, SurfaceId::mint));
+            let surface_id = admitted!(crate::resource::compose_index_id(
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
+                surface_index,
+                SurfaceId::mint
+            ));
             let procedural_id
                 = admitted!(
                     crate::resource::compose_index_id(
@@ -323,9 +327,12 @@ refusal,
                 .as_ref()
                 .is_some_and(|topology| topology.bodies.is_empty())
             {
-                "The E5 reference graph is closed; body ownership and shell orientation use an incidence-derived gauge because the stream has no class-0x01 body root."
+                "The E5 reference graph is closed; body ownership and shell orientation use an \
+                 incidence-derived gauge because the stream has no class-0x01 body root."
             } else {
-                "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
+                "The E5 reference graph is closed; face and loop orientation transfer, but \
+                 body/shell orientation uses an incidence-derived gauge because the root's two \
+                 trailing orientation signs remain unresolved."
             };
             (CatiaLossCode::TopologyE5GaugeSubstituted, message)
         } else {

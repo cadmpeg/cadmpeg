@@ -12,7 +12,7 @@ use cadmpeg_ir::units::FiniteVector;
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh,
-    BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardIncidenceEvidence,
+    BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardIncidenceSearch,
     StandardTopologyDraft, TrimRecord,
 };
 use crate::families::standard::trim_packet::TrimPacket;
@@ -230,6 +230,7 @@ pub(crate) fn parse_standard(
 /// anchor.
 pub(super) fn parse_standard_motif(
     ctx: &DecodeContext<'_>,
+    topology_budget: &WorkBudget,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     circle_anchors: &[Option<[usize; 2]>],
@@ -288,6 +289,7 @@ pub(super) fn parse_standard_motif(
     }
     reconstruct_incidence(
         ctx,
+        topology_budget,
         edge_rows,
         vertex_points,
         edge_faces,
@@ -300,6 +302,7 @@ pub(super) fn parse_standard_motif(
 /// as interchangeable serialized edge rows during incidence-slot completion.
 pub(super) fn parse_standard_endpoints_with_edge_classes(
     ctx: &DecodeContext<'_>,
+    topology_budget: &WorkBudget,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
@@ -333,7 +336,8 @@ pub(super) fn parse_standard_endpoints_with_edge_classes(
         edge_faces,
         edge_points,
         face_count,
-        StandardIncidenceEvidence {
+        StandardIncidenceSearch {
+            budget: topology_budget,
             edge_classes,
             mesh_bytes: Some(bytes),
         },
@@ -567,6 +571,7 @@ pub(super) fn parse_standard_port_endpoint_candidates(
 /// identities from trim order.
 pub(super) fn parse_fbb_endpoints_with_edge_classes(
     ctx: &DecodeContext<'_>,
+    topology_budget: &WorkBudget,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
@@ -600,7 +605,8 @@ pub(super) fn parse_fbb_endpoints_with_edge_classes(
         edge_faces,
         edge_points,
         face_count,
-        StandardIncidenceEvidence {
+        StandardIncidenceSearch {
+            budget: topology_budget,
             edge_classes,
             mesh_bytes: Some(bytes),
         },
@@ -1824,6 +1830,7 @@ mod endpoint_tests {
         let bytes = synthetic_fbb_triangle();
         let topology = parse_fbb_endpoints_with_edge_classes(
             &ctx,
+            &crate::test_support::topology_budget(),
             &bytes,
             &[[0, 1], [0, 1], [0, 1]],
             &[[0, 1], [1, 2], [0, 2]],

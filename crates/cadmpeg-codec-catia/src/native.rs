@@ -7225,9 +7225,7 @@ macro_rules! define_catia_arenas {
         }
 
         impl CatiaArenaProjection {
-            fn from_owned(
-                mut native: CatiaNative,
-            ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+            fn from_owned(mut native: CatiaNative) -> Self {
                 $(
                     $(
                         define_catia_arenas!(
@@ -7240,7 +7238,7 @@ macro_rules! define_catia_arenas {
                         define_catia_arenas!(@prepare $field, native, $stored, $field);
                     )?
                 )*
-                Ok(Self {
+                Self {
                     $(
                         $(
                             $field: define_catia_arenas!(
@@ -7255,7 +7253,7 @@ macro_rules! define_catia_arenas {
                             ),
                         )?
                     )*
-                })
+                }
             }
         }
 
@@ -9061,7 +9059,7 @@ impl CatiaNative {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        let projection = CatiaArenaProjection::from_owned(self)?;
+        let projection = CatiaArenaProjection::from_owned(self);
         store_projection(ctx, &projection, namespace)
     }
 }

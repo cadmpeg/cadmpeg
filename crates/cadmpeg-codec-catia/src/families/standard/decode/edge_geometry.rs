@@ -1717,11 +1717,17 @@ pub(super) fn circle_endpoint_range_choices(
     })
 }
 
+/// Bounds the selection states the circular-range selection check visits.
+pub(super) const MAX_SELECTION_STATES: usize = 4_096;
+
+/// Whether one range per choice set can be selected so that the selected
+/// ranges neither overlap nor partially coincide.
+///
+/// Returns [`SearchBounded`](super::SearchBounded) when the check reaches
+/// [`MAX_SELECTION_STATES`] before it finds a selection or rules one out.
 pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>(
     choices: &[T],
-) -> bool {
-    const MAX_SELECTION_STATES: usize = 4_096;
-
+) -> Result<bool, super::SearchBounded> {
     fn visit<T: AsRef<[[f64; 2]]>>(
         choices: &[T],
         index: usize,
@@ -1757,9 +1763,9 @@ pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>
     }
 
     if choices.iter().any(|choice| choice.as_ref().is_empty()) {
-        return false;
+        return Ok(false);
     }
-    visit(choices, 0, &mut [0; MAX_SELECTION_STATES], &mut 0).unwrap_or(false)
+    visit(choices, 0, &mut [0; MAX_SELECTION_STATES], &mut 0).ok_or(super::SearchBounded)
 }
 
 #[cfg(test)]

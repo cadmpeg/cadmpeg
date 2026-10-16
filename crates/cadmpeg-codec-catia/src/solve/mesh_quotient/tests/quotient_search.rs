@@ -860,13 +860,9 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
         face_equation_cache: RefCell::default(),
     };
 
-    assert!(!search
-        .selected_orientable()
-        .expect("check that the selected faces are orientable"));
+    assert!(!search.selected_orientable());
     search.selected[2] = Some((0, vec![vec![false, true]]));
-    assert!(search
-        .selected_orientable()
-        .expect("check that the selected faces are orientable"));
+    assert!(search.selected_orientable());
 }
 
 #[test]
@@ -972,13 +968,9 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
-    assert!(!search
-        .fixed_remaining_faces_are_orientable()
-        .expect("check that the fixed remaining faces are orientable"));
+    assert!(!search.fixed_remaining_faces_are_orientable());
     search.selected[1] = Some((0, vec![vec![false, true]]));
-    assert!(search
-        .fixed_remaining_faces_are_orientable()
-        .expect("check that the fixed remaining faces are orientable"));
+    assert!(search.fixed_remaining_faces_are_orientable());
 }
 
 #[test]
@@ -1025,9 +1017,7 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         face_equation_cache: RefCell::default(),
     };
 
-    assert!(!search
-        .fixed_remaining_faces_are_orientable()
-        .expect("check that the fixed remaining faces are orientable"));
+    assert!(!search.fixed_remaining_faces_are_orientable());
 }
 
 #[test]
@@ -1317,8 +1307,6 @@ fn coordinate_root_domains_drop_an_unsupported_candidate_pair() {
 
 #[test]
 fn ordered_triangle_face_supports_three_corner_equations() {
-    use cadmpeg_core::decode::DecodeContext;
-    use cadmpeg_core::CodecError;
     let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..3)
@@ -1336,20 +1324,17 @@ fn ordered_triangle_face_supports_three_corner_equations() {
         initial_mesh_quotient(&edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
             .expect("build the initial mesh quotient")
             .expect("initial quotient");
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut quotient = initial_quotient.clone();
-        let budget = WorkBudget::new(1_000);
-        let equations = crate::solve::mesh_quotient::common_supported_corner_equations(
-            ctx,
+    let mut quotient = initial_quotient.clone();
+    let budget = WorkBudget::new(1_000);
+    assert!(
+        crate::solve::mesh_quotient::common_supported_corner_equations(
             &mut quotient,
             std::slice::from_ref(&assignment),
             &budget,
-        )?;
-        Ok::<_, CodecError>(equations)
-    };
-    assert!(crate::test_support::with_service_context(run)
+        )
         .expect("compute the common supported corner equations")
-        .is_some());
+        .is_some()
+    );
     let fixed_assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..3)
             .map(|edge| MeshBoundaryEdgeCandidate {
@@ -1360,21 +1345,17 @@ fn ordered_triangle_face_supports_three_corner_equations() {
             })
             .collect()],
     };
-    let fixed_run = |ctx: &DecodeContext<'_>| {
-        let mut quotient = initial_quotient.clone();
-        let budget = WorkBudget::new(1_000);
+    let mut quotient = initial_quotient.clone();
+    let budget = WorkBudget::new(1_000);
+    assert_eq!(
         crate::solve::mesh_quotient::common_supported_corner_equations(
-            ctx,
             &mut quotient,
             std::slice::from_ref(&fixed_assignment),
             &budget,
         )
-    };
-    assert_eq!(
-        fixed_run(&service_ctx)
-            .expect("compute the common supported corner equations")
-            .expect("fixed cycle has supported corners")
-            .len(),
+        .expect("compute the common supported corner equations")
+        .expect("fixed cycle has supported corners")
+        .len(),
         3
     );
     let mut quotient = initial_quotient.clone();

@@ -8,6 +8,7 @@ use crate::families::standard::fbb::EDGE_DELIMITER;
 use crate::families::standard::topology::complete_duplicate_face_slots;
 use crate::families::standard::topology::EdgeBoundaryLayout;
 use crate::families::standard::topology::EdgeRow;
+use crate::families::standard::topology::StandardIncidenceSearch;
 use std::collections::HashSet;
 
 #[test]
@@ -97,8 +98,11 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
         &[[0, 1], [0, 1], [0, 0]],
         &[[0, 1], [1, 2], [2, 0]],
         2,
-        None,
-        Some(&[]),
+        StandardIncidenceSearch {
+            budget: &crate::test_support::topology_budget(),
+            edge_classes: None,
+            mesh_bytes: Some(&[]),
+        },
     )
     .expect("complete the duplicate face slots")
     .expect("unique face-closing slot assignment");
@@ -135,8 +139,11 @@ fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
             [0, usize::MAX],
         ],
         2,
-        None,
-        Some(&[]),
+        StandardIncidenceSearch {
+            budget: &crate::test_support::topology_budget(),
+            edge_classes: None,
+            mesh_bytes: Some(&[]),
+        },
     )
     .expect("complete the duplicate face slots")
     .expect("sparse endpoint identities");
@@ -162,9 +169,20 @@ fn independent_duplicate_face_slots_have_one_canonical_search_order() {
         .map(|point| [point, point])
         .collect::<Vec<_>>();
 
-    let completed = complete_duplicate_face_slots(&ctx, &rows, &serialized, &points, 2, None, None)
-        .expect("complete the duplicate face slots")
-        .expect("independent closed edges have one face completion");
+    let completed = complete_duplicate_face_slots(
+        &ctx,
+        &rows,
+        &serialized,
+        &points,
+        2,
+        StandardIncidenceSearch {
+            budget: &crate::test_support::topology_budget(),
+            edge_classes: None,
+            mesh_bytes: None,
+        },
+    )
+    .expect("complete the duplicate face slots")
+    .expect("independent closed edges have one face completion");
     assert_eq!(completed, vec![[0, 1]; rows.len()]);
 }
 
@@ -235,11 +253,20 @@ fn duplicate_face_completion_rejects_out_of_range_faces() {
         EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
             .expect("admitted edge row")
     }];
-    assert!(
-        complete_duplicate_face_slots(&ctx, &rows, &[[0, 2]], &[[0, 1]], 2, None, None,)
-            .expect("complete the duplicate face slots")
-            .is_none()
-    );
+    assert!(complete_duplicate_face_slots(
+        &ctx,
+        &rows,
+        &[[0, 2]],
+        &[[0, 1]],
+        2,
+        StandardIncidenceSearch {
+            budget: &crate::test_support::topology_budget(),
+            edge_classes: None,
+            mesh_bytes: None,
+        },
+    )
+    .expect("complete the duplicate face slots")
+    .is_none());
 }
 
 #[test]
@@ -276,8 +303,11 @@ fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
         &[[0, 1], [0, 1], [2, 2], [2, 2]],
         &[[0, 1], [1, 2], [2, 0], [0, 2]],
         3,
-        Some(&[0, 1, 2, 2]),
-        None,
+        StandardIncidenceSearch {
+            budget: &crate::test_support::topology_budget(),
+            edge_classes: Some(&[0, 1, 2, 2]),
+            mesh_bytes: None,
+        },
     )
     .expect("complete the duplicate face slots")
     .expect("one assignment modulo equivalent edge rows");

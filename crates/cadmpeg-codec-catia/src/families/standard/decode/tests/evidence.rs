@@ -612,15 +612,97 @@ fn circular_face_interval_choices_select_disjoint_arc_branches() {
         vec![[0.0, 3.0], [3.0, tau]],
     ];
 
-    assert!(circular_range_choices_have_simple_selection(&simple));
-    assert!(!circular_range_choices_have_simple_selection(&crossing));
+    assert_eq!(
+        circular_range_choices_have_simple_selection(&simple),
+        Ok(true)
+    );
+    assert_eq!(
+        circular_range_choices_have_simple_selection(&crossing),
+        Ok(false)
+    );
 }
 
 #[test]
 fn circular_face_interval_budget_cannot_admit_an_unproved_selection() {
     let mut choices = vec![vec![[0.0, 1.0], [2.0, 3.0]]; 12];
     choices.push(vec![[0.5, 2.5]]);
-    assert!(!circular_range_choices_have_simple_selection(&choices));
+    assert_eq!(
+        circular_range_choices_have_simple_selection(&choices),
+        Err(crate::families::standard::decode::SearchBounded)
+    );
+}
+
+#[test]
+fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
+    use crate::families::standard::decode::{
+        push_circular_selection_bounded, StandardCirclePairConstraint,
+    };
+
+    let mut ir = CadIr::empty();
+    for (index, angle) in [0.0_f64, 1.0, 0.5, 3.0].into_iter().enumerate() {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ));
+    }
+    let surface_id =
+        SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
+        source_object: None,
+    });
+    let bindings = [(surface_id.clone(), false, 0)];
+    let surface_indices = HashMap::from([(surface_id, 0)]);
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 0],
+        geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0),
+    };
+    // Twelve arcs between angles 0 and 1 admit every selection of their two
+    // ranges, and the arc between 0.5 and 3 crosses both, so the check walks
+    // every selection of the twelve before it can refuse.
+    let solve = |arcs: usize| {
+        let supports = vec![support; arcs + 1];
+        let mut options = vec![vec![[0, 1], [1, 0]]; arcs];
+        options.push(vec![[2, 3], [3, 2]]);
+        let mut pairs = vec![Some([0, 1]); arcs];
+        pairs.push(Some([2, 3]));
+        let constraint = StandardCirclePairConstraint::new(&supports, &options);
+        let simple = constraint.solution_is_simple(
+            &ir,
+            &bindings,
+            &surface_indices,
+            &supports,
+            &options,
+            &pairs,
+        );
+        (simple, constraint.selection_bounded())
+    };
+
+    assert_eq!(solve(2), (false, false));
+    assert_eq!(solve(12), (false, true));
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    push_circular_selection_bounded(&mut refusal);
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one bounded selection check");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::TopologyStandardSearchBounded.kind()
+    );
+    assert!(note.message.contains("bound of 4096 states"));
 }
 
 #[test]
@@ -1201,7 +1283,7 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
 
     assert_eq!(
         standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.0, 0.0), 2e-3),
-        None
+        Ok(None)
     );
 }
 
@@ -1263,6 +1345,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             &surface_indices,
             std::slice::from_ref(&support),
             std::slice::from_ref(&limit_curve),
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
     .expect("compute the standard limit curve bindings");
@@ -1310,6 +1393,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             &surface_indices,
             &[support, support],
             &[limit_curve],
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
     .expect("compute the standard limit curve bindings");
@@ -1325,6 +1409,100 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         resolve_standard_limit_curve_binding(&[*binding, *binding], [0, 1]),
         None
     );
+}
+
+#[test]
+fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
+    let mut ir = CadIr::empty();
+    ir.model.points.extend(
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
+            .into_iter()
+            .enumerate()
+            .map(|(index, position)| {
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point-{index}"))
+                        .expect("identity grammar"),
+                    cadmpeg_ir::features::FinitePoint3::new(position)
+                        .expect("a finite position is a point"),
+                    None,
+                )
+            }),
+    );
+    let surface_id =
+        SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
+        source_object: None,
+    });
+    let support = StandardCurveSupport {
+        pos: 10,
+        tag: 20,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let quintic = |poles: Vec<Point3>| {
+        NurbsCurve::from_lanes(
+            5,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            poles,
+            None,
+            false,
+        )
+        .expect("valid degree-5 NURBS")
+    };
+    let line = quintic(
+        (0..6)
+            .map(|index| Point3::new(-1.0 + 0.8 * f64::from(index), 0.0, 0.0))
+            .collect(),
+    );
+    // Every pole sits on point 0, so no subdivision is ever pruned.
+    let collapsed = quintic((0..6).map(|_| Point3::new(0.0, 0.0, 0.0)).collect());
+    assert_eq!(
+        standard_limit_curve_point_parameter(&collapsed, Point3::new(0.0, 0.0, 0.0), 2e-3),
+        Err(crate::families::standard::decode::SearchBounded)
+    );
+    let bindings = [(surface_id.clone(), false, 0)];
+    let surface_indices = HashMap::from([(surface_id, 0)]);
+
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let limit_bindings = crate::test_support::with_service_context(|ctx| {
+        standard_limit_curve_bindings(
+            ctx,
+            &ir,
+            &bindings,
+            &surface_indices,
+            &[support],
+            &[line, collapsed],
+            &mut refusal,
+        )
+    })
+    .expect("a bounded point search is not a decode error");
+    let [limit_candidates] = limit_bindings.as_slice() else {
+        panic!("one edge limit-curve domain");
+    };
+    let curves = limit_candidates
+        .iter()
+        .map(|binding| binding.curve)
+        .collect::<Vec<_>>();
+    assert_eq!(curves, [0]);
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one bounded limit curve");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::TopologyStandardSearchBounded.kind()
+    );
+    assert!(note.message.contains("bound of 65536 subdivision nodes"));
+    assert!(note.message.contains("limit curve 1 near model point 0"));
 }
 
 #[test]

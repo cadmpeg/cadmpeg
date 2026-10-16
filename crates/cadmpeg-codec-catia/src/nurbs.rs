@@ -91,6 +91,14 @@ impl LaneRefusals {
         );
     }
 
+    /// Record that a standard-family topology evidence search reached its
+    /// local work bound. `detail` names the bound and the evidence it skipped.
+    pub(crate) fn push_standard_search_bounded(&mut self, detail: impl std::fmt::Display) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyStandardSearchBounded.note(detail.to_string()),
+        );
+    }
+
     /// Record one refusal against the record that stated it.
     fn push(
         &mut self,
