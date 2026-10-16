@@ -368,6 +368,7 @@ dependencies = [
  "encoding_rs",
  "hdf5-reader",
  "roxmltree",
+ "serde",
  "serde_json",
  "thiserror",
  "zip",

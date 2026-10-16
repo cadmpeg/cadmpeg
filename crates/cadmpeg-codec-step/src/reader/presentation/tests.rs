@@ -25,19 +25,17 @@ fn a_style_with_no_stated_depth_takes_a_position_of_its_own() {
 ENDSEC;END-ISO-10303-21;",
         crate::parse::parse_inner)
     .expect("parse style graph");
-        let graph_limit = 64;
-
         assert_eq!(
-            style_application_order(5, &exchange, graph_limit, ctx).expect("local style depth"),
+            style_application_order(5, &exchange, ctx).expect("local style depth"),
             (false, Some(0))
         );
         assert_eq!(
-            style_application_order(6, &exchange, graph_limit, ctx).expect("local style depth"),
+            style_application_order(6, &exchange, ctx).expect("local style depth"),
             (true, None)
         );
         let mut styles = vec![6_u64, 5_u64];
         styles.sort_by_key(|id| {
-            style_application_order(*id, &exchange, graph_limit, ctx).expect("local style depth")
+            style_application_order(*id, &exchange, ctx).expect("local style depth")
         });
         assert_eq!(styles, [5, 6]);
     });
@@ -1933,7 +1931,6 @@ ENDSEC;END-ISO-10303-21;",
                 losses: &mut Vec::new(),
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
-            0,
             ctx,
         )
         .expect("colour search resolves")

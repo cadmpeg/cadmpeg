@@ -333,6 +333,13 @@ pub(crate) enum StepLossCode {
     EdgeStartVertexMissing,
     /// An edge was omitted because its end vertex is missing.
     EdgeEndVertexMissing,
+    /// An anchor or REFERENCE expansion passed its value-node limit; the
+    /// binding or instance remains source-only.
+    ParseExpansionBounded,
+    /// Product occurrence expansion stopped at its occurrence limit.
+    OccurrenceExpansionOutputTruncated,
+    /// Product occurrence expansion stopped a branch at its path-depth limit.
+    OccurrenceExpansionDepthTruncated,
 }
 
 impl StepLossCode {
@@ -491,6 +498,9 @@ impl StepLossCode {
         Self::EdgeRecordMissing,
         Self::EdgeStartVertexMissing,
         Self::EdgeEndVertexMissing,
+        Self::ParseExpansionBounded,
+        Self::OccurrenceExpansionOutputTruncated,
+        Self::OccurrenceExpansionDepthTruncated,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -669,6 +679,9 @@ impl StepLossCode {
             Self::EdgeRecordMissing => "topology.edge-record-missing",
             Self::EdgeStartVertexMissing => "topology.edge-start-vertex-missing",
             Self::EdgeEndVertexMissing => "topology.edge-end-vertex-missing",
+            Self::ParseExpansionBounded => "parse.expansion-bounded",
+            Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
+            Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
         }
     }
 
@@ -740,11 +753,14 @@ impl StepLossCode {
             | Self::HeaderMetadataNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
-            | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
+            | Self::PcurveGlobalFidelityUnproved
+            | Self::OccurrenceExpansionOutputTruncated
+            | Self::OccurrenceExpansionDepthTruncated => LossTaxonomy::DecodeDiagnostic,
             Self::ParseDraftGrammar => LossTaxonomy::SourceDialectUnverified,
             Self::OpaqueRecordPreserved
             | Self::DrawingRecordTooFewParameters
-            | Self::DrawingOrderUnstatable => LossTaxonomy::RecordNotTyped,
+            | Self::DrawingOrderUnstatable
+            | Self::ParseExpansionBounded => LossTaxonomy::RecordNotTyped,
             Self::ImplementationLevelUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
@@ -1071,6 +1087,9 @@ mod tests {
                 "topology.edge-record-missing",
                 "topology.edge-start-vertex-missing",
                 "topology.edge-end-vertex-missing",
+                "parse.expansion-bounded",
+                "occurrence.expansion-output-truncated",
+                "occurrence.expansion-depth-truncated",
             ]
         );
     }
