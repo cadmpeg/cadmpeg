@@ -161,7 +161,11 @@ pub(crate) fn project_occurrences(
             )?;
             continue;
         };
-        if !occurrence_records.contains_key(&source.occurrence_id) {
+        if occurrence_records
+            .get(&source.occurrence_id)
+            .and_then(Option::as_ref)
+            .is_none()
+        {
             count_unresolved(
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
@@ -950,6 +954,22 @@ mod tests {
                 _ => None,
             }),
             Some(expected_document_id.as_str())
+        );
+    }
+
+    #[test]
+    fn duplicated_occurrence_records_do_not_prove_an_occurrence() {
+        let projection = project_under_service(
+            &[ufrx_occurrence(4, 7, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7), assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        );
+
+        assert!(projection.occurrences.is_empty());
+        assert_eq!(
+            projection.unresolved_placements,
+            BTreeMap::from([(super::UnresolvedCause::OccurrenceRecord, NonZeroUsize::MIN)])
         );
     }
 

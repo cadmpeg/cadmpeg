@@ -504,7 +504,11 @@ pub(crate) fn project_parameters(
     let mut bounded = 0usize;
     for parameter in &inventory.parameters {
         let token = parameter.identity.segment_token.as_str();
-        if !parameters.contains_key(&(token, parameter.identity.record_ordinal)) {
+        if parameters
+            .get(&(token, parameter.identity.record_ordinal))
+            .and_then(Option::as_ref)
+            .is_none()
+        {
             unresolved += 1;
             continue;
         }
@@ -1900,6 +1904,18 @@ mod tests {
                     && limit.operation == "project Inventor parameter"
                     && limit.used == 0
         ));
+    }
+
+    #[test]
+    fn duplicated_parameter_keys_are_unresolved_and_not_projected() {
+        let mut inventory = single_parameter_inventory();
+        inventory.parameters.push(inventory.parameters[0].clone());
+
+        let projection =
+            project(&DecodePolicy::service(), &inventory).expect("parameter projection");
+
+        assert!(projection.parameters.is_empty());
+        assert_eq!((projection.unresolved, projection.bounded), (2, 0));
     }
 
     #[test]
