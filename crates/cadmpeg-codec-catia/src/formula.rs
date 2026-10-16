@@ -12,7 +12,8 @@ use cadmpeg_ir::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 
-use crate::native::CatiaNative;
+use crate::legacy_entity::LegacyEvaluatedValueNames;
+use crate::native::{CatiaLegacyTextField, CatiaNative};
 
 const FORMULA_INTEGER_LOWER: f64 = -9_223_372_036_854_775_808.0;
 const FORMULA_INTEGER_UPPER: f64 = 9_223_372_036_854_775_808.0;
@@ -781,8 +782,10 @@ fn collect_legacy_parameters(
         .filter(|run| outer_container_in_scope(run.outer_container.as_ref(), modeling_scope))
     {
         let types = LegacyTypes::new(&run.type_descriptors);
-        let evaluated_names =
-            crate::native::LegacyEvaluatedValueNames::new(&run.role_selectors, &run.text_fields);
+        let evaluated_names = LegacyEvaluatedValueNames::new(
+            crate::native::legacy_evaluation_roles(&run.role_selectors),
+            &run.text_fields,
+        );
         let mut parameters_by_entity = HashMap::<u32, Vec<ParameterId>>::new();
         let mut parameters_by_name = HashMap::<String, Vec<ParameterId>>::new();
         for scalar in &run.scalar_values {
@@ -1239,7 +1242,7 @@ impl<'a> LegacyTypes<'a> {
 
 fn resolved_or_intrinsic_legacy_type<'a>(
     types: &LegacyTypes<'a>,
-    evaluated_names: &crate::native::LegacyEvaluatedValueNames<'_>,
+    evaluated_names: &LegacyEvaluatedValueNames<'_, CatiaLegacyTextField>,
     entity_id: u32,
     value_offset: u64,
     name_field: Option<u64>,

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, View};
 use serde::{Deserialize, Serialize};
 
 use crate::container;
@@ -929,38 +929,105 @@ fn parse_integer_values(
         .collect::<Vec<_>>()
 }
 
+/// Text-field data used to bind evaluated legacy values to names.
+pub(crate) trait LegacyValueNameField {
+    fn entity_id(&self) -> u32;
+    fn offset(&self) -> u64;
+    fn value(&self) -> &str;
+    fn role_field_code(&self) -> Option<u16>;
+}
+
+impl LegacyValueNameField for LegacyTextField {
+    fn entity_id(&self) -> u32 {
+        self.entity_id
+    }
+
+    fn offset(&self) -> u64 {
+        u64_from_index(self.offset)
+    }
+
+    fn value(&self) -> &str {
+        &self.value
+    }
+
+    fn role_field_code(&self) -> Option<u16> {
+        self.role.as_ref().and_then(|role| role.field_code)
+    }
+}
+
+/// The name field of each evaluated legacy value in one run.
+///
+/// Each entry supplies an entity, value offset, and evaluation-role offset.
+/// Its name is the only identifier field of that entity with a `0x1200` role
+/// that starts before the evaluation role. Duplicate entries have no name.
+pub(crate) struct LegacyEvaluatedValueNames<'a, Field> {
+    evaluation_roles: HashMap<(u32, u64), Option<u64>>,
+    identifiers: HashMap<u32, Vec<&'a Field>>,
+}
+
+impl<'a, Field: LegacyValueNameField> LegacyEvaluatedValueNames<'a, Field> {
+    pub(crate) fn new(
+        roles: impl IntoIterator<Item = (u32, u64, u64)>,
+        fields: &'a [Field],
+    ) -> Self {
+        let mut evaluation_roles = HashMap::new();
+        for (entity_id, value_offset, role_offset) in roles {
+            evaluation_roles
+                .entry((entity_id, value_offset))
+                .and_modify(|offset| *offset = None)
+                .or_insert(Some(role_offset));
+        }
+        let mut identifiers = HashMap::<u32, Vec<&Field>>::new();
+        for field in fields {
+            if valid_identifier(field.value()) && field.role_field_code() == Some(0x1200) {
+                identifiers
+                    .entry(field.entity_id())
+                    .or_default()
+                    .push(field);
+            }
+        }
+        for names in identifiers.values_mut() {
+            names.sort_by_key(|field| field.offset());
+        }
+        Self {
+            evaluation_roles,
+            identifiers,
+        }
+    }
+
+    pub(crate) fn get(&self, entity_id: u32, value_offset: u64) -> Option<&'a Field> {
+        let role_offset = (*self.evaluation_roles.get(&(entity_id, value_offset))?)?;
+        let names = self.identifiers.get(&entity_id)?;
+        let before_role = names.partition_point(|field| field.offset() < role_offset);
+        (before_role == 1).then(|| names.first().copied()).flatten()
+    }
+}
+
 /// Name bindings for one run. Duplicate roles or literal names map to `None`.
 struct LegacyValueNames<'a> {
     literal_names: HashMap<u32, Option<&'a LegacyTextField>>,
-    evaluation_roles: HashMap<(u32, usize), Option<usize>>,
-    identifiers: HashMap<u32, Vec<&'a LegacyTextField>>,
+    evaluated_names: LegacyEvaluatedValueNames<'a, LegacyTextField>,
 }
 
 impl<'a> LegacyValueNames<'a> {
     fn new(data: &[u8], roles: &[LegacyRoleSelector], fields: &'a [LegacyTextField]) -> Self {
         const EVALUATION_FIELD: &[u8] = b"\xe8\xc4\x17\x01\xfe\xfe";
 
-        let mut evaluation_roles = HashMap::new();
-        for role in roles {
+        let evaluation_roles = roles.iter().filter_map(|role| {
             if role.field_code != Some(0x17c4) {
-                continue;
+                return None;
             }
-            let Some(end_offset) = role.end_offset() else {
-                continue;
-            };
-            let Some(value_offset) = end_offset.checked_add(EVALUATION_FIELD.len()) else {
-                continue;
-            };
-            if data.get(end_offset..value_offset) != Some(EVALUATION_FIELD) {
-                continue;
-            }
-            evaluation_roles
-                .entry((role.entity_id, value_offset))
-                .and_modify(|offset| *offset = None)
-                .or_insert(Some(role.offset));
-        }
+            let end_offset = role.end_offset()?;
+            let value_offset = end_offset.checked_add(EVALUATION_FIELD.len())?;
+            (data.get(end_offset..value_offset) == Some(EVALUATION_FIELD)).then(|| {
+                (
+                    role.entity_id,
+                    u64_from_index(value_offset),
+                    u64_from_index(role.offset),
+                )
+            })
+        });
         let mut literal_names = HashMap::new();
-        let mut identifiers = HashMap::<u32, Vec<&LegacyTextField>>::new();
         for field in fields {
             if field
                 .role
@@ -972,22 +1039,10 @@ impl<'a> LegacyValueNames<'a> {
                     .and_modify(|name| *name = None)
                     .or_insert(Some(field));
             }
-            if valid_identifier(&field.value)
-                && field
-                    .role
-                    .as_ref()
-                    .is_some_and(|role| role.field_code == Some(0x1200))
-            {
-                identifiers.entry(field.entity_id).or_default().push(field);
-            }
-        }
-        for names in identifiers.values_mut() {
-            names.sort_by_key(|field| field.offset);
         }
         Self {
             literal_names,
-            evaluation_roles,
-            identifiers,
+            evaluated_names: LegacyEvaluatedValueNames::new(evaluation_roles, fields),
         }
     }
 
@@ -995,13 +1050,8 @@ impl<'a> LegacyValueNames<'a> {
         if let Some(name) = self.literal_names.get(&entity_id) {
             return *name;
         }
-        let role_offset = self
-            .evaluation_roles
-            .get(&(entity_id, value_offset))?
-            .as_ref()?;
-        let names = self.identifiers.get(&entity_id)?;
-        let before_role = names.partition_point(|field| field.offset < *role_offset);
-        (before_role == 1).then(|| names.first().copied()).flatten()
+        self.evaluated_names
+            .get(entity_id, u64_from_index(value_offset))
     }
 }
 
