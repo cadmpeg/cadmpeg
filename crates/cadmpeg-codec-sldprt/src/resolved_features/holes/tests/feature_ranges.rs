@@ -1,4 +1,4 @@
-//! Charged native feature-object range tests.
+//! Native feature-object range tests.
 
 use super::{lane_with_position_reference, native_history};
 use crate::resolved_features::holes::feature_object_byte_ranges;
