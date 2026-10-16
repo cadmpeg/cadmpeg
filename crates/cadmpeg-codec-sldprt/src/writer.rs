@@ -325,6 +325,8 @@ pub(crate) fn write_semantic_with_records(
 }
 
 /// What the semantic writer does with each model arena.
+/// `subds` are `Dropped` because `check_semantic_support` refuses them when
+/// non-empty.
 ///
 /// `patched` states that retained source records fed the write; `retained_brep`
 /// states that the retained Parasolid partition was replayed because
@@ -337,7 +339,7 @@ pub(crate) fn write_semantic_with_records(
 /// from the neutral arenas declared `Written`; the other document arenas are
 /// not read.
 fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
-    use ArenaDisposition::{Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Omitted, Written};
     let brep_carried = if retained_brep { Written } else { Omitted };
     ArenaDispositions {
         bodies: Written,
@@ -351,7 +353,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         points: Written,
         surfaces: Written,
         curves: Written,
-        subds: Reported,
+        subds: Dropped,
         pcurves: brep_carried,
         procedural_surfaces: brep_carried,
         procedural_curves: brep_carried,
