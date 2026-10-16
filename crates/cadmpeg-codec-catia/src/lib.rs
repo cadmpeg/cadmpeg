@@ -43,6 +43,7 @@ mod appearance;
 mod assemble;
 mod boundary_roles;
 mod catalog;
+mod chain_walk;
 mod checked;
 mod container;
 mod coverage;

@@ -23,7 +23,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::SourceObjectAssociation;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::container::ContainerScan;
 use crate::loss::{identity_statement, CatiaLossCode};
@@ -95,111 +95,202 @@ pub(crate) fn neutral_model_is_admissible(
     .is_ok())
 }
 
+/// One curve or surface carrier identity.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Carrier<'a> {
+    Curve(&'a str),
+    Surface(&'a str),
+}
+
+/// Resolved curve and surface carrier identities.
+#[derive(Default)]
+struct ResolvedCarriers<'a> {
+    curves: HashSet<&'a str>,
+    surfaces: HashSet<&'a str>,
+}
+
+impl<'a> ResolvedCarriers<'a> {
+    fn contains(&self, carrier: Carrier<'_>) -> bool {
+        match carrier {
+            Carrier::Curve(id) => self.curves.contains(id),
+            Carrier::Surface(id) => self.surfaces.contains(id),
+        }
+    }
+
+    fn insert(&mut self, carrier: Carrier<'a>) -> bool {
+        match carrier {
+            Carrier::Curve(id) => self.curves.insert(id),
+            Carrier::Surface(id) => self.surfaces.insert(id),
+        }
+    }
+}
+
+/// Carriers a surface construction reads before it resolves its owner, or
+/// `None` when the construction never resolves one.
+fn surface_construction_reads(
+    definition: &ProceduralSurfaceDefinition,
+) -> Option<Vec<Carrier<'_>>> {
+    match definition {
+        ProceduralSurfaceDefinition::Exact(..)
+        | ProceduralSurfaceDefinition::Helix { .. }
+        | ProceduralSurfaceDefinition::RollingBallJet(_) => Some(Vec::new()),
+        ProceduralSurfaceDefinition::Offset(payload) => {
+            Some(vec![Carrier::Surface(payload.support().as_str())])
+        }
+        ProceduralSurfaceDefinition::Revolution(payload) => {
+            Some(vec![Carrier::Curve(payload.directrix().as_str())])
+        }
+        ProceduralSurfaceDefinition::Extrusion(payload) => {
+            Some(vec![Carrier::Curve(payload.directrix().as_str())])
+        }
+        ProceduralSurfaceDefinition::LinearSweep(payload) => {
+            Some(vec![Carrier::Curve(payload.directrix().as_str())])
+        }
+        _ => None,
+    }
+}
+
+/// Carriers a curve construction reads before it resolves its owner, or
+/// `None` when the construction never resolves one.
+fn curve_construction_reads(definition: &ProceduralCurveDefinition) -> Option<Vec<Carrier<'_>>> {
+    match definition {
+        ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {
+            Some(Vec::new())
+        }
+        ProceduralCurveDefinition::Intersection { context, .. } => context
+            .sides()
+            .iter()
+            .map(|side| {
+                side.surface
+                    .as_ref()
+                    .map(|surface| Carrier::Surface(surface.as_str()))
+            })
+            .collect(),
+        ProceduralCurveDefinition::SurfaceCurve { family } => {
+            let reads = family
+                .context()
+                .sides()
+                .iter()
+                .filter_map(|side| side.surface.as_ref().zip(side.pcurve.as_ref()))
+                .map(|(surface, _)| Carrier::Surface(surface.as_str()))
+                .collect::<Vec<_>>();
+            (!reads.is_empty()).then_some(reads)
+        }
+        _ => None,
+    }
+}
+
+/// The unique carrier of each construction identity, or `None` when several
+/// carriers name it.
+fn unique_owners<'a, K: Eq + std::hash::Hash>(
+    carriers: impl IntoIterator<Item = (Option<K>, Carrier<'a>)>,
+) -> HashMap<K, Option<Carrier<'a>>> {
+    let mut owners = HashMap::new();
+    for (construction, carrier) in carriers {
+        let Some(construction) = construction else {
+            continue;
+        };
+        owners
+            .entry(construction)
+            .and_modify(|owner| *owner = None)
+            .or_insert(Some(carrier));
+    }
+    owners
+}
+
+/// Carriers that are solved, or that a construction resolves from resolved
+/// carriers.
+///
+/// A construction resolves its unique owning carrier once every carrier it
+/// reads is resolved. This is the least fixed point of that rule; each
+/// construction is checked when it is first seen and again only when a
+/// carrier it reads becomes resolved.
+fn resolved_carriers(ir: &CadIr) -> ResolvedCarriers<'_> {
+    let mut resolved = ResolvedCarriers::default();
+    for curve in &ir.model.curves {
+        if !matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+                | CurveGeometry::Procedural { .. }
+        ) {
+            resolved.curves.insert(curve.id.as_str());
+        }
+    }
+    for surface in &ir.model.surfaces {
+        if !matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                | SurfaceGeometry::Procedural { .. }
+        ) {
+            resolved.surfaces.insert(surface.id.as_str());
+        }
+    }
+    let surface_owners = unique_owners(ir.model.surfaces.iter().map(|surface| {
+        (
+            surface.geometry.procedural_construction(),
+            Carrier::Surface(surface.id.as_str()),
+        )
+    }));
+    let curve_owners = unique_owners(ir.model.curves.iter().map(|curve| {
+        (
+            curve.geometry.procedural_construction(),
+            Carrier::Curve(curve.id.as_str()),
+        )
+    }));
+    let mut constructions = Vec::new();
+    for procedural in &ir.model.procedural_surfaces {
+        if let (Some(reads), Some(Some(owner))) = (
+            surface_construction_reads(procedural.definition()),
+            surface_owners.get(&procedural.id),
+        ) {
+            constructions.push((*owner, reads));
+        }
+    }
+    for procedural in &ir.model.procedural_curves {
+        if let (Some(reads), Some(Some(owner))) = (
+            curve_construction_reads(procedural.definition()),
+            curve_owners.get(&procedural.id),
+        ) {
+            constructions.push((*owner, reads));
+        }
+    }
+    let mut waiting = HashMap::<Carrier<'_>, Vec<usize>>::new();
+    let mut ready = Vec::new();
+    for (index, (owner, reads)) in constructions.iter().enumerate() {
+        let mut pending = false;
+        for &read in reads {
+            if !resolved.contains(read) {
+                waiting.entry(read).or_default().push(index);
+                pending = true;
+            }
+        }
+        if !pending {
+            ready.push(*owner);
+        }
+    }
+    while let Some(carrier) = ready.pop() {
+        if !resolved.insert(carrier) {
+            continue;
+        }
+        for index in waiting.remove(&carrier).into_iter().flatten() {
+            let (owner, reads) = &constructions[index];
+            if reads.iter().all(|read| resolved.contains(*read)) {
+                ready.push(*owner);
+            }
+        }
+    }
+    resolved
+}
+
 /// Identities of the curve and surface carriers the transfer left unresolved.
 ///
 /// A carrier is one record instance, so a report about them names the
 /// identities, not only how many there are.
 fn unresolved_carrier_ids(ir: &CadIr) -> (Vec<&str>, Vec<&str>) {
-    let mut resolved_curves = ir
-        .model
-        .curves
-        .iter()
-        .filter(|curve| {
-            !matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-                    | CurveGeometry::Procedural { .. }
-            )
-        })
-        .map(|curve| curve.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    let mut resolved_surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| {
-            !matches!(
-                surface.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                    | SurfaceGeometry::Procedural { .. }
-            )
-        })
-        .map(|surface| surface.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    loop {
-        let mut changed = false;
-        for procedural in &ir.model.procedural_surfaces {
-            let resolved = match procedural.definition() {
-                ProceduralSurfaceDefinition::Exact(..)
-                | ProceduralSurfaceDefinition::Helix { .. }
-                | ProceduralSurfaceDefinition::RollingBallJet(_) => true,
-                ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    let support = definition_payload.support();
-                    {
-                        resolved_surfaces.contains(support.as_str())
-                    }
-                }
-                ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-                    let directrix = definition_payload.directrix();
-                    {
-                        resolved_curves.contains(directrix.as_str())
-                    }
-                }
-                ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-                    let directrix = definition_payload.directrix();
-                    {
-                        resolved_curves.contains(directrix.as_str())
-                    }
-                }
-                ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
-                    resolved_curves.contains(definition_payload.directrix().as_str())
-                }
-                _ => false,
-            };
-            if resolved {
-                if let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) {
-                    changed |= resolved_surfaces.insert(owner.as_str());
-                }
-            }
-        }
-        for procedural in &ir.model.procedural_curves {
-            let resolved = match procedural.definition() {
-                ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {
-                    true
-                }
-                ProceduralCurveDefinition::Intersection { context, .. } => {
-                    context.sides().iter().all(|side| {
-                        side.surface
-                            .as_ref()
-                            .is_some_and(|surface| resolved_surfaces.contains(surface.as_str()))
-                    })
-                }
-                ProceduralCurveDefinition::SurfaceCurve { family } => {
-                    let (has_side, all_resolved) = family
-                        .context()
-                        .sides()
-                        .iter()
-                        .filter_map(|side| side.surface.as_ref().zip(side.pcurve.as_ref()))
-                        .fold((false, true), |(_, all_resolved), (surface, _)| {
-                            (
-                                true,
-                                all_resolved && resolved_surfaces.contains(surface.as_str()),
-                            )
-                        });
-                    has_side && all_resolved
-                }
-                _ => false,
-            };
-            if resolved {
-                if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
-                    changed |= resolved_curves.insert(owner.as_str());
-                }
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
+    let ResolvedCarriers {
+        curves: resolved_curves,
+        surfaces: resolved_surfaces,
+    } = resolved_carriers(ir);
     let curves = ir
         .model
         .curves
@@ -1403,6 +1494,71 @@ mod route_tests {
             );
         });
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
+    }
+
+    #[test]
+    fn offset_chain_listed_against_its_order_resolves_every_link() {
+        const CHAIN: usize = 256;
+        let surface_id = |index: usize| {
+            SurfaceId::mint(format!("catia:test:surface#chain-{index}")).expect("identity grammar")
+        };
+        let chain = |terminal: SurfaceGeometry| {
+            let mut ir = CadIr::empty();
+            for index in 0..CHAIN {
+                ir.model.surfaces.push(Surface {
+                    id: surface_id(index),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                        record: None,
+                    }),
+                    source_object: None,
+                });
+            }
+            ir.model.surfaces.push(Surface {
+                id: surface_id(CHAIN),
+                geometry: terminal,
+                source_object: None,
+            });
+            for index in 0..CHAIN {
+                let construction =
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        surface_id(index + 1),
+                        2.0,
+                        Some(1),
+                        Some(1),
+                        false,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                            cache: None,
+                        },
+                    )
+                    .expect("valid offset fixture");
+                ir.model
+                    .add_procedural_surface(
+                        &surface_id(index),
+                        ProceduralSurface::new(
+                            ProceduralSurfaceId::mint(format!(
+                                "catia:test:proceduralsurface#chain-{index}"
+                            ))
+                            .expect("identity grammar"),
+                            ProceduralSurfaceDefinition::Offset(construction),
+                            None,
+                        ),
+                    )
+                    .expect("attach construction to its fixture carrier");
+            }
+            ir
+        };
+        let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid plane fixture"),
+        ));
+        assert_eq!(unresolved_carrier_counts(&chain(plane)), (0, 0));
+        let unknown = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        assert_eq!(unresolved_carrier_counts(&chain(unknown)), (0, CHAIN + 1));
     }
 
     #[test]

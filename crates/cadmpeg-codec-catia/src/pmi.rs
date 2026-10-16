@@ -32,6 +32,10 @@ pub(crate) fn transfer_dimensions(
     transferred_sketch_ranges: &HashSet<String>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
+    let mut present = HashSet::new();
+    for annotation in &ir.model.pmi {
+        present.insert(annotation.id.clone());
+    }
     for entity in native
         .entity_records
         .iter()
@@ -44,7 +48,7 @@ pub(crate) fn transfer_dimensions(
             continue;
         };
         let id = pmi_id(entity.byte_offset)?;
-        if ir.model.pmi.iter().any(|annotation| annotation.id == id) {
+        if !present.insert(id.clone()) {
             continue;
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
@@ -458,6 +462,47 @@ mod tests {
         .expect("first dimension");
 
         assert_eq!(ir.model.pmi.len(), 1);
+    }
+
+    #[test]
+    fn many_dimensions_transfer_once_per_identity() {
+        const DIMENSIONS: u64 = 4_096;
+        let mut entity_records = Vec::new();
+        for byte_offset in (0..DIMENSIONS).chain(0..DIMENSIONS / 2) {
+            let mut entity = range_only_entity("DiameterThread");
+            entity.byte_offset = byte_offset;
+            entity_records.push(entity);
+        }
+        let native = CatiaNative {
+            entity_records,
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        let transfer = |ir: &mut CadIr| {
+            with_service_context(|ctx| {
+                transfer_dimensions(
+                    ctx,
+                    ir,
+                    &native,
+                    &crate::decode::ModelingGraphScope::Unscoped,
+                    &HashSet::new(),
+                )
+            })
+            .expect("transfer dimensions")
+        };
+        assert_eq!(transfer(&mut ir), 4_096);
+        ir.model.pmi.truncate(1);
+        assert_eq!(transfer(&mut ir), 4_095);
+        let ids = ir
+            .model
+            .pmi
+            .iter()
+            .map(|annotation| annotation.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let expected = (0..DIMENSIONS)
+            .map(|offset| format!("catia:model:pmi#entity-record-{offset:010}"))
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected);
     }
 
     #[test]

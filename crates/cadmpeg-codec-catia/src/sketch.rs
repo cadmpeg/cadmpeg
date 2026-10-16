@@ -11,7 +11,8 @@ use cadmpeg_ir::sketches::{
     SketchGeometry, SketchId, SketchNativeOperand,
 };
 
-use crate::design_feature::DesignFeatureTransfer;
+use crate::chain_walk::{ChainStep, ChainStops};
+use crate::design_feature::{owner_chain_step, DesignFeatureTransfer};
 use crate::ids::neutral_history_id;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{
@@ -655,6 +656,11 @@ pub(crate) fn transfer_constraint_ranges(
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
     let indexes = ConstraintIndexes::new(native, ir);
+    let mut sketch_owners = ChainStops::new(|id: &str| {
+        owner_chain_step(id, indexes.design_objects.get(id).copied(), |id| {
+            feature_transfer.feature_ids.contains_key(id)
+        })
+    });
     let mut transferred = HashSet::new();
 
     for entity in &native.entity_records {
@@ -662,7 +668,7 @@ pub(crate) fn transfer_constraint_ranges(
             continue;
         };
         let Some(binding) =
-            constraint_binding(entity, range, &indexes, feature_transfer, graph_scope)
+            constraint_binding(entity, range, &indexes, &mut sketch_owners, graph_scope)
         else {
             continue;
         };
@@ -767,11 +773,15 @@ fn sketch_entities_by_native_ref(ir: &CadIr) -> UniqueIndex<String, (SketchEntit
     index
 }
 
-fn constraint_binding(
+/// Bind one constraint range to its exact source operand.
+///
+/// `sketch_owners` answers the nearest transferred feature on a design
+/// object's exact owner chain. A missing link or a cycle rejects the chain.
+fn constraint_binding<'a>(
     range_entity: &CatiaEntityRecord,
     range: &CatiaConstraintRange,
-    indexes: &ConstraintIndexes<'_>,
-    feature_transfer: &DesignFeatureTransfer,
+    indexes: &ConstraintIndexes<'a>,
+    sketch_owners: &mut ChainStops<&'a str, impl FnMut(&'a str) -> ChainStep<&'a str>>,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Option<ConstraintBinding> {
     let selected = (|| {
@@ -825,12 +835,9 @@ fn constraint_binding(
         ))
     })();
     let (source_record_id, source_record, source_entity_record, source_design_object) = selected?;
-    let sketch = sketch_owner_for_design_object(
-        source_design_object,
-        &indexes.design_objects,
-        &indexes.sketch_ids,
-        feature_transfer,
-    )?;
+    let sketch = sketch_owners
+        .stop(source_design_object)
+        .and_then(|owner| indexes.sketch_ids.get(owner).cloned())?;
     let entity = indexes
         .sketch_entities
         .get(source_record_id)
@@ -863,32 +870,6 @@ fn constraint_binding(
         },
         entity,
     })
-}
-
-fn sketch_owner_for_design_object<'a>(
-    start: &'a str,
-    design_objects: &UniqueIndex<&'a str, &'a CatiaDesignObject>,
-    sketch_ids: &UniqueIndex<String, SketchId>,
-    feature_transfer: &DesignFeatureTransfer,
-) -> Option<SketchId> {
-    let mut current = Some(start);
-    let mut steps = 0usize;
-    while let Some(current_id) = current {
-        if steps >= design_objects.len() {
-            return None;
-        }
-        steps += 1;
-
-        let object = design_objects.get(current_id).copied()?;
-        if feature_transfer.feature_ids.contains_key(current_id) {
-            return sketch_ids.get(current_id).cloned();
-        }
-        current = object
-            .owner_design_object
-            .as_deref()
-            .filter(|parent| *parent != current_id);
-    }
-    None
 }
 
 fn constraint_properties(range: &CatiaConstraintRange) -> BTreeMap<String, String> {
@@ -2067,6 +2048,39 @@ mod tests {
             HashSet::new()
         );
         assert!(ir.model.sketch_constraints.is_empty());
+    }
+
+    #[test]
+    fn constraint_ranges_bind_through_a_long_owner_chain_and_refuse_a_cycle() {
+        const CHAIN: usize = 4096;
+        let link = |index: usize| format!("synthetic:test:object#link-{index}");
+        let transferred = |closes: bool| {
+            let (mut ir, mut native, transfer, graph_scope) = fixture(false);
+            native.design_objects.truncate(1);
+            native
+                .design_objects
+                .push(design_object("source-object", Some(&link(0))));
+            for index in 1..CHAIN {
+                native
+                    .design_objects
+                    .push(design_object(&link(index - 1), Some(&link(index))));
+            }
+            let last = if closes {
+                "sketch-object".to_string()
+            } else {
+                link(0)
+            };
+            native
+                .design_objects
+                .push(design_object(&link(CHAIN - 1), Some(&last)));
+            crate::test_support::with_service_context(|ctx| {
+                transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+            })
+            .expect("valid sketch constraint transfer");
+            ir.model.sketch_constraints.len()
+        };
+        assert_eq!(transferred(true), 1);
+        assert_eq!(transferred(false), 0);
     }
 
     #[test]
