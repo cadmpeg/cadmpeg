@@ -473,10 +473,10 @@ pub(crate) fn project_occurrences(
 /// Return the one container reference whose occurrence role and placement
 /// match a `Component Insert` construction.
 pub(crate) fn component_insert_reference<'a>(
-    table: &'a XrefTable,
+    references: &'a [XrefReference],
     construction: &DesignComponentInsertConstruction,
 ) -> Option<&'a XrefReference> {
-    let mut matches = table.references.iter().filter(|reference| {
+    let mut matches = references.iter().filter(|reference| {
         reference.neutron_role.as_str() == construction.neutron_role
             && reference
                 .transform
@@ -497,7 +497,7 @@ pub(crate) fn bind_component_insert_features(
         let Some(construction) = scope.component_insert_construction() else {
             continue;
         };
-        let Some(reference) = component_insert_reference(table, construction) else {
+        let Some(reference) = component_insert_reference(&table.references, construction) else {
             continue;
         };
         let Some(feature) = features

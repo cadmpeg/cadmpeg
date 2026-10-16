@@ -10,11 +10,8 @@ use crate::native::F3dNative;
 use crate::records::{
     bodies::{DesignBodyBinding, DesignBodyMember},
     decal::DesignRecordHeader,
-    entity_header::{DesignEntityHeader, SegmentType},
-    feature::{
-        assembly_features::DesignComponentOccurrence, scope::DesignParameterScope,
-        surface_ops::DesignSurfaceTrimOperation,
-    },
+    entity_header::{DesignEntityHeader, DesignFeatureTimeline, SegmentType},
+    feature::{assembly_features::DesignComponentOccurrence, scope::DesignParameterScope},
     parameters::{DesignParameter, DesignParameterOwner},
     recipes::{ConstructionRecipe, DesignComponentNamingSpace},
     references::DesignMaterialAssignment,
@@ -29,18 +26,21 @@ pub(super) struct ProductPrereqs {
     pub(super) design_types: Vec<SegmentType>,
     pub(super) design_parameters: Vec<DesignParameter>,
     pub(super) design_entity_headers: Vec<DesignEntityHeader>,
-    /// Headers of the records that entity headers index. Parameter-owner
-    /// headers are not in this set: design-intent decoding adds them with the
-    /// sketch-relation headers.
+    /// Headers of the records that entity headers index. Sketch relations
+    /// decode from this set only.
     pub(super) design_record_headers: Vec<DesignRecordHeader>,
+    /// Headers of the parameter-owner records that entity headers do not
+    /// index.
+    pub(super) design_owner_record_headers: Vec<DesignRecordHeader>,
     pub(super) design_parameter_owners: Vec<DesignParameterOwner>,
     pub(super) design_component_occurrences: Vec<DesignComponentOccurrence>,
     /// Scopes after history-bound variant admission, before design-intent
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
-    /// Surface-trim operations decoded from the scopes before variant
-    /// admission.
-    pub(super) design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
+    /// Authored feature order, which tells top-level `Component Insert`
+    /// scopes from internal operands. A decode failure that does not refuse
+    /// the document stays here; design intent then does not run.
+    pub(super) design_feature_timelines: Result<Vec<DesignFeatureTimeline>, CodecError>,
     pub(super) design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
     pub(super) design_body_bindings: Vec<DesignBodyBinding>,
     pub(super) design_body_members: Vec<DesignBodyMember>,
@@ -57,6 +57,19 @@ impl ProductPrereqs {
         self.xref.as_ref().ok().and_then(Option::as_ref)
     }
 
+    /// Authored feature timelines, when they were decoded.
+    pub(super) fn feature_timelines(&self) -> Option<&[DesignFeatureTimeline]> {
+        self.design_feature_timelines.as_deref().ok()
+    }
+
+    /// Every phase-1 record header, sorted by identity.
+    pub(super) fn record_headers(&self) -> Vec<DesignRecordHeader> {
+        merged_record_headers(
+            &self.design_record_headers,
+            &self.design_owner_record_headers,
+        )
+    }
+
     /// Move every Design record into native storage and return the container
     /// reference outcome.
     pub(super) fn store(self, native: &mut F3dNative) -> Result<Option<XrefTable>, CodecError> {
@@ -67,26 +80,30 @@ impl ProductPrereqs {
             design_parameters,
             design_entity_headers,
             design_record_headers,
+            design_owner_record_headers,
             design_parameter_owners,
             design_component_occurrences,
             design_parameter_scopes,
-            design_surface_trim_operations,
+            design_feature_timelines,
             design_component_naming_spaces,
             design_body_bindings,
             design_body_members,
             history_retained_allowance: _,
             xref,
         } = self;
+        if let Ok(timelines) = design_feature_timelines {
+            native.design_feature_timelines = timelines;
+        }
         native.construction_recipes = construction_recipes;
         native.design_material_assignments = design_material_assignments;
         native.design_types = design_types;
         native.design_parameters = design_parameters;
         native.design_entity_headers = design_entity_headers;
-        native.design_record_headers = design_record_headers;
+        native.design_record_headers =
+            merged_record_headers(&design_record_headers, &design_owner_record_headers);
         native.design_parameter_owners = design_parameter_owners;
         native.design_component_occurrences = design_component_occurrences;
         native.design_parameter_scopes = design_parameter_scopes;
-        native.design_surface_trim_operations = design_surface_trim_operations;
         native.design_component_naming_spaces = design_component_naming_spaces;
         native.design_body_bindings = design_body_bindings;
         native.design_body_members = design_body_members;
@@ -120,18 +137,16 @@ pub(super) fn decode(
     let design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     let design_record_headers =
         crate::design::decode::sketch::decode_record_headers(scan, &design_entity_headers)?;
-    let mut owner_headers = design_record_headers.clone();
-    append_related_record_headers(
+    let design_owner_record_headers = related_record_headers(
         scan,
-        &mut owner_headers,
+        &design_record_headers,
         &parameter_owner_indices(&design_parameters),
     )?;
     let design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
         scan,
         &design_parameters,
-        &owner_headers,
+        &merged_record_headers(&design_record_headers, &design_owner_record_headers),
     )?;
-    drop(owner_headers);
     let design_component_occurrences =
         crate::design::decode::components::decode_component_occurrences(scan)?;
     let mut design_parameter_scopes =
@@ -147,16 +162,16 @@ pub(super) fn decode(
                 recipes: &construction_recipes,
             },
         )?;
-    let design_surface_trim_operations =
-        crate::design::decode::surface_trim::decode_surface_trim_operations(
-            scan,
-            &design_parameter_scopes,
-        )?;
     crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
         ctx,
         &mut design_parameter_scopes,
         &history_index,
     )?;
+    let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(scan)
+    {
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        other => other,
+    };
     let design_component_naming_spaces =
         crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
@@ -173,10 +188,11 @@ pub(super) fn decode(
         design_parameters,
         design_entity_headers,
         design_record_headers,
+        design_owner_record_headers,
         design_parameter_owners,
         design_component_occurrences,
         design_parameter_scopes,
-        design_surface_trim_operations,
+        design_feature_timelines,
         design_component_naming_spaces,
         design_body_bindings,
         design_body_members,
@@ -197,7 +213,7 @@ pub(super) fn history_ref_width(history_brep: &BrepFacts) -> cadmpeg_asm::kernel
 }
 
 /// Owner record of every Design parameter.
-pub(super) fn parameter_owner_indices(parameters: &[DesignParameter]) -> Vec<(String, u32)> {
+fn parameter_owner_indices(parameters: &[DesignParameter]) -> Vec<(String, u32)> {
     collect_related_indices(parameters.iter().filter_map(|parameter| {
         Some((
             crate::ids::native_stream(&parameter.id)?,
@@ -217,23 +233,43 @@ pub(super) fn collect_related_indices<'a>(
     collected
 }
 
+/// Decode the headers of the related records that `existing` does not hold.
+fn related_record_headers(
+    scan: &ContainerScan,
+    existing: &[DesignRecordHeader],
+    indices: &[(String, u32)],
+) -> Result<Vec<DesignRecordHeader>, CodecError> {
+    let held = existing
+        .iter()
+        .filter_map(|record| Some((crate::ids::native_stream(&record.id)?, record.record_index)))
+        .collect::<std::collections::HashSet<_>>();
+    let mut wanted = Vec::new();
+    for (stream, index) in indices {
+        if !held.contains(&(stream.as_str(), *index)) {
+            wanted.push((stream.clone(), *index));
+        }
+    }
+    crate::design::decode::sketch::decode_related_record_headers(scan, &wanted)
+}
+
 /// Add the headers of related records that `headers` does not hold yet.
 pub(super) fn append_related_record_headers(
     scan: &ContainerScan,
     headers: &mut Vec<DesignRecordHeader>,
     indices: &[(String, u32)],
 ) -> Result<(), CodecError> {
-    let existing = headers
-        .iter()
-        .filter_map(|record| Some((crate::ids::native_stream(&record.id)?, record.record_index)))
-        .collect::<std::collections::HashSet<_>>();
-    let mut related = crate::design::decode::sketch::decode_related_record_headers(scan, indices)?;
-    related.retain(|record| {
-        crate::ids::native_stream(&record.id)
-            .is_none_or(|stream| !existing.contains(&(stream, record.record_index)))
-    });
-    drop(existing);
+    let related = related_record_headers(scan, headers, indices)?;
     headers.extend(related);
     headers.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// Two disjoint header sets as one, sorted by identity.
+pub(super) fn merged_record_headers(
+    first: &[DesignRecordHeader],
+    second: &[DesignRecordHeader],
+) -> Vec<DesignRecordHeader> {
+    let mut headers = first.iter().chain(second).cloned().collect::<Vec<_>>();
+    headers.sort_by(|a, b| a.id.cmp(&b.id));
+    headers
 }

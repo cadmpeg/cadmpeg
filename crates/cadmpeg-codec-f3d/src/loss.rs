@@ -38,6 +38,14 @@ pub(crate) enum F3dLossCode {
     ActComponentLinkUnresolved,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
+    /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
+    ComponentInsertUnplaced,
+    /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
+    /// top-level inserts from internal operands.
+    ComponentInsertOrderUnknown,
+    /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
+    /// project.
+    AssemblyJointUnprojected,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -215,6 +223,9 @@ impl F3dLossCode {
         Self::ConfigurationFeatureSuppressionUnbound,
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
+        Self::ComponentInsertUnplaced,
+        Self::ComponentInsertOrderUnknown,
+        Self::AssemblyJointUnprojected,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::RecipeSideSearchBudgetExceeded,
@@ -314,6 +325,9 @@ impl F3dLossCode {
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
+            Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
+            Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
+            Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
@@ -432,6 +446,9 @@ impl F3dLossCode {
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
             | Self::LocalOccurrenceUnplaced
+            | Self::ComponentInsertUnplaced
+            | Self::ComponentInsertOrderUnknown
+            | Self::AssemblyJointUnprojected
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
             | Self::ReferenceImageNativeRetained
@@ -551,9 +568,12 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
-            | Self::FeaturePatternInstanceSearchCapped => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeaturePatternInstanceSearchCapped
+            | Self::AssemblyJointUnprojected => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
-            Self::LocalOccurrenceUnplaced => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::LocalOccurrenceUnplaced
+            | Self::ComponentInsertUnplaced
+            | Self::ComponentInsertOrderUnknown => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -648,6 +668,9 @@ mod tests {
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
+                "assembly.component-insert-unplaced",
+                "assembly.component-insert-order-unknown",
+                "assembly.joint-unprojected",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "feature.recipe-search-budget-exceeded",

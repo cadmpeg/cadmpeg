@@ -54,12 +54,17 @@ pub(crate) fn validate_assembly_projection(
                 )
             });
     };
+    let inserts = crate::design::components::ComponentInserts::decide(
+        &native.design_parameter_scopes,
+        &native.design_feature_timelines,
+        &native.xref_references,
+    );
     let projected = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
-        &target.model.features,
-    )?;
-    if target.model.assembly_joints != projected {
+        &inserts,
+    );
+    if target.model.assembly_joints != projected.joints {
         return Err(CodecError::NotImplemented(
             "editing F3D assembly joints is not supported".into(),
         ));
