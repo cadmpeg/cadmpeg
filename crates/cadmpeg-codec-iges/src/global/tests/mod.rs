@@ -97,9 +97,9 @@ fn point_file_with_field(index: usize, value: &str) -> Vec<u8> {
     point_file_with_global(global.as_bytes())
 }
 
-fn strict_options(container_only: bool) -> DecodeOptions {
+fn strict_options(depth: cadmpeg_core::decode::DecodeDepth) -> DecodeOptions {
     let mut options = DecodeOptions {
-        container_only,
+        depth,
         ..DecodeOptions::default()
     };
     options.policy.mode = DecodeMode::Strict;

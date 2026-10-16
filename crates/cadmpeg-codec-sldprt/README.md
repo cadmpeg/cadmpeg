@@ -46,7 +46,8 @@ their topology as opaque geometry linked to preserved source bytes. If no
 Parasolid body stream produces a graph, the result contains container metadata
 and blocking geometry diagnostics.
 
-Set `DecodeOptions::container_only` to skip geometry. `Codec::inspect` offers a
+Set `DecodeOptions::depth` to `DecodeDepth::Container` to skip geometry.
+`Codec::inspect` offers a
 lighter inventory of compressed blocks, section-directory entries, cache
 cells, payload families, and embedded Parasolid schemas.
 

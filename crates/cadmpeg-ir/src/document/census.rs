@@ -9,11 +9,14 @@ use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::native::view::NativeView;
 
 macro_rules! define_census {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $class:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         /// Count the borrowed view with one arena walk.
         pub(crate) fn count(view: NativeView<'_>) -> BTreeMap<CensusKey, usize> {
             let mut counts = BTreeMap::new();
-            $(counts.insert(CensusKey::model(ArenaName::registered(stringify!($field))), view.ir.model.$field.len());)*
+            $(counts.insert(
+                CensusKey::model(ArenaName::registered(stringify!($field), super::arena_class!($class))),
+                view.ir.model.$field.len(),
+            );)*
             let unknown_surfaces = view.ir.model.surfaces.iter().filter(|surface| matches!(surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }))).count();
             counts.insert(CensusKey::surfaces_unknown_geometry(), unknown_surfaces);
@@ -27,7 +30,7 @@ macro_rules! define_census {
         }
     };
 }
-super::arena_registry!(define_census);
+super::classified_arena_registry!(define_census);
 
 #[cfg(test)]
 mod tests {

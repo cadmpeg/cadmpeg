@@ -15,9 +15,12 @@ fn unsupported_redirections_schema_preserves_error_kind() {
             if message.contains("unsupported schema-version 1"))
         );
     });
-    for container_only in [false, true] {
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
         let options = DecodeOptions {
-            container_only,
+            depth,
             ..DecodeOptions::default()
         };
         let error = F3dCodec

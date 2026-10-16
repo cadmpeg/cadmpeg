@@ -872,7 +872,7 @@ fn decode_does_not_promote_subfigure_instance_in_rejected_definition() {
         .decode(
             &mut Cursor::new(rejected_containing_subfigure_file()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -922,7 +922,7 @@ fn decode_does_not_promote_network_instance_in_rejected_definition() {
         .decode(
             &mut Cursor::new(rejected_containing_network_file()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -945,7 +945,7 @@ fn container_only_preserves_raw_occurrence_expansion_without_structure_admission
         .decode(
             &mut Cursor::new(invalid_top_level_occurrence_structure_file()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

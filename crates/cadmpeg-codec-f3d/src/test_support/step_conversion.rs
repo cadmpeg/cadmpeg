@@ -9,7 +9,7 @@
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::report::decode::DecodeReport;
 use cadmpeg_ir::validate::validate_neutral_with_source_fidelity_for_decode;
 use cadmpeg_ir::CadIr;
@@ -30,7 +30,7 @@ pub(crate) fn convert_to_step(bytes: &[u8]) -> StepConversion {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("acquire the archive");
-    let decoded = F3dCodec.decode_with_context(&ctx, root, &DecodeOptions::default());
+    let decoded = F3dCodec.decode_with_context(&ctx, root);
     ctx.finish_session().expect("the decode session closes");
     let (ir, decode, fidelity) = decoded
         .unwrap_or_else(|error| panic!("decode refused: {error:?}"))

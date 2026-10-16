@@ -372,7 +372,7 @@ fn f3z_container_only_stamps_the_outer_document_digest() {
         .decode(
             &mut Cursor::new(archive),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

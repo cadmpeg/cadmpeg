@@ -4,7 +4,7 @@
 //! retained-byte allowances with and without room for history binding.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{Codec, DecodeResult};
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
@@ -57,11 +57,7 @@ fn decode(bytes: &[u8], max_retained_bytes: u64) -> Result<Decoded, String> {
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .map_err(|error| error.to_string())?;
     let available = ctx.retained_bytes_available();
-    let options = DecodeOptions {
-        policy,
-        ..DecodeOptions::default()
-    };
-    let result = F3dCodec.decode_with_context(&ctx, root, &options);
+    let result = F3dCodec.decode_with_context(&ctx, root);
     let retained_bytes = available - ctx.retained_bytes_available();
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(format!("{refusal:?}"));

@@ -281,7 +281,7 @@ fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container
         .decode(
             &mut Cursor::new(bytes.clone()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

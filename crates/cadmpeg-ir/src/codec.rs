@@ -14,6 +14,7 @@
 
 use std::fmt;
 
+use self::loss::DecodeLossCode;
 use crate::document::CadIr;
 use crate::report::{
     check::Finding,
@@ -23,7 +24,7 @@ use crate::report::{
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
+    DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
 };
 use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
@@ -87,8 +88,9 @@ impl fmt::Display for Confidence {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DecodeOptions {
-    /// Stop after the container layer; do not attempt entity decode.
-    pub container_only: bool,
+    /// How much of the source to transfer.
+    #[serde(default)]
+    pub depth: DecodeDepth,
     /// Resource limits and failure-handling mode governing the decode.
     #[serde(default)]
     pub policy: DecodePolicy,
@@ -188,7 +190,8 @@ pub struct Decoded {
 /// A [`DecodeReport`] without its classification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodeBody {
-    /// The backend transfer outcome.
+    /// The depth the backend delivered and its geometry outcome. The sealed
+    /// wrapper records this depth on the document.
     pub transfer: DecodeTransfer,
     /// Coverage measures keyed by their declared name.
     pub coverage: Coverage,
@@ -219,13 +222,28 @@ impl DecodeResult {
     /// the report body, then canonicalizing the IR and source fidelity.
     ///
     /// A document without source metadata yields an unclassified report for
-    /// `format`, the codec's registry format.
-    fn new(decoded: Decoded, format: FormatId, container_only: bool) -> Self {
+    /// `format`, the codec's registry format. The document records the depth
+    /// the backend's transfer state reports; a depth shallower than
+    /// `requested` adds an error loss.
+    fn new(decoded: Decoded, format: FormatId, requested: DecodeDepth) -> Result<Self, CodecError> {
         let Decoded {
             mut ir,
-            body,
+            mut body,
             source_fidelity,
         } = decoded;
+        let delivered = body.transfer.depth();
+        ir.set_decode_depth(delivered);
+        ir.check_decode_depth().map_err(|error| {
+            CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
+        })?;
+        if delivered < requested {
+            body.losses.push(
+                DecodeLossCode::DepthNotDelivered { delivered }.note(format!(
+                    "requested {requested} depth but the {format} decoder delivered \
+                     {delivered} depth, so the records only {requested} depth carries are absent"
+                )),
+            );
+        }
         let classification = match ir.source.as_ref() {
             Some(source) => match source.classification() {
                 FormatIdentity::Classified { dialects } => {
@@ -238,11 +256,11 @@ impl DecodeResult {
             None => FormatIdentity::unclassified(format.as_str().to_owned()),
         };
         ir.finalize();
-        Self {
+        Ok(Self {
             ir,
-            report: DecodeReport::from_body(classification, body, container_only),
+            report: DecodeReport::from_body(classification, body),
             source_fidelity,
-        }
+        })
     }
 
     /// Borrow the finalized IR.
@@ -376,8 +394,8 @@ pub trait Codec: sealed::Sealed {
     /// [`DecodeMode::Strict`] refuses the decode with
     /// [`DecodeFailure::StrictRejected`] for the first reported loss whose
     /// [`StrictConsequence`] is [`StrictConsequence::Reject`]. The gate
-    /// evaluates full-decode reports only: a container-only decode keeps its
-    /// losses and is never refused. This gate owns the refusal predicate and
+    /// evaluates geometry and full requests only: a container-only request
+    /// keeps its losses and is never refused. This gate owns the refusal predicate and
     /// the refusal class for every codec. A backend reports its losses with
     /// their strict floors and adds no strict gate of its own; a local gate
     /// widens the predicate and reclassifies the refusal without the caller
@@ -388,13 +406,13 @@ pub trait Codec: sealed::Sealed {
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure>;
 
-    /// Decodes an acquired root in the caller's detection session.
+    /// Decodes an acquired root in the caller's detection session, under the
+    /// session's policy and requested depth.
     /// The caller finishes the session after this method returns.
     fn decode_with_context(
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
-        options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure>;
 }
 
@@ -425,7 +443,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             mode: DecodeMode::Salvage,
             limits: options.limits,
         };
-        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, DecodeDepth::Full)?;
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
         let result = result?;
@@ -445,9 +463,8 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure> {
         let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
-        let result = self.decode_with_context(&ctx, root, options);
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy, options.depth)?;
+        let result = self.decode_with_context(&ctx, root);
         ctx.finish_session()?;
         result
     }
@@ -456,10 +473,9 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
-        options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
-        let result = DecodeResult::new(decoded, C::FORMAT, options.container_only);
+        let result = DecodeResult::new(decoded, C::FORMAT, ctx.depth())?;
         if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -469,17 +485,17 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             .into());
         }
         crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
-        let strict_loss_index =
-            if options.policy.mode == DecodeMode::Strict && !options.container_only {
-                result
-                    .report()
-                    .losses
-                    .iter()
-                    .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
-                    .map(RejectingLossIndex)
-            } else {
-                None
-            };
+        let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
+        {
+            result
+                .report()
+                .losses
+                .iter()
+                .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
+                .map(RejectingLossIndex)
+        } else {
+            None
+        };
         if let Some(loss_index) = strict_loss_index {
             let (_, report, _) = result.into_parts();
 
@@ -490,6 +506,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     }
 }
 
+mod loss;
 pub mod write;
 
 #[cfg(test)]

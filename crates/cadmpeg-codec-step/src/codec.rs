@@ -6,11 +6,12 @@ use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::fmt;
 
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -31,6 +32,9 @@ pub struct StepCodec {
 
 impl EncoderBackend for StepCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Writes B-rep, product structure, presentation and PMI; design arenas are
+    /// reported as omitted, not read.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(2));
 
