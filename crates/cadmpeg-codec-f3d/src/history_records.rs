@@ -1244,8 +1244,25 @@ pub(crate) struct AsmHistoricalEntityTags {
     pub(crate) tags: Vec<AsmHistoricalPersistentSubentityTag>,
 }
 
+/// Decoded carrier memberships of one stable slot, in decode order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalEntityRows {
+    pub(crate) entity_ref: i64,
+    pub(crate) rows: Vec<i64>,
+}
+
+impl AsmHistoricalRow for AsmHistoricalEntityRows {
+    fn key(&self) -> i64 {
+        self.entity_ref
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalRowsDelta {
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) surfaces: AsmHistoricalRowDelta<AsmHistoricalEntityRows>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) curves: AsmHistoricalRowDelta<AsmHistoricalEntityRows>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) surface_radii: AsmHistoricalRowDelta<AsmHistoricalSurfaceRadius>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
@@ -1370,6 +1387,7 @@ pub(crate) enum AsmTransitionError {
     DeletedAbsent,
     InvalidUpdate,
     RevisionCoverage,
+    MembershipCoverage,
     RemovedRowAbsent,
     UnsortedFamily,
 }
