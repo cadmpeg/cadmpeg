@@ -31,7 +31,6 @@ impl DecodeContext<'_> {
         let mut chunk = [0_u8; INPUT_CHUNK];
         while bytes.len() < length {
             let count = (length - bytes.len()).min(chunk.len());
-
             let read = reader.read(&mut chunk[..count]).map_err(CodecError::Io)?;
             if read == 0 {
                 break;
