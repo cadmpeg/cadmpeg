@@ -982,7 +982,6 @@ ENDSEC;END-ISO-10303-21;",
         },
         &mut losses,
         &mut active,
-        0,
         &ctx
     )
     .expect("decode pcurve geometry")
@@ -1000,7 +999,6 @@ ENDSEC;END-ISO-10303-21;",
         },
         &mut losses,
         &mut active,
-        0,
         &ctx
     )
     .expect("decode pcurve geometry")

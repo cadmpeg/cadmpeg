@@ -28,7 +28,6 @@ fn pcurve_geometry_refusal(depth_limit: u64) -> CodecError {
         },
         &mut Vec::new(),
         &mut BTreeSet::new(),
-        0,
         &ctx,
     )
     .expect_err("pcurve geometry exceeds the limit")

@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fallible, allocation-free traversal of STEP entity references.
+//! Fallible traversal of STEP entity references.
 
 use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
 use crate::parse::Value;
-
-/// Fixed traversal storage; deeper values refuse before another frame is used.
-const MAX_VALUE_FRAMES: usize = 513;
 
 struct Frame<'a, 'ctx> {
     value: &'a Value,
@@ -16,9 +13,10 @@ struct Frame<'a, 'ctx> {
     _depth: DepthGuard<'ctx>,
 }
 
+/// Each frame holds one session depth level, so the session's recursion
+/// ceiling bounds the frame stack.
 pub(super) struct References<'a, 'ctx, 'arena> {
-    frames: [Option<Frame<'a, 'ctx>>; MAX_VALUE_FRAMES],
-    active: usize,
+    frames: Vec<Frame<'a, 'ctx>>,
     root: Option<&'a Value>,
     ctx: &'ctx DecodeContext<'arena>,
 }
@@ -28,8 +26,7 @@ pub(super) fn references<'a, 'ctx, 'arena>(
     ctx: &'ctx DecodeContext<'arena>,
 ) -> References<'a, 'ctx, 'arena> {
     References {
-        frames: std::array::from_fn(|_| None),
-        active: 0,
+        frames: Vec::new(),
         root: Some(value),
         ctx,
     }
@@ -37,18 +34,12 @@ pub(super) fn references<'a, 'ctx, 'arena>(
 
 impl<'a> References<'a, '_, '_> {
     fn push_frame(&mut self, value: &'a Value) -> Result<(), CodecError> {
-        if self.active == MAX_VALUE_FRAMES {
-            return Err(CodecError::malformed(format_args!(
-                "STEP value nesting exceeds {MAX_VALUE_FRAMES} levels"
-            )));
-        }
         let depth = self.ctx.enter_nested("step_reference_value_walk")?;
-        self.frames[self.active] = Some(Frame {
+        self.frames.push(Frame {
             value,
             next_child: 0,
             _depth: depth,
         });
-        self.active += 1;
         Ok(())
     }
 
@@ -56,17 +47,11 @@ impl<'a> References<'a, '_, '_> {
         if let Some(root) = self.root.take() {
             self.push_frame(root)?;
         }
-        while self.active > 0 {
-            let Some(frame) = self.frames[self.active - 1].as_mut() else {
-                return Err(CodecError::malformed(
-                    "STEP reference traversal has no active frame",
-                ));
-            };
+        while let Some(frame) = self.frames.last_mut() {
             let child = match frame.value {
                 Value::Reference(id) => {
                     let id = *id;
-                    self.active -= 1;
-                    self.frames[self.active] = None;
+                    self.frames.pop();
                     return Ok(Some(id));
                 }
                 Value::List(values) => {
@@ -85,8 +70,7 @@ impl<'a> References<'a, '_, '_> {
             if let Some(child) = child {
                 self.push_frame(child)?;
             } else {
-                self.active -= 1;
-                self.frames[self.active] = None;
+                self.frames.pop();
             }
         }
         Ok(None)
@@ -101,9 +85,8 @@ impl Iterator for References<'_, '_, '_> {
             Ok(Some(id)) => Some(Ok(id)),
             Ok(None) => None,
             Err(error) => {
-                self.active = 0;
                 self.root = None;
-                self.frames = std::array::from_fn(|_| None);
+                self.frames.clear();
                 Some(Err(error))
             }
         }
@@ -129,7 +112,7 @@ pub(super) fn first_matching<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{first_matching, references, MAX_VALUE_FRAMES};
+    use super::{first_matching, references};
     use crate::parse::Value;
     use crate::test_support::{with_policy_context, with_service_context};
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
@@ -178,22 +161,25 @@ mod tests {
     }
 
     #[test]
-    fn reference_iterator_frame_ceiling_refuses_instead_of_ending() {
+    fn reference_iterator_depth_follows_the_session_past_513_levels() {
         let mut value = Value::Reference(9);
-        for _ in 0..MAX_VALUE_FRAMES {
+        for _ in 0..600 {
             value = Value::List(vec![value]);
         }
         let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = 1024;
+        policy.limits.max_recursion_depth = 601;
         with_policy_context(b"", &policy, |_, ctx| {
-            assert!(
-                matches!(references(&value, ctx).collect::<Result<Vec<_>, _>>(),
-                Err(CodecError::Malformed(message)) if message == "STEP value nesting exceeds 513 levels")
+            assert_eq!(
+                references(&value, ctx)
+                    .collect::<Result<Vec<_>, _>>()
+                    .expect("admitted traversal"),
+                [9]
             );
         });
+        policy.limits.max_recursion_depth = 600;
         with_policy_context(b"", &policy, |_, ctx| {
             assert!(matches!(first_matching([&value], ctx, |_| true),
-                Err(CodecError::Malformed(message)) if message == "STEP value nesting exceeds 513 levels"));
+                Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::RecursionDepth));
         });
     }
 

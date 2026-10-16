@@ -26,8 +26,9 @@ use super::StageOutcome;
 
 mod bodies;
 
+/// Occurrences that product expansion may add to the model. Expansion stops
+/// at the limit and reports one loss.
 const MAX_OCCURRENCES: usize = 100_000;
-const MAX_ASSEMBLY_DEPTH: usize = 256;
 const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION_FORMATION",
     "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
@@ -338,6 +339,7 @@ pub(super) fn decode(
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
+    let mut output_truncated_at = None;
     for &definition in definitions.keys() {
         if child_definitions.contains(&definition) {
             continue;
@@ -353,7 +355,8 @@ pub(super) fn decode(
             key_word!("definition").dash(definition),
         ));
         if ir.model.occurrences.len() >= MAX_OCCURRENCES {
-            return Err(occurrence_limit_error());
+            output_truncated_at = Some(format!("root PRODUCT_DEFINITION #{definition}"));
+            break;
         }
 
         ir.model.occurrences.push(Occurrence {
@@ -428,7 +431,14 @@ pub(super) fn decode(
         grouped.push(usage_id);
     }
     let had_roots = !pending_occurrences.is_empty();
-    while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
+    // The expansion is iterative, so the session depth ceiling bounds the
+    // occurrence path length directly.
+    let depth_limit = ctx.policy().limits.max_recursion_depth;
+    let mut depth_truncated = None::<(u64, usize)>;
+    'expansion: while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
+        if output_truncated_at.is_some() {
+            break;
+        }
         for &usage_id in usages_by_parent
             .get(&parent_definition)
             .into_iter()
@@ -446,10 +456,10 @@ pub(super) fn decode(
                 continue;
             };
             let parent_path = occurrence_paths.get(&parent);
-            if parent_path.is_some_and(|path| path.len() >= MAX_ASSEMBLY_DEPTH) {
-                return Err(CodecError::NotImplemented(format!(
-                    "STEP assembly nesting exceeds {MAX_ASSEMBLY_DEPTH} levels"
-                )));
+            if parent_path.is_some_and(|path| u64_from_index(path.len()) >= depth_limit) {
+                let (_, skipped) = depth_truncated.get_or_insert((usage_id, 0));
+                *skipped += 1;
+                continue;
             }
             if parent_path.is_some_and(|path| path.contains(&usage.child_definition)) {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -472,7 +482,8 @@ pub(super) fn decode(
                 IdentityKey::from(usage_id).with_tail(&suffix),
             ));
             if ir.model.occurrences.len() >= MAX_OCCURRENCES {
-                return Err(occurrence_limit_error());
+                output_truncated_at = Some(format!("NAUO #{usage_id}"));
+                break 'expansion;
             }
 
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
@@ -525,6 +536,22 @@ pub(super) fn decode(
             pending_occurrences.push_back((usage.child_definition, id));
             typed.insert(usage_id);
         }
+    }
+    if let Some(start) = output_truncated_at {
+        losses.push(
+            StepLossCode::OccurrenceExpansionOutputTruncated.note(format!(
+            "product occurrence expansion stopped at its limit of {MAX_OCCURRENCES} occurrences; \
+             {start} and the usages after it are not expanded"
+        )),
+        );
+    }
+    if let Some((first, skipped)) = depth_truncated {
+        losses.push(
+            StepLossCode::OccurrenceExpansionDepthTruncated.note(format!(
+            "product occurrence paths stop at the recursion depth limit of {depth_limit} levels; \
+             {skipped} usage(s) from NAUO #{first} are not expanded"
+        )),
+        );
     }
     if !had_roots && !usages.is_empty() {
         losses.push(
@@ -591,12 +618,6 @@ pub(super) fn decode(
         losses,
         notes: Vec::new(),
     })
-}
-
-fn occurrence_limit_error() -> CodecError {
-    CodecError::NotImplemented(format!(
-        "STEP assembly expands to more than {MAX_OCCURRENCES} occurrences"
-    ))
 }
 
 #[derive(Clone, Copy)]
