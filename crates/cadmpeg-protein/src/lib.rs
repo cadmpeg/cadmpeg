@@ -36,6 +36,9 @@ pub const CONTINUATION_MARKER: &[u8] = &continuation_page::MARKER_VALUE;
 pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
 const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RECOVERY_VALUES: u64 = 1_024;
+/// Inherited property entries one catalog materializes across all resolved
+/// schema closures.
+const MAX_INHERITED_PROPERTIES: usize = 1 << 18;
 
 fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> Option<String> {
     let count = usize::try_from(View::u32_le_at(bytes, *at)?).ok()?;
@@ -125,9 +128,18 @@ struct Schema {
 pub struct SchemaCatalog {
     schemas: HashMap<String, Schema>,
     properties: HashMap<String, BTreeMap<String, Property>>,
+    inherited_entries: usize,
 }
 
 impl SchemaCatalog {
+    fn new(schemas: HashMap<String, Schema>) -> Self {
+        Self {
+            schemas,
+            properties: HashMap::new(),
+            inherited_entries: 0,
+        }
+    }
+
     /// Parse the schemas in one nested Protein archive through the decode session.
     /// Returns `None` when the archive has no schema entries.
     pub fn load<'a>(
@@ -149,21 +161,14 @@ impl SchemaCatalog {
         if schemas.is_empty() {
             return Ok(None);
         }
-        Ok(Some(Self {
-            schemas,
-            properties: HashMap::new(),
-        }))
+        Ok(Some(Self::new(schemas)))
     }
 
     /// Parse schemas for source-retaining export edits.
     pub fn load_for_edit(protein: &[u8]) -> Result<Self, CodecError> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(protein, &arena, &DecodePolicy::default())?;
-        let schemas = schemas(&ctx, protein)?;
-        Ok(Self {
-            schemas,
-            properties: HashMap::new(),
-        })
+        Ok(Self::new(schemas(&ctx, protein)?))
     }
 
     fn properties_for(
@@ -171,7 +176,13 @@ impl SchemaCatalog {
         ctx: &DecodeContext<'_>,
         name: &str,
     ) -> Result<&BTreeMap<String, Property>, CodecError> {
-        resolve_inheritance(ctx, &self.schemas, &mut self.properties, name)?;
+        resolve_inheritance(
+            ctx,
+            &self.schemas,
+            &mut self.properties,
+            &mut self.inherited_entries,
+            name,
+        )?;
         self.properties.get(name).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "Protein instance references absent schema {name}"
@@ -184,6 +195,7 @@ fn resolve_inheritance(
     ctx: &DecodeContext<'_>,
     schemas: &HashMap<String, Schema>,
     resolved: &mut HashMap<String, BTreeMap<String, Property>>,
+    inherited_entries: &mut usize,
     name: &str,
 ) -> Result<(), CodecError> {
     let mut path = Vec::new();
@@ -216,12 +228,26 @@ fn resolve_inheritance(
             ))
         })?;
         let inherited = schema.base.as_deref().and_then(|base| resolved.get(base));
+        inherited
+            .map_or(0, BTreeMap::len)
+            .checked_add(schema.properties.len())
+            .and_then(|entries| entries.checked_add(*inherited_entries))
+            .filter(|entries| *entries <= MAX_INHERITED_PROPERTIES)
+            .ok_or_else(|| inherited_properties_exceeded(current))?;
         let mut properties = inherited.cloned().unwrap_or_default();
         properties.extend(schema.properties.clone());
+        *inherited_entries += properties.len();
         resolved.insert(current.to_owned(), properties);
         drop(depth_guards.pop());
     }
     Ok(())
+}
+
+/// A schema whose closure does not fit the catalog's inherited-property cap.
+fn inherited_properties_exceeded(schema: &str) -> CodecError {
+    CodecError::NotImplemented(format!(
+        "Protein schema {schema} inherits past the {MAX_INHERITED_PROPERTIES}-entry inherited property cap"
+    ))
 }
 
 /// One paged Protein instance record.
@@ -268,15 +294,10 @@ pub fn decode_detailed<'a>(
     protein: View<'a>,
     instance: View<'a>,
 ) -> Result<DecodeOutcome, CodecError> {
-    let mut catalog = match SchemaCatalog::load(ctx, protein)? {
-        Some(catalog) => catalog,
-        None => SchemaCatalog {
-            schemas: HashMap::new(),
-            properties: HashMap::new(),
-        },
-    };
+    let mut catalog =
+        SchemaCatalog::load(ctx, protein)?.unwrap_or_else(|| SchemaCatalog::new(HashMap::new()));
     let frames = framing::record_frames(instance.window())?;
-    decode_frames_admitted(ctx, &mut catalog, &frames)
+    decode_frames(ctx, &mut catalog, &frames)
 }
 
 /// Decode already framed records for source-retaining export edits.
@@ -286,23 +307,12 @@ pub fn decode_frames_for_edit(
 ) -> Result<DecodeOutcome, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(protein, &arena, &DecodePolicy::default())?;
-    let mut catalog = SchemaCatalog {
-        schemas: schemas(&ctx, protein)?,
-        properties: HashMap::new(),
-    };
+    let mut catalog = SchemaCatalog::new(schemas(&ctx, protein)?);
     decode_frames(&ctx, &mut catalog, frames)
 }
 
-/// Decode frames admitted by the caller against one parsed schema catalog.
-pub fn decode_frames_admitted(
-    ctx: &DecodeContext<'_>,
-    catalog: &mut SchemaCatalog,
-    frames: &[framing::RecordFrame],
-) -> Result<DecodeOutcome, CodecError> {
-    decode_frames(ctx, catalog, frames)
-}
-
-fn decode_frames(
+/// Decode framed records against one parsed schema catalog.
+pub fn decode_frames(
     ctx: &DecodeContext<'_>,
     catalog: &mut SchemaCatalog,
     frames: &[framing::RecordFrame],
@@ -893,7 +903,13 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
         assert!(matches!(
-            super::resolve_inheritance(&ctx, &schemas, &mut std::collections::HashMap::new(), "AChild"),
+            super::resolve_inheritance(
+                &ctx,
+                &schemas,
+                &mut std::collections::HashMap::new(),
+                &mut 0,
+                "AChild"
+            ),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RecursionDepth
         ));
@@ -904,6 +920,7 @@ mod tests {
             &ctx,
             &schemas,
             &mut std::collections::HashMap::new(),
+            &mut 0,
             "AChild"
         )
         .is_ok());
@@ -956,23 +973,20 @@ mod tests {
         }
         let stream = paged_stream(&[&record]);
         let frames = framing::record_frames(&stream).expect("fixture framing is valid");
-        let mut catalog = super::SchemaCatalog {
-            schemas: std::collections::HashMap::from([
-                ("Good".into(), super::Schema::default()),
-                (
-                    "Unused".into(),
-                    super::Schema {
-                        base: Some("Absent".into()),
-                        ..super::Schema::default()
-                    },
-                ),
-            ]),
-            properties: std::collections::HashMap::new(),
-        };
+        let mut catalog = super::SchemaCatalog::new(std::collections::HashMap::from([
+            ("Good".into(), super::Schema::default()),
+            (
+                "Unused".into(),
+                super::Schema {
+                    base: Some("Absent".into()),
+                    ..super::Schema::default()
+                },
+            ),
+        ]));
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
             .expect("stream fits service input limit");
-        let outcome = super::decode_frames_admitted(&ctx, &mut catalog, &frames)
+        let outcome = super::decode_frames(&ctx, &mut catalog, &frames)
             .expect("unused schema is not resolved");
         assert_eq!(outcome.records.len(), 1);
         assert!(outcome.rejected.is_empty());
@@ -1059,6 +1073,7 @@ mod tests {
                     },
                 )]),
             )]),
+            inherited_entries: 0,
         };
         let mut over = Vec::new();
         let mut within = Vec::new();
@@ -1075,7 +1090,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
             .expect("build the decode context");
-        let outcome = super::decode_frames_admitted(&ctx, &mut catalog, &frames)
+        let outcome = super::decode_frames(&ctx, &mut catalog, &frames)
             .expect("a capped record is rejected, not refused");
         assert_eq!(outcome.records.len(), 1);
         assert_eq!(outcome.rejected.len(), 1);
@@ -1091,19 +1106,79 @@ mod tests {
         }
         let stream = paged_stream(&[&record]);
         let frames = framing::record_frames(&stream).expect("fixture framing is valid");
-        let mut catalog = super::SchemaCatalog {
-            schemas: std::collections::HashMap::new(),
-            properties: std::collections::HashMap::new(),
-        };
+        let mut catalog = super::SchemaCatalog::new(std::collections::HashMap::new());
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
             .expect("build the decode context");
         assert_eq!(
-            super::decode_frames_admitted(&ctx, &mut catalog, &frames)
+            super::decode_frames(&ctx, &mut catalog, &frames)
                 .expect("an absent schema rejects only its record")
                 .rejected
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn inherited_property_cap_rejects_one_record_and_decoding_continues() {
+        let wide = (0..=super::MAX_INHERITED_PROPERTIES / 2)
+            .map(|index| {
+                (
+                    format!("p{index}"),
+                    super::Property::Reference { multiple: false },
+                )
+            })
+            .collect();
+        let mut catalog = super::SchemaCatalog::new(std::collections::HashMap::from([
+            (
+                "Wide".into(),
+                super::Schema {
+                    base: None,
+                    properties: wide,
+                },
+            ),
+            (
+                "Child".into(),
+                super::Schema {
+                    base: Some("Wide".into()),
+                    ..super::Schema::default()
+                },
+            ),
+            ("Small".into(), super::Schema::default()),
+        ]));
+        let mut child = Vec::new();
+        let mut small = Vec::new();
+        for value in ["Child", "guid", "base", ""] {
+            push_lp(&mut child, value);
+        }
+        for value in ["Small", "guid", "base", ""] {
+            push_lp(&mut small, value);
+        }
+        let stream = paged_stream(&[&child, &small, &child]);
+        let frames = framing::record_frames(&stream).expect("fixture framing is valid");
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
+            .expect("build the decode context");
+        let outcome = super::decode_frames(&ctx, &mut catalog, &frames)
+            .expect("a capped closure rejects its records, not the decode");
+        assert_eq!(outcome.records.len(), 1);
+        assert_eq!(outcome.records[0].schema, "Small");
+        assert_eq!(
+            outcome
+                .rejected
+                .iter()
+                .map(|rejected| rejected.ordinal)
+                .collect::<Vec<_>>(),
+            [0, 2]
+        );
+        assert!(outcome.rejected.iter().all(|rejected| rejected
+            .detail
+            .contains("262144-entry inherited property cap")));
+        assert!(catalog.properties.contains_key("Wide"));
+        assert!(!catalog.properties.contains_key("Child"));
+        assert_eq!(
+            catalog.inherited_entries,
+            super::MAX_INHERITED_PROPERTIES / 2 + 1
         );
     }
 
@@ -1133,12 +1208,10 @@ mod tests {
             .collect::<Vec<_>>();
         for id in ["metal_f0", "common_Tint_color"] {
             let mut at = 0;
-            {
-                assert_eq!(
-                    read_value(&bare, &mut at, ValueCarrier::Color, id).unwrap(),
-                    PropertyValue::Color(rgba.map(|value| FiniteReal::new(value).expect("finite")))
-                );
-            }
+            assert_eq!(
+                read_value(&bare, &mut at, ValueCarrier::Color, id).unwrap(),
+                PropertyValue::Color(rgba.map(|value| FiniteReal::new(value).expect("finite")))
+            );
             assert_eq!(at, bare.len());
         }
     }
@@ -1150,41 +1223,33 @@ mod tests {
         push_lp(&mut connections, "first-guid");
         push_lp(&mut connections, "second-guid");
         let mut at = 0;
-        {
-            assert_eq!(
-                read_connections(&connections, &mut at).unwrap(),
-                ["first-guid", "second-guid"]
-            );
-        }
+        assert_eq!(
+            read_connections(&connections, &mut at).unwrap(),
+            ["first-guid", "second-guid"]
+        );
         assert_eq!(at, connections.len());
 
         let mut at = 0;
-        {
-            assert!(read_connections(&[0], &mut at).unwrap().is_empty());
-        }
+        assert!(read_connections(&[0], &mut at).unwrap().is_empty());
         assert_eq!(at, 1);
 
         let mut counted = vec![0];
         counted.extend_from_slice(&1u32.to_le_bytes());
         push_lp(&mut counted, "cloud/resource/one");
         let mut at = 0;
-        {
-            assert_eq!(
-                read_texture_uri(&counted, &mut at, "unifiedbitmap_Bitmap").unwrap(),
-                PropertyValue::TextureUri(vec!["cloud/resource/one".into()])
-            );
-        }
+        assert_eq!(
+            read_texture_uri(&counted, &mut at, "unifiedbitmap_Bitmap").unwrap(),
+            PropertyValue::TextureUri(vec!["cloud/resource/one".into()])
+        );
         assert_eq!(at, counted.len());
 
         let mut single = vec![1];
         push_lp(&mut single, "local_bitmap.png");
         let mut at = 0;
-        {
-            assert_eq!(
-                read_texture_uri(&single, &mut at, "unifiedbitmap_Bitmap").unwrap(),
-                PropertyValue::TextureUri(vec!["local_bitmap.png".into()])
-            );
-        }
+        assert_eq!(
+            read_texture_uri(&single, &mut at, "unifiedbitmap_Bitmap").unwrap(),
+            PropertyValue::TextureUri(vec!["local_bitmap.png".into()])
+        );
         assert_eq!(at, single.len());
     }
 
