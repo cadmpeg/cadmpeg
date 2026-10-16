@@ -1045,6 +1045,79 @@ fn topology_rejects_overlapping_candidates_without_ranking() {
 }
 
 #[test]
+fn topology_admits_disjoint_bounded_records_in_one_overlap_cluster() {
+    let mut member = record(91, 20);
+    put_ref(&mut member, 2, 30);
+    put_ref(&mut member, 8, 31);
+    put_ref(&mut member, 10, 4);
+    for at in [12, 14, 16, 18] {
+        put_ref(&mut member, at, 1);
+    }
+    let mut stream = vec![0xaa; 39];
+    stream.extend(member);
+    stream.extend([0xaa; 39]);
+    let face = |xmt, pos| NodeCandidate {
+        kind: NodeKind::Face,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+        pos,
+        shift: 0,
+        end: pos + 39,
+    };
+    let spanning = NodeCandidate {
+        kind: NodeKind::Edge,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(40).unwrap(),
+        pos: 20,
+        shift: 0,
+        end: 70,
+    };
+
+    let selected = crate::test_support::with_decode_context(|ctx| {
+        Graph::select_non_overlapping_candidates(
+            ctx,
+            &stream,
+            vec![face(4, 0), spanning, face(5, 59)],
+        )
+        .map(|(nodes, _reservation)| nodes)
+    })
+    .unwrap();
+    assert_eq!(
+        selected.iter().map(|node| node.xmt()).collect::<Vec<_>>(),
+        [4, 5]
+    );
+}
+
+#[test]
+fn topology_bounds_a_record_at_the_type_38_schema_header() {
+    let mut stream = vec![0xaa; 91];
+    stream.extend_from_slice(TYPE_38_SCHEMA_HEADER);
+    stream.extend([0xaa; 8]);
+    let plane = NodeCandidate {
+        kind: NodeKind::Plane,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(6).unwrap(),
+        pos: 0,
+        shift: 0,
+        end: 91,
+    };
+    let embedded = NodeCandidate {
+        kind: NodeKind::Vertex,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(19).unwrap(),
+        pos: 11,
+        shift: 0,
+        end: 39,
+    };
+
+    let selected = crate::test_support::with_decode_context(|ctx| {
+        Graph::select_non_overlapping_candidates(ctx, &stream, vec![plane, embedded])
+            .map(|(nodes, _reservation)| nodes)
+    })
+    .unwrap();
+    assert_eq!(
+        selected.iter().map(|node| node.xmt()).collect::<Vec<_>>(),
+        [6]
+    );
+}
+
+#[test]
 fn topology_ownership_candidate_cannot_suppress_typed_candidate() {
     let mut face = record(14, 39);
     put_ref(&mut face, 2, 4);

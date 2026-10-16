@@ -124,9 +124,15 @@ pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
     if stream.get(end) != Some(&0) {
         return false;
     }
+    if crate::topology::intersection_data_schema_header_at(stream, end) {
+        return true;
+    }
     let Some(&kind) = end.checked_add(1).and_then(|at| stream.get(at)) else {
         return false;
     };
+    if kind == MEMBER_OF_FEATURE {
+        return member_of_feature_frame(stream, end);
+    }
     let Ok(kind) = NodeKind::try_from(kind) else {
         return false;
     };
@@ -135,6 +141,25 @@ pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
         .flatten()
         .next()
         .is_some()
+}
+
+/// Parasolid `MEMBER_OF_FEATURE` record tag.
+const MEMBER_OF_FEATURE: u8 = 91;
+
+/// Return whether a complete `MEMBER_OF_FEATURE` frame with a non-null owner
+/// starts at `pos`.
+fn member_of_feature_frame(stream: &[u8], pos: usize) -> bool {
+    let frame = |identity_at: usize| -> Option<()> {
+        let (xmt, extra) = read_xmt(stream, identity_at)?;
+        NonNullXmt::try_from(xmt).ok()?;
+        let mut at = identity_at.checked_add(2 + extra + 4)?;
+        let references = read_sequence_at::<6>(stream, &mut at)?;
+        NonNullXmt::try_from(references[1]).ok()?;
+        stream.get(pos..at).map(|_| ())
+    };
+    let identity_at = pos + 2;
+    frame(identity_at).is_some()
+        || (stream.get(identity_at) == Some(&0xff) && frame(identity_at + 1).is_some())
 }
 
 pub(crate) fn read_and_advance(stream: &[u8], at: &mut usize) -> Option<u32> {
@@ -333,7 +358,17 @@ pub(crate) fn fixed_len(kind: NodeKind) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_sequence_at, skip_sequence_at};
+    use super::{fixed_record_boundary, read_sequence_at, skip_sequence_at};
+
+    #[test]
+    fn member_of_feature_frame_with_an_owner_is_a_record_boundary() {
+        let mut member = vec![0, 91, 0, 30, 0, 0, 0, 0, 0, 31, 0, 4];
+        member.extend([0, 1].repeat(4));
+        assert!(fixed_record_boundary(&member, 0));
+        member[10..12].copy_from_slice(&[0, 1]);
+        assert!(!fixed_record_boundary(&member, 0));
+        assert!(!fixed_record_boundary(&member[..19], 0));
+    }
 
     #[test]
     fn skip_sequence_tracks_compact_and_extended_xmt_widths() {

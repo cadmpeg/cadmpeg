@@ -763,6 +763,12 @@ single-byte delta `0x5a` record is `INTERSECTION_DATA`; it uses the
 `intersection_data` layout and is distinct from the two-byte type-90 `GROUP`
 record.
 
+Type 91 `MEMBER_OF_FEATURE` has logical length 20: `dummy_node_id:u32 +4`,
+then the owning-feature, owner, next, previous, next-member, and
+previous-member references. Its owner reference is non-null. A complete
+`MEMBER_OF_FEATURE` frame and the type-38 inline schema header each begin a
+record, so each bounds the fixed record before it.
+
 ### 4.2 Deltas-stream framing
 
 A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode. Records use the following forms:

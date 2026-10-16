@@ -1346,15 +1346,16 @@ impl Graph {
                 )?;
                 selected.push(*node);
             } else {
-                let mut boundary_candidates = cluster
+                let bounded = cluster
                     .iter()
                     .copied()
-                    .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
-                let Some(node) = boundary_candidates.next() else {
-                    start = end;
-                    continue;
-                };
-                if boundary_candidates.next().is_none() {
+                    .filter(|candidate| fixed_record_boundary(stream, candidate.end()))
+                    .collect::<Vec<_>>();
+                for node in bounded.iter().copied().filter(|node| {
+                    bounded
+                        .iter()
+                        .all(|other| other == node || !other.overlaps(*node))
+                }) {
                     ctx.reserve_scoped_vec(
                         &mut reservation,
                         &mut selected,
