@@ -213,8 +213,6 @@ fn chain() -> AsmHistory {
         let transition =
             AsmHistoricalTransition::between(index.checked_sub(1).map(snapshot), snapshot(index))
                 .unwrap();
-        let topology = topologies[index].clone();
-        let slots = topology.slots();
         states.push(AsmDeltaState {
             id: format!("state-{index}"),
             parent: "history".into(),
@@ -231,15 +229,6 @@ fn chain() -> AsmHistory {
             owner_ref: 0,
             bulletin_boards: Vec::new(),
             records: Vec::new(),
-            entity_versions: versions[index]
-                .iter()
-                .filter(|(slot, _)| slots.contains(slot))
-                .map(|(&entity_ref, &record_ref)| AsmEntityVersion {
-                    entity_ref,
-                    record_ref,
-                })
-                .collect(),
-            topology_cache: AsmTopologyCache::Complete(topology),
             transition: Some(transition),
         });
     }
@@ -256,36 +245,92 @@ fn chain() -> AsmHistory {
     }
 }
 
+fn expected_versions(state_id: i64) -> BTreeMap<i64, i64> {
+    match state_id {
+        0 => vec![(0, 0), (1, 1)],
+        1 => vec![(0, 0), (1, 1), (2, 2), (10, 10), (20, 20)],
+        2 => vec![(0, 0), (2, 2), (3, 3), (10, 10), (20, 20)],
+        3 => vec![(0, 0), (2, 22), (3, 33), (10, 110), (20, 120)],
+        _ => unreachable!(),
+    }
+    .into_iter()
+    .collect()
+}
+
+fn expected_topology(state_id: i64, scope: AsmTopologyScope) -> Option<AsmHistoricalTopology> {
+    let mut expected = match state_id {
+        0 => AsmHistoricalTopology {
+            bodies: vec![1],
+            ..Default::default()
+        },
+        1 => topology(&[1, 2], false),
+        2 => topology(&[2, 3], false),
+        3 => topology(&[2, 3], true),
+        _ => unreachable!(),
+    };
+    if scope == AsmTopologyScope::Retained {
+        expected.surface_radii.clear();
+        expected.surface_cylinders.clear();
+        expected.surface_axes.clear();
+        expected.persistent_subentity_tags.clear();
+        expected.body_regions.clear();
+        expected.region_shells.clear();
+        expected.shell_faces.clear();
+        expected.shell_wire_edges.clear();
+        expected.shell_free_vertices.clear();
+        expected.edge_vertices.clear();
+        expected.vertex_points.clear();
+        expected.point_positions.clear();
+        if !expected.has_retained_rows() {
+            return None;
+        }
+    }
+    Some(expected)
+}
+
 #[test]
 fn reconstructs_every_family_in_both_scopes() {
     let mut history = chain();
     assert_eq!(history.check_transitions(), Ok(()));
     for scope in [AsmTopologyScope::Complete, AsmTopologyScope::Retained] {
-        for state in &history.states {
+        for state in history.states() {
             assert_eq!(
                 history.topology(state),
-                state.topology(),
+                expected_topology(state.state_id, scope).as_ref(),
                 "{scope:?} state {}",
                 state.state_id
             );
-            assert_eq!(history.entity_versions(state), state.entity_versions);
+            let expected = expected_topology(state.state_id, scope);
+            let slots = expected
+                .as_ref()
+                .map(AsmHistoricalTopology::slots)
+                .unwrap_or_default();
+            let versions: Vec<_> = expected_versions(state.state_id)
+                .into_iter()
+                .filter(|(slot, _)| slots.contains(slot))
+                .map(|(entity_ref, record_ref)| AsmEntityVersion {
+                    entity_ref,
+                    record_ref,
+                })
+                .collect();
+            assert_eq!(history.entity_versions(state), versions);
         }
         crate::history::discard_projection_caches(std::slice::from_mut(&mut history));
     }
-    assert!(history.topology(&history.states[2]).is_none());
+    assert!(history.topology(&history.states()[2]).is_none());
 }
 
 #[test]
 fn cache_only_materializes_requested_members_and_resets() {
     let mut history = chain();
     assert!(history.materialized.states.get().is_none());
-    assert!(history.topology(&history.states[0]).is_some());
+    assert!(history.topology(&history.states()[0]).is_some());
     let cache = history.materialized.states.get().unwrap();
     assert_eq!(
         cache.iter().filter(|entry| entry.get().is_some()).count(),
         1
     );
-    let outsider = history.states[0].clone();
+    let outsider = history.states()[0].clone();
     assert!(history.topology(&outsider).is_none());
     assert!(history.entity_versions(&outsider).is_empty());
     assert!(history.clone().materialized.states.get().is_none());
@@ -296,7 +341,7 @@ fn cache_only_materializes_requested_members_and_resets() {
 #[test]
 fn transition_and_history_serde_preserve_data_and_clear_cache() {
     let history = chain();
-    for state in &history.states {
+    for state in history.states() {
         assert!(history.topology(state).is_some());
         let transition = state.transition.as_ref().unwrap();
         let bytes = serde_json::to_vec(transition).unwrap();
@@ -306,14 +351,17 @@ fn transition_and_history_serde_preserve_data_and_clear_cache() {
     let decoded: AsmHistory = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(decoded, history);
     assert!(decoded.materialized.states.get().is_none());
-    for state in &decoded.states {
-        assert_eq!(decoded.topology(state), state.topology());
+    for state in decoded.states() {
+        assert_eq!(
+            decoded.topology(state),
+            expected_topology(state.state_id, AsmTopologyScope::Complete).as_ref()
+        );
     }
 }
 
 fn transition_mut(history: &mut AsmHistory, id: i64) -> &mut AsmHistoricalTransition {
     history
-        .states
+        .states_mut()
         .iter_mut()
         .find(|state| state.state_id == id)
         .unwrap()
@@ -327,10 +375,12 @@ fn transition_invariant_errors() {
     use AsmTransitionError::*;
     type BrokenChain = (AsmTransitionError, fn(&mut AsmHistory));
     let cases: Vec<BrokenChain> = vec![
-        (MissingTransition, |h| h.states[0].transition = None),
-        (Chain, |h| h.states[0].next_ref = Some(999)),
-        (Chain, |h| h.states[2].next_ref = Some(3)),
-        (Chain, |h| h.states[0].node_index = h.states[1].node_index),
+        (MissingTransition, |h| h.states_mut()[0].transition = None),
+        (Chain, |h| h.states_mut()[0].next_ref = Some(999)),
+        (Chain, |h| h.states_mut()[2].next_ref = Some(3)),
+        (Chain, |h| {
+            h.states_mut()[0].node_index = h.states()[1].node_index;
+        }),
         (PreviousState, |h| {
             transition_mut(h, 1).previous_state_id = Some(99);
         }),
@@ -401,7 +451,7 @@ fn transition_invariant_errors() {
         break_chain(&mut history);
         assert_eq!(history.check_transitions(), Err(expected), "case {case}");
         let head = history
-            .states
+            .states()
             .iter()
             .find(|state| state.state_id == 3)
             .unwrap();
@@ -409,11 +459,11 @@ fn transition_invariant_errors() {
         assert!(history.entity_versions(head).is_empty(), "case {case}");
     }
     let mut unbound = chain();
-    for state in &mut unbound.states {
+    for state in unbound.states_mut() {
         state.transition = None;
     }
     assert_eq!(unbound.check_transitions(), Ok(()));
-    for state in &unbound.states {
+    for state in unbound.states() {
         assert!(unbound.topology(state).is_none());
     }
 }
@@ -613,18 +663,36 @@ fn older_materialization_does_not_validate_newer_deltas() {
         .removed
         .push(99);
     let older = history
-        .states
+        .states()
         .iter()
         .find(|state| state.state_id == 2)
         .unwrap();
-    assert_eq!(history.topology(older), older.topology());
-    assert_eq!(history.entity_versions(older), older.entity_versions);
+    assert_eq!(
+        history.topology(older),
+        expected_topology(older.state_id, AsmTopologyScope::Complete).as_ref()
+    );
+    assert_eq!(
+        history.entity_versions(older),
+        expected_versions(older.state_id)
+            .into_iter()
+            .filter(
+                |(slot, _)| expected_topology(older.state_id, AsmTopologyScope::Complete)
+                    .unwrap()
+                    .slots()
+                    .contains(slot)
+            )
+            .map(|(entity_ref, record_ref)| AsmEntityVersion {
+                entity_ref,
+                record_ref
+            })
+            .collect::<Vec<_>>()
+    );
     assert_eq!(
         history.check_transitions(),
         Err(AsmTransitionError::RemovedRowAbsent)
     );
     let newer = history
-        .states
+        .states()
         .iter()
         .find(|state| state.state_id == 3)
         .unwrap();
@@ -636,13 +704,16 @@ fn cached_older_state_keeps_record_revision_validation() {
     let history = &mut chain();
     transition_mut(history, 3).record_revisions[0].record_ref = 2;
     let older = history
-        .states
+        .states()
         .iter()
         .find(|state| state.state_id == 2)
         .unwrap();
-    assert_eq!(history.topology(older), older.topology());
+    assert_eq!(
+        history.topology(older),
+        expected_topology(older.state_id, AsmTopologyScope::Complete).as_ref()
+    );
     let newer = history
-        .states
+        .states()
         .iter()
         .find(|state| state.state_id == 3)
         .unwrap();
@@ -791,15 +862,25 @@ fn carrier_groups_preserve_membership_multiplicity_changes() {
         if index == 1 {
             assert_eq!(transition.topology.surfaces.inserted, [2, 4]);
             assert_eq!(transition.topology.curves.inserted, [3]);
-            assert_eq!(transition.rows.surfaces.set[0].rows, [2, 2]);
-            assert_eq!(transition.rows.curves.set[0].rows, [3, 3, 3]);
+            assert_eq!(
+                transition.rows.surface_repeats.set[0],
+                AsmHistoricalSlotRepeat { slot: 2, count: 2 }
+            );
+            assert_eq!(
+                transition.rows.curve_repeats.set[0],
+                AsmHistoricalSlotRepeat { slot: 3, count: 3 }
+            );
         }
         if index == 2 {
             assert_eq!(
                 transition.topology.surfaces,
                 AsmHistoricalEntityDelta::default()
             );
-            assert_eq!(transition.rows.surfaces.set.len(), 2);
+            assert_eq!(
+                transition.rows.surface_repeats.set,
+                [AsmHistoricalSlotRepeat { slot: 4, count: 3 }]
+            );
+            assert_eq!(transition.rows.surface_repeats.removed, [2]);
         }
         let mut decoded: AsmHistoricalTransition =
             serde_json::from_slice(&serde_json::to_vec(&transition).unwrap()).unwrap();
@@ -816,13 +897,19 @@ fn carrier_groups_preserve_membership_multiplicity_changes() {
 fn carrier_groups_reject_inconsistent_memberships() {
     let cases: Vec<fn(&mut AsmHistory)> = vec![
         |history| {
-            transition_mut(history, 1).rows.surfaces.set[0].rows.clear();
+            transition_mut(history, 1).rows.surface_repeats.set[0].count = 1;
         },
         |history| {
-            transition_mut(history, 1).rows.curves.set[0].rows.push(99);
+            transition_mut(history, 1)
+                .rows
+                .curve_repeats
+                .set
+                .last_mut()
+                .unwrap()
+                .slot = 99;
         },
         |history| {
-            transition_mut(history, 1).rows.surfaces.set.pop();
+            transition_mut(history, 1).rows.surface_repeats.set[0].count = 0;
         },
         |history| {
             transition_mut(history, 1).topology.curves.inserted.pop();
@@ -837,10 +924,32 @@ fn carrier_groups_reject_inconsistent_memberships() {
             "case {case}"
         );
         let head = history
-            .states
+            .states()
             .iter()
             .find(|state| state.state_id == 3)
             .unwrap();
         assert!(history.topology(head).is_none(), "case {case}");
     }
+}
+
+#[test]
+fn states_mut_invalidates_materializations_before_mutation() {
+    let mut history = chain();
+    let index = history
+        .states()
+        .iter()
+        .position(|s| s.state_id == 3)
+        .unwrap();
+    assert!(history.topology(&history.states()[index]).is_some());
+    history.states_mut()[index]
+        .transition
+        .as_mut()
+        .unwrap()
+        .previous_state_id = Some(-1);
+    assert!(history.materialized.states.get().is_none());
+    assert!(history.topology(&history.states()[index]).is_none());
+    assert_eq!(
+        history.check_transitions(),
+        Err(AsmTransitionError::PreviousState)
+    );
 }

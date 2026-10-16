@@ -56,8 +56,6 @@ fn insert_only_state(node_index: i64, next_ref: Option<i64>, inserted: &[i64]) -
             },
             raw_bytes: vec![0x11].into(),
         }],
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: None,
     }
 }
@@ -71,10 +69,17 @@ fn insert_only_chain() -> Vec<AsmDeltaState> {
 }
 
 fn state_records(states: &[AsmDeltaState]) -> u64 {
-    states
-        .iter()
-        .map(|state| u64_from_index(state.entity_versions.len()))
-        .sum()
+    let active_count = crate::history::insert_only_active_record_count(states).unwrap();
+    let mut count = 0;
+    assert!(crate::history::walk_entity_versions(
+        states,
+        i64::try_from(active_count).unwrap(),
+        &[],
+        |_, versions| {
+            count += u64_from_index(versions.len());
+        }
+    ));
+    count
 }
 
 #[test]
@@ -102,9 +107,7 @@ fn history_binding_skips_a_chain_past_its_state_record_allowance() {
         bind_historical_entity_versions(&mut past_bound, &mut allowance).unwrap(),
         TableBindingCost::Exceeded
     );
-    assert!(past_bound
-        .iter()
-        .all(|state| state.entity_versions.is_empty()));
+    assert!(past_bound.iter().all(|state| state.transition.is_none()));
     assert_eq!(allowance, entries - 1);
 }
 
@@ -124,5 +127,5 @@ fn history_streams_of_one_decode_share_the_binding_allowance() {
         bind_historical_entity_versions(&mut second, &mut allowance).unwrap(),
         TableBindingCost::Exceeded
     );
-    assert!(second.iter().all(|state| state.entity_versions.is_empty()));
+    assert!(second.iter().all(|state| state.transition.is_none()));
 }

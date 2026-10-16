@@ -12,37 +12,38 @@ use crate::history_records::AsmEntityVersion;
 use crate::history_records::AsmHistoricalCoedge;
 use crate::history_records::AsmHistoricalEdge;
 use crate::history_records::AsmHistoricalTopology;
-use crate::history_records::AsmHistory;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
 #[test]
 fn design_identity_resolves_only_one_invariant_history_family() {
-    let state = |state_id, topology| AsmDeltaState {
-        id: format!("state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition: None,
+    let state = |state_id, topology| {
+        (
+            AsmDeltaState {
+                id: format!("state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![
             state(
                 3,
                 AsmHistoricalTopology {
@@ -59,7 +60,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
                 },
             ),
         ],
-    };
+    );
     assert_eq!(
         historical_identity_kind(std::slice::from_ref(&history), 42),
         Some((AsmHistoricalEntityKind::Edge, vec![3, 5]))
@@ -76,15 +77,37 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         historical_identity_kind(std::slice::from_ref(&history), 7),
         None
     );
-    let mut revision_history = history.clone();
-    revision_history.states[0].entity_versions = vec![AsmEntityVersion {
-        entity_ref: 42,
-        record_ref: 700,
-    }];
-    revision_history.states[1].entity_versions = vec![AsmEntityVersion {
-        entity_ref: 42,
-        record_ref: 701,
-    }];
+    let mut revision_history = crate::test_support::history::history(
+        history.id.clone(),
+        history.byte_offset,
+        history.preamble,
+        false,
+        history
+            .states()
+            .iter()
+            .enumerate()
+            .map(|(index, state)| {
+                let topology = history.topology(state).unwrap().clone();
+                let versions = topology
+                    .slots()
+                    .into_iter()
+                    .map(|entity_ref| AsmEntityVersion {
+                        entity_ref,
+                        record_ref: if entity_ref == 42 {
+                            if index == 0 {
+                                700
+                            } else {
+                                701
+                            }
+                        } else {
+                            entity_ref
+                        },
+                    })
+                    .collect();
+                (state.clone(), Some(topology), versions)
+            })
+            .collect(),
+    );
     assert_eq!(
         historical_selection_identity_kind(std::slice::from_ref(&revision_history), 700),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3]))
@@ -103,9 +126,9 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         },
     };
     let mut reconstructed_revision_history = history.clone();
-    reconstructed_revision_history.states[0].bulletin_boards = vec![AsmBulletinBoard {
+    reconstructed_revision_history.states_mut()[0].bulletin_boards = vec![AsmBulletinBoard {
         id: "board".into(),
-        parent: reconstructed_revision_history.states[0].id.clone(),
+        parent: reconstructed_revision_history.states()[0].id.clone(),
         byte_offset: 0,
         owner_ref: 0,
         number: 2,
@@ -119,18 +142,12 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
     );
     let mut incomplete_revision_history = reconstructed_revision_history.clone();
-    incomplete_revision_history.states[1].topology_cache =
-        crate::history_records::AsmTopologyCache::Retained(
-            incomplete_revision_history.states[1]
-                .topology()
-                .unwrap()
-                .clone(),
-        );
+    incomplete_revision_history.topology_scope = crate::history_records::AsmTopologyScope::Retained;
     assert_eq!(
         historical_selection_identity_kind(std::slice::from_ref(&incomplete_revision_history), 700),
         None
     );
-    reconstructed_revision_history.states[0].bulletin_boards[0]
+    reconstructed_revision_history.states_mut()[0].bulletin_boards[0]
         .changes
         .push(revision_change(90));
     assert_eq!(
@@ -140,38 +157,41 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         ),
         None
     );
-    revision_history.states[0].entity_versions = vec![AsmEntityVersion {
-        entity_ref: 90,
-        record_ref: 42,
-    }];
+    crate::test_support::history::edit(&mut revision_history, 0, |topology, versions| {
+        topology.vertices.push(90);
+        versions.push(AsmEntityVersion {
+            entity_ref: 90,
+            record_ref: 42,
+        });
+    });
     assert_eq!(
         historical_selection_identity_kind(std::slice::from_ref(&revision_history), 42),
         None
     );
-    let duplicate_state_history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "duplicate-state-history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state(
+    let duplicate_state_history = crate::test_support::history::history(
+        "duplicate-state-history".into(),
+        0,
+        None,
+        false,
+        vec![state(
             3,
             AsmHistoricalTopology {
                 vertices: vec![42],
                 ..AsmHistoricalTopology::default()
             },
         )],
-    };
+    );
     assert_eq!(
         historical_identity_kind(&[history.clone(), duplicate_state_history.clone()], 42),
         Some((AsmHistoricalEntityKind::Edge, vec![5]))
     );
     let mut duplicate_revision_history = duplicate_state_history;
-    duplicate_revision_history.states[0].entity_versions = vec![AsmEntityVersion {
-        entity_ref: 42,
-        record_ref: 700,
-    }];
+    crate::test_support::history::edit(&mut duplicate_revision_history, 0, |_, versions| {
+        *versions = vec![AsmEntityVersion {
+            entity_ref: 42,
+            record_ref: 700,
+        }];
+    });
     assert_eq!(
         historical_selection_identity_kind(
             &[revision_history.clone(), duplicate_revision_history],
@@ -179,21 +199,19 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         ),
         None
     );
-    let ambiguous = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "other-history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state(
+    let ambiguous = crate::test_support::history::history(
+        "other-history".into(),
+        0,
+        None,
+        false,
+        vec![state(
             7,
             AsmHistoricalTopology {
                 vertices: vec![42],
                 ..AsmHistoricalTopology::default()
             },
         )],
-    };
+    );
     assert_eq!(historical_identity_kind(&[history, ambiguous], 42), None);
 }
 
@@ -225,28 +243,30 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
         ],
         ..AsmHistoricalTopology::default()
     };
-    let history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![AsmDeltaState {
-            id: "state-3".into(),
-            parent: "history".into(),
-            byte_offset: 0,
-            state_id: 3,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 3,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: vec![
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![(
+            AsmDeltaState {
+                id: "state-3".into(),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id: 3,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 3,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology.clone()),
+            vec![
                 AsmEntityVersion {
                     entity_ref: 42,
                     record_ref: 700,
@@ -256,10 +276,8 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
                     record_ref: 800,
                 },
             ],
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology.clone()),
-            transition: None,
-        }],
-    };
+        )],
+    );
     let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&history), [700, 800]);
     let candidates =
         { entity_selection_edge_candidates([(0, 700), (1, 800)], 3, &identities, &topology) };
@@ -286,69 +304,57 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
 }
 
 #[test]
-fn a_retained_state_beside_a_complete_snapshot_resolves_no_reconstructed_revision() {
-    let topology = |vertices: Vec<i64>| {
-        serde_json::to_value(AsmHistoricalTopology {
-            edges: vec![42],
-            vertices,
-            ..AsmHistoricalTopology::default()
-        })
-        .unwrap()
+fn partially_bound_history_resolves_no_reconstructed_revision() {
+    let topology = AsmHistoricalTopology {
+        edges: vec![42],
+        ..Default::default()
     };
-    let document = serde_json::json!({
-        "id": "history",
-        "byte_offset": 0,
-        "projection_finalized": true,
-        "states": [
-            {
-                "id": "state-3",
-                "parent": "history",
-                "byte_offset": 0,
-                "state_id": 3,
-                "version_flag": 1,
-                "state_flag": 0,
-                "node_index": 3,
-                "owner_ref": 0,
-                "bulletin_boards": [{
-                    "id": "board",
-                    "parent": "state-3",
-                    "byte_offset": 0,
-                    "owner_ref": 0,
-                    "number": 2,
-                    "changes": [{
-                        "id": "revision-700-to-42",
-                        "parent": "board",
-                        "byte_offset": 0,
-                        "kind": "update",
-                        "old_ref": 700,
-                        "new_ref": 42
-                    }]
-                }],
-                "records": [],
-                "record_table_complete": true,
-                "topology_cache": "complete",
-                "topology": topology(Vec::new())
+    let state = |state_id| {
+        (
+            AsmDeltaState {
+                id: format!("state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
             },
-            {
-                "id": "state-5",
-                "parent": "history",
-                "byte_offset": 0,
-                "state_id": 5,
-                "version_flag": 1,
-                "state_flag": 0,
-                "node_index": 5,
-                "owner_ref": 0,
-                "bulletin_boards": [],
-                "records": [],
-                "topology_cache": "retained",
-                "topology": topology(vec![90])
-            }
-        ]
-    });
-    let history: AsmHistory = serde_json::from_value(document).unwrap();
-    assert!(!history.projection_finalized());
-    assert_eq!(
-        historical_selection_identity_kind(std::slice::from_ref(&history), 700),
-        None
+            Some(topology.clone()),
+            Vec::new(),
+        )
+    };
+    let mut history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(3), state(5)],
     );
+    history.states_mut()[0].bulletin_boards = vec![AsmBulletinBoard {
+        id: "board".into(),
+        parent: "state-3".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 2,
+        changes: vec![AsmEntityChange {
+            id: "revision-700-to-42".into(),
+            parent: "board".into(),
+            byte_offset: 0,
+            kind: AsmEntityChangeKind::Update { old: 700, new: 42 },
+        }],
+    }];
+    history.states_mut()[1].transition = None;
+    assert_eq!(
+        history.check_transitions(),
+        Err(crate::history_records::AsmTransitionError::MissingTransition)
+    );
+    assert_eq!(historical_selection_identity_kind(&[history], 700), None);
 }

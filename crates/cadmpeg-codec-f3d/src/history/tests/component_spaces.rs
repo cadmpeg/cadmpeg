@@ -11,9 +11,10 @@ use crate::history::{
     recipe_index::RecipeTopologyCache, recipe_reference_common_vertex,
     selection::bind_extrude_selection_history,
 };
+use crate::history_records::AsmHistory;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,
-    AsmHistoricalTopology, AsmHistory,
+    AsmHistoricalTopology,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
@@ -31,32 +32,32 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
             "asm-history",
             0,
         );
-        AsmHistory {
-            topology_scope: crate::history_records::AsmTopologyScope::Complete,
-            materialized: crate::history_records::MaterializedTopologies::default(),
-            states: vec![AsmDeltaState {
-                id: format!("{id}:state#{state_id}"),
-                parent: id.clone(),
-                byte_offset: 0,
-                state_id,
-                version_flag: 1,
-                state_flag: 0,
-                previous_ref: None,
-                next_ref: None,
-                node_index: state_id,
-                partner_ref: None,
-                owner_ref: 0,
-                bulletin_boards: Vec::new(),
-                records: Vec::new(),
-                entity_versions: Vec::new(),
-                topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-                transition: None,
-            }],
-            id,
-            byte_offset: 0,
-            preamble: None,
-            record_table_binding_budget_exceeded: false,
-        }
+        crate::test_support::history::history(
+            id.clone(),
+            0,
+            None,
+            false,
+            vec![(
+                AsmDeltaState {
+                    id: format!("{id}:state#{state_id}"),
+                    parent: id.clone(),
+                    byte_offset: 0,
+                    state_id,
+                    version_flag: 1,
+                    state_flag: 0,
+                    previous_ref: None,
+                    next_ref: None,
+                    node_index: state_id,
+                    partner_ref: None,
+                    owner_ref: 0,
+                    bulletin_boards: Vec::new(),
+                    records: Vec::new(),
+                    transition: None,
+                },
+                Some(topology),
+                Vec::new(),
+            )],
+        )
     }
 
     let design_stream = "Asset/Design1/BulkStream.dat";

@@ -98,15 +98,13 @@ fn history_past_its_binding_bound_reports_a_loss() {
     let mut native = F3dNative::default();
     native
         .asm_histories
-        .push(crate::history_records::AsmHistory {
-            topology_scope: crate::history_records::AsmTopologyScope::Complete,
-            materialized: crate::history_records::MaterializedTopologies::default(),
-            id: "f3d:test:asm-history#0".into(),
-            byte_offset: 0,
-            preamble: None,
-            record_table_binding_budget_exceeded: true,
-            states: Vec::new(),
-        });
+        .push(crate::test_support::history::history(
+            "f3d:test:asm-history#0".into(),
+            0,
+            None,
+            true,
+            Vec::new(),
+        ));
     let mut report = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),

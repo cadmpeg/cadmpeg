@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge-operand reference contexts name `asm_face_boundaries` records.
 
-use crate::history_records::{AsmDeltaState, AsmHistory, AsmTopologyCache};
+use crate::history_records::AsmDeltaState;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
 use crate::records::topology::historical_context::{
     AsmFaceBoundary, DesignEdgeRecipeReferenceContext, DesignHistoricalFaceLoopContext,
@@ -14,25 +14,27 @@ const OPERAND_MESSAGE: &str =
 const BOUNDARY_MESSAGE: &str =
     "Fusion ASM face boundary has an invalid state, identity, or reference";
 
-fn state(state_id: i64, byte_offset: u64) -> AsmDeltaState {
-    AsmDeltaState {
-        id: format!("f3d:test:asm-delta-state#{byte_offset:010}"),
-        parent: "f3d:test:asm-history#0000000000".into(),
-        byte_offset,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: AsmTopologyCache::Released,
-        transition: None,
-    }
+fn state(state_id: i64, byte_offset: u64) -> crate::test_support::history::State {
+    (
+        AsmDeltaState {
+            id: format!("f3d:test:asm-delta-state#{byte_offset:010}"),
+            parent: "f3d:test:asm-history#0000000000".into(),
+            byte_offset,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        None,
+        Vec::new(),
+    )
 }
 
 fn boundary(state: &AsmDeltaState, face_slot: i64) -> AsmFaceBoundary {
@@ -57,8 +59,9 @@ fn face(slot: i64) -> FaceId {
 /// A Loft scope evaluated from state 6 to state 7, one edge operand with one
 /// reference context naming face 100 in both states, and both boundaries.
 fn native() -> crate::native::F3dNative {
-    let result = state(7, 20);
+    let mut result = state(7, 20);
     let preceding = state(6, 10);
+    result.0.next_ref = Some(preceding.0.node_index);
     let scope = serde_json::from_value(serde_json::json!({
         "id": "f3d:test:scope#1811",
         "byte_offset": 0,
@@ -101,8 +104,8 @@ fn native() -> crate::native::F3dNative {
         "next_byte_offset": 160
     }))
     .unwrap();
-    let result_boundary = boundary(&result, 100);
-    let preceding_boundary = boundary(&preceding, 100);
+    let result_boundary = boundary(&result.0, 100);
+    let preceding_boundary = boundary(&preceding.0, 100);
     operand.recipe_state_id = Some(6);
     operand.recipe_reference_contexts = vec![DesignEdgeRecipeReferenceContext {
         reference_ordinal: 0,
@@ -122,15 +125,13 @@ fn native() -> crate::native::F3dNative {
     crate::native::F3dNative {
         design_parameter_scopes: vec![scope],
         design_edge_operands: vec![operand],
-        asm_histories: vec![AsmHistory {
-            topology_scope: crate::history_records::AsmTopologyScope::Complete,
-            materialized: crate::history_records::MaterializedTopologies::default(),
-            id: "f3d:test:asm-history#0000000000".into(),
-            byte_offset: 0,
-            preamble: None,
-            record_table_binding_budget_exceeded: false,
-            states: vec![preceding, result],
-        }],
+        asm_histories: vec![crate::test_support::history::history(
+            "f3d:test:asm-history#0000000000".into(),
+            0,
+            None,
+            false,
+            vec![preceding, result],
+        )],
         asm_face_boundaries: face_boundaries,
         ..Default::default()
     }

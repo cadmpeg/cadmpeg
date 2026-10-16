@@ -492,9 +492,12 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     let mut states = histories
         .iter()
         .filter(|history| ids::same_native_occurrence(&history.id, &group.id))
-        .flat_map(|history| &history.states)
-        .filter(|state| state.state_id == state_id);
-    let Some(topology) = states.next().and_then(|state| state.topology()) else {
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == state_id);
+    let Some((history, state)) = states.next() else {
+        return Ok(native_edge_selection(group));
+    };
+    let Some(topology) = history.topology(state) else {
         return Ok(native_edge_selection(group));
     };
     if states.next().is_some() {

@@ -1804,7 +1804,7 @@ fn report_design_projection_gaps(
     for error in native
         .asm_histories
         .iter()
-        .flat_map(|history| &history.states)
+        .flat_map(crate::history_records::AsmHistory::states)
         .flat_map(|state| &state.records)
         .filter_map(|record| record.framing_error())
     {
@@ -4384,7 +4384,7 @@ fn populate_annotations(
         }
         for history in &native.asm_histories {
             note!(&history.id, "history_stream");
-            for state in &history.states {
+            for state in history.states() {
                 note!(&state.id, "delta_state");
                 for board in &state.bulletin_boards {
                     note!(&board.id, "BulletinBoard");

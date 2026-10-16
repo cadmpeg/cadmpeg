@@ -16,54 +16,59 @@ use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 
 #[test]
 fn projection_caches_end_after_history_consumers() {
-    let transition = crate::history_records::AsmHistoricalTransition {
-        record_revisions: Vec::new(),
-        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
-        previous_state_id: Some(1),
-        records: Default::default(),
-        topology: Default::default(),
-    };
-    let state = AsmDeltaState {
-        id: "f3d:test:history-state#2".into(),
-        parent: "f3d:test:history#0".into(),
-        byte_offset: 0,
-        state_id: 2,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 2,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: vec![crate::history_records::AsmEntityVersion {
+    let state = (
+        AsmDeltaState {
+            id: "f3d:test:history-state#2".into(),
+            parent: "f3d:test:history#0".into(),
+            byte_offset: 0,
+            state_id: 2,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 2,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(AsmHistoricalTopology {
+            edges: vec![3],
+            ..Default::default()
+        }),
+        vec![crate::history_records::AsmEntityVersion {
             entity_ref: 3,
             record_ref: 4,
         }],
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition: Some(transition.clone()),
-    };
-    let mut histories = [AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "f3d:test:history#0".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state],
-    }];
+    );
+    let mut histories = [crate::test_support::history::history(
+        "f3d:test:history#0".into(),
+        0,
+        None,
+        false,
+        vec![state],
+    )];
 
+    let transition = histories[0].states()[0].transition.clone();
+    assert_eq!(
+        histories[0].entity_versions(&histories[0].states()[0]),
+        vec![crate::history_records::AsmEntityVersion {
+            entity_ref: 3,
+            record_ref: 4
+        }]
+    );
     discard_projection_caches(&mut histories);
 
-    let state = &histories[0].states[0];
-    assert!(histories[0].projection_finalized());
-    assert!(state.entity_versions.is_empty());
-    assert!(!state.record_table_complete());
-    assert!(state.topology().is_none());
-    assert_eq!(state.transition, Some(transition));
+    let state = &histories[0].states()[0];
+    assert!(crate::history::projection_was_finalized(&histories));
+    assert!(histories[0].entity_versions(state).is_empty());
+    assert_ne!(
+        histories[0].topology_scope,
+        crate::history_records::AsmTopologyScope::Complete
+    );
+    assert!(histories[0].topology(state).is_none());
+    assert_eq!(state.transition, transition);
 
     let mut native = crate::native::F3dNative {
         asm_histories: histories.to_vec(),
@@ -77,7 +82,9 @@ fn projection_caches_end_after_history_consumers() {
         )
         .expect("store native history");
     native = crate::native::F3dNative::load(&namespace).expect("load native history");
-    assert!(native.asm_histories[0].projection_finalized());
+    assert!(crate::history::projection_was_finalized(
+        &native.asm_histories
+    ));
 }
 
 #[test]
@@ -152,7 +159,7 @@ fn a_history_with_no_states_has_released_nothing_and_is_not_finalized() {
         "states": []
     });
     let history: AsmHistory = serde_json::from_value(document).unwrap();
-    assert!(!history.projection_finalized());
+    assert!(history.states().is_empty());
     assert!(!crate::history::projection_was_finalized(
         std::slice::from_ref(&history)
     ));

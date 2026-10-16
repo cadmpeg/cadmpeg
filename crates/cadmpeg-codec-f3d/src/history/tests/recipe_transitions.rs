@@ -17,7 +17,7 @@ fn split_face_case() -> Result<
     ),
     cadmpeg_core::CodecError,
 > {
-    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use crate::records::{
         feature::scope::DesignParameterScope,
         recipes::ConstructionRecipeKind,
@@ -130,47 +130,35 @@ fn split_face_case() -> Result<
             next_byte_offset: 1500,
         })
         .unwrap();
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition,
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:state#{state_id}"),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                2,
-                Some(crate::history_records::AsmHistoricalTransition {
-                    record_revisions: Vec::new(),
-                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
-            ),
-            state(1, None),
-        ],
-    };
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, Some(1)), state(1, None)],
+    );
     let mut features = vec![Feature {
         id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
         ordinal: 0,
@@ -226,7 +214,6 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
 fn thread_face_group_uses_first_reference_transition_candidates() {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalTopology,
-        AsmHistoricalTransition, AsmHistory,
     };
     use crate::records::{
         dimensions::DesignRecipeReference,
@@ -356,41 +343,35 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         })
         .unwrap();
 
-    let mut transition = AsmHistoricalTransition {
-        record_revisions: Vec::new(),
-        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
-        previous_state_id: Some(1),
-        records: Default::default(),
-        topology: Default::default(),
+    let state = |state_id, topology, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:state#{state_id}"),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
-    transition.topology.faces.updated.push(7);
-    let state = |state_id, topology, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: (state_id == 2).then_some(1),
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
-    };
-    let history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(2, AsmHistoricalTopology::default(), Some(transition)),
+    let mut history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(2, AsmHistoricalTopology::default(), Some(1)),
             state(
                 1,
                 AsmHistoricalTopology {
@@ -418,8 +399,28 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
                 None,
             ),
         ],
-    };
+    );
 
+    let result_topology = history.topology(&history.states()[1]).unwrap().clone();
+    crate::test_support::history::edit(&mut history, 1, |_, versions| {
+        *versions = [7, 8, 9, 10]
+            .into_iter()
+            .map(|entity_ref| crate::history_records::AsmEntityVersion {
+                entity_ref,
+                record_ref: entity_ref,
+            })
+            .collect();
+    });
+    crate::test_support::history::edit(&mut history, 0, |topology, versions| {
+        *topology = result_topology;
+        *versions = [7, 8, 9, 10]
+            .into_iter()
+            .map(|entity_ref| crate::history_records::AsmEntityVersion {
+                entity_ref,
+                record_ref: if entity_ref == 7 { 107 } else { entity_ref },
+            })
+            .collect();
+    });
     let mut operands = vec![operand.clone()];
     crate::test_support::with_decode_context(|decode_ctx| {
         bind_face_operand_history_candidates(
@@ -464,33 +465,40 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .clone();
     let mut cylinder_history = history.clone();
     cylinder_history.id = "f3d:Breps.BlobParts/BREP.input:asm-history#1".into();
-    let cylinder_topology = cylinder_history.states[1]
-        .topology_mut()
-        .expect("preceding topology");
-    cylinder_topology.face_surfaces = vec![
-        AsmHistoricalCarrierBinding {
-            entity: 7,
-            carrier: 70,
-        },
-        AsmHistoricalCarrierBinding {
-            entity: 8,
-            carrier: 80,
-        },
-    ];
-    cylinder_topology.surface_cylinders = vec![
-        AsmHistoricalCylinder {
-            surface: 70,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            radius: 1.5,
-        },
-        AsmHistoricalCylinder {
-            surface: 80,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            radius: 3.0,
-        },
-    ];
+    crate::test_support::history::edit(&mut cylinder_history, 1, |topology, _| {
+        topology.surfaces = vec![70, 80];
+        topology.face_surfaces = vec![
+            AsmHistoricalCarrierBinding {
+                entity: 7,
+                carrier: 70,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 8,
+                carrier: 80,
+            },
+        ];
+        topology.surface_cylinders = vec![
+            AsmHistoricalCylinder {
+                surface: 70,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 1.5,
+            },
+            AsmHistoricalCylinder {
+                surface: 80,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 3.0,
+            },
+        ];
+    });
+    let cylinders = cylinder_history
+        .topology(&cylinder_history.states()[1])
+        .unwrap()
+        .clone();
+    crate::test_support::history::edit(&mut cylinder_history, 0, |topology, _| {
+        *topology = cylinders;
+    });
     let mut cylinder_operands = vec![cylinder_operand];
     crate::test_support::with_decode_context(|decode_ctx| {
         bind_face_operand_history_candidates(
@@ -526,19 +534,16 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
 
     let mut ambiguous_geometry_history = cylinder_history;
-    ambiguous_geometry_history.states[0]
-        .transition
-        .as_mut()
-        .expect("result transition")
-        .topology
-        .faces
-        .updated
-        .push(8);
-    ambiguous_geometry_history.states[1]
-        .topology_mut()
-        .expect("preceding topology")
-        .surface_cylinders[1]
-        .radius = 1.6;
+    crate::test_support::history::edit(&mut ambiguous_geometry_history, 0, |_, versions| {
+        versions
+            .iter_mut()
+            .find(|v| v.entity_ref == 8)
+            .unwrap()
+            .record_ref = 108;
+    });
+    crate::test_support::history::edit(&mut ambiguous_geometry_history, 1, |topology, _| {
+        topology.surface_cylinders[1].radius = 1.6;
+    });
     let mut ambiguous_geometry_operands = vec![cylinder_operands.remove(0)];
     crate::test_support::with_decode_context(|decode_ctx| {
         bind_face_operand_history_candidates(
@@ -752,9 +757,7 @@ fn hole_face_case() -> Result<
     ),
     cadmpeg_core::CodecError,
 > {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
-    };
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use crate::records::{
         feature::{
             hole::{DesignHoleConstruction, DesignHoleFaceSelection},
@@ -885,47 +888,35 @@ fn hole_face_case() -> Result<
         vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         native_ref: None,
     }];
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("history:state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition,
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history:state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                2,
-                Some(AsmHistoricalTransition {
-                    record_revisions: Vec::new(),
-                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
-            ),
-            state(1, None),
-        ],
-    };
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, Some(1)), state(1, None)],
+    );
 
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),

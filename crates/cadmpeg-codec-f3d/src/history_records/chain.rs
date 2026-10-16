@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sorted historical row diffs and lazy chain materialization.
 use super::{
-    AsmDeltaState, AsmEntityVersion, AsmHistoricalEntityDelta, AsmHistoricalEntityRows,
-    AsmHistoricalEntityTags, AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistoricalRowsDelta,
+    AsmDeltaState, AsmEntityVersion, AsmHistoricalEntityDelta, AsmHistoricalEntityTags,
+    AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistoricalRowsDelta, AsmHistoricalSlotRepeat,
     AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
     AsmTopologyScope, AsmTransitionError,
 };
@@ -169,27 +169,39 @@ fn entity_tags(topology: &AsmHistoricalTopology) -> Vec<AsmHistoricalEntityTags>
     groups
 }
 
-fn entity_rows(family: &[i64]) -> Vec<AsmHistoricalEntityRows> {
-    let mut groups: Vec<AsmHistoricalEntityRows> = Vec::new();
-    for &entity_ref in family {
-        if let Some(last) = groups
-            .last_mut()
-            .filter(|last| last.entity_ref == entity_ref)
-        {
-            last.rows.push(entity_ref);
+fn slot_repeats(family: &[i64]) -> Option<Vec<AsmHistoricalSlotRepeat>> {
+    let mut groups: Vec<AsmHistoricalSlotRepeat> = Vec::new();
+    let mut previous = None;
+    let mut count = 0_u32;
+    for &slot in family {
+        if previous == Some(slot) {
+            count = count.checked_add(1)?;
         } else {
-            groups.push(AsmHistoricalEntityRows {
-                entity_ref,
-                rows: vec![entity_ref],
-            });
+            if previous.is_some_and(|previous| previous > slot) {
+                return None;
+            }
+            if let Some(slot) = previous.filter(|_| count >= 2) {
+                groups.push(AsmHistoricalSlotRepeat { slot, count });
+            }
+            previous = Some(slot);
+            count = 1;
         }
     }
-    groups
+    if let Some(slot) = previous.filter(|_| count >= 2) {
+        groups.push(AsmHistoricalSlotRepeat { slot, count });
+    }
+    Some(groups)
 }
 
-fn apply_entity_rows(
+fn distinct_slots(family: &[i64]) -> Vec<i64> {
+    let mut slots = family.to_vec();
+    slots.dedup();
+    slots
+}
+
+fn apply_slot_repeats(
     membership: &AsmHistoricalEntityDelta,
-    rows: &AsmHistoricalRowDelta<AsmHistoricalEntityRows>,
+    rows: &AsmHistoricalRowDelta<AsmHistoricalSlotRepeat>,
     family: &mut Vec<i64>,
     updated_records: &[i64],
 ) -> Result<(), AsmTransitionError> {
@@ -200,18 +212,32 @@ fn apply_entity_rows(
     {
         return Ok(());
     }
-    let mut groups = entity_rows(family);
-    let mut keys = groups.iter().map(AsmHistoricalRow::key).collect();
-    apply_membership(membership, &mut keys, updated_records)?;
-    rows.apply(&mut groups)?;
-    if !groups.iter().map(AsmHistoricalRow::key).eq(keys)
-        || groups.iter().any(|group| {
-            group.rows.is_empty() || group.rows.iter().any(|&row| row != group.entity_ref)
-        })
+    let mut repeats = slot_repeats(family).ok_or(AsmTransitionError::UnsortedFamily)?;
+    let mut slots = distinct_slots(family);
+    apply_membership(membership, &mut slots, updated_records)?;
+    rows.apply(&mut repeats)?;
+    if repeats
+        .iter()
+        .any(|repeat| repeat.count < 2 || slots.binary_search(&repeat.slot).is_err())
     {
         return Err(AsmTransitionError::MembershipCoverage);
     }
-    *family = groups.into_iter().flat_map(|group| group.rows).collect();
+    let mut repeats = repeats.iter().peekable();
+    family.clear();
+    for slot in slots {
+        let count = if repeats.peek().is_some_and(|repeat| repeat.slot == slot) {
+            repeats.next().map_or(1, |repeat| repeat.count)
+        } else {
+            1
+        };
+        let count = usize::try_from(count).map_err(|_| AsmTransitionError::MembershipCoverage)?;
+        family
+            .try_reserve(count)
+            .map_err(|_| AsmTransitionError::MembershipCoverage)?;
+        for _ in 0..count {
+            family.push(slot);
+        }
+    }
     Ok(())
 }
 
@@ -229,17 +255,11 @@ impl AsmHistoricalTransition {
             .map_or(&empty_versions, |state| state.versions);
         let new = newer.topology;
 
-        let old_surfaces = entity_rows(&old_topology.surfaces);
-        let new_surfaces = entity_rows(&new.surfaces);
-        let old_curves = entity_rows(&old_topology.curves);
-        let new_curves = entity_rows(&new.curves);
+        let old_surfaces = slot_repeats(&old_topology.surfaces)?;
+        let new_surfaces = slot_repeats(&new.surfaces)?;
+        let old_curves = slot_repeats(&old_topology.curves)?;
+        let new_curves = slot_repeats(&new.curves)?;
         let delta = |new: &[i64], old: &[i64]| entity_delta(new, old, newer.versions, old_versions);
-        let grouped_delta = |new: &[AsmHistoricalEntityRows], old: &[AsmHistoricalEntityRows]| {
-            delta(
-                &new.iter().map(AsmHistoricalRow::key).collect::<Vec<_>>(),
-                &old.iter().map(AsmHistoricalRow::key).collect::<Vec<_>>(),
-            )
-        };
         let records = delta(
             &newer.versions.keys().copied().collect::<Vec<_>>(),
             &old_versions.keys().copied().collect::<Vec<_>>(),
@@ -273,13 +293,19 @@ impl AsmHistoricalTransition {
                 edges: delta(&new.edges, &old_topology.edges)?,
                 vertices: delta(&new.vertices, &old_topology.vertices)?,
                 points: delta(&new.points, &old_topology.points)?,
-                surfaces: grouped_delta(&new_surfaces, &old_surfaces)?,
-                curves: grouped_delta(&new_curves, &old_curves)?,
+                surfaces: delta(
+                    &distinct_slots(&new.surfaces),
+                    &distinct_slots(&old_topology.surfaces),
+                )?,
+                curves: delta(
+                    &distinct_slots(&new.curves),
+                    &distinct_slots(&old_topology.curves),
+                )?,
                 pcurves: delta(&new.pcurves, &old_topology.pcurves)?,
             },
             rows: AsmHistoricalRowsDelta {
-                surfaces: AsmHistoricalRowDelta::between(&old_surfaces, &new_surfaces)?,
-                curves: AsmHistoricalRowDelta::between(&old_curves, &new_curves)?,
+                surface_repeats: AsmHistoricalRowDelta::between(&old_surfaces, &new_surfaces)?,
+                curve_repeats: AsmHistoricalRowDelta::between(&old_curves, &new_curves)?,
                 surface_radii: AsmHistoricalRowDelta::between(
                     &old_topology.surface_radii,
                     &new.surface_radii,
@@ -413,15 +439,15 @@ impl AsmHistoricalTransition {
             &mut topology.points,
             &self.records.updated,
         )?;
-        apply_entity_rows(
+        apply_slot_repeats(
             &self.topology.surfaces,
-            &self.rows.surfaces,
+            &self.rows.surface_repeats,
             &mut topology.surfaces,
             &self.records.updated,
         )?;
-        apply_entity_rows(
+        apply_slot_repeats(
             &self.topology.curves,
-            &self.rows.curves,
+            &self.rows.curve_repeats,
             &mut topology.curves,
             &self.records.updated,
         )?;
@@ -654,7 +680,7 @@ impl AsmHistoricalRowsDelta {
 }
 
 impl AsmHistoricalTopology {
-    fn has_retained_rows(&self) -> bool {
+    pub(crate) fn has_retained_rows(&self) -> bool {
         !self.face_surfaces.is_empty()
             || !self.surface_planes.is_empty()
             || !self.loop_coedges.is_empty()
@@ -664,7 +690,7 @@ impl AsmHistoricalTopology {
             || !self.coedge_pcurves.is_empty()
             || !self.curve_axes.is_empty()
     }
-    fn slots(&self) -> BTreeSet<i64> {
+    pub(crate) fn slots(&self) -> BTreeSet<i64> {
         [
             &self.bodies,
             &self.regions,
@@ -756,8 +782,6 @@ impl AsmHistory {
     }
 
     /// Check chain links and all delta application invariants.
-    // Snapshot consumers migrate to this entry point in the next unit.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn check_transitions(&self) -> Result<(), AsmTransitionError> {
         let Some(order) = self.bound_chain()? else {
             return Ok(());
@@ -776,8 +800,6 @@ impl AsmHistory {
     }
 
     /// Rebuild this member state's topology and cache only that state.
-    // Snapshot consumers migrate to this entry point in the next unit.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn topology(&self, state: &AsmDeltaState) -> Option<&AsmHistoricalTopology> {
         let index = self
             .states
@@ -823,8 +845,6 @@ impl AsmHistory {
     }
 
     /// Revisions of the topology's slots, sorted by stable slot.
-    // Snapshot consumers migrate to this entry point in the next unit.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn entity_versions(&self, state: &AsmDeltaState) -> Vec<AsmEntityVersion> {
         self.topology_versions(state).unwrap_or_default()
     }

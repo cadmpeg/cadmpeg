@@ -24,21 +24,37 @@ pub(crate) struct AsmHistory {
     /// True when historical topology binding was not attempted because its
     /// state-record entry count exceeded the binding bound.
     pub(crate) record_table_binding_budget_exceeded: bool,
-    pub(crate) states: Vec<AsmDeltaState>,
+    states: Vec<AsmDeltaState>,
     pub(crate) topology_scope: AsmTopologyScope,
     pub(crate) materialized: MaterializedTopologies,
 }
 
 impl AsmHistory {
-    /// Historical projection consumers finished and every temporary complete
-    /// topology snapshot this history holds was released. A history with no
-    /// states has released nothing and is not finalized.
-    pub(crate) fn projection_finalized(&self) -> bool {
-        !self.states.is_empty()
-            && self
-                .states
-                .iter()
-                .all(super::history_records::AsmDeltaState::projection_released)
+    pub(crate) fn new(
+        id: String,
+        byte_offset: u64,
+        preamble: Option<AsmPreamble>,
+        record_table_binding_budget_exceeded: bool,
+        states: Vec<AsmDeltaState>,
+    ) -> Self {
+        Self {
+            id,
+            byte_offset,
+            preamble,
+            record_table_binding_budget_exceeded,
+            states,
+            topology_scope: AsmTopologyScope::Complete,
+            materialized: MaterializedTopologies::default(),
+        }
+    }
+
+    pub(crate) fn states(&self) -> &[AsmDeltaState] {
+        &self.states
+    }
+
+    pub(crate) fn states_mut(&mut self) -> &mut Vec<AsmDeltaState> {
+        self.release_topologies();
+        &mut self.states
     }
 
     pub(crate) fn stream_size(&self) -> Option<i64> {
@@ -139,86 +155,14 @@ pub(crate) struct AsmDeltaState {
     pub(crate) bulletin_boards: Vec<AsmBulletinBoard>,
     #[serde(default)]
     pub(crate) records: Vec<AsmHistoryRecord>,
-    /// Topology-entity slot to record-revision map at this state. The decoder
-    /// retains this compact map for late persistent-selection binding after
-    /// projection caches are finalized.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) entity_versions: Vec<AsmEntityVersion>,
-    pub(crate) topology_cache: AsmTopologyCache,
     /// Forward change from the state reached by `next_ref` to this state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) transition: Option<AsmHistoricalTransition>,
 }
 
-/// Historical topology retained for projection or for late identity resolution.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) enum AsmTopologyCache {
-    #[default]
-    Absent,
-    Complete(AsmHistoricalTopology),
-    Retained(AsmHistoricalTopology),
-    /// The complete snapshot was released at finalization and nothing was kept.
-    Released,
-}
-
-/// Serialized discriminant of one state's topology cache.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum AsmTopologyCacheKind {
-    #[default]
-    Absent,
-    Complete,
-    Retained,
-    Released,
-}
-
 /// Whether a serialized field still holds its default.
 pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
     *value == T::default()
-}
-
-impl AsmDeltaState {
-    pub(crate) fn topology(&self) -> Option<&AsmHistoricalTopology> {
-        match &self.topology_cache {
-            AsmTopologyCache::Absent | AsmTopologyCache::Released => None,
-            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => {
-                Some(topology)
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn topology_mut(&mut self) -> Option<&mut AsmHistoricalTopology> {
-        match &mut self.topology_cache {
-            AsmTopologyCache::Absent | AsmTopologyCache::Released => None,
-            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => {
-                Some(topology)
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn record_table_complete(&self) -> bool {
-        matches!(self.topology_cache, AsmTopologyCache::Complete(_))
-    }
-
-    /// The serialized discriminant of this state's topology cache.
-    pub(crate) fn topology_cache_kind(&self) -> AsmTopologyCacheKind {
-        match self.topology_cache {
-            AsmTopologyCache::Absent => AsmTopologyCacheKind::Absent,
-            AsmTopologyCache::Complete(_) => AsmTopologyCacheKind::Complete,
-            AsmTopologyCache::Retained(_) => AsmTopologyCacheKind::Retained,
-            AsmTopologyCache::Released => AsmTopologyCacheKind::Released,
-        }
-    }
-
-    /// The state's complete projection snapshot was released at finalization.
-    fn projection_released(&self) -> bool {
-        matches!(
-            self.topology_cache,
-            AsmTopologyCache::Retained(_) | AsmTopologyCache::Released
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -253,22 +197,6 @@ struct AsmDeltaStateWire {
     bulletin_boards: Vec<AsmBulletinBoard>,
     #[serde(default)]
     records: Vec<AsmHistoryRecord>,
-    /// Topology-entity slot to record-revision map at this state. The decoder
-    /// retains this compact map for late persistent-selection binding after
-    /// projection caches are finalized.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    entity_versions: Vec<AsmEntityVersion>,
-    /// Which form of topology snapshot this state holds.
-    #[serde(default, skip_serializing_if = "is_default")]
-    topology_cache: AsmTopologyCacheKind,
-    /// Stable `RecordTable` identities emitted by the ordinary B-rep decoder for
-    /// this historical state.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_topology"
-    )]
-    topology: Option<AsmHistoricalTopology>,
     /// Forward change from the state reached by `next_ref` to this state.
     #[serde(
         default,
@@ -282,22 +210,6 @@ impl TryFrom<AsmDeltaStateWire> for AsmDeltaState {
     type Error = String;
 
     fn try_from(wire: AsmDeltaStateWire) -> Result<Self, Self::Error> {
-        let topology_cache = match (wire.topology_cache, wire.topology) {
-            (AsmTopologyCacheKind::Absent, None) => AsmTopologyCache::Absent,
-            (AsmTopologyCacheKind::Released, None) => AsmTopologyCache::Released,
-            (AsmTopologyCacheKind::Complete, Some(topology)) => {
-                AsmTopologyCache::Complete(topology)
-            }
-            (AsmTopologyCacheKind::Retained, Some(topology)) => {
-                AsmTopologyCache::Retained(topology)
-            }
-            (AsmTopologyCacheKind::Absent | AsmTopologyCacheKind::Released, Some(_)) => {
-                return Err("topology_cache carries no topology in this form".into())
-            }
-            (AsmTopologyCacheKind::Complete | AsmTopologyCacheKind::Retained, None) => {
-                return Err("topology_cache requires topology".into())
-            }
-        };
         Ok(Self {
             id: wire.id,
             parent: wire.parent,
@@ -312,25 +224,13 @@ impl TryFrom<AsmDeltaStateWire> for AsmDeltaState {
             owner_ref: wire.owner_ref,
             bulletin_boards: wire.bulletin_boards,
             records: wire.records,
-            entity_versions: wire.entity_versions,
             transition: wire.transition,
-            topology_cache,
         })
     }
 }
 
 impl From<AsmDeltaState> for AsmDeltaStateWire {
     fn from(state: AsmDeltaState) -> Self {
-        let (topology_cache, topology) = match state.topology_cache {
-            AsmTopologyCache::Absent => (AsmTopologyCacheKind::Absent, None),
-            AsmTopologyCache::Released => (AsmTopologyCacheKind::Released, None),
-            AsmTopologyCache::Complete(topology) => {
-                (AsmTopologyCacheKind::Complete, Some(topology))
-            }
-            AsmTopologyCache::Retained(topology) => {
-                (AsmTopologyCacheKind::Retained, Some(topology))
-            }
-        };
         Self {
             id: state.id,
             parent: state.parent,
@@ -345,10 +245,7 @@ impl From<AsmDeltaState> for AsmDeltaStateWire {
             owner_ref: state.owner_ref,
             bulletin_boards: state.bulletin_boards,
             records: state.records,
-            entity_versions: state.entity_versions,
             transition: state.transition,
-            topology_cache,
-            topology,
         }
     }
 }
@@ -954,7 +851,7 @@ impl From<AsmEntityChange> for AsmEntityChangeSerde {
 
 #[cfg(test)]
 mod tests {
-    use super::{AsmDeltaState, AsmHistoricalTopology, AsmTopologyCache};
+    use super::AsmDeltaState;
 
     #[test]
     fn history_record_borrowed_wire_matches_owned_wire_bytes() {
@@ -1111,49 +1008,11 @@ mod tests {
     }
 
     #[test]
-    fn topology_cache_wire_preserves_every_form_and_rejects_a_missing_topology() {
-        let prefix = r#"{"id":"state","parent":"history","byte_offset":0,"state_id":1,"version_flag":1,"state_flag":0,"node_index":1,"owner_ref":0,"bulletin_boards":[],"records":[]"#;
-        let topology = serde_json::to_string(&AsmHistoricalTopology::default()).unwrap();
-        for (complete, released, has_topology, fields) in [
-            (false, false, false, String::new()),
-            (
-                true,
-                false,
-                true,
-                format!(",\"topology_cache\":\"complete\",\"topology\":{topology}"),
-            ),
-            (
-                false,
-                true,
-                true,
-                format!(",\"topology_cache\":\"retained\",\"topology\":{topology}"),
-            ),
-            (
-                false,
-                true,
-                false,
-                ",\"topology_cache\":\"released\"".to_owned(),
-            ),
-        ] {
-            let wire = format!("{prefix}{fields}}}");
-            let state: AsmDeltaState = serde_json::from_str(&wire).unwrap();
-            assert_eq!(state.record_table_complete(), complete);
-            assert_eq!(state.topology().is_some(), has_topology);
-            assert_eq!(state.projection_released(), released);
-            let expected = match &state.topology_cache {
-                AsmTopologyCache::Absent => (false, false),
-                AsmTopologyCache::Complete(_) => (true, false),
-                AsmTopologyCache::Retained(_) | AsmTopologyCache::Released => (false, true),
-            };
-            assert_eq!(expected, (complete, released));
-            assert_eq!(serde_json::to_string(&state).unwrap(), wire);
-        }
-        let invalid = format!("{prefix},\"topology_cache\":\"complete\"}}");
-        let error = serde_json::from_str::<AsmDeltaState>(&invalid)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("topology_cache"));
-        assert!(error.contains("topology"));
+    fn delta_state_wire_contains_only_transition_topology() {
+        let wire = r#"{"id":"state","parent":"history","byte_offset":0,"state_id":1,"version_flag":1,"state_flag":0,"node_index":1,"owner_ref":0,"bulletin_boards":[],"records":[]}"#;
+        let state: AsmDeltaState = serde_json::from_str(wire).unwrap();
+        assert!(state.transition.is_none());
+        assert_eq!(serde_json::to_string(&state).unwrap(), wire);
     }
     #[test]
     fn history_record_framing_preserves_wire_and_rejects_opaque_metadata() {
@@ -1186,7 +1045,6 @@ cadmpeg_core::named_optional_field!(deserialize_history_entry_count, i64, "histo
 cadmpeg_core::named_optional_field!(deserialize_previous_ref, i64, "previous_ref");
 cadmpeg_core::named_optional_field!(deserialize_next_ref, i64, "next_ref");
 cadmpeg_core::named_optional_field!(deserialize_partner_ref, i64, "partner_ref");
-cadmpeg_core::named_optional_field!(deserialize_topology, AsmHistoricalTopology, "topology");
 cadmpeg_core::named_optional_field!(
     deserialize_transition,
     AsmHistoricalTransition,
@@ -1244,25 +1102,25 @@ pub(crate) struct AsmHistoricalEntityTags {
     pub(crate) tags: Vec<AsmHistoricalPersistentSubentityTag>,
 }
 
-/// Decoded carrier memberships of one stable slot, in decode order.
+/// A stable slot that a historical surface or curve list names more than once.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct AsmHistoricalEntityRows {
-    pub(crate) entity_ref: i64,
-    pub(crate) rows: Vec<i64>,
+pub(crate) struct AsmHistoricalSlotRepeat {
+    pub(crate) slot: i64,
+    pub(crate) count: u32,
 }
 
-impl AsmHistoricalRow for AsmHistoricalEntityRows {
+impl AsmHistoricalRow for AsmHistoricalSlotRepeat {
     fn key(&self) -> i64 {
-        self.entity_ref
+        self.slot
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalRowsDelta {
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
-    pub(crate) surfaces: AsmHistoricalRowDelta<AsmHistoricalEntityRows>,
+    pub(crate) surface_repeats: AsmHistoricalRowDelta<AsmHistoricalSlotRepeat>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
-    pub(crate) curves: AsmHistoricalRowDelta<AsmHistoricalEntityRows>,
+    pub(crate) curve_repeats: AsmHistoricalRowDelta<AsmHistoricalSlotRepeat>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) surface_radii: AsmHistoricalRowDelta<AsmHistoricalSurfaceRadius>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
