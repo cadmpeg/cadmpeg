@@ -103,6 +103,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         )?;
         let mut report =
             build_container_report(ctx, &scan, &classification, container::notes(&scan))?;
+        report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         report.losses.append(&mut pmi_losses);
         return decode_result(ctx, ir, report, annotations, unknowns);
     }

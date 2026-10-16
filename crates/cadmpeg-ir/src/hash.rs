@@ -187,7 +187,9 @@ fn reduced_unknowns(
 
 /// A document as the semantic digest sees it.
 ///
-/// Mirrors [`CadIr`]'s serialized shape field for field, borrowing what it can.
+/// Mirrors [`CadIr`]'s serialized shape field for field, borrowing what it can,
+/// except `decode_depth`: decoders take this digest before the decode wrapper
+/// records the depth.
 #[derive(Serialize)]
 struct NormalizedDocument<'a> {
     ir_version: &'a str,
@@ -598,7 +600,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            "dfc5790d04d56453ec5d9bd2ce5f221522ea0bdc25acdcf97a9047705f30afc7"
+            "224e96104fea391ebe17d8c507a485d8f1cdf55d32cd079624246bec39ae1b72"
         );
         assert_eq!(
             document_local_sha256(
@@ -775,7 +777,10 @@ mod tests {
                 &unknowns,
             )
             .unwrap();
-        crate::hash::sha256_hex(normalized.to_canonical_json().unwrap().as_bytes())
+        let text = normalized.to_canonical_json().unwrap();
+        let depth = "\n  \"decode_depth\": \"full\",";
+        assert_eq!(text.matches(depth).count(), 1, "{text}");
+        crate::hash::sha256_hex(text.replacen(depth, "", 1).as_bytes())
     }
 
     /// A document with an unordered model, a recorded digest, two native

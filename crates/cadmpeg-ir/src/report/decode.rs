@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -28,16 +29,25 @@ pub struct DecodeReport {
 }
 
 /// Mutually exclusive source-transfer states for a decode report.
+///
+/// The backend reports the state it delivered; the sealed decode wrapper
+/// records its [`depth`](Self::depth) on the document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "transfer", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum DecodeTransfer {
-    /// The request stopped after container inspection and transferred no
+    /// The decoder stopped after container inspection and transferred no
     /// semantic geometry.
     ContainerOnly {},
-    /// The request ran the full decoder, with the recorded B-rep geometry
-    /// outcome.
+    /// The decoder transferred the model and left every design arena empty,
+    /// with the recorded B-rep geometry outcome.
+    Geometry {
+        /// Whether B-rep geometry was transferred into the IR.
+        geometry_transferred: bool,
+    },
+    /// The decoder transferred the model and its design, with the recorded
+    /// B-rep geometry outcome.
     Full {
         /// Whether B-rep geometry was transferred into the IR.
         geometry_transferred: bool,
@@ -53,17 +63,30 @@ impl DecodeTransfer {
         }
     }
 
-    /// Constructs the transfer state from the sealed wrapper's request scope
-    /// and the backend's geometry outcome.
-    const fn stamp_request_scope(container_only: bool, transfer: Self) -> Self {
-        if container_only {
-            Self::ContainerOnly {}
-        } else {
-            Self::full(transfer.geometry_transferred())
+    /// Constructs the state for a decode that delivered `depth`, with its
+    /// geometry outcome. A container decode carries no geometry outcome.
+    #[must_use]
+    pub const fn at(depth: DecodeDepth, geometry_transferred: bool) -> Self {
+        match depth {
+            DecodeDepth::Container => Self::ContainerOnly {},
+            DecodeDepth::Geometry => Self::Geometry {
+                geometry_transferred,
+            },
+            DecodeDepth::Full => Self::full(geometry_transferred),
         }
     }
 
-    /// Returns whether the request stopped at the container layer.
+    /// The depth this state delivered.
+    #[must_use]
+    pub const fn depth(self) -> DecodeDepth {
+        match self {
+            Self::ContainerOnly {} => DecodeDepth::Container,
+            Self::Geometry { .. } => DecodeDepth::Geometry,
+            Self::Full { .. } => DecodeDepth::Full,
+        }
+    }
+
+    /// Returns whether the decode stopped at the container layer.
     #[must_use]
     pub const fn container_only(self) -> bool {
         matches!(self, Self::ContainerOnly {})
@@ -74,7 +97,9 @@ impl DecodeTransfer {
     pub const fn geometry_transferred(self) -> bool {
         matches!(
             self,
-            Self::Full {
+            Self::Geometry {
+                geometry_transferred: true
+            } | Self::Full {
                 geometry_transferred: true
             }
         )
@@ -419,11 +444,10 @@ impl DecodeReport {
     pub(crate) fn from_body(
         classification: FormatIdentity<DialectLayers>,
         body: crate::codec::DecodeBody,
-        container_only: bool,
     ) -> Self {
         Self {
             classification,
-            transfer: DecodeTransfer::stamp_request_scope(container_only, body.transfer),
+            transfer: body.transfer,
             coverage: body.coverage,
             losses: body.losses,
             notes: body.notes,
@@ -489,6 +513,12 @@ impl DecodeReport {
     #[must_use]
     pub const fn container_only(&self) -> bool {
         self.transfer.container_only()
+    }
+
+    /// The depth the decode delivered.
+    #[must_use]
+    pub const fn depth(&self) -> DecodeDepth {
+        self.transfer.depth()
     }
 
     /// Returns whether B-rep geometry was transferred into the IR.

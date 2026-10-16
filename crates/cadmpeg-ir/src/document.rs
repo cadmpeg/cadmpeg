@@ -14,7 +14,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 use cadmpeg_core::CodecError;
 
@@ -64,54 +64,102 @@ pub(crate) struct FeatureRegenerationParents(
     BTreeMap<crate::features::FeatureId, crate::features::FeatureId>,
 );
 
+/// Every model arena with its [`ArenaClass`] token (`model` or `design`).
+///
+/// Consumers that need the class match `$class:ident` after the type; every
+/// other consumer goes through [`arena_registry!`], which drops the token.
+macro_rules! classified_arena_registry {
+    ($macro:ident) => {
+        $crate::document::classified_arena_registry! { @entries [$macro] }
+    };
+    (@entries [$($target:tt)+] $($prefix:ident)?) => {
+        $($target)+! {
+            $($prefix;)?
+            bodies: Body, model, "Body arena.", [];
+            regions: Region, model, "Region arena.", [];
+            shells: Shell, model, "Shell arena.", [];
+            faces: Face, model, "Face arena.", [];
+            loops: Loop, model, "Loop arena.", [];
+            coedges: Coedge, model, "Coedge arena.", [];
+            edges: Edge, model, "Edge arena.", [];
+            vertices: Vertex, model, "Vertex arena.", [];
+            points: Point, model, "Point arena.", [];
+            surfaces: Surface, model, "Surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Surface>"))];
+            curves: Curve, model, "Curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Curve>"))];
+            subds: SubdSurface, model, "Subdivision surface arena.", [];
+            pcurves: Pcurve, model, "Pcurve arena.", [];
+            procedural_surfaces: ProceduralSurface, model, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurface>"))];
+            procedural_curves: ProceduralCurve, model, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurve>"))];
+            assets: crate::assets::Asset, model, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            features: Feature, design, "Feature arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<FeatureRowWire>"))];
+            feature_input_topologies: FeatureInputTopology, design, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            feature_result_topologies: FeatureResultTopology, design, "Feature result-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            configurations: DesignConfiguration, design, "Design configuration arena.", [serde(default)];
+            parameters: DesignParameter, design, "Design parameter arena.", [serde(default)];
+            sketches: Sketch, design, "Planar sketch arena.", [serde(default)];
+            sketch_entities: SketchEntity, design, "Solved sketch entity arena.", [serde(default)];
+            sketch_constraints: SketchConstraint, design, "Sketch constraint arena.", [serde(default)];
+            spatial_sketches: SpatialSketch, design, "Spatial sketch arena.", [serde(default)];
+            spatial_sketch_entities: SpatialSketchEntity, design, "Solved spatial sketch entity arena.", [serde(default)];
+            spatial_sketch_constraints: SpatialSketchConstraint, design, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            spreadsheets: Spreadsheet, design, "Spreadsheet arena.", [serde(default)];
+            product_definitions: ProductDefinition, model, "Product definition arena.", [serde(default)];
+            occurrences: Occurrence, model, "Product occurrence arena.", [serde(default)];
+            assembly_joints: AssemblyJoint, model, "Assembly joint arena.", [serde(default)];
+            drawings: Drawing, model, "Drawing page, resource, view, and annotation arena.", [serde(default)];
+            semantic_annotations: SemanticAnnotation, model, "Semantic dimension, note, symbol, and callout arena.", [serde(default)];
+            presentation_documents: PresentationDocument, model, "Document presentation arena.", [serde(default)];
+            view_presentations: ViewPresentation, model, "View-provider presentation arena.", [serde(default)];
+            tessellations: Tessellation, model, "Tessellation arena.", [];
+            appearances: Appearance, model, "Appearance arena.", [];
+            appearance_bindings: AppearanceBinding, model, "Appearance binding arena.", [];
+            attributes: SourceAttribute, model, "Attribute arena.", [];
+            pmi: crate::pmi::PmiAnnotation, model, "Product-manufacturing information arena.", [serde(default)];
+            presentation_layers: crate::presentation::PresentationLayer, model, "Presentation layer arena.", [serde(default)];
+        }
+    };
+}
+pub(crate) use classified_arena_registry;
+
+/// Every model arena, without its class token.
 macro_rules! arena_registry {
     ($macro:ident) => {
-        $macro! {
-            bodies: Body, "Body arena.", [];
-            regions: Region, "Region arena.", [];
-            shells: Shell, "Shell arena.", [];
-            faces: Face, "Face arena.", [];
-            loops: Loop, "Loop arena.", [];
-            coedges: Coedge, "Coedge arena.", [];
-            edges: Edge, "Edge arena.", [];
-            vertices: Vertex, "Vertex arena.", [];
-            points: Point, "Point arena.", [];
-            surfaces: Surface, "Surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Surface>"))];
-            curves: Curve, "Curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Curve>"))];
-            subds: SubdSurface, "Subdivision surface arena.", [];
-            pcurves: Pcurve, "Pcurve arena.", [];
-            procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurface>"))];
-            procedural_curves: ProceduralCurve, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurve>"))];
-            assets: crate::assets::Asset, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            features: Feature, "Feature arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<FeatureRowWire>"))];
-            feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            feature_result_topologies: FeatureResultTopology, "Feature result-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            configurations: DesignConfiguration, "Design configuration arena.", [serde(default)];
-            parameters: DesignParameter, "Design parameter arena.", [serde(default)];
-            sketches: Sketch, "Planar sketch arena.", [serde(default)];
-            sketch_entities: SketchEntity, "Solved sketch entity arena.", [serde(default)];
-            sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)];
-            spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)];
-            spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)];
-            spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
-            spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)];
-            product_definitions: ProductDefinition, "Product definition arena.", [serde(default)];
-            occurrences: Occurrence, "Product occurrence arena.", [serde(default)];
-            assembly_joints: AssemblyJoint, "Assembly joint arena.", [serde(default)];
-            drawings: Drawing, "Drawing page, resource, view, and annotation arena.", [serde(default)];
-            semantic_annotations: SemanticAnnotation, "Semantic dimension, note, symbol, and callout arena.", [serde(default)];
-            presentation_documents: PresentationDocument, "Document presentation arena.", [serde(default)];
-            view_presentations: ViewPresentation, "View-provider presentation arena.", [serde(default)];
-            tessellations: Tessellation, "Tessellation arena.", [];
-            appearances: Appearance, "Appearance arena.", [];
-            appearance_bindings: AppearanceBinding, "Appearance binding arena.", [];
-            attributes: SourceAttribute, "Attribute arena.", [];
-            pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)];
-            presentation_layers: crate::presentation::PresentationLayer, "Presentation layer arena.", [serde(default)];
+        $crate::document::classified_arena_registry! {
+            @entries [$crate::document::strip_arena_class] $macro
         }
     };
 }
 pub(crate) use arena_registry;
+
+macro_rules! strip_arena_class {
+    ($target:ident; $($field:ident: $ty:ty, $class:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        $target! { $($field: $ty, $doc, [$($attribute),*] $(, [$($schema_attr),*])?;)* }
+    };
+}
+pub(crate) use strip_arena_class;
+
+/// Maps a registry class token to its [`ArenaClass`]; any other token fails
+/// to compile.
+macro_rules! arena_class {
+    (model) => {
+        $crate::document::ArenaClass::Model
+    };
+    (design) => {
+        $crate::document::ArenaClass::Design
+    };
+}
+pub(crate) use arena_class;
+
+/// Whether a model arena holds the product model or the design that built it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ArenaClass {
+    /// B-rep, tessellation, product structure, placements, appearance, PMI,
+    /// attributes, and the assets they reference.
+    Model,
+    /// Features, sketches, parameters, configurations, spreadsheets, and the
+    /// feature topology bindings. Empty below [`DecodeDepth::Full`].
+    Design,
+}
 
 struct SurfaceWire<'a>(&'a Surface);
 
@@ -620,32 +668,52 @@ fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
 }
 
 macro_rules! declare_arena_name {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+    ($($field:ident: $ty:ty, $class:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Name of a registered model arena.
         ///
         /// Values use the `arena_registry!` field names so a new arena is
         /// counted and diffed under its declared wire key.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct ArenaName(&'static str);
+        pub struct ArenaName {
+            name: &'static str,
+            class: ArenaClass,
+        }
 
         impl ArenaName {
             /// Every registered arena, in registry order.
-            pub const ALL: &'static [Self] = &[$(Self(stringify!($field))),*];
+            pub const ALL: &'static [Self] = &[$(Self::registered(stringify!($field), arena_class!($class))),*];
 
-            pub(crate) const fn registered(name: &'static str) -> Self {
-                Self(name)
+            pub(crate) const fn registered(name: &'static str, class: ArenaClass) -> Self {
+                Self { name, class }
             }
 
             /// Registry field name, which is also the CADIR JSON object key.
             #[must_use]
             pub const fn as_str(self) -> &'static str {
-                self.0
+                self.name
+            }
+
+            /// Whether this arena holds model or design records.
+            #[must_use]
+            pub const fn class(self) -> ArenaClass {
+                self.class
             }
 
             /// Parse a registry field name.
             #[must_use]
             pub fn parse(name: &str) -> Option<Self> {
                 Self::ALL.iter().copied().find(|arena| arena.as_str() == name)
+            }
+        }
+
+        impl Model {
+            /// The first registered design arena that holds a record.
+            #[must_use]
+            pub fn populated_design_arena(&self) -> Option<ArenaName> {
+                $(if matches!(arena_class!($class), ArenaClass::Design) && !self.$field.is_empty() {
+                    return Some(ArenaName::registered(stringify!($field), arena_class!($class)));
+                })*
+                None
             }
         }
 
@@ -674,7 +742,7 @@ pub struct IrVersion;
 arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
-arena_registry!(declare_arena_name);
+classified_arena_registry!(declare_arena_name);
 
 /// Borrowed geometry and topology arenas for an embedded semantic record.
 pub struct GeometrySnapshot<'a> {
@@ -1377,6 +1445,8 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
 /// `ir_version` is a serialized constant checked by the read adapter.
+/// A document below [`DecodeDepth::Full`] holds no record in any
+/// [`ArenaClass::Design`] arena; serialization and parsing refuse one that does.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CadIr {
     /// Source-container metadata.
@@ -1387,12 +1457,25 @@ pub struct CadIr {
     pub model: Model,
     /// Per-format native namespaces, each an arena map.
     pub native: Native,
+    decode_depth: DecodeDepth,
+}
+
+/// A document below full decode depth that holds a design record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("a {depth}-depth document holds records in design arena `{arena}`")]
+pub struct DesignBelowFullDepth {
+    /// The depth the document records.
+    pub depth: DecodeDepth,
+    /// The first design arena that holds a record.
+    pub arena: ArenaName,
 }
 
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CadIrWriteWire<'a> {
     ir_version: IrVersion,
+    /// How much of the source the decode transferred.
+    decode_depth: DecodeDepth,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<&'a SourceMeta>,
     units: CanonicalUnitsWire,
@@ -1410,6 +1493,7 @@ struct CadIrReadWire {
         deserialize_with = "deserialize_ir_version"
     )]
     ir_version: Option<serde_json::Value>,
+    decode_depth: DecodeDepth,
     #[serde(default, deserialize_with = "deserialize_source")]
     source: Option<SourceMeta>,
     #[serde(default, rename = "units")]
@@ -1422,8 +1506,11 @@ struct CadIrReadWire {
 
 impl Serialize for CadIr {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.check_decode_depth()
+            .map_err(serde::ser::Error::custom)?;
         CadIrWriteWire {
             ir_version: IrVersion,
+            decode_depth: self.decode_depth,
             source: self.source.as_ref(),
             units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
@@ -1438,18 +1525,23 @@ impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
-        Ok(wire.into())
+        wire.try_into().map_err(serde::de::Error::custom)
     }
 }
 
-impl From<CadIrReadWire> for CadIr {
-    fn from(wire: CadIrReadWire) -> Self {
-        Self {
+impl TryFrom<CadIrReadWire> for CadIr {
+    type Error = DesignBelowFullDepth;
+
+    fn try_from(wire: CadIrReadWire) -> Result<Self, Self::Error> {
+        let ir = Self {
             source: wire.source,
             tolerances: wire.tolerances,
             model: wire.model,
             native: wire.native,
-        }
+            decode_depth: wire.decode_depth,
+        };
+        ir.check_decode_depth()?;
+        Ok(ir)
     }
 }
 
@@ -1641,22 +1733,57 @@ impl CadIr {
             tolerances: Tolerances::default(),
             model: Model::default(),
             native: Native::default(),
+            decode_depth: DecodeDepth::Full,
         }
     }
 
     /// Construct a decoded document with classified source metadata.
+    ///
+    /// The document records [`DecodeDepth::Full`] until the sealed decode
+    /// wrapper records the depth the backend reported.
     pub fn decoded(source: SourceMeta) -> Self {
         Self {
             source: Some(source),
             tolerances: Tolerances::default(),
             model: Model::default(),
             native: Native::default(),
+            decode_depth: DecodeDepth::Full,
         }
     }
 
     /// IR schema version emitted by serialization and accepted on deserialize.
     pub fn ir_version(&self) -> &str {
         IR_VERSION
+    }
+
+    /// How much of the source the decode that produced this document
+    /// transferred.
+    #[must_use]
+    pub const fn decode_depth(&self) -> DecodeDepth {
+        self.decode_depth
+    }
+
+    pub(crate) fn set_decode_depth(&mut self, depth: DecodeDepth) {
+        self.decode_depth = depth;
+    }
+
+    /// Refuses a document below [`DecodeDepth::Full`] that holds a record in
+    /// an [`ArenaClass::Design`] arena.
+    ///
+    /// # Errors
+    ///
+    /// Names the recorded depth and the first populated design arena.
+    pub fn check_decode_depth(&self) -> Result<(), DesignBelowFullDepth> {
+        if self.decode_depth == DecodeDepth::Full {
+            return Ok(());
+        }
+        match self.model.populated_design_arena() {
+            Some(arena) => Err(DesignBelowFullDepth {
+                depth: self.decode_depth,
+                arena,
+            }),
+            None => Ok(()),
+        }
     }
 
     /// Serialize a finalized, identity-sorted view as pretty JSON.
@@ -1675,7 +1802,8 @@ impl CadIr {
         crate::hash::finite_json::to_canonical_json_string(&canonical)
     }
 
-    /// Parse JSON and reject any unsupported `ir_version`.
+    /// Parse JSON and reject any unsupported `ir_version`, or a document below
+    /// full depth that holds design records.
     ///
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
@@ -1688,7 +1816,9 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<CadIrReadWire>(s).map(Into::into)
+        serde_json::from_str::<CadIrReadWire>(s)?
+            .try_into()
+            .map_err(<serde_json::Error as serde::de::Error>::custom)
     }
 
     /// Sort model, native, and unknown-record arenas by identity.

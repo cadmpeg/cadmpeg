@@ -10,7 +10,7 @@ A product document has three semantic layers:
 
 ```text
 CadIr
-├── ir_version, source?, units, tolerances
+├── ir_version, decode_depth, source?, units, tolerances
 ├── model
 │   ├── topology and geometry carriers
 │   ├── procedural constructions and neutral features
@@ -19,6 +19,8 @@ CadIr
 ```
 
 `model` is format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
+
+`decode_depth` is required. It records how much of the source the decode transferred: `container`, `geometry`, or `full`. Each model arena is classed as model or design. The design arenas are `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, the six sketch arenas, and `spreadsheets`. A document below `full` holds no record in a design arena, and readers and writers refuse one that does. Configurations are design because they key parameter overrides and feature states by design IDs. `assets` is model because tessellation texture assignments reference assets.
 
 `source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`.
 
@@ -287,6 +289,7 @@ The generated document begins with this complete hierarchy and representative ra
 ```json
 {
   "ir_version": "6",
+  "decode_depth": "full",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {
