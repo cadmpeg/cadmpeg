@@ -1789,14 +1789,14 @@ fn merge_records(
     census: &Census,
     unmatched_tombstones: Option<&mut BTreeMap<&'static str, usize>>,
 ) -> Result<Vec<u8>, CodecError> {
-    let current_scopes = current_revision_scopes(census, deltas.len());
+    let current_scopes = ScopeIndex::new(&current_revision_scopes(census, deltas.len()));
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
     let mut unmatched_events =
         unmatched_tombstones.map(|totals| (totals, BTreeMap::<(u8, u32), Vec<MergeEvent>>::new()));
     for record in census
         .records
         .iter()
-        .filter(|record| current_scope_contains(&current_scopes, record.offset))
+        .filter(|record| current_scopes.contains(record.offset))
     {
         let Ok(kind) = u8::try_from(record.kind()) else {
             continue;
@@ -1818,7 +1818,7 @@ fn merge_records(
     for tombstone in census
         .tombstones
         .iter()
-        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
+        .filter(|tombstone| current_scopes.contains(tombstone.offset))
     {
         let kind = tombstone.kind.code();
         tombstones.insert((kind, tombstone.xmt), tombstone);
@@ -1928,12 +1928,12 @@ fn collect_unmatched_events(
     census: &Census,
     stream_len: usize,
 ) -> BTreeMap<(u8, u32), Vec<MergeEvent>> {
-    let current_scopes = current_revision_scopes(census, stream_len);
+    let current_scopes = ScopeIndex::new(&current_revision_scopes(census, stream_len));
     let mut events = BTreeMap::<(u8, u32), Vec<MergeEvent>>::new();
     for record in census
         .records
         .iter()
-        .filter(|record| current_scope_contains(&current_scopes, record.offset))
+        .filter(|record| current_scopes.contains(record.offset))
     {
         let Ok(kind) = u8::try_from(record.kind()) else {
             continue;
@@ -1951,7 +1951,7 @@ fn collect_unmatched_events(
     for tombstone in census
         .tombstones
         .iter()
-        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
+        .filter(|tombstone| current_scopes.contains(tombstone.offset))
     {
         let kind = tombstone.kind.code();
         events
@@ -2090,10 +2090,41 @@ fn revision_follows_direction(previous: u32, current: u32, direction: RevisionDi
     }
 }
 
-fn current_scope_contains(scopes: &[RevisionScope], offset: usize) -> bool {
-    scopes
-        .iter()
-        .any(|scope| scope.start <= offset && offset < scope.end)
+/// Revision scopes ordered by start for offset containment queries.
+struct ScopeIndex {
+    /// Each scope start in ascending order, with the furthest end of the
+    /// scopes up to and including it.
+    reach_by_start: Vec<(usize, usize)>,
+}
+
+impl ScopeIndex {
+    fn new(scopes: &[RevisionScope]) -> Self {
+        let mut spans = scopes
+            .iter()
+            .map(|scope| (scope.start, scope.end))
+            .collect::<Vec<_>>();
+        spans.sort_unstable();
+        let mut reach = 0;
+        let reach_by_start = spans
+            .into_iter()
+            .map(|(start, end)| {
+                reach = reach.max(end);
+                (start, reach)
+            })
+            .collect();
+        Self { reach_by_start }
+    }
+
+    /// Return whether any scope satisfies `start <= offset < end`.
+    fn contains(&self, offset: usize) -> bool {
+        let started = self
+            .reach_by_start
+            .partition_point(|&(start, _)| start <= offset);
+        started
+            .checked_sub(1)
+            .and_then(|last| self.reach_by_start.get(last))
+            .is_some_and(|&(_, reach)| offset < reach)
+    }
 }
 
 /// Return raw deltas bytes with decoded records and compact tombstones masked.
@@ -2113,12 +2144,13 @@ pub(crate) fn semantic_residual(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
 /// byte-for-byte identical to `semantic_residual`.
 pub(crate) fn semantic_residual_with_census(stream: &[u8], census: &Census) -> Vec<u8> {
     let current_scopes = current_revision_scopes(census, stream.len());
+    let scope_index = ScopeIndex::new(&current_scopes);
     // Mask the whole stream and restore each current-revision scope. Restoring
     // the kept spans, rather than filling the gaps between them, needs no
     // ordering or disjointness relation between the scopes: every byte outside
     // every scope reads 0xff whatever order the scopes arrive in.
     let is_semantic = |record: &Record| {
-        let is_current = current_scope_contains(&current_scopes, record.offset);
+        let is_current = scope_index.contains(record.offset);
         let is_semantic = matches!(
             record.kind(),
             40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204

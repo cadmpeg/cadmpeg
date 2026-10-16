@@ -1483,3 +1483,34 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
         assert_ne!(census.bytes_decoded(), 444 - 67);
     }
 }
+
+#[test]
+fn scope_index_matches_any_scope_containment() {
+    use super::{RevisionScope, ScopeIndex};
+
+    // Unordered, overlapping, nested and empty scopes.
+    let mut scopes = (0..1024_usize)
+        .map(|index| {
+            let start = (index * 7_919) % 20_000;
+            RevisionScope {
+                start,
+                end: start + index % 13,
+            }
+        })
+        .collect::<Vec<_>>();
+    scopes.push(RevisionScope {
+        start: 5_000,
+        end: 9_000,
+    });
+    let index = ScopeIndex::new(&scopes);
+    let mut inside = 0;
+    for offset in 0..21_000 {
+        let expected = scopes
+            .iter()
+            .any(|scope| scope.start <= offset && offset < scope.end);
+        assert_eq!(index.contains(offset), expected, "offset {offset}");
+        inside += usize::from(expected);
+    }
+    assert!(inside > 4_000 && inside < 21_000);
+    assert!(!ScopeIndex::new(&[]).contains(0));
+}
