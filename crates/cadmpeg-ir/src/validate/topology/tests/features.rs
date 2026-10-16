@@ -419,6 +419,24 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("does not precede its consumer")));
+    let dependency_order = findings
+        .iter()
+        .find(|finding| finding.message.contains("does not precede its consumer"))
+        .expect("dependency order finding");
+    assert_eq!(dependency_order.entity.as_deref(), Some(first.as_str()));
+    assert_eq!(
+        dependency_order.related,
+        vec!["synthetic:test:parameter#second"]
+    );
+    let missing = findings
+        .iter()
+        .find(|finding| {
+            finding
+                .message
+                .contains("parameter dependency `synthetic:test:parameter#missing`")
+        })
+        .expect("missing dependency finding");
+    assert!(missing.related.is_empty());
     assert!(findings.iter().any(|finding| {
         finding
             .message
@@ -557,6 +575,17 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("datum-plane reference cycle")));
+
+    let cycle = report
+        .findings
+        .iter()
+        .find(|finding| finding.message.contains("datum-plane reference cycle"))
+        .expect("datum-plane cycle finding");
+    assert_eq!(
+        cycle.entity.as_deref(),
+        Some("synthetic:test:feature#offset")
+    );
+    assert_eq!(cycle.related, vec![principal.as_str()]);
 
     let index = crate::index::ModelIndex::build(&ir);
     let arena = DecodeArena::new();

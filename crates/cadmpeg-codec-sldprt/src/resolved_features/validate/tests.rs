@@ -54,6 +54,7 @@ fn native_validation_rejects_broken_history_root_graph() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut expected_related = Vec::new();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         let history = &mut native.feature_histories[0];
         let nested = history
@@ -63,20 +64,47 @@ fn native_validation_rejects_broken_history_root_graph() {
             .unwrap()
             .id
             .clone();
+        expected_related = vec![
+            nested.clone(),
+            history.configurations[0].id.clone(),
+            history
+                .features
+                .iter()
+                .find(|feature| feature.name == "Root")
+                .unwrap()
+                .id
+                .clone(),
+        ];
         history.content = vec![
             HistoryContent::Feature(nested),
             HistoryContent::Configuration("missing-configuration".into()),
         ];
     });
 
-    let messages = crate::resolved_features::validate::validate_native(
+    let findings = crate::resolved_features::validate::validate_native(
         &cadmpeg_test_support::service_decode_context(),
         decoded.ir(),
     )
-    .unwrap()
-    .into_iter()
-    .map(|finding| finding.message)
-    .collect::<Vec<_>>();
+    .unwrap();
+    for (message, expected) in [
+        ("references nested feature", Some(&expected_related[0])),
+        ("references missing configuration", None),
+        ("omits configuration", Some(&expected_related[1])),
+        ("omits feature", Some(&expected_related[2])),
+    ] {
+        let finding = findings
+            .iter()
+            .find(|finding| finding.message.contains(message))
+            .unwrap();
+        assert_eq!(
+            finding.related,
+            expected.into_iter().cloned().collect::<Vec<_>>()
+        );
+    }
+    let messages = findings
+        .into_iter()
+        .map(|finding| finding.message)
+        .collect::<Vec<_>>();
     assert!(messages
         .iter()
         .any(|message| message.contains("references nested feature")));

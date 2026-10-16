@@ -33,6 +33,7 @@ pub(crate) fn validate_native(
     for history in &native.feature_histories {
         if let Err(error) = crate::writer::validate_feature_graph(&history.features) {
             findings.push(Finding {
+                related: Vec::new(),
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: error.to_string(),
@@ -62,12 +63,16 @@ pub(crate) fn validate_native(
                 let error = match item {
                     crate::records::HistoryContent::Configuration(id) => {
                         if !configurations.contains(id.as_str()) {
-                            Some(format!(
-                                "SolidWorks history root references missing configuration {id}"
+                            Some((
+                                format!(
+                                    "SolidWorks history root references missing configuration {id}"
+                                ),
+                                None,
                             ))
                         } else if !seen_configurations.insert(id.as_str()) {
-                            Some(format!(
-                                "SolidWorks history root repeats configuration {id}"
+                            Some((
+                                format!("SolidWorks history root repeats configuration {id}"),
+                                Some(id),
                             ))
                         } else {
                             None
@@ -75,23 +80,33 @@ pub(crate) fn validate_native(
                     }
                     crate::records::HistoryContent::Feature(id) => {
                         if !all_features.contains(id.as_str()) {
-                            Some(format!(
-                                "SolidWorks history root references missing feature {id}"
+                            Some((
+                                format!("SolidWorks history root references missing feature {id}"),
+                                None,
                             ))
                         } else if !root_features.contains(id.as_str()) {
-                            Some(format!(
-                                "SolidWorks history root references nested feature {id}"
+                            Some((
+                                format!("SolidWorks history root references nested feature {id}"),
+                                Some(id),
                             ))
                         } else if !seen_features.insert(id.as_str()) {
-                            Some(format!("SolidWorks history root repeats feature {id}"))
+                            Some((
+                                format!("SolidWorks history root repeats feature {id}"),
+                                Some(id),
+                            ))
                         } else {
                             None
                         }
                     }
                     crate::records::HistoryContent::Text(_) => None,
                 };
-                if let Some(message) = error {
+                if let Some((message, related)) = error {
                     findings.push(Finding {
+                        related: related
+                            .filter(|id| *id != &history.id)
+                            .cloned()
+                            .into_iter()
+                            .collect(),
                         check: Check::NativeLinks,
                         severity: Severity::Error,
                         message,
@@ -101,6 +116,10 @@ pub(crate) fn validate_native(
             }
             for missing in configurations.difference(&seen_configurations) {
                 findings.push(Finding {
+                    related: (*missing != history.id.as_str())
+                        .then(|| (*missing).to_owned())
+                        .into_iter()
+                        .collect(),
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("SolidWorks history root omits configuration {missing}"),
@@ -109,6 +128,10 @@ pub(crate) fn validate_native(
             }
             for missing in root_features.difference(&seen_features) {
                 findings.push(Finding {
+                    related: (*missing != history.id.as_str())
+                        .then(|| (*missing).to_owned())
+                        .into_iter()
+                        .collect(),
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("SolidWorks history root omits feature {missing}"),
@@ -132,6 +155,7 @@ pub(crate) fn validate_native(
         for (feature, expected_feature) in history.features.iter().zip(&expected_history.features) {
             if feature.input_class != expected_feature.input_class {
                 findings.push(Finding {
+                    related: Vec::new(),
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message:
@@ -150,6 +174,7 @@ pub(crate) fn validate_native(
         {
             if entity.feature_ref != expected_entity.feature_ref {
                 findings.push(Finding {
+                    related: Vec::new(),
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: "SolidWorks sketch-input marker has inconsistent feature ownership"
@@ -159,6 +184,7 @@ pub(crate) fn validate_native(
             }
             if entity.links != expected_entity.links {
                 findings.push(Finding {
+                    related: Vec::new(),
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: "SolidWorks sketch-input marker has inconsistent local links".into(),
@@ -173,6 +199,7 @@ pub(crate) fn validate_native(
 
 fn invalid_namespace(error: &cadmpeg_ir::NativeConvertError) -> Vec<Finding> {
     vec![Finding {
+        related: Vec::new(),
         check: Check::NativeLinks,
         severity: Severity::Error,
         message: format!("invalid SolidWorks native namespace: {error}"),

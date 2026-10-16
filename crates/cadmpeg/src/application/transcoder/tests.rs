@@ -613,6 +613,7 @@ fn an_error_without_an_entity_blocks_a_step_export() {
         );
         assert_eq!(conversion.validation.error_count(), 0);
         conversion.validation.findings.push(Finding {
+            related: Vec::new(),
             check: Check::Counts,
             severity: Severity::Error,
             message: "synthetic document-wide error".into(),
@@ -620,6 +621,7 @@ fn an_error_without_an_entity_blocks_a_step_export() {
         });
         if include_design_error {
             conversion.validation.findings.push(Finding {
+                related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: "synthetic design error".into(),
@@ -675,6 +677,7 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
         };
         if inject_error {
             conversion.validation.findings.push(Finding {
+                related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: "synthetic design error".into(),
@@ -719,6 +722,7 @@ fn allow_errors_writes_past_a_carried_error() {
     );
     assert_eq!(conversion.validation.error_count(), 0);
     conversion.validation.findings.push(Finding {
+        related: Vec::new(),
         check: Check::Counts,
         severity: Severity::Error,
         message: "synthetic document-wide error".into(),
@@ -747,6 +751,7 @@ fn an_f3d_native_design_record_error_does_not_block_a_step_export() {
     );
     assert_eq!(conversion.validation.error_count(), 0);
     let finding = Finding {
+        related: Vec::new(),
         check: Check::Counts,
         severity: Severity::Error,
         message: "synthetic native design record error".into(),

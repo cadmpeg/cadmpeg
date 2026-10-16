@@ -2170,6 +2170,7 @@ fn unique<T: Eq + std::hash::Hash>(
 
 fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
     Finding {
+        related: Vec::new(),
         check,
         severity: Severity::Error,
         message,
