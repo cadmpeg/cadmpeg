@@ -43,8 +43,11 @@ pub(super) fn admit(
             )
             .filter_map(Result::ok)
             .collect();
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!("SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
-            lane.id, actual.value, expected)));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "SolidWorks feature-input name value does not match its native payload: \
+                 lane {} name {index} states {:?}, its payload states {:?}",
+                lane.id, actual.value, expected
+            )));
         }
         let mut entities = lane.sketch_entities.iter();
         for (index, position) in (0..lane.native_payload.len())
@@ -66,7 +69,11 @@ pub(super) fn admit(
                 )));
             }
             if entity.offset() != u64_from_index(position) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!("SolidWorks feature-input lane {} omits marker at offset {position} or has an extra or unordered entity", lane.id)));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks feature-input lane {} omits marker at offset {position} \
+                     or has an extra or unordered entity",
+                    lane.id
+                )));
             }
         }
         if entities.next().is_some() {
@@ -92,9 +99,18 @@ pub(super) fn admit(
                         )
                     });
             return match mismatch {
-                Some((actual, expected)) => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!("SolidWorks feature-input scalar index does not match its native payload: {actual:?} != {expected:?}"))),
-                None => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!("SolidWorks feature-input scalar index does not match its native payload: count {} != {}",
-                lane.scalars.len(), expected_lane.scalars.len()))),
+                Some((actual, expected)) => {
+                    Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "SolidWorks feature-input scalar index does not match its native payload: \
+                         {actual:?} != {expected:?}"
+                    )))
+                }
+                None => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "SolidWorks feature-input scalar index does not match its native payload: \
+                     count {} != {}",
+                    lane.scalars.len(),
+                    expected_lane.scalars.len()
+                ))),
             };
         }
         if lane.relation_bindings != expected_lane.relation_bindings {
