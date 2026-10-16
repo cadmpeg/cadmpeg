@@ -3,6 +3,7 @@
 
 mod attribute_colors;
 mod history_deltas;
+mod history_scale;
 mod optional_payloads;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
