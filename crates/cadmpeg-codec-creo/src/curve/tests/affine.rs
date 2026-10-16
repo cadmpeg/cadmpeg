@@ -76,7 +76,14 @@ fn infer_solve_variable_dimensions(
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<RelationDimension>> {
     crate::decode::with_service_context(|ctx| {
-        crate::curve::infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)
+        crate::curve::infer_solve_variable_dimensions(
+            ctx,
+            block,
+            values,
+            known_dimensions,
+            context,
+            &mut None,
+        )
     })
     .expect("test dimension inference")
 }

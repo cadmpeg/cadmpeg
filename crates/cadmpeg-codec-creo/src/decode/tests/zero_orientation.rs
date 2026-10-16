@@ -1298,6 +1298,72 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
 }
 
 #[test]
+fn saved_spline_above_the_interpolation_matrix_cap_is_refused_with_its_bound() {
+    const POINTS: u32 = 1100;
+    let spline = crate::feature::definitions::FeatureSavedSpline {
+        entity_id: Some(7),
+        declared_point_count: Some(POINTS),
+        interpolation_points: (0..POINTS).map(|i| [f64::from(i), 0.0, 0.0]).collect(),
+        interpolation_points_body: Vec::new(),
+        endpoint_tangents: Some(crate::feature::definitions::DecodedField {
+            value: [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            body: Vec::new(),
+        }),
+        parameters: Some(crate::feature::definitions::DecodedField {
+            value: (0..POINTS).map(f64::from).collect(),
+            body: Vec::new(),
+        }),
+        offset: 10,
+    };
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let nurbs =
+        crate::decode::with_service_context(|ctx| saved_spline_nurbs(ctx, &spline, &mut refusal))
+            .expect("the interpolation cap is not a decode failure");
+    assert!(nurbs.is_none());
+    assert_eq!(
+        refusal.take_records(),
+        [
+            "creo saved-spline entity 7 at offset 10 NURBS record: interpolation needs \
+             1214404 dense matrix entries, above MAX_INTERPOLATION_MATRIX_ENTRIES (1048576)"
+        ]
+    );
+}
+
+#[test]
+fn interpolation_grid_above_the_matrix_cap_is_refused_with_its_bound() {
+    const SIDE: u32 = 100;
+    let parameters: Vec<f64> = (0..SIDE).map(f64::from).collect();
+    let points = (0..SIDE)
+        .flat_map(|u| (0..SIDE).map(move |v| [f64::from(u), f64::from(v), 0.0]))
+        .collect();
+    let boundary = || (0..2 * SIDE).map(|_| [0.0; 3]).collect();
+    let grid = crate::interpolation_grid::InterpolationGrid::try_new(
+        points,
+        parameters.clone(),
+        parameters,
+        boundary(),
+        boundary(),
+        [[0.0; 3]; 4],
+    )
+    .expect("grid work admission")
+    .expect("complete interpolation grid");
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let nurbs = crate::decode::with_service_context(|ctx| {
+        interpolation_spline_surface(ctx, &grid, &"interpolation grid fixture", &mut refusal)
+    })
+    .expect("the interpolation cap is not a decode failure");
+    assert!(nurbs.is_none());
+    assert_eq!(
+        refusal.take_records(),
+        [
+            "creo interpolation-spline surface record for interpolation grid fixture: \
+             interpolation needs 2122416 dense matrix entries, above \
+             MAX_INTERPOLATION_MATRIX_ENTRIES (1048576)"
+        ]
+    );
+}
+
+#[test]
 fn tensor_product_collocation_preserves_position_and_derivative_order() {
     let points = [
         [0.0, 0.0, 0.0],

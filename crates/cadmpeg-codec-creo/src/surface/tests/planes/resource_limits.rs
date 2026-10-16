@@ -55,7 +55,7 @@ fn surface_parameter_reads_one_header() {
         offset: 0,
     }];
     let service = with_surface_ctx(&payload, |ctx| {
-        crate::surface::parameter_records_for_rows(ctx, &payload, &rows)
+        crate::surface::parameter_records_for_rows(ctx, &payload, &rows, &mut Vec::new())
     })
     .expect("one parameter record fits service limits");
     assert_eq!(service.len(), 1);
@@ -113,7 +113,12 @@ fn plane_envelope_close_slot_finds_close() {
         0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f, 0x99, 1, 2, 3, 4, 5, 6, 0xe3,
     ];
     let close = with_surface_ctx(&body, |ctx| {
-        crate::surface::plane_envelope_compound_close(ctx, &body, &scalar::ScalarCache::default())
+        crate::surface::plane_envelope_compound_close(
+            ctx,
+            &body,
+            &scalar::ScalarCache::default(),
+            &mut Vec::new(),
+        )
     })
     .expect("ten slots are admitted");
     assert_eq!(close, Some(body.len() - 1));
@@ -135,7 +140,7 @@ fn plane_envelope_reader_reads_one_envelope() {
         offset: 0,
     }];
     let envelopes = with_surface_ctx(&payload, |ctx| {
-        crate::surface::plane_envelopes_for_rows(ctx, &payload, &rows)
+        crate::surface::plane_envelopes_for_rows(ctx, &payload, &rows, &mut Vec::new())
     })
     .expect("compute the plane envelopes for rows");
     assert_eq!(envelopes.len(), 1);

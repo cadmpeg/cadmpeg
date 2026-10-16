@@ -263,6 +263,9 @@ fn solve_section_coordinates_with_derived_constraints(
     Ok(solved_coordinates)
 }
 
+/// [`resolved_section_coordinates_with_losses`] without its loss notes. The
+/// result depends only on `definition`, and source metadata resolves every
+/// definition once with the notes, so each skip is reported there.
 pub(in crate::decode) fn resolved_section_coordinates(
     ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
