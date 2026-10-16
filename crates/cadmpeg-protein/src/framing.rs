@@ -131,7 +131,7 @@ pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn terminal_page_frames_one_record_without_retained_bytes() {
+    fn terminal_page_frames_one_record() {
         let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + crate::PAGE_SIZE];
         let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
         bytes[offset..offset + 4].copy_from_slice(
