@@ -393,9 +393,16 @@ pub fn has_schemas(protein: &[u8]) -> bool {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(protein)) else {
         return false;
     };
+    // `by_index_raw`, not `by_index`: this only reads a NAME, and `by_index` additionally
+    // builds a decompressor for the entry's method -- so a compression method the enabled `zip`
+    // features do not cover turns a would-be `true` into `false` through the `is_ok_and`. That
+    // is an answer inversion rather than a refusal, and `has_schemas` routes at three call
+    // sites. Building `zip` without its `zstd` feature makes it reachable; the narrower call
+    // was the right one either way, since constructing a decoder to read a filename is work this
+    // function never wanted.
     (0..archive.len()).any(|index| {
         archive
-            .by_index(index)
+            .by_index_raw(index)
             .is_ok_and(|entry| is_schema_entry(entry.name()))
     })
 }
@@ -411,21 +418,52 @@ fn schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<HashMap<String, Sc
     let mut schemas = HashMap::new();
     let mut entry_names = BTreeSet::new();
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|error| {
-            CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
-        })?;
-        if !entry_names.insert(entry.name().to_owned()) {
+        // Name first, through `by_index_raw`, which builds no decompressor. Reading every
+        // entry with `by_index` made one member in an unsupported compression method abort
+        // schema extraction for the whole archive, including archives whose schema entries are
+        // all perfectly readable. Only an entry that IS a schema needs to be decompressed.
+        let (name, is_zstd) = {
+            let entry = archive.by_index_raw(index).map_err(|error| {
+                CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
+            })?;
+            (
+                entry.name().to_owned(),
+                entry.compression() == zip::CompressionMethod::ZSTD,
+            )
+        };
+        if !entry_names.insert(name.clone()) {
             return Err(CodecError::malformed(format_args!(
-                "Protein archive defines entry {} more than once",
-                entry.name()
+                "Protein archive defines entry {name} more than once"
             )));
         }
-        if !is_schema_entry(entry.name()) {
+        if !is_schema_entry(&name) {
             continue;
         }
-        let size = entry.size();
-        let name = entry.name().to_owned();
-        let bytes = read_entry_bounded(ctx, &mut entry, size)?;
+        let bytes = if is_zstd {
+            // `zip` cannot expand method 93; read the member as stored and expand it here.
+            let mut entry = archive.by_index_raw(index).map_err(|error| {
+                CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
+            })?;
+            let size = entry.size();
+            if size > MAX_SCHEMA_BYTES {
+                return Err(ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, size));
+            }
+            let crc32 = entry.crc32();
+            let stored_size = entry.compressed_size();
+            let stored = read_entry_bounded(ctx, &mut entry, stored_size)?;
+            cadmpeg_container::compression::expand_zstd_member_owned(
+                ctx,
+                &stored,
+                ExpandSpec::Exact(size),
+                crc32,
+            )?
+        } else {
+            let mut entry = archive.by_index(index).map_err(|error| {
+                CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
+            })?;
+            let size = entry.size();
+            read_entry_bounded(ctx, &mut entry, size)?
+        };
         parse_schema_document(ctx, &name, &bytes, &mut schemas)?;
     }
     Ok(schemas)
@@ -2023,6 +2061,72 @@ mod tests {
             archive.write_all(xml.as_bytes()).expect("write schema");
         }
         archive.finish().expect("finish schemas").into_inner()
+    }
+
+    /// Rewrites the compression method of the named stored entry, in its local
+    /// header and its central-directory record, to one no `zip` build decodes.
+    fn mark_entry_method_unsupported(archive: &mut [u8], name: &str) {
+        const UNSUPPORTED_METHOD: [u8; 2] = 0xfffe_u16.to_le_bytes();
+        let mut patched = 0;
+        for (signature, method_at, name_len_at, name_at) in
+            [(b"PK\x03\x04", 8, 26, 30), (b"PK\x01\x02", 10, 28, 46)]
+        {
+            let mut offset = 0;
+            while offset + name_at <= archive.len() {
+                if &archive[offset..offset + 4] == signature {
+                    let name_len = usize::from(u16::from_le_bytes([
+                        archive[offset + name_len_at],
+                        archive[offset + name_len_at + 1],
+                    ]));
+                    let name_range = offset + name_at..offset + name_at + name_len;
+                    if archive.get(name_range) == Some(name.as_bytes()) {
+                        archive[offset + method_at..offset + method_at + 2]
+                            .copy_from_slice(&UNSUPPORTED_METHOD);
+                        patched += 1;
+                    }
+                }
+                offset += 1;
+            }
+        }
+        assert_eq!(patched, 2, "one local header and one central record");
+    }
+
+    /// One member in a compression method this build cannot decode must not
+    /// hide the archive's readable schemas: `has_schemas` reads names only, and
+    /// schema extraction builds a decompressor for schema entries only.
+    #[test]
+    fn an_undecodable_non_schema_member_does_not_hide_the_schemas() {
+        const SCHEMA: &str = r#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
+        let mut protein = schema_archive(&[
+            ("payload.bin", "opaque"),
+            ("Schemas/SimpleSchema.xml", SCHEMA),
+        ]);
+        mark_entry_method_unsupported(&mut protein, "payload.bin");
+
+        // The control: the patched member really is one `by_index` refuses.
+        let mut archive = zip::ZipArchive::new(Cursor::new(protein.as_slice())).expect("archive");
+        assert!(archive.by_name("payload.bin").is_err());
+        drop(archive);
+
+        assert!(super::has_schemas(&protein));
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&protein, &arena, &DecodePolicy::service())
+                .expect("ZIP fits service input limit");
+        // The decode route reads the directory through `ArchiveSnapshot`.
+        assert!(super::SchemaCatalog::load(&ctx, root)
+            .expect("the schema entry is readable")
+            .is_some());
+        // The edit route reads it through the `zip` crate, in `schemas`.
+        let catalog = super::SchemaCatalog::load_for_edit(&protein)
+            .expect("the schema entry is readable for edit");
+        assert!(catalog.schemas.contains_key("Simple"));
+
+        // And an undecodable member that IS the only schema-named entry still
+        // answers `true` from `has_schemas`: the probe never builds a decoder.
+        let mut only = schema_archive(&[("Schemas/SimpleSchema.xml", SCHEMA)]);
+        mark_entry_method_unsupported(&mut only, "Schemas/SimpleSchema.xml");
+        assert!(super::has_schemas(&only));
     }
 
     fn push_lp(bytes: &mut Vec<u8>, value: &str) {

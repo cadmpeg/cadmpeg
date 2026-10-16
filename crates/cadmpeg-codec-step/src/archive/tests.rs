@@ -152,6 +152,7 @@ use std::io::{Cursor, Read as _};
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -169,6 +170,37 @@ fn step_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> Vec<u8> {
         std::io::Write::write_all(&mut writer, bytes).unwrap();
     }
     writer.finish().unwrap().into_inner()
+}
+
+/// A Zstandard frame carrying `plain` in RAW (uncompressed) blocks.
+///
+/// The workspace has no Zstandard ENCODER: `zip`'s `zstd` feature and the `zstd` crate are both
+/// libzstd bindings and are not built, and `ruzstd` is used for decoding only.  A raw-block
+/// frame is fully specified by RFC 8878 without one: magic, a single-segment header with a
+/// four-byte content size and no checksum, then blocks of at most 64 KiB whose three-byte header
+/// is `last | type 0 << 1 | size << 3`.  It is a conforming frame any decoder reads, which is all
+/// the archive-profile tests here need -- they are about the ZIP method number, not the codec.
+fn zstd_raw_frame(plain: &[u8]) -> Vec<u8> {
+    const BLOCK: usize = 64 * 1024;
+    let mut frame = vec![0x28, 0xB5, 0x2F, 0xFD];
+    // Frame_Content_Size flag 2 (four bytes), Single_Segment set, no checksum, no dictionary.
+    frame.push(0b1010_0000);
+    frame.extend_from_slice(
+        &u32::try_from(plain.len())
+            .expect("fixture fits a four-byte content size")
+            .to_le_bytes(),
+    );
+    let mut chunks = plain.chunks(BLOCK).peekable();
+    if chunks.peek().is_none() {
+        frame.extend_from_slice(&[1, 0, 0]);
+    }
+    while let Some(chunk) = chunks.next() {
+        let last = u32::from(chunks.peek().is_none());
+        let header = last | (u32::try_from(chunk.len()).expect("block fits") << 3);
+        frame.extend_from_slice(&header.to_le_bytes()[..3]);
+        frame.extend_from_slice(chunk);
+    }
+    frame
 }
 
 fn step_zip_with_comment(entries: &[(&str, &[u8], CompressionMethod)], comment: &str) -> Vec<u8> {
@@ -1027,7 +1059,16 @@ fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
-    let zstd = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Zstd)]);
+    // A Zstandard root member.  Laid out by `zip_fixture` rather than by `ZipWriter`: `zip` is
+    // built without its `zstd` feature (a libzstd binding), so the writer cannot emit method 93
+    // and `CompressionMethod::Zstd` does not exist.  Such a root is read, and the noncanonical
+    // compression is reported.
+    let zstd = zip_fixture::archive(&[RawEntry::compressed(
+        "ISO-10303.p21",
+        zip_fixture::ZSTD,
+        &zstd_raw_frame(root),
+        root,
+    )]);
     let summary = codec
         .inspect(&mut Cursor::new(zstd), &InspectOptions::default())
         .expect("recover safely readable noncanonical root compression");
@@ -1259,14 +1300,23 @@ fn optional_archive_profile_defects_preserve_geometry_and_declarations() {
     let baseline = StepCodec::default()
         .decode(&mut Cursor::new(root), &DecodeOptions::default())
         .unwrap();
-    for (name, compression) in [
-        ("preview.bin", CompressionMethod::Zstd),
-        ("π-preview.bin", CompressionMethod::Stored),
-    ] {
-        let bytes = step_zip(&[
+    // The Zstandard arm is laid out by `zip_fixture`: `zip` is built without its `zstd` feature,
+    // so `ZipWriter` cannot emit method 93 (see `zstd_raw_frame`).
+    for bytes in [
+        zip_fixture::archive(&[
+            RawEntry::stored("ISO-10303.p21", root),
+            RawEntry::compressed(
+                "preview.bin",
+                zip_fixture::ZSTD,
+                &zstd_raw_frame(b"preview"),
+                b"preview",
+            ),
+        ]),
+        step_zip(&[
             ("ISO-10303.p21", root, CompressionMethod::Stored),
-            (name, b"preview", compression),
-        ]);
+            ("π-preview.bin", b"preview", CompressionMethod::Stored),
+        ]),
+    ] {
         let result = EditableDecodeResult::from(
             StepCodec::default()
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
