@@ -807,6 +807,14 @@ fn admit_surface_pole_count(pole_count: usize) -> Result<(), CodecError> {
     Ok(())
 }
 
+/// Whether a revolution grid from this generatrix and angular basis exceeds
+/// [`MAX_SURFACE_POLES`], including when the product overflows `usize`.
+fn revolution_pole_count_exceeds_limit(generatrix_count: usize, angular_controls: usize) -> bool {
+    generatrix_count
+        .checked_mul(angular_controls)
+        .is_none_or(|count| count > MAX_SURFACE_POLES)
+}
+
 fn ruled_surface_carrier(
     first: &NurbsCurve,
     second: &NurbsCurve,
@@ -2345,10 +2353,7 @@ pub(super) fn project(
             );
             continue;
         };
-        if generatrix_count
-            .checked_mul(angular_controls.len())
-            .is_none_or(|count| count > MAX_SURFACE_POLES)
-        {
+        if revolution_pole_count_exceeds_limit(generatrix_count, angular_controls.len()) {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
