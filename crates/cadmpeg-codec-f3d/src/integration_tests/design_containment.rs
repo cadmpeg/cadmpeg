@@ -13,6 +13,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use super::{assert_valid, decode};
 use crate::decode::design_intent::inject_failure;
 use crate::loss::F3dLossCode;
+use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
 use crate::test_support::native_test::f3d_native;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
@@ -137,6 +138,52 @@ fn the_patch_path_refuses_a_source_whose_design_intent_was_contained() {
         ),
         "{refused:?}"
     );
+}
+
+#[test]
+fn an_unedited_contained_document_replays_its_source_bytes() {
+    let source = design_archive();
+    inject_failure(malformed_design);
+    let contained = decode(source.clone());
+
+    let mut replayed = Vec::new();
+    crate::test_support::plan_inherited_write(
+        contained.ir(),
+        contained.source_fidelity(),
+        &mut replayed,
+    )
+    .expect("an unedited contained document replays");
+
+    assert_eq!(replayed, source);
+}
+
+#[test]
+fn a_bodyless_design_intent_failure_keeps_the_xref_product_structure() {
+    let archive = || f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let full = decode(archive());
+    assert!(!f3d_native(full.ir()).xref_references.is_empty());
+
+    inject_failure(malformed_design);
+    let contained = decode(archive());
+
+    assert_eq!(
+        f3d_native(contained.ir()).xref_references,
+        f3d_native(full.ir()).xref_references
+    );
+    assert_eq!(
+        f3d_native(contained.ir()).xref_designs,
+        f3d_native(full.ir()).xref_designs
+    );
+    assert_eq!(
+        contained
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
+            .count(),
+        1
+    );
+    assert_valid(&contained);
 }
 
 #[test]
