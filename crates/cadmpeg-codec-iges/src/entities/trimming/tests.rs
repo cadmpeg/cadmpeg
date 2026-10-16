@@ -51,6 +51,8 @@ use super::LinearBoundaryGeometry;
 use super::SimpleRing;
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::fixed_ascii_with_global;
+use crate::test_support::test_curves_and_surfaces::closed_ring_linear_nurbs_parameters;
+use crate::test_support::test_curves_and_surfaces::planar_nurbs_parameters;
 use crate::test_support::test_drawing_and_trimming::explicit_cylinder_seam_file;
 use crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file;
 use crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file_with_first_pcurve;
@@ -59,6 +61,7 @@ use crate::test_support::test_drawing_and_trimming::multi_pcurve_boundary_file;
 use crate::test_support::test_drawing_and_trimming::multi_pcurve_boundary_file_with_first_pcurve;
 use crate::test_support::test_drawing_and_trimming::parameter_domain_trimmed_surface_file;
 use crate::test_support::test_drawing_and_trimming::subrange_nurbs_surface_boundary_file;
+use crate::test_support::test_drawing_and_trimming::subrange_nurbs_surface_boundary_file_with_pcurve;
 use crate::test_support::test_drawing_and_trimming::subrange_nurbs_surface_boundary_file_with_source_precision;
 use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_boundaries;
 use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_boundaries_and_inner;
@@ -140,6 +143,112 @@ fn decode_skips_a_boundary_over_its_endpoint_cluster_limit() {
                 .message
                 .contains("endpoint clustering is limited to 16384")
     }));
+}
+
+#[test]
+fn decode_skips_a_trimmed_face_whose_linear_boundary_exceeds_the_pair_budget() {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "RING".into(),
+            status: "00010000",
+            parameters: closed_ring_linear_nurbs_parameters(32_770),
+        },
+        OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "ONSURF".into(),
+            status: "00010000",
+            parameters: "142,0,1,0,3,2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "TRIMMED".into(),
+            status: "00000000",
+            parameters: "144,1,1,0,5;".into(),
+        },
+    ];
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(decoded.ir().model.faces.is_empty());
+    assert!(
+        decoded.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::GeometryNotProjected.kind()
+                && loss.message.contains("linear boundary points")
+                && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
+        }),
+        "{:#?}",
+        decoded.report().losses
+    );
+}
+
+#[test]
+fn decode_reports_a_pcurve_support_check_over_the_blend_limit() {
+    // 1025 spans of degree 255 need 1025 * 256² blends, just over 2^26.
+    let last = 255 + 1025 - 1;
+    let pcurve = planar_nurbs_parameters(255, 1025, true, |index| {
+        if index == 0 || index == last {
+            [0.2, 0.2]
+        } else {
+            [0.1, 0.5]
+        }
+    });
+    for (preference, face_kept) in [(2, true), (3, false)] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(subrange_nurbs_surface_boundary_file_with_pcurve(
+                    preference, &pcurve,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let losses = &result.report().losses;
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .faces
+                .iter()
+                .any(|face| face.id.as_str() == "iges:model:face#D9"),
+            face_kept,
+            "{losses:#?}"
+        );
+        assert!(
+            losses.iter().any(|loss| {
+                loss.code == IgesLossCode::GeometryNotProjected.kind()
+                    && loss.message.contains("MAX_BEZIER_BLENDS")
+            }),
+            "{losses:#?}"
+        );
+        assert!(!losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind()));
+        if face_kept {
+            let coedge = result
+                .ir()
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D9:0:0")
+                .expect("trimmed boundary coedge");
+            assert!(coedge.pcurves.is_empty());
+        }
+    }
 }
 
 #[test]
