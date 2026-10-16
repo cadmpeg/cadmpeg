@@ -1918,12 +1918,11 @@ pub(super) fn source_meta(
             .entry_count(ctx, crate::container::Region::Header)?,
     )?;
     if let crate::container::ContainerLayout::Modern {
-        footer_offset,
-        footer_fingerprint,
+        footer: Some(footer),
         ..
     } = scan.container.layout
     {
-        insert_source_attribute(ctx, &mut attributes, "footer_offset", footer_offset)?;
+        insert_source_attribute(ctx, &mut attributes, "footer_offset", footer.offset)?;
         insert_source_attribute(
             ctx,
             &mut attributes,
@@ -1935,7 +1934,7 @@ pub(super) fn source_meta(
             ctx,
             &mut attributes,
             "footer_fingerprint",
-            format_args!("{:08x}", assemble_u32_be(footer_fingerprint)),
+            format_args!("{:08x}", assemble_u32_be(footer.fingerprint)),
         )?;
     }
     let (control_count, classified_control_count) =

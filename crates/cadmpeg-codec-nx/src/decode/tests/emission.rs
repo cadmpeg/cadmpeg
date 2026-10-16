@@ -23,6 +23,7 @@ use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::prt_with_partition;
 use crate::test_support::test_prt::single_part_prt;
 use crate::test_support::test_prt::topology_part_prt;
+use crate::test_support::test_prt::without_footer;
 use crate::test_support::test_streams::external_reference_stream;
 use crate::test_support::test_streams::pcurve_topology_partition_stream;
 use crate::test_support::test_streams::shared_region_shells_partition_stream;
@@ -1003,6 +1004,22 @@ fn decode_transfers_point_plane_cylinder_line() {
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
+}
+
+#[test]
+fn decode_emits_the_same_brep_without_a_footer_region() {
+    let decode = |bytes: Vec<u8>| {
+        NxCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap()
+    };
+    let footed = decode(topology_part_prt());
+    let footerless = decode(without_footer(topology_part_prt()));
+
+    assert_eq!(footerless.ir().model.faces.len(), 1);
+    assert_eq!(footerless.ir().model.faces, footed.ir().model.faces);
+    assert_eq!(footerless.ir().model.edges, footed.ir().model.edges);
+    assert_eq!(footerless.ir().model.surfaces, footed.ir().model.surfaces);
 }
 
 #[test]

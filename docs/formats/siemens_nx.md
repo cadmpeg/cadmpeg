@@ -46,6 +46,10 @@ later than the FOOTER offset. Other payloads remain exact opaque bytes. Entry
 framing is contiguous; invalid framing rejects the complete containing
 directory without bytewise recovery.
 
+A FOOTER offset of `0xffffffffffff` states that the file has no FOOTER region.
+The HEADER directory is then the complete directory, a file range ends no later
+than the file boundary, and the file has no fingerprint.
+
 The four-byte FOOTER fingerprint is retained exactly. The `/Root/` sentinel
 node carries UUID `611ec9b3-fa60-d111-8ad9-0800362fb302` across files.
 
