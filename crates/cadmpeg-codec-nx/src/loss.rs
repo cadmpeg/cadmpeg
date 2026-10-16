@@ -130,6 +130,9 @@ loss_codes! {
     /// An arithmetic-coded Display-JT lane reached its decoder work bound and
     /// was left undecoded.
     DisplayJtArithmeticLaneBounded => ("container.display-jt-arithmetic-lane-bounded", Warning, ObjectRecordsUntransferred),
+    /// A Display-JT polygon mesh did not resolve to a tessellation, so the
+    /// part's Display-JT tessellations were skipped.
+    DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
 }
@@ -221,6 +224,7 @@ mod tests {
                 "source.scan-bounded",
                 "native.record-identity-bounded",
                 "container.display-jt-arithmetic-lane-bounded",
+                "carrier.display-jt-tessellations-dropped",
                 "native.attachment-failed",
             ]
         );
