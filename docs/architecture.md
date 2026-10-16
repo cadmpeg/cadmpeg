@@ -13,7 +13,7 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
                                                 └── convert ── check + plan + write ──> output artifact
 ```
 
-- `convert` loads or decodes, checks, then writes another format. `--allow-errors` writes after check errors.
+- `convert` loads or decodes, checks, plans, then writes another format. It refuses before the write when an error finding is in what the planned payload writes. The plan's `ArenaCoverage` decides this: `Complete` writes every arena and native namespace; `Declared` writes the model arenas marked `Written` or `Reported` and the native namespace of the output format only. A finding is in the payload when its entity or an identity in its message is in it, when it names no entity, or when its entity is not in the document. If planning fails, every error refuses. The report keeps every finding. `--allow-errors` writes after any check error. `check` still exits 1 on every error.
 - `inspect` detects a codec and reports container structure without decoding geometry.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source metadata, source annotations, and retained records. ID-bearing records match by globally unique IDs. Vector position is not entity identity. A source attribute whose key ends in `_local_sha256` holds a machine-local content digest, which no two platforms reproduce; `diff` reports a difference in one under a separate informational section and keeps status 0.
 - `check` reads or decodes an input and checks IR invariants. Decoder and export admission subsets are in [admissibility-routes.md](admissibility-routes.md).

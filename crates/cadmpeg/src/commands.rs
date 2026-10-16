@@ -494,6 +494,15 @@ pub(crate) fn convert(
                 writeln!(stderr)?;
             }
             print_check_report(&mut stderr, &prepared.validation)?;
+            let total = prepared.validation.error_count();
+            if total > 0 {
+                writeln!(
+                    stderr,
+                    "check: {} of {total} error(s) in what the {} output writes",
+                    planned.carried_errors(),
+                    prepared.format().name()
+                )?;
+            }
             (
                 prepared.document.decode_report().cloned(),
                 prepared.validation.clone(),
