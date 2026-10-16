@@ -23,6 +23,11 @@ const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
 
 /// Maximum embedded curve nesting depth.
 const MAX_CURVE_DEPTH: usize = 32;
+/// Highest degree a polycurve join raises its segments to. Bezier elevation
+/// costs the square of the degree per span; Rhino commands stop at degree 11.
+const MAX_JOIN_DEGREE: usize = 64;
+/// Elevated Bezier poles, `degree` per span, that one polycurve join produces.
+const MAX_JOIN_ELEVATED_POLES: usize = 1 << 20;
 /// Acceptance tolerance for circle plane axes and evaluated radius points.
 const CIRCLE_TOLERANCE: f64 = EPS_CURVE_DEGENERATE;
 
@@ -871,58 +876,144 @@ fn elevate_bezier(
     Ok(values)
 }
 
-fn insert_knot_once(
-    ctx: &DecodeContext<'_>,
-    knots: &mut Vec<f64>,
-    points: &mut Vec<Homogeneous>,
-    degree: usize,
-    value: f64,
-    offset: usize,
-    failure: &'static str,
-) -> Result<(), GeometryError> {
-    let n = points.len() - 1;
-    // Endpoint clamping can select a span beyond the last control point.
-    let k = knots
-        .iter()
-        .rposition(|knot| *knot <= value)
-        .ok_or_else(|| error(offset, failure))?;
-    let k = if degree == 0 { k.min(n) } else { k };
-    let multiplicity = knots.iter().filter(|knot| **knot == value).count();
-    if multiplicity > degree
-        || k < degree
-        || k - degree > n
-        || k.checked_sub(multiplicity).is_none_or(|tail| tail > n)
-    {
-        return Err(error(offset, failure));
-    }
-    let mut output = ctx.alloc_filled(
-        points
-            .len()
-            .checked_add(1)
-            .ok_or_else(|| error(offset, failure))?,
-        points[0],
-        "Rhino polycurve knot insertion points",
-    )?;
-    output[..=k - degree].copy_from_slice(&points[..=k - degree]);
-    output[k - multiplicity + 1..=n + 1].copy_from_slice(&points[k - multiplicity..=n]);
-    for index in k - degree + 1..=k - multiplicity {
-        let denominator = knots[index + degree] - knots[index];
-        if denominator <= 0.0 || !denominator.is_finite() {
-            return Err(error(offset, failure));
-        }
-        let alpha = (value - knots[index]) / denominator;
-        output[index] = points[index - 1].blend(points[index], alpha);
-    }
-
-    knots.insert(k + 1, value);
-    *points = output;
-    Ok(())
+/// A sequence split at a movable gap; `right` holds the suffix reversed. Moving
+/// the gap costs one move per element crossed and inserting at it costs O(1).
+struct GapBuffer<T> {
+    left: Vec<T>,
+    right: Vec<T>,
 }
 
+impl<T: Copy> GapBuffer<T> {
+    fn new(mut values: Vec<T>) -> Self {
+        values.reverse();
+        Self {
+            left: Vec::new(),
+            right: values,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.left.len() + self.right.len()
+    }
+
+    fn get(&self, index: usize) -> Option<T> {
+        match index.checked_sub(self.left.len()) {
+            None => self.left.get(index).copied(),
+            Some(offset) => self
+                .right
+                .len()
+                .checked_sub(offset + 1)
+                .and_then(|position| self.right.get(position))
+                .copied(),
+        }
+    }
+
+    fn move_gap(&mut self, position: usize) {
+        while self.left.len() < position {
+            let Some(value) = self.right.pop() else {
+                return;
+            };
+            self.left.push(value);
+        }
+        while self.left.len() > position {
+            let Some(value) = self.left.pop() else {
+                return;
+            };
+            self.right.push(value);
+        }
+    }
+
+    fn into_vec(mut self) -> Vec<T> {
+        self.right.reverse();
+        self.left.append(&mut self.right);
+        self.left
+    }
+}
+
+/// Raises each of `values` to `multiplicity` by repeated single-knot Boehm
+/// insertion. Every insertion computes exactly what it would on the whole
+/// curve, but ascending values keep both gaps moving forward, so a pass costs
+/// the curve length plus `degree` per insertion.
+fn insert_knots(
+    knots: Vec<f64>,
+    points: Vec<Homogeneous>,
+    degree: usize,
+    values: &[f64],
+    multiplicity: usize,
+    offset: usize,
+    failure: &'static str,
+) -> Result<(Vec<f64>, Vec<Homogeneous>), GeometryError> {
+    let mut knots = GapBuffer::new(knots);
+    let mut points = GapBuffer::new(points);
+    for &value in values {
+        while knots.left.last().is_some_and(|knot| *knot > value) {
+            knots.move_gap(knots.left.len() - 1);
+        }
+        while knots.right.last().is_some_and(|knot| *knot <= value) {
+            knots.move_gap(knots.left.len() + 1);
+        }
+        loop {
+            // Knots are sorted, so the run of `value` ends at the gap. Counting
+            // past `degree + 1` cannot change any decision below.
+            let existing = knots
+                .left
+                .iter()
+                .rev()
+                .take(degree + 1)
+                .take_while(|knot| **knot == value)
+                .count();
+            if existing >= multiplicity {
+                break;
+            }
+            let n = points
+                .len()
+                .checked_sub(1)
+                .ok_or_else(|| error(offset, failure))?;
+            let k = knots
+                .left
+                .len()
+                .checked_sub(1)
+                .ok_or_else(|| error(offset, failure))?;
+            // Endpoint clamping can select a span beyond the last control point.
+            let k = if degree == 0 { k.min(n) } else { k };
+            if existing > degree
+                || k < degree
+                || k - degree > n
+                || k.checked_sub(existing).is_none_or(|tail| tail > n)
+            {
+                return Err(error(offset, failure));
+            }
+            points.move_gap(k - existing + 1);
+            let mut blended = Vec::new();
+            for index in k - degree + 1..=k - existing {
+                let low = knots.get(index).ok_or_else(|| error(offset, failure))?;
+                let high = knots
+                    .get(index + degree)
+                    .ok_or_else(|| error(offset, failure))?;
+                let denominator = high - low;
+                if denominator <= 0.0 || !denominator.is_finite() {
+                    return Err(error(offset, failure));
+                }
+                let alpha = (value - low) / denominator;
+                blended.push(points.left[index - 1].blend(points.left[index], alpha));
+            }
+            let kept = points.left[k - existing];
+            points.left.truncate(k - degree + 1);
+            points.left.append(&mut blended);
+            points.left.push(kept);
+            knots.left.insert(k + 1, value);
+        }
+    }
+    Ok((knots.into_vec(), points.into_vec()))
+}
+
+/// Splits `curve` into Bezier spans raised to `target`, adding the
+/// `target` poles of each span to the join's `elevated_poles`.
 fn elevate_to_degree(
     ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     target: usize,
+    elevated_poles: &mut usize,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let degree =
@@ -977,6 +1068,24 @@ fn elevate_to_degree(
         source_knots[degree],
         source_knots[source_knots.len() - degree - 1],
     ];
+    let internal_knots = source_knots
+        .chunk_by(|left, right| left == right)
+        .filter(|run| {
+            run.first()
+                .is_some_and(|knot| *knot > domain[0] && *knot < domain[1])
+        })
+        .count();
+    *elevated_poles = internal_knots
+        .checked_add(1)
+        .and_then(|spans| spans.checked_mul(target))
+        .and_then(|poles| poles.checked_add(*elevated_poles))
+        .filter(|poles| *poles <= MAX_JOIN_ELEVATED_POLES)
+        .ok_or_else(|| {
+            error(
+                offset,
+                "polycurve degree elevation exceeds MAX_JOIN_ELEVATED_POLES",
+            )
+        })?;
     let mut elevated_knots = ctx.alloc_filled(
         target
             .checked_add(1)
@@ -1005,17 +1114,15 @@ fn elevate_to_degree(
     let mut knots = Vec::new();
     knots.extend_from_slice(source_knots);
     for endpoint in domain {
-        while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
-            insert_knot_once(
-                ctx,
-                &mut knots,
-                &mut points,
-                degree,
-                endpoint,
-                offset,
-                "polycurve endpoint clamping failed",
-            )?;
-        }
+        (knots, points) = insert_knots(
+            knots,
+            points,
+            degree,
+            &[endpoint],
+            degree + 1,
+            offset,
+            "polycurve endpoint clamping failed",
+        )?;
     }
     let mut internal = Vec::new();
     for knot in knots
@@ -1026,19 +1133,15 @@ fn elevate_to_degree(
         internal.push(knot);
     }
     internal.dedup();
-    for knot in internal {
-        while knots.iter().filter(|value| **value == knot).count() < degree {
-            insert_knot_once(
-                ctx,
-                &mut knots,
-                &mut points,
-                degree,
-                knot,
-                offset,
-                "polycurve knot insertion failed",
-            )?;
-        }
-    }
+    (knots, points) = insert_knots(
+        knots,
+        points,
+        degree,
+        &internal,
+        degree,
+        offset,
+        "polycurve knot insertion failed",
+    )?;
     let mut spans = Vec::new();
     for span in (degree..points.len()).filter(|&span| {
         knots[span] < knots[span + 1] && knots[span] >= domain[0] && knots[span + 1] <= domain[1]
@@ -1053,7 +1156,10 @@ fn elevate_to_degree(
         let mut bezier = Vec::new();
         bezier.extend_from_slice(&points[span - degree..=span]);
         let bezier = elevate_bezier(bezier, target)?;
-        let disconnected = knots.iter().filter(|knot| **knot == knots[span]).count() > degree;
+        let value = knots[span];
+        let multiplicity = knots.partition_point(|knot| *knot <= value)
+            - knots.partition_point(|knot| *knot < value);
+        let disconnected = multiplicity > degree;
         let skip = usize::from(index > 0 && !disconnected);
         if index > 0 {
             let added = target + usize::from(disconnected);
@@ -1110,9 +1216,19 @@ pub(crate) fn join_nurbs_segments(
     if target == 0 {
         return Err(error(offset, "polycurve segment degree must be positive"));
     }
+    if target > MAX_JOIN_DEGREE {
+        return Err(error(offset, "polycurve degree exceeds MAX_JOIN_DEGREE"));
+    }
+    let mut elevated_poles = 0;
     let mut elevated_segments = Vec::new();
     for segment in &segments {
-        elevated_segments.push(elevate_to_degree(ctx, segment, target, offset)?);
+        elevated_segments.push(elevate_to_degree(
+            ctx,
+            segment,
+            target,
+            &mut elevated_poles,
+            offset,
+        )?);
     }
     segments = elevated_segments;
     if segments.len() == 1 {
@@ -2000,9 +2116,10 @@ mod tests {
         ];
         for curve in cases {
             for degree in [2, 3] {
-                let elevated =
-                    with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, degree, 0))
-                        .unwrap();
+                let elevated = with_test_context(|ctx| {
+                    super::elevate_to_degree(ctx, &curve, degree, &mut 0, 0)
+                })
+                .unwrap();
                 let start = curve.knots()
                     [usize::try_from(curve.degree()).expect("fixture value fits usize")];
                 let end = curve.knots()[curve.control_points().len()];
@@ -2145,21 +2262,256 @@ mod tests {
 
     #[test]
     fn polycurve_knot_insertion_adds_one_pole() {
-        let mut knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-        let mut points = vec![super::Homogeneous([1.0; 4]); 3];
-        with_test_context(|ctx| {
-            super::insert_knot_once(
-                ctx,
-                &mut knots,
-                &mut points,
-                2,
-                0.5,
-                0,
-                "polycurve knot insertion failed",
-            )
-            .expect("insert knot once");
-        });
+        let (knots, points) = super::insert_knots(
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![super::Homogeneous([1.0; 4]); 3],
+            2,
+            &[0.5],
+            1,
+            0,
+            "polycurve knot insertion failed",
+        )
+        .expect("insert knot once");
+        assert_eq!(knots, [0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0]);
         assert_eq!(points.len(), 4);
+    }
+
+    type Inserted = Result<(Vec<f64>, Vec<[f64; 4]>), String>;
+
+    /// The single Boehm insertion the streaming pass must reproduce bit for
+    /// bit: it rescans and copies the whole curve on every insertion.
+    fn reference_insert_once(
+        knots: &mut Vec<f64>,
+        points: &mut Vec<super::Homogeneous>,
+        degree: usize,
+        value: f64,
+    ) -> Result<(), String> {
+        let n = points.len() - 1;
+        let k = knots
+            .iter()
+            .rposition(|knot| *knot <= value)
+            .ok_or("no span")?;
+        let k = if degree == 0 { k.min(n) } else { k };
+        let multiplicity = knots.iter().filter(|knot| **knot == value).count();
+        if multiplicity > degree
+            || k < degree
+            || k - degree > n
+            || k.checked_sub(multiplicity).is_none_or(|tail| tail > n)
+        {
+            return Err("insertion failed".to_owned());
+        }
+        let mut output = vec![points[0]; points.len() + 1];
+        output[..=k - degree].copy_from_slice(&points[..=k - degree]);
+        output[k - multiplicity + 1..=n + 1].copy_from_slice(&points[k - multiplicity..=n]);
+        for index in k - degree + 1..=k - multiplicity {
+            let denominator = knots[index + degree] - knots[index];
+            if denominator <= 0.0 || !denominator.is_finite() {
+                return Err("insertion failed".to_owned());
+            }
+            let alpha = (value - knots[index]) / denominator;
+            output[index] = points[index - 1].blend(points[index], alpha);
+        }
+        knots.insert(k + 1, value);
+        *points = output;
+        Ok(())
+    }
+
+    /// Endpoint clamping then internal insertion, one knot at a time.
+    fn reference_decompose(
+        mut knots: Vec<f64>,
+        mut points: Vec<super::Homogeneous>,
+        degree: usize,
+    ) -> Inserted {
+        let domain = [knots[degree], knots[knots.len() - degree - 1]];
+        for endpoint in domain {
+            while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
+                reference_insert_once(&mut knots, &mut points, degree, endpoint)?;
+            }
+        }
+        let mut internal: Vec<f64> = knots
+            .iter()
+            .copied()
+            .filter(|knot| *knot > domain[0] && *knot < domain[1])
+            .collect();
+        internal.dedup();
+        for knot in internal {
+            while knots.iter().filter(|value| **value == knot).count() < degree {
+                reference_insert_once(&mut knots, &mut points, degree, knot)?;
+            }
+        }
+        Ok((knots, points.into_iter().map(|point| point.0).collect()))
+    }
+
+    fn streaming_decompose(
+        mut knots: Vec<f64>,
+        mut points: Vec<super::Homogeneous>,
+        degree: usize,
+    ) -> Inserted {
+        let failed = |_| "insertion failed".to_owned();
+        let domain = [knots[degree], knots[knots.len() - degree - 1]];
+        for endpoint in domain {
+            (knots, points) =
+                super::insert_knots(knots, points, degree, &[endpoint], degree + 1, 0, "")
+                    .map_err(failed)?;
+        }
+        let mut internal: Vec<f64> = knots
+            .iter()
+            .copied()
+            .filter(|knot| *knot > domain[0] && *knot < domain[1])
+            .collect();
+        internal.dedup();
+        (knots, points) =
+            super::insert_knots(knots, points, degree, &internal, degree, 0, "").map_err(failed)?;
+        Ok((knots, points.into_iter().map(|point| point.0).collect()))
+    }
+
+    #[test]
+    fn streaming_knot_insertion_matches_single_insertions_bit_for_bit() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            state >> 33
+        };
+        let mut compared = 0;
+        for case in 0..400 {
+            let degree = case % 6;
+            let poles = degree + 1 + usize::try_from(next() % 24).expect("small count");
+            let mut knot = -1.5;
+            let knots: Vec<f64> = (0..=poles + degree)
+                .map(|_| {
+                    knot += [0.0, 0.0, 0.25, 0.5, 1.0, 1.75]
+                        [usize::try_from(next() % 6).expect("small index")];
+                    knot
+                })
+                .collect();
+            let points: Vec<super::Homogeneous> = (0..poles)
+                .map(|_| {
+                    let weight = 0.5 + f64::from(u32::try_from(next() % 8).expect("small")) / 4.0;
+                    super::Homogeneous(std::array::from_fn(|lane| {
+                        if lane == 3 {
+                            weight
+                        } else {
+                            f64::from(u32::try_from(next() % 1000).expect("small")) / 7.0 * weight
+                        }
+                    }))
+                })
+                .collect();
+            let reference = reference_decompose(knots.clone(), points.clone(), degree);
+            let streaming = streaming_decompose(knots, points, degree);
+            let bits = |result: &Inserted| {
+                result.clone().map(|(knots, points)| {
+                    (
+                        knots
+                            .iter()
+                            .map(|value| value.to_bits())
+                            .collect::<Vec<_>>(),
+                        points
+                            .iter()
+                            .flatten()
+                            .map(|value| value.to_bits())
+                            .collect::<Vec<_>>(),
+                    )
+                })
+            };
+            assert_eq!(bits(&streaming), bits(&reference), "case {case}");
+            compared += usize::from(reference.is_ok());
+        }
+        assert!(compared > 200, "only {compared} successful decompositions");
+    }
+
+    #[test]
+    fn long_polycurve_segment_decomposes_in_linear_time() {
+        // 2^14 internal knots each need two insertions; a whole-curve copy per
+        // insertion would move about 2^29 poles.
+        let spans = 1_usize << 14;
+        let end = f64::from(u32::try_from(spans).expect("small count"));
+        let mut knots = vec![0.0; 4];
+        knots.extend((1..spans).map(|knot| f64::from(u32::try_from(knot).expect("small"))));
+        knots.extend([end; 4]);
+        let points = (0..spans + 3)
+            .map(|index| {
+                let x = f64::from(u32::try_from(index).expect("small"));
+                Point3::new(x, (x * 0.5).sin(), 0.0)
+            })
+            .collect();
+        let curve = NurbsCurve::from_lanes(3, knots, points, None, false).expect("cubic segment");
+        let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![curve.clone()], 0))
+            .expect("join one long segment")
+            .curve;
+        assert_eq!(joined.control_points().len(), 3 * spans + 1);
+        assert_eq!(joined.control_points()[0], curve.control_points()[0]);
+        assert_eq!(
+            joined.control_points().last(),
+            curve.control_points().last()
+        );
+        assert!(joined.knots()[4..joined.knots().len() - 4]
+            .chunks(3)
+            .all(|run| run.iter().all(|knot| *knot == run[0])));
+    }
+
+    #[test]
+    fn polycurve_join_over_the_degree_cap_fails_the_curve() {
+        let degree = super::MAX_JOIN_DEGREE + 1;
+        let mut knots = vec![0.0; degree + 1];
+        knots.extend(vec![1.0; degree + 1]);
+        let points = (0..=degree)
+            .map(|index| Point3::new(f64::from(u32::try_from(index).expect("small")), 0.0, 0.0))
+            .collect();
+        let curve = NurbsCurve::from_lanes(
+            u32::try_from(degree).expect("small degree"),
+            knots,
+            points,
+            None,
+            false,
+        )
+        .expect("high-degree segment");
+        let Err(GeometryError::Malformed(error)) =
+            with_test_context(|ctx| join_nurbs_segments(ctx, vec![curve], 0))
+        else {
+            panic!("a degree above the cap fails the join");
+        };
+        assert!(error.to_string().contains("MAX_JOIN_DEGREE"), "{error}");
+    }
+
+    #[test]
+    fn polycurve_join_over_the_elevated_pole_cap_fails_before_elevation() {
+        let degree = super::MAX_JOIN_DEGREE;
+        let mut knots = vec![0.0; degree + 1];
+        knots.extend(vec![1.0; degree + 1]);
+        let high = NurbsCurve::from_lanes(
+            u32::try_from(degree).expect("small degree"),
+            knots,
+            vec![Point3::new(0.0, 0.0, 0.0); degree + 1],
+            None,
+            false,
+        )
+        .expect("high-degree segment");
+        // One more span than the cap leaves for the high segment's one span.
+        let spans = super::MAX_JOIN_ELEVATED_POLES / degree;
+        let mut knots = vec![1.0];
+        knots.extend((0..=spans).map(|knot| 1.0 + f64::from(u32::try_from(knot).expect("small"))));
+        knots.push(knots[knots.len() - 1]);
+        let polyline = NurbsCurve::from_lanes(
+            1,
+            knots,
+            (0..=spans)
+                .map(|index| Point3::new(f64::from(u32::try_from(index).expect("small")), 0.0, 0.0))
+                .collect(),
+            None,
+            false,
+        )
+        .expect("many-span segment");
+        let Err(GeometryError::Malformed(error)) =
+            with_test_context(|ctx| join_nurbs_segments(ctx, vec![high, polyline], 0))
+        else {
+            panic!("elevated poles above the cap fail the join");
+        };
+        assert!(
+            error.to_string().contains("MAX_JOIN_ELEVATED_POLES"),
+            "{error}"
+        );
     }
 
     fn read_cloud(
@@ -2820,12 +3172,14 @@ mod tests {
             .unwrap()
         };
         for degree in [1, 2] {
-            let normalized =
-                with_test_context(|ctx| super::elevate_to_degree(ctx, &line(1.), degree, 0))
-                    .unwrap();
-            let rescaled =
-                with_test_context(|ctx| super::elevate_to_degree(ctx, &line(1e200), degree, 0))
-                    .unwrap();
+            let normalized = with_test_context(|ctx| {
+                super::elevate_to_degree(ctx, &line(1.), degree, &mut 0, 0)
+            })
+            .unwrap();
+            let rescaled = with_test_context(|ctx| {
+                super::elevate_to_degree(ctx, &line(1e200), degree, &mut 0, 0)
+            })
+            .unwrap();
             for (a, b) in normalized
                 .control_points()
                 .iter()
