@@ -1192,7 +1192,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     group_parameter
         .try_set_source(
             crate::records::parameters::DesignParameterSource::new(
-                zero_parameter.source_kind().into(),
+                zero_parameter.source_kind().as_str().into(),
                 Some(group_owner.record_index()),
                 zero_parameter.family_discriminator(),
             )
