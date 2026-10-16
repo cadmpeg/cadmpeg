@@ -1249,7 +1249,7 @@ mod tests {
             bounds: Some([1., 2.]),
         })
         .expect("valid finite regression fixture");
-        let geometry = ({ super::scale_sketch_geometry(geometry, positive(10.)) })
+        let geometry = super::scale_sketch_geometry(geometry, positive(10.))
             .expect("valid finite regression fixture");
         assert!(matches!(
             geometry.definition(),
@@ -1637,7 +1637,8 @@ mod tests {
                     .unwrap(),
             ),
         );
-        ({ source_carriers.admit_procedural_surface(&mut ir, &surface_id, surface) })
+        source_carriers
+            .admit_procedural_surface(&mut ir, &surface_id, surface)
             .expect("surface construction admission");
         let curve_id =
             cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve").expect("identity grammar");
@@ -1679,7 +1680,8 @@ mod tests {
                 .expect("identity grammar"),
             curve_definition,
         );
-        ({ source_carriers.admit_procedural_curve(&mut ir, &curve_id, curve) })
+        source_carriers
+            .admit_procedural_curve(&mut ir, &curve_id, curve)
             .expect("curve construction admission");
 
         let surface = &ir.model.procedural_surfaces[0];
@@ -1815,10 +1817,10 @@ mod tests {
                 definition,
                 None,
             );
-            let error =
-                ({ source_carriers.admit_procedural_surface(&mut ir, &surface_id, surface) })
-                    .expect_err("an overflowing scaled vector has no payload")
-                    .to_string();
+            let error = source_carriers
+                .admit_procedural_surface(&mut ir, &surface_id, surface)
+                .expect_err("an overflowing scaled vector has no payload")
+                .to_string();
             assert!(error.contains(refusal), "{error}");
         }
     }
@@ -2160,18 +2162,16 @@ mod tests {
     #[test]
     fn sketch_scaling_refusal_names_the_field() {
         assert_scaling_malformed(
-            {
-                super::scale_sketch_geometry(
-                    cadmpeg_ir::sketches::SketchGeometry::try_from(
-                        cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
-                            position: Point2::new(f64::MAX, 0.0),
-                        },
-                    )
-                    .expect("point"),
-                    positive(2.0),
+            super::scale_sketch_geometry(
+                cadmpeg_ir::sketches::SketchGeometry::try_from(
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
+                        position: Point2::new(f64::MAX, 0.0),
+                    },
                 )
-                .map(|_| ())
-            },
+                .expect("point"),
+                positive(2.0),
+            )
+            .map(|_| ()),
             "sketch point position must be finite",
         );
     }

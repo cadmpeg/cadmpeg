@@ -4377,10 +4377,7 @@ mod tests {
             });
         }
 
-        assert_eq!(
-            ({ standard_carrier_surface_ids(&ir) }).get(&0x1234),
-            Some(&None)
-        );
+        assert_eq!(standard_carrier_surface_ids(&ir).get(&0x1234), Some(&None));
     }
 
     #[test]

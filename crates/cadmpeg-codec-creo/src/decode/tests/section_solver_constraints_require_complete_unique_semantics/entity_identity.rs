@@ -401,26 +401,24 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             if entity.as_str().ends_with(":99") && target.as_str().ends_with(":12")
     ));
     assert_eq!(
-        {
-            section_skamp_midpoint(
-                &opaque_point,
-                &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-                &opaque_point_item,
-                &crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 12,
-                    sense: 2,
-                },
-                Some(&BTreeMap::from([(
-                    SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string())
-                        .expect("valid test fixture"),
-                    SketchGeometry::try_from(SketchGeometryDefinition::Native {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("point")
-                            .expect("nonempty source identity"),
-                    })
+        section_skamp_midpoint(
+            &opaque_point,
+            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
+            &opaque_point_item,
+            &crate::feature::definitions::FeatureSkampItem {
+                entity_id: 12,
+                sense: 2,
+            },
+            Some(&BTreeMap::from([(
+                SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string())
                     .expect("valid test fixture"),
-                )])),
-            )
-        },
+                SketchGeometry::try_from(SketchGeometryDefinition::Native {
+                    native_kind: cadmpeg_core::text::NonBlankString::new("point")
+                        .expect("nonempty source identity"),
+                })
+                .expect("valid test fixture"),
+            )])),
+        ),
         None
     );
     let centered_line = crate::feature::definitions::FeatureCenteredLineSegment {

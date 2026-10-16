@@ -849,21 +849,19 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             usize::MAX,
         );
 
-        ({
-            crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
-                &mut ir,
-                crate::decode::support_uv::IntersectionStream {
-                    graph: &graph,
-                    scope: &crate::decode::ids::IdScope::stream(0),
-                    coedge_start: target_index + 1,
-                    procedural_start: 0,
-                    source_stream: source_stream.clone(),
-                    validated_endpoint_witnesses: &std::collections::BTreeMap::new(),
-                },
-                &mut annotations,
-                &geometry_budget,
-            )
-        })
+        crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
+            &mut ir,
+            crate::decode::support_uv::IntersectionStream {
+                graph: &graph,
+                scope: &crate::decode::ids::IdScope::stream(0),
+                coedge_start: target_index + 1,
+                procedural_start: 0,
+                source_stream: source_stream.clone(),
+                validated_endpoint_witnesses: &std::collections::BTreeMap::new(),
+            },
+            &mut annotations,
+            &geometry_budget,
+        )
         .expect("valid exactness fields");
         assert!(!ir
             .model
@@ -877,15 +875,13 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             coedge_start: 0,
             procedural_start: 0,
         };
-        ({
-            crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
-                &mut ir,
-                std::slice::from_ref(&source),
-                &mut annotations,
-                &std::collections::BTreeMap::new(),
-                &geometry_budget,
-            )
-        })
+        crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
+            &mut ir,
+            std::slice::from_ref(&source),
+            &mut annotations,
+            &std::collections::BTreeMap::new(),
+            &geometry_budget,
+        )
         .expect("valid exactness fields");
 
         let completed = ir

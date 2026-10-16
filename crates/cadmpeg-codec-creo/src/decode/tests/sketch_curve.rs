@@ -39,7 +39,7 @@ fn section_segment_radius_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
-    ({ checked_section_segment_radius_constraints(definition, sketch) })
+    checked_section_segment_radius_constraints(definition, sketch)
         .expect("compute the checked section segment radius constraints")
 }
 
@@ -49,14 +49,12 @@ fn section_segment_radius_constraints_for_emitted(
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
-    ({
-        checked_section_segment_radius_constraints_for_emitted(
-            definition,
-            sketch,
-            emitted,
-            available_parameters,
-        )
-    })
+    checked_section_segment_radius_constraints_for_emitted(
+        definition,
+        sketch,
+        emitted,
+        available_parameters,
+    )
     .expect("compute the checked section segment radius constraints for emitted")
 }
 

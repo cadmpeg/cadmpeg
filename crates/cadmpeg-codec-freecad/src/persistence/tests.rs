@@ -757,7 +757,7 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
         assert_eq!(second.subelements(), ["Face1"]);
         let invalid = markup.replace("XLinkSubList", "XLinkList");
         let xml = roxmltree::Document::parse(&invalid).unwrap();
-        assert!({ super::parse_link_targets(xml.root_element(), type_name).is_err() });
+        assert!(super::parse_link_targets(xml.root_element(), type_name).is_err());
     }
 }
 

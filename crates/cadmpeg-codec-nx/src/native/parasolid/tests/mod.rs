@@ -337,15 +337,13 @@ fn structured_value_uses_require_one_same_stream_family() {
         byte_len: 16,
         inflated_offset: 90,
     };
-    assert!({
-        parasolid_entity_51_structured_uses(
-            std::slice::from_ref(&entity),
-            std::slice::from_ref(&point),
-            &[],
-            std::slice::from_ref(&colliding_tag),
-            &[],
-        )
-    }
+    assert!(parasolid_entity_51_structured_uses(
+        std::slice::from_ref(&entity),
+        std::slice::from_ref(&point),
+        &[],
+        std::slice::from_ref(&colliding_tag),
+        &[],
+    )
     .is_empty());
 
     let other_stream = ParasolidEntityVectorRecord {
@@ -885,32 +883,26 @@ fn topology_attribute_class_uses_resolve_type_80_definitions_by_xmt() {
     assert_eq!(uses[0].attribute_class_use, instance_uses[0].id);
     assert_eq!(u32::from(uses[0].definition_xmt), 34);
     assert_eq!(uses[0].attribute_definition, definition.id);
-    assert!({
-        super::parasolid_topology_attribute_class_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&entity),
-            &[instance_uses[0].clone(), instance_uses[0].clone()],
-        )
-    }
+    assert!(super::parasolid_topology_attribute_class_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&entity),
+        &[instance_uses[0].clone(), instance_uses[0].clone()],
+    )
     .is_empty());
 
     let mut invalid = entity;
     invalid.definition_xmt = 33;
-    assert!({
-        super::parasolid_attribute_class_uses(
-            std::slice::from_ref(&invalid),
-            std::slice::from_ref(&definition),
-        )
-    }
+    assert!(super::parasolid_attribute_class_uses(
+        std::slice::from_ref(&invalid),
+        std::slice::from_ref(&definition),
+    )
     .is_empty());
     let invalid_uses = super::parasolid_attribute_class_uses(&[invalid.clone()], &[definition]);
-    assert!({
-        super::parasolid_topology_attribute_class_uses(
-            &[reference],
-            std::slice::from_ref(&invalid),
-            &invalid_uses,
-        )
-    }
+    assert!(super::parasolid_topology_attribute_class_uses(
+        &[reference],
+        std::slice::from_ref(&invalid),
+        &invalid_uses,
+    )
     .is_empty());
 }
 

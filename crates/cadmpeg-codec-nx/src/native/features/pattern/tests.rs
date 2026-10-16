@@ -44,9 +44,8 @@ fn pattern_construction_route_admits_one_payload() {
         stable_identity: None,
         source_offset: 0,
     }];
-    let admitted =
-        ({ super::feature_pattern_construction_payloads(&container, &labels, &references) })
-            .expect("admitted pattern construction payload");
+    let admitted = super::feature_pattern_construction_payloads(&container, &labels, &references)
+        .expect("admitted pattern construction payload");
     assert_eq!(admitted.len(), 1);
 }
 

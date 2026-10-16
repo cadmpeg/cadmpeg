@@ -1870,7 +1870,7 @@ mod tests {
             tail: Vec::new(),
         };
         let supports = BTreeMap::from([(1, support([2, 3])), (2, support([1, 3]))]);
-        assert!(!{ curve_support_reference_closes(1, &pcurves, &supports) });
+        assert!(!curve_support_reference_closes(1, &pcurves, &supports));
     }
 
     #[test]

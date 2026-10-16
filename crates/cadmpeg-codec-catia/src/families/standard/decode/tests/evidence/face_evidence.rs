@@ -645,16 +645,14 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
     .expect("attach standard faces");
     let mut second = base_ir.model.faces[0].clone();
     second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
-    ({
-        crate::assemble::annotate(
-            &mut base_annotations,
-            &second.id,
-            "MainDataStream+SurfacicReps",
-            0,
-            "surfacic_reps_face_sense",
-            cadmpeg_ir::Exactness::ByteExact,
-        )
-    })
+    crate::assemble::annotate(
+        &mut base_annotations,
+        &second.id,
+        "MainDataStream+SurfacicReps",
+        0,
+        "surfacic_reps_face_sense",
+        cadmpeg_ir::Exactness::ByteExact,
+    )
     .expect("annotate the entity");
     base_ir.model.faces.push(second);
     let components = [vec![0], vec![1]];

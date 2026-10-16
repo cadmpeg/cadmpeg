@@ -1146,6 +1146,6 @@ fn copying_a_revolution_procedure_preserves_it() {
         },
     ));
     let service =
-        ({ super::super::copy_standard_procedure(&procedure) }).expect("copy standard procedure");
+        super::super::copy_standard_procedure(&procedure).expect("copy standard procedure");
     assert!(service == procedure);
 }

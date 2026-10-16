@@ -1079,56 +1079,46 @@ pub(crate) fn project(
 
     let unique_properties = unique_index(inventory.properties.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let unique_parameters = unique_index(design.parameters.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let unique_sketches = unique_index(sketch.sketches.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let unique_directions = unique_index(sketch.directions.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
     let unique_transforms = unique_index(sketch.transforms.iter().map(|record| {
         (
-            {
-                (
-                    record.identity.segment_token.as_str(),
-                    record.identity.record_ordinal,
-                )
-            },
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            ),
             record,
         )
     }));
@@ -1173,12 +1163,10 @@ pub(crate) fn project(
     // with no owner never claims the feature at ordinal 0.
     let labels = unique_index(inventory.labels.iter().map(|label| {
         (
-            {
-                (
-                    label.identity.segment_token.as_str(),
-                    label.header.owner.record_ordinal(),
-                )
-            },
+            (
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal(),
+            ),
             label,
         )
     }));

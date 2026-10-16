@@ -36,7 +36,7 @@ fn regeneration_edge_commit_installs_feature_parent() {
     child.id = child_id.clone();
     child.ordinal = 1;
     ir.model.features.push(child);
-    ({ commit_regeneration_edges(&mut ir, vec![(child_id.clone(), parent_id.clone())]) })
+    commit_regeneration_edges(&mut ir, vec![(child_id.clone(), parent_id.clone())])
         .expect("regeneration parent");
     assert_eq!(ir.model.feature_parent(&child_id), Some(&parent_id));
 }

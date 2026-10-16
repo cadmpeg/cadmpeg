@@ -69,7 +69,7 @@ fn append_design_intent_losses(
     ir: &cadmpeg_ir::document::CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    ({ crate::decode::report::append_design_intent_losses(ir, losses) }).unwrap();
+    crate::decode::report::append_design_intent_losses(ir, losses).unwrap();
 }
 
 #[test]
