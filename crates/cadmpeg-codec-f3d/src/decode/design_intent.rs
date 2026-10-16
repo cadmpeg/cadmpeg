@@ -322,8 +322,24 @@ fn decode_asm_history(
     )
 }
 
+#[cfg(test)]
+thread_local! {
+    static INJECTED_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Make the next phase-2 run on this thread fail with `failure()`.
+#[cfg(test)]
+pub(crate) fn inject_failure(failure: fn() -> CodecError) {
+    INJECTED_FAILURE.with(|slot| slot.set(Some(failure)));
+}
+
 /// Decode design intent over the product prerequisites.
 pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecError> {
+    #[cfg(test)]
+    if let Some(failure) = INJECTED_FAILURE.with(std::cell::Cell::take) {
+        return Err(failure());
+    }
     let &DesignInputs {
         ctx,
         scan,

@@ -2280,6 +2280,14 @@ enum SessionPath {
     Bodyless,
 }
 
+/// Phase-2 outcome as product projection and finalization see it.
+enum DesignState {
+    /// Phase 2 ran. Its native records wait for finalization.
+    Projected(Box<design_intent::DesignNative>),
+    /// No phase-2 output. Design reports do not run.
+    Absent,
+}
+
 /// The inputs one decoded path hands to finalization.
 enum FinalizePath {
     Geometry(GeometryIndex),
@@ -2424,10 +2432,37 @@ impl<'a> F3dDecodeSession<'a> {
     fn into_result(mut self, path: SessionPath) -> Result<AuthoredDecoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
         let prereqs = self.decode_product_prereqs(&path)?;
-        let design = self.decode_design_intent(&path, &prereqs)?;
-        let design = self.merge_design(design);
+        let design = self.decode_design_state(&path, &prereqs)?;
         let path = self.decode_products(path, &prereqs, &design)?;
         self.finalize(path, prereqs, design)
+    }
+
+    /// Run phase 2 and merge its outputs, or contain its failure.
+    ///
+    /// This is the one point that decides whether design intent enters the
+    /// document. [`DesignState::Absent`] leaves a complete product and
+    /// geometry document from phase 1. A resource refusal, or any error after
+    /// the session fused, still refuses the document.
+    fn decode_design_state(
+        &mut self,
+        path: &SessionPath,
+        prereqs: &prereqs::ProductPrereqs,
+    ) -> Result<DesignState, CodecError> {
+        match self.decode_design_intent(path, prereqs) {
+            Ok(design) => Ok(DesignState::Projected(Box::new(self.merge_design(design)))),
+            Err(error)
+                if !matches!(error, CodecError::ResourceLimit(_))
+                    && self.ctx.resource_refusal().is_none() =>
+            {
+                push_loss_vec(
+                    &mut self.report.losses,
+                    F3dLossCode::DesignIntentUndecoded,
+                    format_args!("Design intent was dropped because its decoding failed: {error}"),
+                );
+                Ok(DesignState::Absent)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// Phase 1: take the geometry body bindings and decode the other product
@@ -2499,7 +2534,7 @@ impl<'a> F3dDecodeSession<'a> {
         &mut self,
         path: SessionPath,
         prereqs: &prereqs::ProductPrereqs,
-        design: &design_intent::DesignNative,
+        design: &DesignState,
     ) -> Result<FinalizePath, CodecError> {
         let scan = self.scan;
         let act = crate::act::decode(scan)?;
@@ -2517,18 +2552,20 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     non_root_act_component_links,
                 );
-                report_unresolved_dimension_companions(
-                    &mut self.report,
-                    unresolved_dimension_companion_count(
-                        &DimensionCompanionSources::new(prereqs, design),
+                if let DesignState::Projected(design) = design {
+                    report_unresolved_dimension_companions(
+                        &mut self.report,
+                        unresolved_dimension_companion_count(
+                            &DimensionCompanionSources::new(prereqs, design),
+                            &self.ir,
+                        ),
+                    );
+                    report_unresolved_configuration_rules(
+                        &mut self.report,
+                        &design.design_configurations,
                         &self.ir,
-                    ),
-                );
-                report_unresolved_configuration_rules(
-                    &mut self.report,
-                    &design.design_configurations,
-                    &self.ir,
-                );
+                    );
+                }
                 report_untyped_material_distances(
                     &mut self.report,
                     materials.untyped_distance_properties,
@@ -2635,7 +2672,7 @@ impl<'a> F3dDecodeSession<'a> {
         mut self,
         path: FinalizePath,
         prereqs: prereqs::ProductPrereqs,
-        design: design_intent::DesignNative,
+        design: DesignState,
     ) -> Result<AuthoredDecoded, CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
@@ -2645,16 +2682,28 @@ impl<'a> F3dDecodeSession<'a> {
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
-                design.store(&mut self.native);
+                if let DesignState::Projected(design) = design {
+                    design.store(&mut self.native);
+                    report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
+                }
                 index
             }
             FinalizePath::Bodyless(inputs) => {
-                let unresolved_companions = unresolved_dimension_companion_count(
-                    &DimensionCompanionSources::new(&prereqs, &design),
-                    &self.ir,
-                );
+                let unresolved_companions = match &design {
+                    DesignState::Projected(design) => unresolved_dimension_companion_count(
+                        &DimensionCompanionSources::new(&prereqs, design),
+                        &self.ir,
+                    ),
+                    DesignState::Absent => 0,
+                };
                 let xref = prereqs.store(&mut self.native);
-                design.store(&mut self.native);
+                let projected = match design {
+                    DesignState::Projected(design) => {
+                        design.store(&mut self.native);
+                        true
+                    }
+                    DesignState::Absent => false,
+                };
                 report_unretained_act_component_links(&mut self.report, inputs.non_root_act);
                 reconcile_appearance_loss(&mut self.report, &self.ir, inputs.has_appearance);
                 let mesh_projection = project_mesh_bodies(
@@ -2669,7 +2718,9 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.native.design_parameter_scopes,
                     &mesh_projection,
                 )?;
-                report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
+                if projected {
+                    report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
+                }
                 ctx.admit_entities(
                     u64_from_index(self.ir.model.entity_count()),
                     &mut self.admitted_entities,
@@ -2722,7 +2773,6 @@ impl<'a> F3dDecodeSession<'a> {
             }
         };
 
-        report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
         ctx.admit_entities(
             u64_from_index(self.ir.model.entity_count()),
             &mut self.admitted_entities,
@@ -4806,7 +4856,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
     }
 }
 
-mod design_intent;
+pub(crate) mod design_intent;
 mod prereqs;
 
 #[cfg(test)]

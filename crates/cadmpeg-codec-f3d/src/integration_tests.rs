@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
 mod attribute_colors;
+mod design_containment;
 mod history_deltas;
 mod optional_payloads;
 
