@@ -4,7 +4,7 @@ use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::face_resolve::resolved_body_recipe_shape;
 use crate::design::feature_project::project_extrude;
-use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
+use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::bind_extrude_profile_selections;
 use crate::design::test_support::parameter_owner_frame;
 use crate::design::test_support::parameter_record;
@@ -31,7 +31,6 @@ use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
-use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
@@ -496,7 +495,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(blind),
             native_ref: Some(scope.id.clone()),
         };
-        let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+        let profile_work = ProfileGeometryWork::new();
         bind_extrude_profile_selections(
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
@@ -522,7 +521,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 scope_histories: &std::collections::HashMap::new(),
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
-                arrangement_budget: &arrangement_budget,
+                profile_work: &profile_work,
                 ctx: decode_ctx,
             },
         )

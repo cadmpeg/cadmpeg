@@ -43,6 +43,7 @@ fn circular_region_keeps_admitted_selection() {
             &entities,
             &points,
             REGION_LIMIT_TEST_TOLERANCE,
+            &super::local_profile_work(),
             decode_ctx,
         )
     })
@@ -56,6 +57,7 @@ fn circular_region_keeps_admitted_selection() {
         &entities,
         &points,
         REGION_LIMIT_TEST_TOLERANCE,
+        &super::local_profile_work(),
         &ctx,
     )
     .unwrap();

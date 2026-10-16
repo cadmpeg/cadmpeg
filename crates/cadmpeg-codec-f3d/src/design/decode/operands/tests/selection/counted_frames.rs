@@ -6,7 +6,7 @@ use cadmpeg_core::decode::u64_from_index;
 use crate::design::decode::operands::parse_extrude_selection_group;
 use crate::design::decode::operands::parse_extrude_selection_member;
 
-use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
+use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::resolved_extrude_profile_selection;
 use crate::ids::neutral_sketch_curve_id;
 use crate::ids::neutral_sketch_point_id;
@@ -23,7 +23,6 @@ use crate::records::topology::construction::DesignConstructionPersistentIdentity
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
-use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
@@ -358,7 +357,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .unwrap(),
             native_ref: None,
         };
-        let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+        let profile_work = ProfileGeometryWork::new();
         assert!(matches!(
             resolved_extrude_profile_selection(
                 &sketch_id,
@@ -373,7 +372,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     scope_histories: &std::collections::HashMap::new(),
                     linear_tolerance: 1.0e-6,
                     angular_tolerance: 1.0e-9,
-                    arrangement_budget: &arrangement_budget,
+                    profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
                 .scoped(&[]),
@@ -449,7 +448,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     scope_histories: &std::collections::HashMap::new(),
                     linear_tolerance: 1.0e-6,
                     angular_tolerance: 1.0e-9,
-                    arrangement_budget: &arrangement_budget,
+                    profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
                 .scoped(&[]),
@@ -476,7 +475,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     scope_histories: &std::collections::HashMap::new(),
                     linear_tolerance: 1.0e-6,
                     angular_tolerance: 1.0e-9,
-                    arrangement_budget: &arrangement_budget,
+                    profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
                 .scoped(&[]),
@@ -507,7 +506,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     scope_histories: &std::collections::HashMap::new(),
                     linear_tolerance: 1.0e-6,
                     angular_tolerance: 1.0e-9,
-                    arrangement_budget: &arrangement_budget,
+                    profile_work: &profile_work,
                     ctx: decode_ctx,
                 }
                 .scoped(&[]),

@@ -213,7 +213,8 @@ fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_reports_dropped_edg
         .iter()
         .find(|loss| loss.code == F3dLossCode::ParameterOrderBudgetExceeded.kind())
         .unwrap();
-    assert!(skip
-        .message
-        .starts_with("1 Design parameter owner scope(s) keep their source ordinals"));
+    assert_eq!(
+        skip.message,
+        "1 Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK (4194304)."
+    );
 }

@@ -74,7 +74,7 @@ fn component_pattern_keeps_seed_and_generated_instances() {
                     },
                 },
             ])),
-            instance_search_capped: false,
+            instance_search_cap: None,
         })
         .unwrap();
     let mut scope = DesignParameterScope::empty(

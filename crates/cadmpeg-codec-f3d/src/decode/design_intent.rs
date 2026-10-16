@@ -5,7 +5,7 @@
 //! not write the session; the caller merges [`DesignOutputs`].
 
 use cadmpeg_core::container::ContainerRole;
-use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     assets::Asset,
@@ -495,8 +495,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &mut losses,
             F3dLossCode::ParameterOrderBudgetExceeded,
             format_args!(
-                "{} Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded its work cap.",
-                projected.unordered_parameter_scopes
+                "{} Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK ({}).",
+                projected.unordered_parameter_scopes,
+                crate::design::feature_project::PARAMETER_ORDER_WORK,
             ),
         );
     }
@@ -629,7 +630,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.sketch_entities,
         &model.spatial_sketch_entities,
     );
-    let arrangement_budget = WorkBudget::new(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK);
+    let profile_work = crate::design::geometry::ProfileGeometryWork::new();
     crate::design::profile_select::bind_sweep_sketch_selections(
         &mut model.features,
         &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -731,10 +732,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             scope_histories: &scope_histories,
             linear_tolerance: geometry.tolerances.linear.get(),
             angular_tolerance: geometry.tolerances.angular.get(),
-            arrangement_budget: &arrangement_budget,
+            profile_work: &profile_work,
             ctx,
         },
     )?;
+    losses.extend(profile_work.losses());
     if matches!(geometry.path, DesignPath::Geometry { .. }) {
         crate::history::discard_projection_caches(&mut design.asm_histories);
     }
