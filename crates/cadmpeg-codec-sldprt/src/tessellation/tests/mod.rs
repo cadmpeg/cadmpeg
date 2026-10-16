@@ -59,7 +59,7 @@ use cadmpeg_ir::topology::{
 
 mod display_references;
 mod display_tables;
-mod surface_admission;
+mod nurbs_display;
 
 macro_rules! assign_unique_surface_owners {
     ($model:expr) => {{
@@ -67,7 +67,7 @@ macro_rules! assign_unique_surface_owners {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
-        crate::tessellation::assign_unique_surface_owners(&ctx, $model)
+        crate::tessellation::assign_unique_surface_owners(&ctx, $model, &mut Vec::new())
     }};
 }
 
@@ -1570,6 +1570,7 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
             tolerance: EPS_DISPLAY_QUANTIZATION,
             sampling_tolerance: SAMPLE_TOLERANCE,
         },
+        &mut Vec::new(),
     )
     .unwrap();
 
@@ -1610,6 +1611,7 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
             tolerance: EPS_DISPLAY_QUANTIZATION,
             sampling_tolerance: SAMPLE_TOLERANCE,
         },
+        &mut Vec::new(),
     )
     .unwrap();
 

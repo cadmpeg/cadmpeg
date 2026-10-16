@@ -26,9 +26,11 @@ fn sole_surface_owner_respects_its_planar_trim() {
         .unwrap(),
     );
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(super::super::assign_unique_surface_owners(&ctx, &mut model)
-        .unwrap()
-        .is_empty());
+    assert!(
+        super::super::assign_unique_surface_owners(&ctx, &mut model, &mut Vec::new())
+            .unwrap()
+            .is_empty()
+    );
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
 }
@@ -130,7 +132,7 @@ fn single_planar_polygon_yields_a_planar_trim() {
         .find(|surface| surface.id == face.surface)
         .unwrap()
         .geometry;
-    assert!(super::super::planar_trim(face, surface, &topology).is_some());
+    assert!(super::super::planar_trim(face, surface, &topology, &mut Vec::new()).is_some());
 }
 
 #[test]
