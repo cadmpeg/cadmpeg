@@ -94,8 +94,8 @@ pub(crate) enum SldprtLossCode {
     AppearanceAssignmentUnresolved,
     /// `DisplayLists` tessellation does not resolve to its B-rep face owners.
     TessellationFaceOwnershipUnresolved,
-    /// A planar trim arc would need more segments than the local work cap.
-    TessellationPlanarArcSegmentCap,
+    /// Surface-owner assignment ran out of its local work cap.
+    TessellationOwnerWorkCapped,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// One face owner has multiple non-equivalent face-use bridges.
@@ -112,6 +112,8 @@ pub(crate) enum SldprtLossCode {
     MaterialMetadataNotTransferred,
     /// No Parasolid partition/deltas stream was located in the container.
     ContainerNoParasolidStream,
+    /// The legacy Parasolid zlib probe stopped at its work limit in a section.
+    ContainerParasolidProbeCapped,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
     /// The document carries no usable `swVersion`, so no declared identity was
@@ -189,7 +191,7 @@ impl SldprtLossCode {
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
-        Self::TessellationPlanarArcSegmentCap,
+        Self::TessellationOwnerWorkCapped,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceOwnerAmbiguous,
         Self::TopologyFaceUnclaimed,
@@ -198,6 +200,7 @@ impl SldprtLossCode {
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
+        Self::ContainerParasolidProbeCapped,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
@@ -252,7 +255,7 @@ impl SldprtLossCode {
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
-            Self::TessellationPlanarArcSegmentCap => "tessellation.planar-arc-segment-cap",
+            Self::TessellationOwnerWorkCapped => "tessellation.owner-work-capped",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
@@ -261,6 +264,7 @@ impl SldprtLossCode {
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
+            Self::ContainerParasolidProbeCapped => "container.parasolid-probe-capped",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
@@ -327,12 +331,13 @@ impl SldprtLossCode {
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::TessellationFaceOwnershipUnresolved
-            | Self::TessellationPlanarArcSegmentCap
+            | Self::TessellationOwnerWorkCapped
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceOwnerAmbiguous
             | Self::TopologyFaceUnclaimed
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
+            | Self::ContainerParasolidProbeCapped
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
             | Self::DialectLayerCollision
@@ -367,15 +372,17 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometrySplineLanesUnpaired
-            | Self::GeometryParasolidNotTransferred => LossTaxonomy::GeometryNotTransferred,
+            | Self::GeometryParasolidNotTransferred
+            | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
                 LossTaxonomy::PcurveOmitted
             }
-            Self::TessellationPlanarArcSegmentCap => LossTaxonomy::GeometryNotTransferred,
             Self::AppearanceFaceColorUnresolved | Self::AppearanceAssignmentUnresolved => {
                 LossTaxonomy::MaterialNotTransferred
             }
-            Self::TessellationFaceOwnershipUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
+            Self::TessellationFaceOwnershipUnresolved | Self::TessellationOwnerWorkCapped => {
+                LossTaxonomy::ReferenceGraphNotClosed
+            }
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
@@ -432,6 +439,51 @@ impl SldprtLossCode {
     }
 }
 
+/// Instances an aggregated loss note names before it only counts the rest.
+pub(crate) const NAMED_INSTANCES_PER_NOTE: usize = 8;
+
+/// A count of affected instances that keeps the first
+/// [`NAMED_INSTANCES_PER_NOTE`] names for one aggregated loss note.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct NamedCount {
+    count: usize,
+    named: Vec<String>,
+}
+
+impl NamedCount {
+    pub(crate) fn push(&mut self, name: &str) {
+        self.count += 1;
+        if self.named.len() < NAMED_INSTANCES_PER_NOTE {
+            self.named.push(name.to_owned());
+        }
+    }
+
+    pub(crate) fn append(&mut self, other: &mut Self) {
+        self.count += other.count;
+        let room = NAMED_INSTANCES_PER_NOTE - self.named.len().min(NAMED_INSTANCES_PER_NOTE);
+        self.named.extend(other.named.drain(..).take(room));
+        other.count = 0;
+    }
+
+    pub(crate) fn count(&self) -> usize {
+        self.count
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+}
+
+impl std::fmt::Display for NamedCount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.named.join(", "))?;
+        if self.count > self.named.len() {
+            f.write_str(", ...")?;
+        }
+        Ok(())
+    }
+}
+
 /// One refused spline lane, named by the record that stated it.
 ///
 /// `record` names the instance: the attribute id, coedge id, edge id or face
@@ -452,6 +504,21 @@ mod tests {
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn named_count_names_the_first_instances_and_counts_the_rest() {
+        let mut first = super::NamedCount::default();
+        for index in 0..super::NAMED_INSTANCES_PER_NOTE - 1 {
+            first.push(&format!("a{index}"));
+        }
+        let mut second = super::NamedCount::default();
+        second.push("b0");
+        second.push("b1");
+        first.append(&mut second);
+        assert_eq!(first.count(), super::NAMED_INSTANCES_PER_NOTE + 1);
+        assert!(second.is_empty());
+        assert_eq!(first.to_string(), "a0, a1, a2, a3, a4, a5, a6, b0, ...");
+    }
 
     #[test]
     fn spline_lane_loss_names_the_record() {
@@ -517,7 +584,7 @@ mod tests {
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
                 "tessellation.face-ownership-unresolved",
-                "tessellation.planar-arc-segment-cap",
+                "tessellation.owner-work-capped",
                 "topology.body-hierarchy-derived",
                 "topology.face-owner-ambiguous",
                 "topology.face-unclaimed",
@@ -526,6 +593,7 @@ mod tests {
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
+                "container.parasolid-probe-capped",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",

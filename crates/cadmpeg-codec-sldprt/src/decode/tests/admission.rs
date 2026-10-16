@@ -111,6 +111,44 @@ fn active_site_copy_refuses_retained_limit() {
 }
 
 #[test]
+fn face_surface_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut body = triangle_body();
+    body.extend(crate::test_support::parasolid::nurbs_surface_carrier(
+        180, 181, 10,
+    ));
+    let bridge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    let source = sldprt_with_body(&body);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain Parasolid surface geometry copy",
+        |limit| {
+            let mut limited = DecodeOptions::default();
+            limited.policy.limits.max_retained_bytes = limit;
+            SldprtCodec
+                .decode(&mut Cursor::new(&source), &limited)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+    assert!(
+        matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Parasolid surface geometry copy"
+                && limit.additional > 0),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn display_section_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 

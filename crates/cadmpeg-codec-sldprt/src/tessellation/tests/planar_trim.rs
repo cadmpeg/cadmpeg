@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{PlanarOuter, PlanarTrim, PlaneFrame};
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 const EPS_AREA_SUM: f64 = 1e-10;
@@ -33,6 +34,66 @@ fn sole_surface_owner_respects_its_planar_trim() {
     );
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
+}
+
+#[test]
+fn owner_work_cap_leaves_tables_unassigned_and_names_the_bound() {
+    let mesh = |name: &str| {
+        cadmpeg_ir::tessellation::Tessellation::new(
+            cadmpeg_ir::tessellation::TessellationId::mint(name).unwrap(),
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(0.1, 0.1, 0.),
+                    Point3::new(0.4, 0.1, 0.),
+                    Point3::new(0.1, 0.4, 0.),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .unwrap()
+    };
+    let model = || {
+        let mut model = super::model_with_body();
+        let face = super::add_square_face(&mut model, "bounded", 0.);
+        super::set_shell_faces(&mut model, vec![face]);
+        model
+            .tessellations
+            .push(mesh("synthetic:test:tessellation#first"));
+        model
+            .tessellations
+            .push(mesh("synthetic:test:tessellation#second"));
+        model
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+
+    let mut unbounded = model();
+    let mut losses = Vec::new();
+    let assigned =
+        super::super::assign_unique_surface_owners(&ctx, &mut unbounded, &mut losses).unwrap();
+    assert_eq!(assigned.len(), 2);
+    assert!(losses.is_empty());
+
+    let mut capped = model();
+    let mut losses = Vec::new();
+    let assigned =
+        super::super::assign_unique_surface_owners_within(&ctx, &mut capped, &mut losses, 1)
+            .unwrap();
+    assert!(assigned.is_empty());
+    assert!(capped
+        .tessellations
+        .iter()
+        .all(|mesh| mesh.faces.is_empty() && mesh.body.is_none()));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::SldprtLossCode::TessellationOwnerWorkCapped.kind()
+    );
+    assert_eq!(
+        losses[0].message,
+        "2 DisplayLists tessellation table(s) were left without a surface owner because owner \
+         assignment exceeded the local work cap TESSELLATION_OWNER_WORK (1)."
+    );
 }
 
 #[test]
@@ -77,7 +138,8 @@ fn planar_trim_rejects_a_triangle_spanning_a_concave_outer() {
     assert!(!trim.contains_mesh(
         &mesh,
         cadmpeg_ir::transform::Transform::identity(),
-        super::EPS_DISPLAY_QUANTIZATION
+        super::EPS_DISPLAY_QUANTIZATION,
+        &WorkBudget::new(usize::MAX),
     ));
 }
 
@@ -124,6 +186,7 @@ fn single_planar_polygon_yields_a_planar_trim() {
         vertices: &vertices,
         points: &points,
         curves: &curves,
+        coordinate_scale: super::super::trim_coordinate_scale(&points),
     };
     let face = model.faces.iter().find(|face| face.id == face_id).unwrap();
     let surface = &model
@@ -132,7 +195,8 @@ fn single_planar_polygon_yields_a_planar_trim() {
         .find(|surface| surface.id == face.surface)
         .unwrap()
         .geometry;
-    assert!(super::super::planar_trim(face, surface, &topology, &mut Vec::new()).is_some());
+    let work = WorkBudget::new(usize::MAX);
+    assert!(super::super::planar_trim(face, surface, &topology, &work).is_some());
 }
 
 #[test]
@@ -153,8 +217,12 @@ fn convex_polygon_ear_search_preserves_area() {
             Point2::new(angle.cos(), angle.sin())
         })
         .collect::<Vec<_>>();
-    let triangles =
-        super::super::triangulate_polygon(&polygon, super::EPS_DISPLAY_QUANTIZATION).unwrap();
+    let triangles = super::super::triangulate_polygon(
+        &polygon,
+        super::EPS_DISPLAY_QUANTIZATION,
+        &WorkBudget::new(usize::MAX),
+    )
+    .unwrap();
     assert_eq!(triangles.len(), polygon.len() - 2);
     let area = triangles
         .iter()
@@ -175,8 +243,10 @@ fn checked_convex_boundary_is_reused_for_every_triangle() {
             Point2::new(angle.cos(), angle.sin())
         })
         .collect::<Vec<_>>();
+    let work = WorkBudget::new(usize::MAX);
     let boundary =
-        super::super::CheckedPlanarPolygon::new(&polygon, super::EPS_DISPLAY_QUANTIZATION).unwrap();
+        super::super::CheckedPlanarPolygon::new(&polygon, super::EPS_DISPLAY_QUANTIZATION, &work)
+            .unwrap();
     for index in 1..polygon.len() - 1 {
         assert!(boundary.contains_triangle([polygon[0], polygon[index], polygon[index + 1]]));
     }

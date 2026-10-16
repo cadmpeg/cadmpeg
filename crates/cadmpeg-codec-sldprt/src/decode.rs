@@ -2218,6 +2218,10 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
     target.stats.off_surface_nurbs_pcurves += source.stats.off_surface_nurbs_pcurves;
+    target
+        .stats
+        .surface_solver_capped
+        .append(&mut source.stats.surface_solver_capped);
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
     target.stats.ambiguous_face_owners += source.stats.ambiguous_face_owners;
@@ -3329,6 +3333,17 @@ fn build_geometry_report(
             s.ambiguous_pcurve_parameters
         )));
     }
+    if !s.surface_solver_capped.is_empty() {
+        losses.push(
+            SldprtLossCode::GeometrySurfaceSolverWorkCapped.note(format!(
+            "{} coedge pcurve(s) were skipped because a NURBS surface solve exceeded the local \
+             work cap SURFACE_SOLVER_LOCAL_WORK ({}): {}.",
+            s.surface_solver_capped.count(),
+            crate::brep::evaluation::SURFACE_SOLVER_LOCAL_WORK,
+            s.surface_solver_capped,
+        )),
+        );
+    }
     if s.off_surface_nurbs_pcurves > 0 {
         losses.push(SldprtLossCode::TopologyPcurveCarrierOffSurface.note(format!(
             "{} NURBS edge carrier(s) have vertex ranges off their bound B-spline surface; pcurve derivation is withheld because the defect is upstream of parameter-space geometry.",
@@ -3361,6 +3376,7 @@ fn build_geometry_report(
             ),
         );
     }
+    append_parasolid_probe_losses(scan, &mut losses);
     append_swift_pmi_losses(ctx, scan, &mut losses)?;
     classification.append_losses(ctx, &mut losses)?;
     Ok(DecodeBody {
@@ -4917,6 +4933,7 @@ fn build_container_report(
             ),
         );
     }
+    append_parasolid_probe_losses(scan, &mut losses);
     append_swift_pmi_losses(ctx, scan, &mut losses)?;
     classification.append_losses(ctx, &mut losses)?;
 
@@ -4927,6 +4944,26 @@ fn build_container_report(
         notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
+}
+
+fn append_parasolid_probe_losses(
+    scan: &ContainerScan<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let mut capped = crate::loss::NamedCount::default();
+    for section in scan.sections().filter(|section| section.ps_probe_capped()) {
+        capped.push(section.source_stream().as_str());
+    }
+    if capped.is_empty() {
+        return;
+    }
+    losses.push(SldprtLossCode::ContainerParasolidProbeCapped.note(format!(
+        "{} section(s) stopped the legacy Parasolid zlib probe at PROBE_WORK_PER_PAYLOAD_BYTE \
+         ({}) times the payload length; later zlib members in those sections were not tried: \
+         {capped}.",
+        capped.count(),
+        crate::parasolid::PROBE_WORK_PER_PAYLOAD_BYTE,
+    )));
 }
 
 fn append_swift_pmi_losses(
