@@ -108,6 +108,7 @@ mod om_tokens;
 mod parasolid;
 mod payload_text;
 mod printable_string;
+mod records;
 mod scan_notes;
 mod topology;
 mod vec3_at;

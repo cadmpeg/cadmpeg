@@ -294,7 +294,6 @@ pub(crate) struct UnchartedIntersection {
 pub(crate) struct RejectionCounts {
     /// The construction did not resolve a valid primary support relation.
     pub(crate) missing_support: usize,
-    /// Competing construction states used one stream-local XMT identity.
     pub(crate) duplicate_identity: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
     pub(crate) missing_chart: usize,
@@ -342,9 +341,6 @@ impl RejectionCounts {
 /// Complete chart-carrier scan result.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CurveScan {
-    /// Constructions remaining after duplicate-identity rejection and before
-    /// chart enrichment. Native record extraction reuses this lane
-    /// so it does not parse the same graph a second time.
     pub(crate) source_constructions: Vec<CompositeCurve>,
     /// Structurally valid constructions with a solved chart or a typed inbound
     /// curve reference.
@@ -445,8 +441,6 @@ struct Chart {
     ext_support_uv: SupportUv,
 }
 
-/// Decode type-38 constructions whose referenced chart and
-/// endpoint witnesses form a complete solved cache.
 pub(crate) fn curves(
     ctx: &DecodeContext<'_>,
     stream: &[u8],

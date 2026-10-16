@@ -752,8 +752,7 @@ fn array_record_at<'bytes>(
             _ => return None,
         };
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
-        (bytes.get(pos + 2 + escape..pos + 4 + escape) == Some(&[0, 0])).then_some(())?;
-        let count = View::u16_be_at(bytes, pos + 4 + escape).map(usize::from)?;
+        let count = usize::try_from(View::u32_be_at(bytes, pos + 2 + escape)?).ok()?;
         (count > 0).then_some(())?;
         let (reference, reference_len) = read_xmt(bytes, pos + 6 + escape)?;
         NonNullXmt::try_from(reference).ok()?;

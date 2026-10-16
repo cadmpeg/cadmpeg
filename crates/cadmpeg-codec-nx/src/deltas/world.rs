@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! WORLD layouts selected by the preceding effective schema, never by length.
 
-use super::embedded_schema::{DataType, EmbeddedSchema};
 use crate::framing::xmt_reference::NonNullXmt;
+use crate::records::{DataType, EmbeddedSchema};
 use cadmpeg_core::decode::View;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,7 +121,7 @@ fn reference_at(stream: &[u8], at: &mut usize) -> Option<u32> {
 fn positive_xmt(stream: &[u8], at: &mut usize) -> Option<u32> {
     let mut view = View::over_retained(stream);
     view.seek(*at)?;
-    let target = super::embedded_schema::positive(&mut view)?.checked_add(1)?;
+    let target = crate::records::positive(&mut view)?.checked_add(1)?;
     *at = view.position();
     Some(target)
 }

@@ -12,12 +12,11 @@ use census::{walk, Census};
 pub(crate) mod record_family;
 pub(crate) mod record_kind;
 use record_family::{FixedPosition, RecordFamily};
-pub(crate) mod embedded_schema;
 pub(crate) mod list;
 pub(crate) mod pointer_list_block;
 pub(crate) mod reference_lanes;
 pub(crate) mod world;
-use embedded_schema::instance::SchemaNode;
+use crate::records::instance::SchemaNode;
 use list::{ListFields, ListWire};
 use pointer_list_block::PointerListBlockFields;
 use reference_lanes::{MapEntries, TaggedReferences};
@@ -38,7 +37,8 @@ use type150_state::Type150State;
 pub(crate) mod group;
 mod intersection;
 pub(crate) mod tails;
-use group::{GroupReferenceStatus, GroupSelector};
+use crate::records::group::GroupSelector;
+use group::GroupReferenceStatus;
 use record_kind::RecordKind;
 
 use crate::framing::read_xmt_width as read_xmt;
@@ -723,9 +723,7 @@ fn inline_schema_node(
     {
         return Ok(None);
     }
-    let Some((fields, end)) =
-        embedded_schema::instance::SchemaNode::read(ctx, &stream[..gap_end], offset)?
-    else {
+    let Some((fields, end)) = SchemaNode::read(ctx, &stream[..gap_end], offset)? else {
         return Ok(None);
     };
     seen[usize::from(kind)] = true;
@@ -2257,7 +2255,7 @@ fn group_layout_with_statuses(
         at += 1;
         references.push(reference);
     }
-    let selector = GroupSelector::try_from(*stream.get(at)?).ok()?;
+    let selector = group::selector(*stream.get(at)?)?;
     at += 1;
     let (reference, consumed) = read_xmt(stream, at)?;
     at = at.checked_add(consumed)?;
@@ -2297,7 +2295,7 @@ fn group_layout_without_leading_statuses(
         at = at.checked_add(consumed)?;
         references.push(reference);
     }
-    let selector = GroupSelector::try_from(*stream.get(at)?).ok()?;
+    let selector = group::selector(*stream.get(at)?)?;
     at += 1;
     let (reference, consumed) = read_xmt(stream, at)?;
     at = at.checked_add(consumed)?;

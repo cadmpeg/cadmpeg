@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Primary V13 field arrays and bounded embedded-schema edit programs.
 
 use crate::printable_string::PrintableString;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -7,9 +6,27 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 mod base;
+pub(crate) mod group;
+mod primary;
+
+pub(crate) use primary::PrimaryRecords;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BaseVersion {
+    V11004,
+    V13006,
+}
+
+pub(crate) fn is_partition_description(description: &[u8]) -> bool {
+    description == b": TRANSMIT FILE (partition)"
+        || description.starts_with(b": TRANSMIT FILE (partition) ")
+}
+
+fn status_schema_kind(kind: u16) -> bool {
+    matches!(kind, 12 | 19 | 38 | 41 | 70 | 74 | 100 | 101)
+}
 pub(crate) mod instance;
 
-/// A field's physical scalar type; pointer classes remain separate constraints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum DataType {
     #[serde(rename = "u")]
@@ -36,6 +53,8 @@ pub(crate) enum DataType {
     Box,
     #[serde(rename = "h")]
     Hvec,
+    #[serde(skip)]
+    Unestablished(u8),
 }
 
 impl DataType {
@@ -53,12 +72,13 @@ impl DataType {
             "v" => Self::Vector,
             "b" => Self::Box,
             "h" => Self::Hvec,
+            "q" => Self::Unestablished(b'q'),
+            "t" => Self::Unestablished(b't'),
             _ => return None,
         })
     }
 }
 
-/// One reconstructed effective field, independent of a node's field values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "FieldWire")]
 pub(crate) struct SchemaField {
@@ -97,23 +117,29 @@ impl TryFrom<FieldWire> for SchemaField {
     }
 }
 
-/// Complete schema metadata ending before variable length or node identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "SchemaWire")]
 pub(crate) struct EmbeddedSchema {
+    #[serde(flatten)]
+    plan: SchemaPlan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SchemaPlan {
     kind: u16,
     fields: Vec<SchemaField>,
 }
 
 impl EmbeddedSchema {
-    pub(super) fn matches_base_with_pointer_tail(&self, kind: u16, tail: &[(&str, u16)]) -> bool {
-        if self.kind != kind {
+    pub(crate) fn matches_base_with_pointer_tail(&self, kind: u16, tail: &[(&str, u16)]) -> bool {
+        if self.plan.kind != kind {
             return false;
         }
-        let Some(original) = base::fields(self.kind) else {
+        let Some(original) = base::fields(BaseVersion::V13006, self.plan.kind) else {
             return false;
         };
-        self.fields
+        self.plan
+            .fields
             .iter()
             .map(|field| {
                 (
@@ -141,13 +167,14 @@ impl EmbeddedSchema {
                 ))
     }
 
-    pub(super) fn matches_fields<'a>(
+    pub(crate) fn matches_fields<'a>(
         &self,
         kind: u16,
         expected: impl Iterator<Item = (&'a str, DataType, u16)>,
     ) -> bool {
-        self.kind == kind
+        self.plan.kind == kind
             && self
+                .plan
                 .fields
                 .iter()
                 .map(|field| {
@@ -172,12 +199,14 @@ struct SchemaWire {
 impl TryFrom<SchemaWire> for EmbeddedSchema {
     type Error = &'static str;
     fn try_from(wire: SchemaWire) -> Result<Self, Self::Error> {
-        if base::fields(wire.kind).is_none() || wire.fields.is_empty() || wire.fields.len() >= 255 {
+        if !status_schema_kind(wire.kind) || wire.fields.is_empty() || wire.fields.len() >= 255 {
             return Err("definition: unsupported kind or invalid effective field count");
         }
         Ok(Self {
-            kind: wire.kind,
-            fields: wire.fields,
+            plan: SchemaPlan {
+                kind: wire.kind,
+                fields: wire.fields,
+            },
         })
     }
 }
@@ -216,7 +245,7 @@ fn short_string<'a>(view: &mut View<'a>) -> Option<&'a str> {
     Some(text)
 }
 
-pub(super) fn positive(view: &mut View<'_>) -> Option<u32> {
+pub(crate) fn positive(view: &mut View<'_>) -> Option<u32> {
     let remainder = view.i16_be()?;
     if remainder > 0 {
         return u32::try_from(remainder).ok()?.checked_sub(1);
@@ -261,32 +290,57 @@ fn descriptor<'a>(view: &mut View<'a>) -> Option<BorrowedField<'a>> {
     })
 }
 
-/// Replay C/D/I/A/Z against the declared V13 base. No following node bytes are read.
+/// Replay C/D/I/A/Z against the declared V13 base.
 pub(crate) fn read(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
 ) -> Result<Option<(EmbeddedSchema, usize)>, CodecError> {
     let mut view = View::over_retained(stream);
-    let Some((kind, count, original)) = (|| {
+    let Some((kind, count)) = (|| {
         view.seek(offset)?;
         let kind = view.u16_be()?;
-        let original = base::fields(kind)?;
-        Some((kind, view.u8()?, original))
+        if !status_schema_kind(kind) {
+            return None;
+        }
+        Some((kind, view.u8()?))
     })() else {
         return Ok(None);
     };
+    if count == 0 {
+        return Ok(None);
+    }
+    let Some(plan) = read_definition(ctx, &mut view, BaseVersion::V13006, kind, count)? else {
+        return Ok(None);
+    };
+    if plan
+        .fields
+        .iter()
+        .any(|field| matches!(field.data_type, DataType::Unestablished(_)))
+    {
+        return Ok(None);
+    }
+    Ok(Some((EmbeddedSchema { plan }, view.position())))
+}
+
+fn read_definition(
+    ctx: &DecodeContext<'_>,
+    view: &mut View<'_>,
+    version: BaseVersion,
+    kind: u16,
+    count: u8,
+) -> Result<Option<SchemaPlan>, CodecError> {
+    let original = base::fields(version, kind);
     let mut scratch = ctx.reserve_scoped(0, "NX schema edit fields")?;
     let mut fields = Vec::new();
     if count == 255 {
+        let Some(original) = original else {
+            return Ok(None);
+        };
         for field in original {
             ctx.push_scoped_vec(&mut scratch, &mut fields, *field, "NX schema edit fields")?;
         }
-    } else {
-        // An empty effective array cannot define any of the supported node types.
-        if count == 0 {
-            return Ok(None);
-        }
+    } else if let Some(original) = original {
         let mut cursor = 0;
         loop {
             ctx.charge_work(1, "read NX schema edit")?;
@@ -305,13 +359,13 @@ pub(crate) fn read(
                     (opcode == b'C').then_some(*field)
                 }
                 b'I' if cursor < original.len() => {
-                    let Some(field) = descriptor(&mut view) else {
+                    let Some(field) = descriptor(view) else {
                         return Ok(None);
                     };
                     Some(field)
                 }
                 b'A' if cursor == original.len() => {
-                    let Some(field) = descriptor(&mut view) else {
+                    let Some(field) = descriptor(view) else {
                         return Ok(None);
                     };
                     Some(field)
@@ -328,13 +382,30 @@ pub(crate) fn read(
         if fields.len() != usize::from(count) {
             return Ok(None);
         }
+    } else {
+        if short_string(view).is_none() || short_string(view).is_none() {
+            return Ok(None);
+        }
+        for _ in 0..count {
+            let Some(field) = descriptor(view) else {
+                return Ok(None);
+            };
+            ctx.push_scoped_vec(&mut scratch, &mut fields, field, "NX schema edit fields")?;
+        }
     }
+    own_definition(ctx, kind, &fields).map(Some)
+}
+
+fn own_definition(
+    ctx: &DecodeContext<'_>,
+    kind: u16,
+    fields: &[BorrowedField<'_>],
+) -> Result<SchemaPlan, CodecError> {
     let mut owned = Vec::new();
     for field in fields {
         let name = ctx.copy_retained_text(field.name, "NX schema field name")?;
-        let Ok(name) = PrintableString::new(name) else {
-            return Ok(None);
-        };
+        let name = PrintableString::new(name)
+            .map_err(|_| CodecError::Malformed("invalid NX schema field name".into()))?;
         ctx.push_vec(
             &mut owned,
             SchemaField {
@@ -347,13 +418,10 @@ pub(crate) fn read(
             "NX effective schema fields",
         )?;
     }
-    Ok(Some((
-        EmbeddedSchema {
-            kind,
-            fields: owned,
-        },
-        view.position(),
-    )))
+    Ok(SchemaPlan {
+        kind,
+        fields: owned,
+    })
 }
 
 #[cfg(test)]

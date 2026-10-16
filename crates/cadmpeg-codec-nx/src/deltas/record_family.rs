@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted delta record layouts and their native-wire projections.
 
-use super::group::{GroupReferenceStatus, GroupSelector};
+use super::group::GroupReferenceStatus;
 use super::intersection::IntersectionReferences;
 use super::list::ListFields;
 use super::pointer_list_block::PointerListBlockFields;
@@ -10,6 +10,7 @@ use super::world::WorldReferences;
 use crate::iter_wire::IterWire;
 use crate::nurbs::curve_references::CurveDescriptorReferences;
 use crate::parasolid::entity_references::EntityReferences;
+use crate::records::group::GroupSelector;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]

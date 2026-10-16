@@ -22,8 +22,7 @@
 # Snapshot-domain gating. A row whose dialect id appears in no checked-in
 # golden snapshot cannot claim a read score: the floor for an unwitnessed
 # dialect is `detected`. The checker derives each domain from the golden
-# harness fixture roots and snapshots. The registry does not duplicate that
-# derived set.
+# harness fixture roots and snapshots.
 #
 # How the read cell is chosen.
 #
@@ -32,10 +31,6 @@
 #   without ever carrying an `Admission` value (the three STEP alternate
 #   encodings); they are marked `refused` and the reason names the refusal
 #   site.
-#
-#   `unclassified-recovered` covers `Admission::Unverified` and
-#   `Admission::Residual`: the file is parsed through a recovery route. The
-#   codec charges its `source.dialect-unverified` loss on exactly these rows.
 #
 #   Each `[format.<id>]` block declares the published level and the `scored`
 #   rows that level covers. A fixture-backed read level or a maintainer

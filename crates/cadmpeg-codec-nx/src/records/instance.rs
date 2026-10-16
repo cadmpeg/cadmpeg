@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Status-framed first-node values selected by the effective field array.
 
 use super::{DataType, EmbeddedSchema};
 use crate::framing::read_and_advance;
@@ -11,7 +10,6 @@ use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
-/// One transmitted scalar or aggregate. Integer words preserve all source bits.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub(crate) enum FieldValue {
@@ -74,8 +72,8 @@ impl FieldValue {
             DataType::Interval => Self::Interval(vector(view)?),
             DataType::Vector => Self::Vector(vector(view)?),
             DataType::Box => Self::Box(vector(view)?),
-            // Deltas hvec carriers retain the complete eleven-double state.
             DataType::Hvec => Self::Hvec(vector(view)?),
+            DataType::Unestablished(_) => return None,
         })
     }
 }
@@ -88,7 +86,6 @@ fn vector<const N: usize>(view: &mut View<'_>) -> Option<FiniteVector<N>> {
     FiniteVector::new(values)
 }
 
-/// A schema edit and its first ordinary instance, with separate byte boundaries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "NodeWire")]
 pub(crate) struct SchemaNode {
@@ -111,20 +108,21 @@ struct NodeWire {
 impl TryFrom<NodeWire> for SchemaNode {
     type Error = &'static str;
     fn try_from(wire: NodeWire) -> Result<Self, Self::Error> {
-        if wire.schema_byte_len < 3 || wire.definition.fields.is_empty() {
+        if wire.schema_byte_len < 3 || wire.definition.plan.fields.is_empty() {
             return Err("definition: requires bounded nonempty schema metadata");
         }
         let variable = wire
             .definition
+            .plan
             .fields
             .iter()
             .any(|field| field.n_elements == 1);
         if variable != wire.variable_length.is_some()
-            || wire.values.len() != wire.definition.fields.len()
+            || wire.values.len() != wire.definition.plan.fields.len()
         {
             return Err("values: effective field cardinality differs from definition");
         }
-        for (field, values) in wire.definition.fields.iter().zip(&wire.values) {
+        for (field, values) in wire.definition.plan.fields.iter().zip(&wire.values) {
             let count = if !field.transmit {
                 0
             } else if field.n_elements == 1 {
@@ -150,14 +148,13 @@ impl TryFrom<NodeWire> for SchemaNode {
 
 impl SchemaNode {
     pub(crate) fn kind(&self) -> u16 {
-        self.definition.kind
+        self.definition.plan.kind
     }
 
     pub(crate) fn definition(&self) -> &EmbeddedSchema {
         &self.definition
     }
 
-    /// Read metadata and exactly one node. Following records remain unread.
     pub(crate) fn read(
         ctx: &DecodeContext<'_>,
         stream: &[u8],
@@ -169,7 +166,12 @@ impl SchemaNode {
         let mut view = View::over_retained(stream);
         let Some((variable_length, xmt)) = (|| {
             view.seek(schema_end)?;
-            let variable_length = if definition.fields.iter().any(|field| field.n_elements == 1) {
+            let variable_length = if definition
+                .plan
+                .fields
+                .iter()
+                .any(|field| field.n_elements == 1)
+            {
                 Some(view.u32_be()?)
             } else {
                 None
@@ -182,7 +184,7 @@ impl SchemaNode {
             return Ok(None);
         };
         let mut values = Vec::new();
-        for field in &definition.fields {
+        for field in &definition.plan.fields {
             let count = if !field.transmit {
                 0
             } else if field.n_elements == 1 {

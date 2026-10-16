@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "32",
+      "ir_version": "33",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -147,10 +147,9 @@
         "nx": {
           "parasolid_group_records": [
             {
-              "byte_len": 24,
-              "id": "nx:s0:parasolid-group#386-10",
-              "inflated_offset": 386,
-              "linked_reference_status": 0,
+              "byte_len": 19,
+              "id": "nx:s0:parasolid-group#368-10",
+              "inflated_offset": 368,
               "node_id": 7,
               "partition_stream_ordinal": 0,
               "references": [
@@ -182,10 +181,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "337",
+          "file_size": "320",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "323",
+          "footer_offset": "306",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -199,9 +198,9 @@
                 "admission": "residual",
                 "declared": {
                   "carrier": "stream@76",
-                  "schema": "SCH_TEST_1_9999"
+                  "schema": "SCH_TEST_13006"
                 },
-                "dialect": "parasolid:unknown"
+                "dialect": "parasolid:format-13006"
               }
             ],
             "primary": {
@@ -231,9 +230,9 @@
               "admission": "residual",
               "declared": {
                 "carrier": "stream@76",
-                "schema": "SCH_TEST_1_9999"
+                "schema": "SCH_TEST_13006"
               },
-              "dialect": "parasolid:unknown"
+              "dialect": "parasolid:format-13006"
             }
           ],
           "primary": {
@@ -275,12 +274,12 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 323, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 306, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -366,22 +365,22 @@
             "tag": "derived_point_topology"
           },
           "nx:s0:crv#0": {
-            "offset": 319,
+            "offset": 301,
             "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
           "nx:s0:pt#0": {
-            "offset": 89,
+            "offset": 71,
             "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
           "nx:s0:surf#0": {
-            "offset": 129,
+            "offset": 111,
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
           "nx:s0:surf#1": {
-            "offset": 220,
+            "offset": 202,
             "stream": "nx:parasolid#0:partition",
             "tag": "CYLINDER"
           }
@@ -390,7 +389,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAAA/OiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AAAAD1NDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAKAAAABwADAQAEAQAFAQAGAQQACAA=",
+            "data": "UFMAAAArOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgdGVzdAAAAA5TQ0hfVEVTVF8xMzAwNgAAAAAAHQACAAAAAAABAAEAAQABP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAQABAAEAAQABKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAEAAQABAAEAASsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAEAAQABAAEAASs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAKAAAABwADAAQABQAGBAAIAAEAAQ==",
             "retention": "inline"
           },
           "offset": 76,
@@ -412,7 +411,7 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 247
+          "size": 230
         }
       },
       {
@@ -435,10 +434,10 @@
           "records.region": "0",
           "records.shell": "0",
           "records.vertex": "0",
-          "schema": "SCH_TEST_1_9999"
+          "schema": "SCH_TEST_13006"
         },
         "compression": "zlib",
-        "expanded": 410,
+        "expanded": 391,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -451,9 +450,9 @@
             "admission": "residual",
             "declared": {
               "carrier": "stream@76",
-              "schema": "SCH_TEST_1_9999"
+              "schema": "SCH_TEST_13006"
             },
-            "dialect": "parasolid:unknown"
+            "dialect": "parasolid:format-13006"
           }
         ],
         "primary": {
@@ -474,12 +473,12 @@
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_13006\", which maps to the named `parasolid:format-13006` row, but the host did not verify that row's schema grammar. It was admitted without substituting another schema grammar; bounded structural recovery retains the source stream.",
         "severity": "warning"
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 323, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 306, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

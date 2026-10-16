@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! First-use schema and node boundaries follow independent primary field orders.
 
 use super::SchemaNode;
 use crate::test_support::with_decode_context;
@@ -77,7 +76,6 @@ fn region_reads_every_declared_field_and_preserves_statuses_and_scalar_bits() {
 
 #[test]
 fn variable_limit_retains_two_complete_ext11_blocks_without_swallowing_the_successor() {
-    // LIMIT edit inserts scalar term_use between type and variable hvec.
     let mut bytes = vec![0, 41, 3, b'C', b'I', 8];
     bytes.extend_from_slice(b"term_use");
     bytes.extend_from_slice(&[0, 0, 0, 1, 1, b'c', b'C', b'Z']);
@@ -124,7 +122,6 @@ fn variable_limit_retains_two_complete_ext11_blocks_without_swallowing_the_succe
 
 #[test]
 fn omitted_variable_storage_has_a_length_but_no_values() {
-    // Keep LIMIT type; replace its variable hvec by an explicitly untransmitted field.
     let mut bytes = vec![0, 41, 2, b'C', b'D', b'A', 4];
     bytes.extend_from_slice(b"skip");
     bytes.extend_from_slice(&[0, 0, 0, 2, 1, b'd', 0, b'Z']);

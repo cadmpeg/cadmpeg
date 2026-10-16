@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! INTERSECTION storage selected by its effective transmitted field array.
 
-use super::embedded_schema::EmbeddedSchema;
 use super::{Token, COMPOSITE_CURVE};
+use crate::records::EmbeddedSchema;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum IntersectionLayout {
@@ -65,32 +65,30 @@ impl TryFrom<Vec<u32>> for IntersectionReferences {
 #[cfg(test)]
 mod tests {
     use super::{IntersectionLayout, IntersectionReferences};
-    use crate::deltas::embedded_schema::EmbeddedSchema;
+    use crate::records::EmbeddedSchema;
     use crate::test_support::with_decode_context;
 
     #[test]
     fn primary_base_and_declared_data_pointer_select_different_cardinalities() {
         with_decode_context(|ctx| {
-            let (base, _) = super::super::embedded_schema::read(ctx, &[0, 38, 255], 0)
+            let (base, _) = crate::records::read(ctx, &[0, 38, 255], 0)
                 .unwrap()
                 .unwrap();
             assert!(matches!(
                 IntersectionLayout::from_schema(&base),
                 IntersectionLayout::Base
             ));
-            let (modern, _) =
-                super::super::embedded_schema::read(ctx, crate::topology::TYPE_38_SCHEMA_HEADER, 0)
-                    .unwrap()
-                    .unwrap();
+            let (modern, _) = crate::records::read(ctx, crate::topology::TYPE_38_SCHEMA_HEADER, 0)
+                .unwrap()
+                .unwrap();
             assert!(matches!(
                 IntersectionLayout::from_schema(&modern),
                 IntersectionLayout::WithData
             ));
-            let wrong_kind: EmbeddedSchema =
-                super::super::embedded_schema::read(ctx, &[0, 19, 255], 0)
-                    .unwrap()
-                    .unwrap()
-                    .0;
+            let wrong_kind: EmbeddedSchema = crate::records::read(ctx, &[0, 19, 255], 0)
+                .unwrap()
+                .unwrap()
+                .0;
             assert!(matches!(
                 IntersectionLayout::from_schema(&wrong_kind),
                 IntersectionLayout::Unsupported

@@ -37,7 +37,6 @@ use entity_references::EntityReferences;
 use name_references::NameReferences;
 
 use crate::container::Container;
-use crate::framing::node_kind::NodeKind;
 use crate::framing::read_and_advance as read_xmt;
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 
@@ -1058,26 +1057,17 @@ fn structural_stream_candidate(
     if !kind.is_parasolid() {
         return Ok(false);
     }
+    if kind != StreamKind::Deltas {
+        let mut primary_storage = ctx.reserve_scoped(0, "NX primary fallback source ownership")?;
+        return Ok(primary_storage
+            .with_storage(|| crate::records::PrimaryRecords::read(ctx, inflated))?
+            .is_some_and(|primary| !primary.records().is_empty()));
+    }
     let census = crate::deltas::census::walk(ctx, inflated)?;
     if !census.records.is_empty() || !census.tombstones.is_empty() {
         return Ok(true);
     }
-    if kind == StreamKind::Deltas {
-        return Ok(false);
-    }
-    let graph = crate::topology::Graph::parse(ctx, inflated)?;
-    Ok([
-        NodeKind::Body,
-        NodeKind::Shell,
-        NodeKind::Face,
-        NodeKind::Loop,
-        NodeKind::Edge,
-        NodeKind::Fin,
-        NodeKind::Vertex,
-        NodeKind::Region,
-    ]
-    .into_iter()
-    .any(|kind| graph.of_kind(kind).next().is_some()))
+    Ok(false)
 }
 
 /// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`
@@ -1269,10 +1259,7 @@ pub(crate) fn classify(inflated: &[u8]) -> StreamBody {
                 .iter()
                 .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
         });
-    let subtype = if description.is_some_and(|description| {
-        description == b": TRANSMIT FILE (partition)"
-            || description.starts_with(b": TRANSMIT FILE (partition) ")
-    }) {
+    let subtype = if description.is_some_and(crate::records::is_partition_description) {
         ParasolidSubtype::Partition
     } else if description.is_some_and(|description| {
         description == b": TRANSMIT FILE (deltas)"

@@ -122,7 +122,12 @@ A standards-conforming zlib member elsewhere in the payload is not an indexed
 stream while the directory supplies at least one Parasolid member. If the
 directory supplies no Parasolid member, an unindexed member is admitted only
 when its inflated bytes contain a complete Parasolid structural record or
-tombstone. A text-only unindexed payload is not admitted as a body stream.
+tombstone. For a primary partition or plain stream, the counted header selects
+base schema 11004 or 13006 and a sequential schema walk owns each complete
+record. Any owned record admits the stream, including standalone geometry
+without topology. An unsupported header or an incomplete first record does
+not admit it. Bytes inside a field are never searched for replacement record
+starts. A text-only unindexed payload is not admitted as a body stream.
 When an indexed wrapper target begins with a standards-conforming zlib header,
 failure to reach its checksum-validated stream end rejects the indexed stream
 directory atomically.
@@ -919,7 +924,7 @@ do not require the type-81 definition to resolve. A value-record-shaped byte
 run inside another record or without one of these owners does not create a
 native value.
 
-Type-91 records are `type:005b [ff], xmt, flag:u32 BE, reference_status[6]`. The record XMT is non-null and `flag` is binary. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The optional `ff` envelope byte precedes the XMT identity. A complete escaped layout takes precedence over a coincidental longer direct layout beginning at that `ff`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
+Type 91 is `MEMBER_OF_GROUP`, named `MEMBER_OF_FEATURE` in schemas 11004 and 13006. Its fields are `dummy_node_id:u32 BE`, `owning_group`, `owner`, `next`, `previous`, `next_member`, and `previous_member`. The integer is an entity label, not a logical flag. A primary record uses six plain biased pointers and ends immediately after `previous_member`. A status-framed Deltas record is `type:005b [ff], xmt, dummy_node_id:u32 BE, reference_status[6]`. The record XMT is non-null. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The optional `ff` envelope byte precedes the XMT identity. A complete escaped layout takes precedence over a coincidental longer direct layout beginning at that `ff`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
 
 Types 45, 67, 70, 74, 90, 91, 101, and 141 use an explicit optional `ff` envelope before their body. When `ff` follows the type tag, a complete escaped body owns that byte. The direct body applies only when the escaped family grammar is incomplete. This decision uses no bytes after the selected body.
 
@@ -996,6 +1001,40 @@ The optional envelope precedes the array count. The record ends after the
 complete declared entry lane and participates in the deltas byte ledger.
 
 Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, ref 01, ref 01, ref 01, ref 01, mode, ref status`. The XMT identity is non-null, `mode` is `02`, `04`, or `09`, and the final status is binary. The optional `ff` envelope byte precedes the XMT identity. The record ends after the final status byte, participates in the deltas byte ledger, and does not enter the procedural-intersection semantic lane. The low byte of this two-byte type tag has no standalone intersection-record meaning.
+
+A primary type-90 `GROUP`, named `FEATURE` in schemas 11004 and 13006,
+contains `node_id:u32`, four pointers, `type:u8`, and a final pointer.
+The pointers are `attributes_features`, `owner`, `next`, `previous`, and
+`first_member`. Each uses the independently sized biased index encoding.
+Primary pointers have no status bytes. The record ends immediately after
+`first_member`, before the next type or node-sequence terminator. First-use
+schema information precedes its XMT according to §3.2.
+
+The public GROUP field `attributes_groups` is named `attributes_features`
+in schemas 11004 and 13006. The public MEMBER_OF_GROUP field `owning_group`
+is named `owning_feature` in those schemas. These pairs name the same fields.
+
+`owner` references the owning part. `next` and `previous` chain groups and
+attributes within that part. `attributes_features` starts the group's own
+attribute chain. `first_member` references the first `MEMBER_OF_GROUP`
+node. A member's `owning_group` points back to the group, and its `owner`
+references the member entity. The member-chain directions and the entity's
+attribute-chain directions are distinct pointer fields.
+
+The GROUP `type` names its allowed member family:
+
+| Value | Family |
+| --- | --- |
+| 1 | INSTANCE |
+| 2 | FACE |
+| 3 | LOOP |
+| 4 | EDGE |
+| 5 | VERTEX |
+| 6 | SURFACE |
+| 7 | CURVE |
+| 8 | POINT |
+| 9 | Mixed |
+| 10 | REGION |
 
 A repeated type-101 `WORLD` record is `0065 [ff]` followed by the instance
 fields selected by the preceding WORLD schema. The fifteen-, eighteen-, and
@@ -2140,29 +2179,23 @@ leave operation outputs unresolved. This direct GROUP relation is independent
 of the plain cached-body history relation and does not equate a partition tuple
 alias with a body identity.
 
-A Parasolid GROUP record has one of two reference layouts:
-`kind:u16 BE=90, xmt:xmt_ref, node_id:u32 BE, leading_refs[4],
-leading_status[4], selector:u8, linked_ref:xmt_ref, linked_status:u8`, or
-`kind:u16 BE=90, xmt:xmt_ref, node_id:u32 BE, leading_refs[4], selector:u8,
-linked_ref:xmt_ref, linked_status:u8`. The first layout is the status-framed
-form and each leading status is 1. The second layout is the
-unframed-leading-reference form used by partition and plain cached-body
-streams. `selector` is 2, 4, or 9, and `linked_status` is zero or one. The
-current GROUP state is obtained by applying full records and compact tombstones
-in partition and paired-deltas event order by XMT identity.
+A Parasolid GROUP uses the primary or status-framed Deltas field grammar in
+§4.2. Its `first_member` pointer is the head of the MEMBER_OF_GROUP chain.
+A member row has six pointers. Slot zero references the owning GROUP, slot one
+references the member entity, slots two and three are `next` and `previous` in
+the entity's attribute/group chain, and slots four and five are `next_member`
+and `previous_member` in the GROUP's member chain.
 
-The GROUP `linked_ref` is the tail of its member chain. A chain row is a
-type-91 record with six references. Slot zero equals the GROUP XMT, slot one
-names the topology member, slot four names the previous row or null, and slot
-five names the next row or null. The tail has null slot five. Following slot
-four to null and checking every reciprocal slot-five link yields member order
-from head to tail after reversal. Every row XMT and member XMT must resolve
-uniquely in the current partition state, every row must point back to the same
-GROUP, and every member must be a BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX,
-or REGION record. A cycle, missing record, duplicate XMT, broken reciprocal
-link, cross-GROUP row, or non-topology member rejects the complete chain.
+The head has null `previous_member`. Following `next_member` to null yields
+head-to-tail order without reversal. Each non-null adjacent link has the
+reciprocal `previous_member`, and every row points back to the same GROUP.
+The two chains use distinct pointer pairs. The member entity belongs to
+INSTANCE, FACE, REGION, LOOP, EDGE, VERTEX, SURFACE, CURVE, or POINT, subject
+to the GROUP's member-family selector. A mixed GROUP permits those families
+in one chain. A cycle, duplicate identity, missing row, cross-GROUP row, or
+broken reciprocal link does not form a complete membership chain.
 
-Each GROUP member family except FIN carries a kernel node identity. The member
+Each topological GROUP member carries a kernel node identity. The member
 XMT is first checked as an exact identity in the delta-merged partition graph;
 the graph record must have the same topology family and kernel node identity.
 When that exact identity is absent or carries a different node identity, a
@@ -3061,6 +3094,8 @@ supplies none of those relations.
 
 A complete `GROUP` record retains its source stream, XMT identity, kernel node
 identity, ordered references, byte extent, and inflated-stream offset. A GROUP
+in a primary partition omits `linked_reference_status` from its native record.
+A Deltas GROUP requires that field and retains its binary source value. A GROUP
 in a partition stream owns that partition's node-id namespace. A GROUP in a
 paired deltas stream owns the paired partition's node-id namespace. An
 unpaired deltas GROUP retains no partition assignment. Equal node identities
@@ -3107,7 +3142,9 @@ A type-126 B-surface descriptor stores U/V periodic logical flags, degrees, pole
 
 A type-135 B-curve control payload stores `double_count:u32`, `first_index`, and `double_count` doubles. Type 136 stores degree, pole count, dimension, distinct-knot count, knot type, periodic/closed/rational logical flags, curve form, control-data index, multiplicity reference, and knot reference.
 
-Type 127 stores `00 7f [ff], 0000, count:u16 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and stores `value[count]:f64 BE`; every type-128 value is finite. Counts are nonzero and XMT identities are non-null. Each record ends after its declared value lane.
+Type 127 stores `00 7f [ff], count:u32 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and stores `value[count]:f64 BE`; every type-128 value is finite. Counts are nonzero and XMT identities are non-null. Each record ends after its declared value lane. Without the optional envelope, the count starts at offset 2 and the XMT at offset 6 for types 127 and 128. The envelope shifts both positions by one byte. The count is one four-byte integer; a zero high word does not form a separate field.
+
+Degrees and individual knot multiplicities use 16-bit fields. Pole counts, distinct-knot counts, and variable-node element counts use 32-bit fields. The declared count determines the complete value-lane length in units of the element width. The complete lane lies within its owning stream.
 
 The B-spline knot type does not determine whether a control grid is rational or periodic. The control-grid stride determines the representation: stride 3 stores xyz and stride 4 stores xyzw.
 

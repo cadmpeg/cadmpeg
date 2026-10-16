@@ -744,6 +744,17 @@ Relative to the type tag without the optional ff envelope. The variable-width XM
 | 0 | 2 | `type_tag` | `u16` | big | spec | `002d [ff], count:u32 BE, xmt, value[count]:f64 BE` · value `45` |
 | 2 | 4 | `count` | `u32` | big | spec | Without the optional envelope, the count starts at offset 2 and the XMT |
 
+## `nurbs_knot_array_count_prefix`
+
+Spec §9.3 · layout: byte offsets · size: 6 B
+
+The type is 127 or 128. Offsets exclude the optional envelope; an envelope shifts the count and following XMT by one byte. The variable-width XMT follows the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `type_tag` | `u16` | big | spec | `00 7f [ff], count:u32 BE, xmt, value[count]:u16 BE` |
+| 2 | 4 | `count` | `u32` | big | spec | Without the optional envelope, the count starts at offset 2 and the XMT at offset 6 for types 127 and 128. |
+
 ## `nurbs_curve_descriptor_prefix`
 
 Spec §6.2 · layout: byte offsets · size: 21 B

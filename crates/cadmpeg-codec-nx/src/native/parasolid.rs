@@ -42,7 +42,6 @@ mod chart_wire;
 mod support_uv_wire;
 mod tail_wire;
 mod transmit_header_wire;
-use crate::deltas::embedded_schema::instance::SchemaNode;
 use crate::deltas::packet_marker::ReferenceMarker;
 use crate::deltas::partition_prefix::PartitionPrefixState;
 use crate::deltas::pmark_nodes::PmarkNodes;
@@ -51,12 +50,14 @@ use crate::deltas::tails::NullTailForm;
 use crate::deltas::transmit_state::TransmitState;
 use crate::deltas::type150_state::Type150State;
 use crate::framing::xmt_reference::NonNullXmt;
+use crate::records::instance::SchemaNode;
 use body_revision_wire::RevisionLengths;
 use transmit_header_wire::TransmitHeaderWire;
 pub(super) mod group_member;
 use group_member::GroupMemberTarget;
 pub(super) mod group_record;
-use crate::deltas::group::{GroupReferenceStatus, GroupSelector};
+use crate::deltas::group::GroupReferenceStatus;
+use crate::records::group::GroupSelector;
 use group_record::GroupOrigin;
 
 use super::substrate::{ParsedStreams, StreamView};
@@ -80,8 +81,6 @@ pub(super) struct ParasolidGroupRecord {
     pub(super) references: [u32; 5],
     /// Selector between the four leading references and the linked reference.
     pub(super) selector: GroupSelector,
-    /// Status byte following the linked reference.
-    pub(super) linked_reference_status: GroupReferenceStatus,
     /// Exact serialized record length.
     pub(super) byte_len: u64,
     /// GROUP tag offset in the inflated source stream.
@@ -104,7 +103,6 @@ impl Clone for ParasolidGroupRecord {
             node_id: self.node_id,
             references: self.references,
             selector: self.selector,
-            linked_reference_status: self.linked_reference_status,
             byte_len: self.byte_len,
             inflated_offset: self.inflated_offset,
         }
@@ -191,19 +189,13 @@ pub(super) fn parasolid_group_records(
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        for record in crate::deltas::census::walk(ctx, &stream.inflated)?
-            .into_events()
-            .records
-        {
-            let crate::deltas::record_family::RecordFamily::Group {
-                node_id,
-                selector,
-                linked_reference_status,
-                references,
-            } = record.family
-            else {
-                continue;
-            };
+        let mut primary_storage = ctx.reserve_scoped(0, "NX primary GROUP source ownership")?;
+        let Some(primary) = primary_storage
+            .with_storage(|| crate::records::PrimaryRecords::read(ctx, &stream.inflated))?
+        else {
+            continue;
+        };
+        for record in primary_storage.with_storage(|| primary.groups(ctx))? {
             ctx.push_vec(
                 &mut groups,
                 ParasolidGroupRecord {
@@ -218,10 +210,9 @@ pub(super) fn parasolid_group_records(
                         stream_ordinal: stream_ordinal_u32,
                     },
                     xmt: record.xmt,
-                    node_id,
-                    references,
-                    selector,
-                    linked_reference_status,
+                    node_id: record.node_id,
+                    references: record.references,
+                    selector: record.selector,
                     byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 },
@@ -248,12 +239,12 @@ pub(super) fn parasolid_group_records(
                     partition_stream_ordinal: usize::try_from(record.stream_ordinal)
                         .ok()
                         .and_then(|delta| paired_partition.get(&delta).copied()),
+                    linked_reference_status: *linked_reference_status,
                 },
                 xmt: record.xmt,
                 node_id: *node_id,
                 references: *references,
                 selector: *selector,
-                linked_reference_status: *linked_reference_status,
                 byte_len: record.byte_len,
                 inflated_offset: record.inflated_offset,
             },

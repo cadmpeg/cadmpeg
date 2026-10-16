@@ -1332,3 +1332,94 @@ fn nurbs_surface_headers_admit_low_nonnull_identity() {
         );
     }
 }
+
+#[test]
+fn nurbs_arrays_admit_u32_counts_and_preserve_requested_prefixes() {
+    for (tag, width) in [(127, 2), (128, 8)] {
+        for escaped in [false, true] {
+            for count in [65_536_u32, 65_537] {
+                let mut bytes = vec![0, tag];
+                if escaped {
+                    bytes.push(0xff);
+                }
+                bytes.extend_from_slice(&count.to_be_bytes());
+                bytes.extend_from_slice(&42_u16.to_be_bytes());
+                let values_at = bytes.len();
+                for _ in 0..count {
+                    if width == 2 {
+                        bytes.extend_from_slice(&3_u16.to_be_bytes());
+                    } else {
+                        bytes.extend_from_slice(&2.5_f64.to_be_bytes());
+                    }
+                }
+                crate::test_support::with_decode_context(|ctx| {
+                    let array = super::array_record_at(ctx, &bytes, 0).unwrap().unwrap();
+                    assert_eq!(array.reference, 42);
+                    assert_eq!(
+                        array.end,
+                        values_at + usize::try_from(count).unwrap() * width
+                    );
+                    if width == 2 {
+                        assert_eq!(
+                            array.values.u16_prefix(ctx, 2).unwrap().unwrap().0,
+                            vec![3, 3]
+                        );
+                    } else {
+                        assert_eq!(
+                            array.values.f64_prefix(ctx, 2).unwrap().unwrap().0,
+                            vec![2.5, 2.5]
+                        );
+                    }
+                    let auxiliary = super::auxiliary_record_at(ctx, &bytes, 0).unwrap().unwrap();
+                    assert_eq!((auxiliary.xmt, auxiliary.end), (42, array.end));
+                    assert_eq!(
+                        auxiliary.family,
+                        if tag == 127 {
+                            super::RecordFamily::Multiplicities
+                        } else {
+                            super::RecordFamily::Knots
+                        }
+                    );
+                    let indexed = super::arrays(ctx, &bytes).unwrap();
+                    let values = if width == 2 {
+                        indexed.u16s.get(&42)
+                    } else {
+                        indexed.f64s.get(&42)
+                    }
+                    .unwrap()
+                    .unwrap();
+                    let raw = match values {
+                        super::ArrayValues::U16(raw) | super::ArrayValues::F64(raw) => raw,
+                    };
+                    assert_eq!(raw.len(), usize::try_from(count).unwrap() * width);
+                    assert!(super::array_record_at(ctx, &bytes[..bytes.len() - 1], 0)
+                        .unwrap()
+                        .is_none());
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn nurbs_array_count_requires_nonempty_complete_storage_and_nonnull_identity() {
+    for tag in [127, 128] {
+        for count in [0_u32, 65_536, u32::MAX] {
+            let mut bytes = vec![0, tag];
+            bytes.extend_from_slice(&count.to_be_bytes());
+            bytes.extend_from_slice(&42_u16.to_be_bytes());
+            crate::test_support::with_decode_context(|ctx| {
+                assert!(super::array_record_at(ctx, &bytes, 0).unwrap().is_none());
+            });
+        }
+        for identity in [0_u16, 1] {
+            let mut bytes = vec![0, tag];
+            bytes.extend_from_slice(&1_u32.to_be_bytes());
+            bytes.extend_from_slice(&identity.to_be_bytes());
+            bytes.extend_from_slice(&[0; 8][..if tag == 127 { 2 } else { 8 }]);
+            crate::test_support::with_decode_context(|ctx| {
+                assert!(super::array_record_at(ctx, &bytes, 0).unwrap().is_none());
+            });
+        }
+    }
+}

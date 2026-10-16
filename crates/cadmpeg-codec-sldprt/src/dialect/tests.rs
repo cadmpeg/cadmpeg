@@ -11,8 +11,9 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::{SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT, VERIFIED_KERNELS};
+use super::{SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT};
 use crate::loss::SldprtLossCode;
+use crate::test_support::container::add_solidworks_version;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
 use crate::test_support::container::scan;
@@ -145,6 +146,56 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 }
 
 #[test]
+fn format_13006_is_admitted_for_a_versioned_solidworks_host() {
+    let description = b"boundary_polyline mesh";
+    let schema = b"SCH_3201255_32001_13006";
+    let mut stream = b"PS\0\0".to_vec();
+    stream.extend(
+        u16::try_from(description.len())
+            .expect("description fits u16")
+            .to_be_bytes(),
+    );
+    stream.extend_from_slice(description);
+    stream.push(u8::try_from(schema.len()).expect("schema fits u8"));
+    stream.extend_from_slice(schema);
+    stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
+    stream.extend(6u32.to_be_bytes());
+    stream.extend([0x00, 0x22]);
+    for value in [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        stream.extend(value.to_be_bytes());
+    }
+
+    let mut source = outer_header();
+    source.extend(make_block(0x20, "Contents/Config-0-Partition", &stream));
+    add_solidworks_version(&mut source, 11_000);
+    let classification = classify_layers(&scan(&source));
+    let kernel = classification
+        .layers()
+        .iter()
+        .find(|matched| matched.format() == PARASOLID_FORMAT)
+        .expect("the framed Parasolid stream emits a layer");
+
+    assert_eq!(
+        classification.layers().primary().dialect().as_str(),
+        "sldprt:sw-version-pre-12000"
+    );
+    assert_eq!(
+        classification.layers().primary().admission(),
+        &Admission::Admitted
+    );
+    assert_eq!(kernel.dialect().as_str(), "parasolid:format-13006");
+    assert_eq!(kernel.admission(), &Admission::Admitted);
+
+    let mut losses = Vec::new();
+    classification
+        .append_losses(&cadmpeg_test_support::service_decode_context(), &mut losses)
+        .expect("test dialect losses fit service policy");
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code != SldprtLossCode::KernelDialectUnverified.kind()));
+}
+
+#[test]
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
@@ -153,7 +204,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
             .expect("the fixture text is a schema token"),
         cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,
-        &VERIFIED_KERNELS,
+        SldprtCodec::VERIFIED_PARASOLID_GRAMMARS,
     )
     .expect("kernel classification fits policy");
     let layers = DialectLayers::of(host)

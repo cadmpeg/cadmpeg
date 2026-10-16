@@ -159,7 +159,7 @@ fn record(
         90 => RecordFamily::Group {
             references: references.try_into().unwrap(),
             node_id: node_id.expect("group node"),
-            selector: GroupSelector::Form4,
+            selector: GroupSelector::Edge,
             linked_reference_status: GroupReferenceStatus::Form0,
         },
         91 => RecordFamily::Type91 {
@@ -193,7 +193,6 @@ use super::{
     ParasolidEntityVectorRecord, ParasolidFieldNamesRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
 };
-use crate::deltas::group::GroupSelector;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::attribute_action::AttributeAction;
@@ -201,6 +200,7 @@ use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::entity_references::EntityReferences;
 use crate::parasolid::name_references::NameReferences;
 use crate::printable_string::PrintableString;
+use crate::records::group::GroupSelector;
 use std::num::NonZeroU32;
 
 #[test]

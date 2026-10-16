@@ -57,19 +57,65 @@ pub(crate) fn partition_stream() -> Vec<u8> {
     s
 }
 
+pub(crate) fn primary_point_stream() -> Vec<u8> {
+    let mut stream = b"PS".to_vec();
+    for text in [
+        b": TRANSMIT FILE (partition) created by test".as_slice(),
+        b"SCH_TEST_13006".as_slice(),
+    ] {
+        stream.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
+        stream.extend_from_slice(text);
+    }
+    stream.extend_from_slice(&0u32.to_be_bytes());
+    let mut point = record(29, 40);
+    put_ref(&mut point, 2, 2);
+    put_ref(&mut point, 8, 1);
+    put_ref(&mut point, 10, 1);
+    put_ref(&mut point, 12, 1);
+    put_ref(&mut point, 14, 1);
+    put_vec3(&mut point, 16, [0.0625, 0.0, 0.0127]);
+    stream.extend(point);
+    stream.extend_from_slice(&[0, 1, 0, 1]);
+    stream
+}
+
 /// Partition stream carrying one complete variable-width Parasolid GROUP record.
 pub(crate) fn parasolid_group_partition_stream() -> Vec<u8> {
-    let mut stream = partition_stream();
+    let mut stream = primary_point_stream();
+    stream.truncate(stream.len() - 4);
+    let geometry = |kind, len, xmt| {
+        let mut bytes = record(kind, len);
+        put_ref(&mut bytes, 2, xmt);
+        for at in (8..=16).step_by(2) {
+            put_ref(&mut bytes, at, 1);
+        }
+        bytes[18] = b'+';
+        bytes
+    };
+    let mut plane = geometry(50, 91, 3);
+    put_vec3(&mut plane, 19, [0.0762, 0.0, 0.0]);
+    put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
+    stream.extend(plane);
+    let mut cylinder = geometry(51, 99, 4);
+    put_vec3(&mut cylinder, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut cylinder, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut cylinder, 67, 0.004_05);
+    put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
+    stream.extend(cylinder);
+    let mut line = geometry(30, 67, 5);
+    put_vec3(&mut line, 19, [0.01, 0.02, 0.03]);
+    put_vec3(&mut line, 43, [1.0, 0.0, 0.0]);
+    stream.extend(line);
     stream.extend_from_slice(&90u16.to_be_bytes());
     stream.extend_from_slice(&10u16.to_be_bytes());
     stream.extend_from_slice(&7u32.to_be_bytes());
     for reference in [3u16, 4, 5, 6] {
         stream.extend_from_slice(&reference.to_be_bytes());
-        stream.push(1);
     }
     stream.push(4);
     stream.extend_from_slice(&8u16.to_be_bytes());
-    stream.push(0);
+    stream.extend_from_slice(&[0, 1, 0, 1]);
     stream
 }
 

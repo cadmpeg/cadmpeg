@@ -113,6 +113,10 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
     assert_eq!(kernel.admission(), &Admission::Residual);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
+    assert_eq!(
+        losses[0].strict_consequence(),
+        cadmpeg_ir::report::loss::StrictConsequence::Reject
+    );
     assert!(losses[0].message.contains("host did not verify"));
 }
 

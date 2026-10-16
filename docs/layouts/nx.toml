@@ -2216,6 +2216,29 @@ source = "spec"
 anchor = "Without the optional envelope, the count starts at offset 2 and the XMT"
 
 [[record]]
+name = "nurbs_knot_array_count_prefix"
+kind = "byte"
+section = "9.3"
+anchor = "Type 127 stores"
+size = 6
+endianness = "big"
+note = "The type is 127 or 128. Offsets exclude the optional envelope; an envelope shifts the count and following XMT by one byte. The variable-width XMT follows the prefix."
+
+[[record.field]]
+name = "type_tag"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "`00 7f [ff], count:u32 BE, xmt, value[count]:u16 BE`"
+
+[[record.field]]
+name = "count"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "Without the optional envelope, the count starts at offset 2 and the XMT at offset 6 for types 127 and 128."
+
+[[record]]
 name = "nurbs_curve_descriptor_prefix"
 kind = "byte"
 section = "6.2"

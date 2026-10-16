@@ -4,7 +4,7 @@ use crate::test_support::test_prt::many_face_partition_stream;
 use crate::topology::Graph;
 use std::collections::BTreeMap;
 
-use super::group_records::group_record;
+use super::group_records::{group_record, primary_group_stream};
 use super::{record, stream};
 use crate::native::parasolid::group_member::GroupMemberTarget;
 
@@ -113,13 +113,13 @@ fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
     let streams = [
         stream(
             crate::parasolid::ParasolidSubtype::Partition,
-            "SCH_TEST",
-            group_record(10, 7, 8),
+            "SCH_TEST_13006",
+            primary_group_stream(10, 7, 8),
         ),
         stream(
             crate::parasolid::ParasolidSubtype::Partition,
-            "SCH_TEST",
-            group_record(11, 7, 9),
+            "SCH_TEST_13006",
+            primary_group_stream(11, 7, 9),
         ),
     ];
 
@@ -133,7 +133,10 @@ fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
     assert_eq!(groups[0].origin.partition_stream_ordinal(), Some(0));
     assert_eq!(groups[1].origin.partition_stream_ordinal(), Some(1));
     assert_eq!(u8::from(groups[0].selector), 4);
-    assert_eq!(u8::from(groups[0].linked_reference_status), 0);
+    assert!(serde_json::to_value(&groups[0])
+        .unwrap()
+        .get("linked_reference_status")
+        .is_none());
     assert_ne!(groups[0].id, groups[1].id);
 }
 
@@ -142,8 +145,8 @@ fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
     let streams = [
         stream(
             crate::parasolid::ParasolidSubtype::Partition,
-            "SCH_TEST",
-            group_record(10, 7, 8),
+            "SCH_TEST_13006",
+            primary_group_stream(10, 7, 8),
         ),
         stream(
             crate::parasolid::ParasolidSubtype::Deltas,

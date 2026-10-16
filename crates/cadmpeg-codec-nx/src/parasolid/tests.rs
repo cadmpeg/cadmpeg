@@ -12,8 +12,8 @@ use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::prt_with_partition;
 use crate::test_support::test_prt::single_part_prt;
 use crate::test_support::test_streams::parasolid_entity_records_stream;
-use crate::test_support::test_streams::parasolid_group_partition_stream;
 use crate::test_support::test_streams::partition_stream;
+use crate::test_support::test_streams::primary_point_stream;
 
 fn token(text: &str) -> cadmpeg_parasolid::OwnedSchemaToken {
     cadmpeg_parasolid::OwnedSchemaToken::try_from(text).expect("the fixture text is a schema token")
@@ -639,11 +639,11 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
 }
 
 #[test]
-fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_parasolid() {
+fn extraction_falls_back_to_unindexed_primary_geometry_when_index_has_no_parasolid() {
     let decoy = zlib_compress(
         b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed text without structural records",
     );
-    let real = zlib_compress(&parasolid_group_partition_stream());
+    let real = zlib_compress(&primary_point_stream());
     let indexed_preview = zlib_compress(b"preview payload");
     let mut payload = Vec::new();
     for word in [0_u32, 9, 11, 1, 1, 24] {
@@ -667,11 +667,36 @@ fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_paras
     assert_eq!(streams.len(), 2);
     assert!(streams.iter().any(|stream| {
         stream.kind() == StreamKind::Partition
-            && stream.schema_token() == Some(&token("SCH_TEST_1_9999"))
+            && stream.schema_token() == Some(&token("SCH_TEST_13006"))
     }));
     assert!(streams
         .iter()
         .all(|stream| { stream.schema_token() != Some(&token("SCH_DECOY_1_9999")) }));
+}
+
+#[test]
+fn unindexed_primary_candidates_require_schema_owned_records() {
+    crate::test_support::with_decode_context(|ctx| {
+        let bytes = primary_point_stream();
+        assert!(super::structural_stream_candidate(ctx, StreamKind::Partition, &bytes).unwrap());
+        let mut unknown = bytes.clone();
+        let version = unknown
+            .windows(5)
+            .position(|window| window == b"13006")
+            .unwrap();
+        unknown[version..version + 5].copy_from_slice(b"99999");
+        assert!(!super::structural_stream_candidate(ctx, StreamKind::Partition, &unknown).unwrap());
+        let point = bytes
+            .windows(2)
+            .position(|window| window == [0, 29])
+            .unwrap();
+        assert!(!super::structural_stream_candidate(
+            ctx,
+            StreamKind::Partition,
+            &bytes[..point + 39]
+        )
+        .unwrap());
+    });
 }
 
 #[test]

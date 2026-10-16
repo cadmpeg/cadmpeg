@@ -19,13 +19,28 @@ pub(super) fn group_record(xmt: u16, node_id: u32, linked_reference: u16) -> Vec
     bytes
 }
 
+pub(super) fn primary_group_stream(xmt: u16, node_id: u32, linked_reference: u16) -> Vec<u8> {
+    let mut bytes = crate::test_support::test_streams::primary_point_stream();
+    bytes.truncate(bytes.len() - 4);
+    bytes.extend_from_slice(&90u16.to_be_bytes());
+    bytes.extend_from_slice(&xmt.to_be_bytes());
+    bytes.extend_from_slice(&node_id.to_be_bytes());
+    for reference in [3u16, 4, 5, 6] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
+    bytes.push(4);
+    bytes.extend_from_slice(&linked_reference.to_be_bytes());
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
 fn group_record_limit_error(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> CodecError {
     let streams = [stream(
         crate::parasolid::ParasolidSubtype::Partition,
-        "SCH_TEST",
-        group_record(10, 7, 8),
+        "SCH_TEST_13006",
+        primary_group_stream(10, 7, 8),
     )];
 
     crate::test_support::with_decode_context_over(

@@ -82,21 +82,11 @@ relation to the owning pmark edge before assigning body change-state roles.
 
 ### PS-13. Deltas type 90 `GROUP`
 
-**Question.** What does each of the five references and the `02|04` mode in deltas type 90 `GROUP` mean?
+**Question.** Which Deltas sequence establishes ownership of a status-framed type-90 GROUP, and what change-state role does its final reference status carry?
 
-**Known.** `siemens_nx.md` §4.2 "Type 90 `GROUP` has the complete deltas record" defines the complete record grammar, reference statuses, mode values, and boundary.
+**Known.** `siemens_nx.md` §4.2 defines the GROUP's five pointer roles, member-family enum 1 through 10, and separate primary and supported Deltas field framing. A primary GROUP ends after `first_member` without a status byte. Its source boundary follows the effective schema cursor.
 
-**Need.** We must know the roles to construct group membership and ownership relations. We must also establish census ownership for complete-looking GROUP frames at shared string terminals before treating every such candidate as a group event.
-
-**Note.** In `Part_17 - Intake Manifold.prt`, partition stream 4 contains six complete-looking GROUP frames at inflated byte offsets 188989, 190112, 215074, 219559, 219895, and 249322. Each begins at the terminal zero of a referenced character value, but the current census does not emit it. Complete field grammar alone does not prove that these candidates have an enclosing ledger owner.
-
-### PS-14. Deltas type 91
-
-**Question.** What is the canonical node-type name of deltas type 91 (`005b`), and what does each field mean?
-
-**Known.** `siemens_nx.md` §4.2 "Type-91 records are" defines its XMT identity, binary flag, six status-framed references, and boundary.
-
-**Need.** We must know the name and field roles to transfer the record as typed Parasolid state.
+**Need.** Establish each Deltas instance's enclosing sequence and reference-status semantics before treating every field-shaped candidate as a group event. Resolve membership through separately owned MEMBER_OF_GROUP records and their distinct group and entity chains.
 
 ### PS-16. Deltas type 141
 
@@ -190,25 +180,13 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 
 **Need.** Define the complete enclosing Deltas sequence, including transitions between control records and status-framed instance fields. The sequence must establish first-use state before admitting either local interpretation and must retain independent state for each transmit stream.
 
-### PS-37. NURBS record count and degree limits
+### PS-37. Basis ranges within counted NURBS storage
 
-**Question.** What bounds the counts, degrees, and pole counts of B-spline support records?
+**Question.** Which values in a counted multiplicity or knot node belong to a descriptor's active basis when the storage count exceeds its distinct-knot count?
 
-**Known.** `siemens_nx.md` §9.3 "Type 127 stores `00 7f [ff], 0000, count:u16 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and sto" defines the array-record envelopes and states that counts are nonzero and identities are non-null. `siemens_nx.md` §6.2 "Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rationa" gives the basis constraints that relate degree, pole count, and multiplicity sums.
+**Known.** `siemens_nx.md` §9.3 defines four-byte variable-node counts and the 16-bit degree and multiplicity fields. §6.2 gives the degree, pole-count, and expanded-knot cardinality constraints. A complete counted storage lane can extend beyond the number of values selected by a descriptor. Periodic storage can include imaginary knots outside its active interval.
 
-**Need.** We must know the bounds, or confirm that the basis constraints are the only ones. The decoder locates these records by scanning the complete stream and admits a record only inside fixed numeric ranges for the array count, the degree, the pole count, and the distinct-knot count. A surface or curve outside those ranges is omitted, and its face keeps an unresolved carrier.
-
-**Note.** The closure changes several descriptor fields from narrow reads to wider reads and removes explicit ceilings, then validates basis cardinality. The synthetic large-cardinality tests are constructed for that interpretation; corpus records have not yet verified the field widths or the absence of a format/resource bound. The count and degree rule remains open.
-
-### PS-38. Fixed-record candidate ranking
-
-**Question.** What serialized evidence selects one complete fixed-record interpretation when direct, escaped, or overlapping candidates all pass structural parsing?
-
-**Known.** `siemens_nx.md` §5.1 requires the complete family grammar and record boundary to establish fixed-record identity. It does not define body-shape preference, reference-count preference, node-quality ranking, or an ownership rule based on scan order.
-
-**Need.** We must know the discriminator before indexing a candidate by `(type, XMT)` or discarding an overlapping candidate. A wrong choice changes topology ownership and every dependent geometry relation.
-
-**Note.** `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs:718-856` accepts the highest-ranked candidate after reference filtering and falls back to heuristic ranking when no candidate resolves. `crates/cadmpeg-codec-nx/src/framing.rs:24-77` supplies multiple complete interpretations. **Evidence:** the comparator uses body-shape, recognized-boundary, reference-count, and node-quality preferences; no serialized discriminator is read. **Counter-evidence:** reference-consistency checks and equal-score rejection discard some ambiguous candidates, and the ranking can be intended as recovery for malformed streams. **Failure:** if an incidental `00 kind` sequence occurs inside a valid record, or if direct and escaped readings both end at recognized boundaries, the comparator can retain one reading without a serialized discriminator, changing topology ownership and dependent geometry. This is a new selection debt found in the 2026-08-10 hostile sweep.
+**Need.** Establish the active range and the role of excess stored values before applying basis cardinality or individual multiplicity bounds to an entire storage node. Distinguish active basis values from padding and other retained values through the owning descriptor and schema.
 
 ## 2. Object model and body composition
 

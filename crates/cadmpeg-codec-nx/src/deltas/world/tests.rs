@@ -3,7 +3,7 @@
 
 use super::{WorldLayout, WorldReferences};
 use crate::deltas::census::walk;
-use crate::deltas::embedded_schema::instance::SchemaNode;
+use crate::records::instance::SchemaNode;
 use crate::test_support::{with_decode_context, world};
 
 #[test]
