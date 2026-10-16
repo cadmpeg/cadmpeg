@@ -145,14 +145,14 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// `bytes` carries no `delta_state` record (the stream is a construction
 /// snapshot with no history tail) or a malformed history body. `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
-/// `binding_allowance` is the count of state-record entries that the
-/// decode's history streams may still bind; see [`history_binding_allowance`].
+/// `remaining_retained_bytes` is the session's remaining retained-byte allowance,
+/// less the estimates reserved for earlier history streams.
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     width: RefWidth,
-    binding_allowance: &mut u64,
+    remaining_retained_bytes: &mut u64,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let preamble_offset = bytes
         .windows(PREAMBLE.len())
@@ -237,10 +237,9 @@ pub(crate) fn decode(
         });
     }
     bind_snapshot_revision_ids(&mut states)?;
-    let record_table_binding_budget_exceeded =
-        bind_historical_entity_versions(&mut states, binding_allowance)?
-            == TableBindingCost::Exceeded;
-    if !record_table_binding_budget_exceeded {
+    let binding_budget_exceeded = admit_history_binding(&states, remaining_retained_bytes)?
+        == HistoryBindingAdmission::Skipped;
+    if !binding_budget_exceeded {
         bind_complete_record_tables(ctx, &mut states, bytes, width)?;
     }
     if states.is_empty() {
@@ -258,7 +257,7 @@ pub(crate) fn decode(
         history_id,
         u64_from_index(offset),
         preamble,
-        record_table_binding_budget_exceeded,
+        binding_budget_exceeded,
         states,
     )))
 }
@@ -376,45 +375,27 @@ pub(crate) fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Optio
         .and_then(|count| usize::try_from(count).ok())
 }
 
-/// Native text that binding retains for one state-record entry: the
-/// entity-version pair and the plane-selection topology that each
-/// `asm_delta_states` record keeps for the entry, and the Design operands that
-/// the bound history resolves. Designs with 0.9 to 19 million entries retain
-/// 111 to 124 bytes for each entry. The value is rounded up.
-const HISTORY_RETAINED_BYTES_PER_STATE_RECORD: u64 = 128;
+/// Estimated native `asm_delta_states` text bytes per changed record slot.
+/// History streams with 206 to 385,790 changed slots retain 96.96 to 161.14
+/// complete-scope bytes per slot. Rounded up to the next ten bytes.
+pub(crate) const HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT: u64 = 170;
 
-/// Count of state-record entries that all history streams of one decode may
-/// bind together.
-///
-/// One entry is one record of one state's record table. The per-state
-/// topology decode, the projected snapshots, and the retained native text all
-/// grow linearly with the entry count. At this count the binding alone retains
-/// the policy's complete `max_retained_bytes`, so a larger binding cannot
-/// complete in the session. A history whose entries exceed the remaining
-/// allowance skips historical topology and reports the skip.
-pub(crate) fn history_binding_allowance(policy: &cadmpeg_core::decode::DecodePolicy) -> u64 {
-    policy.limits.max_retained_bytes / HISTORY_RETAINED_BYTES_PER_STATE_RECORD
-}
-
-/// Whether one history stream's state-record entries fit the binding allowance.
+/// Whether one history stream's estimated retained bytes fit the session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TableBindingCost {
-    /// The entries fit; the history is bound.
+pub(crate) enum HistoryBindingAdmission {
+    /// The estimate fits; it is reserved and the history is bound.
     Admitted,
-    /// The entries exceed the allowance; historical topology is skipped.
-    Exceeded,
+    /// The estimate exceeds the remaining allowance; historical topology is skipped.
+    Skipped,
 }
 
-/// Check the historical binding bound before decoding state record tables.
-///
-/// The walk validates the chain and counts the state-record entries. A history with more entries
-/// than `binding_allowance` is not projected and reports
-/// [`TableBindingCost::Exceeded`]. Otherwise the entries are subtracted from
-/// the allowance.
-fn bind_historical_entity_versions(
-    states: &mut [AsmDeltaState],
-    binding_allowance: &mut u64,
-) -> Result<TableBindingCost, cadmpeg_core::CodecError> {
+/// Validate the chain, then reserve its estimated retained bytes before decoding
+/// record tables. A skipped history leaves the allowance unchanged and has no
+/// transitions. A chain that does not validate is admitted and stays unbound.
+pub(crate) fn admit_history_binding(
+    states: &[AsmDeltaState],
+    remaining_retained_bytes: &mut u64,
+) -> Result<HistoryBindingAdmission, cadmpeg_core::CodecError> {
     let mut archived_ids = Vec::new();
     for revision_id in states
         .iter()
@@ -427,24 +408,33 @@ fn bind_historical_entity_versions(
     let Some(active_count) =
         archived_active_record_count(states)?.or_else(|| insert_only_active_record_count(states))
     else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(HistoryBindingAdmission::Admitted);
     };
     let Ok(active_count) = i64::try_from(active_count) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(HistoryBindingAdmission::Admitted);
     };
-    let mut state_records = Some(0_u64);
-    if !walk_entity_versions(states, active_count, &archived_ids, |_, versions| {
-        state_records =
-            state_records.and_then(|total| total.checked_add(u64_from_index(versions.len())));
+    let mut changed_slots = Some(0_u64);
+    if !walk_entity_versions(states, active_count, &archived_ids, |ordinal, versions| {
+        let state = &states[ordinal];
+        if state.next_ref.is_none() {
+            changed_slots =
+                changed_slots.and_then(|total| total.checked_add(u64_from_index(versions.len())));
+        }
+        for board in &state.bulletin_boards {
+            changed_slots = changed_slots
+                .and_then(|total| total.checked_add(u64_from_index(board.changes.len())));
+        }
     }) {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(HistoryBindingAdmission::Admitted);
     }
-    let Some(remaining) = state_records.and_then(|count| binding_allowance.checked_sub(count))
+    let Some(remaining) = changed_slots
+        .and_then(|count| count.checked_mul(HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT))
+        .and_then(|estimate| remaining_retained_bytes.checked_sub(estimate))
     else {
-        return Ok(TableBindingCost::Exceeded);
+        return Ok(HistoryBindingAdmission::Skipped);
     };
-    *binding_allowance = remaining;
-    Ok(TableBindingCost::Admitted)
+    *remaining_retained_bytes = remaining;
+    Ok(HistoryBindingAdmission::Admitted)
 }
 
 /// Walk the state chain from its head and give each state's entity-to-record

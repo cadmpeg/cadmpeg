@@ -22,8 +22,8 @@ pub(crate) struct AsmHistory {
     pub(crate) byte_offset: u64,
     pub(crate) preamble: Option<AsmPreamble>,
     /// True when historical topology binding was not attempted because its
-    /// state-record entry count exceeded the binding bound.
-    pub(crate) record_table_binding_budget_exceeded: bool,
+    /// estimated retained size exceeded the session's remaining retained-byte allowance.
+    pub(crate) binding_budget_exceeded: bool,
     states: Vec<AsmDeltaState>,
     pub(crate) topology_scope: AsmTopologyScope,
     pub(crate) materialized: MaterializedTopologies,
@@ -34,14 +34,14 @@ impl AsmHistory {
         id: String,
         byte_offset: u64,
         preamble: Option<AsmPreamble>,
-        record_table_binding_budget_exceeded: bool,
+        binding_budget_exceeded: bool,
         states: Vec<AsmDeltaState>,
     ) -> Self {
         Self {
             id,
             byte_offset,
             preamble,
-            record_table_binding_budget_exceeded,
+            binding_budget_exceeded,
             states,
             topology_scope: AsmTopologyScope::Complete,
             materialized: MaterializedTopologies::default(),
@@ -84,7 +84,7 @@ struct AsmHistorySerde {
     #[serde(alias = "high_water_mark")]
     history_entry_count: Option<i64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    record_table_binding_budget_exceeded: bool,
+    binding_budget_exceeded: bool,
     states: Vec<AsmDeltaState>,
     #[serde(default, skip_serializing_if = "is_default")]
     topology_scope: AsmTopologyScope,
@@ -110,7 +110,7 @@ impl TryFrom<AsmHistorySerde> for AsmHistory {
             id: wire.id,
             byte_offset: wire.byte_offset,
             preamble,
-            record_table_binding_budget_exceeded: wire.record_table_binding_budget_exceeded,
+            binding_budget_exceeded: wire.binding_budget_exceeded,
             states: wire.states,
             topology_scope: wire.topology_scope,
             materialized: crate::history_records::MaterializedTopologies::default(),
@@ -127,7 +127,7 @@ impl From<AsmHistory> for AsmHistorySerde {
             byte_offset: history.byte_offset,
             stream_size,
             history_entry_count,
-            record_table_binding_budget_exceeded: history.record_table_binding_budget_exceeded,
+            binding_budget_exceeded: history.binding_budget_exceeded,
             states: history.states,
             topology_scope: history.topology_scope,
         }

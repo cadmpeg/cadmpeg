@@ -13,8 +13,8 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::active_brep_face_matches_source;
+use crate::history::admit_history_binding;
 use crate::history::archived_active_record_count;
-use crate::history::bind_historical_entity_versions;
 use crate::history::bind_snapshot_revision_ids;
 use crate::history::body_revision_without_topology_change;
 use crate::history::combine_recipe_family_tool_slots;
@@ -959,14 +959,14 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
             Vec::<AsmEntityVersion>::new(),
         )
     };
-    let mut states = vec![
+    let states = vec![
         state(0, Some(1), &[1]).0,
         state(1, Some(2), &[2]).0,
         state(2, None, &[3]).0,
     ];
 
     assert_eq!(insert_only_active_record_count(&states), Some(4));
-    bind_historical_entity_versions(&mut states, &mut { u64::MAX }).unwrap();
+    admit_history_binding(&states, &mut { u64::MAX }).unwrap();
     let active_count = archived_active_record_count(&states)
         .unwrap()
         .or_else(|| insert_only_active_record_count(&states))
@@ -1345,7 +1345,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
         })
         .into();
 
-    bind_historical_entity_versions(&mut states, &mut { u64::MAX }).unwrap();
+    admit_history_binding(&states, &mut { u64::MAX }).unwrap();
     let active_count = archived_active_record_count(&states)
         .unwrap()
         .or_else(|| insert_only_active_record_count(&states))

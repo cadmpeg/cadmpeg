@@ -126,7 +126,7 @@ fn history_past_its_binding_bound_reports_a_loss() {
         .iter()
         .find(|loss| loss.code == F3dLossCode::HistoryBindingBudgetExceeded.kind())
         .expect("history binding loss");
-    assert_eq!(loss.message, "1 ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget.");
+    assert_eq!(loss.message, "1 ASM history stream(s) retain no historical topology because their estimated retained size exceeded the decode session's remaining retained-byte allowance.");
 }
 
 #[test]

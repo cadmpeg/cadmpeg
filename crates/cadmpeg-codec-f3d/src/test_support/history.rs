@@ -99,7 +99,7 @@ pub(crate) fn edit(
         target.id.clone(),
         target.byte_offset,
         target.preamble,
-        target.record_table_binding_budget_exceeded,
+        target.binding_budget_exceeded,
         states,
     );
     target.topology_scope = scope;

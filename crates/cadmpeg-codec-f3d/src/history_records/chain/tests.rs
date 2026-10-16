@@ -238,7 +238,7 @@ fn chain() -> AsmHistory {
         id: "history".into(),
         byte_offset: 0,
         preamble: None,
-        record_table_binding_budget_exceeded: false,
+        binding_budget_exceeded: false,
         states,
         topology_scope: AsmTopologyScope::Complete,
         materialized: crate::history_records::MaterializedTopologies::default(),

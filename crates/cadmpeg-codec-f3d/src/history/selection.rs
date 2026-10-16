@@ -412,7 +412,7 @@ impl HistoricalIdentityIndex {
         }
         if histories
             .iter()
-            .any(|history| history.record_table_binding_budget_exceeded)
+            .any(|history| history.binding_budget_exceeded)
         {
             return Self {
                 identities,
