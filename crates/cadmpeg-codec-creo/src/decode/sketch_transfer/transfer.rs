@@ -55,6 +55,7 @@ use crate::decode::sketch_transfer::profiles::{
     SectionEntityIncidenceFamily,
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::ParameterId;
@@ -73,10 +74,15 @@ use std::collections::{BTreeMap, BTreeSet};
 fn expected_segment_rows(
     definition_id: u32,
     table: &crate::feature::definitions::FeatureSegmentTable,
-) -> Result<usize, cadmpeg_core::CodecError> {
-    let declared_count = usize::try_from(table.declared_count).map_err(|_| cadmpeg_core::CodecError::malformed(format!("feature {definition_id} states segment table count {}, which exceeds the addressable row range {}",
-        table.declared_count,
-        usize::MAX)))?;
+) -> Result<usize, CodecError> {
+    let declared_count = usize::try_from(table.declared_count).map_err(|_| {
+        CodecError::malformed(format!(
+            "feature {definition_id} states segment table count {}, which exceeds \
+             the addressable row range {}",
+            table.declared_count,
+            usize::MAX
+        ))
+    })?;
     let elided_prototype_rows = usize::from(table.has_elided_prototype);
     declared_count
         .checked_sub(elided_prototype_rows)
