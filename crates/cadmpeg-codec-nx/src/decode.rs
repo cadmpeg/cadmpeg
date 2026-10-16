@@ -93,6 +93,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     if ctx.container_only() {
         let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
+        body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         body.losses.extend(native_losses);
         report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly)?;
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);

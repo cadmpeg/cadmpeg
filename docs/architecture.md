@@ -51,7 +51,7 @@ FreeCAD producer-version metadata does not select the persistence schema.
 
 ## Decode session
 
-The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the requested `DecodeDepth` on the `DecodeContext`, runs the backend, and finalizes a `DecodeContext`. Its strict gate evaluates full-decode reports only: a container-only report keeps its losses and is never refused by that gate.
+The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the requested `DecodeDepth` on the `DecodeContext`, runs the backend, and finalizes a `DecodeContext`. The backend's `DecodeTransfer` reports the depth it delivered; a codec without a cheaper path delivers `Full`. The wrapper records that depth as `CadIr.decode_depth`, refuses a document below `Full` that holds a design record, and adds an error loss `decode/depth.not-delivered` when the delivered depth is shallower than the request. Its strict gate evaluates reports for geometry and full requests only: a container-only request keeps its losses and is never refused by that gate.
 
 `DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`. Classify a named `MAX_*` cap with [decode-resource-caps.md](decode-resource-caps.md) before adding a bound or a `ResourceLimits` field.
 
@@ -67,7 +67,7 @@ Writers create a unique temporary file in the destination directory, then rename
 
 ## Loss reports
 
-Source decoders return `DecodeReport`, including a typed `DecodeTransfer`, a decode-coverage census, notes, and attributable `LossNote` entries. `DecodeTransfer` distinguishes container-only from full decode and records the geometry outcome only for a full decode. The JSON form retains `container_only` and `geometry_transferred`; both cannot be true. Validation propagates supplied decode losses unchanged.
+Source decoders return `DecodeReport`, including a typed `DecodeTransfer`, a decode-coverage census, notes, and attributable `LossNote` entries. `DecodeTransfer` distinguishes container-only, geometry, and full decodes, and records the geometry outcome for geometry and full decodes. The JSON form tags the state as `container_only`, `geometry`, or `full` and carries `geometry_transferred` only for the last two. Validation propagates supplied decode losses unchanged.
 
 Each codec owns a `*LossCode` enum in `src/loss.rs`. Every reported drop goes through `code.note(message)`, which pins the namespaced local code, `LossTaxonomy`, severity, and strict floor. Shared taxonomy is the category used for subsystem reporting; the stable machine-readable identifier is the codec-local `family.detail` string.
 
@@ -140,4 +140,4 @@ Each input codec implements `Codec`:
 
 `--input-format` selects a codec. Without it, the CLI detects one. Native writers use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.
 
-Strict decode refuses at the `Codec::decode` wrapper, which returns `DecodeFailure::StrictRejected` for the first reported loss whose strict consequence is `Reject`. The wrapper applies that predicate to full-decode reports only: a container-only decode keeps its losses and is admitted in either mode. The refusal carries the loss code, loss message, and completed `DecodeReport`. It is not a `CodecError`: a strict refusal reports a policy decision after decode, not a defect in the bytes. A codec reports its losses with their strict floors and adds no strict gate of its own. A local gate widens the refusal predicate and reclassifies the refusal where the caller cannot see it.
+Strict decode refuses at the `Codec::decode` wrapper, which returns `DecodeFailure::StrictRejected` for the first reported loss whose strict consequence is `Reject`. The wrapper applies that predicate to geometry and full requests only: a container-only request keeps its losses and is admitted in either mode. The refusal carries the loss code, loss message, and completed `DecodeReport`. It is not a `CodecError`: a strict refusal reports a policy decision after decode, not a defect in the bytes. A codec reports its losses with their strict floors and adds no strict gate of its own. A local gate widens the refusal predicate and reclassifies the refusal where the caller cannot see it.

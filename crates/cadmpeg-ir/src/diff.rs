@@ -441,10 +441,13 @@ where
 }
 
 macro_rules! define_diff_arenas {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $class:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
-                ArenaKind::Model(ArenaName::registered(stringify!($field))),
+                ArenaKind::Model(ArenaName::registered(
+                    stringify!($field),
+                    crate::document::arena_class!($class),
+                )),
                 &left.model.$field,
                 &right.model.$field,
                 crate::schema::EntitySchema::identity,
@@ -452,7 +455,7 @@ macro_rules! define_diff_arenas {
         }
     };
 }
-crate::document::arena_registry!(define_diff_arenas);
+crate::document::classified_arena_registry!(define_diff_arenas);
 
 fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
     let namespaces = left

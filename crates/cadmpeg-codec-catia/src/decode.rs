@@ -82,7 +82,8 @@ fn decode_over_routes(
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
-        let report = build_container_report(&scan);
+        let mut report = build_container_report(&scan);
+        report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
     }
 
