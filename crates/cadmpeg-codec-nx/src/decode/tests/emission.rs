@@ -1253,3 +1253,17 @@ fn graph_analytic_candidates_do_not_scan_discarded_fallbacks() {
         },
     );
 }
+
+#[test]
+fn decode_does_not_use_forward_fin_for_zero_partner_reference() {
+    let mut stream = topology_partition_stream();
+    let fin = stream.windows(4).position(|w| w == [0, 17, 0, 7]).unwrap();
+    put_ref(&mut stream, fin + 14, 0);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.edges.is_empty());
+    assert!(result.ir().model.coedges.is_empty());
+    assert!(result.ir().model.loops.is_empty());
+}

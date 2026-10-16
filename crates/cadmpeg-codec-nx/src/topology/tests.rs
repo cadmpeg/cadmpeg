@@ -1529,3 +1529,53 @@ fn identical_domain_selection_materializes_node_payloads_once() {
         },
     );
 }
+
+#[test]
+fn edge_endpoint_witness_uses_partner_and_only_null_falls_back() {
+    use cadmpeg_ir::math::Point3;
+
+    for (partner, point, expected_end) in [
+        (20, 22, Some(Point3::new(40.0, 50.0, 60.0))),
+        (1, 22, Some(Point3::new(10.0, 20.0, 30.0))),
+        (0, 22, None),
+        (99, 22, None),
+        (20, 99, None),
+    ] {
+        let mut stream = topology_partition_stream();
+        let first_fin = stream.windows(4).position(|w| w == [0, 17, 0, 7]).unwrap();
+        put_ref(&mut stream, first_fin + 14, partner);
+        let mut fin = record(17, 23);
+        put_ref(&mut fin, 2, 20);
+        put_ref(&mut fin, 6, 1); // dummy partner has no loop
+        put_ref(&mut fin, 8, 20);
+        put_ref(&mut fin, 10, 20);
+        put_ref(&mut fin, 12, 21);
+        put_ref(&mut fin, 14, 7);
+        put_ref(&mut fin, 16, 8);
+        put_ref(&mut fin, 18, 9);
+        fin[22] = b'-';
+        stream.extend(fin);
+        let mut vertex = record(18, 28);
+        put_ref(&mut vertex, 2, 21);
+        put_ref(&mut vertex, 16, point);
+        put_f64(&mut vertex, 18, 0.000_1);
+        stream.extend(vertex);
+        let mut position = record(29, 40);
+        put_ref(&mut position, 2, 22);
+        put_ref(&mut position, 10, 21);
+        put_vec3(&mut position, 16, [0.04, 0.05, 0.06]);
+        stream.extend(position);
+        crate::test_support::with_decode_context(|ctx| {
+            let graph = Graph::parse(ctx, &stream).unwrap();
+            let witness = graph.unique_curve_edge_witness(9);
+            assert_eq!(
+                witness.map(|w| w.endpoints[1].get()),
+                expected_end,
+                "partner={partner}, point={point}"
+            );
+            if let Some(witness) = witness {
+                assert_eq!(witness.endpoints[0].get(), Point3::new(10.0, 20.0, 30.0));
+            }
+        });
+    }
+}

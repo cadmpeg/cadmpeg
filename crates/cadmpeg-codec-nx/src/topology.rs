@@ -1497,7 +1497,7 @@ impl Graph {
         edges.next().is_none().then_some(())?;
         let first_fin = self.get_target(NodeKind::Fin, edge.fin)?.fin_fields()?;
         let second_fin = self
-            .get_target(NodeKind::Fin, first_fin.forward)?
+            .get_target(NodeKind::Fin, first_fin.other.or(first_fin.forward))?
             .fin_fields()?;
         let position = |vertex_xmt| {
             let point_xmt = self

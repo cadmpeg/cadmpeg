@@ -632,10 +632,7 @@ pub(super) fn emit_topology(
         let Some(start) = start else {
             continue;
         };
-        let end_fin = fin_fields
-            .other
-            .filter(|target| u32::from(*target) > 1)
-            .or(fin_fields.forward);
+        let end_fin = fin_fields.other.or(fin_fields.forward);
         let Some(end_fields) = graph
             .get_target(NodeKind::Fin, end_fin)
             .and_then(Node::fin_fields)
