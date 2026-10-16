@@ -12,13 +12,14 @@ rust-version.workspace = true
 [dependencies]
 cadmpeg-core.workspace = true
 flate2.workspace = true
-zstd.workspace = true
 crc32fast.workspace = true
 zip.workspace = true
 
 [dev-dependencies]
-# Test-only byte-fixture writers shared with the codec crates.
-cadmpeg-test-support = { workspace = true }
+# Test-only byte-fixture writers shared with the codec crates, and raw ZIP fixture assembly:
+# `zip`'s writer cannot emit method 93 without its `zstd` feature (see the workspace manifest), so the
+# Zstandard tests lay their archive out by hand with `zip_fixture`.
+cadmpeg-test-support.workspace = true
 
 [lints]
 workspace = true
