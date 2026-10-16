@@ -249,6 +249,103 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
 }
 
 #[test]
+fn feature_input_column_targets_join_many_inputs_through_sole_uses_and_rows() {
+    use crate::native::features::feature_input_column_targets;
+    use crate::native::features::ColumnIndexRowKind;
+    use crate::native::features::FeatureInputBlock;
+    use crate::native::features::FeatureInputColumnRowUse;
+    use crate::native::om::column_row::DataBlockTargetIndexRow;
+    use crate::om::column_row::ColumnRowSlot;
+
+    let target_row = |id: String| DataBlockTargetIndexRow {
+        id,
+        section_ordinal: 0,
+        ordinal: 3,
+        frame: TargetRow::<String, u64>::new(
+            CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[4]).unwrap(),
+                target: "block#4".into(),
+            },
+            [5, 6, 4].map(|value| CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::read(&[value]).unwrap(),
+                target: format!("block#{value}"),
+            }),
+            crate::om::discriminators::IndexRowMode::Form07,
+            100,
+        )
+        .unwrap(),
+        source_entry: "entry".into(),
+        opening_data_block: "opening-block".into(),
+        opening_block_offset: 8,
+    };
+    let rows = (0..301)
+        .map(|row| target_row(format!("target-row#{row}")))
+        .chain([target_row("target-row#11".into())])
+        .collect::<Vec<_>>();
+    let inputs = (0..1024)
+        .map(|index| FeatureInputBlock {
+            id: format!("input#{index:010}"),
+            operation_label: "operation#1".into(),
+            input_slot: crate::om::header_references::HeaderSlot::Two,
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(4, &[4]).unwrap(),
+            data_block: "block#4".into(),
+            source_offset: 10,
+        })
+        .collect::<Vec<_>>();
+    let row_use = |input: &FeatureInputBlock, row: usize, slot, table: Option<&str>| {
+        FeatureInputColumnRowUse {
+            id: format!("use-{}-{row}", input.id),
+            input_block: input.id.clone(),
+            operation_label: input.operation_label.clone(),
+            input_slot: input.input_slot,
+            row_kind: ColumnIndexRowKind::TargetIndex,
+            column_row: format!("target-row#{row}"),
+            column_table: table.map(str::to_owned),
+            row_slot: slot,
+            data_block: input.data_block.clone(),
+            source_offset: 105,
+        }
+    };
+    let table = Some("column-table");
+    // By index % 5: no use, one use, two uses, a use outside a table, and a
+    // non-zero slot beside one slot-zero use.
+    let mut uses = Vec::new();
+    for (index, input) in inputs.iter().enumerate() {
+        let row = index % 300;
+        match index % 5 {
+            0 => {}
+            1 => uses.push(row_use(input, row, ColumnRowSlot::Zero, table)),
+            2 => {
+                uses.push(row_use(input, row, ColumnRowSlot::Zero, table));
+                uses.push(row_use(input, row + 1, ColumnRowSlot::Zero, table));
+            }
+            3 => uses.push(row_use(input, row, ColumnRowSlot::Zero, None)),
+            _ => {
+                uses.push(row_use(input, row, ColumnRowSlot::Three, table));
+                uses.push(row_use(input, row, ColumnRowSlot::Zero, table));
+            }
+        }
+    }
+
+    let targets = feature_input_column_targets(&inputs, &uses, &[], &rows);
+
+    let expected = inputs
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| matches!(index % 5, 1 | 4) && index % 300 != 11)
+        .map(|(index, input)| (input.id.clone(), format!("target-row#{}", index % 300)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| (target.input_block.clone(), target.column_row.clone()))
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert!(expected.len() > 400);
+}
+
+#[test]
 fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
     use crate::native::features::feature_datum_csys_column_row_uses;
     use crate::native::features::ColumnIndexRowKind;

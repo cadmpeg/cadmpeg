@@ -70,3 +70,49 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
         }))
     );
 }
+
+#[test]
+fn nx_trim_body_checks_many_tools_for_distinct_indices_and_blocks() {
+    let body = (114, "nx:om-data-blocks-2:block#114".to_string());
+    let operand = |index: u32, block: u32| {
+        let raw = [
+            0x80 + u8::try_from(index >> 8).unwrap(),
+            u8::try_from(index & 0xff).unwrap(),
+        ];
+        crate::native::features::FeatureOperationBodyOperand {
+            id: format!("operand#{index}"),
+            operation_label: "operation#0".to_string(),
+            body_object_index: 114,
+            body_reference_ordinal: 0,
+            ordinal: 0,
+            operand: crate::om::compact::LocatedCompactIndex {
+                atom: crate::om::compact::CompactIndexAtom::read(&raw).unwrap(),
+                offset: 0,
+            },
+            operand_data_block: Some(format!("nx:om-data-blocks-2:block#{block}")),
+            segment_body_bindings: Vec::new(),
+        }
+    };
+    let distinct = (200..200 + 4096)
+        .map(|index| operand(index, index))
+        .collect::<Vec<_>>();
+    let tools = |operands: &[crate::native::features::FeatureOperationBodyOperand]| {
+        let operands = operands.iter().collect::<Vec<_>>();
+        match offset_store_trim_body_feature_definition(std::slice::from_ref(&body), &operands) {
+            Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
+                operands, ..
+            })) => operands.tools().clone(),
+            other => panic!("unexpected trim definition {other:?}"),
+        }
+    };
+
+    assert!(matches!(tools(&distinct), BodySelection::Local { .. }));
+
+    let mut repeated_index = distinct.clone();
+    repeated_index.push(operand(200, 9000));
+    assert_eq!(tools(&repeated_index), BodySelection::Unresolved);
+
+    let mut repeated_block = distinct;
+    repeated_block.push(operand(9000, 4295));
+    assert_eq!(tools(&repeated_block), BodySelection::Unresolved);
+}
