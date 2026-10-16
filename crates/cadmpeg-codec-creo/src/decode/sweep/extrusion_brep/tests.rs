@@ -208,10 +208,10 @@ fn closed_extrusion_reaches_brep_admission() {
             &sketch_id,
             1,
         )
-        .expect("compute the resolved sketch profiles")
+        .expect("resolve the sketch profiles")
         .expect("profile geometry");
         assert!(super::ordered_extrusion_profiles(ctx, profiles)
-            .expect("compute the ordered extrusion profiles")
+            .expect("order the extrusion profiles")
             .is_some());
     });
     let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();

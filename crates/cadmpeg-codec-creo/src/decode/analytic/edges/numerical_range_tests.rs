@@ -93,7 +93,7 @@ fn numerical_audit_full_edge_survives_small_knot_domain() {
                 &c,
                 [[0., 0., 0.], [1., 0., 0.]]
             )
-            .expect("compute the nonperiodic NURBS edge parameter range"),
+            .expect("find the nonperiodic NURBS edge parameter range"),
             Some([0., d])
         );
     }

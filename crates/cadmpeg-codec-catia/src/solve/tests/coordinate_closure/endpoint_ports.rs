@@ -33,7 +33,7 @@ fn one_admitted_alternate_does_not_force_a_second_face() {
 
     assert!(
         unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| Ok(true))
-            .expect("compute the unique duplicate face assignment")
+            .expect("find the unique duplicate face assignment")
             .is_none()
     );
 }
@@ -121,7 +121,7 @@ fn native_edge_identities_bind_ambiguous_coordinate_pairs() {
             &ports,
             &candidates
         ))
-        .expect("bind edge port candidates"),
+        .expect("bind the edge port candidates"),
         Some(vec![[0, 1], [2, 3], [0, 2], [1, 3]])
     );
 }
@@ -229,7 +229,7 @@ fn native_edge_identities_reject_multiple_coordinate_bijections() {
             &ports,
             &candidates
         ))
-        .expect("bind edge port candidates"),
+        .expect("bind the edge port candidates"),
         None
     );
 }
@@ -242,7 +242,7 @@ fn native_edge_identities_preserve_endpoint_equality() {
             &[[10, 11]],
             &[vec![[0, 0]]]
         ))
-        .expect("bind edge port candidates"),
+        .expect("bind the edge port candidates"),
         None
     );
     assert_eq!(
@@ -251,7 +251,7 @@ fn native_edge_identities_preserve_endpoint_equality() {
             &[[10, 10]],
             &[vec![[0, 1]]]
         ))
-        .expect("bind edge port candidates"),
+        .expect("bind the edge port candidates"),
         None
     );
     assert_eq!(
@@ -260,7 +260,7 @@ fn native_edge_identities_preserve_endpoint_equality() {
             &[[10, 10]],
             &[vec![[0, 0]]]
         ))
-        .expect("bind edge port candidates"),
+        .expect("bind the edge port candidates"),
         Some(vec![[0, 0]])
     );
 }
@@ -281,7 +281,7 @@ fn native_edge_identities_bind_independent_components_with_local_budgets() {
     let solution = crate::test_support::with_service_context(|ctx| {
         bind_edge_port_candidates(ctx, &ports, &candidates)
     })
-    .expect("bind edge port candidates")
+    .expect("bind the edge port candidates")
     .expect("independent port components");
 
     assert_eq!(solution.len(), COMPONENT_COUNT);
@@ -307,7 +307,7 @@ fn native_edge_identities_do_not_charge_forced_chain_depth() {
     let solution = crate::test_support::with_service_context(|ctx| {
         bind_edge_port_candidates(ctx, &ports, &candidates)
     })
-    .expect("bind edge port candidates")
+    .expect("bind the edge port candidates")
     .expect("forced connected port chain");
 
     assert_eq!(

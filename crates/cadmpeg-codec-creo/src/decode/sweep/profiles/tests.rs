@@ -126,7 +126,7 @@ fn hole_profiles_inside_outer_profile_are_ordered() {
     ];
     assert!(
         crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(ctx, profiles))
-            .expect("compute the ordered extrusion profiles")
+            .expect("order the extrusion profiles")
             .is_some()
     );
 }
@@ -147,7 +147,7 @@ fn connected_profile_vertices_read_line_endpoints() {
             super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
                 .map(std::iter::Iterator::collect::<Vec<_>>)
         })
-        .expect("compute the connected sketch profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 }
@@ -188,13 +188,13 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
             ctx, &ir, &carriers, &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices"),
+        .expect("find the connected sketch profile vertices"),
         vec![(0, vec![[3.0, 0.0]])]
     );
     let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("compute the resolved sketch profiles")
+    .expect("resolve the sketch profiles")
     .expect("source profile");
     let super::ProfileGeometry::Circle { center, radius } = profiles[0][0].geometry() else {
         panic!("source profile changed family");
@@ -231,7 +231,7 @@ fn resolved_nurbs_profile_keeps_closed_source_geometry() {
     let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("compute the resolved sketch profiles")
+    .expect("resolve the sketch profiles")
     .expect("closed source profile");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 1);
@@ -257,7 +257,7 @@ fn resolved_profile_reads_closed_circle() {
     let profiles = crate::decode::with_service_context(|ctx| {
         super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
     })
-    .expect("compute the resolved sketch profiles")
+    .expect("resolve the sketch profiles")
     .expect("closed circle profile");
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 1);
@@ -314,7 +314,7 @@ fn profile_joins_reject_duplicate_sketch_ids() {
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices")
+        .expect("find the connected sketch profile vertices")
         .is_empty()
     );
     assert!(
@@ -325,7 +325,7 @@ fn profile_joins_reject_duplicate_sketch_ids() {
             &sketch_id,
             1
         ))
-        .expect("compute the resolved sketch profiles")
+        .expect("resolve the sketch profiles")
         .is_none()
     );
 }
@@ -350,7 +350,7 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("compute the connected sketch profile vertices")
+        .expect("find the connected sketch profile vertices")
         .is_empty()
     );
     assert!(
@@ -361,7 +361,7 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
             &sketch_id,
             1
         ))
-        .expect("compute the resolved sketch profiles")
+        .expect("resolve the sketch profiles")
         .is_none()
     );
 }

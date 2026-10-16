@@ -194,7 +194,7 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
     .expect("construct the profile entity")
     .expect("valid profile entity")];
     let profiles = ordered_extrusion_profiles(&ctx, vec![profile.clone()])
-        .expect("compute the ordered extrusion profiles")
+        .expect("order the extrusion profiles")
         .expect("a full-turn arc is a closed profile");
     let area = profiles[0].area();
     assert_eq!(
@@ -260,7 +260,7 @@ fn circle_remains_a_closed_extrusion_profile() {
             1,
         )
     })
-    .expect("compute the resolved sketch profiles")
+    .expect("resolve the sketch profiles")
     .expect("one circle profile");
     assert_eq!(
         profiles,
@@ -269,7 +269,7 @@ fn circle_remains_a_closed_extrusion_profile() {
             .expect("valid profile entity")]]
     );
     let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
-        .expect("compute the ordered extrusion profiles")
+        .expect("order the extrusion profiles")
         .expect("closed circle");
     let area = ordered[0].area();
     assert_eq!(

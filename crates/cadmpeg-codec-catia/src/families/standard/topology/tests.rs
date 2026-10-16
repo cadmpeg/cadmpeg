@@ -60,7 +60,7 @@ fn body_kinds_rejects_an_overflowing_face_group_sum() {
     assert_eq!(
         topology
             .body_kinds(&[usize::MAX, 1])
-            .expect("compute the body kinds"),
+            .expect("classify the bodies"),
         None
     );
 }
@@ -290,7 +290,7 @@ fn duplicate_face_slots_keep_an_already_complete_assignment() {
         complete_duplicate_face_slots(ctx, &rows, &[[0, 1]], &[[0, 1]], 2, None, None)
     };
     assert_eq!(
-        crate::test_support::with_service_context(run).expect("complete duplicate face slots"),
+        crate::test_support::with_service_context(run).expect("complete the duplicate face slots"),
         Some(vec![[0, 1]])
     );
 }
@@ -346,7 +346,7 @@ fn edge_vertices_follow_the_coedge_direction() {
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("compute the edge vertices"),
+            .expect("resolve the edge vertices"),
         Some(vec![[0, 1]])
     );
 }
@@ -388,7 +388,7 @@ fn edge_vertices_reject_an_edge_row_without_a_coedge() {
     };
     assert!(
         crate::test_support::with_service_context(|ctx| topology.edge_vertices(ctx))
-            .expect("compute the edge vertices")
+            .expect("resolve the edge vertices")
             .is_none()
     );
 }

@@ -128,7 +128,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
             2,
             Some(&budget),
         )
-        .expect("compute the assignment options");
+        .expect("find the assignment orientation options");
 
     assert_eq!(options.len(), 1);
     assert_eq!(options[0].0, vec![vec![false; EDGE_COUNT]]);
@@ -169,7 +169,7 @@ fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
             4,
             None,
         )
-        .expect("compute the assignment options");
+        .expect("find the assignment orientation options");
 
     assert!(options
         .iter()
@@ -189,7 +189,7 @@ fn quotient_merge_preserves_physical_edge_pair_correlation() {
         .expect("nonempty port intersection");
     assert!(!quotient
         .edge_domains_viable(&[vec![[0, 1]], vec![[0, 2]]])
-        .expect("check edge domains viable"));
+        .expect("check that the edge domains are viable"));
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn port_quotient_completes_only_supported_unknown_edge_pairs() {
         5,
         &[[10, 11], [10, 12], [12, 13]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     let completed = crate::solve::mesh_quotient::complete_mesh_endpoint_candidates_from_quotient(
         &candidates,
@@ -239,11 +239,11 @@ fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
         3,
         &[[10, 11], [10, 12], [13, 11], [14, 14]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 3, &candidates, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("coordinate root domains");
 
     assert_eq!(
@@ -265,7 +265,7 @@ fn coordinate_root_preparation_skips_on_an_exhausted_local_slice() {
         3,
         &[[10, 11], [10, 12], [13, 11], [14, 14]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     // Every local slice too small for the preparation ends it without
     // domains; none of them refuses the session.
@@ -305,11 +305,11 @@ fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
         4,
         &[[10, 11], [11, 12], [13, 14]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("coordinate root domains")
         .refine_edge_candidate_arc(&ctx, 0, [0, 1], None)
         .expect("refine edge candidate arc")
@@ -324,7 +324,7 @@ fn port_quotient_declines_unbounded_unknown_edge_pairs() {
     let candidates = [Vec::new()];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 100, &[[10, 11]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     assert!(
         crate::solve::mesh_quotient::complete_mesh_endpoint_candidates_from_quotient(
@@ -343,11 +343,11 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
     let candidates = [Vec::new()];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[10, 11]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &candidates, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("implicit coordinate domains");
 
     assert!(domains.edge_candidates()[0].is_empty());
@@ -375,11 +375,11 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
     let candidates = [Vec::new(), Vec::new()];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &[[10, 11], [12, 13]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("implicit coordinate domains");
     let implicit = domains
         .implicit_edge_candidates(0, Some(1))
@@ -416,7 +416,7 @@ fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
         })
         .collect::<Vec<_>>();
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 200, &ports)
-        .expect("compute the initial mesh quotient")
+        .expect("build the initial mesh quotient")
         .expect("initial quotient");
 
     assert!(
@@ -439,7 +439,7 @@ fn incidence_search_consumes_implicit_coordinate_root_pairs() {
         3,
         &[[10, 11], [11, 12], [12, 10]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("cycle quotient");
     let outcome = component_incidence_pair_solution_outcome(
         &ctx,
@@ -469,7 +469,7 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
         3,
         &[[10, 11], [12, 13], [14, 15]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![
         MeshFaceBoundaryAssignment {
@@ -519,7 +519,7 @@ fn quotient_pair_domains_propagate_through_shared_components() {
 
     assert!(quotient
         .edge_domains_viable(&[vec![[0, 2]], vec![[0, 3], [1, 4]],])
-        .expect("check edge domains viable"));
+        .expect("check that the edge domains are viable"));
     assert_eq!(*quotient.domains()[root], HashSet::from([0]));
     let third_root = quotient.find(3).expect("find the component root");
     assert_eq!(*quotient.domains()[third_root], HashSet::from([3]));
@@ -671,7 +671,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
     let options = quotient.assignment_options(&ctx, &assignment, &unrestricted);
     let limited = quotient
         .assignment_options_limited(&ctx, &assignment, &unrestricted, &HashSet::new(), 1, None)
-        .expect("compute the assignment options");
+        .expect("find the assignment orientation options");
     assert_eq!(limited.len(), 1);
     assert_eq!(limited[0].0, options[0].0);
     let unique = quotient
@@ -683,7 +683,7 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
             4_096,
             None,
         )
-        .expect("compute the assignment options");
+        .expect("find the assignment orientation options");
     assert!(unique
         .iter()
         .all(|option| options.iter().any(|candidate| candidate.0 == option.0)));
@@ -712,7 +712,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
             1,
             Some(&budget),
         )
-        .expect("compute the assignment options");
+        .expect("find the assignment orientation options");
 
     assert!(options.is_empty());
     assert!(budget.exhausted());
@@ -1091,7 +1091,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = initial_mesh_quotient(&edge_candidates, 2, &[[0, 1], [2, 3]])
-        .expect("compute the initial mesh quotient")
+        .expect("build the initial mesh quotient")
         .expect("initial quotient");
     quotient
         .merge(1, 2)
@@ -1191,7 +1191,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("compute the remaining equation merge capacity"),
+            .expect("count the possible remaining equation merges"),
         Some(2)
     );
     quotient
@@ -1201,7 +1201,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
     assert_eq!(
         search
             .remaining_equation_merge_capacity(&mut quotient)
-            .expect("compute the remaining equation merge capacity"),
+            .expect("count the possible remaining equation merges"),
         Some(1)
     );
 }
@@ -1302,7 +1302,7 @@ fn coordinate_root_domains_drop_an_unsupported_candidate_pair() {
         3,
         &[[10, 11], [10, 12], [13, 11], [14, 14]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         quotient
@@ -1310,7 +1310,7 @@ fn coordinate_root_domains_drop_an_unsupported_candidate_pair() {
             .prepare_coordinate_root_domains(ctx, 3, &candidates, None)
     };
     let selected = crate::test_support::with_service_context(run)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("coordinate root domains");
     assert_eq!(selected.edge_candidates()[0], [[0, 1]]);
 }
@@ -1334,7 +1334,7 @@ fn ordered_triangle_face_supports_three_corner_equations() {
     catia_test_context!(service_ctx);
     let initial_quotient =
         initial_mesh_quotient(&edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let run = |ctx: &DecodeContext<'_>| {
         let mut quotient = initial_quotient.clone();

@@ -62,7 +62,7 @@ fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
             0.,
             0.
         )
-        .expect("compute the NURBS curve parameter near point"),
+        .expect("find the NURBS curve parameter near the point"),
         None
     );
 }
@@ -87,7 +87,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
                 tolerance,
                 0.5
             )
-            .expect("compute the NURBS curve parameter near point"),
+            .expect("find the NURBS curve parameter near the point"),
             None
         );
     }
@@ -100,7 +100,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
         tolerance,
         seed,
     )
-    .expect("compute the NURBS curve parameter near point");
+    .expect("find the NURBS curve parameter near the point");
     assert!(parameter.is_some());
     assert_eq!(
         parameter,
@@ -111,7 +111,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
             tolerance.get(),
             0.5
         )
-        .expect("compute the NURBS curve parameter near point")
+        .expect("find the NURBS curve parameter near the point")
     );
 }
 
@@ -140,7 +140,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
                 0.,
                 0.
             )
-            .expect("compute the NURBS curve parameter near point")
+            .expect("find the NURBS curve parameter near the point")
             .map(crate::scalar::FiniteReal::get),
             Some(0.0)
         );
@@ -153,7 +153,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
                 Point2::new(0.5, 0.),
                 0.,
             )
-            .expect("check NURBS pcurve contains point"),
+            .expect("check that the NURBS pcurve contains the point"),
             Some(true)
         );
     }
@@ -184,7 +184,7 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
             0.0,
             0.5
         )
-        .expect("compute the NURBS curve parameter near point"),
+        .expect("find the NURBS curve parameter near the point"),
         nurbs_curve_parameter_near_point(
             &cadmpeg_test_support::service_decode_context(),
             &explicit,
@@ -192,12 +192,12 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
             0.0,
             0.5
         )
-        .expect("compute the NURBS curve parameter near point")
+        .expect("find the NURBS curve parameter near the point")
     );
     let controls = [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
     assert_eq!(
         nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0,)
-            .expect("check NURBS pcurve contains point"),
+            .expect("check that the NURBS pcurve contains the point"),
         nurbs_pcurve_contains_point(
             1,
             &[0.0, 0.0, 1.0, 1.0],
@@ -206,7 +206,7 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
             controls[0],
             0.0,
         )
-        .expect("check NURBS pcurve contains point")
+        .expect("check that the NURBS pcurve contains the point")
     );
 }
 

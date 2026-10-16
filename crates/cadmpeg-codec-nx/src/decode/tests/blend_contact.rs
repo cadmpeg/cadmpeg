@@ -186,7 +186,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         None,
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("compute the NURBS surface closest parameter")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -199,7 +199,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
         Some(Point2::new(f64::NAN, 0.5)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("compute the NURBS surface closest parameter")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
     assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
@@ -652,7 +652,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
         Some(Point2::new(0.875, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("compute the NURBS surface closest parameter")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
@@ -691,7 +691,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
         Some(Point2::new(0.50011, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
-    .expect("compute the NURBS surface closest parameter")
+    .expect("find the closest NURBS surface parameters")
     .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);

@@ -339,7 +339,7 @@ fn a_repeated_slot_with_one_admitted_face_takes_it_without_a_search() {
     let serialized = [[0usize, 0]];
     let allowed = vec![vec![0usize]];
     let solved = unique_duplicate_face_assignment(&serialized, &allowed, 1, |_| Ok(true))
-        .expect("compute the unique duplicate face assignment");
+        .expect("find the unique duplicate face assignment");
     assert_eq!(solved, Some(vec![[0, 0]]));
 }
 
@@ -350,7 +350,7 @@ fn a_repeated_slot_with_two_admitted_faces_resolves_to_the_one_valid_assignment(
     let solved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |assignment| {
         Ok(assignment[0][1] == 1)
     })
-    .expect("compute the unique duplicate face assignment");
+    .expect("find the unique duplicate face assignment");
     assert_eq!(solved, Some(vec![[0, 1]]));
 }
 
@@ -463,7 +463,7 @@ fn single_port_candidate_binds_to_its_edge() {
     catia_test_context!(service_ctx);
     assert_eq!(
         super::bind_edge_port_candidates(&service_ctx, &ports, &candidates)
-            .expect("bind edge port candidates"),
+            .expect("bind the edge port candidates"),
         Some(vec![[0, 1]])
     );
 }
@@ -536,7 +536,7 @@ fn duplicate_face_assignment_picks_the_one_passing_face() {
     let run =
         || unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| Ok(faces[0][1] == 1));
     assert_eq!(
-        run().expect("compute the unique duplicate face assignment"),
+        run().expect("find the unique duplicate face assignment"),
         Some(vec![[0, 1]])
     );
 }

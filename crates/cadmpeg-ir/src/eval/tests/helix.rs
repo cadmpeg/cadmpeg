@@ -237,7 +237,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         target.get(),
         1.5,
     )
-    .expect("compute the model curve parameter near point")
+    .expect("find the model curve parameter near the point")
     .expect("helix inverse")
     .get();
     assert!((0.25..=2.0).contains(&inverse));
@@ -265,7 +265,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         target.get(),
         0.24
     )
-    .expect("compute the model curve parameter near point")
+    .expect("find the model curve parameter near the point")
     .is_none());
 }
 

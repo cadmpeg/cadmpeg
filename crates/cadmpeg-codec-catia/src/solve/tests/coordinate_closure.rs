@@ -255,7 +255,7 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
 
     let assignment = quotient
         .close_coordinate_roots(&ctx, 3, &candidates, None)
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .expect("unique joint coordinate closure");
 
     assert_eq!(quotient.root_count().expect("count the component roots"), 3);
@@ -293,7 +293,7 @@ fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
 
     assert!(quotient
         .close_coordinate_roots(&ctx, 1, &[vec![]], Some(&budget))
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .is_none());
     assert!(budget.exhausted());
 }
@@ -307,7 +307,7 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
 
     let assignment = quotient
         .close_coordinate_roots(&ctx, 1, &[], Some(&budget))
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .expect("forced coordinate closure");
 
     assert_eq!(quotient.root_count().expect("count the component roots"), 1);
@@ -350,7 +350,7 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
             },
             Some(&budget),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_some());
     assert!(!budget.exhausted());
 }
@@ -367,7 +367,7 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
 
     let assignment = quotient
         .close_coordinate_roots(&ctx, 2, &candidates, Some(&budget))
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .expect("arc-consistent coordinate closure");
 
     assert_eq!(quotient.root_count().expect("count the component roots"), 2);
@@ -391,7 +391,7 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
 
     let assignment = quotient
         .close_coordinate_roots(&ctx, 2, &candidates, Some(&budget))
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .expect("arc-consistent coordinate closure");
 
     assert_eq!(quotient.root_count().expect("count the component roots"), 2);
@@ -419,7 +419,7 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
 
     let assignment = quotient
         .close_coordinate_roots(&ctx, 3, &[Vec::new(), Vec::new()], Some(&budget))
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .expect("point-support-forced coordinate closure");
 
     assert_eq!(quotient.root_count().expect("count the component roots"), 3);
@@ -451,7 +451,7 @@ fn quotient_coordinate_closure_rejects_a_coordinate_support_hall_conflict() {
 
     assert!(quotient
         .close_coordinate_roots(&ctx, 4, &[Vec::new(), Vec::new()], Some(&budget))
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .is_none());
     assert!(!budget.exhausted());
 }
@@ -473,7 +473,7 @@ fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
         None,
         None,
     )
-    .expect("compute the distinct domain matching")
+    .expect("find a distinct domain matching")
     .expect("coordinate support matching");
 
     assert_eq!(matching[2], 2);
@@ -488,7 +488,7 @@ fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
                 matching[2]
             )),
         )
-        .expect("compute the distinct domain matching")
+        .expect("find a distinct domain matching")
         .is_none()
     );
 
@@ -503,7 +503,7 @@ fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
                 0, 2
             )),
         )
-        .expect("compute the distinct domain matching")
+        .expect("find a distinct domain matching")
         .is_none()
     );
     assert!(
@@ -516,7 +516,7 @@ fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
                 0, 0
             )),
         )
-        .expect("compute the distinct domain matching")
+        .expect("find a distinct domain matching")
         .is_some()
     );
 }
@@ -547,7 +547,7 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
             },
             Some(&budget),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_none());
 
     let mut closed = MeshQuotient::new(
@@ -577,7 +577,7 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
             },
             Some(&WorkBudget::new(1_000)),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_some());
 }
 
@@ -615,7 +615,7 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
             },
             Some(&budget),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_none());
     assert!(!budget.exhausted());
 }
@@ -669,7 +669,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             },
             Some(&WorkBudget::new(10_000)),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_none());
     assert!(quotient()
         .close_coordinate_roots_for_incidence_with_budget(
@@ -683,7 +683,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             },
             Some(&WorkBudget::new(10_000)),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_some());
 
     let fixed = [MeshFaceBoundaryDomain::Ordered(vec![
@@ -711,7 +711,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             },
             Some(&WorkBudget::new(10_000)),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_none());
 }
 
@@ -749,7 +749,7 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
 
     let assignment = quotient
         .close_coordinate_roots(&ctx, point_count, &candidates, None)
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .expect("independent coordinate closures");
 
     assert_eq!(
@@ -827,7 +827,7 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
             },
             Some(&budget),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_some());
     assert!(!budget.exhausted());
 }
@@ -841,7 +841,7 @@ fn quotient_closure_does_not_budget_forced_component_depth() {
 
     let assignment = quotient
         .close_coordinate_roots(&ctx, 1, &candidates, None)
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .expect("forced coordinate component");
 
     assert_eq!(quotient.root_count().expect("count the component roots"), 1);
@@ -860,7 +860,7 @@ fn quotient_does_not_guess_an_ambiguous_coordinate_closure() {
 
     assert!(quotient
         .close_coordinate_roots(&ctx, 2, &[vec![[0, 1]], vec![[0, 1]]], None)
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .is_none());
     assert_eq!(quotient.root_count().expect("count the component roots"), 3);
 }
@@ -876,7 +876,7 @@ fn quotient_closure_requires_every_coordinate_row_in_a_domain() {
 
     assert!(quotient
         .close_coordinate_roots(&ctx, 2, &[vec![[0, 0]], vec![[0, 0]]], None)
-        .expect("close coordinate roots")
+        .expect("close the coordinate roots")
         .is_none());
     assert_eq!(quotient.root_count().expect("count the component roots"), 3);
 }
@@ -893,10 +893,10 @@ fn quotient_accepts_diagonal_domain_for_closed_edge() {
         .expect("closed endpoint merge");
     assert!(quotient
         .edge_domains_viable(&[vec![[2, 2]]])
-        .expect("check edge domains viable"));
+        .expect("check that the edge domains are viable"));
     assert!(!quotient
         .edge_domains_viable(&[vec![[1, 2]]])
-        .expect("check edge domains viable"));
+        .expect("check that the edge domains are viable"));
 }
 
 #[test]
@@ -925,7 +925,7 @@ fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
 
     assert!(quotient
         .edge_domains_viable(&[vec![[2, 2]]])
-        .expect("check edge domains viable"));
+        .expect("check that the edge domains are viable"));
     assert_eq!(
         quotient.domains(),
         vec![Arc::new(HashSet::from([2])), Arc::new(HashSet::from([2]))]
@@ -936,7 +936,7 @@ fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
         .expect("closed endpoint merge");
     assert!(quotient
         .edge_domains_viable(&[vec![[2, 2]]])
-        .expect("check edge domains viable"));
+        .expect("check that the edge domains are viable"));
 }
 
 #[test]
@@ -1064,7 +1064,7 @@ fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
             },
             Some(&WorkBudget::new(10_000)),
         )
-        .expect("close coordinate roots for incidence")
+        .expect("close the coordinate roots for incidence")
         .is_some());
 }
 
@@ -1168,11 +1168,11 @@ fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
         4,
         &[[10, 11], [12, 13], [14, 15]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 4, &choices, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("implicit coordinate domains");
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..3)
@@ -1330,13 +1330,13 @@ fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
     let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 3, |faces| {
         Ok(faces == [[0, 2], [0, 1], [1, 0]])
     })
-    .expect("compute the unique duplicate face assignment")
+    .expect("find the unique duplicate face assignment")
     .expect("one complete assignment");
     assert_eq!(resolved, [[0, 2], [0, 1], [1, 0]]);
 
     assert!(
         unique_duplicate_face_assignment(&serialized, &allowed, 3, |_| Ok(true))
-            .expect("compute the unique duplicate face assignment")
+            .expect("find the unique duplicate face assignment")
             .is_none()
     );
     assert!(unique_duplicate_face_assignment(
@@ -1345,7 +1345,7 @@ fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
         3,
         |_| Ok(true),
     )
-    .expect("compute the unique duplicate face assignment")
+    .expect("find the unique duplicate face assignment")
     .is_none());
 }
 
@@ -1357,7 +1357,7 @@ fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
     let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| {
         Ok(faces == [[0, 0], [0, 1]])
     })
-    .expect("compute the unique duplicate face assignment")
+    .expect("find the unique duplicate face assignment")
     .expect("the unresolved same-face slot remains in the joint assignment");
 
     assert_eq!(resolved, [[0, 0], [0, 1]]);
@@ -1454,11 +1454,11 @@ fn ordered_face_pruning_uses_implicit_coordinate_candidates() {
         4,
         &[[10, 11], [12, 13], [14, 15]],
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&service_ctx, 4, &choices, None)
-        .expect("prepare coordinate root domains")
+        .expect("prepare the coordinate root domains")
         .expect("implicit coordinate domains");
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..3)
