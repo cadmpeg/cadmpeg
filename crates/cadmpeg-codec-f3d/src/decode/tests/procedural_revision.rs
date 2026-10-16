@@ -1466,7 +1466,7 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
     let curve = decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the support isoline")
         .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
@@ -1543,7 +1543,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
         &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
     )
     .transpose()
-    .expect("resource allocation did not fail")
+    .expect("resolve the procedural surface references")
     .expect("the record owns its extrusion");
     assert!(matches!(
         decoded.definition(),
@@ -1574,7 +1574,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
         &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
     )
     .transpose()
-    .expect("resource allocation did not fail")
+    .expect("resolve the procedural surface references")
     .is_none());
 }
 

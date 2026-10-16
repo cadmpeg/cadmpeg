@@ -729,6 +729,40 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))
 
+    codec = re.match(r"crates/(cadmpeg-codec-[^/]+)/src/", relative_path(path))
+    if codec is not None:
+        namespace_calls = list(re.finditer(r"\.\s*namespace(?:_mut)?\s*\(", code))
+        native_maps = list(re.finditer(r"\.\s*native\s*\.\s*0\b", code))
+        if namespace_calls or native_maps:
+            # Keep literals for argument checks, but find calls only in production code.
+            arguments = list(code)
+            for start, end in rust_non_code_spans(source):
+                if re.match(r'(?:r#{0,255})?"', source[start:end]):
+                    arguments[start:end] = source[start:end]
+            arguments = "".join(arguments)
+            format_id = codec_native_format(ROOT / "crates" / codec[1])
+            own_literal = re.compile(
+                r'\s*(?:"' + re.escape(format_id or "")
+                + r'"|r(?P<hashes>#{0,255})"' + re.escape(format_id or "")
+                + r'"(?P=hashes))\s*(?=[,)])'
+            )
+            for call in namespace_calls:
+                # Other APIs use namespace() with no argument.
+                if re.match(r"\s*\)", arguments[call.end():]):
+                    continue
+                if format_id is None or own_literal.match(arguments, call.end()) is None:
+                    report("foreign_native_namespace", code.count("\n", 0, call.start()) + 1,
+                           "Codec crates read only their own native namespace; the convert gate assumes it (ExportPlan::carried_errors).")
+            for access in native_maps:
+                method = re.match(
+                    r"\s*\.\s*(?:get|get_mut|remove|insert|entry|contains_key)\s*\(",
+                    code[access.end():],
+                )
+                if (format_id is None or method is None
+                        or own_literal.match(arguments, access.end() + method.end()) is None):
+                    report("foreign_native_namespace", code.count("\n", 0, access.start()) + 1,
+                           "Codec crates read only their own native namespace; the convert gate assumes it (ExportPlan::carried_errors).")
+
     if size > PRODUCTION_LINE_LIMIT:
         report("production_size", 1,
                f"Production file has {size} lines excluding cfg(test) items; limit is {PRODUCTION_LINE_LIMIT}.")
@@ -787,6 +821,21 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
             report("unchecked_vec_repeat", code.count("\n", 0, offset) + 1,
                    "Allocate a repeat whose count is not a literal or an existing collection length with DecodeContext::alloc_filled, after View::counted or bounded_len validates the count.")
     return findings
+
+
+@cached_analysis
+def codec_native_format(crate_root: Path) -> str | None:
+    """Read the format id from the codec's generated dialect registry."""
+    registry = crate_root / "src/dialect/registry_ids.rs"
+    if not registry.is_file():
+        return None
+    source = registry.read_text(encoding="utf-8")
+    code, _ = production_source(source)
+    for declaration in re.finditer(r"\bconst\s+FORMAT\s*:\s*&str\s*=", code):
+        literal = re.match(r'\s*"([a-z0-9]+)"\s*;', source[declaration.end():])
+        if literal is not None:
+            return literal[1]
+    return None
 
 
 def scan_placement(sources: dict[Path, str]) -> list[Finding]:

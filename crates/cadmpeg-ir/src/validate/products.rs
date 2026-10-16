@@ -58,7 +58,7 @@ pub(super) fn check_products(
     }
     let mut root_ordinals = std::collections::BTreeSet::new();
     let mut sibling_ordinals: BorrowedIdentities<'_, std::collections::BTreeSet<u32>> =
-        BorrowedIdentities::build(|_| Ok(()))?;
+        BorrowedIdentities::new();
     for occurrence in &ir.model.occurrences {
         let valid_prototype = match &occurrence.prototype {
             PrototypeReference::Local { definition } => definitions.contains(definition.as_str()),

@@ -1977,11 +1977,16 @@ pub(super) fn check_references(
                 )
             },
         )? {
-            super::record_finding(
+            super::record_related_finding(
                 findings,
                 Check::Counts,
                 Severity::Error,
-                Some(parameter.id.as_str()),
+                parameter.id.as_str(),
+                parameter
+                    .owner
+                    .as_ref()
+                    .map(crate::features::FeatureId::as_str)
+                    .as_slice(),
                 format_args!(
                     "parameter scope {:?} repeats parameter name `{}`",
                     parameter.owner, parameter.name
@@ -1997,11 +2002,16 @@ pub(super) fn check_references(
                 )
             },
         )? {
-            super::record_finding(
+            super::record_related_finding(
                 findings,
                 Check::Counts,
                 Severity::Error,
-                Some(parameter.id.as_str()),
+                parameter.id.as_str(),
+                parameter
+                    .owner
+                    .as_ref()
+                    .map(crate::features::FeatureId::as_str)
+                    .as_slice(),
                 format_args!(
                     "parameter scope {:?} repeats parameter ordinal {}",
                     parameter.owner, parameter.ordinal
@@ -2033,11 +2043,12 @@ pub(super) fn check_references(
                 }
             };
             if !precedes {
-                super::record_finding(
+                super::record_related_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     Severity::Error,
-                    Some(parameter.id.as_str()),
+                    parameter.id.as_str(),
+                    &[dependency.as_str()],
                     format_args!(
                         "parameter dependency `{}` does not precede its consumer",
                         dependency.as_str()
@@ -2408,11 +2419,12 @@ pub(super) fn check_references(
                 Some(owner) => *owner != constraint.sketch.as_str(),
                 None => true,
             } {
-                super::record_finding(
+                super::record_related_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     Severity::Error,
-                    Some(constraint.id.as_str()),
+                    constraint.id.as_str(),
+                    &[entity.as_str()],
                     format_args!(
                         "sketch entity `{}` belongs to a different sketch",
                         entity.as_str()
@@ -2479,11 +2491,25 @@ fn check_feature_references(
     };
 
     if let Err(error) = crate::document::feature_parents::validate(&[&ir.model]) {
-        super::record_finding(
+        use crate::document::feature_parents::ParentError;
+        let related = match &error {
+            ParentError::TreeParents { first, second, .. }
+            | ParentError::RegenerationParents { first, second, .. } => {
+                vec![first.as_str(), second.as_str()]
+            }
+            ParentError::TreeChild { parent, .. } | ParentError::Order { parent, .. } => {
+                vec![parent.as_str()]
+            }
+            ParentError::Repeated { .. }
+            | ParentError::MissingChild { .. }
+            | ParentError::MissingParent { .. } => Vec::new(),
+        };
+        super::record_related_finding(
             findings,
             Check::ReferentialIntegrity,
             Severity::Error,
-            Some(error.owner().as_str()),
+            error.owner().as_str(),
+            &related,
             format_args!("{error}"),
         );
     }
@@ -2640,11 +2666,12 @@ fn check_feature_references(
                             *dependency_ordinal >= feature_ordinal
                         }) =>
                     {
-                        super::record_finding(
+                        super::record_related_finding(
                             findings,
                             Check::ReferentialIntegrity,
                             Severity::Error,
-                            Some(configuration.id.as_str()),
+                            configuration.id.as_str(),
+                            &[dependency.as_str(), feature.as_str()],
                             format_args!(
                                 "configuration feature dependency `{}` does not precede `{}`",
                                 dependency.as_str(),
@@ -2655,7 +2682,7 @@ fn check_feature_references(
                     Some(_) => {}
                 }
             }
-            for reference in regeneration_references(state.definition.operation())? {
+            for reference in regeneration_references(state.definition.operation()) {
                 match features.get(reference.as_str()) {
                     None => ref_error(
                         findings,
@@ -2668,11 +2695,12 @@ fn check_feature_references(
                             *reference_ordinal >= feature_ordinal
                         }) =>
                     {
-                        super::record_finding(
+                        super::record_related_finding(
                             findings,
                             Check::ReferentialIntegrity,
                             Severity::Error,
-                            Some(configuration.id.as_str()),
+                            configuration.id.as_str(),
+                            &[reference.as_str(), feature.as_str()],
                             format_args!(
                                 "configuration definition feature `{}` does not precede `{}`",
                                 reference.as_str(),
@@ -2685,7 +2713,7 @@ fn check_feature_references(
                             Ok(dependency.as_str() == reference.as_str())
                         })? =>
                     {
-                        super::record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(configuration.id.as_str()), format_args!(
+                        super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, configuration.id.as_str(), &[feature.as_str(), reference.as_str()], format_args!(
                                 "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
                                 feature.as_str(), reference.as_str()
                             ));
@@ -2740,7 +2768,7 @@ fn check_feature_references(
     let mut reported_plane_cycles = Vec::new();
     for feature in &ir.model.features {
         let mut path: Vec<(&str, cadmpeg_core::decode::DepthGuard<'_>)> = Vec::new();
-        let mut positions = BorrowedIdentities::build(|_| Ok(()))?;
+        let mut positions = BorrowedIdentities::new();
         let mut cursor = feature.id.as_str();
         loop {
             if let Some(&cycle_start) = positions.get(cursor) {
@@ -2756,6 +2784,12 @@ fn check_feature_references(
                     })
                 })? {
                     let finding = Finding {
+                        related: cycle
+                            .iter()
+                            .copied()
+                            .filter(|id| *id != feature.id.as_str())
+                            .map(str::to_owned)
+                            .collect(),
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
                         message: format!(
@@ -2803,7 +2837,7 @@ fn check_feature_references(
         }
         Ok(())
     })?;
-    let mut topology_owners = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut topology_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_input_topologies {
         if !features.contains(state.input_of.as_str()) {
             ref_error(
@@ -2823,7 +2857,7 @@ fn check_feature_references(
             );
         }
     }
-    let mut result_owners = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut result_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_result_topologies {
         if !features.contains(state.output_of.as_str()) {
             ref_error(
@@ -2869,11 +2903,12 @@ fn check_feature_references(
                     "dependency feature",
                     dependency.as_str(),
                 ),
-                Some(ordinal) if *ordinal >= feature.ordinal => super::record_finding(
+                Some(ordinal) if *ordinal >= feature.ordinal => super::record_related_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     Severity::Error,
-                    Some(feature.id.as_str()),
+                    feature.id.as_str(),
+                    &[dependency.as_str()],
                     format_args!(
                         "dependency feature `{}` does not precede its consumer",
                         dependency.as_str()
@@ -2896,11 +2931,12 @@ fn check_feature_references(
                             );
                         }
                         Some(owner) if !same_feature_owner(*owner, Some(&feature.id)) => {
-                            super::record_finding(
+                            super::record_related_finding(
                                 findings,
                                 Check::ReferentialIntegrity,
                                 Severity::Error,
-                                Some(feature.id.as_str()),
+                                feature.id.as_str(),
+                                &[parameter.as_str()],
                                 format_args!(
                                     "content parameter `{}` belongs to another feature",
                                     parameter.as_str()
@@ -2917,11 +2953,12 @@ fn check_feature_references(
                         "content child",
                         child.as_str(),
                     ),
-                    Some(ordinal) if *ordinal <= feature.ordinal => super::record_finding(
+                    Some(ordinal) if *ordinal <= feature.ordinal => super::record_related_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         Severity::Error,
-                        Some(feature.id.as_str()),
+                        feature.id.as_str(),
+                        &[child.as_str()],
                         format_args!(
                             "content child `{}` does not follow its parent",
                             child.as_str()
@@ -3308,11 +3345,12 @@ fn check_feature_references(
                                 seed.as_str(),
                             ),
                             Some(ordinal) if *ordinal >= feature.ordinal => {
-                                super::record_finding(
+                                super::record_related_finding(
                                     findings,
                                     Check::ReferentialIntegrity,
                                     Severity::Error,
-                                    Some(feature.id.as_str()),
+                                    feature.id.as_str(),
+                                    &[seed.as_str()],
                                     format_args!(
                                         "seed feature `{}` does not precede its pattern",
                                         seed.as_str()
@@ -3325,11 +3363,12 @@ fn check_feature_references(
                                     |dependency| Ok(dependency.as_str() == seed.as_str()),
                                 )? =>
                             {
-                                super::record_finding(
+                                super::record_related_finding(
                                     findings,
                                     Check::ReferentialIntegrity,
                                     Severity::Error,
-                                    Some(feature.id.as_str()),
+                                    feature.id.as_str(),
+                                    &[seed.as_str()],
                                     format_args!(
                                         "pattern omits seed feature `{}` from its dependencies",
                                         seed.as_str()
@@ -3443,11 +3482,12 @@ fn check_feature_references(
                                 target.as_str(),
                             ),
                             Some(ordinal) if *ordinal >= feature.ordinal => {
-                                super::record_finding(
+                                super::record_related_finding(
                                     findings,
                                     Check::ReferentialIntegrity,
                                     Severity::Error,
-                                    Some(feature.id.as_str()),
+                                    feature.id.as_str(),
+                                    &[target.as_str()],
                                     format_args!(
                                         "binder target feature `{}` does not precede its binder",
                                         target.as_str()
@@ -3560,7 +3600,7 @@ fn check_feature_references(
                                         |dependency| Ok(dependency.as_str() == reference.as_str()),
                                     )? =>
                                 {
-                                    super::record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
+                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
                                             "datum point omits plane feature `{}` from its dependencies",
                                             reference.as_str()
                                         ));
@@ -3616,7 +3656,7 @@ fn check_feature_references(
                                 Ok(dependency.as_str() == block.as_str())
                             })? =>
                         {
-                            super::record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
+                            super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[block.as_str()], format_args!(
                                     "sketch block instance omits block feature `{}` from its dependencies",
                                     block.as_str()
                                 ));
@@ -3632,11 +3672,12 @@ fn check_feature_references(
                     "source feature",
                     source.as_str(),
                 ),
-                Some(ordinal) if *ordinal >= feature.ordinal => super::record_finding(
+                Some(ordinal) if *ordinal >= feature.ordinal => super::record_related_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     Severity::Error,
-                    Some(feature.id.as_str()),
+                    feature.id.as_str(),
+                    &[source.as_str()],
                     format_args!(
                         "source feature `{}` does not precede its derived geometry",
                         source.as_str()
@@ -3647,11 +3688,12 @@ fn check_feature_references(
                         Ok(dependency.as_str() == source.as_str())
                     })? =>
                 {
-                    super::record_finding(
+                    super::record_related_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         Severity::Error,
-                        Some(feature.id.as_str()),
+                        feature.id.as_str(),
+                        &[source.as_str()],
                         format_args!(
                             "derived geometry omits source feature `{}` from its dependencies",
                             source.as_str()
@@ -3692,7 +3734,7 @@ fn check_feature_references(
                                     );
                                 }
                                 Some(record) if record.ordinal >= feature.ordinal => {
-                                    super::record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
+                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
                                             "reference plane `{}` does not precede its offset plane",
                                             reference.as_str()
                                         ));
@@ -3703,7 +3745,7 @@ fn check_feature_references(
                                         |dependency| Ok(dependency.as_str() == reference.as_str()),
                                     )? =>
                                 {
-                                    super::record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(feature.id.as_str()), format_args!(
+                                    super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
                                             "offset plane omits reference feature `{}` from its dependencies",
                                             reference.as_str()
                                         ));
@@ -4213,8 +4255,8 @@ where
 
 fn regeneration_references(
     definition: &crate::features::FeatureOperation,
-) -> Result<Vec<&crate::features::FeatureId>, CodecError> {
-    let mut references = BorrowedIdentities::build(|_| Ok(()))?;
+) -> Vec<&crate::features::FeatureId> {
+    let mut references = BorrowedIdentities::new();
     match definition {
         // A datum offset plane regenerates from its reference only when that
         // reference names a feature; a face-supported plane carries its frame
@@ -4284,7 +4326,7 @@ fn regeneration_references(
     }
     let mut ordered = (references.values()).copied().collect::<Vec<_>>();
     ordered.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-    Ok(ordered)
+    ordered
 }
 
 fn definition_profiles(
@@ -4415,7 +4457,7 @@ fn check_configuration_state_closure(
         }
         Ok(())
     })?;
-    let mut closure = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut closure = BorrowedIdentities::new();
     let mut pending = Vec::new();
     for (feature, state) in &configuration.feature_states {
         if !state.evaluation.is_suppressed() && closure.insert_unique(feature.as_str(), ()) {
@@ -4430,11 +4472,12 @@ fn check_configuration_state_closure(
             match states.get(dependency.as_str()) {
                 None => {}
                 Some(dependency_state) if dependency_state.evaluation.is_suppressed() => {
-                    super::record_finding(
+                    super::record_related_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         Severity::Error,
-                        Some(configuration.id.as_str()),
+                        configuration.id.as_str(),
+                        &[dependency.as_str()],
                         format_args!(
                             "configuration state closure uses suppressed dependency state `{}`",
                             dependency.as_str()
@@ -4483,11 +4526,12 @@ fn check_plane_feature_reference(
                 "feature reference does not name a datum plane",
             );
         }
-        Some(record) if record.ordinal >= feature.ordinal => super::record_finding(
+        Some(record) if record.ordinal >= feature.ordinal => super::record_related_finding(
             findings,
             Check::ReferentialIntegrity,
             Severity::Error,
-            Some(feature.id.as_str()),
+            feature.id.as_str(),
+            &[reference.as_str()],
             format_args!(
                 "{reference_kind} `{}` does not precede its consuming feature",
                 reference.as_str()
@@ -4498,11 +4542,12 @@ fn check_plane_feature_reference(
                 Ok(dependency.as_str() == reference.as_str())
             })? =>
         {
-            super::record_finding(
+            super::record_related_finding(
                 findings,
                 Check::ReferentialIntegrity,
                 Severity::Error,
-                Some(feature.id.as_str()),
+                feature.id.as_str(),
+                &[reference.as_str()],
                 format_args!(
                     "feature omits {reference_kind} dependency `{}`",
                     reference.as_str()
@@ -4596,7 +4641,7 @@ fn check_feature_sketch_references(
         }
         Ok(())
     })?;
-    let mut owners = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut owners = BorrowedIdentities::new();
     for feature in &ir.model.features {
         let sketch = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -4612,11 +4657,12 @@ fn check_feature_sketch_references(
             .insert(sketch, (feature.id.as_str(), feature.ordinal))
             .is_some()
         {
-            super::record_finding(
+            super::record_related_finding(
                 findings,
                 Check::ReferentialIntegrity,
                 Severity::Error,
-                Some(feature.id.as_str()),
+                feature.id.as_str(),
+                &[sketch],
                 format_args!("sketch `{sketch}` has multiple owning features"),
             );
         }
@@ -4699,11 +4745,12 @@ fn check_feature_sketch_references(
         if let Some(sketch_id) = sketch_id {
             if let Some((owner, ordinal)) = owners.get(sketch_id) {
                 if *ordinal >= feature.ordinal {
-                    super::record_finding(
+                    super::record_related_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         Severity::Error,
-                        Some(feature.id.as_str()),
+                        feature.id.as_str(),
+                        &[owner],
                         format_args!(
                             "sketch owner `{owner}` does not precede its datum-point consumer"
                         ),
@@ -4793,11 +4840,12 @@ fn check_feature_sketch_references(
                 );
             } else if let Some((owner, ordinal)) = owners.get(sketch) {
                 if *ordinal >= feature.ordinal {
-                    super::record_finding(
+                    super::record_related_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         Severity::Error,
-                        Some(feature.id.as_str()),
+                        feature.id.as_str(),
+                        &[owner],
                         format_args!(
                             "{sketch_kind} owner `{owner}` does not precede its profile consumer"
                         ),
@@ -4951,11 +4999,12 @@ fn check_feature_sketch_references(
                 ref_error(findings, feature.id.as_str(), description, sketch);
             } else if let Some((owner, ordinal)) = owners.get(sketch) {
                 if *ordinal >= feature.ordinal {
-                    super::record_finding(
+                    super::record_related_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         Severity::Error,
-                        Some(feature.id.as_str()),
+                        feature.id.as_str(),
+                        &[owner],
                         format_args!("sketch owner `{owner}` does not precede its path consumer"),
                     );
                 }

@@ -139,6 +139,10 @@ pub struct Finding {
         deserialize_with = "deserialize_entity"
     )]
     pub entity: Option<String>,
+    /// Other document entities a finding about `entity` involves, in message
+    /// order. Empty when `entity` is absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related: Vec<String>,
 }
 
 /// Entity counts, findings, and propagated decode losses for one document.
@@ -181,3 +185,41 @@ impl ValidationReport {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_entity, String, "entity");
+
+#[cfg(test)]
+mod tests {
+    use super::{Check, Finding};
+    use crate::report::Severity;
+
+    #[test]
+    fn finding_without_related_omits_the_key() -> Result<(), serde_json::Error> {
+        let wire = serde_json::json!({
+            "check": "referential_integrity",
+            "severity": "error",
+            "message": "invalid reference",
+            "entity": "test:model:feature#consumer"
+        });
+        let finding: Finding = serde_json::from_value(wire.clone())?;
+        assert!(finding.related.is_empty());
+        assert_eq!(serde_json::to_value(finding)?, wire);
+        Ok(())
+    }
+
+    #[test]
+    fn finding_round_trips_related_ids_in_order() -> Result<(), serde_json::Error> {
+        let finding = Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: "invalid dependencies".into(),
+            entity: Some("test:model:feature#consumer".into()),
+            related: vec![
+                "test:model:feature#second".into(),
+                "test:model:feature#first".into(),
+            ],
+        };
+        let wire = serde_json::to_value(&finding)?;
+        assert_eq!(wire["related"], serde_json::json!(finding.related));
+        assert_eq!(serde_json::from_value::<Finding>(wire)?, finding);
+        Ok(())
+    }
+}

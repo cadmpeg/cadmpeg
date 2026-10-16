@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Evaluated legacy value names keyed by entity and value offset.
 
-use crate::legacy_entity::LegacyRoleName;
+use crate::legacy_entity::{LegacyEvaluatedValueNames, LegacyRoleName};
 use crate::native::{
-    CatiaLegacyRoleSelector, CatiaLegacyRoleSelectorEncoding, CatiaLegacyTextEncoding,
-    CatiaLegacyTextField, LegacyEvaluatedValueNames,
+    legacy_evaluation_roles, CatiaLegacyRoleSelector, CatiaLegacyRoleSelectorEncoding,
+    CatiaLegacyTextEncoding, CatiaLegacyTextField,
 };
 
 fn role(byte_offset: u64, entity_id: u32, field_code: u16) -> CatiaLegacyRoleSelector {
@@ -43,7 +43,7 @@ fn evaluated_value_name_is_the_only_identifier_before_the_evaluation_role() {
         field(70, 9, "Other"),
         field(80, 7, "not an identifier"),
     ];
-    let names = LegacyEvaluatedValueNames::new(&roles, &fields);
+    let names = LegacyEvaluatedValueNames::new(legacy_evaluation_roles(&roles), &fields);
 
     let name = names.get(7, 100 + VALUE_AFTER_ROLE).unwrap();
     assert_eq!((name.byte_offset, name.value.as_str()), (50, "Width"));
@@ -60,7 +60,7 @@ fn evaluated_value_name_requires_one_evaluation_role() {
         role(300, 7, 0x1200),
     ];
     let fields = [field(50, 7, "Width")];
-    let names = LegacyEvaluatedValueNames::new(&roles, &fields);
+    let names = LegacyEvaluatedValueNames::new(legacy_evaluation_roles(&roles), &fields);
 
     assert!(names.get(7, 100 + VALUE_AFTER_ROLE).is_none());
     assert!(names.get(7, 300 + VALUE_AFTER_ROLE).is_none());

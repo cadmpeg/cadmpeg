@@ -793,6 +793,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
 
 fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> Finding {
     Finding {
+        related: Vec::new(),
         check,
         severity: FindingSeverity::Error,
         message: message.into(),

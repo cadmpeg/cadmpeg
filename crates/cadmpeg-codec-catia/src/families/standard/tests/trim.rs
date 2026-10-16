@@ -90,7 +90,7 @@ fn trim_record_layout_indexes_extent_without_materializing_triangles() {
     assert_eq!(layout.handle_count, 3);
     assert_eq!(layout.end, bytes.len());
 
-    let record = parse_trim_record(&bytes, 0, 2).expect("materialized trim packet");
+    let record = parse_trim_record(&bytes, 0, 2).expect("parse the trim record");
     assert_eq!(record.packet.triangles().to_vec(), [[10, 11, 12]]);
 }
 

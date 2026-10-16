@@ -111,7 +111,7 @@ pub(super) fn exact_fixed_extrude_parameters(
             })
         };
         let lane_kind = match source_kind {
-            Some(kind) => kind,
+            Some(kind) => kind.as_str(),
             None => match lane.ordinal {
                 0 => "AlongDistance",
                 1 => "TaperAngle",

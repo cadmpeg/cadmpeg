@@ -463,7 +463,7 @@ fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
             _ => panic!("test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut index = super::BorrowedIdentities::build(|_| Ok(())).unwrap();
+        let mut index = super::BorrowedIdentities::new();
         let caller = if active {
             Some(ctx.enter_nested("carrier law caller").unwrap())
         } else {

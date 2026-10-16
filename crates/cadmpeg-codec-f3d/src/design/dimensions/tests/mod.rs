@@ -13,12 +13,17 @@ mod owner_scoped;
 mod recipe;
 mod relations;
 
+const EPS_DIMENSION_PROJECTION_LINEAR: f64 = 1.0e-6;
+
 fn project_dimension_constraints(
     inputs: &crate::design::dimensions::DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
-    crate::design::dimensions::project_dimension_constraints(inputs, spatial_sketches, 1.0e-6)
-        .expect("dimension projection")
+    crate::design::dimensions::project_dimension_constraints(
+        inputs,
+        spatial_sketches,
+        EPS_DIMENSION_PROJECTION_LINEAR,
+    )
 }
 
 fn project_spatial_dimension_constraints(
@@ -30,9 +35,8 @@ fn project_spatial_dimension_constraints(
         inputs,
         spatial_sketches,
         spatial_entities,
-        1.0e-6,
+        EPS_DIMENSION_PROJECTION_LINEAR,
     )
-    .expect("dimension projection")
 }
 
 mod numerical_ranges;

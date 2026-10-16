@@ -33,9 +33,9 @@ pub(super) fn check(
         }
         Ok(())
     })?;
-    let mut complete = BorrowedIdentities::build(|_| Ok(()))?;
-    let mut active = BorrowedIdentities::build(|_| Ok(()))?;
-    let mut roots = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut complete = BorrowedIdentities::new();
+    let mut active = BorrowedIdentities::new();
+    let mut roots = BorrowedIdentities::new();
     for identity in segments.identities() {
         roots.insert_unique(identity, ());
     }

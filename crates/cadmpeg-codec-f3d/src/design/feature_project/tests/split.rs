@@ -266,7 +266,7 @@ fn compact_split_face_fixture() -> (DesignParameterScope, [DesignConstructionOpe
 fn class_277_258_compact_split_face_frame_projects() {
     let (mut scope, groups) = compact_split_face_fixture();
     let definition = project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[])
-        .expect("projection resource budget")
+        .expect("project the split face feature")
         .expect("class-277 SplitFace frame");
     assert!(matches!(
         definition,
@@ -284,7 +284,7 @@ fn class_277_258_compact_split_face_frame_projects() {
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(
         project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[])
-            .expect("projection resource budget")
+            .expect("project the split face feature")
             .is_some()
     );
 
@@ -294,7 +294,7 @@ fn class_277_258_compact_split_face_frame_projects() {
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(
         project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[])
-            .expect("projection resource budget")
+            .expect("project the split face feature")
             .is_none()
     );
 }
@@ -448,7 +448,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     ];
 
     let definition = project_split_face(&scope, &[scope.clone()], &groups, &selections, &[], &[])
-        .expect("projection resource budget")
+        .expect("project the split face feature")
         .expect("class-277 direct edge path");
     let FeatureDefinition::Operation(FeatureOperation::SplitFace {
         tool:

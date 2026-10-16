@@ -60,10 +60,10 @@ pub(super) fn check_carrier_reachability(
         }
         Ok(())
     })?;
-    let mut surfaces = BorrowedIdentities::build(|_| Ok(()))?;
-    let mut curves = BorrowedIdentities::build(|_| Ok(()))?;
-    let mut pcurves = BorrowedIdentities::build(|_| Ok(()))?;
-    let mut points = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut surfaces = BorrowedIdentities::new();
+    let mut curves = BorrowedIdentities::new();
+    let mut pcurves = BorrowedIdentities::new();
+    let mut points = BorrowedIdentities::new();
     for face in &ir.model.faces {
         surfaces.insert_unique(face.surface.as_str(), ());
     }

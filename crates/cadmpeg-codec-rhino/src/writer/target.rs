@@ -129,11 +129,13 @@ pub(crate) fn plan(
 
 /// What `prepare_write` does with each model arena.
 ///
+/// `subds`, procedural surfaces and curves, features, configurations, parameters,
+/// sketches, sketch entities and constraints, appearances, appearance bindings
+/// and attributes are `Dropped` because `prepare_write` refuses non-empty arenas.
 /// Topology is written as Brep and point objects or refused as orphaned;
-/// unowned pcurves are refused. The refused arenas are the ones
-/// `prepare_write` names in its unsupported-arena refusal.
+/// unowned pcurves are refused.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Omitted, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -146,19 +148,19 @@ const COVERAGE: ArenaDispositions = {
         points: Written,
         surfaces: Written,
         curves: Written,
-        subds: Reported,
+        subds: Dropped,
         pcurves: Written,
-        procedural_surfaces: Reported,
-        procedural_curves: Reported,
+        procedural_surfaces: Dropped,
+        procedural_curves: Dropped,
         assets: Omitted,
-        features: Reported,
+        features: Dropped,
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
-        configurations: Reported,
-        parameters: Reported,
-        sketches: Reported,
-        sketch_entities: Reported,
-        sketch_constraints: Reported,
+        configurations: Dropped,
+        parameters: Dropped,
+        sketches: Dropped,
+        sketch_entities: Dropped,
+        sketch_constraints: Dropped,
         spatial_sketches: Omitted,
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
@@ -171,9 +173,9 @@ const COVERAGE: ArenaDispositions = {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Written,
-        appearances: Reported,
-        appearance_bindings: Reported,
-        attributes: Reported,
+        appearances: Dropped,
+        appearance_bindings: Dropped,
+        attributes: Dropped,
         pmi: Omitted,
         presentation_layers: Omitted,
     }

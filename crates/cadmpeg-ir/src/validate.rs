@@ -123,11 +123,35 @@ fn record_finding(
     let message = std::fmt::format(message);
     let entity = entity.map(str::to_owned);
     findings.push(Finding {
+        related: Vec::new(),
         check,
         severity,
         message,
         entity,
     });
+}
+
+fn record_related_finding(
+    findings: &mut Vec<Finding>,
+    check: Check,
+    severity: Severity,
+    entity: &str,
+    related: &[&str],
+    message: std::fmt::Arguments<'_>,
+) {
+    let mut finding = Finding {
+        check,
+        severity,
+        message: std::fmt::format(message),
+        entity: Some(entity.to_owned()),
+        related: Vec::new(),
+    };
+    for &id in related {
+        if id != entity && !finding.related.iter().any(|previous| previous == id) {
+            finding.related.push(id.to_owned());
+        }
+    }
+    findings.push(finding);
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
@@ -140,11 +164,11 @@ fn validate_model(
     validate_model_with_index(ctx, ir, losses, &index)
 }
 
-fn validate_model_with_index(
+fn validate_model_with_index<'ir>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    ir: &'ir CadIr,
     losses: Vec<LossNote>,
-    ids: &crate::index::ModelIndex<'_>,
+    ids: &crate::index::ModelIndex<'ir>,
 ) -> Result<ValidationReport, CodecError> {
     let _depth = ctx.enter_nested("IR neutral validation")?;
 

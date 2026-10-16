@@ -13,30 +13,35 @@ fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
         entity_counts: std::collections::BTreeMap::default(),
         findings: vec![
             Finding {
+                related: Vec::new(),
                 check: Check::Annotations,
                 severity: Severity::Warning,
                 message: "skip warning".into(),
                 entity: None,
             },
             Finding {
+                related: Vec::new(),
                 check: Check::Identity,
                 severity: Severity::Error,
                 message: "invalid identity".into(),
                 entity: Some("rhino:test:point#1".into()),
             },
             Finding {
+                related: Vec::new(),
                 check: Check::NativeLinks,
                 severity: Severity::Blocking,
                 message: "unresolved link".into(),
                 entity: None,
             },
             Finding {
+                related: Vec::new(),
                 check: Check::ArenaOrder,
                 severity: Severity::Error,
                 message: "unsorted arena".into(),
                 entity: None,
             },
             Finding {
+                related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: "fourth finding".into(),

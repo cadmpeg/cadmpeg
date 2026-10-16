@@ -29,7 +29,7 @@ mod coverage;
 mod loss;
 pub mod target;
 
-use carried::{EntityLocation, FindingLocator, FindingScope};
+use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
@@ -308,7 +308,7 @@ impl ExportPlan {
     /// `ir` is the document this plan was built from. Only findings at or above
     /// `Severity::Error` are considered. Findings with no resolved entity are
     /// carried because they cannot be shown to be outside the output. A located
-    /// finding is carried if any entity or message location is carried. Model
+    /// finding is carried if any entity or related id location is carried. Model
     /// locations follow the plan's arena coverage. Native locations are carried
     /// by complete coverage or by their own format's encoder; a backend reads
     /// no native namespace other than its own format's.
@@ -324,11 +324,12 @@ impl ExportPlan {
         let locator = FindingLocator::new(ir, errors.iter().copied());
         errors
             .into_iter()
-            .filter(|finding| match locator.scope(finding) {
-                FindingScope::Unlocated => true,
-                FindingScope::Located(locations) => locations
-                    .into_iter()
-                    .any(|location| self.carries_location(location)),
+            .filter(|finding| {
+                locator.scope(finding).is_none_or(|locations| {
+                    locations
+                        .into_iter()
+                        .any(|location| self.carries_location(location))
+                })
             })
             .collect()
     }
