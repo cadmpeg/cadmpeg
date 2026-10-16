@@ -201,7 +201,7 @@ pub(crate) fn install(
         if let Some(id) = &external_id {
             links.push(id.to_owned());
         }
-        links.sort_by(Ord::cmp);
+        links.sort();
         links.dedup();
         let mut member_object_ids = Vec::new();
         for id in &definition.members {
@@ -239,7 +239,7 @@ pub(crate) fn install(
         }
     }
     for parents in member_definitions.values_mut() {
-        parents.sort_by(Ord::cmp);
+        parents.sort();
         parents.dedup();
     }
     let mut occurrences = Vec::new();
@@ -300,7 +300,7 @@ pub(crate) fn install(
         if definition_ids.contains(&reference.definition_id()) {
             links.push(definition);
         }
-        links.sort_by(Ord::cmp);
+        links.sort();
 
         occurrences.push(OccurrenceRecord {
             id: format!("rhino:product:occurrence#{key}"),
