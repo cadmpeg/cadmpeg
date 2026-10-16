@@ -166,7 +166,7 @@ mod tests {
                 ));
             }
         })
-        .expect("service test context");
+        .expect("create the empty-input decode context");
     }
 
     #[test]
@@ -193,6 +193,6 @@ mod tests {
                 assert!(matches!(error, CodecError::ResourceLimit(limit) if limit == refusal));
             }
         })
-        .expect("service test context");
+        .expect("create the empty-input decode context");
     }
 }

@@ -183,8 +183,13 @@ fn body(
 /// curves are also `Dropped` because only their solved carriers are written and
 /// `procedural_reduction_losses` charges for their definitions. Topology and
 /// geometry go through the B-rep, trimmed-sheet or free-geometry entity graph.
+/// `points`, `curves`, `surfaces`, `edges` and `vertices` are `Reported` because
+/// `WriterSupportGeometryNotRepresented`, `WriterSupportEdgeNotRepresented` and
+/// `WriterFreeGeometryOmitted` account for withheld support geometry, support edges
+/// and free points or vertices, respectively; `procedural_surfaces` is `Reported`
+/// because `ProceduralReduced` accounts for definitions reduced to solved carriers.
 const SYNTHESIS_COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Dropped, Written};
+    use ArenaDisposition::{Dropped, Reported, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -192,14 +197,14 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
         faces: Written,
         loops: Written,
         coedges: Written,
-        edges: Written,
-        vertices: Written,
-        points: Written,
-        surfaces: Written,
-        curves: Written,
+        edges: Reported,
+        vertices: Reported,
+        points: Reported,
+        surfaces: Reported,
+        curves: Reported,
         subds: Dropped,
         pcurves: Written,
-        procedural_surfaces: Written,
+        procedural_surfaces: Reported,
         procedural_curves: Dropped,
         assets: Dropped,
         features: Dropped,

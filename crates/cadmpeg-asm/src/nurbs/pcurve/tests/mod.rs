@@ -171,7 +171,7 @@ fn intcurve_selector_uses_the_serialized_direct_slot() {
             &table
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the selected pcurve with its chart")
         .is_some());
         assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
             &asm_decode_ctx,
@@ -180,7 +180,7 @@ fn intcurve_selector_uses_the_serialized_direct_slot() {
             &table
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the selected pcurve with its chart")
         .is_some());
         assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
             &asm_decode_ctx,
@@ -189,7 +189,7 @@ fn intcurve_selector_uses_the_serialized_direct_slot() {
             &table
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the selected pcurve with its chart")
         .is_none());
     }
 }
@@ -216,7 +216,7 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
             &table,
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .unwrap_or_else(|| panic!("exact curve at width {int_width}"));
         assert!(matches!(
             decoded.construction,
@@ -229,7 +229,7 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
             &table,
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the selected pcurve with its chart")
         .unwrap_or_else(|| panic!("exact curve pcurve at width {int_width}"));
         // A `forward_v` plane stores native lengths along `u_dir` and
         // `normal × u_dir`.
@@ -244,7 +244,7 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
             &table
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the selected pcurve with its chart")
         .is_some());
         assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
             &asm_decode_ctx,
@@ -253,7 +253,7 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
             &table
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the selected pcurve with its chart")
         .is_none());
     }
 }
@@ -287,7 +287,7 @@ fn exact_curve_selector_follows_subtype_reference() {
                 &table
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the selected pcurve with its chart")
             .is_some());
             assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
                 &asm_decode_ctx,
@@ -296,7 +296,7 @@ fn exact_curve_selector_follows_subtype_reference() {
                 &table
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the selected pcurve with its chart")
             .is_none());
         }
     }

@@ -4,7 +4,6 @@
 pub(crate) mod identities;
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
 use cadmpeg_core::decode::{DecodeContext, DepthGuard, ResourceLimit};
@@ -41,13 +40,13 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
     ) -> Result<Option<&V>, P::Error> {
         query.work(identity.len(), operation)?;
         query.work(1, operation)?;
-        let Some((&candidate, value)) = self.slots.get_key_value(identity) else {
+        let Some(value) = self.slots.get(identity) else {
             return Ok(None);
         };
         query.work(1, operation)?;
-        Ok(query
-            .equal(candidate, identity, operation)?
-            .then_some(value))
+        query.work(1, operation)?;
+        query.work(identity.len(), operation)?;
+        Ok(Some(value))
     }
 
     fn identities(&self) -> impl Iterator<Item = &'ir str> + '_ {
@@ -91,12 +90,6 @@ pub(crate) fn public_result<T>(value: Result<T, std::convert::Infallible>) -> T 
     }
 }
 
-pub(crate) fn identity_hash(identity: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    identity.hash(&mut hasher);
-    hasher.finish()
-}
-
 fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex<'_> {
     let mut index = HashMap::new();
     for (slot, entity) in entities.iter().enumerate() {
@@ -118,13 +111,9 @@ fn lookup_identity<'a, T: EntitySchema, S: IndexQuery>(
         return Ok(None);
     };
     storage.work(1, "model identity lookup collision")?;
-    Ok(storage
-        .equal(
-            entity.identity(),
-            identity,
-            "model identity lookup comparison",
-        )?
-        .then_some(entity))
+    storage.work(1, "model identity lookup comparison")?;
+    storage.work(identity.len(), "model identity lookup comparison")?;
+    Ok(Some(entity))
 }
 
 pub(crate) mod sealed {
@@ -155,13 +144,6 @@ pub trait IndexQuery: sealed::IndexQuery {
     fn finish<T>(&self, result: Result<T, Self::Error>) -> Self::Output<T>;
     #[doc(hidden)]
     fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error>;
-    #[doc(hidden)]
-    fn equal(
-        &self,
-        first: &str,
-        second: &str,
-        operation: &'static str,
-    ) -> Result<bool, Self::Error>;
 }
 
 impl IndexQuery for StandardIndex {
@@ -172,14 +154,6 @@ impl IndexQuery for StandardIndex {
     }
     fn work(&self, _count: usize, _operation: &'static str) -> Result<(), Self::Error> {
         Ok(())
-    }
-    fn equal(
-        &self,
-        first: &str,
-        second: &str,
-        _operation: &'static str,
-    ) -> Result<bool, Self::Error> {
-        Ok(first == second)
     }
 }
 
