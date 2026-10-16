@@ -14,8 +14,23 @@ use cadmpeg_ir::math::Vector3;
 use super::{
     base_geometry_line_font_valid, base_geometry_use_flag_valid, declared_affine_progression,
     is_finite_nonzero_vector, normal_matches_plane, validate_declared_transform_frame,
-    DeclaredInterval, DeclaredTransformFrameError,
+    DeclaredInterval, DeclaredTransformFrameError, PlanarPairBudget,
 };
+
+#[test]
+fn planar_pair_budget_refuses_an_item_without_spending_its_pairs() {
+    let budget = PlanarPairBudget::new();
+    assert!(!budget.admit(32_769));
+    assert!(budget.admit(32_768));
+    assert!(!budget.admit(1));
+    assert!(!budget.admit(usize::MAX));
+
+    let budget = PlanarPairBudget::new();
+    for _ in 0..1024 {
+        assert!(budget.admit(1024));
+    }
+    assert!(!budget.admit(1));
+}
 
 #[test]
 fn composite_coplanarity_refuses_recursion_depth() {

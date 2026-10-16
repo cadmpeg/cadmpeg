@@ -4,7 +4,8 @@
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
     curve_geometry_coplanar, linear_nurbs_parameters, planar_polyline_has_self_intersection,
-    plane_coordinates, resolve_transform, ProjectionOutcome, TransformResolutionError,
+    plane_coordinates, resolve_transform, PlanarPairBudget, ProjectionOutcome,
+    TransformResolutionError,
 };
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
@@ -1430,18 +1431,16 @@ fn linear_nurbs_boundary_points(
 fn linear_nurbs_is_simple_closed(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
-    plane: (Point3, Vector3),
-    resolution: f64,
-    transform: Transform,
-    ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
-    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range, ctx)? else {
+    context: PlaneBoundarySimplicity<'_, '_, '_>,
+) -> Result<bool, PlaneBoundaryError> {
+    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range, context.ctx)? else {
         return Ok(false);
     };
     let Some(points) = points
         .into_iter()
         .map(|point| {
-            transform
+            context
+                .transform
                 .apply_point(point)
                 .map(cadmpeg_ir::features::FinitePoint3::get)
         })
@@ -1449,15 +1448,30 @@ fn linear_nurbs_is_simple_closed(
     else {
         return Ok(false);
     };
+    closed_points_are_simple(&points, context)
+}
+
+/// Whether a closed point sequence has no coincident points and, projected
+/// into the plane, no self-intersection.
+fn closed_points_are_simple(
+    points: &[Point3],
+    context: PlaneBoundarySimplicity<'_, '_, '_>,
+) -> Result<bool, PlaneBoundaryError> {
+    let resolution = context.resolution;
     if points.len() < 3
         || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
-        || super::geometry::closed_polyline_has_duplicate(&points, |left, right| {
-            points_coincident(*left, *right, resolution)
-        })
     {
         return Ok(false);
     }
-    let Some(projected) = plane_coordinates(&points, plane) else {
+    if !context.pairs.admit(points.len()) {
+        return Err(PlaneBoundaryError::PairLimit);
+    }
+    if super::geometry::closed_polyline_has_duplicate(points, |left, right| {
+        points_coincident(*left, *right, resolution)
+    }) {
+        return Ok(false);
+    }
+    let Some(projected) = plane_coordinates(points, context.plane) else {
         return Ok(false);
     };
     Ok(!planar_polyline_has_self_intersection(&projected))
@@ -1482,8 +1496,17 @@ struct PlaneBoundarySimplicity<'index, 'ir, 'ctx> {
     index: &'index ModelIndex<'ir>,
     plane: (Point3, Vector3),
     resolution: f64,
+    pairs: &'index PlanarPairBudget,
     transform: Transform,
     ctx: &'ctx DecodeContext<'ctx>,
+}
+
+/// The tolerance and point-pair allowance that one structure pass's plane
+/// boundary checks share.
+#[derive(Clone, Copy)]
+struct PlaneBoundaryRules<'pass> {
+    resolution: f64,
+    pairs: &'pass PlanarPairBudget,
 }
 
 fn bounded_plane_curve_is_simple(
@@ -1492,7 +1515,7 @@ fn bounded_plane_curve_is_simple(
     source_is_certified_simple: bool,
     parameter_range: Option<[f64; 2]>,
     active: &mut BTreeSet<CurveId>,
-) -> Result<bool, CodecError> {
+) -> Result<bool, PlaneBoundaryError> {
     let _nested = context.ctx.enter_nested("iges plane boundary simplicity")?;
     match geometry {
         SolvedCurveGeometry::Degenerate(_)
@@ -1557,14 +1580,7 @@ fn bounded_plane_curve_is_simple(
             let Some(range) = parameter_range else {
                 return Ok(false);
             };
-            linear_nurbs_is_simple_closed(
-                nurbs,
-                range,
-                context.plane,
-                context.resolution,
-                context.transform,
-                context.ctx,
-            )
+            linear_nurbs_is_simple_closed(nurbs, range, context)
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let active_range_matches = parameter_range.is_none_or(|range| {
@@ -1590,22 +1606,7 @@ fn bounded_plane_curve_is_simple(
             let Some(points) = points else {
                 return Ok(false);
             };
-            if !(points.len() >= 3
-                && points_coincident(
-                    points[0],
-                    *points.last().unwrap_or(&points[0]),
-                    context.resolution,
-                )
-                && !super::geometry::closed_polyline_has_duplicate(&points, |left, right| {
-                    points_coincident(*left, *right, context.resolution)
-                }))
-            {
-                return Ok(false);
-            }
-            let Some(projected) = plane_coordinates(&points, context.plane) else {
-                return Ok(false);
-            };
-            Ok(!planar_polyline_has_self_intersection(&projected))
+            closed_points_are_simple(&points, context)
         }
     }
 }
@@ -1619,6 +1620,7 @@ enum PlaneBoundaryError {
     MissingStart,
     MissingEnd,
     NotClosed,
+    PairLimit,
     Resource(CodecError),
 }
 
@@ -1630,6 +1632,9 @@ impl PlaneBoundaryError {
             Self::MissingCurveCarrier => "plane boundary edge curve carrier is missing",
             Self::NotSimple => {
                 "plane boundary curve is not proven simple, degenerate, cyclic, or self-intersecting"
+            }
+            Self::PairLimit => {
+                "plane boundary simplicity check does not fit the pass's remaining MAX_PLANAR_POINT_PAIRS allowance"
             }
             Self::NotCoplanar => "plane boundary curve does not lie in the plane",
             Self::MissingStart => "plane boundary start vertex is missing",
@@ -1647,6 +1652,9 @@ impl PlaneBoundaryError {
             }
             Self::NotSimple => {
                 "legacy single-parent plane boundary is not proven simple, degenerate, cyclic, or self-intersecting"
+            }
+            Self::PairLimit => {
+                "legacy single-parent plane boundary simplicity check does not fit the pass's remaining MAX_PLANAR_POINT_PAIRS allowance"
             }
             Self::NotCoplanar => "legacy single-parent plane boundary does not lie in the plane",
             Self::MissingStart => "legacy single-parent boundary start vertex is missing",
@@ -1668,9 +1676,10 @@ fn plane_boundary_edge(
     plane: (Point3, Vector3),
     boundary_sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    resolution: f64,
+    rules: PlaneBoundaryRules<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Edge, PlaneBoundaryError> {
+    let resolution = rules.resolution;
     let mut key_storage = [0_u8; 64];
     let key =
         crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage)
@@ -1699,6 +1708,7 @@ fn plane_boundary_edge(
                 index,
                 plane,
                 resolution,
+                pairs: rules.pairs,
                 transform: Transform::identity(),
                 ctx,
             },
@@ -1878,7 +1888,7 @@ fn legacy_single_parent_face(
     source: LegacyPlaneSource<'_>,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    global: &ProjectedGlobal,
+    rules: PlaneBoundaryRules<'_>,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<Option<(ModelDraft, Vec<u32>)>, LegacyPlaneError> {
@@ -1932,7 +1942,7 @@ fn legacy_single_parent_face(
     let index = ModelIndex::new_model_only(ir);
     let parent_plane = plane_carrier(&index, parent_sequence)
         .ok_or("legacy single-parent parent plane was not projected")?;
-    let resolution = global.minimum_resolution_mm();
+    let resolution = rules.resolution;
     let mut boundary_edges = Vec::new();
     for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
         .chain(children.iter().copied())
@@ -1944,12 +1954,11 @@ fn legacy_single_parent_face(
         if !planes_are_coplanar(parent_plane, plane, resolution) {
             return Err("legacy single-parent plane boundaries are not coplanar".into());
         }
-        let mut edge =
-            plane_boundary_edge(&index, plane, boundary_sequence, entries, resolution, ctx)
-                .map_err(|error| match error.legacy_message() {
-                    Ok(message) => LegacyPlaneError::Invalid(message),
-                    Err(resource) => LegacyPlaneError::Resource(resource),
-                })?;
+        let mut edge = plane_boundary_edge(&index, plane, boundary_sequence, entries, rules, ctx)
+            .map_err(|error| match error.legacy_message() {
+            Ok(message) => LegacyPlaneError::Invalid(message),
+            Err(resource) => LegacyPlaneError::Resource(resource),
+        })?;
         let edge_id = crate::ids::edge(
             &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
                 .tail_index(boundary_index),
@@ -2287,6 +2296,11 @@ pub(super) fn project(
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
+    let planar_pairs = PlanarPairBudget::new();
+    let boundary_rules = PlaneBoundaryRules {
+        resolution: global.minimum_resolution_mm(),
+        pairs: &planar_pairs,
+    };
     let mut placement_rejections = BTreeMap::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
@@ -2844,7 +2858,7 @@ pub(super) fn project(
                     LegacyPlaneSource { entry, record },
                     &entries,
                     &records,
-                    global,
+                    boundary_rules,
                     ctx,
                     sequences,
                 ) {
@@ -2891,7 +2905,7 @@ pub(super) fn project(
                 plane,
                 boundary_sequence,
                 &entries,
-                global.minimum_resolution_mm(),
+                boundary_rules,
                 ctx,
             ) {
                 Ok(mut edge) => {
@@ -2936,7 +2950,7 @@ pub(super) fn project(
                 plane,
                 boundary_sequence,
                 &entries,
-                global.minimum_resolution_mm(),
+                boundary_rules,
                 ctx,
             ) {
                 Ok(_) => super::push_entity_loss(

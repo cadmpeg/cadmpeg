@@ -143,6 +143,25 @@ fn bounded_plane_rejects_a_self_intersecting_piecewise_linear_nurbs_boundary() {
 }
 
 #[test]
+fn bounded_plane_over_the_pair_budget_is_skipped_with_a_loss() {
+    let result = decode(bounded_plane_entity_file(
+        GLOBAL_V5_0,
+        126,
+        &crate::test_support::test_curves_and_surfaces::closed_ring_linear_nurbs_parameters(32_770),
+    ));
+
+    assert!(result.ir().model.faces.is_empty());
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::EntityNotProjected.kind()
+                && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
+        }),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn bounded_plane_rejects_a_discontinuous_piecewise_linear_nurbs_boundary() {
     let result = decode(bounded_plane_entity_file(
         GLOBAL_V5_0,
