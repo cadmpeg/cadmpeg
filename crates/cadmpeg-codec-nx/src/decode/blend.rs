@@ -1700,9 +1700,9 @@ fn blend_surface_u_derivative_with_index_and_budget(
     )))
 }
 
-struct BlendContactDerivativeContext<'a> {
-    index: &'a cadmpeg_ir::index::ModelIndex<'a>,
-    spine: &'a CurveId,
+struct BlendContactDerivativeContext<'index, 'a> {
+    index: &'index cadmpeg_ir::index::ModelIndex<'a>,
+    spine: &'index CurveId,
     parameter: f64,
     center: Point3,
     center_derivative: Vector3,
@@ -1710,7 +1710,7 @@ struct BlendContactDerivativeContext<'a> {
     depth: usize,
 }
 
-impl BlendContactDerivativeContext<'_> {
+impl BlendContactDerivativeContext<'_, '_> {
     fn direction_derivative(
         &self,
         support: &SurfaceId,

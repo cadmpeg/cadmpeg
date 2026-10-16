@@ -2708,7 +2708,7 @@ mod tests {
             &operands,
             &[10, 20, 30],
         )
-        .expect("projection resource budget")
+        .expect("resolve the historical split face target group")
         .expect("updated target transition proof");
         let cadmpeg_ir::features::FaceSelection::Historical {
             state,
@@ -2738,7 +2738,7 @@ mod tests {
                 &operands,
                 &[10, 20]
             )
-            .expect("projection resource budget")
+            .expect("resolve the historical split face target group")
             .is_none()
         );
         assert!(
@@ -2749,7 +2749,7 @@ mod tests {
                 &operands,
                 &[10, 20, 40]
             )
-            .expect("projection resource budget")
+            .expect("resolve the historical split face target group")
             .is_none()
         );
     }

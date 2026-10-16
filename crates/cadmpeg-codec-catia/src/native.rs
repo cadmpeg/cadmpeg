@@ -6652,6 +6652,24 @@ pub(crate) struct CatiaLegacyTextField {
     pub(crate) value: String,
 }
 
+impl legacy_entity::LegacyValueNameField for CatiaLegacyTextField {
+    fn entity_id(&self) -> u32 {
+        self.entity_id
+    }
+
+    fn offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    fn value(&self) -> &str {
+        &self.value
+    }
+
+    fn role_field_code(&self) -> Option<u16> {
+        self.role.as_ref().and_then(|role| role.field_code)
+    }
+}
+
 /// One legacy schema field bounded by consecutive role selectors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaLegacySchemaField {
@@ -7799,68 +7817,16 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
     converted
 }
 
-/// The name field of each evaluated legacy value in one run.
-///
-/// A value at `value_offset` is evaluated when exactly one `0x17C4` role of
-/// its entity ends six bytes before it. Its name is the only identifier field
-/// of that entity with a `0x1200` role that starts before that role.
-pub(crate) struct LegacyEvaluatedValueNames<'a> {
-    /// Offset of the evaluation role per (entity, value offset), or `None`
-    /// when several evaluation roles end at the same value.
-    evaluation_roles: HashMap<(u32, u64), Option<u64>>,
-    /// Identifier fields with a `0x1200` role per entity, sorted by offset.
-    names: HashMap<u32, Vec<&'a CatiaLegacyTextField>>,
-}
-
-impl<'a> LegacyEvaluatedValueNames<'a> {
-    pub(crate) fn new(
-        roles: &[CatiaLegacyRoleSelector],
-        fields: &'a [CatiaLegacyTextField],
-    ) -> Self {
-        let mut evaluation_roles = HashMap::new();
-        for role in roles {
-            if role.field_code != Some(0x17c4) {
-                continue;
-            }
-            let Some(value_offset) = role.end_offset().and_then(|offset| offset.checked_add(6))
-            else {
-                continue;
-            };
-            evaluation_roles
-                .entry((role.entity_id, value_offset))
-                .and_modify(|offset| *offset = None)
-                .or_insert(Some(role.byte_offset));
+pub(crate) fn legacy_evaluation_roles(
+    roles: &[CatiaLegacyRoleSelector],
+) -> impl Iterator<Item = (u32, u64, u64)> + '_ {
+    roles.iter().filter_map(|role| {
+        if role.field_code != Some(0x17c4) {
+            return None;
         }
-        let mut names = HashMap::<u32, Vec<&CatiaLegacyTextField>>::new();
-        for field in fields {
-            if legacy_entity::valid_identifier(&field.value)
-                && field
-                    .role
-                    .as_ref()
-                    .is_some_and(|role| role.field_code == Some(0x1200))
-            {
-                names.entry(field.entity_id).or_default().push(field);
-            }
-        }
-        for fields in names.values_mut() {
-            fields.sort_by_key(|field| field.byte_offset);
-        }
-        Self {
-            evaluation_roles,
-            names,
-        }
-    }
-
-    pub(crate) fn get(
-        &self,
-        entity_id: u32,
-        value_offset: u64,
-    ) -> Option<&'a CatiaLegacyTextField> {
-        let role_offset = (*self.evaluation_roles.get(&(entity_id, value_offset))?)?;
-        let names = self.names.get(&entity_id)?;
-        let before_role = names.partition_point(|field| field.byte_offset < role_offset);
-        (before_role == 1).then(|| names.first().copied()).flatten()
-    }
+        let value_offset = role.end_offset()?.checked_add(6)?;
+        Some((role.entity_id, value_offset, role.byte_offset))
+    })
 }
 
 fn consolidated_class61_records(

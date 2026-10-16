@@ -179,12 +179,12 @@ fn body(
 
 /// What [`synthesize`] does with each model arena.
 ///
-/// `reject_unsupported_model` refuses every arena declared `Reported` except
-/// `procedural_curves`, which `procedural_reduction_losses` charges as reduced
-/// to their carriers. Topology and geometry go through the B-rep, trimmed-sheet
-/// or free-geometry entity graph.
+/// Arenas refused by `reject_unsupported_model` are `Dropped`; procedural
+/// curves are also `Dropped` because only their solved carriers are written and
+/// `procedural_reduction_losses` charges for their definitions. Topology and
+/// geometry go through the B-rep, trimmed-sheet or free-geometry entity graph.
 const SYNTHESIS_COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Reported, Written};
+    use ArenaDisposition::{Dropped, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -197,36 +197,36 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
         points: Written,
         surfaces: Written,
         curves: Written,
-        subds: Reported,
+        subds: Dropped,
         pcurves: Written,
         procedural_surfaces: Written,
-        procedural_curves: Reported,
-        assets: Reported,
-        features: Reported,
-        feature_input_topologies: Reported,
-        feature_result_topologies: Reported,
-        configurations: Reported,
-        parameters: Reported,
-        sketches: Reported,
-        sketch_entities: Reported,
-        sketch_constraints: Reported,
-        spatial_sketches: Reported,
-        spatial_sketch_entities: Reported,
-        spatial_sketch_constraints: Reported,
-        spreadsheets: Reported,
-        product_definitions: Reported,
-        occurrences: Reported,
-        assembly_joints: Reported,
-        drawings: Reported,
-        semantic_annotations: Reported,
-        presentation_documents: Reported,
-        view_presentations: Reported,
-        tessellations: Reported,
-        appearances: Reported,
-        appearance_bindings: Reported,
-        attributes: Reported,
-        pmi: Reported,
-        presentation_layers: Reported,
+        procedural_curves: Dropped,
+        assets: Dropped,
+        features: Dropped,
+        feature_input_topologies: Dropped,
+        feature_result_topologies: Dropped,
+        configurations: Dropped,
+        parameters: Dropped,
+        sketches: Dropped,
+        sketch_entities: Dropped,
+        sketch_constraints: Dropped,
+        spatial_sketches: Dropped,
+        spatial_sketch_entities: Dropped,
+        spatial_sketch_constraints: Dropped,
+        spreadsheets: Dropped,
+        product_definitions: Dropped,
+        occurrences: Dropped,
+        assembly_joints: Dropped,
+        drawings: Dropped,
+        semantic_annotations: Dropped,
+        presentation_documents: Dropped,
+        view_presentations: Dropped,
+        tessellations: Dropped,
+        appearances: Dropped,
+        appearance_bindings: Dropped,
+        attributes: Dropped,
+        pmi: Dropped,
+        presentation_layers: Dropped,
     }
 };
 

@@ -165,7 +165,7 @@ fn projected(scope: &DesignParameterScope) -> Option<FeatureDefinition> {
             &[],
         )
     })
-    .expect("projection resource budget")
+    .expect("project the extrude feature")
 }
 
 /// Fixed first-side and second-side lanes in centimetres define a two-sided

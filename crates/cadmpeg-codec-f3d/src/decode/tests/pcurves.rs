@@ -744,7 +744,7 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
         .expect("valid single-record byte fixture"),
     )
     .transpose()
-    .expect("resource allocation did not fail")
+    .expect("decode the selected pcurve with its chart")
     .expect("intcurve slot 2 carries the UV cache");
     assert_eq!(pcurve.control_points()[0].u, 0.25);
     assert_eq!(pcurve.control_points()[1].v, 1.5);
@@ -764,7 +764,7 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
             .expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the selected pcurve with its chart")
         .is_none()
     );
 }
@@ -804,7 +804,7 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
             .expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the selected pcurve with its chart")
         .is_none(),
         "a pcurve without its typed support surface is not a carrier"
     );
@@ -830,7 +830,7 @@ fn decode_attaches_generated_pcurve_to_its_coedge() {
         1
     );
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 

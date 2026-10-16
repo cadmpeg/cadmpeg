@@ -26,6 +26,7 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   resolves function paths and imports, and tracks bound results. Common method
   names require a receiver type or constructor that identifies the evaluator.
 - Loss notes use the owning loss code's `note` method.
+- Codec crates access only their own native namespace (`foreign_native_namespace`).
 - Formatted malformed errors use structured codec errors.
 - Tolerances from `1e-6` through `1e-12` use named constants or statics.
 - Vector repeats use a literal size or the length of an existing collection.

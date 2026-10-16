@@ -307,6 +307,12 @@ fn walk_cycles<'ir>(
                 Visit::Complete => {}
                 Visit::Active(start_index) => {
                     let finding = Finding {
+                        related: stack[start_index..]
+                            .iter()
+                            .map(|frame| frame.node)
+                            .filter(|id| *id != child)
+                            .map(str::to_owned)
+                            .collect(),
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
                         message: format!(
@@ -338,10 +344,10 @@ fn walk_cycles<'ir>(
 }
 
 /// Report cycles in the dependencies an evaluator can follow from a carrier.
-pub(super) fn check_evaluation_cycles(
+pub(super) fn check_evaluation_cycles<'ir>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    index: &ModelIndex<'_>,
+    ir: &'ir CadIr,
+    index: &ModelIndex<'ir>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     walk_cycles(ctx, ir, index, |finding| {

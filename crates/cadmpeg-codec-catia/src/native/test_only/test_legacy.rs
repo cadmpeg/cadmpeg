@@ -68,8 +68,11 @@ fn legacy_value_name(
         return None;
     }
 
-    let name = crate::native::LegacyEvaluatedValueNames::new(roles, fields)
-        .get(entity_id, value_offset)?;
+    let name = crate::legacy_entity::LegacyEvaluatedValueNames::new(
+        crate::native::legacy_evaluation_roles(roles),
+        fields,
+    )
+    .get(entity_id, value_offset)?;
     Some((name.byte_offset, name.value.clone()))
 }
 

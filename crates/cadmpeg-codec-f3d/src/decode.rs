@@ -2855,7 +2855,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.spatial_sketches,
                 self.ir.tolerances.linear.get(),
             )
-        }?;
+        };
         self.ir
             .model
             .sketch_constraints
@@ -2866,7 +2866,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.spatial_sketches,
                 &self.ir.model.spatial_sketch_entities,
                 self.ir.tolerances.linear.get(),
-            )?;
+            );
         self.ir
             .model
             .spatial_sketch_constraints

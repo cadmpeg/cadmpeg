@@ -613,6 +613,7 @@ fn push_constant_finding(
     entity: Option<String>,
 ) {
     findings.push(Finding {
+        related: Vec::new(),
         check,
         severity: Severity::Error,
         message: message.into(),
@@ -768,6 +769,7 @@ pub(crate) fn validate_native(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok(vec![Finding {
+                related: Vec::new(),
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion native namespace does not match the expected arena shape".into(),
@@ -8267,6 +8269,7 @@ fn emit_sketch_relation_finding(findings: &mut Vec<Finding>, entity: &str, messa
         copied
     };
     findings.push(Finding {
+        related: Vec::new(),
         check: Check::NativeLinks,
         severity: Severity::Error,
         message: message.into(),

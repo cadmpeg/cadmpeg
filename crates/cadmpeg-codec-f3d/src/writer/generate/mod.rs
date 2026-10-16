@@ -171,6 +171,9 @@ pub(super) fn write_new(
 }
 
 /// What [`write_new`] does with each model arena.
+/// `subds`, assets, tessellations and assembly joints are `Dropped` because
+/// non-empty arenas are refused; parameters are also `Dropped` without native
+/// Design records because their required projection is empty.
 ///
 /// The generator writes B-rep topology, geometry, procedural carriers and
 /// appearances from the neutral model. Configurations and parameters are
@@ -180,7 +183,7 @@ pub(super) fn write_new(
 /// and the remaining document arenas come only from native records, so the
 /// neutral arenas are not represented.
 fn coverage(has_native: bool) -> ArenaDispositions {
-    use ArenaDisposition::{Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Omitted, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -193,16 +196,16 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         points: Written,
         surfaces: Written,
         curves: Written,
-        subds: Reported,
+        subds: Dropped,
         pcurves: Written,
         procedural_surfaces: Written,
         procedural_curves: Written,
-        assets: Reported,
+        assets: Dropped,
         features: Omitted,
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
         configurations: if has_native { Written } else { Omitted },
-        parameters: if has_native { Written } else { Reported },
+        parameters: if has_native { Written } else { Dropped },
         sketches: Omitted,
         sketch_entities: Omitted,
         sketch_constraints: Omitted,
@@ -212,12 +215,12 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         spreadsheets: Omitted,
         product_definitions: Omitted,
         occurrences: Omitted,
-        assembly_joints: Reported,
+        assembly_joints: Dropped,
         drawings: Omitted,
         semantic_annotations: Omitted,
         presentation_documents: Omitted,
         view_presentations: Omitted,
-        tessellations: Reported,
+        tessellations: Dropped,
         appearances: Written,
         appearance_bindings: Omitted,
         attributes: Omitted,

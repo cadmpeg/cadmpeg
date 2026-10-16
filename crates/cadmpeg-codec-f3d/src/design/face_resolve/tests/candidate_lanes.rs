@@ -93,7 +93,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
 
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()])
-                .expect("projection resource budget"),
+                .expect("resolve the bounded face group"),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
                 native: group.id.clone(),
@@ -139,7 +139,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
             Some(FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar"));
         assert_eq!(
             resolved_face_group(&group, std::slice::from_ref(&operand))
-                .expect("projection resource budget"),
+                .expect("resolve the face group"),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
                 faces: vec![
                     FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar")
@@ -151,7 +151,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         operand.preceding_candidate_faces = vec![face(10), face(20)];
         assert_eq!(
             resolved_face_group(&group, std::slice::from_ref(&operand))
-                .expect("projection resource budget"),
+                .expect("resolve the face group"),
             None
         );
         operand.preceding_candidate_faces.clear();
@@ -170,7 +170,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         operand.candidate_faces.clear();
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()])
-                .expect("projection resource budget"),
+                .expect("resolve the bounded face group"),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
                 native: group.id.clone(),
@@ -186,7 +186,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
             .alternate_selector_faces
             .push(face(30));
         assert!(resolved_explicit_bounded_face_group(&group, &[operand])
-            .expect("projection resource budget")
+            .expect("resolve the bounded face group")
             .is_none());
     });
 }

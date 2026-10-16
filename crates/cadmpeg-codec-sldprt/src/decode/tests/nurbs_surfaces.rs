@@ -233,7 +233,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == support.surface)
-                .expect("materialized blend support")
+                .expect("find the blend support surface")
         })
         .collect();
     assert!(matches!(

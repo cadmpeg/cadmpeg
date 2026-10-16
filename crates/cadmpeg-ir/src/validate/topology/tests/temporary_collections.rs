@@ -23,7 +23,7 @@ fn topology_regeneration_references_keep_byte_order_and_uniqueness() {
         })
         .unwrap(),
     };
-    let references = super::super::regeneration_references(&definition).unwrap();
+    let references = super::super::regeneration_references(&definition);
     assert_eq!(&*references, [&first, &second]);
 }
 

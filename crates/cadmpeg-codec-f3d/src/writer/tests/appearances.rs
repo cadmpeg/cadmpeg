@@ -102,7 +102,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     })
     .is_empty());
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",

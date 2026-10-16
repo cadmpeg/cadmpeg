@@ -54,6 +54,108 @@ class TempSourceCase(unittest.TestCase):
         return [item for item in policy.check_source() if item.rule == rule]
 
 
+class ForeignNativeNamespaceTests(TempSourceCase):
+    def codec(self, name: str = "step", format_id: str = "step") -> str:
+        root = f"crates/cadmpeg-codec-{name}/src"
+        self.write(f"{root}/dialect/registry_ids.rs",
+                   f'pub(crate) const FORMAT: &str = "{format_id}";\n')
+        return root
+
+    def test_own_literal_passes(self) -> None:
+        root = self.codec()
+        self.write(f"{root}/writer.rs", '''
+fn f() {
+    ir.native.namespace("step");
+    ir.native.namespace_mut("step");
+    ir.native.namespace(/* key */ r#"step"# /* own */);
+}
+''')
+        self.assertEqual(self.findings("foreign_native_namespace"), [])
+
+    def test_foreign_literal_and_nonliteral_arguments_fail(self) -> None:
+        root = self.codec()
+        for argument in ('"iges"', 'r#"iges"#', 'format', 'FORMAT',
+                         'crate::dialect::FORMAT', '"step".to_owned()', 'choose("step")'):
+            for method in ("namespace", "namespace_mut"):
+                with self.subTest(argument=argument, method=method):
+                    self.write(f"{root}/writer.rs",
+                               f'fn f() {{\n    ir.native.{method}({argument});\n}}\n')
+                    findings = self.findings("foreign_native_namespace")
+                    self.assertEqual(len(findings), 1)
+                    self.assertEqual(findings[0].line, 2)
+                    self.assertEqual(findings[0].path, f"{root}/writer.rs")
+                    self.assertEqual(findings[0].message,
+                                     "Codec crates read only their own native namespace; "
+                                     "the convert gate assumes it (ExportPlan::carried_errors).")
+
+    def test_native_map_own_literal_methods_pass(self) -> None:
+        root = self.codec()
+        for method in ("get", "get_mut", "remove", "insert", "entry", "contains_key"):
+            with self.subTest(method=method):
+                extra = ", value" if method == "insert" else ""
+                self.write(f"{root}/writer.rs",
+                           f'fn f() {{ ir.native.0.{method}("step"{extra}); }}\n')
+                self.assertEqual(self.findings("foreign_native_namespace"), [])
+
+    def test_native_map_other_access_fails(self) -> None:
+        root = self.codec()
+        for access in ('ir.native.0.iter()', 'ir.native.0.values()', 'ir.native.0.keys()',
+                       '&ir.native.0', 'ir.native.0', 'ir.native.0.get("iges")',
+                       'ir.native.0.get_mut(format)', 'ir.native.0["step"]',
+                       'ir.native.0.clear()', 'ir.native.0.get("step".to_owned())'):
+            with self.subTest(access=access):
+                self.write(f"{root}/writer.rs", f'fn f() {{ consume({access}); }}\n')
+                self.assertEqual(len(self.findings("foreign_native_namespace")), 1)
+
+    def test_masks_tests_comments_and_literals(self) -> None:
+        root = self.codec()
+        self.write(f"{root}/writer.rs", '''
+// ir.native.namespace("iges");
+const EXAMPLE: &str = r#"ir.native.namespace("iges")"#;
+#[cfg(test)]
+mod tests {
+    fn f() { ir.native.namespace("iges"); consume(&ir.native.0); }
+}
+''')
+        self.write(f"{root}/writer/tests.rs", 'fn f() { ir.native.namespace("iges"); }\n')
+        self.assertEqual(self.findings("foreign_native_namespace"), [])
+
+    def test_freecad_uses_fcstd_from_registry(self) -> None:
+        root = self.codec("freecad", "fcstd")
+        self.write(f"{root}/writer.rs", 'fn f() { ir.native.namespace("fcstd"); }\n')
+        self.assertEqual(self.findings("foreign_native_namespace"), [])
+        self.write(f"{root}/writer.rs", 'fn f() { ir.native.namespace("freecad"); }\n')
+        self.assertEqual(len(self.findings("foreign_native_namespace")), 1)
+
+    def test_whitespace_and_multiline_calls(self) -> None:
+        root = self.codec()
+        self.write(f"{root}/writer.rs", '''
+fn f() {
+    ir . native . 0
+        . get_mut ( /* key */ "step" );
+    ir.native
+        . namespace_mut (
+            "iges",
+        );
+}
+''')
+        self.assertEqual([item.line for item in self.findings("foreign_native_namespace")], [6])
+
+    def test_unrelated_namespace_access_is_outside_the_rule(self) -> None:
+        root = self.codec()
+        self.write(f"{root}/writer.rs", 'fn f() { resolution.namespace(); }\n')
+        self.write("crates/cadmpeg-ir/src/native.rs",
+                   'fn f() { ir.native.namespace("iges"); consume(&ir.native.0); }\n')
+        self.write("crates/cadmpeg-codec-step/examples/demo.rs",
+                   'fn f() { ir.native.namespace("iges"); }\n')
+        self.assertEqual(self.findings("foreign_native_namespace"), [])
+
+    def test_missing_format_declaration_does_not_admit_access(self) -> None:
+        self.write("crates/cadmpeg-codec-step/src/writer.rs",
+                   'fn f() { ir.native.namespace("step"); }\n')
+        self.assertEqual(len(self.findings("foreign_native_namespace")), 1)
+
+
 class AnalysisCacheTests(unittest.TestCase):
     def test_session_reuses_analysis_and_releases_it(self):
         source = 'fn f() { /* comment */ }'

@@ -429,7 +429,7 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
     );
     let assignment = crate::solve::incidence::deferred_boundary_assignment(&domain, &valid)
         .expect("compute the deferred boundary assignment")
-        .expect("materialized deferred boundary");
+        .expect("assign the deferred boundary");
     assert_eq!(
         assignment.boundaries[0]
             .iter()
@@ -462,7 +462,7 @@ fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
     let assignment =
         crate::solve::incidence::deferred_boundary_assignment(&domain, &[[0, 1], [0, 1]])
             .expect("compute the deferred boundary assignment")
-            .expect("materialized deferred boundary");
+            .expect("assign the deferred boundary");
 
     assert_eq!(
         assignment.boundaries[0]

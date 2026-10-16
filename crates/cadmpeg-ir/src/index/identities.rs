@@ -44,15 +44,19 @@ impl<T> Slots<T> {
 }
 
 impl<'ir, T> BorrowedIdentities<'ir, T> {
+    pub(crate) fn new() -> Self {
+        Self {
+            slots: HashMap::new(),
+            len: 0,
+        }
+    }
+
     pub(crate) fn build(
         visit: impl FnOnce(
             &mut dyn FnMut(&'ir str, T) -> Result<(), CodecError>,
         ) -> Result<(), CodecError>,
     ) -> Result<Self, CodecError> {
-        let mut index = Self {
-            slots: HashMap::new(),
-            len: 0,
-        };
+        let mut index = Self::new();
         visit(&mut |id, value| {
             match index.slots.entry(id) {
                 Entry::Vacant(entry) => {
@@ -220,7 +224,7 @@ mod tests {
 
     #[test]
     fn borrowed_identity_set_keeps_one_slot_per_identity() {
-        let mut index = super::BorrowedIdentities::build(|_| Ok(())).unwrap();
+        let mut index = super::BorrowedIdentities::new();
         index.extend_unique([
             "test:model:point#first",
             "test:model:point#second",
@@ -239,7 +243,7 @@ mod tests {
         let ids: Vec<_> = (0..COUNT)
             .map(|index| format!("test:model:point#{index}"))
             .collect();
-        let mut index = super::BorrowedIdentities::build(|_| Ok(())).unwrap();
+        let mut index = super::BorrowedIdentities::new();
         for (value, id) in ids.iter().enumerate() {
             assert!(index.insert_unique(id, value));
         }

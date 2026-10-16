@@ -308,7 +308,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed blind Extrude");
         assert!(matches!(
             &blind,
@@ -345,7 +345,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed sheet Extrude");
         assert!(matches!(
             sheet,
@@ -388,7 +388,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed symmetric Extrude");
         assert!(matches!(
             symmetric,
@@ -417,7 +417,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed through-all Extrude");
         assert!(matches!(
             through_all,
@@ -445,7 +445,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed symmetric through-all Extrude");
         assert!(matches!(
             symmetric_through_all,
@@ -545,7 +545,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         set_extrude_direction_reversed(&mut scope, false);
@@ -560,7 +560,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         let side_two_taper = parameter("Side2TaperAngle", "deg", -0.3);
@@ -574,7 +574,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         let invalid_taper = parameter("TaperAngle", "native-unit", 0.2);
@@ -588,7 +588,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         let mut owned_along = along.clone();
@@ -597,7 +597,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         owned_along
             .try_set_source(
                 crate::records::parameters::DesignParameterSource::new(
-                    owned_along.source_kind().to_owned(),
+                    owned_along.source_kind().as_str().to_owned(),
                     Some(44),
                     owned_along.family_discriminator(),
                 )
@@ -898,7 +898,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed target-body Extrude");
         assert!(matches!(
             target_body,
@@ -1015,7 +1015,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&target_shape_operand),
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed target-shape Extrude");
         assert!(matches!(
             unresolved_target_shape,
@@ -1050,7 +1050,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&target_shape_operand),
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("resolved target-shape Extrude");
         let feature = crate::ids::neutral_feature_id(&scope);
         let feature_key = feature.key();
@@ -1159,7 +1159,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed multi-profile Extrude");
         assert!(matches!(
             multiple_profiles,
@@ -1180,7 +1180,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
@@ -1209,7 +1209,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     &[],
                 )
             })
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .expect("direct sketch profile with a scoped selection group");
         assert!(matches!(
             direct_profile_with_selection_group,
@@ -1252,7 +1252,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed hybrid fixed-distance Extrude");
         assert!(matches!(
             hybrid,
@@ -1280,7 +1280,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed hybrid fixed-distance Extrude");
         assert!(matches!(
             reversed_hybrid,
@@ -1331,7 +1331,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed Extrude with a native profile");
         assert!(matches!(
             reversed_native_profile,
@@ -1380,7 +1380,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
 
@@ -1395,7 +1395,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         set_extrude_start(&mut scope, DesignExtrudeStart::OffsetProfilePlane);
@@ -1410,7 +1410,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed offset-profile-plane Extrude");
         assert!(matches!(
             offset_start,
@@ -1435,7 +1435,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
@@ -1450,7 +1450,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed two-sided Extrude");
         assert!(matches!(
             two_sided,
@@ -1484,7 +1484,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
         set_extrude_direction_reversed(&mut scope, false);
@@ -1502,7 +1502,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed Extrude");
         assert!(matches!(
             reversed,
@@ -1541,7 +1541,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed to-face Extrude");
         assert!(matches!(
             to_face,
@@ -1583,7 +1583,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("class-330 face-target Extrude admits omitted zero offset");
         assert!(matches!(
             omitted_zero_offset,
@@ -1612,7 +1612,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 std::slice::from_ref(&placement),
                 &[]
             ))
-            .expect("projection resource budget")
+            .expect("project the extrude feature")
             .is_none()
         );
 
@@ -1642,7 +1642,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed two-sided face-target Extrude");
         assert!(matches!(
             two_sided_to_faces,
@@ -1691,7 +1691,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed reversed two-sided face-target Extrude");
         assert!(matches!(
             reversed_two_sided_to_faces,
@@ -1715,7 +1715,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed mixed two-sided Extrude");
         assert!(matches!(
             mixed_two_sided,
@@ -1766,7 +1766,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed selected-face start Extrude");
         assert!(matches!(
             from_face,
@@ -1797,7 +1797,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 &[],
             )
         })
-        .expect("projection resource budget")
+        .expect("project the extrude feature")
         .expect("typed selected-face-start two-sided Extrude");
         assert!(matches!(
             from_face_two_sided,

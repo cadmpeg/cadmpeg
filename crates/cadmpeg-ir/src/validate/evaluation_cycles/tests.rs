@@ -60,6 +60,8 @@ fn cycle_check_reports_one_cycle_for_repeated_carrier_rows() {
     super::check_evaluation_cycles(&ctx, &ir, &index, &mut findings).unwrap();
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].check, Check::ReferentialIntegrity);
+    assert_eq!(findings[0].entity.as_deref(), Some(curve.as_str()));
+    assert_eq!(findings[0].related, vec![surface.as_str()]);
     assert_eq!(
         findings[0].message,
         format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}")

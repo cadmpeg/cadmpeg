@@ -154,6 +154,7 @@ impl CodecBackend for NxCodec {
                     return Err(codec_error);
                 }
                 vec![cadmpeg_ir::report::check::Finding {
+                    related: Vec::new(),
                     check: cadmpeg_ir::report::check::Check::NativeLinks,
                     severity: cadmpeg_ir::report::Severity::Error,
                     message,

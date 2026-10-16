@@ -28,7 +28,7 @@ pub(in crate::validate) fn check_coedge_pairing(
         }
         Ok(())
     })?;
-    let mut statuses = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut statuses = BorrowedIdentities::new();
     for coedge in &ir.model.coedges {
         let start = coedge.id.as_str();
         if statuses.contains(start) {
@@ -36,7 +36,7 @@ pub(in crate::validate) fn check_coedge_pairing(
         }
         let expected_edge = &coedge.edge;
         let mut path = Vec::<&str>::new();
-        let mut positions = BorrowedIdentities::build(|_| Ok(()))?;
+        let mut positions = BorrowedIdentities::new();
         let mut current = start;
         loop {
             if let Some(status) = statuses.get(current).copied() {
@@ -278,15 +278,14 @@ fn insert_incident<'ir>(
     groups: &mut BorrowedIdentities<'ir, BorrowedIdentities<'ir>>,
     member: &'ir str,
     face: &'ir str,
-) -> Result<(), CodecError> {
+) {
     if let Some(group) = groups.get_mut(member) {
         group.insert_unique(face, ());
     } else {
-        let mut group = BorrowedIdentities::build(|_| Ok(()))?;
+        let mut group = BorrowedIdentities::new();
         group.insert_unique(face, ());
         groups.insert(member, group);
     }
-    Ok(())
 }
 
 pub(in crate::validate) fn check_shell_connectivity(
@@ -311,16 +310,16 @@ pub(in crate::validate) fn check_shell_connectivity(
         }
         Ok(())
     })?;
-    let mut faces_by_edge = BorrowedIdentities::build(|_| Ok(()))?;
-    let mut faces_by_vertex = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut faces_by_edge = BorrowedIdentities::new();
+    let mut faces_by_vertex = BorrowedIdentities::new();
     for coedge in &ir.model.coedges {
         let Some(face) = loop_faces.get(coedge.owner_loop.as_str()).copied() else {
             continue;
         };
-        insert_incident(&mut faces_by_edge, coedge.edge.as_str(), face)?;
+        insert_incident(&mut faces_by_edge, coedge.edge.as_str(), face);
         if let Some(edge) = edges.get(coedge.edge.as_str()) {
-            insert_incident(&mut faces_by_vertex, edge.start.as_str(), face)?;
-            insert_incident(&mut faces_by_vertex, edge.end.as_str(), face)?;
+            insert_incident(&mut faces_by_vertex, edge.start.as_str(), face);
+            insert_incident(&mut faces_by_vertex, edge.end.as_str(), face);
         }
     }
     for loop_ in &ir.model.loops {
@@ -329,21 +328,21 @@ pub(in crate::validate) fn check_shell_connectivity(
         };
         match &loop_.boundary {
             crate::topology::LoopBoundary::Vertex { vertex, .. } => {
-                insert_incident(&mut faces_by_vertex, vertex.as_str(), face)?;
+                insert_incident(&mut faces_by_vertex, vertex.as_str(), face);
             }
             crate::topology::LoopBoundary::Ring(ring) => {
                 for use_ in ring.vertex_uses() {
-                    insert_incident(&mut faces_by_vertex, use_.vertex.as_str(), face)?;
+                    insert_incident(&mut faces_by_vertex, use_.vertex.as_str(), face);
                 }
             }
         }
     }
-    let mut neighbors = BorrowedIdentities::build(|_| Ok(()))?;
+    let mut neighbors = BorrowedIdentities::new();
     for incident_faces in faces_by_edge.values().chain(faces_by_vertex.values()) {
         for face in incident_faces.identities() {
             for other in incident_faces.identities() {
                 if other != face {
-                    insert_incident(&mut neighbors, face, other)?;
+                    insert_incident(&mut neighbors, face, other);
                 }
             }
         }
@@ -365,9 +364,9 @@ pub(in crate::validate) fn check_shell_connectivity(
         if skips {
             continue;
         }
-        let mut owned = BorrowedIdentities::build(|_| Ok(()))?;
+        let mut owned = BorrowedIdentities::new();
         owned.extend_unique(shell.faces().iter().map(crate::ids::FaceId::as_str));
-        let mut reached = BorrowedIdentities::build(|_| Ok(()))?;
+        let mut reached = BorrowedIdentities::new();
         let first = shell.faces()[0].as_str();
         reached.insert_unique(first, ());
         let mut pending = Vec::new();
