@@ -63,7 +63,7 @@ fn empty_section_transfer_preserves_sketch_and_feature() {
 fn sketch_native_reference_names_featdefs_sketch() {
     let sketch = SketchId::mint("creo:model:sketch#7").expect("valid sketch ID");
     assert_eq!(
-        crate::decode::sketch_ids::sketch_native_ref_admitted(&sketch),
+        crate::decode::sketch_ids::sketch_native_ref(&sketch),
         "creo:featdefs:sketch#7"
     );
 }

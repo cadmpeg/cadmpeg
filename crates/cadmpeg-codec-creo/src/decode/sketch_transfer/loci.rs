@@ -8,7 +8,7 @@ use super::super::sketch::skamp::{
     section_skamp_incidence_point, section_skamp_selected_point_id_with_ordinary_segment,
     unique_decoded_section_segment, SectionPointSource,
 };
-use super::super::sketch_ids::sketch_entity_id_admitted;
+use super::super::sketch_ids::sketch_entity_id;
 use crate::decode::sketch_transfer::identity::{
     saved_section_entity_fallback_allowed, semantic_saved_section_entities,
 };
@@ -158,7 +158,7 @@ pub(super) fn section_point_locus(
                 }),
         );
     let (external_id, kind) = crate::decode::uniqueness::exactly_one(candidates)?;
-    let entity = super::super::sketch_ids::sketch_entity_id_admitted(sketch, external_id)?;
+    let entity = super::super::sketch_ids::sketch_entity_id(sketch, external_id)?;
     Some(match kind {
         PointLocusKind::Entity => SketchLocus::Entity(entity),
         PointLocusKind::Start => SketchLocus::Start(entity),
@@ -222,7 +222,7 @@ pub(in super::super) fn section_skamp_locus(
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SketchLocus> {
-    let entity = sketch_entity_id_admitted(sketch, item.entity_id)?;
+    let entity = sketch_entity_id(sketch, item.entity_id)?;
     if let Some(family) = solver_only_section_entity_family(definition, item.entity_id) {
         return section_entity_family_locus(family, entity, item.sense);
     }
@@ -466,7 +466,7 @@ pub(in super::super) fn section_skamp_incidence_locus(
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<SketchLocus> {
     section_skamp_point_locus(definition, sketch, item).or_else(|| {
-        let entity = sketch_entity_id_admitted(sketch, item.entity_id)?;
+        let entity = sketch_entity_id(sketch, item.entity_id)?;
         let native = geometry?.get(&entity).is_some_and(|geometry| {
             matches!(
                 geometry.definition(),
@@ -498,8 +498,8 @@ pub(super) fn section_skamp_line_pair(
         return None;
     }
     Some([
-        sketch_entity_id_admitted(sketch, first.entity_id)?,
-        sketch_entity_id_admitted(sketch, second.entity_id)?,
+        sketch_entity_id(sketch, first.entity_id)?,
+        sketch_entity_id(sketch, second.entity_id)?,
     ])
 }
 
@@ -510,7 +510,7 @@ pub(super) fn section_skamp_oriented_line(
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<SketchEntityId> {
     (item.sense == 0).then_some(())?;
-    let entity = sketch_entity_id_admitted(sketch, item.entity_id)?;
+    let entity = sketch_entity_id(sketch, item.entity_id)?;
     if section_skamp_is_line(definition, item) {
         return Some(entity);
     }
@@ -787,7 +787,7 @@ pub(super) fn section_skamp_curve_entity(
                 )
             }));
     is_curve
-        .then(|| sketch_entity_id_admitted(sketch, item.entity_id))
+        .then(|| sketch_entity_id(sketch, item.entity_id))
         .flatten()
 }
 
@@ -800,11 +800,11 @@ pub(in super::super) fn section_skamp_midpoint(
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::definitions::FeatureSkampItem| {
         if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
-            return sketch_entity_id_admitted(sketch, item.entity_id);
+            return sketch_entity_id(sketch, item.entity_id);
         }
         (item.sense == 0).then_some(())?;
         if section_skamp_is_arc(definition, item) {
-            return sketch_entity_id_admitted(sketch, item.entity_id);
+            return sketch_entity_id(sketch, item.entity_id);
         }
         // A type-25 section-reference line and an axis line anchored at one
         // section point are unbounded, so neither is a midpoint target.
@@ -820,7 +820,7 @@ pub(in super::super) fn section_skamp_midpoint(
     let point = |item: &crate::feature::definitions::FeatureSkampItem| {
         section_skamp_point_locus(definition, sketch, item).or_else(|| {
             (item.sense == 0 && section_skamp_is_circular(definition, item))
-                .then(|| sketch_entity_id_admitted(sketch, item.entity_id).map(SketchLocus::Center))
+                .then(|| sketch_entity_id(sketch, item.entity_id).map(SketchLocus::Center))
                 .flatten()
         })
     };
@@ -909,7 +909,7 @@ pub(super) fn section_skamp_circular_entity(
         return None;
     }
     section_skamp_is_circular(definition, item)
-        .then(|| sketch_entity_id_admitted(sketch, item.entity_id))
+        .then(|| sketch_entity_id(sketch, item.entity_id))
         .flatten()
 }
 
@@ -919,7 +919,7 @@ pub(super) fn section_skamp_center_entity(
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SketchEntityId> {
     (item.sense == 4 && section_skamp_is_circular(definition, item))
-        .then(|| sketch_entity_id_admitted(sketch, item.entity_id))
+        .then(|| sketch_entity_id(sketch, item.entity_id))
         .flatten()
 }
 

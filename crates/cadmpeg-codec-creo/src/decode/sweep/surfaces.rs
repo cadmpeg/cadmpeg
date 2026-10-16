@@ -13,7 +13,7 @@ use super::super::sketch::geometry::{
 use super::super::sketch::intersect::section_point_in_model;
 use super::super::sketch::radii::trim_segment_id;
 use super::super::sketch::skamp::complete_section_segment_rows;
-use super::super::sketch_ids::sketch_section_curve_id_admitted;
+use super::super::sketch_ids::sketch_section_curve_id;
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -238,7 +238,7 @@ pub(in super::super) fn placed_sketch_curve_ref(
 ) -> Option<String> {
     let transform = transform?;
     placed_section_geometry_curve(transform, geometry)?;
-    Some(sketch_section_curve_id_admitted(sketch, suffix))
+    Some(sketch_section_curve_id(sketch, suffix))
 }
 
 fn unique_feature_surface_row(
