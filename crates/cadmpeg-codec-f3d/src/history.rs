@@ -11,6 +11,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+pub(crate) mod binding;
 mod body_candidates;
 mod body_index;
 mod cache;
@@ -527,100 +528,7 @@ fn bind_complete_record_tables(
     bytes: &[u8],
     width: RefWidth,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let Some(archive) = decode_record_archive(ctx, states, bytes, width)? else {
-        return Ok(());
-    };
-    let archived_ids: Vec<_> = states
-        .iter()
-        .flat_map(|state| &state.records)
-        .filter_map(|record| record.revision_id)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    let Some(active_count) = archived_active_record_count(states)?
-        .or_else(|| insert_only_active_record_count(states))
-        .and_then(|count| i64::try_from(count).ok())
-    else {
-        return Ok(());
-    };
-    let mut newer: Option<(usize, AsmHistoricalTopology, BTreeMap<i64, i64>)> = None;
-    let mut transitions = Vec::new();
-    let mut complete = true;
-    let mut failure = None;
-    let walked = walk_entity_versions(states, active_count, &archived_ids, |ordinal, versions| {
-        if !complete {
-            return;
-        }
-        let decoded = (|| {
-            let Some(records) = materialize_record_table(versions, &archive) else {
-                return Ok(None);
-            };
-            let decoded = match crate::brep::decode_history_topology(
-                ctx,
-                &records,
-                bytes,
-                crate::ids::ID_FORMAT,
-            ) {
-                Ok(decoded) => decoded,
-                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => return Ok(None),
-            };
-            historical_topology_with_tags(&decoded)
-        })();
-        let topology = match decoded {
-            Ok(Some(topology)) => topology,
-            Ok(None) => {
-                complete = false;
-                return;
-            }
-            Err(error) => {
-                failure = Some(error);
-                complete = false;
-                return;
-            }
-        };
-        if let Some((newer_index, newer_topology, newer_versions)) = newer.take() {
-            let older = crate::history_records::AsmStateSnapshot {
-                state_id: states[ordinal].state_id,
-                topology: &topology,
-                versions,
-            };
-            let new = crate::history_records::AsmStateSnapshot {
-                state_id: states[newer_index].state_id,
-                topology: &newer_topology,
-                versions: &newer_versions,
-            };
-            let Some(transition) = AsmHistoricalTransition::between(Some(older), new) else {
-                complete = false;
-                return;
-            };
-            transitions.push((newer_index, transition));
-        }
-        newer = Some((ordinal, topology, versions.clone()));
-    });
-    if let Some(error) = failure {
-        return Err(error);
-    }
-    if !walked || !complete {
-        return Ok(());
-    }
-    if let Some((ordinal, topology, versions)) = newer {
-        let Some(transition) = AsmHistoricalTransition::between(
-            None,
-            crate::history_records::AsmStateSnapshot {
-                state_id: states[ordinal].state_id,
-                topology: &topology,
-                versions: &versions,
-            },
-        ) else {
-            return Ok(());
-        };
-        transitions.push((ordinal, transition));
-    }
-    for (ordinal, transition) in transitions {
-        states[ordinal].transition = Some(transition);
-    }
-    Ok(())
+    binding::bind(ctx, states, bytes, width).map(|_| ())
 }
 
 pub(crate) fn decode_record_archive(
@@ -7313,6 +7221,7 @@ pub(crate) fn historical_topology_with_tags(
     Ok(Some(topology))
 }
 
+#[cfg(test)]
 pub(crate) fn materialize_record_table(
     versions: &BTreeMap<i64, i64>,
     archive: &HistoricalRecordArchive,
