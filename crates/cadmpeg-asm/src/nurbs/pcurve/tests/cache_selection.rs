@@ -99,7 +99,7 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
             &test_table(&subset, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .unwrap_or_else(|| panic!("nested subset source at width {int_width}"));
         assert!(!matches!(
             subset_decoded.construction,
@@ -131,7 +131,7 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
             &test_table(&offset, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .unwrap_or_else(|| panic!("nested vector-offset source at width {int_width}"));
         assert!(!matches!(
             offset_decoded.construction,
@@ -300,7 +300,7 @@ fn procedural_curve_cache_ignores_nested_support_scope() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .unwrap_or_else(|| panic!("procedural curve at width {int_width}"));
 
         assert!((decoded.curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
@@ -333,7 +333,7 @@ fn procedural_curve_with_only_nested_cache_is_withheld() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture")
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .is_none());
     }
 }
@@ -391,7 +391,7 @@ fn two_cache_bearing_owned_scopes_state_no_record_cache() {
             &test_table(&bytes, int_width).expect("valid single-record byte fixture")
         )
         .transpose()
-        .expect("resource allocation did not fail")
+        .expect("decode the procedural curve")
         .is_none());
 
         let mut surfaces = vec![0x0f];

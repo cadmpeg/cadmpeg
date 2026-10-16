@@ -3594,7 +3594,7 @@ mod cache_form_tests {
             let mut cur = Cur::at(&toks, 0);
             let context = cache_first_curve_context(&asm_decode_ctx, &mut cur, &table)
                 .transpose()
-                .expect("resource allocation did not fail")
+                .expect("decode the cache-first curve context")
                 .unwrap_or_else(|| {
                     panic!("parameterized cache-first context at width {int_width}")
                 });
@@ -3644,7 +3644,7 @@ mod cache_form_tests {
             let mut cur = Cur::at(&toks, 0);
             assert!(cache_first_curve_context(&asm_decode_ctx, &mut cur, &table)
                 .transpose()
-                .expect("resource allocation did not fail")
+                .expect("decode the cache-first curve context")
                 .is_none());
         }
     }

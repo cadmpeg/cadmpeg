@@ -91,7 +91,7 @@ fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
         &table,
     )
     .transpose()
-    .expect("resource allocation did not fail")
+    .expect("decode the procedural surface")
     .expect("syntactically complete T-spline reaches surface admission");
     let mut carriers = Carriers::default();
     carriers.surface_geo.insert(

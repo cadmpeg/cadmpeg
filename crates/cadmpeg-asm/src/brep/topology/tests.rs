@@ -172,7 +172,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 &table,
             )
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("decode the procedural surface")
             .unwrap();
             let DecodedProceduralSurfaceDefinition::Sum {
                 revision_form: Some(form),
