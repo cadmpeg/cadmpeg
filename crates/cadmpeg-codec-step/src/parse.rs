@@ -215,6 +215,15 @@ pub(crate) struct RawRecord {
     pub(crate) span: Range<usize>,
 }
 
+impl RawRecord {
+    /// Every parameter of every partial, in source order.
+    fn values_mut(&mut self) -> impl Iterator<Item = &mut Value> {
+        (&mut self.partials)
+            .into_iter()
+            .flat_map(|partial| &mut partial.parameters)
+    }
+}
+
 /// One entity-like record in the HEADER section.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HeaderRecord {
@@ -246,6 +255,17 @@ pub(crate) struct AnchorEntry {
     pub(crate) value: Value,
     /// Ordered metadata tags attached to the binding.
     tags: Vec<AnchorTag>,
+}
+
+impl AnchorEntry {
+    /// The bound value followed by each tag value.
+    fn values(&self) -> impl Iterator<Item = &Value> {
+        std::iter::once(&self.value).chain(self.tags.iter().map(|tag| &tag.value))
+    }
+
+    fn values_mut(&mut self) -> impl Iterator<Item = &mut Value> {
+        std::iter::once(&mut self.value).chain(self.tags.iter_mut().map(|tag| &mut tag.value))
+    }
 }
 
 /// One edition-3 metadata tag attached to an ANCHOR binding.
@@ -503,6 +523,9 @@ pub(crate) enum ParseDiagnosticKind {
     /// `FILE_DESCRIPTION` declares an implementation level whose grammar is
     /// not implemented; parsing continued with the edition-3 class-3 grammar.
     ImplementationLevelUnverified,
+    /// An anchor or REFERENCE expansion passed its value-node limit; the
+    /// binding or instance remains source-only.
+    ExpansionBounded,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -533,7 +556,6 @@ pub(crate) fn parse_inner(
         current: None,
         lexer,
         last_end: 0,
-        depth: 0,
         diagnostics: Vec::new(),
         omitted_entity_names: None,
         defer_lexical_errors: false,
@@ -557,7 +579,6 @@ struct Parser<'input, 'ctx, 'arena> {
     lexer: Lexer<'input, 'ctx, 'arena>,
     current: Option<Token>,
     last_end: usize,
-    depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
     omitted_entity_names: Option<(usize, NonZeroUsize)>,
     defer_lexical_errors: bool,
@@ -795,6 +816,7 @@ impl Parser<'_, '_, '_> {
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let mut anchors = Vec::new();
+        let mut anchor_spans = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
                 self.diagnostic(self.current_offset(), ParseDiagnosticKind::ImplementationLevelUnverified, format_args!("{level} forbids ANCHOR and REFERENCE sections; readable sections parsed with the 4;3 section grammar"));
@@ -805,6 +827,7 @@ impl Parser<'_, '_, '_> {
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
+                let start = self.current_offset();
                 let TokenKind::Resource(name) = self.next_kind()? else {
                     return self.err("expected anchor name");
                 };
@@ -835,6 +858,7 @@ impl Parser<'_, '_, '_> {
 
                 self.punct(&TokenKind::Semicolon)?;
                 anchors.push(AnchorEntry { name, value, tags });
+                anchor_spans.push(start..self.previous_end());
             }
             self.next_kind()?;
             self.lexer.set_allow_print_controls(true);
@@ -1010,6 +1034,7 @@ impl Parser<'_, '_, '_> {
         {
             return self.err("external value instance collides with a DATA instance");
         }
+        let mut omissions = ExpansionOmissions::default();
         if !anchors.is_empty() {
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
@@ -1019,26 +1044,33 @@ impl Parser<'_, '_, '_> {
             if anchor_bindings.len() != anchors.len() {
                 return self.err("duplicate anchor name");
             }
+            let mut bounded = BoundedExpansions::default();
             let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget);
             for anchor in &mut anchors {
-                anchor.value = resolver
-                    .resolve_root(&anchor.value)
-                    .map_err(|error| error.into_parse_error(0))?;
-                for tag in &mut anchor.tags {
-                    tag.value = resolver
-                        .resolve_root(&tag.value)
-                        .map_err(|error| error.into_parse_error(0))?;
+                if let Some(bound) = resolver
+                    .resolve_item(anchor.values_mut())
+                    .map_err(|error| error.into_parse_error(0))?
+                {
+                    bounded.anchors.insert(anchor.name.clone(), bound);
                 }
             }
-            for record in records.values_mut() {
-                for partial in &mut record.partials {
-                    for value in &mut partial.parameters {
-                        *value = resolver
-                            .resolve_root(value)
-                            .map_err(|error| error.into_parse_error(record.span.start))?;
-                    }
+            for (&id, record) in &mut records {
+                let offset = record.span.start;
+                if let Some(bound) = resolver
+                    .resolve_item(record.values_mut())
+                    .map_err(|error| error.into_parse_error(offset))?
+                {
+                    bounded.records.insert(id, bound);
                 }
             }
+            self.omit_bounded_expansions(
+                bounded,
+                &mut anchors,
+                &mut anchor_spans,
+                &mut records,
+                &mut omitted_spans,
+                &mut omissions,
+            );
         }
         // Validate the source occurrence class before local REFERENCES can
         // replace a forbidden token with an ordinary value.
@@ -1062,8 +1094,21 @@ impl Parser<'_, '_, '_> {
                             })
                         })
                 });
-        resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
-            .map_err(|error| error.into_parse_error(0))?;
+        let bounded = resolve_local_references(
+            &mut anchors,
+            &mut records,
+            &reference_entries,
+            &omissions.anchors,
+            self.budget,
+        )?;
+        self.omit_bounded_expansions(
+            bounded,
+            &mut anchors,
+            &mut anchor_spans,
+            &mut records,
+            &mut omitted_spans,
+            &mut omissions,
+        );
         for (&id, record) in &mut records {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
@@ -1102,7 +1147,28 @@ impl Parser<'_, '_, '_> {
 
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
+        let mut dependent = BoundedExpansions::default();
         for anchor in &anchors {
+            let mut bounded_reference = None;
+            for value in anchor.values() {
+                refs.clear();
+                value_refs.clear();
+                references(value, &mut refs, &mut value_refs, self.budget)?;
+                bounded_reference = refs
+                    .iter()
+                    .copied()
+                    .find(|id| omissions.records.contains(id));
+                if bounded_reference.is_some() {
+                    break;
+                }
+            }
+            if let Some(id) = bounded_reference {
+                dependent.anchors.insert(
+                    anchor.name.clone(),
+                    format!("depends on instance #{id}, omitted at its expansion limit"),
+                );
+                continue;
+            }
             refs.clear();
             value_refs.clear();
             references(&anchor.value, &mut refs, &mut value_refs, self.budget)?;
@@ -1136,6 +1202,14 @@ impl Parser<'_, '_, '_> {
                 }
             }
         }
+        self.omit_bounded_expansions(
+            dependent,
+            &mut anchors,
+            &mut anchor_spans,
+            &mut records,
+            &mut omitted_spans,
+            &mut omissions,
+        );
         self.omit_unresolved_records(
             &mut records,
             &external_reference_ids,
@@ -1289,16 +1363,9 @@ impl Parser<'_, '_, '_> {
         &mut self,
         parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
     ) -> Result<T, ParseError> {
-        const MAX_VALUE_DEPTH: usize = 256;
         let budget = self.budget;
         let _nested = budget.enter_nested("step_parse_parameter_nesting")?;
-        if self.depth >= MAX_VALUE_DEPTH {
-            return self.err("parameter nesting exceeds 256 levels");
-        }
-        self.depth += 1;
-        let result = parse(self);
-        self.depth -= 1;
-        result
+        parse(self)
     }
 
     fn parameters_inner(&mut self) -> Result<Vec<Value>, ParseError> {
@@ -2280,16 +2347,36 @@ fn is_anchor_item(value: &Value) -> bool {
 #[derive(Debug)]
 enum ResolveError {
     Syntax(String),
+    /// A value-node limit stopped the expansion; the message names the bound.
+    Bounded(String),
     Resource(CodecError),
 }
 
 impl ResolveError {
     fn into_parse_error(self, offset: usize) -> ParseError {
         match self {
-            Self::Syntax(message) => ParseError::Syntax { offset, message },
+            Self::Syntax(message) | Self::Bounded(message) => {
+                ParseError::Syntax { offset, message }
+            }
             Self::Resource(error) => ParseError::Resource(error),
         }
     }
+}
+
+/// Anchors and instances whose expansion passed a value-node limit, each with
+/// the bound that stopped it.
+#[derive(Default)]
+struct BoundedExpansions {
+    anchors: BTreeMap<String, String>,
+    records: BTreeMap<u64, String>,
+}
+
+/// Anchors and instances that a value-node limit removed from the
+/// interpreted graph.
+#[derive(Default)]
+struct ExpansionOmissions {
+    anchors: BTreeSet<String>,
+    records: BTreeSet<u64>,
 }
 
 impl From<String> for ResolveError {
@@ -2318,8 +2405,8 @@ struct AnchorResolver<'a, 'ctx, 'arena> {
 }
 
 impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
+    /// Value nodes that anchor expansion may copy across the whole exchange.
     const MAX_EXPANDED_NODES: usize = 1_000_000;
-    const MAX_REFERENCE_DEPTH: usize = 256;
 
     fn new(anchors: &'a BTreeMap<String, Value>, budget: &'ctx DecodeContext<'arena>) -> Self {
         Self {
@@ -2330,10 +2417,30 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         }
     }
 
+    /// Resolves every value of one anchor or instance. A value that passes
+    /// the node limit leaves the item unresolved, returns the bound, and
+    /// gives back the nodes that the item's earlier values used.
+    fn resolve_item<'v>(
+        &mut self,
+        values: impl Iterator<Item = &'v mut Value>,
+    ) -> Result<Option<String>, ResolveError> {
+        let remaining = self.remaining_nodes;
+        for value in values {
+            match self.resolve_root(value) {
+                Ok(resolved) => *value = resolved,
+                Err(ResolveError::Bounded(bound)) => {
+                    self.remaining_nodes = remaining;
+                    return Ok(Some(bound));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(None)
+    }
+
     fn resolve_root(&mut self, value: &Value) -> Result<Value, ResolveError> {
         let mut stack = Vec::new();
-        let (value, _, expanded_nodes) =
-            self.resolve(value, &mut stack, self.remaining_nodes, 0)?;
+        let (value, _, expanded_nodes) = self.resolve(value, &mut stack, self.remaining_nodes)?;
         self.remaining_nodes = self
             .remaining_nodes
             .checked_sub(expanded_nodes)
@@ -2342,11 +2449,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 
     fn node_limit_error() -> ResolveError {
-        format!(
+        ResolveError::Bounded(format!(
             "anchor expansion exceeds {} value nodes",
             Self::MAX_EXPANDED_NODES
-        )
-        .into()
+        ))
     }
 
     fn resolve(
@@ -2354,16 +2460,8 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         value: &Value,
         stack: &mut Vec<&'a str>,
         budget: usize,
-        depth: usize,
     ) -> Result<(Value, usize, usize), ResolveError> {
         let _nested = self.budget.enter_nested("step_anchor_reference")?;
-        if depth >= Self::MAX_REFERENCE_DEPTH {
-            return Err(format!(
-                "anchor reference nesting exceeds {} levels",
-                Self::MAX_REFERENCE_DEPTH
-            )
-            .into());
-        }
         if let Value::Resource(name) = value {
             if let Some((name, source)) = name
                 .strip_prefix('#')
@@ -2382,7 +2480,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
                 stack.push(name);
-                let resolved = self.resolve(source, stack, budget, depth + 1);
+                let resolved = self.resolve(source, stack, budget);
                 stack.pop();
                 let (value, nodes, _) = resolved?;
                 if nodes > budget {
@@ -2403,7 +2501,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .checked_sub(expanded_nodes)
                         .ok_or_else(Self::node_limit_error)?;
                     let (value, child_nodes, child_expanded_nodes) =
-                        self.resolve(value, stack, remaining, depth + 1)?;
+                        self.resolve(value, stack, remaining)?;
                     nodes = nodes
                         .checked_add(child_nodes)
                         .ok_or_else(Self::node_limit_error)?;
@@ -2415,8 +2513,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 Ok((Value::List(resolved), nodes, expanded_nodes))
             }
             Value::Typed(name, value) => {
-                let (value, nodes, expanded_nodes) =
-                    self.resolve(value, stack, budget, depth + 1)?;
+                let (value, nodes, expanded_nodes) = self.resolve(value, stack, budget)?;
                 let value = Value::Typed(name.to_owned(), Box::new(value));
                 Ok((
                     value,
@@ -2432,18 +2529,21 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
 struct ReferenceResolver<'a, 'ctx, 'arena> {
     bindings: BTreeMap<ReferenceName, &'a str>,
     anchors: &'a BTreeMap<String, Value>,
+    omitted_anchors: &'a BTreeSet<String>,
     stack: Vec<ReferenceName>,
     remaining_nodes: usize,
     budget: &'ctx DecodeContext<'arena>,
 }
 
 impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
+    /// Value nodes that REFERENCE expansion may copy across the whole
+    /// exchange.
     const MAX_MATERIALIZED_NODES: usize = 1_000_000;
-    const MAX_REFERENCE_DEPTH: usize = 256;
 
     fn new(
         references: &'a [ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
+        omitted_anchors: &'a BTreeSet<String>,
         budget: &'ctx DecodeContext<'arena>,
     ) -> Self {
         let bindings = references
@@ -2453,6 +2553,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         Self {
             bindings,
             anchors,
+            omitted_anchors,
             stack: Vec::new(),
             remaining_nodes: Self::MAX_MATERIALIZED_NODES,
             budget,
@@ -2460,11 +2561,31 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     }
 
     fn node_limit_error() -> ResolveError {
-        format!(
+        ResolveError::Bounded(format!(
             "external reference expansion exceeds {} value nodes",
             Self::MAX_MATERIALIZED_NODES
-        )
-        .into()
+        ))
+    }
+
+    /// Resolves every value of one anchor or instance. A value that passes
+    /// the node limit leaves the item unresolved, returns the bound, and
+    /// gives back the nodes that the item's earlier values used.
+    fn resolve_item<'v>(
+        &mut self,
+        values: impl Iterator<Item = &'v mut Value>,
+    ) -> Result<Option<String>, ResolveError> {
+        let remaining = self.remaining_nodes;
+        for value in values {
+            match self.resolve_value(value) {
+                Ok(resolved) => *value = resolved,
+                Err(ResolveError::Bounded(bound)) => {
+                    self.remaining_nodes = remaining;
+                    return Ok(Some(bound));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(None)
     }
 
     fn clone_leaf(&mut self, value: &Value) -> Result<Value, ResolveError> {
@@ -2472,21 +2593,12 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         Ok(try_clone_value(value, self.budget)?)
     }
 
-    fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
+    fn resolve_value(&mut self, value: &Value) -> Result<Value, ResolveError> {
         let _nested = self.budget.enter_nested("step_reference_expansion")?;
-        if depth >= Self::MAX_REFERENCE_DEPTH {
-            return Err(format!(
-                "external reference nesting exceeds {} levels",
-                Self::MAX_REFERENCE_DEPTH
-            )
-            .into());
-        }
         match value {
-            Value::Reference(id) => {
-                self.resolve_occurrence(ReferenceName::Entity(*id), value, depth)
-            }
+            Value::Reference(id) => self.resolve_occurrence(ReferenceName::Entity(*id), value),
             Value::ExternalReference(id) => {
-                self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
+                self.resolve_occurrence(ReferenceName::Value(*id), value)
             }
             Value::List(values) => {
                 self.consume_materialized_node()?;
@@ -2495,13 +2607,13 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 }
                 let mut resolved = Vec::new();
                 for value in values {
-                    resolved.push(self.resolve_value(value, depth + 1)?);
+                    resolved.push(self.resolve_value(value)?);
                 }
                 Ok(Value::List(resolved))
             }
             Value::Typed(name, value) => {
                 self.consume_materialized_node()?;
-                let resolved = self.resolve_value(value, depth + 1)?;
+                let resolved = self.resolve_value(value)?;
                 Ok(Value::Typed(name.to_owned(), Box::new(resolved)))
             }
             _ => self.clone_leaf(value),
@@ -2512,7 +2624,6 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         &mut self,
         key: ReferenceName,
         original: &Value,
-        depth: usize,
     ) -> Result<Value, ResolveError> {
         let Some(uri) = self.bindings.get(&key).copied() else {
             return self.clone_leaf(original);
@@ -2526,6 +2637,11 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         if self.stack.contains(&key) {
             return self.clone_leaf(&Value::Omitted);
         }
+        if self.omitted_anchors.contains(fragment) {
+            return Err(ResolveError::Bounded(format!(
+                "REFERENCE {key} names anchor <{fragment}>, omitted at its expansion limit"
+            )));
+        }
         let Some(anchor) = self.anchors.get(fragment) else {
             return if is_uuid_fragment(fragment) {
                 self.clone_leaf(original)
@@ -2534,7 +2650,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             };
         };
         self.stack.push(key);
-        let resolved = self.resolve_value(anchor, depth + 1);
+        let resolved = self.resolve_value(anchor);
         self.stack.pop();
         let resolved = resolved?;
         if let Value::Resource(uri) = &resolved {
@@ -2561,14 +2677,18 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     }
 }
 
+/// Resolves local REFERENCE occurrences and returns the anchors and instances
+/// whose expansion passed the value-node limit.
 fn resolve_local_references(
     anchors: &mut [AnchorEntry],
     records: &mut BTreeMap<u64, RawRecord>,
     references: &[ReferenceEntry],
+    omitted_anchors: &BTreeSet<String>,
     budget: &DecodeContext<'_>,
-) -> Result<(), ResolveError> {
+) -> Result<BoundedExpansions, ParseError> {
+    let mut bounded = BoundedExpansions::default();
     if references.is_empty() {
-        return Ok(());
+        return Ok(bounded);
     }
 
     let mut anchor_bindings = BTreeMap::new();
@@ -2576,21 +2696,26 @@ fn resolve_local_references(
         let value = try_clone_value(&anchor.value, budget)?;
         anchor_bindings.insert(anchor.name.clone(), value);
     }
-    let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget);
+    let mut resolver =
+        ReferenceResolver::new(references, &anchor_bindings, omitted_anchors, budget);
     for anchor in anchors {
-        anchor.value = resolver.resolve_value(&anchor.value, 0)?;
-        for tag in &mut anchor.tags {
-            tag.value = resolver.resolve_value(&tag.value, 0)?;
+        if let Some(bound) = resolver
+            .resolve_item(anchor.values_mut())
+            .map_err(|error| error.into_parse_error(0))?
+        {
+            bounded.anchors.insert(anchor.name.clone(), bound);
         }
     }
-    for record in records.values_mut() {
-        for partial in &mut record.partials {
-            for value in &mut partial.parameters {
-                *value = resolver.resolve_value(value, 0)?;
-            }
+    for (&id, record) in records.iter_mut() {
+        let offset = record.span.start;
+        if let Some(bound) = resolver
+            .resolve_item(record.values_mut())
+            .map_err(|error| error.into_parse_error(offset))?
+        {
+            bounded.records.insert(id, bound);
         }
     }
-    Ok(())
+    Ok(bounded)
 }
 
 fn reference_target_matches(name: ReferenceName, value: &Value) -> bool {
@@ -2612,8 +2737,8 @@ fn is_uuid_fragment(fragment: &str) -> bool {
         })
 }
 
-/// Count the value nodes of `value`, refusing a value deeper than 256 levels or
-/// larger than `limit` nodes before anchor expansion copies it.
+/// Count the value nodes of `value` before anchor expansion copies it. A
+/// value larger than `limit` nodes is [`ResolveError::Bounded`].
 fn value_node_count(
     value: &Value,
     limit: usize,
@@ -2622,30 +2747,27 @@ fn value_node_count(
     fn visit(
         value: &Value,
         remaining: &mut usize,
+        limit: usize,
         budget: &DecodeContext<'_>,
-        depth: usize,
     ) -> Result<(), ResolveError> {
         let _depth_guard = budget.enter_nested("step_value_node_count")?;
-        if depth >= 256 {
-            return Err("anchor value nesting exceeds 256 levels".into());
-        }
-        *remaining = remaining
-            .checked_sub(1)
-            .ok_or("anchor value exceeds the expansion node limit")?;
+        *remaining = remaining.checked_sub(1).ok_or_else(|| {
+            ResolveError::Bounded(format!("anchor value exceeds {limit} value nodes"))
+        })?;
         match value {
             Value::List(values) => {
                 for child in values {
-                    visit(child, remaining, budget, depth + 1)?;
+                    visit(child, remaining, limit, budget)?;
                 }
             }
-            Value::Typed(_, child) => visit(child, remaining, budget, depth + 1)?,
+            Value::Typed(_, child) => visit(child, remaining, limit, budget)?,
             _ => {}
         }
         Ok(())
     }
 
     let mut remaining = limit;
-    visit(value, &mut remaining, budget, 0)?;
+    visit(value, &mut remaining, limit, budget)?;
     Ok(limit - remaining)
 }
 

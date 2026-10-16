@@ -18,7 +18,7 @@ fn style_target_refuses(operation: &str) {
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits style target policy");
         matches!(
-            super::super::expand_style_targets(1, &exchange, &mut HashSet::new(), &mut BTreeSet::new(), 0, 128, &ctx),
+            super::super::expand_style_targets(1, &exchange, &mut HashSet::new(), &mut BTreeSet::new(), &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.operation == operation
                     && refusal.dimension == ResourceDimension::RecursionDepth
@@ -54,7 +54,7 @@ fn style_graph_refuses(
 #[test]
 fn presentation_style_depth_walk_refuses_depth_limit() {
     style_graph_refuses("step_presentation_style_depth_walk", |exchange, ctx| {
-        super::super::style_application_order(1, exchange, 128, ctx).map(|_| ())
+        super::super::style_application_order(1, exchange, ctx).map(|_| ())
     });
 }
 
@@ -90,7 +90,6 @@ fn presentation_null_style_walk_refuses_depth_limit() {
             &crate::parse::Value::Reference(5),
             exchange,
             &mut BTreeSet::new(),
-            0,
             ctx,
         )
         .map(|_| ())
@@ -169,7 +168,6 @@ fn presentation_color_walk_refuses_depth_limit() {
             losses: &mut Vec::new(),
             invalid_surface_sides: &mut BTreeSet::new(),
         },
-        0,
         &ctx,
     );
     assert!(matches!(

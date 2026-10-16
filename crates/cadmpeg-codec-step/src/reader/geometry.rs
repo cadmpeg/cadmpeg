@@ -799,7 +799,6 @@ pub(super) fn decode(
                 },
                 &mut losses,
                 &mut BTreeSet::new(),
-                0,
                 ctx,
             )? {
                 decoded_count += 1;
@@ -3651,19 +3650,6 @@ pub(super) fn unit_scale_radians(
     active: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    unit_scale_radians_inner(id, exchange, active, 0, ctx)
-}
-
-fn unit_scale_radians_inner(
-    id: u64,
-    exchange: &Exchange,
-    active: &mut BTreeSet<u64>,
-    depth: usize,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<PositiveReal>, CodecError> {
-    if depth >= 256 {
-        return Ok(None);
-    }
     let _depth = ctx.enter_nested("step_angle_unit_scale_walk")?;
     if active.contains(&id) {
         return Ok(None);
@@ -3697,10 +3683,7 @@ fn unit_scale_radians_inner(
             let Some(base_id) = record_values(factor).find_map(Value::reference) else {
                 return Ok(None);
             };
-            Ok(
-                unit_scale_radians_inner(base_id, exchange, active, depth + 1, ctx)?
-                    .map(|base| value * base.get()),
-            )
+            Ok(unit_scale_radians(base_id, exchange, active, ctx)?.map(|base| value * base.get()))
         } else {
             Ok(None)
         }
@@ -3715,19 +3698,6 @@ pub(super) fn unit_scale_mm(
     active: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    unit_scale_mm_inner(id, exchange, active, 0, ctx)
-}
-
-fn unit_scale_mm_inner(
-    id: u64,
-    exchange: &Exchange,
-    active: &mut BTreeSet<u64>,
-    depth: usize,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<PositiveReal>, CodecError> {
-    if depth >= 256 {
-        return Ok(None);
-    }
     let _depth = ctx.enter_nested("step_length_unit_scale_walk")?;
     if active.contains(&id) {
         return Ok(None);
@@ -3766,10 +3736,7 @@ fn unit_scale_mm_inner(
             else {
                 return Ok(None);
             };
-            Ok(
-                unit_scale_mm_inner(base_id, exchange, active, depth + 1, ctx)?
-                    .map(|base| value * base.get()),
-            )
+            Ok(unit_scale_mm(base_id, exchange, active, ctx)?.map(|base| value * base.get()))
         } else {
             Ok(None)
         }
@@ -4792,7 +4759,6 @@ fn decode_pcurve_geometry(
     sources: PcurveSources<'_>,
     losses: &mut Vec<LossNote>,
     active: &mut BTreeSet<u64>,
-    depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(PcurveGeometry, BTreeSet<u64>)>, CodecError> {
     let PcurveSources {
@@ -4802,7 +4768,7 @@ fn decode_pcurve_geometry(
         transformations,
         angle_scale,
     } = sources;
-    if depth >= 256 || active.contains(&id) {
+    if active.contains(&id) {
         return Ok(None);
     }
     let _depth = ctx.enter_nested("step_pcurve_geometry_walk")?;
@@ -4945,13 +4911,7 @@ fn decode_pcurve_geometry(
                             named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
                         );
                     let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
-                        basis_id,
-                        exchange,
-                        sources,
-                        losses,
-                        active,
-                        depth + 1,
-                        ctx,
+                        basis_id, exchange, sources, losses, active, ctx,
                     )?);
                     let transform = geometry_or_none!(transformations.get(&operator_id).copied());
                     for record in basis_records {
@@ -4975,13 +4935,7 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "TRIMMED_CURVE", 4).and_then(Value::logical)
                     );
                     let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
-                        basis_id,
-                        exchange,
-                        sources,
-                        losses,
-                        active,
-                        depth + 1,
-                        ctx,
+                        basis_id, exchange, sources, losses, active, ctx,
                     )?);
                     let scale = if matches!(
                         basis,
@@ -5027,13 +4981,7 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "OFFSET_CURVE_2D", 3).and_then(Value::logical)
                     );
                     let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
-                        basis_id,
-                        exchange,
-                        sources,
-                        losses,
-                        active,
-                        depth + 1,
-                        ctx,
+                        basis_id, exchange, sources, losses, active, ctx,
                     )?);
                     for record in basis_records {
                         records.insert(record);
