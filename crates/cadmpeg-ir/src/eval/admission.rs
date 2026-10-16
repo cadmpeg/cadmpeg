@@ -291,14 +291,6 @@ impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
     fn work(&self, count: usize, _operation: &'static str) -> Result<(), EvaluationRefusal> {
         EvaluationAdmission::work(*self, count)
     }
-    fn equal(
-        &self,
-        first: &str,
-        second: &str,
-        operation: &'static str,
-    ) -> Result<bool, EvaluationRefusal> {
-        crate::ids::comparison::equal(self, first, second, operation)
-    }
 }
 
 pub(super) enum EvaluationDepthGuard<'scratch> {
@@ -333,7 +325,7 @@ mod tests {
             let parent = WorkBudget::new(allowance);
             let result: Result<bool, EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
                 .within_work_slice(&parent, |admission| {
-                    crate::index::IndexQuery::equal(
+                    crate::ids::comparison::equal(
                         &admission,
                         "alpha",
                         "alpha",
