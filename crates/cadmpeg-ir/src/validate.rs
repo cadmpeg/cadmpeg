@@ -164,11 +164,11 @@ fn validate_model(
     validate_model_with_index(ctx, ir, losses, &index)
 }
 
-fn validate_model_with_index(
+fn validate_model_with_index<'ir>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    ir: &'ir CadIr,
     losses: Vec<LossNote>,
-    ids: &crate::index::ModelIndex<'_>,
+    ids: &crate::index::ModelIndex<'ir>,
 ) -> Result<ValidationReport, CodecError> {
     let _depth = ctx.enter_nested("IR neutral validation")?;
 

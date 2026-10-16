@@ -1478,8 +1478,8 @@ fn analytic_curve_is_simple_closed(
 }
 
 #[derive(Clone, Copy)]
-struct PlaneBoundarySimplicity<'ir, 'ctx> {
-    index: &'ir ModelIndex<'ir>,
+struct PlaneBoundarySimplicity<'index, 'ir, 'ctx> {
+    index: &'index ModelIndex<'ir>,
     plane: (Point3, Vector3),
     resolution: f64,
     transform: Transform,
@@ -1488,7 +1488,7 @@ struct PlaneBoundarySimplicity<'ir, 'ctx> {
 
 fn bounded_plane_curve_is_simple(
     geometry: &SolvedCurveGeometry,
-    context: PlaneBoundarySimplicity<'_, '_>,
+    context: PlaneBoundarySimplicity<'_, '_, '_>,
     source_is_certified_simple: bool,
     parameter_range: Option<[f64; 2]>,
     active: &mut BTreeSet<CurveId>,
