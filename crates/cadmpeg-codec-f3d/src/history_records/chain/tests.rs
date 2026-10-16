@@ -457,6 +457,8 @@ fn transition_invariant_errors() {
             .unwrap();
         assert!(history.topology(head).is_none(), "case {case}");
         assert!(history.entity_versions(head).is_empty(), "case {case}");
+        let requested = std::collections::HashSet::from([1, 2, 3, 10, 20, 22, 33, 110, 120]);
+        assert_identity_query(&mut history, &requested);
     }
     let mut unbound = chain();
     for state in unbound.states_mut() {
@@ -952,4 +954,72 @@ fn states_mut_invalidates_materializations_before_mutation() {
         history.check_transitions(),
         Err(AsmTransitionError::PreviousState)
     );
+}
+
+fn assert_identity_query(history: &mut AsmHistory, requested: &std::collections::HashSet<i64>) {
+    let expected_revisions: Vec<_> = history
+        .states()
+        .iter()
+        .enumerate()
+        .flat_map(|(index, state)| {
+            history
+                .entity_versions(state)
+                .into_iter()
+                .filter(|version| requested.contains(&version.record_ref))
+                .map(move |version| (index, version))
+        })
+        .collect();
+    let mut expected_entities = Vec::new();
+    let mut all_states_available = true;
+    for (index, state) in history.states().iter().enumerate() {
+        let Some(topology) = history.topology(state) else {
+            all_states_available = false;
+            continue;
+        };
+        let families: [(AsmHistoricalEntityKind, &[i64]); 12] = [
+            (AsmHistoricalEntityKind::Body, &topology.bodies),
+            (AsmHistoricalEntityKind::Region, &topology.regions),
+            (AsmHistoricalEntityKind::Shell, &topology.shells),
+            (AsmHistoricalEntityKind::Face, &topology.faces),
+            (AsmHistoricalEntityKind::Loop, &topology.loops),
+            (AsmHistoricalEntityKind::Coedge, &topology.coedges),
+            (AsmHistoricalEntityKind::Edge, &topology.edges),
+            (AsmHistoricalEntityKind::Vertex, &topology.vertices),
+            (AsmHistoricalEntityKind::Point, &topology.points),
+            (AsmHistoricalEntityKind::Surface, &topology.surfaces),
+            (AsmHistoricalEntityKind::Curve, &topology.curves),
+            (AsmHistoricalEntityKind::Pcurve, &topology.pcurves),
+        ];
+        for (kind, members) in families {
+            expected_entities.extend(
+                members
+                    .iter()
+                    .filter(|slot| requested.contains(slot))
+                    .map(|&slot| (index, slot, kind)),
+            );
+        }
+    }
+    expected_entities.sort_by_key(|(index, slot, _)| (*index, *slot));
+    expected_entities.dedup();
+    history.release_topologies();
+    let query = history.identity_memberships(requested, requested);
+    assert_eq!(query.revisions, expected_revisions);
+    assert_eq!(query.entities, expected_entities);
+    assert_eq!(query.all_states_available, all_states_available);
+    assert!(history.materialized.states.get().is_none());
+}
+
+#[test]
+fn identity_query_matches_reconstruction_in_both_scopes() {
+    let mut history = chain();
+    for _ in 0..2 {
+        for requested in [
+            std::collections::HashSet::from([1, 2, 3, 10, 20, 22, 33, 110, 120]),
+            std::collections::HashSet::from([2, 22, 120]),
+            std::collections::HashSet::new(),
+        ] {
+            assert_identity_query(&mut history, &requested);
+        }
+        crate::history::discard_projection_caches(std::slice::from_mut(&mut history));
+    }
 }

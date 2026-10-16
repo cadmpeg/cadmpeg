@@ -4908,18 +4908,27 @@ pub(super) fn emit_faces(
 
 /// Source records and decode settings for emitting shell containers.
 #[derive(Clone, Copy)]
-pub(super) struct ContainerInputs<'a, 'record> {
-    pub(super) records: &'record [Record],
-    pub(super) bytes: &'a [u8],
-    pub(super) by_index: &'a HashMap<i64, &'record Record>,
-    pub(super) reach: &'a Reachable,
-    pub(super) wire: &'a WireShellTopology,
-    pub(super) stream: &'a str,
-    pub(super) header_scale: f64,
-    pub(super) format: IdFormat,
+pub struct ContainerInputs<'a, 'record> {
+    /// Container records and records needed by their chains.
+    pub records: &'record [Record],
+    /// Source bytes for retained records.
+    pub bytes: &'a [u8],
+    /// Records indexed by stable slot.
+    pub by_index: &'a HashMap<i64, &'record Record>,
+    /// Admitted topology slots.
+    pub reach: &'a Reachable,
+    /// Wire and free-vertex members for each shell.
+    pub wire: &'a WireShellTopology,
+    /// Source stream name.
+    pub stream: &'a str,
+    /// Transform length scale.
+    pub header_scale: f64,
+    /// Identity format.
+    pub format: IdFormat,
 }
 
-pub(super) fn emit_containers(
+/// Emit bodies, regions, and shells from admitted topology and chain records.
+pub fn emit_containers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     inputs: ContainerInputs<'_, '_>,
@@ -5092,10 +5101,10 @@ pub(super) fn emit_containers(
 /// Emit direct and inherited entity attributes and derive the link, tag, and
 /// timestamp projections. Returns the set of emitted attribute record indices.
 /// An attribute holding a NaN or infinite number refuses the stream.
-pub(super) fn emit_attributes(
+pub fn emit_attributes(
     out: &mut AsmBrep,
     records: &[Record],
-    by_index: &HashMap<i64, &Record>,
+    by_index: &HashMap<i64, &Record, std::collections::hash_map::RandomState>,
     reach: &Reachable,
     format: IdFormat,
 ) -> Result<HashSet<i64>, cadmpeg_core::CodecError> {

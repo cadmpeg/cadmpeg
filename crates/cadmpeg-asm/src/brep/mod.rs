@@ -19,7 +19,7 @@
 
 pub mod annotations;
 pub mod attributes;
-mod emit;
+pub mod emit;
 pub mod geometry;
 pub mod key_maps;
 pub mod records;
@@ -475,8 +475,9 @@ struct Carriers {
 /// grouped by entity kind. Every emit pass filters `records` against these
 /// sets so only reachable entities appear in the output.
 #[derive(Default)]
-struct Reachable {
-    faces: HashSet<i64>,
+pub struct Reachable {
+    /// Face slots admitted by the face pass.
+    pub faces: HashSet<i64>,
     loops: HashSet<i64>,
     coedges: HashSet<i64>,
     edges: HashSet<i64>,
@@ -493,7 +494,7 @@ struct Reachable {
 /// Wire-edge and free-vertex reachability collected per shell during the
 /// topology walk, consumed when emitting shell containers.
 #[derive(Default)]
-struct WireShellTopology {
+pub struct WireShellTopology {
     wire_edges_by_shell: HashMap<i64, Vec<i64>>,
     free_vertices_by_shell: HashMap<i64, Vec<i64>>,
     saved_free_edges: Vec<i64>,

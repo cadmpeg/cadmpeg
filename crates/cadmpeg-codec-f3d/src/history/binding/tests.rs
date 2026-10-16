@@ -129,10 +129,10 @@ fn compare_step(
         .update(&a.keys().copied().collect(), &versions_a)
         .unwrap();
     binder.rebuild_units();
-    let mut previous = binder.full(&ctx, &bytes, &mut stats).unwrap().unwrap();
-    let full_previous = previous.clone();
-    assert!(!previous.faces.is_empty());
-    assert!(!previous.coedges.is_empty());
+    let full_previous = binder.full(&ctx, &bytes, &mut stats).unwrap().unwrap();
+    let mut previous = super::IndexedTopology::from(full_previous.clone());
+    assert!(!full_previous.faces.is_empty());
+    assert!(!full_previous.coedges.is_empty());
     let actual = binder
         .incremental(
             &ctx,
@@ -152,7 +152,7 @@ fn compare_step(
         None,
     )
     .unwrap();
-    assert_eq!(actual, expected);
+    assert_eq!(actual.as_ref().map(|_| previous.materialize()), expected);
     if let Some(expected) = expected.as_ref() {
         let old_snapshot = || crate::history_records::AsmStateSnapshot {
             state_id: 1,
@@ -161,7 +161,7 @@ fn compare_step(
         };
         let new_snapshot = || crate::history_records::AsmStateSnapshot {
             state_id: 2,
-            topology: &previous,
+            topology: &actual.as_ref().unwrap().1,
             versions: &versions_a,
         };
         let full_new_snapshot = || crate::history_records::AsmStateSnapshot {
@@ -171,10 +171,12 @@ fn compare_step(
         };
         assert_eq!(
             super::transition_for_changes(
-                old_snapshot(),
+                crate::history_records::AsmStateSnapshot {
+                    topology: &actual.as_ref().unwrap().0,
+                    ..old_snapshot()
+                },
                 new_snapshot(),
-                changed,
-                binder.changed_rows.as_ref()
+                changed
             ),
             super::AsmHistoricalTransition::between(Some(old_snapshot()), full_new_snapshot()),
         );
@@ -533,4 +535,49 @@ fn container_owner_insertion_updates_closure_without_a_forward_link() {
     set_ref(&mut b, 3, 7, 40);
     let stats = compare_step(&a, &b, &Slots::from([3, 40]), None);
     assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+}
+
+#[test]
+fn saved_container_before_later_body_matches_full_transition_refusal() {
+    let mut records = fixture();
+    records.insert(100, refs(100, "body", &[]));
+    let mut saved = records[&14].clone();
+    saved.index = 40;
+    records.insert(40, saved);
+    let mut bytes = b"ASM BinaryFile8".to_vec();
+    bytes.extend_from_slice(&23100_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 12]);
+    bytes.extend_from_slice(&50_u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::desktop();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let input: Vec<_> = records.values().cloned().collect();
+    let decoded =
+        crate::brep::decode_history_topology(&ctx, &input, &bytes, crate::ids::ID_FORMAT).unwrap();
+    let topology = super::historical_topology_with_tags(&decoded)
+        .unwrap()
+        .unwrap();
+    assert_eq!(topology.bodies, vec![1, 100, 40]);
+    assert!(!super::IndexedTopology::ordered(&topology));
+    let versions = records.keys().map(|&slot| (slot, slot)).collect();
+    let snapshot = crate::history_records::AsmStateSnapshot {
+        state_id: 1,
+        topology: &topology,
+        versions: &versions,
+    };
+    assert!(super::AsmHistoricalTransition::between(None, snapshot).is_none());
+    assert!(super::transition_for_changes(snapshot, snapshot, &Slots::from([40])).is_none());
+    let archive = records
+        .iter()
+        .map(|(&slot, record)| (slot, record.clone()))
+        .collect();
+    let mut binder = Binder::new(&archive, Some(50));
+    binder
+        .update(&records.keys().copied().collect(), &versions)
+        .unwrap();
+    assert!(binder
+        .full(&ctx, &bytes, &mut Statistics::default())
+        .unwrap()
+        .is_none());
 }

@@ -12,6 +12,9 @@ use cadmpeg_asm::sab::{Record, Token};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
+mod indexed;
+use indexed::IndexedTopology;
+
 #[derive(Debug, Default)]
 pub(crate) struct Statistics {
     pub(crate) steps: usize,
@@ -49,7 +52,8 @@ pub(crate) fn bind(
         .and_then(|header| header.metadata.entity_count)
         .and_then(|count| i64::try_from(count).ok());
     let mut binder = Binder::new(&archive, saved_limit);
-    let mut newer: Option<(usize, AsmHistoricalTopology)> = None;
+    let mut newer_index: Option<usize> = None;
+    let mut current = IndexedTopology::default();
     let mut newer_versions = BTreeMap::new();
     let mut transitions = Vec::new();
     let mut complete = true;
@@ -59,8 +63,8 @@ pub(crate) fn bind(
             return;
         }
         stats.full_records += versions.len();
-        let changed: Slots = if let Some((newer_index, _)) = &newer {
-            states[*newer_index]
+        let changed: Slots = if let Some(newer_index) = newer_index {
+            states[newer_index]
                 .bulletin_boards
                 .iter()
                 .flat_map(|board| &board.changes)
@@ -81,48 +85,60 @@ pub(crate) fn bind(
         } else {
             versions.keys().copied().collect()
         };
-        let decoded = if let Some((_, topology)) = &mut newer {
+        if let Some(index) = newer_index {
             stats.steps += 1;
-            binder.incremental(ctx, topology, &changed, versions, bytes, &mut stats)
-        } else {
-            let slots = versions.keys().copied().collect();
-            if binder.update(&slots, versions).is_some() {
-                binder.rebuild_units();
-                binder.full(ctx, bytes, &mut stats)
-            } else {
-                Ok(None)
-            }
-        };
-        let topology = match decoded {
-            Ok(Some(topology)) => topology,
-            Ok(None) => {
-                complete = false;
-                return;
-            }
-            Err(error) => {
-                failure = Some(error);
-                complete = false;
-                return;
-            }
-        };
-        if let Some((newer_index, newer_topology)) = newer.take() {
+            let (older_rows, newer_rows) = match binder.incremental(
+                ctx,
+                &mut current,
+                &changed,
+                versions,
+                bytes,
+                &mut stats,
+            ) {
+                Ok(Some(rows)) => rows,
+                Ok(None) => {
+                    complete = false;
+                    return;
+                }
+                Err(error) => {
+                    failure = Some(error);
+                    complete = false;
+                    return;
+                }
+            };
             let older = crate::history_records::AsmStateSnapshot {
                 state_id: states[ordinal].state_id,
-                topology: &topology,
+                topology: &older_rows,
                 versions,
             };
             let new = crate::history_records::AsmStateSnapshot {
-                state_id: states[newer_index].state_id,
-                topology: &newer_topology,
+                state_id: states[index].state_id,
+                topology: &newer_rows,
                 versions: &newer_versions,
             };
-            let Some(transition) =
-                transition_for_changes(older, new, &changed, binder.changed_rows.as_ref())
-            else {
+            let Some(transition) = transition_for_changes(older, new, &changed) else {
                 complete = false;
                 return;
             };
-            transitions.push((newer_index, transition));
+            transitions.push((index, transition));
+        } else {
+            if binder.update(&changed, versions).is_none() {
+                complete = false;
+                return;
+            }
+            binder.rebuild_units();
+            match binder.full(ctx, bytes, &mut stats) {
+                Ok(Some(topology)) => current = topology.into(),
+                Ok(None) => {
+                    complete = false;
+                    return;
+                }
+                Err(error) => {
+                    failure = Some(error);
+                    complete = false;
+                    return;
+                }
+            }
         }
         for slot in &changed {
             if let Some(revision) = versions.get(slot) {
@@ -131,7 +147,7 @@ pub(crate) fn bind(
                 newer_versions.remove(slot);
             }
         }
-        newer = Some((ordinal, topology));
+        newer_index = Some(ordinal);
     });
     if let Some(error) = failure {
         return Err(error);
@@ -139,7 +155,8 @@ pub(crate) fn bind(
     if !walked || !complete {
         return Ok(stats);
     }
-    if let Some((ordinal, topology)) = newer {
+    if let Some(ordinal) = newer_index {
+        let topology = current.materialize();
         let Some(transition) = AsmHistoricalTransition::between(
             None,
             crate::history_records::AsmStateSnapshot {
@@ -159,30 +176,13 @@ pub(crate) fn bind(
     Ok(stats)
 }
 
-struct ChangedRows {
-    entities: Slots,
-    containers: Slots,
-}
-
-/// Compare the same rows the dependency closure can replace.
 fn transition_for_changes(
     older: crate::history_records::AsmStateSnapshot<'_>,
     newer: crate::history_records::AsmStateSnapshot<'_>,
     changed: &Slots,
-    rows: Option<&ChangedRows>,
 ) -> Option<AsmHistoricalTransition> {
-    let Some(rows) = rows else {
-        return AsmHistoricalTransition::between(Some(older), newer);
-    };
-    let mut old_topology = AsmHistoricalTopology::default();
-    let mut new_topology = AsmHistoricalTopology::default();
-    for (source, target) in [
-        (older.topology, &mut old_topology),
-        (newer.topology, &mut new_topology),
-    ] {
-        splice(target, source, &rows.entities, false);
-        splice(target, source, &rows.containers, true);
-    }
+    let old_topology = older.topology;
+    let new_topology = newer.topology;
     let mut slots = old_topology.slots();
     slots.extend(new_topology.slots());
     slots.extend(changed);
@@ -196,12 +196,12 @@ fn transition_for_changes(
     let new_versions = project(newer.versions);
     AsmHistoricalTransition::between(
         Some(crate::history_records::AsmStateSnapshot {
-            topology: &old_topology,
+            topology: old_topology,
             versions: &old_versions,
             ..older
         }),
         crate::history_records::AsmStateSnapshot {
-            topology: &new_topology,
+            topology: new_topology,
             versions: &new_versions,
             ..newer
         },
@@ -590,60 +590,75 @@ fn container_unit(live: &Live<'_>, body: i64) -> Slots {
     unit
 }
 
-fn replace_rows<T: Clone>(old: &mut Vec<T>, new: &[T], keys: &Slots, key: impl Fn(&T) -> i64) {
-    if keys.is_empty() || (old.is_empty() && new.is_empty()) {
-        return;
-    }
-    let retained = std::mem::take(old);
-    let mut left = retained
-        .into_iter()
-        .filter(|row| !keys.contains(&key(row)))
-        .peekable();
-    let mut right = keys
-        .iter()
-        .flat_map(|slot| {
-            let start = new.partition_point(|row| key(row) < *slot);
-            let end = new.partition_point(|row| key(row) <= *slot);
-            new[start..end].iter()
-        })
-        .peekable();
-    while let (Some(a), Some(b)) = (left.peek(), right.peek()) {
-        if key(a) <= key(b) {
-            if let Some(row) = left.next() {
-                old.push(row);
-            }
-        } else if let Some(row) = right.next() {
-            old.push(row.clone());
-        }
-    }
-    old.extend(left);
-    old.extend(right.cloned());
+fn append_containers(target: &mut AsmHistoricalTopology, source: AsmHistoricalTopology) {
+    target.bodies = source.bodies;
+    target.regions = source.regions;
+    target.shells = source.shells;
+    target.body_regions = source.body_regions;
+    target.region_shells = source.region_shells;
+    target.shell_faces = source.shell_faces;
+    target.shell_wire_edges = source.shell_wire_edges;
+    target.shell_free_vertices = source.shell_free_vertices;
 }
 
-fn splice(
-    topology: &mut AsmHistoricalTopology,
-    part: &AsmHistoricalTopology,
-    keys: &Slots,
-    containers: bool,
-) {
-    macro_rules! members {
-        ($($field:ident),* $(,)?) => { $(replace_rows(&mut topology.$field, &part.$field, keys, |slot| *slot);)* };
-    }
-    macro_rules! rows {
-        ($($field:ident => $key:ident),* $(,)?) => { $(replace_rows(&mut topology.$field, &part.$field, keys, |row| row.$key);)* };
-    }
-    if containers {
-        members!(bodies, regions, shells);
-        rows!(body_regions => owner_ref, region_shells => owner_ref, shell_faces => owner_ref,
-            shell_wire_edges => owner_ref, shell_free_vertices => owner_ref);
-    } else {
-        members!(faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves);
-        rows!(surface_radii => surface, surface_cylinders => surface, surface_planes => surface,
-            surface_axes => surface, curve_axes => curve, persistent_subentity_tags => entity_ref,
-            face_loops => owner_ref, loop_coedges => owner_ref, coedge_topology => coedge,
-            edge_vertices => edge, face_surfaces => entity, edge_curves => entity,
-            coedge_pcurves => entity, vertex_points => entity, point_positions => point);
-    }
+fn container_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    live: &Live<'_>,
+    slots: &Slots,
+    bytes: &[u8],
+) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
+    use cadmpeg_asm::brep::{
+        emit::{emit_attributes, emit_containers, ContainerInputs},
+        AsmBrep, Reachable, WireShellTopology,
+    };
+    let records: Vec<_> = slots
+        .iter()
+        .filter_map(|slot| live.table.get(slot))
+        .filter(|record| {
+            matches!(
+                record.head(),
+                "body" | "lump" | "region" | "shell" | "subshell" | "face"
+            ) || record.name.ends_with("-attrib")
+        })
+        .map(|record| (*record).clone())
+        .collect();
+    let by_index: HashMap<_, _> = records
+        .iter()
+        .filter_map(|record| {
+            i64::try_from(record.index)
+                .ok()
+                .map(|index| (index, record))
+        })
+        .collect();
+    let mut reach = Reachable::default();
+    reach.faces = by_index
+        .iter()
+        .filter(|(_, record)| {
+            record.head() == "face"
+                && record.ref_at(5).is_some()
+                && record
+                    .ref_at(7)
+                    .is_some_and(|surface| live.table.contains_key(&surface))
+        })
+        .map(|(&slot, _)| slot)
+        .collect();
+    let mut out = AsmBrep::default();
+    emit_containers(
+        ctx,
+        &mut out,
+        ContainerInputs {
+            records: &records,
+            bytes,
+            by_index: &by_index,
+            reach: &reach,
+            wire: &WireShellTopology::default(),
+            stream: "",
+            header_scale: 1.0,
+            format: crate::ids::ID_FORMAT,
+        },
+    )?;
+    emit_attributes(&mut out, &records, &by_index, &reach, crate::ids::ID_FORMAT)?;
+    Ok(super::historical_topology(&out)?.filter(IndexedTopology::ordered))
 }
 
 fn decode_slots(
@@ -668,7 +683,7 @@ fn decode_slots(
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    historical_topology_with_tags(&decoded)
+    Ok(historical_topology_with_tags(&decoded)?.filter(IndexedTopology::ordered))
 }
 
 struct Definition {
@@ -683,12 +698,12 @@ struct Binder<'a> {
     units: Units,
     containers: BTreeMap<i64, Slots>,
     container_reverse: BTreeMap<i64, Slots>,
+    orphan_containers: Slots,
     wires: Slots,
     revision_subtypes: HashMap<i64, Subtypes>,
     saved_limit: Option<i64>,
     subtype_table: Option<cadmpeg_asm::nurbs::toks::SubtypeTable>,
     definitions: Vec<Definition>,
-    changed_rows: Option<ChangedRows>,
 }
 
 impl<'a> Binder<'a> {
@@ -697,12 +712,12 @@ impl<'a> Binder<'a> {
             saved_limit,
             subtype_table: None,
             definitions: Vec::new(),
-            changed_rows: None,
             archive,
             live: Live::new(),
             units: Units::default(),
             containers: BTreeMap::new(),
             container_reverse: BTreeMap::new(),
+            orphan_containers: Slots::new(),
             wires: Slots::new(),
             revision_subtypes: archive
                 .iter()
@@ -711,8 +726,8 @@ impl<'a> Binder<'a> {
         }
     }
 
-    fn update(&mut self, changed: &Slots, versions: &BTreeMap<i64, i64>) -> Option<()> {
-        if changed.iter().any(|slot| {
+    fn definitions_changed(&self, changed: &Slots, versions: &BTreeMap<i64, i64>) -> bool {
+        changed.iter().any(|slot| {
             self.definitions
                 .binary_search_by_key(slot, |definition| definition.owner.0)
                 .is_ok()
@@ -720,7 +735,11 @@ impl<'a> Binder<'a> {
                     .get(slot)
                     .and_then(|r| self.revision_subtypes.get(r))
                     .is_some_and(|s| !s.definitions.is_empty())
-        }) {
+        })
+    }
+
+    fn update(&mut self, changed: &Slots, versions: &BTreeMap<i64, i64>) -> Option<()> {
+        if self.definitions_changed(changed, versions) {
             self.subtype_table = None;
         }
         for &slot in changed {
@@ -759,10 +778,16 @@ impl<'a> Binder<'a> {
                 );
             }
         }
+        for &slot in changed {
+            self.refresh_orphan(slot);
+        }
         self.live.valid_changes(changed).then_some(())
     }
 
     fn resolution_changes(&self, changed: &Slots, versions: &BTreeMap<i64, i64>) -> Slots {
+        if !self.definitions_changed(changed, versions) {
+            return changed.clone();
+        }
         let mut next: BTreeMap<_, _> = self
             .live
             .subtype_references
@@ -839,6 +864,12 @@ impl<'a> Binder<'a> {
         self.wires = wire_slots(&self.live);
         self.containers.clear();
         self.container_reverse.clear();
+        self.orphan_containers = self
+            .live
+            .kind("shell")
+            .chain(self.live.kind("lump"))
+            .chain(self.live.kind("region"))
+            .collect();
         let bodies: Vec<_> = self.live.kind("body").collect();
         for body in bodies {
             self.replace_container(body, container_unit(&self.live, body));
@@ -854,6 +885,7 @@ impl<'a> Binder<'a> {
                         self.container_reverse.remove(&slot);
                     }
                 }
+                self.refresh_orphan(slot);
             }
         }
         if self
@@ -864,8 +896,23 @@ impl<'a> Binder<'a> {
         {
             for &slot in &unit {
                 self.container_reverse.entry(slot).or_default().insert(body);
+                self.refresh_orphan(slot);
             }
             self.containers.insert(body, unit);
+        }
+    }
+
+    fn refresh_orphan(&mut self, slot: i64) {
+        if self
+            .live
+            .table
+            .get(&slot)
+            .is_some_and(|record| matches!(record.head(), "shell" | "lump" | "region"))
+            && !self.container_reverse.contains_key(&slot)
+        {
+            self.orphan_containers.insert(slot);
+        } else {
+            self.orphan_containers.remove(&slot);
         }
     }
 
@@ -914,31 +961,27 @@ impl<'a> Binder<'a> {
         out
     }
 
-    /// Reuse the prior topology vectors; keep its replaced rows for the diff.
+    /// Replace keyed rows and return the two sides of this transition.
     fn incremental(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        previous: &mut AsmHistoricalTopology,
+        previous: &mut IndexedTopology,
         changed: &Slots,
         versions: &BTreeMap<i64, i64>,
         bytes: &[u8],
         stats: &mut Statistics,
-    ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
+    ) -> Result<Option<(AsmHistoricalTopology, AsmHistoricalTopology)>, cadmpeg_core::CodecError>
+    {
         let revisions = changed;
         let expanded = self.resolution_changes(changed, versions);
         let changed = &expanded;
-        let saved_containers = previous.bodies.iter().any(|slot| {
+        let saved_containers = previous.bodies().any(|slot| {
             self.live
                 .table
                 .get(slot)
                 .is_none_or(|record| record.head() != "body")
         });
-        let orphan_containers = self
-            .live
-            .kind("shell")
-            .chain(self.live.kind("lump"))
-            .chain(self.live.kind("region"))
-            .any(|slot| !self.container_reverse.contains_key(&slot));
+        let orphan_containers = !self.orphan_containers.is_empty();
         let old_targets = self.attribute_targets(changed);
         let mut dirty = self.units.touching(&old_targets);
         let old_changed_edges: Slots = revisions
@@ -1075,13 +1118,7 @@ impl<'a> Binder<'a> {
                 .is_some_and(|record| matches!(record.head(), "edge" | "tedge"))
                 && *was_reached != self.units.edge_users.contains_key(slot)
         });
-        let orphan_containers = orphan_containers
-            || self
-                .live
-                .kind("shell")
-                .chain(self.live.kind("lump"))
-                .chain(self.live.kind("region"))
-                .any(|slot| !self.container_reverse.contains_key(&slot));
+        let orphan_containers = orphan_containers || !self.orphan_containers.is_empty();
         let reason = if orphan_containers {
             Some("orphan-container")
         } else if saved_containers && !container_keys.is_empty() {
@@ -1132,7 +1169,7 @@ impl<'a> Binder<'a> {
         };
         if let Some(reason) = reason {
             *stats.fallbacks.entry(reason).or_default() += 1;
-            return self.full(ctx, bytes, stats);
+            return self.replace_full(ctx, previous, bytes, stats);
         }
         if self.subtype_table.is_none() {
             let definitions = self
@@ -1157,11 +1194,48 @@ impl<'a> Binder<'a> {
         )?
         else {
             *stats.fallbacks.entry("subset-decode").or_default() += 1;
-            return self.full(ctx, bytes, stats);
+            return self.replace_full(ctx, previous, bytes, stats);
         };
+        let fast_containers = self.wires.is_empty()
+            && container_input.iter().all(|slot| {
+                self.live.table.get(slot).is_none_or(|record| {
+                    !matches!(
+                        record.head(),
+                        "wire"
+                            | "loop"
+                            | "coedge"
+                            | "tcoedge"
+                            | "edge"
+                            | "tedge"
+                            | "vertex"
+                            | "tvertex"
+                    ) && (record.head() != "face"
+                        || record
+                            .ref_at(3)
+                            .and_then(|next| self.live.table.get(&next))
+                            .is_none_or(|next| next.head() == "face"))
+                        && record
+                            .ref_at(0)
+                            .and_then(|attribute| self.live.table.get(&attribute))
+                            .is_none_or(|attribute| attribute.name.ends_with("-attrib"))
+                })
+            });
         let container_part = if container_keys.is_empty() {
             None
+        } else if fast_containers {
+            match container_rows(ctx, &self.live, &container_input, bytes) {
+                Ok(Some(part)) => Some(part),
+                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
+                Ok(None) | Err(_) => {
+                    *stats.fallbacks.entry("container-decode").or_default() += 1;
+                    return self.replace_full(ctx, previous, bytes, stats);
+                }
+            }
         } else {
+            *stats
+                .fallbacks
+                .entry("container-complex-decode")
+                .or_default() += 1;
             let Some(part) = decode_slots(
                 ctx,
                 &self.live,
@@ -1172,23 +1246,35 @@ impl<'a> Binder<'a> {
             )?
             else {
                 *stats.fallbacks.entry("container-decode").or_default() += 1;
-                return self.full(ctx, bytes, stats);
+                return self.replace_full(ctx, previous, bytes, stats);
             };
             Some(part)
         };
-        let mut prior = AsmHistoricalTopology::default();
-        splice(&mut prior, previous, &keys, false);
-        splice(&mut prior, previous, &container_keys, true);
-        let mut topology = std::mem::replace(previous, prior);
-        splice(&mut topology, &part, &keys, false);
+        let mut prior = previous.project(&keys, false);
+        let containers = previous.project(&container_keys, true);
+        append_containers(&mut prior, containers);
+        previous.replace(part, &keys, false);
         if let Some(part) = container_part {
-            splice(&mut topology, &part, &container_keys, true);
+            previous.replace(part, &container_keys, true);
         }
-        self.changed_rows = Some(ChangedRows {
-            entities: keys,
-            containers: container_keys,
-        });
-        Ok(Some(topology))
+        let mut older = previous.project(&keys, false);
+        append_containers(&mut older, previous.project(&container_keys, true));
+        Ok(Some((older, prior)))
+    }
+
+    fn replace_full(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        previous: &mut IndexedTopology,
+        bytes: &[u8],
+        stats: &mut Statistics,
+    ) -> Result<Option<(AsmHistoricalTopology, AsmHistoricalTopology)>, cadmpeg_core::CodecError>
+    {
+        let Some(topology) = self.full(ctx, bytes, stats)? else {
+            return Ok(None);
+        };
+        let prior = std::mem::replace(previous, topology.clone().into()).materialize();
+        Ok(Some((topology, prior)))
     }
 
     fn ambient_dependency(&self, input: &Slots) -> bool {
@@ -1249,7 +1335,6 @@ impl<'a> Binder<'a> {
         bytes: &[u8],
         stats: &mut Statistics,
     ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
-        self.changed_rows = None;
         decode_slots(
             ctx,
             &self.live,

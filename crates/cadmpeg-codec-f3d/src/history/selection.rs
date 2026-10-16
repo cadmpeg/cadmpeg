@@ -420,18 +420,44 @@ impl HistoricalIdentityIndex {
             };
         }
         let ambiguous_states = ambiguous_history_state_ids(&histories);
-        for (history, state) in histories
+        let mut queried_entities = record_refs.clone();
+        for state in histories.iter().flat_map(|history| history.states()) {
+            if let Some(transition) = &state.transition {
+                queried_entities.extend(
+                    transition
+                        .record_revisions
+                        .iter()
+                        .filter(|version| record_refs.contains(&version.record_ref))
+                        .map(|version| version.entity_ref),
+                );
+            }
+            queried_entities.extend(
+                state
+                    .bulletin_boards
+                    .iter()
+                    .flat_map(|board| &board.changes)
+                    .filter(|change| {
+                        change
+                            .old_ref()
+                            .is_some_and(|old| record_refs.contains(&old))
+                    })
+                    .filter_map(|change| change.new_ref().or_else(|| change.old_ref())),
+            );
+        }
+        let memberships: Vec<_> = histories
             .iter()
-            .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-            .filter(|(_, state)| !ambiguous_states.contains(&state.state_id))
-        {
-            for version in history.entity_versions(state) {
-                if record_refs.contains(&version.record_ref) {
-                    let membership = revisions.entry(version.record_ref).or_default();
-                    membership.entity_refs.insert(version.entity_ref);
-                    if !membership.states.contains(&state.state_id) {
-                        membership.states.push(state.state_id);
-                    }
+            .map(|history| history.identity_memberships(&record_refs, &queried_entities))
+            .collect();
+        for (history, query) in histories.iter().zip(&memberships) {
+            for (index, version) in &query.revisions {
+                let state = &history.states()[*index];
+                if ambiguous_states.contains(&state.state_id) {
+                    continue;
+                }
+                let membership = revisions.entry(version.record_ref).or_default();
+                membership.entity_refs.insert(version.entity_ref);
+                if !membership.states.contains(&state.state_id) {
+                    membership.states.push(state.state_id);
                 }
             }
         }
@@ -442,17 +468,19 @@ impl HistoricalIdentityIndex {
         let mut reconstructed_revisions = HashSet::new();
         // Finalized histories retain the entity-slot membership and the
         // bulletin-board chain after their geometry caches are compacted.
-        for history in histories.iter().filter(|history| {
-            let states = history.states();
-            !states.is_empty()
-                && states.iter().all(|state| state.transition.is_some())
-                && match history.topology_scope {
-                    AsmTopologyScope::Complete => true,
-                    AsmTopologyScope::Retained => {
-                        states.iter().all(|state| history.topology(state).is_some())
+        for (history, _) in histories
+            .iter()
+            .zip(&memberships)
+            .filter(|(history, query)| {
+                let states = history.states();
+                !states.is_empty()
+                    && states.iter().all(|state| state.transition.is_some())
+                    && match history.topology_scope {
+                        AsmTopologyScope::Complete => true,
+                        AsmTopologyScope::Retained => query.all_states_available,
                     }
-                }
-        }) {
+            })
+        {
             for change in history
                 .states()
                 .iter()
@@ -479,38 +507,17 @@ impl HistoricalIdentityIndex {
         ) {
             entity_refs.insert(entity_ref);
         }
-        for (history, state) in histories
-            .iter()
-            .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-            .filter(|(_, state)| !ambiguous_states.contains(&state.state_id))
-        {
-            let Some(topology) = history.topology(state) else {
-                continue;
-            };
-            let families: [(AsmHistoricalEntityKind, &[i64]); 12] = [
-                (AsmHistoricalEntityKind::Body, &topology.bodies),
-                (AsmHistoricalEntityKind::Region, &topology.regions),
-                (AsmHistoricalEntityKind::Shell, &topology.shells),
-                (AsmHistoricalEntityKind::Face, &topology.faces),
-                (AsmHistoricalEntityKind::Loop, &topology.loops),
-                (AsmHistoricalEntityKind::Coedge, &topology.coedges),
-                (AsmHistoricalEntityKind::Edge, &topology.edges),
-                (AsmHistoricalEntityKind::Vertex, &topology.vertices),
-                (AsmHistoricalEntityKind::Point, &topology.points),
-                (AsmHistoricalEntityKind::Surface, &topology.surfaces),
-                (AsmHistoricalEntityKind::Curve, &topology.curves),
-                (AsmHistoricalEntityKind::Pcurve, &topology.pcurves),
-            ];
-            for (kind, members) in families {
-                for entity_ref in members
-                    .iter()
-                    .filter(|entity_ref| entity_refs.contains(entity_ref))
+        for (history, query) in histories.iter().zip(&memberships) {
+            for &(index, entity_ref, kind) in &query.entities {
+                let state = &history.states()[index];
+                if ambiguous_states.contains(&state.state_id) || !entity_refs.contains(&entity_ref)
                 {
-                    let membership = identities.entry(*entity_ref).or_default();
-                    membership.kinds.insert(kind);
-                    if !membership.states.contains(&state.state_id) {
-                        membership.states.push(state.state_id);
-                    }
+                    continue;
+                }
+                let membership = identities.entry(entity_ref).or_default();
+                membership.kinds.insert(kind);
+                if !membership.states.contains(&state.state_id) {
+                    membership.states.push(state.state_id);
                 }
             }
         }
