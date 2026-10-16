@@ -69,7 +69,7 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
         [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
     );
     assert!(
-        { crate::families::consolidated::records::object_stream_vertices(&bytes[5..]) }
+        crate::families::consolidated::records::object_stream_vertices(&bytes[5..])
             .expect("service decode")
             .is_empty()
     );

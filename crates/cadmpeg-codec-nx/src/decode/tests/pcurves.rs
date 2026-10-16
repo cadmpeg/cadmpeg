@@ -77,7 +77,7 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(({ select_active_body(&mut ir, &body_node_ids, &[7]) }));
+    assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(

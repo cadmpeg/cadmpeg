@@ -2353,11 +2353,9 @@ mod tests {
             first: 10,
             second: 11,
         };
-        let rows = ({
-            super::collect_constraint_candidates([Ok(super::equation_constraint(
-                &sketch, 1, definition, true, 7,
-            ))])
-        })
+        let rows = super::collect_constraint_candidates([Ok(super::equation_constraint(
+            &sketch, 1, definition, true, 7,
+        ))])
         .expect("one equation row");
         assert_eq!(rows.len(), 1);
         assert_eq!(
@@ -2464,8 +2462,8 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let rows = ({ super::section_segment_radius_constraints(&definition, &sketch) })
-            .expect("radius row");
+        let rows =
+            super::section_segment_radius_constraints(&definition, &sketch).expect("radius row");
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows[0].0.id.as_str(),
@@ -2475,14 +2473,12 @@ mod tests {
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID")
         ]);
         assert_eq!(
-            ({
-                super::section_segment_radius_constraints_for_emitted(
-                    &definition,
-                    &sketch,
-                    &emitted,
-                    &BTreeSet::new(),
-                )
-            })
+            super::section_segment_radius_constraints_for_emitted(
+                &definition,
+                &sketch,
+                &emitted,
+                &BTreeSet::new(),
+            )
             .expect("emitted radius row")
             .len(),
             1
@@ -2672,10 +2668,9 @@ mod tests {
         };
         let sketch =
             SketchId::mint("creo:model:sketch#angle-difference").expect("valid test fixture");
-        let constraints = ({
+        let constraints =
             section_equation_function_sixteen_angle_difference_constraints(&definition, &sketch)
-        })
-        .expect("section_equation_function_sixteen_angle_difference_constraints admitted");
+                .expect("section_equation_function_sixteen_angle_difference_constraints admitted");
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].1, 28);
         assert_eq!(constraints[0].0.active, Some(true));
@@ -2748,7 +2743,7 @@ mod tests {
         let sketch =
             SketchId::mint("creo:model:sketch#scalar-equality").expect("valid test fixture");
         let constraints =
-            ({ section_equation_function_five_scalar_equality_constraints(&definition, &sketch) })
+            section_equation_function_five_scalar_equality_constraints(&definition, &sketch)
                 .expect("section_equation_function_five_scalar_equality_constraints admitted");
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].0.active, Some(true));
@@ -2763,11 +2758,11 @@ mod tests {
         let mut conflicting = definition.clone();
         conflicting.variables.as_mut().expect("variables").rows[1].value =
             crate::feature::definitions::ScalarLane::Value(3.5);
-        assert!(({
+        assert!(
             section_equation_function_five_scalar_equality_constraints(&conflicting, &sketch)
-        })
-        .expect("section_equation_function_five_scalar_equality_constraints admitted")
-        .is_empty());
+                .expect("section_equation_function_five_scalar_equality_constraints admitted")
+                .is_empty()
+        );
     }
 
     #[test]

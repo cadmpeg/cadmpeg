@@ -215,9 +215,10 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         "nx:offset-store:named-point#2-11",
         &["nx:om-data-blocks-2:block#11"],
     );
-    assert!({
-        feature_sketch_preceding_named_point_uses(&references, &[preceding.clone(), ambiguous])
-    }
+    assert!(feature_sketch_preceding_named_point_uses(
+        &references,
+        &[preceding.clone(), ambiguous]
+    )
     .unwrap()
     .is_empty());
     let gap = point(
@@ -235,18 +236,20 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
     );
 
     let unresolved = [references[0].clone(), reference(1, 2, None)];
-    assert!({
-        feature_sketch_preceding_named_point_uses(&unresolved, std::slice::from_ref(&preceding))
-    }
+    assert!(feature_sketch_preceding_named_point_uses(
+        &unresolved,
+        std::slice::from_ref(&preceding)
+    )
     .unwrap()
     .is_empty());
     let noncontiguous = [
         references[0].clone(),
         reference(2, 3, Some("nx:om-data-blocks-2:block#13")),
     ];
-    assert!({
-        feature_sketch_preceding_named_point_uses(&noncontiguous, std::slice::from_ref(&preceding))
-    }
+    assert!(feature_sketch_preceding_named_point_uses(
+        &noncontiguous,
+        std::slice::from_ref(&preceding)
+    )
     .unwrap()
     .is_empty());
     let mut bad_terminal = serde_json::to_value(&references[1]).unwrap();

@@ -1048,7 +1048,7 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     );
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = ({ section_equation_same_coordinate_constraints(&definition, &sketch) })
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch)
         .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].0.active, Some(true));
@@ -1089,7 +1089,7 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         .expect("variables")
         .declared_count = 5;
     let function_two_constraints =
-        ({ section_equation_same_coordinate_constraints(&function_two, &sketch) })
+        section_equation_same_coordinate_constraints(&function_two, &sketch)
             .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(function_two_constraints.len(), 2);
     assert_eq!(

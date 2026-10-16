@@ -119,14 +119,14 @@ fn feature_source_parameter_keeps_order_and_duplicate_refusal() {
     let id = ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
         .expect("valid test identity");
     let mut content = cadmpeg_ir::features::FeatureContent::default();
-    ({ push_feature_source_parameter(&mut content, id.clone()) })
+    push_feature_source_parameter(&mut content, id.clone())
         .expect("one reference fits service limits");
     assert_eq!(content.len(), 1);
     assert!(
         matches!(&content[0], cadmpeg_ir::features::FeatureSourceContent::Parameter(value)
         if value == &id)
     );
-    let error = ({ push_feature_source_parameter(&mut content, id) })
+    let error = push_feature_source_parameter(&mut content, id)
         .expect_err("duplicate parameter remains invalid");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }

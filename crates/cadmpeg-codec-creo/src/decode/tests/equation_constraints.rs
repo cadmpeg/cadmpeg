@@ -47,9 +47,8 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints =
-        ({ section_equation_native_constraints(&definition, &sketch, &BTreeSet::new()) })
-            .expect("section_equation_native_constraints admitted");
+    let constraints = section_equation_native_constraints(&definition, &sketch, &BTreeSet::new())
+        .expect("section_equation_native_constraints admitted");
     assert_eq!(constraints.len(), 1);
     let (constraint, offset) = &constraints[0];
     assert_eq!(*offset, 28);
@@ -130,7 +129,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
         offset: 899,
     });
     let disabled_constraints =
-        ({ section_equation_native_constraints(&disabled, &sketch, &BTreeSet::new()) })
+        section_equation_native_constraints(&disabled, &sketch, &BTreeSet::new())
             .expect("section_equation_native_constraints admitted");
     assert_eq!(disabled_constraints[0].0.active, Some(false));
     let SketchConstraintDefinitionInput::Native { native_state, .. } =
@@ -216,7 +215,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = ({ section_equation_same_coordinate_constraints(&definition, &sketch) })
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch)
         .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
@@ -250,7 +249,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     definition.variables.as_mut().expect("variables").rows[3].value =
         crate::feature::definitions::ScalarLane::Value(0.25);
     assert!(
-        ({ section_equation_same_coordinate_constraints(&definition, &sketch) })
+        section_equation_same_coordinate_constraints(&definition, &sketch)
             .expect("section_equation_same_coordinate_constraints admitted")
             .is_empty()
     );
@@ -266,7 +265,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     definition.variables.as_mut().expect("variables").rows[2].value =
         crate::feature::definitions::ScalarLane::Undefined;
     assert!(
-        ({ section_equation_same_coordinate_constraints(&definition, &sketch) })
+        section_equation_same_coordinate_constraints(&definition, &sketch)
             .expect("section_equation_same_coordinate_constraints admitted")
             .is_empty()
     );
@@ -275,7 +274,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     definition.variables.as_mut().expect("variables").rows[1].value =
         crate::feature::definitions::ScalarLane::Value(0.0);
     assert!(
-        ({ section_equation_same_coordinate_constraints(&definition, &sketch) })
+        section_equation_same_coordinate_constraints(&definition, &sketch)
             .expect("section_equation_same_coordinate_constraints admitted")
             .is_empty()
     );
@@ -287,7 +286,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
     rows[2].variable_type = crate::feature::definitions::VariableType::V;
     rows[4].variable_type = crate::feature::definitions::VariableType::U;
     rows[5].variable_type = crate::feature::definitions::VariableType::U;
-    let constraints = ({ section_equation_same_coordinate_constraints(&definition, &sketch) })
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch)
         .expect("section_equation_same_coordinate_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(
@@ -393,7 +392,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = ({ section_equation_radius_dimension_constraints(&definition, &sketch) })
+    let constraints = section_equation_radius_dimension_constraints(&definition, &sketch)
         .expect("section_equation_radius_dimension_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
@@ -447,9 +446,8 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
         }),
         offset: 899,
     });
-    let disabled_constraints =
-        ({ section_equation_radius_dimension_constraints(&disabled, &sketch) })
-            .expect("section_equation_radius_dimension_constraints admitted");
+    let disabled_constraints = section_equation_radius_dimension_constraints(&disabled, &sketch)
+        .expect("section_equation_radius_dimension_constraints admitted");
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }
@@ -1198,7 +1196,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = ({ section_equation_equal_distance_constraints(&definition, &sketch) })
+    let constraints = section_equation_equal_distance_constraints(&definition, &sketch)
         .expect("section_equation_equal_distance_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(
@@ -1267,9 +1265,8 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
         }),
         offset: 899,
     });
-    let disabled_constraints =
-        ({ section_equation_equal_distance_constraints(&disabled, &sketch) })
-            .expect("section_equation_equal_distance_constraints admitted");
+    let disabled_constraints = section_equation_equal_distance_constraints(&disabled, &sketch)
+        .expect("section_equation_equal_distance_constraints admitted");
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }
@@ -1360,7 +1357,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = ({ section_equation_point_on_line_constraints(&definition, &sketch) })
+    let constraints = section_equation_point_on_line_constraints(&definition, &sketch)
         .expect("section_equation_point_on_line_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(
@@ -1403,7 +1400,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
         }];
     });
     let reference_line_constraints =
-        ({ section_equation_point_on_line_constraints(&reference_line_definition, &sketch) })
+        section_equation_point_on_line_constraints(&reference_line_definition, &sketch)
             .expect("section_equation_point_on_line_constraints admitted");
     assert_eq!(reference_line_constraints.len(), 1);
     assert_eq!(
@@ -1446,7 +1443,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
         }),
         offset: 899,
     });
-    let disabled_constraints = ({ section_equation_point_on_line_constraints(&disabled, &sketch) })
+    let disabled_constraints = section_equation_point_on_line_constraints(&disabled, &sketch)
         .expect("section_equation_point_on_line_constraints admitted");
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
@@ -1538,7 +1535,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let constraints = ({ section_equation_unsigned_distance_constraints(&definition, &sketch) })
+    let constraints = section_equation_unsigned_distance_constraints(&definition, &sketch)
         .expect("section_equation_unsigned_distance_constraints admitted");
     assert_eq!(constraints.len(), 1);
     assert_eq!(
@@ -1610,9 +1607,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         }),
         offset: 899,
     });
-    let disabled_constraints =
-        ({ section_equation_unsigned_distance_constraints(&disabled, &sketch) })
-            .expect("section_equation_unsigned_distance_constraints admitted");
+    let disabled_constraints = section_equation_unsigned_distance_constraints(&disabled, &sketch)
+        .expect("section_equation_unsigned_distance_constraints admitted");
     assert_eq!(disabled_constraints.len(), 1);
     assert_eq!(disabled_constraints[0].0.active, Some(false));
 }

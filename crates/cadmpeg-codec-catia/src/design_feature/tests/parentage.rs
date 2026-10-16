@@ -41,7 +41,7 @@ fn assigns_parent_from_an_exact_transferred_owner_chain() {
         ..DesignFeatureTransfer::default()
     };
 
-    ({ transfer.assign_feature_parents(&mut ir, &native) }).unwrap();
+    transfer.assign_feature_parents(&mut ir, &native).unwrap();
 
     assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
     assert_eq!(
@@ -87,7 +87,7 @@ fn assigns_parent_from_the_nearest_transferred_ancestor() {
         ..DesignFeatureTransfer::default()
     };
 
-    ({ transfer.assign_feature_parents(&mut ir, &native) }).unwrap();
+    transfer.assign_feature_parents(&mut ir, &native).unwrap();
 
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
@@ -128,7 +128,7 @@ fn rejects_a_parent_that_does_not_precede_its_child() {
         ..DesignFeatureTransfer::default()
     };
 
-    ({ transfer.assign_feature_parents(&mut ir, &native) }).unwrap();
+    transfer.assign_feature_parents(&mut ir, &native).unwrap();
 
     assert!(ir
         .model
@@ -158,7 +158,7 @@ fn does_not_assign_a_self_parent() {
         ..DesignFeatureTransfer::default()
     };
 
-    ({ transfer.assign_feature_parents(&mut ir, &native) }).unwrap();
+    transfer.assign_feature_parents(&mut ir, &native).unwrap();
 
     assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
 }
@@ -201,7 +201,7 @@ fn omits_all_parents_in_an_owner_cycle() {
         ..DesignFeatureTransfer::default()
     };
 
-    ({ transfer.assign_feature_parents(&mut ir, &native) }).unwrap();
+    transfer.assign_feature_parents(&mut ir, &native).unwrap();
 
     assert!(ir
         .model
@@ -221,6 +221,8 @@ fn object_without_owner_chain_gets_no_feature_parent() {
         .features
         .push(feature("one", "synthetic:test:object#one"));
     let transfer = DesignFeatureTransfer::default();
-    ({ transfer.assign_feature_parents(&mut ir, &native) }).expect("assign feature parents");
+    transfer
+        .assign_feature_parents(&mut ir, &native)
+        .expect("assign feature parents");
     assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
 }

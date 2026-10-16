@@ -581,7 +581,7 @@ fn text_terminator_precedes_an_e3_shaped_unresolved_role() {
 #[test]
 fn rejects_ambiguous_unresolved_role_selector_framing() {
     let bytes = [0x81, 0x80, 0x01, 0x82, 0xd1, 0x17, 0xe8, 0x00, 0x1c, 0x01];
-    assert!({ super::parse_role_selectors(&bytes, 0, bytes.len(), 1) }.is_empty());
+    assert!(super::parse_role_selectors(&bytes, 0, bytes.len(), 1).is_empty());
 }
 
 #[test]

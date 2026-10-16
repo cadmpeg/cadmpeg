@@ -205,13 +205,11 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
     assert_eq!(
-        {
-            crate::intersection::scan_with_auxiliary_replacements(
-                &chart,
-                &chart[..chart.len() - 108],
-                &[&chart[chart.len() - 108..]],
-            )
-        }
+        crate::intersection::scan_with_auxiliary_replacements(
+            &chart,
+            &chart[..chart.len() - 108],
+            &[&chart[chart.len() - 108..]],
+        )
         .unwrap()
         .curves
         .len(),
@@ -227,13 +225,11 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
     assert_eq!(
-        {
-            crate::intersection::scan_with_auxiliary_replacements(
-                &term,
-                &base_term,
-                &[&term[base_term.len()..]],
-            )
-        }
+        crate::intersection::scan_with_auxiliary_replacements(
+            &term,
+            &base_term,
+            &[&term[base_term.len()..]],
+        )
         .unwrap()
         .curves
         .len(),

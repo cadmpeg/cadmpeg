@@ -191,7 +191,7 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         native_ref: Some("creo:featdefs:sketch#offset:40".to_string()),
     });
     assert_eq!(
-        ({ section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()) }),
+        section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
         ProfileRef::Planar(PlanarProfileRef::Native(
             "creo:featdefs:sketch#offset:40".to_string()
         ))
@@ -203,13 +203,13 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         reversed: false,
     });
     assert_eq!(
-        ({ section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()) }),
+        section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
         ProfileRef::Planar(PlanarProfileRef::Sketch(
             SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture")
         ))
     );
     assert_eq!(
-        ({ section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()) }),
+        section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()),
         ProfileRef::Planar(PlanarProfileRef::Native(
             "creo:featdefs:sketch#918".to_string()
         ))
@@ -237,7 +237,7 @@ fn section_profile_lookup_resolves_the_feature_sketch() {
         native_ref: None,
     });
     assert_eq!(
-        ({ section_profile_ref(&ir, "creo:featdefs:sketch#40".to_owned()) }),
+        section_profile_ref(&ir, "creo:featdefs:sketch#40".to_owned()),
         ProfileRef::Planar(PlanarProfileRef::Sketch(id))
     );
 }

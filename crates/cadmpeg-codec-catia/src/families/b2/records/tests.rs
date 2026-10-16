@@ -853,7 +853,7 @@ fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
     let mut degenerate = b2_cone_face_stream();
     let half_angle = degenerate.len() - 8;
     degenerate[half_angle..].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert!({ crate::families::b2::records::b2_cone_faces(&degenerate) }.is_empty());
+    assert!(crate::families::b2::records::b2_cone_faces(&degenerate).is_empty());
 }
 
 #[test]

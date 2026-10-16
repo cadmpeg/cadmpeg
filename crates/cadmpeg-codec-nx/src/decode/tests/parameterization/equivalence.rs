@@ -118,8 +118,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         &offsets[0],
         &offsets[1]
     ));
-    ({ complete_parameterization_equivalent_support_uv(&mut ir) })
-        .expect("equivalent support copy");
+    complete_parameterization_equivalent_support_uv(&mut ir).expect("equivalent support copy");
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
     else {

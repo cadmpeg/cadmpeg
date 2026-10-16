@@ -33,16 +33,14 @@ fn hole_resolved_face_keeps_its_native_reference() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.faces.push(resolved_hole_face());
-    let selection = ({
-        hole_face_selection(
-            &scan,
-            &ir,
-            9,
-            11,
-            &std::collections::BTreeMap::new(),
-            &std::collections::BTreeSet::new(),
-        )
-    })
+    let selection = hole_face_selection(
+        &scan,
+        &ir,
+        9,
+        11,
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeSet::new(),
+    )
     .expect("resolved hole face");
     assert!(
         matches!(selection, cadmpeg_ir::features::FaceSelection::Resolved { faces, native }
@@ -60,16 +58,14 @@ fn hole_generated_face_keeps_its_native_reference() {
             "creo:model:feature#3",
         )
         .expect("identity grammar")]);
-    let selection = ({
-        hole_face_selection(
-            &scan,
-            &CadIr::empty(),
-            9,
-            11,
-            &result_surface_ids,
-            &available_features,
-        )
-    })
+    let selection = hole_face_selection(
+        &scan,
+        &CadIr::empty(),
+        9,
+        11,
+        &result_surface_ids,
+        &available_features,
+    )
     .expect("generated hole face");
     assert!(
         matches!(selection, cadmpeg_ir::features::FaceSelection::Generated { native, .. }
@@ -128,8 +124,8 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
 #[test]
 fn thicken_fixture_generates_a_face() {
     let scan = thicken_scan();
-    let definition = ({ thicken_feature_definition(&scan, &CadIr::empty(), 17) })
-        .expect("generated thicken face");
+    let definition =
+        thicken_feature_definition(&scan, &CadIr::empty(), 17).expect("generated thicken face");
     assert!(matches!(
         definition,
         IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {

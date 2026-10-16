@@ -481,7 +481,7 @@ fn counterbore_patch_rows_cover_each_source_row() {
     ir.model
         .surfaces
         .extend([model_cylinder(1), model_cylinder(2)]);
-    let service = ({ super::counterbore_patch_geometries(&scan, &ir, 40) })
+    let service = super::counterbore_patch_geometries(&scan, &ir, 40)
         .expect("compute the counterbore patch geometries")
         .expect("source patches");
     assert_eq!(

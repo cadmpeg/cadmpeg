@@ -4627,14 +4627,14 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
     let mut free_vertex_ids = Vec::new();
     for index in &free_vertex_indices {
-        free_vertex_ids.push({
-            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::ids::VertexId::compose(
+        free_vertex_ids.push(Ok::<_, cadmpeg_core::CodecError>(
+            cadmpeg_ir::ids::VertexId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
                 key.clone()
                     .then(cadmpeg_ir::identity_key!(".slot-"))
                     .then(*index),
-            ))
-        }?);
+            ),
+        )?);
     }
     if grouping.fallback {
         staged.warnings.push(format_args!(

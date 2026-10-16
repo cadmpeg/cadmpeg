@@ -1788,27 +1788,23 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .recipe_nodes
         .push(candidate_context.recipe_nodes[0].clone());
     candidate_context.recipe_program = vec![0, -1, 2];
-    assert!({
-        resolved_historical_split_face_target_group(
-            &split_scope,
-            split_scope.previous_history_state_id(),
-            &split_group,
-            &[split_selected.clone(), candidate_context],
-        )
-    }
+    assert!(resolved_historical_split_face_target_group(
+        &split_scope,
+        split_scope.previous_history_state_id(),
+        &split_group,
+        &[split_selected.clone(), candidate_context],
+    )
     .is_some());
     let mut unresolved_context = split_context;
     for reference in &mut unresolved_context.recipe_references {
         reference.candidate_faces.clear();
         reference.alternate_selector_faces.clear();
     }
-    assert!({
-        resolved_historical_split_face_target_group(
-            &split_scope,
-            split_scope.previous_history_state_id(),
-            &split_group,
-            &[split_selected, unresolved_context],
-        )
-    }
+    assert!(resolved_historical_split_face_target_group(
+        &split_scope,
+        split_scope.previous_history_state_id(),
+        &split_group,
+        &[split_selected, unresolved_context],
+    )
     .is_none());
 }

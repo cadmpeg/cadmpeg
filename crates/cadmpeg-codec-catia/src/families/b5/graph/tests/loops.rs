@@ -98,7 +98,7 @@ fn resolve_surface_aliases(
     surfaces: &mut BTreeMap<u32, B5Surface>,
     conflicts: &mut HashSet<u32>,
 ) -> bool {
-    ({ super::super::resolve_surface_aliases(records, by_id, surfaces, conflicts) })
+    super::super::resolve_surface_aliases(records, by_id, surfaces, conflicts)
         .expect("resolve surface aliases")
 }
 
@@ -107,7 +107,7 @@ fn surface_alias_carrier(
     by_id: &HashMap<u32, &B5Record>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Surface> {
-    ({ super::super::surface_alias_carrier(object_id, by_id, surfaces) })
+    super::super::surface_alias_carrier(object_id, by_id, surfaces)
         .expect("compute the surface alias carrier")
 }
 

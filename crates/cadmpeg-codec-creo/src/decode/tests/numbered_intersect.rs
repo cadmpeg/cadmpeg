@@ -79,7 +79,7 @@ fn generated_curve_edge_refs_with_service(
     available_features: &BTreeSet<IrFeatureId>,
     result_edge_ids: &BTreeMap<u32, Vec<u32>>,
 ) -> Option<Vec<GeneratedEdgeRef>> {
-    ({ generated_curve_edge_refs(curve_ids, rows, available_features, result_edge_ids) })
+    generated_curve_edge_refs(curve_ids, rows, available_features, result_edge_ids)
         .expect("compute the generated curve edge refs")
 }
 
@@ -89,7 +89,7 @@ fn generated_surface_face_refs_with_service(
     result_surface_ids: &BTreeMap<u32, Vec<u32>>,
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Option<Vec<GeneratedFaceRef>> {
-    ({ generated_surface_face_refs(source_ids, rows, result_surface_ids, available_features) })
+    generated_surface_face_refs(source_ids, rows, result_surface_ids, available_features)
         .expect("compute the generated surface face refs")
 }
 

@@ -905,7 +905,8 @@ mod tests {
         let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         { carriers.admit_sketch(&mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0))) }
             .expect("sketch admission");
-        ({ carriers.admit_sketch_entities(&mut ir, vec![source_sketch_line(1.0)]) })
+        carriers
+            .admit_sketch_entities(&mut ir, vec![source_sketch_line(1.0)])
             .expect("entity admission");
         { carriers.admit_sketch_constraints(&mut ir, vec![source_distance_constraint(2.0)]) }
             .expect("constraint admission");
@@ -954,9 +955,9 @@ mod tests {
     fn sketch_entity_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error =
-            ({ carriers.admit_sketch_entities(&mut ir, vec![source_sketch_line(f64::MAX)]) })
-                .expect_err("millimeter line cannot be represented");
+        let error = carriers
+            .admit_sketch_entities(&mut ir, vec![source_sketch_line(f64::MAX)])
+            .expect_err("millimeter line cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.sketch_entities.is_empty());
     }
@@ -1237,7 +1238,8 @@ mod tests {
             ),
             None,
         );
-        ({ source_carriers.admit_procedural_surface(&mut ir, &surface_id, procedural) })
+        source_carriers
+            .admit_procedural_surface(&mut ir, &surface_id, procedural)
             .expect("procedural attachment");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
             ir.model.procedural_surfaces[0].definition()
@@ -1299,7 +1301,8 @@ mod tests {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
-        ({ SourceUnitCarriers::default().admit_procedural_surface(&mut ir, &owner, procedural) })
+        SourceUnitCarriers::default()
+            .admit_procedural_surface(&mut ir, &owner, procedural)
             .expect("valid test setup or admitted service result");
         assert_eq!(ir.model.procedural_surfaces.len(), 1);
     }
@@ -1320,7 +1323,8 @@ mod tests {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
         });
-        ({ SourceUnitCarriers::default().admit_procedural_curve(&mut ir, &owner, procedural) })
+        SourceUnitCarriers::default()
+            .admit_procedural_curve(&mut ir, &owner, procedural)
             .expect("valid test setup or admitted service result");
         assert_eq!(ir.model.procedural_curves.len(), 1);
     }
@@ -1343,8 +1347,8 @@ mod tests {
             )
         })
         .expect("curve admission");
-        ({
-            source_carriers.admit_procedural_curve(
+        source_carriers
+            .admit_procedural_curve(
                 &mut ir,
                 &curve_id,
                 ProceduralCurve::new(
@@ -1366,8 +1370,7 @@ mod tests {
                     ),
                 ),
             )
-        })
-        .expect("helix attachment");
+            .expect("helix attachment");
         let ProceduralCurveDefinition::Helix(helix) = ir.model.procedural_curves[0].definition()
         else {
             panic!("helix construction changed family");

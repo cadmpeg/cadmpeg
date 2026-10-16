@@ -1112,15 +1112,15 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
 
     let mut mismatched = populations.clone();
     mismatched[1] = population(2, 2, 200);
-    assert!({
+    assert!(
         crate::families::standard::records::pair_standard_populations(&layouts, &mismatched)
-    }
-    .is_none());
-    assert!({
+            .is_none()
+    );
+    assert!(
         crate::families::standard::records::pair_standard_populations(&layouts[..1], &populations)
-    }
-    .is_none());
-    assert!({ crate::families::standard::records::pair_standard_populations(&[], &[]) }.is_none());
+            .is_none()
+    );
+    assert!(crate::families::standard::records::pair_standard_populations(&[], &[]).is_none());
     let one = crate::families::standard::records::pair_standard_populations(
         &layouts[..1],
         &populations[..1],

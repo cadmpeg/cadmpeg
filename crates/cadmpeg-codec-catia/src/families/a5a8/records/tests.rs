@@ -1180,9 +1180,7 @@ fn a5_weight_program_does_not_cross_frame_boundary() {
     bytes.extend([1.0, 2.0, 3.0, 4.0].into_iter().flat_map(le_f64));
     bytes.extend([0u8; 8]);
     let mut at = 0;
-    assert!(
-        { crate::families::a5a8::records::a5_weights(&bytes, &mut at, 2, 2, 1 + 3 * 8) }.is_none()
-    );
+    assert!(crate::families::a5a8::records::a5_weights(&bytes, &mut at, 2, 2, 1 + 3 * 8).is_none());
 }
 
 #[test]

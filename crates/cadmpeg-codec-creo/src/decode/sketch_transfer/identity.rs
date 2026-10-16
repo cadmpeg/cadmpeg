@@ -385,15 +385,13 @@ mod tests {
         );
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let (entity, offset) = ({
-            super::unresolved_saved_section_entity(
-                &definition,
-                &sketch,
-                &saved,
-                &std::collections::BTreeSet::new(),
-                &std::collections::BTreeSet::new(),
-            )
-        })
+        let (entity, offset) = super::unresolved_saved_section_entity(
+            &definition,
+            &sketch,
+            &saved,
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        )
         .expect("service admission")
         .expect("saved dummy entity");
         assert_eq!(offset, 9);

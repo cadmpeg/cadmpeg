@@ -50,16 +50,14 @@ fn section_solver_saved_points_preserve_incidence_symmetry_and_duplicate_refusal
         offset: 82,
     });
     assert_eq!(
-        {
-            section_skamp_endpoint(
-                &saved_definition,
-                &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
-                &crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 14,
-                    sense: 3,
-                },
-            )
-        },
+        section_skamp_endpoint(
+            &saved_definition,
+            &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
+            &crate::feature::definitions::FeatureSkampItem {
+                entity_id: 14,
+                sense: 3,
+            },
+        ),
         Some(SketchLocus::End(
             SketchEntityId::mint("creo:featdefs:sketch_entity#917:14".to_string())
                 .expect("valid test fixture")

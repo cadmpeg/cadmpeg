@@ -365,7 +365,7 @@ mod tests {
         let mut mode_seven = row.to_vec();
         mode_seven[18] = 0x07;
         assert_eq!(
-            u8::from({ crate::om::column_row::scan::linked_rows(&mode_seven) }[0].mode()),
+            u8::from(crate::om::column_row::scan::linked_rows(&mode_seven)[0].mode()),
             7
         );
         assert!(crate::om::column_row::scan::linked_rows(&row[..row.len() - 1]).is_empty());
@@ -409,7 +409,7 @@ mod tests {
         let mut mode_four = row.to_vec();
         mode_four[16] = 0x04;
         assert_eq!(
-            u8::from({ crate::om::column_row::scan::target_rows(&mode_four) }[0].mode()),
+            u8::from(crate::om::column_row::scan::target_rows(&mode_four)[0].mode()),
             4
         );
         assert!(crate::om::column_row::scan::target_rows(&row[..row.len() - 1]).is_empty());
