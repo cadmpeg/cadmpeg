@@ -441,6 +441,134 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
         .is_ok());
 }
 
+/// De Casteljau's split that keeps every level.
+fn split_keeping_levels(controls: &[[f64; 4]], parameter: f64) -> (Vec<[f64; 4]>, Vec<[f64; 4]>) {
+    let mut levels = vec![controls.to_vec()];
+    while levels.last().unwrap().len() > 1 {
+        let next = levels
+            .last()
+            .unwrap()
+            .windows(2)
+            .map(|pair| {
+                std::array::from_fn(|axis| {
+                    (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
+                })
+            })
+            .collect();
+        levels.push(next);
+    }
+    (
+        levels.iter().map(|level| level[0]).collect(),
+        levels
+            .iter()
+            .rev()
+            .map(|level| *level.last().unwrap())
+            .collect(),
+    )
+}
+
+#[test]
+fn ruled_span_split_of_a_high_degree_polygon_matches_the_level_split() {
+    let span = cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan {
+        domain: [2.0, 6.0],
+        controls: (0..1024_u32)
+            .map(|index| {
+                let t = f64::from(index);
+                [t.sin(), t.cos(), 0.5 * t, 1.0 + f64::from(index % 5) / 8.0]
+            })
+            .collect(),
+    };
+    let (left, right) = super::split_homogeneous_bezier_span(&span, 3.0).unwrap();
+    let (expected_left, expected_right) = split_keeping_levels(&span.controls, 0.25);
+    assert_eq!(left.domain, [2.0, 3.0]);
+    assert_eq!(right.domain, [3.0, 6.0]);
+    assert_eq!(left.controls, expected_left);
+    assert_eq!(right.controls, expected_right);
+}
+
+/// A clamped polynomial rail along `y` of `degree` with the spans that end
+/// at each of `boundaries`.
+fn ruled_rail(degree: u32, boundaries: &[f64], y: f64) -> NurbsCurve {
+    let degree_index = cadmpeg_core::decode::index_from_u32(degree);
+    let last = *boundaries.last().unwrap();
+    let mut knots = vec![0.0; degree_index + 1];
+    knots.extend(&boundaries[..boundaries.len() - 1]);
+    knots.extend(vec![last; degree_index + 1]);
+    let count = knots.len() - degree_index - 1;
+    let points = (0..count)
+        .map(|index| {
+            let x = f64::from(u32::try_from(index).unwrap());
+            Point3::new(x, y, f64::from(u32::try_from(index % 3).unwrap()))
+        })
+        .collect();
+    NurbsCurve::from_lanes(degree, knots, points, None, false).unwrap()
+}
+
+#[test]
+fn ruled_carrier_of_long_interleaved_rails_partitions_by_search() {
+    let spans = 1_u32 << 14;
+    let first_boundaries: Vec<f64> = (1..=spans).map(f64::from).collect();
+    let mut second_boundaries: Vec<f64> = (1..spans).map(|knot| f64::from(knot) - 0.5).collect();
+    second_boundaries.push(f64::from(spans));
+    let first = ruled_rail(1, &first_boundaries, 0.0);
+    let second = ruled_rail(2, &second_boundaries, 1.0);
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let surface = super::ruled_surface_carrier(&first, &second, &ctx)
+        .expect("ruled lanes pair")
+        .expect("partition-aligned ruled carrier");
+    let aligned = 2 * cadmpeg_core::decode::index_from_u32(spans) - 1;
+    assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
+    assert_eq!(surface.u_count(), 3 * aligned + 1);
+}
+
+#[test]
+fn ruled_rails_over_the_blend_limit_are_skipped_with_a_loss() {
+    use crate::test_support::test_curves_and_surfaces::planar_nurbs_parameters;
+
+    // One aligned span of degree 4096 + 4097 needs 8194² blends, over 2^26.
+    let rail = |label: &str, degree: u32, y: f64| OwnedTestEntity {
+        entity_type: 126,
+        form: 0,
+        label: label.into(),
+        status: "00010000",
+        parameters: planar_nurbs_parameters(degree, 1, false, |index| {
+            [f64::from(index) / f64::from(degree), y]
+        }),
+    };
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                rail("RAIL1", 4096, 0.0),
+                rail("RAIL2", 4097, 1.0),
+                OwnedTestEntity {
+                    entity_type: 118,
+                    form: 1,
+                    label: "RULED".into(),
+                    status: "00000000",
+                    parameters: "118,1,3,0,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "iges:model:surface#D5"));
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::GeometryNotProjected.kind()
+                && loss.message.contains("MAX_BEZIER_BLENDS")
+        }),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
 #[test]
 fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
     let first = NurbsCurve::from_lanes(
@@ -463,7 +591,8 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         false,
     )
     .expect("valid second rail");
-    let surface = super::ruled_surface_carrier(&first, &second)
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("partition-aligned rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
@@ -1145,7 +1274,8 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
         false,
     )
     .expect("valid second rail");
-    let surface = super::ruled_surface_carrier(&first, &second)
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("relative-parameter rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));

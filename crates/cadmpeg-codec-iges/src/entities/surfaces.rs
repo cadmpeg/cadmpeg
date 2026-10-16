@@ -6,6 +6,9 @@ use super::geometry::{
     declared_unit_vector, resolve_transform, source_object, unit_vector, DeclaredInterval,
     ProjectionOutcome,
 };
+use super::nurbs_controls::{
+    bezier_blends, bezier_span_count, homogeneous_bezier_extraction, MAX_BEZIER_BLENDS,
+};
 
 use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
@@ -16,7 +19,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
-    boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
+    boundaries_within_resolution, positive_controls, HomogeneousBezierSpan,
 };
 use cadmpeg_ir::geometry::{
     nurbs::{
@@ -459,6 +462,7 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
 
 fn homogeneous_bezier_spans(
     curve: &NurbsCurve,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
@@ -497,7 +501,7 @@ fn homogeneous_bezier_spans(
     let Some(controls) = positive_controls(&points, weights.as_deref()) else {
         return Ok(None);
     };
-    Ok(homogeneous_spans(degree, curve.knots(), &controls))
+    homogeneous_bezier_extraction(ctx, degree, curve.knots(), &controls)
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
@@ -514,9 +518,28 @@ fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
     Some(value)
 }
 
+/// `bernstein_binomial(n, k)` for every `k` in `0..=n`.
+fn bernstein_binomial_row(n: usize) -> Vec<Option<f64>> {
+    let mut row = Vec::new();
+    row.extend((0..=n).map(|k| bernstein_binomial(n, k)));
+    row
+}
+
+/// The Bézier spans of a rail inside its knot domain, counted from its knots.
+fn rail_span_count(curve: &NurbsCurve, degree: usize) -> usize {
+    let knots = curve.knots();
+    knots
+        .get(degree)
+        .zip(knots.get(curve.pole_count()))
+        .map_or(1, |(start, end)| bezier_span_count(knots, [*start, *end]))
+}
+
+/// One pole of the product of two Bézier polygons, with each polygon's
+/// [`bernstein_binomial_row`] and the row of the product degree.
 fn homogeneous_product_control(
-    vector_controls: &[[f64; 4]],
-    scalar_controls: &[[f64; 4]],
+    (vector_controls, vector_binomials): (&[[f64; 4]], &[Option<f64>]),
+    (scalar_controls, scalar_binomials): (&[[f64; 4]], &[Option<f64>]),
+    product_binomials: &[Option<f64>],
     index: usize,
 ) -> Option<[f64; 4]> {
     // For homogeneous rails C1=A/a and C2=B/b, the ruled blend is
@@ -525,7 +548,13 @@ fn homogeneous_product_control(
     let vector_degree = vector_controls.len().checked_sub(1)?;
     let scalar_degree = scalar_controls.len().checked_sub(1)?;
     let degree = vector_degree.checked_add(scalar_degree)?;
-    let denominator = bernstein_binomial(degree, index)?;
+    if vector_binomials.len() != vector_controls.len()
+        || scalar_binomials.len() != scalar_controls.len()
+        || product_binomials.len() != degree + 1
+    {
+        return None;
+    }
+    let denominator = (*product_binomials.get(index)?)?;
     let upper = index.min(vector_degree);
     let mut control = [0.0; 4];
     for (vector_index, vector_control) in vector_controls.iter().enumerate() {
@@ -538,9 +567,8 @@ fn homogeneous_product_control(
         let Some(scalar_control) = scalar_controls.get(scalar_index) else {
             continue;
         };
-        let coefficient = bernstein_binomial(vector_degree, vector_index)?
-            * bernstein_binomial(scalar_degree, scalar_index)?
-            / denominator;
+        let coefficient =
+            vector_binomials[vector_index]? * scalar_binomials[scalar_index]? / denominator;
         let scalar = scalar_control[3];
         for axis in 0..4 {
             control[axis] += coefficient * vector_control[axis] * scalar;
@@ -577,27 +605,27 @@ fn split_homogeneous_bezier_span(
     if !parameter.is_finite() || parameter <= 0.0 || parameter >= 1.0 {
         return None;
     }
-    let degree = span.controls.len().checked_sub(1)?;
-    let mut levels = Vec::new();
-    let first_level = span.controls.clone();
-    levels.push(first_level);
-    for _ in 1..=degree {
-        let previous = levels.last()?;
-        let mut current = Vec::new();
-        current.extend(previous.windows(2).map(|pair| {
-            std::array::from_fn(|axis| {
-                (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
-            })
-        }));
-        if current.iter().flatten().any(|value| !value.is_finite()) {
+    // De Casteljau's levels, keeping only the level ends the halves use.
+    let mut level = span.controls.clone();
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    left.push(*level.first()?);
+    right.push(*level.last()?);
+    while level.len() > 1 {
+        for index in 0..level.len() - 1 {
+            let (first, second) = (level[index], level[index + 1]);
+            level[index] = std::array::from_fn(|axis| {
+                (1.0 - parameter) * first[axis] + parameter * second[axis]
+            });
+        }
+        level.pop();
+        if level.iter().flatten().any(|value| !value.is_finite()) {
             return None;
         }
-        levels.push(current);
+        left.push(*level.first()?);
+        right.push(*level.last()?);
     }
-    let mut left = Vec::new();
-    left.extend((0..=degree).map(|level| levels[level][0]));
-    let mut right = Vec::new();
-    right.extend((0..=degree).map(|index| levels[degree - index][index]));
+    right.reverse();
     Some((
         HomogeneousBezierSpan {
             domain: [span.domain[0], cut],
@@ -646,12 +674,13 @@ fn partition_homogeneous_spans(
         if !start.is_finite() || !end.is_finite() || start >= end {
             return None;
         }
-        if boundaries
-            .iter()
-            .copied()
-            .filter(|boundary| start < *boundary && *boundary < end)
-            .any(|boundary| cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary).is_none())
-        {
+        let interior = boundaries.get(
+            boundaries.partition_point(|boundary| *boundary <= start)
+                ..boundaries.partition_point(|boundary| *boundary < end),
+        )?;
+        if interior.iter().any(|boundary| {
+            cadmpeg_ir::math::interpolate(domain[0], domain[1], *boundary).is_none()
+        }) {
             return None;
         }
         let controls = span.controls.clone();
@@ -659,11 +688,7 @@ fn partition_homogeneous_spans(
             domain: span.domain,
             controls,
         };
-        for boundary in boundaries
-            .iter()
-            .copied()
-            .filter(|boundary| start < *boundary && *boundary < end)
-        {
+        for boundary in interior.iter().copied() {
             let cut = cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary)
                 .map(cadmpeg_ir::scalar::FiniteReal::get)?;
             let (left, right) = split_homogeneous_bezier_span(&current, cut)?;
@@ -680,12 +705,13 @@ fn partition_homogeneous_spans(
 fn aligned_homogeneous_spans(
     first: &NurbsCurve,
     second: &NurbsCurve,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>>, CodecError> {
-    let Some(first_extraction) = homogeneous_bezier_spans(first)? else {
+    let Some(first_extraction) = homogeneous_bezier_spans(first, ctx)? else {
         return Ok(None);
     };
     let first_spans = &*first_extraction;
-    let Some(second_extraction) = homogeneous_bezier_spans(second)? else {
+    let Some(second_extraction) = homogeneous_bezier_spans(second, ctx)? else {
         return Ok(None);
     };
     let second_spans = &*second_extraction;
@@ -818,6 +844,7 @@ fn revolution_pole_count_exceeds_limit(generatrix_count: usize, angular_controls
 fn ruled_surface_carrier(
     first: &NurbsCurve,
     second: &NurbsCurve,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
     if first.degree() == second.degree()
         && first.knots() == second.knots()
@@ -831,7 +858,7 @@ fn ruled_surface_carrier(
             return same_basis_ruled_surface(first, second, &weights).map(Some);
         }
     }
-    let lanes = ruled_surface_span_lanes(first, second)?;
+    let lanes = ruled_surface_span_lanes(first, second, ctx)?;
     let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
@@ -874,6 +901,7 @@ type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal
 fn ruled_surface_span_lanes(
     first: &NurbsCurve,
     second: &NurbsCurve,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<RuledSpanLanes>, CodecError> {
     let (Ok(first_degree), Ok(second_degree)) = (
         usize::try_from(first.degree()),
@@ -887,9 +915,22 @@ fn ruled_surface_span_lanes(
     if degree == 0 {
         return Ok(None);
     }
-    let Some(spans) = aligned_homogeneous_spans(first, second)? else {
+    // Each rail contributes its span boundaries to the shared partition, and
+    // every aligned span costs about `(degree + 1)²` blends in splits and
+    // products.
+    let aligned_spans =
+        rail_span_count(first, first_degree) + rail_span_count(second, second_degree) - 1;
+    if bezier_blends(aligned_spans, degree).is_none_or(|blends| blends > MAX_BEZIER_BLENDS) {
+        return Err(CodecError::NotImplemented(format!(
+            "IGES ruled carrier of degree {degree} aligns up to {aligned_spans} Bézier spans, which exceeds MAX_BEZIER_BLENDS"
+        )));
+    }
+    let Some(spans) = aligned_homogeneous_spans(first, second, ctx)? else {
         return Ok(None);
     };
+    let first_binomials = bernstein_binomial_row(first_degree);
+    let second_binomials = bernstein_binomial_row(second_degree);
+    let product_binomials = bernstein_binomial_row(degree);
     let Some(u_count) = spans
         .len()
         .checked_mul(degree)
@@ -921,14 +962,20 @@ fn ruled_surface_span_lanes(
         }
         let start = usize::from(span_index > 0);
         for index in 0..=degree {
-            let Some(first_times_second) =
-                homogeneous_product_control(&first_span.controls, &second_span.controls, index)
-            else {
+            let Some(first_times_second) = homogeneous_product_control(
+                (&first_span.controls, &first_binomials),
+                (&second_span.controls, &second_binomials),
+                &product_binomials,
+                index,
+            ) else {
                 return Ok(None);
             };
-            let Some(second_times_first) =
-                homogeneous_product_control(&second_span.controls, &first_span.controls, index)
-            else {
+            let Some(second_times_first) = homogeneous_product_control(
+                (&second_span.controls, &second_binomials),
+                (&first_span.controls, &first_binomials),
+                &product_binomials,
+                index,
+            ) else {
                 return Ok(None);
             };
             if index >= start {
@@ -976,6 +1023,7 @@ fn homogeneous_curve_boundary_matches(
     second: &NurbsCurve,
     range: [f64; 2],
     resolution: f64,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<bool>, CodecError> {
     if !resolution.is_finite()
         || resolution < 0.0
@@ -985,11 +1033,11 @@ fn homogeneous_curve_boundary_matches(
     {
         return Ok(None);
     }
-    let Some(first_extraction) = homogeneous_bezier_spans(first)? else {
+    let Some(first_extraction) = homogeneous_bezier_spans(first, ctx)? else {
         return Ok(None);
     };
     let first_spans = &*first_extraction;
-    let Some(second_extraction) = homogeneous_bezier_spans(second)? else {
+    let Some(second_extraction) = homogeneous_bezier_spans(second, ctx)? else {
         return Ok(None);
     };
     let second_spans = &*second_extraction;
@@ -1036,7 +1084,7 @@ fn surface_boundary_is_closed(
     else {
         return Ok(None);
     };
-    homogeneous_curve_boundary_matches(&first, &second, varying_range, resolution)
+    homogeneous_curve_boundary_matches(&first, &second, varying_range, resolution, ctx)
 }
 
 fn rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
@@ -1566,7 +1614,7 @@ pub(super) fn project(
                 continue;
             }
         }
-        let surface = match ruled_surface_carrier(&first, &second) {
+        let surface = match ruled_surface_carrier(&first, &second, ctx) {
             Ok(Some(surface)) => surface,
             Ok(None) => {
                 super::push_geometry_loss(
