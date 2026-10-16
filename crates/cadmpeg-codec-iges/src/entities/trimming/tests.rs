@@ -73,6 +73,76 @@ const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
 #[test]
+fn decode_skips_a_boundary_over_its_endpoint_cluster_limit() {
+    let segment_count = 8_193_usize;
+    let mut entities = Vec::new();
+    entities.push(OwnedTestEntity {
+        entity_type: 108,
+        form: 0,
+        label: "PLANE".into(),
+        status: "00010000",
+        parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+    });
+    let last = u32::try_from(segment_count - 1).expect("segment count fits a directory pointer");
+    for index in 0..last {
+        entities.push(OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "EDGE".into(),
+            status: "00010000",
+            parameters: format!("110,{index},0,0,{},0,0;", index + 1),
+        });
+    }
+    entities.push(OwnedTestEntity {
+        entity_type: 110,
+        form: 0,
+        label: "EDGE".into(),
+        status: "00010000",
+        parameters: format!("110,{last},0,0,0,0,0;"),
+    });
+    let mut boundary = format!("141,0,1,1,{segment_count}");
+    for index in 0..segment_count {
+        let sequence =
+            3 + u32::try_from(index).expect("segment index fits a directory pointer") * 2;
+        boundary.push(',');
+        boundary.push_str(&sequence.to_string());
+        boundary.push_str(",1,0");
+    }
+    boundary.push(';');
+    let boundary_sequence = 3 + u32::try_from(segment_count).expect("count fits") * 2;
+    entities.push(OwnedTestEntity {
+        entity_type: 141,
+        form: 0,
+        label: "BOUNDARY".into(),
+        status: "00010000",
+        parameters: boundary,
+    });
+    entities.push(OwnedTestEntity {
+        entity_type: 143,
+        form: 0,
+        label: "BOUNDED".into(),
+        status: "00000000",
+        parameters: format!("143,0,1,1,{boundary_sequence};"),
+    });
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(decoded.ir().model.faces.is_empty());
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
+            && loss
+                .message
+                .contains("endpoint clustering is limited to 16384")
+    }));
+}
+
+#[test]
 fn pcurve_bounds_keep_a_wide_finite_knot_span() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
