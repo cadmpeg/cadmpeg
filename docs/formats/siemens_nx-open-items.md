@@ -178,16 +178,6 @@ pmark, target pmark, and partition ownership. Apply only edges that lead to
 the selected current state, including branches, undone changes, and multiple
 bodies. Keep an unestablished edge selection unresolved.
 
-### PS-31. `OFFSET_SURF` discriminator and true-offset roles
-
-**Question.** What do the `OFFSET_SURF` discriminator byte and `true_offset` field select?
-
-**Known.** `siemens_nx.md` §6.1 "**OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref" defines the layout and the evaluation `P = base(u,v) + offset_distance * unit_normal(u,v)`. It assigns no role to the discriminator or to `true_offset`.
-
-**Need.** We must know the roles before the transferred surface states a parameter-direction sense. The decoder writes a forward sense for both parameters on every offset surface. If either field selects parameter reversal, every transferred offset surface states the wrong sense, and the sense comparison between two offset surfaces cannot separate them.
-
-**Note.** The closure changes the specification to say that `V`, `I`, and `U` are status values and that neither field affects parameter direction. The tests only mutate synthetic bytes and assert that the decoder leaves senses unset. No serialized comparison establishes either field's meaning or rules out an orientation role.
-
 ### PS-33. MESH FILE chart layout
 
 **Question.** Which layout, if any, applies to `CHART_s` and `LIMIT` Hvec rows in a `MESH FILE` payload?
