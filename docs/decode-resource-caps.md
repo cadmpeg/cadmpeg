@@ -176,6 +176,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-iges`     | `src/entities/composite.rs`                        | `MAX_COMPOSITE_DEGREE`                    | `1024`                                                  | 1    | Target degree when a child is raised to the composite degree. A higher degree is an unsupported spline; the composite is projected degraded with a loss.                                                                                                                     |
 | `cadmpeg-codec-iges`     | `src/entities/composite.rs`                        | `MAX_COMPOSITE_DEPTH`                     | `64`                                                    | 4    | Composite flattening depth; each level also charges `enter_nested`. At the limit the composite is projected degraded with a loss.                                                                                                                                            |
 | `cadmpeg-codec-iges`     | `src/entities/trimming.rs`                         | `MAX_BOUNDARY_CLUSTER_ENDPOINTS`          | `16_384`                                                | 4    | Endpoint clustering for boundary sewing. Excess marks the boundary invalid with a geometry loss.                                                                                                                                                                             |
+| `cadmpeg-codec-inventor` | `src/design.rs`                                    | `MAX_EXPRESSION_TEXT_BYTES`               | `1 << 16`                                               | 4    | Rendered text length of one parameter expression, measured once per shared node before any text is built. A longer expression skips its parameter with `parameter.expression-bounded`; emitted text is charged to `retain_bytes`.                                            |
 | `cadmpeg-codec-inventor` | `src/property_set.rs`                              | `MAX_STREAM_SIZE`                         | `2_097_152`                                             | 2    | OLE property-set stream size and the string, BLOB and clipboard size fields. A larger stream is skipped when property sets are listed and `Malformed` when parsed; a larger size field is `Malformed`. Payload reads go through `take`.                                      |
 | `cadmpeg-codec-inventor` | `src/property_set.rs`                              | `MAX_PROPERTIES`                          | `65_536`                                                | 2    | Section property count, dictionary entry count and vector element count. Excess is `Malformed`; entries are read one at a time against the section window.                                                                                                                   |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_SKETCH_RECORDS`                      | `1_000_000`                                             | 2    | Declared sketch, spreadsheet, dimension and record counts (excess is `Malformed`); spline pole, knot and multiplicity counts, binary point and value lists checked with `View::counted`, and pattern occurrence counts (excess returns `None` and the item is not built).    |
@@ -357,23 +358,23 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 188.
+Production `MAX_*` constants: 189.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 64    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 77    |
+| 4    | Local work cap             | 78    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 188   |
+|      | Total                      | 189   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 1, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 4,
-`cadmpeg-codec-iges` 14, `cadmpeg-codec-inventor` 2,
+`cadmpeg-codec-iges` 14, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 9, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 13,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 16, `cadmpeg-codec-sldprt` 11,
 and `cadmpeg-codec-catia` 44.
@@ -424,5 +425,9 @@ Current codec routes:
   its operation or solution budget".
 - F3D recipe, pattern, parameter-order, spatial-profile, and history-binding
   bounds report losses. History binding uses `retained_bytes_available()`.
-- Inventor and FreeCAD have only kind 2 constants. `cadmpeg-codec-sat` has no
-  production `MAX_*`.
+- Inventor measures each parameter expression once per shared node. A
+  parameter whose text would pass `MAX_EXPRESSION_TEXT_BYTES` is skipped and
+  reported as `parameter.expression-bounded`; emitted text charges
+  `retain_bytes`.
+- FreeCAD has only kind 2 constants. `cadmpeg-codec-sat` has no production
+  `MAX_*`.

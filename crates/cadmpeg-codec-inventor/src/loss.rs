@@ -58,6 +58,8 @@ pub(crate) enum InventorLossCode {
     FeatureStateUnresolved,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
+    /// Parameter records have an expression whose text passes the local cap.
+    ParameterExpressionBounded,
     /// Sketch, entity, or constraint records have a neutral graph that is not closed.
     SketchGraphOpen,
     /// `RSe` contains unpaired metadata or bulk streams.
@@ -122,6 +124,7 @@ impl InventorLossCode {
         Self::FeatureOperationGraphOpen,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
+        Self::ParameterExpressionBounded,
         Self::SketchGraphOpen,
         Self::RseStreamUnpaired,
         Self::PropertySetStreamMalformed,
@@ -166,6 +169,7 @@ impl InventorLossCode {
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
+            Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::SketchGraphOpen => "sketch.graph-open",
             Self::RseStreamUnpaired => "rse.stream-unpaired",
             Self::PropertySetStreamMalformed => "property-set.stream-malformed",
@@ -225,7 +229,9 @@ impl InventorLossCode {
             Self::FeatureOperationGraphOpen
             | Self::FeatureStateUnresolved
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
-            Self::ParameterGraphOpen => LossTaxonomy::ParametricRecordOmitted,
+            Self::ParameterGraphOpen | Self::ParameterExpressionBounded => {
+                LossTaxonomy::ParametricRecordOmitted
+            }
             Self::MetadataPropertyUnmapped | Self::FeatureLabelUnusable => {
                 LossTaxonomy::MetadataNotTransferred
             }
@@ -297,6 +303,7 @@ mod tests {
                 "feature.operation-graph-open",
                 "feature.state-unresolved",
                 "parameter.graph-open",
+                "parameter.expression-bounded",
                 "sketch.graph-open",
                 "rse.stream-unpaired",
                 "property-set.stream-malformed",
