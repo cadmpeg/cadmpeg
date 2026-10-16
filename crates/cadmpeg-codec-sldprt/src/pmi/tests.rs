@@ -1146,12 +1146,17 @@ fn pmi_nested_messagepack_depth_cap_rejects_the_value() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut within = vec![0x91; 16];
     within.push(0xc0);
-    assert!(super::parse_value(&ctx, &within, &mut 0, 0)
+    let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
+    let parse = super::Parse {
+        shape: super::Shape::Record,
+        work: &work,
+    };
+    assert!(super::parse_value(&ctx, &within, &mut 0, 0, parse)
         .unwrap()
         .is_some());
     let mut beyond = vec![0x91; 18];
     beyond.push(0xc0);
-    assert!(super::parse_value(&ctx, &beyond, &mut 0, 0)
+    assert!(super::parse_value(&ctx, &beyond, &mut 0, 0, parse)
         .unwrap()
         .is_none());
     assert!(ctx.finish_session().is_ok());
@@ -1189,4 +1194,136 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         patch_payload(&ir, "block", &mut []),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
+}
+
+/// The default record with one more outer-map entry `key: value` after its
+/// fields, so every field keeps its offset.
+fn record_with_trailing_entry(key: &str, value: &[u8]) -> Vec<u8> {
+    const GUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
+    let mut payload = pmi_semantic_payload();
+    let header = payload
+        .windows(GUID.len())
+        .position(|window| window == GUID.as_bytes())
+        .unwrap()
+        + GUID.len();
+    assert_eq!(payload[header], 0x87);
+    payload[header] = 0x88;
+    fixstr(&mut payload, key);
+    payload.extend_from_slice(value);
+    payload
+}
+
+#[test]
+fn pmi_skipped_values_are_validated_but_not_kept() {
+    const BULK_VALUES: usize = 1 << 20;
+    let mut bulk = vec![0xdd];
+    bulk.extend_from_slice(&u32::try_from(BULK_VALUES).unwrap().to_be_bytes());
+    bulk.extend_from_slice(&vec![0; BULK_VALUES]);
+    let original = parse_payload(&pmi_semantic_payload(), &mut Vec::new());
+    let payload = record_with_trailing_entry("bulk", &bulk);
+    let mut losses = Vec::new();
+    let records = parse_payload(&payload, &mut losses);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(records, original);
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
+    let parse = super::Parse {
+        shape: super::Shape::Record,
+        work: &work,
+    };
+    let mut cursor = usize::try_from(records[0].offset).unwrap();
+    let outer = super::parse_value(&ctx, &payload, &mut cursor, 0, parse)
+        .unwrap()
+        .unwrap();
+    let super::ValueKind::Map(fields) = outer.kind else {
+        panic!("the record is a map");
+    };
+    assert_eq!(
+        fields.keys().copied().collect::<Vec<_>>(),
+        ["cadText", "dimItems", "dimText"]
+    );
+    assert_eq!(cursor, payload.len());
+    assert!(work.consumed() > BULK_VALUES);
+
+    let mut losses = Vec::new();
+    let integer_key = record_with_trailing_entry("bulk", &[0x91, 0x81, 0x01, 0x02]);
+    assert!(parse_payload(&integer_key, &mut losses).is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one malformed-record loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::PmiSemanticRecordMalformed.kind()
+    );
+}
+
+/// `count` candidate maps whose arrays run to the end of the payload. Each
+/// later header sits inside a `str8` value of every earlier parse: the `0xd9`
+/// before a GUID turns its first character, `0`, into a 48-byte length.
+fn overlapping_candidates(count: usize, filler: usize) -> (Vec<u8>, usize) {
+    let mut payload = Vec::new();
+    let mut length_slots = Vec::new();
+    let stride = 36 + 8 + filler + 1;
+    for index in 0..count {
+        let guid = format!("{index:08x}-0000-4000-8000-{index:012x}");
+        payload.extend_from_slice(guid.as_bytes());
+        payload.extend_from_slice(&[0x81, 0xa1, b'x', 0xdd]);
+        length_slots.push(payload.len());
+        payload.extend_from_slice(&[0; 4]);
+        payload.extend_from_slice(&vec![0; filler]);
+        payload.push(0xd9);
+    }
+    for slot in length_slots {
+        let remaining = u32::try_from(payload.len() - slot - 4).unwrap();
+        payload[slot..slot + 4].copy_from_slice(&remaining.to_be_bytes());
+    }
+    (payload, stride)
+}
+
+#[test]
+fn pmi_parse_cap_skips_the_remaining_candidates_and_names_the_bound() {
+    const CANDIDATES: usize = 64;
+    let record = pmi_semantic_payload();
+    let original = parse_payload(&record, &mut Vec::new());
+
+    let (moderate, _) = overlapping_candidates(8, 2048);
+    let mut payload = record.clone();
+    payload.extend_from_slice(&moderate);
+    let mut losses = Vec::new();
+    assert_eq!(parse_payload(&payload, &mut losses), original);
+    assert!(losses.is_empty(), "{losses:?}");
+
+    let (chain, stride) = overlapping_candidates(CANDIDATES, 2048);
+    let mut payload = record.clone();
+    payload.extend_from_slice(&chain);
+    let mut losses = Vec::new();
+    assert_eq!(parse_payload(&payload, &mut losses), original);
+    let [loss] = losses.as_slice() else {
+        panic!("one parse-cap loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::PmiSemanticParseCapped.kind()
+    );
+    let prefix = "PMISemanticDataDB section sldprt:block#pmi-payload: ";
+    let suffix = format!(
+        " were not parsed because the section reached the local work cap \
+         PMI_PARSE_WORK_PER_PAYLOAD_BYTE (16) times its {}-byte payload.",
+        payload.len()
+    );
+    let counts = loss
+        .message
+        .strip_prefix(prefix)
+        .and_then(|message| message.strip_suffix(&suffix))
+        .unwrap_or_else(|| panic!("unexpected message: {}", loss.message));
+    let (skipped, offset) = counts.split_once(" candidate map(s) from offset ").unwrap();
+    let skipped = skipped.parse::<usize>().unwrap();
+    let offset = offset.parse::<usize>().unwrap();
+    assert!(0 < skipped && skipped < CANDIDATES, "{skipped}");
+    assert_eq!(
+        offset,
+        record.len() + (CANDIDATES - skipped) * stride + 36,
+        "the loss starts at the candidate the budget ran out in"
+    );
 }
