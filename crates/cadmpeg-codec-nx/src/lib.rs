@@ -184,7 +184,7 @@ impl CodecBackend for NxCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = decode::scan(ctx, root)?;
-        inspect::summarize(ctx, &scan)
+        inspect::summarize(&scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
