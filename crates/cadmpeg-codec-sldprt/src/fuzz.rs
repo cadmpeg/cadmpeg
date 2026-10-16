@@ -24,21 +24,19 @@ pub fn parasolid(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
 }
 
 /// Exercise spline-curve carrier scanning.
-pub fn spline_curves(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+pub fn spline_curves(data: &[u8]) {
     drop(crate::brep::spline::scan_curve_carriers(
         data,
         &mut Vec::new(),
     ));
-    Ok(())
 }
 
 /// Exercise spline-surface carrier scanning.
-pub fn spline_surfaces(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+pub fn spline_surfaces(data: &[u8]) {
     drop(crate::brep::spline::scan_surface_carriers(
         data,
         &mut Vec::new(),
     ));
-    Ok(())
 }
 
 /// Exercise topology record scanning.
@@ -95,11 +93,18 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
 mod tests {
     use std::io::Write;
 
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     #[test]
     fn parasolid_fuzz_wrapper_skips_frame_above_local_cap() {
         let mut encoder =
             flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(b"x").expect("compressed frame fixture");
+        encoder
+            .write_all(&crate::test_support::parasolid::parasolid_payload(
+                "partition body",
+                "SCH_SW_33103_11000",
+            ))
+            .expect("compressed frame fixture");
         let member = encoder.finish().expect("finish compressed frame fixture");
         let mut payload = vec![
             0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89,
@@ -113,5 +118,11 @@ mod tests {
         );
         payload.extend_from_slice(&member);
         super::parasolid(&payload).expect("a frame above the local cap is skipped");
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service())
+            .expect("root");
+        let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+            .expect("a frame above the local cap is skipped");
+        assert!(streams.is_empty());
     }
 }
