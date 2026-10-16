@@ -20,6 +20,7 @@ use crate::legacy_entity::TYPE_OPEN;
 
 mod identity;
 mod transfer;
+mod value_names;
 
 use crate::container;
 

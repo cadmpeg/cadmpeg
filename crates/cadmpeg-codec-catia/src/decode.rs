@@ -536,19 +536,21 @@ fn finish_decode(
         .legacy_entity_runs
         .iter()
         .map(|run| {
-            let evaluation_name_bound = |entity_id, value_offset| {
-                run.role_selectors.iter().any(|role| {
-                    role.entity_id == entity_id
-                        && role.field_code == Some(0x17c4)
-                        && role.end_offset().and_then(|offset| offset.checked_add(6))
-                            == Some(value_offset)
+            let evaluation_keys: HashSet<(u32, u64)> = run
+                .role_selectors
+                .iter()
+                .filter(|role| role.field_code == Some(0x17c4))
+                .filter_map(|role| {
+                    role.end_offset()
+                        .and_then(|offset| offset.checked_add(6))
+                        .map(|value_offset| (role.entity_id, value_offset))
                 })
-            };
+                .collect();
             run.scalar_values
                 .iter()
                 .filter(|value| {
                     value.name.is_some()
-                        && evaluation_name_bound(value.entity_id, value.byte_offset)
+                        && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
                 })
                 .count()
                 + run
@@ -556,7 +558,7 @@ fn finish_decode(
                     .iter()
                     .filter(|value| {
                         value.name.is_some()
-                            && evaluation_name_bound(value.entity_id, value.byte_offset)
+                            && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
                     })
                     .count()
                 + run
@@ -564,7 +566,7 @@ fn finish_decode(
                     .iter()
                     .filter(|value| {
                         value.name.is_some()
-                            && evaluation_name_bound(value.entity_id, value.byte_offset)
+                            && evaluation_keys.contains(&(value.entity_id, value.byte_offset))
                     })
                     .count()
         })
