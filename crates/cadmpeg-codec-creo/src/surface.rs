@@ -582,7 +582,6 @@ fn take_spline_vectors(
 }
 
 fn parse_positional_spline_replay(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
@@ -590,7 +589,7 @@ fn parse_positional_spline_replay(
     let Some(shape) = spline_replay_shape(prototype) else {
         return Ok(None);
     };
-    let Some(envelope_close) = surface_body_compound_close(ctx, SurfaceKind::Spline, body, cache)?
+    let Some(envelope_close) = scalar_surface_body_compound_close(SurfaceKind::Spline, body, cache)
     else {
         return Ok(None);
     };
@@ -678,7 +677,7 @@ fn positional_spline_replay_body_end(
     let Some(body) = payload.get(body_start..body_limit) else {
         return Ok(None);
     };
-    let Some((_, consumed)) = parse_positional_spline_replay(ctx, body, &prototype, cache)? else {
+    let Some((_, consumed)) = parse_positional_spline_replay(body, &prototype, cache)? else {
         return Ok(None);
     };
     Ok((body.get(consumed) == Some(&psb::token::COMPOUND_CLOSE))
@@ -688,13 +687,11 @@ fn positional_spline_replay_body_end(
 
 /// Decode a positional spline replay body after its final close was removed.
 pub(crate) fn decode_positional_spline_replay(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<crate::interpolation_grid::InterpolationGrid>, CodecError> {
-    let Some((replay, consumed)) = parse_positional_spline_replay(ctx, body, prototype, cache)?
-    else {
+    let Some((replay, consumed)) = parse_positional_spline_replay(body, prototype, cache)? else {
         return Ok(None);
     };
     Ok((consumed == body.len()).then_some(replay))
@@ -4048,12 +4045,23 @@ fn named_record_boundary(
     None
 }
 
-/// Decode bounded parameter bodies for positional `srf_array` rows.
+/// Decode bounded parameter bodies for positional `srf_array` rows. Framing a
+/// plane body can stop a local-system search at a work cap; its loss goes to
+/// `losses`.
+pub(crate) fn parameter_records_with_losses(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
+    parameter_records_for_rows(ctx, payload, &rows(payload), losses)
+}
+
+#[cfg(test)]
 pub(crate) fn parameter_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
-    parameter_records_for_rows(ctx, payload, &rows(payload))
+    parameter_records_with_losses(ctx, payload, &mut Vec::new())
 }
 
 /// Decode bounded positional parameter bodies from a DEPDB cross-section
@@ -4061,8 +4069,9 @@ pub(crate) fn parameter_records(
 pub(crate) fn cross_section_parameter_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
-    parameter_records_for_rows(ctx, payload, &cross_section_rows(payload))
+    parameter_records_for_rows(ctx, payload, &cross_section_rows(payload), losses)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -5055,6 +5064,7 @@ fn parameter_records_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
@@ -5106,9 +5116,13 @@ fn parameter_records_for_rows(
             body_end = body_start + layout.terminal_close;
             boundary = SurfaceBodyBoundary::CompoundClose;
         } else {
-            if let Some(relative) =
-                surface_body_compound_close(ctx, row.kind, &payload[*body_start..body_end], &cache)?
-            {
+            if let Some(relative) = surface_body_compound_close(
+                ctx,
+                row.kind,
+                &payload[*body_start..body_end],
+                &cache,
+                losses,
+            )? {
                 body_end = body_start + relative;
                 boundary = SurfaceBodyBoundary::CompoundClose;
             }
@@ -5183,12 +5197,22 @@ fn parameter_records_for_rows(
 }
 
 /// Decode complete positional surface contour chains from the visible
-/// `srf_array` namespace.
+/// `srf_array` namespace. Framing a plane body can stop a local-system search
+/// at a work cap; its loss goes to `losses`.
+pub(crate) fn contour_records_with_losses(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<SurfaceContourRecord>, CodecError> {
+    contour_records_for_rows(ctx, payload, &rows(payload), losses)
+}
+
+#[cfg(test)]
 pub(crate) fn contour_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
-    contour_records_for_rows(ctx, payload, &rows(payload))
+    contour_records_with_losses(ctx, payload, &mut Vec::new())
 }
 
 /// Decode complete positional surface contour chains from a DEPDB
@@ -5196,14 +5220,16 @@ pub(crate) fn contour_records(
 pub(crate) fn cross_section_contour_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
-    contour_records_for_rows(ctx, payload, &cross_section_rows(payload))
+    contour_records_for_rows(ctx, payload, &cross_section_rows(payload), losses)
 }
 
 fn contour_records_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
     let mut frames = Vec::new();
@@ -5244,10 +5270,14 @@ fn contour_records_for_rows(
             };
             Some(contour_start)
         } else {
-            let Some(envelope_close) =
-                surface_body_compound_close(ctx, row.kind, &payload[body_start..row_end], &cache)?
-                    .map(|relative| body_start + relative)
-            else {
+            let Some(envelope_close) = surface_body_compound_close(
+                ctx,
+                row.kind,
+                &payload[body_start..row_end],
+                &cache,
+                losses,
+            )?
+            .map(|relative| body_start + relative) else {
                 continue;
             };
             let Some(local_system_start) = envelope_close.checked_add(1) else {
@@ -5860,15 +5890,26 @@ fn surface_body_compound_close(
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<usize>, CodecError> {
     if kind == SurfaceKind::Plane {
-        if let Some(close) = plane_envelope_compound_close(ctx, body, cache)? {
+        if let Some(close) = plane_envelope_compound_close(ctx, body, cache, losses)? {
             return Ok(Some(close));
         }
     }
+    Ok(scalar_surface_body_compound_close(kind, body, cache))
+}
+
+/// The envelope close of a surface body found by its scalar grammar alone,
+/// without the plane local-system recovery of [`surface_body_compound_close`].
+fn scalar_surface_body_compound_close(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
     if kind == SurfaceKind::Cone {
         if let Some(layout) = cone_half_angle_before_close(body) {
-            return Ok(Some(layout.end));
+            return Some(layout.end);
         }
     }
     if matches!(kind, SurfaceKind::Extrusion(_)) {
@@ -5879,14 +5920,14 @@ fn surface_body_compound_close(
                 }
             }
             if body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE) {
-                return Ok(Some(cursor));
+                return Some(cursor);
             }
         }
     }
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::COMPOUND_CLOSE {
-            return Ok(Some(cursor));
+            return Some(cursor);
         }
         if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
             cursor = next;
@@ -5894,7 +5935,7 @@ fn surface_body_compound_close(
             cursor += 1;
         }
     }
-    Ok(None)
+    None
 }
 
 fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -5930,6 +5971,7 @@ fn plane_local_system_compound_close(
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<usize>, CodecError> {
     // Keep the established structural boundary when it exists. Some local
     // systems contain an e0 byte inside a numeric token; in that case the
@@ -5940,8 +5982,7 @@ fn plane_local_system_compound_close(
     }
     for close in start..end {
         if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
-            && complete_plane_local_system(ctx, &payload[start..close], cache, &mut Vec::new())?
-                .is_some()
+            && complete_plane_local_system(ctx, &payload[start..close], cache, losses)?.is_some()
         {
             return Ok(Some(close));
         }
@@ -6493,6 +6534,7 @@ fn plane_envelope_compound_close(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<usize>, CodecError> {
     for (offset, byte) in body.iter().enumerate() {
         if *byte != psb::token::COMPOUND_CLOSE {
@@ -6525,7 +6567,9 @@ fn plane_envelope_compound_close(
             .slots
             .push((Some(positive_value), &body[positive_start..positive_end]));
         let axis_aligned = plane_envelope_has_one_held_coordinate(&slots.slots, pairs);
-        if axis_aligned || plane_envelope_boundary_has_local_system(ctx, body, offset, cache)? {
+        if axis_aligned
+            || plane_envelope_boundary_has_local_system(ctx, body, offset, cache, losses)?
+        {
             return Ok(Some(offset));
         }
     }
@@ -6548,6 +6592,7 @@ fn plane_envelope_boundary_has_local_system(
     body: &[u8],
     envelope_close: usize,
     cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<bool, CodecError> {
     let Some(local_system_start) = envelope_close.checked_add(1) else {
         return Ok(false);
@@ -6555,8 +6600,14 @@ fn plane_envelope_boundary_has_local_system(
     if local_system_start == body.len() {
         return Ok(false);
     }
-    let Some(local_system_close) =
-        plane_local_system_compound_close(ctx, body, local_system_start, body.len(), cache)?
+    let Some(local_system_close) = plane_local_system_compound_close(
+        ctx,
+        body,
+        local_system_start,
+        body.len(),
+        cache,
+        losses,
+    )?
     else {
         return Ok(false);
     };
@@ -6564,7 +6615,7 @@ fn plane_envelope_boundary_has_local_system(
         ctx,
         &body[local_system_start..local_system_close],
         cache,
-        &mut Vec::new(),
+        losses,
     )?
     .is_some())
 }
@@ -6950,7 +7001,7 @@ fn plane_local_systems_for_rows(
     }
 
     let cache = scalar::ScalarCache::from_section_checked(payload);
-    let parameters = parameter_records_for_rows(ctx, payload, rows)?;
+    let parameters = parameter_records_for_rows(ctx, payload, rows, losses)?;
     let headers = rows
         .iter()
         .enumerate()
@@ -6982,8 +7033,14 @@ fn plane_local_systems_for_rows(
         let mut row_systems = Vec::new();
         for envelope_close in envelope_closes.into_iter().flatten() {
             let chunk_start = envelope_close + 1;
-            let chunk_end =
-                plane_local_system_compound_close(ctx, payload, chunk_start, row_end, &cache)?;
+            let chunk_end = plane_local_system_compound_close(
+                ctx,
+                payload,
+                chunk_start,
+                row_end,
+                &cache,
+                losses,
+            )?;
             let Some(chunk_end) = chunk_end else {
                 continue;
             };
@@ -7048,19 +7105,31 @@ fn plane_local_systems_for_rows(
 }
 
 /// Decode plane positional envelope bodies into their two defined layouts.
+/// Framing a plane body can stop a local-system search at a work cap; its
+/// loss goes to `losses`.
+pub(crate) fn plane_envelopes_with_losses(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
+    plane_envelopes_for_rows(ctx, payload, &rows(payload), losses)
+}
+
+#[cfg(test)]
 pub(crate) fn plane_envelopes(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
-    plane_envelopes_for_rows(ctx, payload, &rows(payload))
+    plane_envelopes_with_losses(ctx, payload, &mut Vec::new())
 }
 
 /// Decode plane envelopes from a DEPDB cross-section namespace.
 pub(crate) fn cross_section_plane_envelopes(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
-    plane_envelopes_for_rows(ctx, payload, &cross_section_rows(payload))
+    plane_envelopes_for_rows(ctx, payload, &cross_section_rows(payload), losses)
 }
 
 fn copied_plane_envelope_tokens(slots: &ScalarTokenTable<'_>) -> Vec<Vec<u8>> {
@@ -7075,6 +7144,7 @@ fn plane_envelopes_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     all_rows: &[SurfaceRow],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     const NAMED_OUTLINE: &[u8] = b"outline\0\xf9\x02\x03";
     let cache = scalar::ScalarCache::from_section_checked(payload);
@@ -7095,8 +7165,9 @@ fn plane_envelopes_for_rows(
         let Some(body) = payload.get(body_start..row_end) else {
             continue;
         };
-        let Some(body_end) = surface_body_compound_close(ctx, SurfaceKind::Plane, body, &cache)?
-            .map(|relative| body_start + relative)
+        let Some(body_end) =
+            surface_body_compound_close(ctx, SurfaceKind::Plane, body, &cache, losses)?
+                .map(|relative| body_start + relative)
         else {
             continue;
         };

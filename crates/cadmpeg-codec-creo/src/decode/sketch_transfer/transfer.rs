@@ -8,7 +8,7 @@ use super::super::feature_history::link::{
 };
 use super::super::feature_history::outputs::owned_section_feature_id;
 use super::super::native::annotate;
-use super::super::sketch::coordinates::resolved_section_coordinates_with_losses;
+use super::super::sketch::coordinates::resolved_section_coordinates;
 use super::super::sketch::geometry::{
     resolved_section_reference_line_geometry, resolved_section_segment_geometry_with_missing_line,
     saved_profile_chains, saved_section_missing_line_geometry, section_centered_line_geometry,
@@ -185,7 +185,7 @@ pub(in super::super) fn transfer_sketches(
                 coverage.record_family_rows(family, count);
             }
         }
-        let variable_points = resolved_section_coordinates_with_losses(ctx, definition, losses)?;
+        let variable_points = resolved_section_coordinates(ctx, definition)?;
         let mut points = BTreeMap::new();
         for (point, [u, v]) in &variable_points {
             if let (Some(u), Some(v)) = (u, v) {

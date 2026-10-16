@@ -28,7 +28,7 @@ fn datum_cylinder_array_decodes_one_active_cylinder() {
         0x2a, 0xe8, 0x00,
     ]);
     let count = crate::decode::with_service_context(|ctx| {
-        cylinders(ctx, &data).map(|records| records.len())
+        cylinders(ctx, &data, &mut Vec::new()).map(|records| records.len())
     })
     .expect("datum cylinders decode");
     assert_eq!(count, 1);
@@ -497,7 +497,7 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
         let policy = cadmpeg_core::decode::DecodePolicy::desktop();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
             .expect("datum fixture is admitted");
-        let decoded = cylinders(&ctx, &data).expect("collect the cylinders");
+        let decoded = cylinders(&ctx, &data, &mut Vec::new()).expect("collect the cylinders");
         let [cylinder] = decoded.as_slice() else {
             panic!("one complete active-datum cylinder expected");
         };

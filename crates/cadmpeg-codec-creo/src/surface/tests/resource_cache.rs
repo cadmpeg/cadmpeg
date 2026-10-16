@@ -18,7 +18,7 @@ fn named_prototype_scalar_image_alone_yields_no_records() {
 #[test]
 fn positional_parameter_scalar_image_without_rows_yields_no_records() {
     assert!(crate::decode::with_service_context(|ctx| {
-        super::super::parameter_records_for_rows(ctx, SCALAR_IMAGE, &[])
+        super::super::parameter_records_for_rows(ctx, SCALAR_IMAGE, &[], &mut Vec::new())
     })
     .expect("parameter records")
     .is_empty());
@@ -27,7 +27,7 @@ fn positional_parameter_scalar_image_without_rows_yields_no_records() {
 #[test]
 fn contour_scalar_image_without_rows_yields_no_records() {
     assert!(crate::decode::with_service_context(|ctx| {
-        super::super::contour_records_for_rows(ctx, SCALAR_IMAGE, &[])
+        super::super::contour_records_for_rows(ctx, SCALAR_IMAGE, &[], &mut Vec::new())
     })
     .expect("contour records")
     .is_empty());

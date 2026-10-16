@@ -50,7 +50,7 @@ fn parameter_records(payload: &[u8]) -> Vec<super::SurfaceParameterRecord> {
 
 fn cross_section_parameter_records(payload: &[u8]) -> Vec<super::SurfaceParameterRecord> {
     with_decode_ctx(payload, |ctx| {
-        super::cross_section_parameter_records(ctx, payload)
+        super::cross_section_parameter_records(ctx, payload, &mut Vec::new())
     })
 }
 
