@@ -56,6 +56,7 @@ use cadmpeg_ir::geometry::{
 
 use super::NxCodec;
 
+mod attachment_containment;
 mod dialect;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
