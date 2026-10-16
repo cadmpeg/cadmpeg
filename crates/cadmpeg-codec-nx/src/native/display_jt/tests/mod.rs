@@ -1360,6 +1360,42 @@ fn jt9_topology_lookahead_returns_packet_nesting_refusal() {
 }
 
 #[test]
+fn jt9_lane_search_probes_past_the_lanes_mark_the_bound_only_on_failure() {
+    // Twenty-one prefix packets, one high-degree lane and two split packets,
+    // all empty, then the envelope. Framed as a packet, the envelope is an
+    // arithmetic lane of 1_000_000 values over 65 probability entries.
+    let bindings = 0x0041_0000_0000_0003_u64;
+    let mut representation = vec![0; 96];
+    representation.extend(1_000_000_u32.to_le_bytes());
+    representation.extend(bindings.to_le_bytes());
+    representation.extend([24, 0, 0, 0]);
+    representation.resize(400, 0);
+
+    crate::test_support::with_decode_context(|ctx| {
+        let probe = crate::jt::ArithmeticWorkBound::default();
+        assert!(
+            crate::jt::frame_int32_cdp2(ctx, &probe, &representation[96..], 0)
+                .unwrap()
+                .is_none()
+        );
+        assert!(probe.reached());
+
+        let bound = crate::jt::ArithmeticWorkBound::default();
+        let lane_count =
+            super::jt9_topology_high_degree_lane_count(ctx, &bound, &representation, bindings)
+                .unwrap();
+        assert_eq!(lane_count, Some(1));
+        assert!(!bound.reached());
+
+        let lane_count =
+            super::jt9_topology_high_degree_lane_count(ctx, &bound, &representation, bindings + 1)
+                .unwrap();
+        assert_eq!(lane_count, None);
+        assert!(bound.reached());
+    });
+}
+
+#[test]
 fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
     let mut body = Vec::new();
     body.extend_from_slice(&1_u16.to_le_bytes());
