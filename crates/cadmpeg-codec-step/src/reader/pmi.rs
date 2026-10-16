@@ -35,6 +35,9 @@ struct MeasureContext<'a> {
     length_scale: f64,
     angle_scale: f64,
     losses: &'a mut Vec<LossNote>,
+    /// The measure that each completed record evaluated to under these
+    /// scales.
+    measured: BTreeMap<u64, Option<PmiValue>>,
 }
 
 fn collect_pmi_references(
@@ -1895,14 +1898,9 @@ fn characteristic_measure_values(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<(Option<String>, PmiValue)>, CodecError> {
     let mut measure_ids = BTreeSet::new();
+    let mut visited = BTreeSet::new();
     parameters.visit(|parameter| {
-        collect_measure_ids(
-            parameter,
-            exchange,
-            &mut BTreeSet::new(),
-            &mut measure_ids,
-            ctx,
-        )
+        collect_measure_ids(parameter, exchange, &mut visited, &mut measure_ids, ctx)
     })?;
     let mut values = Vec::new();
     for id in measure_ids {
@@ -1926,40 +1924,40 @@ fn characteristic_measure_values(
     Ok(values)
 }
 
+/// Collects the measure records that `value` reaches through other records.
+/// `visited` holds every record already walked, so each is walked once.
 fn collect_measure_ids(
     value: &Value,
     exchange: &Exchange,
-    active: &mut BTreeSet<u64>,
+    visited: &mut BTreeSet<u64>,
     measure_ids: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let _nested = ctx.enter_nested("step_pmi_measure_id_walk")?;
     match value {
         Value::Reference(id) => {
-            if active.contains(id) {
+            if !visited.insert(*id) {
                 return Ok(());
             }
-            active.insert(*id);
             if let Some(record) = exchange.records().get(id) {
                 if is_measure_record(record) {
                     measure_ids.insert(*id);
                 } else {
                     for partial in &record.partials {
                         for parameter in &partial.parameters {
-                            collect_measure_ids(parameter, exchange, active, measure_ids, ctx)?;
+                            collect_measure_ids(parameter, exchange, visited, measure_ids, ctx)?;
                         }
                     }
                 }
             }
-            active.remove(id);
         }
         Value::List(values) => {
             for value in values {
-                collect_measure_ids(value, exchange, active, measure_ids, ctx)?;
+                collect_measure_ids(value, exchange, visited, measure_ids, ctx)?;
             }
         }
         Value::Typed(_, value) => {
-            collect_measure_ids(value, exchange, active, measure_ids, ctx)?;
+            collect_measure_ids(value, exchange, visited, measure_ids, ctx)?;
         }
         _ => {}
     }
@@ -2006,6 +2004,7 @@ fn measure_context<'a>(
         length_scale: geometry.units.length([id]).get(),
         angle_scale: geometry.units.angle([id]).get(),
         losses,
+        measured: BTreeMap::new(),
     }
 }
 
@@ -2063,14 +2062,16 @@ fn measure_inner(
             )
         }),
         Value::Reference(id) => {
+            if let Some(measured) = measurements.measured.get(id) {
+                return Ok(*measured);
+            }
             if active.contains(id) {
                 return Ok(None);
             }
-            active.insert(*id);
             let Some(record) = exchange.records().get(id) else {
-                active.remove(id);
                 return Ok(None);
             };
+            active.insert(*id);
             let mut quantity = None;
             for parameter in record
                 .partials
@@ -2168,6 +2169,7 @@ fn measure_inner(
                 }
             }
             active.remove(id);
+            measurements.measured.insert(*id, result);
             result
         }
         Value::List(values) => {
