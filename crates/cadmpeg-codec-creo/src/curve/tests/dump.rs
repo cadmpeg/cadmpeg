@@ -497,7 +497,27 @@ fn decode_leaves_a_nonconverging_nonlinear_solve_block_unsolved() {
         == crate::loss::CreoLossCode::CurveExpressionSolveUnresolved.kind()
         && loss
             .message
-            .contains("1 active curve-equation simultaneous-solve block(s)")));
+            .contains("1 active curve-equation simultaneous-solve block(s)")
+        && loss
+            .message
+            .contains("MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS")));
+}
+
+#[test]
+fn decode_leaves_a_nonlinear_solve_block_unsolved_at_the_variable_cap() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x14\
+x1=1\0x2=1\0x3=1\0x4=1\0x5=1\0x6=1\0x7=1\0x8=1\0x9=1\0\
+SOLVE\0x1*x1=1\0x2*x2=1\0x3*x3=1\0x4*x4=1\0x5*x5=1\0x6*x6=1\0x7*x7=1\0x8*x8=1\0x9*x9=1\0\
+FOR x1,x2,x3,x4,x5,x6,x7,x8,x9\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("the nonlinear variable cap is not a decode failure");
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::CurveExpressionSolveUnresolved.kind()
+        && loss.message.contains("MAX_NONLINEAR_SOLVE_VARIABLES")));
 }
 
 #[test]

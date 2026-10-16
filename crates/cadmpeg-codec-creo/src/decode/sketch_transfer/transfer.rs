@@ -8,7 +8,7 @@ use super::super::feature_history::link::{
 };
 use super::super::feature_history::outputs::owned_section_feature_id;
 use super::super::native::annotate;
-use super::super::sketch::coordinates::resolved_section_coordinates;
+use super::super::sketch::coordinates::resolved_section_coordinates_with_losses;
 use super::super::sketch::geometry::{
     resolved_section_reference_line_geometry, resolved_section_segment_geometry_with_missing_line,
     saved_profile_chains, saved_section_missing_line_geometry, section_centered_line_geometry,
@@ -55,6 +55,7 @@ use crate::decode::sketch_transfer::profiles::{
     SectionEntityIncidenceFamily,
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::ParameterId;
@@ -73,10 +74,15 @@ use std::collections::{BTreeMap, BTreeSet};
 fn expected_segment_rows(
     definition_id: u32,
     table: &crate::feature::definitions::FeatureSegmentTable,
-) -> Result<usize, cadmpeg_core::CodecError> {
-    let declared_count = usize::try_from(table.declared_count).map_err(|_| cadmpeg_core::CodecError::malformed(format!("feature {definition_id} states segment table count {}, which exceeds the addressable row range {}",
-        table.declared_count,
-        usize::MAX)))?;
+) -> Result<usize, CodecError> {
+    let declared_count = usize::try_from(table.declared_count).map_err(|_| {
+        CodecError::malformed(format!(
+            "feature {definition_id} states segment table count {}, which exceeds \
+             the addressable row range {}",
+            table.declared_count,
+            usize::MAX
+        ))
+    })?;
     let elided_prototype_rows = usize::from(table.has_elided_prototype);
     declared_count
         .checked_sub(elided_prototype_rows)
@@ -179,7 +185,7 @@ pub(in super::super) fn transfer_sketches(
                 coverage.record_family_rows(family, count);
             }
         }
-        let variable_points = resolved_section_coordinates(ctx, definition)?;
+        let variable_points = resolved_section_coordinates_with_losses(ctx, definition, losses)?;
         let mut points = BTreeMap::new();
         for (point, [u, v]) in &variable_points {
             if let (Some(u), Some(v)) = (u, v) {

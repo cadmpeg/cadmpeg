@@ -59,7 +59,9 @@ fn contour_records(payload: &[u8]) -> Vec<super::SurfaceContourRecord> {
 }
 
 fn plane_local_systems(payload: &[u8]) -> Vec<super::PlaneLocalSystem> {
-    with_decode_ctx(payload, |ctx| super::plane_local_systems(ctx, payload))
+    with_decode_ctx(payload, |ctx| {
+        super::plane_local_systems(ctx, payload, &mut Vec::new())
+    })
 }
 
 fn plane_local_systems_for_rows(
@@ -67,7 +69,7 @@ fn plane_local_systems_for_rows(
     rows: &[super::SurfaceRow],
 ) -> Vec<super::PlaneLocalSystem> {
     with_decode_ctx(payload, |ctx| {
-        super::plane_local_systems_for_rows(ctx, payload, rows)
+        super::plane_local_systems_for_rows(ctx, payload, rows, &mut Vec::new())
     })
 }
 

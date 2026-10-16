@@ -213,7 +213,9 @@ impl std::fmt::Display for TwoChartMappingEvidence<'_> {
         }
         write!(
             f,
-            " Two-chart mapping: {} record(s), {} mapped ({} complete, {} partial), {} unmapped; {} missing surface path(s), {} unevaluable path(s), {} surface disagreement(s), {} empty sample record(s).",
+            " Two-chart mapping: {} record(s), {} mapped ({} complete, {} partial), \
+             {} unmapped; {} missing surface path(s), {} unevaluable path(s), \
+             {} surface disagreement(s), {} empty sample record(s).",
             pcurve.two_chart_records,
             pcurve.two_chart_mapped_records(),
             pcurve.two_chart_complete_records,
@@ -710,24 +712,43 @@ pub(super) fn push_carrier_transfer_notes(
     }
 
     if !container_only && !scan.references.circles.is_empty() {
-        push_report_loss(losses, CreoLossCode::CarrierReferenceCircles, format_args!(
-            "Transferred {} circular reference carrier(s) from MdlRefInfo rows whose stored center, radius, and endpoints satisfy the circle equation; byte-exact endpoints remain attached as native circle records.",
-            scan.references.circles.len()
-        ));
+        push_report_loss(
+            losses,
+            CreoLossCode::CarrierReferenceCircles,
+            format_args!(
+                "Transferred {} circular reference carrier(s) from MdlRefInfo rows whose \
+             stored center, radius, and endpoints satisfy the circle equation; \
+             byte-exact endpoints remain attached as native circle records.",
+                scan.references.circles.len()
+            ),
+        );
     }
 
     if !container_only && !scan.references.ellipses.is_empty() {
-        push_report_loss(losses, CreoLossCode::CarrierReferenceEllipses, format_args!(
-            "Transferred {} elliptical reference carrier(s) from MdlRefInfo conic rows whose frame, coefficient radii, and antipodal endpoints satisfy one ellipse equation; the source conic records remain byte-exact native records.",
-            scan.references.ellipses.len()
-        ));
+        push_report_loss(
+            losses,
+            CreoLossCode::CarrierReferenceEllipses,
+            format_args!(
+                "Transferred {} elliptical reference carrier(s) from MdlRefInfo conic rows \
+             whose frame, coefficient radii, and antipodal endpoints satisfy one \
+             ellipse equation; the source conic records remain byte-exact native records.",
+                scan.references.ellipses.len()
+            ),
+        );
     }
 
     let topological_point_count = coverage_count(coverage, "transferred_topological_point_count");
     if !container_only && topological_point_count != 0 {
-        push_report_loss(losses, CreoLossCode::CarrierTopologicalPoints, format_args!(
-            "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers."
-        ));
+        push_report_loss(
+            losses,
+            CreoLossCode::CarrierTopologicalPoints,
+            format_args!(
+                "Transferred {topological_point_count} exact model-space point(s) for native \
+             topological vertex orbits from unique placed-carrier intersections or \
+             pcurve endpoint domains constrained by agreeing face maps and incident \
+             analytic edge carriers."
+            ),
+        );
     }
 
     let native_topological_edge_count =
@@ -741,9 +762,15 @@ pub(super) fn push_carrier_transfer_notes(
     let analytic_pcurve_carrier_count =
         coverage_count(coverage, "transferred_analytic_pcurve_carrier_count");
     if !container_only && analytic_pcurve_carrier_count != 0 {
-        push_report_loss(losses, CreoLossCode::CarrierAnalyticPcurves, format_args!(
-            "Transferred {analytic_pcurve_carrier_count} exact analytic carrier(s) by mapping native linear pcurves through placed planar, cylindrical, conical, spherical, or toroidal face charts."
-        ));
+        push_report_loss(
+            losses,
+            CreoLossCode::CarrierAnalyticPcurves,
+            format_args!(
+                "Transferred {analytic_pcurve_carrier_count} exact analytic carrier(s) by \
+             mapping native linear pcurves through placed planar, cylindrical, conical, \
+             spherical, or toroidal face charts."
+            ),
+        );
     }
 
     let extrusion_plane_boundary_curve_count =
@@ -963,8 +990,15 @@ mod tests {
             losses
         };
         let message = &losses[0].message;
-        assert!(message.contains("Face admission considered 3 candidate(s): 1 passed, 1 emitted, and 0 were rejected. First-failure rejection counts are: none."));
-        assert!(message.contains("Component admission gate: 1 admitted component(s), selected body count 2; selected body count mismatch, legacy body ownership ambiguous, 2 empty admitted component(s)."));
+        assert!(message.contains(concat!(
+            "Face admission considered 3 candidate(s): 1 passed, 1 emitted, ",
+            "and 0 were rejected. First-failure rejection counts are: none."
+        )));
+        assert!(message.contains(concat!(
+            "Component admission gate: 1 admitted component(s), selected body count 2; ",
+            "selected body count mismatch, legacy body ownership ambiguous, ",
+            "2 empty admitted component(s)."
+        )));
         assert!(message.contains("Boundary evidence: 0 curve(s), 0 without a unique incidence pair, 0 with an unsolved endpoint vertex."));
         assert!(message.contains("0 solved. 4 PSB geometry section(s) were preserved"));
     }

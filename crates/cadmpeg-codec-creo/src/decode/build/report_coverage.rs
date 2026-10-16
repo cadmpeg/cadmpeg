@@ -30,6 +30,7 @@ impl std::fmt::Display for CountBreakdown<'_> {
 pub(super) fn push_coverage_drop_losses(
     losses: &mut Vec<LossNote>,
     coverage: &cadmpeg_ir::report::decode::Coverage,
+    solve_work_caps: &[&str],
 ) -> Result<(), CodecError> {
     let untransferred_surface_rows =
         coverage_count(coverage, "untransferred_visible_surface_row_count");
@@ -435,13 +436,18 @@ pub(super) fn push_coverage_drop_losses(
     ))
     .ok_or_else(|| CodecError::malformed("evaluated solve count exceeds decoded count"))?;
     if unresolved_solve_blocks != 0 {
+        let bound_clause = if solve_work_caps.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", solve_work_caps.join(", "))
+        };
         push_report_loss(
             losses,
             CreoLossCode::CurveExpressionSolveUnresolved,
             format_args!(
                 "{unresolved_solve_blocks} active curve-equation simultaneous-solve block(s) \
              retain their ordered equations and unknowns without solved values or derived \
-             curves."
+             curves{bound_clause}."
             ),
         );
     }
@@ -489,7 +495,7 @@ mod tests {
                 1,
             );
             assert!(matches!(
-                push_coverage_drop_losses(&mut Vec::new(), &coverage),
+                push_coverage_drop_losses(&mut Vec::new(), &coverage, &[]),
                 Err(CodecError::Malformed(_))
             ));
         });
@@ -504,7 +510,7 @@ mod tests {
                 1,
             );
             assert!(matches!(
-                push_coverage_drop_losses(&mut Vec::new(), &coverage),
+                push_coverage_drop_losses(&mut Vec::new(), &coverage, &[]),
                 Err(CodecError::Malformed(_))
             ));
         });
@@ -526,7 +532,7 @@ mod tests {
     fn coverage_family_loss_preserves_breakdown_under_service_profile() {
         let losses = {
             let mut losses = Vec::new();
-            push_coverage_drop_losses(&mut losses, &two_untransferred_planes())
+            push_coverage_drop_losses(&mut losses, &two_untransferred_planes(), &[])
                 .expect("record the coverage drop losses");
             losses
         };

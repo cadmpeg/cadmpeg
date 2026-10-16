@@ -498,7 +498,11 @@ fn transfer_display_tessellations(
                     point.z * scale.get(),
                 );
                 if !point.is_finite() {
-                    return Err(CodecError::NotImplemented(format!("SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters", strip.offset)));
+                    return Err(CodecError::NotImplemented(format!(
+                        "SolidPrimdata display triangle strip at byte {} has a vertex \
+                         that cannot be represented in millimeters",
+                        strip.offset
+                    )));
                 }
             }
             let Some(point) = FinitePoint3::new(point) else {
@@ -614,7 +618,11 @@ fn transfer_placed_plane_surfaces_into_ir(
 ) -> Result<(), CodecError> {
     for frame in &scan.planes.local_systems {
         if frame.frame().cross_overflow {
-            return Err(CodecError::NotImplemented(format!("Creo plane local system at byte {} has a cross product outside the representable range", frame.offset)));
+            return Err(CodecError::NotImplemented(format!(
+                "Creo plane local system at byte {} has a cross product outside \
+                 the representable range",
+                frame.offset
+            )));
         }
     }
     for (

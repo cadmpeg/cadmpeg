@@ -189,6 +189,10 @@ pub(crate) enum CreoLossCode {
     CurveExpressionSolveControlUnresolved,
     /// Prohibited datum-curve constructs across active curve-equation records.
     CurveExpressionKindProhibited,
+    /// Plane-support lane search stopped at its local variant cap.
+    PlaneSupportVariantsCapped,
+    /// A section distance component had more sign branches than the local cap.
+    SectionSignBranchesCapped,
 }
 }
 
@@ -271,6 +275,8 @@ impl CreoLossCode {
                 "curve-expression.solve-control-unresolved"
             }
             Self::CurveExpressionKindProhibited => "curve-expression.kind-prohibited",
+            Self::PlaneSupportVariantsCapped => "geometry.plane-support-variants-capped",
+            Self::SectionSignBranchesCapped => "section.sign-branches-capped",
         }
     }
 
@@ -349,7 +355,9 @@ impl CreoLossCode {
             | Self::CurveExpressionProhibited
             | Self::CurveExpressionSolveUnresolved
             | Self::CurveExpressionSolveControlUnresolved
-            | Self::CurveExpressionKindProhibited => Severity::Warning,
+            | Self::CurveExpressionKindProhibited
+            | Self::PlaneSupportVariantsCapped
+            | Self::SectionSignBranchesCapped => Severity::Warning,
         }
     }
 
@@ -401,7 +409,8 @@ impl CreoLossCode {
             | Self::VisibGeomCurveAmbiguous
             | Self::SectionSegmentGeometryUnresolved
             | Self::SectionSplineUnresolved
-            | Self::SurfacePrototypeFieldRetained => LossTaxonomy::GeometryNotTransferred,
+            | Self::SurfacePrototypeFieldRetained
+            | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,
@@ -427,7 +436,8 @@ impl CreoLossCode {
             | Self::CurveExpressionProhibited
             | Self::CurveExpressionSolveUnresolved
             | Self::CurveExpressionSolveControlUnresolved
-            | Self::CurveExpressionKindProhibited => LossTaxonomy::FeatureHistoryRetained,
+            | Self::CurveExpressionKindProhibited
+            | Self::SectionSignBranchesCapped => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -540,6 +550,8 @@ mod tests {
                 "curve-expression.solve-unresolved",
                 "curve-expression.solve-control-unresolved",
                 "curve-expression.kind-prohibited",
+                "geometry.plane-support-variants-capped",
+                "section.sign-branches-capped",
             ]
         );
     }

@@ -36,7 +36,7 @@ fn contour_scalar_image_without_rows_yields_no_records() {
 #[test]
 fn plane_local_system_scalar_image_without_rows_yields_no_records() {
     assert!(crate::decode::with_service_context(|ctx| {
-        super::super::plane_local_systems_for_rows(ctx, SCALAR_IMAGE, &[])
+        super::super::plane_local_systems_for_rows(ctx, SCALAR_IMAGE, &[], &mut Vec::new())
     })
     .expect("plane local systems")
     .is_empty());
