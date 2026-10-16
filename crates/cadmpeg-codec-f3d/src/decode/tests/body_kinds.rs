@@ -6,6 +6,7 @@ use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
@@ -113,8 +114,15 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
     assert_eq!(model.bodies[0].kind, BodyKind::Solid);
     assert_eq!(model.faces.len(), 6);
     assert_eq!(model.edges.len(), 13);
-    assert!(model
+    let collapsed = model
         .edges
         .iter()
-        .any(|edge| edge.curve().is_none() && edge.start == edge.end));
+        .find(|edge| edge.start == edge.end)
+        .unwrap();
+    let carrier = collapsed.curve().unwrap();
+    assert!(model.curves.iter().any(|curve| curve.id == *carrier
+        && matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+        )));
 }

@@ -280,6 +280,9 @@ pub(crate) struct Builder<'a> {
     /// counted loss note.
     curveless_edges: BTreeSet<String>,
 
+    /// Degenerate carriers of point edges written as `VERTEX_LOOP` vertices.
+    point_loop_curves: BTreeSet<String>,
+
     /// Faces skipped because their surface geometry is unknown (opaque), so no
     /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
     /// is reached once per shell) and aggregated into a single counted loss.
@@ -453,6 +456,7 @@ impl<'a> Builder<'a> {
             written_procedural_curves: BTreeSet::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
+            point_loop_curves: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
             topology_relation_losses: BTreeSet::new(),
             face_step_refs: HashMap::new(),
@@ -1992,6 +1996,7 @@ impl<'a> Builder<'a> {
         }
         for curve in &self.ir.model.curves {
             if !self.curve_refs.contains_key(curve.id.as_str())
+                && !self.point_loop_curves.contains(curve.id.as_str())
                 && (owned_curves.contains(curve.id.as_str())
                     || ownership::is_support(
                         curve.id.as_str(),
@@ -2508,7 +2513,11 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        if let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } = &lp.boundary {
+        let singular = match &lp.boundary {
+            cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } => Some((vertex, Vec::new())),
+            cadmpeg_ir::topology::LoopBoundary::Ring(_) => self.point_loop(lp),
+        };
+        if let Some((vertex, point_curves)) = singular {
             let vertex_id = vertex.as_str();
             let Some(vertex) = self.emit_vertex(vertex_id) else {
                 self.topology_relation_loss(
@@ -2518,6 +2527,8 @@ impl<'a> Builder<'a> {
                 );
                 return None;
             };
+            self.point_loop_curves
+                .extend(point_curves.into_iter().map(str::to_owned));
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
@@ -2561,6 +2572,34 @@ impl<'a> Builder<'a> {
             self.emitter
                 .emit("EDGE_LOOP", &format!("'',{}", refs(&oe_refs))),
         )
+    }
+
+    /// The vertex and carriers of a ring made only of point edges on
+    /// degenerate carriers at one vertex, with no coedge geometry. STEP writes
+    /// it as a `VERTEX_LOOP`, whose vertex is the whole boundary.
+    fn point_loop(&self, lp: &Loop) -> Option<(&'a cadmpeg_ir::ids::VertexId, Vec<&'a str>)> {
+        let mut vertex = None;
+        let mut curves = Vec::new();
+        for coedge_id in lp.coedges() {
+            let coedge = self.coedges.get(coedge_id.as_str()).copied()?;
+            if !coedge.pcurves.is_empty() || coedge.use_curve.is_some() {
+                return None;
+            }
+            let edge = self.edges.get(coedge.edge.as_str()).copied()?;
+            let curve = self.curves.get(edge.curve()?.as_str()).copied()?;
+            if edge.start != edge.end
+                || !matches!(
+                    curve.geometry,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+                )
+                || vertex.is_some_and(|vertex| vertex != &edge.start)
+            {
+                return None;
+            }
+            vertex = Some(&edge.start);
+            curves.push(curve.id.as_str());
+        }
+        Some((vertex?, curves))
     }
 
     fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {

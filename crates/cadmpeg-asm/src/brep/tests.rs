@@ -517,6 +517,113 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     assert_eq!(brep.curves.len(), 1);
 }
 
+/// A cone closed by a disk. The apex loop is one null-curve edge whose two
+/// vertex references name the apex vertex.
+const CONE_WITH_POINT_APEX_SAT: &[u8] = b"23200 0 1 0 \n\
+14 cadmpeg-tests 4 ACIS 0 \n\
+1 1e-06 1e-10 \n\
+body $-1 -1 $-1 $1 $-1 $-1 #\n\
+lump $-1 -1 $-1 $-1 $2 $0 #\n\
+shell $-1 -1 $-1 $-1 $-1 $3 $-1 $1 #\n\
+face $-1 -1 $-1 $4 $5 $2 $-1 $7 forward single #\n\
+face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #\n\
+loop $-1 -1 $-1 $9 $10 $3 #\n\
+loop $-1 -1 $-1 $-1 $11 $4 #\n\
+cone-surface $-1 -1 $-1 0 0 0 0 0 1 5 0 0 1 I I -0.4472135954999579 0.8944271909999159 5 forward I I I I #\n\
+plane-surface $-1 -1 $-1 0 0 0 0 0 -1 1 0 0 forward_v I I I I #\n\
+loop $-1 -1 $-1 $-1 $12 $3 #\n\
+coedge $-1 -1 $-1 $10 $10 $11 $13 forward $5 0 $-1 #\n\
+coedge $-1 -1 $-1 $11 $11 $10 $13 reversed $6 0 $-1 #\n\
+coedge $-1 -1 $-1 $12 $12 $-1 $14 forward $9 0 $-1 #\n\
+edge $-1 -1 $-1 $15 0 $15 6.283185307179586 $10 $17 forward @7 unknown #\n\
+edge $-1 -1 $-1 $16 1 $16 0 $12 $-1 forward @7 unknown #\n\
+vertex $-1 -1 $-1 $13 0 $18 #\n\
+vertex $-1 -1 $-1 $14 0 $19 #\n\
+ellipse-curve $-1 -1 $-1 0 0 0 0 0 1 5 0 0 1 I I #\n\
+point $-1 -1 $-1 5 0 0 #\n\
+point $-1 -1 $-1 0 0 10 #\n\
+End-of-ASM-data \n";
+
+fn edge_by_record(brep: &AsmBrep, index: i64) -> &cadmpeg_ir::topology::Edge {
+    let edge = EdgeId::mint(id(FORMAT, index).into_string()).expect("identity grammar");
+    brep.edges
+        .iter()
+        .find(|candidate| candidate.id == edge)
+        .expect("edge record decodes")
+}
+
+#[test]
+fn null_curve_apex_edge_is_a_point_edge_of_a_solid() {
+    let source = CONE_WITH_POINT_APEX_SAT;
+    crate::test_support::with_service_context(source, |ctx| {
+        let parsed = crate::sat::parse(ctx, source).expect("synthetic SAT stream");
+        let header = parsed.header.as_kernel_header(ctx).expect("SAT header");
+        let brep = super::decode_with_header(
+            ctx,
+            &parsed.records,
+            source,
+            Some(&header),
+            "stream",
+            FORMAT,
+            DecodePurpose::Model,
+        )
+        .expect("synthetic cone solid decodes");
+
+        assert_eq!(brep.bodies.len(), 1);
+        assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Solid);
+        let apex = edge_by_record(&brep, 14);
+        assert_eq!(apex.start, apex.end);
+        assert_eq!(apex.param_range(), None);
+        let carrier = apex.curve().expect("apex edge carrier");
+        let curve = brep
+            .curves
+            .iter()
+            .find(|curve| &curve.id == carrier)
+            .expect("apex carrier curve");
+        let point = match curve.geometry {
+            cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Degenerate(point),
+            ) => Some(point.point().get()),
+            _ => None,
+        }
+        .expect("apex carrier is a point");
+        assert!(
+            point.distance(Point3::new(0.0, 0.0, 10.0)) < 1.0e-12,
+            "{point:?}"
+        );
+        assert!(edge_by_record(&brep, 13).curve().is_some());
+        assert_eq!(brep.curves.len(), 2);
+    })
+    .expect("fixture is within the service input limit");
+}
+
+#[test]
+fn null_curve_edge_between_distinct_vertices_stays_curveless() {
+    let source = String::from_utf8(CONE_WITH_POINT_APEX_SAT.to_vec())
+        .expect("ASCII fixture")
+        .replace("edge $-1 -1 $-1 $16 1 $16 0", "edge $-1 -1 $-1 $16 1 $15 0");
+    let source = source.as_bytes();
+    crate::test_support::with_service_context(source, |ctx| {
+        let parsed = crate::sat::parse(ctx, source).expect("synthetic SAT stream");
+        let header = parsed.header.as_kernel_header(ctx).expect("SAT header");
+        let brep = super::decode_with_header(
+            ctx,
+            &parsed.records,
+            source,
+            Some(&header),
+            "stream",
+            FORMAT,
+            DecodePurpose::Model,
+        )
+        .expect("synthetic cone solid decodes");
+
+        assert_eq!(edge_by_record(&brep, 14).curve(), None);
+        assert_eq!(brep.curves.len(), 1);
+        assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Sheet);
+    })
+    .expect("fixture is within the service input limit");
+}
+
 #[test]
 fn nested_attributes_inherit_their_topology_owner() {
     use cadmpeg_ir::attributes::AttributeTarget;
