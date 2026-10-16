@@ -632,6 +632,15 @@ impl SubtypeTable {
         }
     }
 
+    /// Build from definition token positions in complete record-table order.
+    /// Each pair names the owning payload and its opening subtype token.
+    pub fn from_definitions(defs: Vec<(std::sync::Arc<[Token]>, usize)>) -> Self {
+        Self {
+            defs,
+            save_format_version: None,
+        }
+    }
+
     /// Attach the stream's ASM save format version.
     #[must_use]
     pub fn with_save_format_version(mut self, version: Option<u32>) -> Self {
@@ -783,6 +792,56 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
         super::admit_subtype_references(&ctx, &records, &table)
             .expect("service profile admits finite chain");
+    }
+
+    #[test]
+    fn supplied_definitions_preserve_global_order_and_admit_external_references() {
+        use crate::sab::Record;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let payload: std::sync::Arc<[Token]> = vec![
+            Token::SubtypeOpen,
+            Token::Ident("first".into()),
+            Token::SubtypeClose,
+            Token::SubtypeOpen,
+            Token::Ident("second".into()),
+            Token::SubtypeClose,
+        ]
+        .into();
+        let table = super::SubtypeTable::from_definitions(vec![(payload.clone(), 3), (payload, 0)])
+            .with_save_format_version(Some(23100));
+        assert_eq!(
+            table.span(0).unwrap().interior(),
+            &[Token::Ident("second".into())]
+        );
+        assert_eq!(
+            table.span(1).unwrap().interior(),
+            &[Token::Ident("first".into())]
+        );
+        assert_eq!(table.save_format_version(), Some(23100));
+        let subset = [Record {
+            index: 8,
+            name: "unused".into(),
+            offset: 0,
+            len: 0,
+            tokens: vec![
+                Token::SubtypeOpen,
+                Token::Ident("ref".into()),
+                Token::Long(1),
+                Token::SubtypeClose,
+            ]
+            .into(),
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(super::admit_subtype_references(&ctx, &subset, &table).is_err());
+        assert!(super::admit_subtype_references(
+            &ctx,
+            &subset,
+            &super::SubtypeTable::from_records(&subset)
+        )
+        .is_ok());
     }
 
     fn ident(name: &str) -> Token {

@@ -253,6 +253,22 @@ pub(crate) fn decode_history_topology(
     )?)
 }
 
+/// Decode a History subset against the complete state's subtype table.
+pub(crate) fn decode_history_with_subtypes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    subtypes: &cadmpeg_asm::nurbs::toks::SubtypeTable,
+) -> Result<Brep, CodecError> {
+    Brep::from_asm(cadmpeg_asm::brep::decode_history_with_subtypes(
+        ctx,
+        records,
+        bytes,
+        crate::ids::ID_FORMAT,
+        subtypes,
+    )?)
+}
+
 /// Resolve one Design body selector within one BREP blob. Exact native keys
 /// take precedence; an absent key falls back to the zero-based body ordinal.
 pub(crate) fn resolve_body_selector<'a>(
