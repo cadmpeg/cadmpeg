@@ -148,10 +148,10 @@ use super::om::{
     DataBlockReference, ExpressionDeclaration, ExternalReference, ExternalReferenceEmptyRecord,
     ExternalReferenceIndexedRecord, ExternalReferenceRecord, ExternalReferenceRecordChild,
     ExternalReferenceRecordStringUse, ExternalReferenceTailReferencePair, FieldDefinition,
-    MaterialTextureCatalogEntry, ObjectRecord, ObjectRecordHandlePair, ObjectReference,
-    OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage, OmRecordArea,
-    ParameterFormula, PartAttribute, PartColorDefinition, PartColorTable, PersistentHandle,
-    RmFastLoadObjectId, RmFastLoadObjectIdTable, StoreHeader, StringValue,
+    IdentityBoundedSection, MaterialTextureCatalogEntry, ObjectRecord, ObjectRecordHandlePair,
+    ObjectReference, OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage,
+    OmRecordArea, ParameterFormula, PartAttribute, PartColorDefinition, PartColorTable,
+    PersistentHandle, RmFastLoadObjectId, RmFastLoadObjectIdTable, StoreHeader, StringValue,
 };
 use super::parasolid::{
     parasolid_attribute_class_uses, parasolid_attribute_definitions,
@@ -509,6 +509,7 @@ pub(in crate::native) struct OmRecords {
     pub(super) classes: Vec<ClassDefinition>,
     pub(super) fields: Vec<FieldDefinition>,
     pub(super) object_records: Vec<ObjectRecord>,
+    pub(super) object_record_identity_bounded_sections: Vec<IdentityBoundedSection>,
     pub(super) rmfastload_object_id_tables: Vec<RmFastLoadObjectIdTable>,
     pub(super) rmfastload_object_ids: Vec<RmFastLoadObjectId>,
     pub(super) data_blocks: Vec<DataBlock>,
@@ -1214,7 +1215,7 @@ impl NativeModel {
         let expressions = expressions(container, &expression_declarations)?;
         let classes = class_definitions(container)?;
         let fields = field_definitions(container)?;
-        let object_records = object_records(container)?;
+        let (object_records, object_record_identity_bounded_sections) = object_records(container)?;
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
             match rmfastload_object_id_table(ctx, container)? {
                 Some((table, object_ids)) => (vec![table], object_ids),
@@ -1556,6 +1557,7 @@ impl NativeModel {
                 classes,
                 fields,
                 object_records,
+                object_record_identity_bounded_sections,
                 rmfastload_object_id_tables,
                 rmfastload_object_ids,
                 data_blocks,
