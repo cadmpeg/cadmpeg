@@ -54,7 +54,9 @@ use self::emit::{
     emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns, emit_pcurves, emit_points,
     emit_vertices, CoedgeDecodeInputs, ContainerInputs, CurveSenseRefs,
 };
-use self::geometry::{clamp_edge_ranges_to_carrier_domains, classify_body_kinds};
+use self::geometry::{
+    attach_point_edge_carriers, clamp_edge_ranges_to_carrier_domains, classify_body_kinds,
+};
 use self::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,
     MeshSurfaceSentinel, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
@@ -711,6 +713,7 @@ fn decode_with_table(
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
         emit_annotation_records(&mut out, records, &by_index, &carriers, stream, format)?;
 
+        attach_point_edge_carriers(&mut out, records, format);
         classify_body_kinds(&mut out);
         clamp_edge_ranges_to_carrier_domains(&mut out)?;
     }

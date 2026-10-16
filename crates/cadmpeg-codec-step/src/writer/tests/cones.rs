@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! STEP writer cone chart tests.
+//! STEP writer cone chart and apex tests.
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
@@ -7,12 +7,69 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::export::write_step;
 use crate::loss::StepLossCode;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
+
+use super::reports::edgeless_doc;
+
+#[test]
+fn point_edge_ring_is_written_as_vertex_loop() {
+    let mut ir = edgeless_doc();
+    ir.model
+        .vertices
+        .retain(|vertex| vertex.id.as_str() != "test:model:vertex#v1");
+    ir.model
+        .points
+        .retain(|point| point.id.as_str() != "test:model:point#p1");
+    let point_curve = CurveId::mint("test:model:curve#point").expect("identity grammar");
+    ir.model.curves.push(Curve {
+        parameter_range: None,
+        id: point_curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
+        )),
+        source_object: None,
+    });
+    let edge = &mut ir.model.edges[0];
+    edge.carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(point_curve));
+    edge.end = edge.start.clone();
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write point loop");
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+
+    assert_eq!(text.matches("VERTEX_LOOP('',").count(), 1, "{text}");
+    assert!(!text.contains("EDGE_LOOP"), "{text}");
+    assert!(!text.contains("POLYLINE"), "{text}");
+    for code in [
+        StepLossCode::EdgeNo3dCurve,
+        StepLossCode::CurvelessEdgeOmitted,
+        StepLossCode::GeometryCarrierNotWritten,
+        StepLossCode::FaceOmittedUnclassifiedLoop,
+        StepLossCode::LoopEdgeNotWritable,
+    ] {
+        assert!(
+            !report.losses.iter().any(|loss| loss.code == code.kind()),
+            "{}: {:?}",
+            code.kind(),
+            report.losses
+        );
+    }
+}
 
 #[test]
 fn negative_cone_face_pcurve_is_written_in_reversed_chart() {
