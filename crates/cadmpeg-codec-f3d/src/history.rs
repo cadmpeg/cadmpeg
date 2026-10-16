@@ -2695,9 +2695,8 @@ fn visit_states_oldest_first<J>(
         let position = orders
             .get(history_index)
             .and_then(Option::as_ref)
-            .and_then(|order| order.iter().position(|&index| index == state_index))
-            .unwrap_or(usize::MAX);
-        (history_index, position)
+            .and_then(|order| order.iter().position(|&index| index == state_index));
+        (history_index, position.is_none(), position)
     });
     for (history_index, state_index, job) in jobs {
         let Some(history) = histories.get_mut(history_index) else {
