@@ -50,7 +50,7 @@ use crate::native::{
     CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
     CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
     CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
-    CatiaZeroEntityVertexIncidence, EntityIncidenceIndex,
+    CatiaZeroEntityVertexIncidence, EntityIncidenceIndex, RelationDependencies,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -297,18 +297,23 @@ impl CatiaNative {
                             .find(|record| record.id == entity.object_record);
                         entity.object_production
                             != object.and_then(|object| {
-                                object_production(
-                                    entity,
-                                    object,
-                                    &CatiaEntityReferenceIndex {
-                                        entities: &entities_by_graph_identity,
-                                        classes: &entity_classes_by_graph_identity,
-                                        terminal_nulls: &terminal_nulls_by_graph,
-                                    },
-                                    &relation_expressions,
-                                    &relation_expression_entities,
-                                    &parameter_bindings,
-                                )
+                                crate::test_support::with_service_context(|ctx| {
+                                    object_production(
+                                        ctx,
+                                        entity,
+                                        object,
+                                        &CatiaEntityReferenceIndex {
+                                            entities: &entities_by_graph_identity,
+                                            classes: &entity_classes_by_graph_identity,
+                                            terminal_nulls: &terminal_nulls_by_graph,
+                                        },
+                                        &relation_expressions,
+                                        &relation_expression_entities,
+                                        &mut RelationDependencies::new(&parameter_bindings),
+                                    )
+                                })
+                                .ok()
+                                .flatten()
                             })
                     })
                     || graph_entities.windows(2).any(|pair| {
