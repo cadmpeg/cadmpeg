@@ -1384,9 +1384,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     Ok(())
 }
 
-fn opposite_chart_transfer_priority(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    source_surface: &SurfaceId,
+fn opposite_chart_transfer_priority<'a>(
+    index: &cadmpeg_ir::index::ModelIndex<'a>,
+    source_surface: &'a SurfaceId,
     target_surface: &SurfaceId,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<u8, cadmpeg_core::decode::ResourceLimit> {
@@ -3038,7 +3038,7 @@ fn opposite_chart_geometry_work_limit(candidates_remaining: usize, remaining: us
 
 struct PcurveTransfer<'inputs, 'a> {
     curve: &'inputs CurveId,
-    source_surface: &'inputs SurfaceId,
+    source_surface: &'a SurfaceId,
     source_pcurve: &'inputs PcurveGeometry,
     target_surface: &'a SurfaceId,
     parameter_range: [f64; 2],
@@ -3046,7 +3046,7 @@ struct PcurveTransfer<'inputs, 'a> {
 }
 
 fn transfer_intersection_pcurve<'a>(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    index: &cadmpeg_ir::index::ModelIndex<'a>,
     pcurve_transfer: &PcurveTransfer<'_, 'a>,
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,

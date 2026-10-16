@@ -3,7 +3,6 @@
 
 pub(crate) mod identities;
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
@@ -18,31 +17,9 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 
-/// Borrowed text keys with explicit hashing and collision comparisons.
+/// Borrowed identity text mapped to its first inserted value.
 struct BorrowedIdentityIndex<'ir, V> {
-    slots: HashMap<u64, BorrowedIdentitySlots<'ir, V>>,
-}
-
-/// Distinct hashes store their identity inline; only collisions need a vector.
-enum BorrowedIdentitySlots<'ir, V> {
-    One((&'ir str, V)),
-    Many(Vec<(&'ir str, V)>),
-}
-
-impl<'ir, V> BorrowedIdentitySlots<'ir, V> {
-    fn as_slice(&self) -> &[(&'ir str, V)] {
-        match self {
-            Self::One(value) => std::slice::from_ref(value),
-            Self::Many(values) => values,
-        }
-    }
-
-    fn as_mut_slice(&mut self) -> &mut [(&'ir str, V)] {
-        match self {
-            Self::One(value) => std::slice::from_mut(value),
-            Self::Many(values) => values,
-        }
-    }
+    slots: HashMap<&'ir str, V>,
 }
 
 impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
@@ -53,48 +30,7 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
     }
 
     fn entry(&mut self, identity: &'ir str, value: impl FnOnce() -> V) -> &mut V {
-        let (hash, found) = self.find(identity);
-        match self.slots.entry(hash) {
-            Entry::Vacant(entry) => {
-                let entries = entry.insert(BorrowedIdentitySlots::One((identity, value())));
-                &mut entries.as_mut_slice()[0].1
-            }
-            Entry::Occupied(entry) => {
-                let entries = entry.into_mut();
-                if let Some(position) = found {
-                    return &mut entries.as_mut_slice()[position].1;
-                }
-                let position = entries.as_slice().len();
-                let next = (identity, value());
-                match entries {
-                    BorrowedIdentitySlots::One(_) => {
-                        let mut values = Vec::new();
-                        match std::mem::replace(entries, BorrowedIdentitySlots::Many(Vec::new())) {
-                            BorrowedIdentitySlots::One(first) => values.push(first),
-                            BorrowedIdentitySlots::Many(mut previous) => {
-                                values.append(&mut previous);
-                            }
-                        }
-                        values.push(next);
-                        *entries = BorrowedIdentitySlots::Many(values);
-                    }
-                    BorrowedIdentitySlots::Many(values) => values.push(next),
-                }
-                &mut entries.as_mut_slice()[position].1
-            }
-        }
-    }
-
-    /// The identity's hash and its slot position, comparing full text after a hash match.
-    fn find(&self, identity: &str) -> (u64, Option<usize>) {
-        let hash = identity_hash(identity);
-        let found = self.slots.get(&hash).and_then(|entries| {
-            entries
-                .as_slice()
-                .iter()
-                .position(|(candidate, _)| *candidate == identity)
-        });
-        (hash, found)
+        self.slots.entry(identity).or_insert_with(value)
     }
 
     fn get<P: IndexQuery>(
@@ -103,56 +39,23 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
         query: &P,
         operation: &'static str,
     ) -> Result<Option<&V>, P::Error> {
-        let (hash, found) = self.position(
-            identity,
-            |count| query.work(count, operation),
-            |first, second| query.equal(first, second, operation),
-        )?;
-        Ok(found.map(|position| &self.slots[&hash].as_slice()[position].1))
-    }
-
-    fn position<E>(
-        &self,
-        identity: &str,
-        work: impl Fn(usize) -> Result<(), E>,
-        equal: impl Fn(&str, &str) -> Result<bool, E>,
-    ) -> Result<(u64, Option<usize>), E> {
-        work(identity.len())?;
-        let hash = identity_hash(identity);
-        work(1)?;
-        let Some(entries) = self.slots.get(&hash) else {
-            return Ok((hash, None));
+        query.work(identity.len(), operation)?;
+        query.work(1, operation)?;
+        let Some((&candidate, value)) = self.slots.get_key_value(identity) else {
+            return Ok(None);
         };
-        for (position, (candidate, _)) in entries.as_slice().iter().enumerate() {
-            work(1)?;
-            if equal(candidate, identity)? {
-                return Ok((hash, Some(position)));
-            }
-        }
-        Ok((hash, None))
+        query.work(1, operation)?;
+        Ok(query
+            .equal(candidate, identity, operation)?
+            .then_some(value))
     }
 
     fn identities(&self) -> impl Iterator<Item = &'ir str> + '_ {
-        self.slots
-            .values()
-            .flat_map(|entries| entries.as_slice().iter().map(|(identity, _)| *identity))
+        self.slots.keys().copied()
     }
 }
 
-/// Collision-safe, allocation-free identity slots for one typed arena.
-///
-/// The index stores arena positions rather than borrowed keys. This keeps a
-/// lazy index covariant over the document lifetime and avoids copying every
-/// identity into each phase-local lookup map. Hash collisions and duplicate
-/// identities are retained in insertion order and checked against the source
-/// entity before a result is returned.
-#[derive(Debug)]
-enum IdentityEntry {
-    One(usize),
-    Many(Vec<usize>),
-}
-
-type IdentityIndex = HashMap<u64, IdentityEntry>;
+type IdentityIndex<'a> = HashMap<&'a str, usize>;
 
 /// Nesting policy for infallible public indexes and fallible decode indexes.
 pub(crate) trait IndexStorage {
@@ -194,59 +97,34 @@ pub(crate) fn identity_hash(identity: &str) -> u64 {
     hasher.finish()
 }
 
-fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex {
+fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex<'_> {
     let mut index = HashMap::new();
     for (slot, entity) in entities.iter().enumerate() {
-        match index.entry(identity_hash(entity.identity())) {
-            Entry::Vacant(entry) => {
-                entry.insert(IdentityEntry::One(slot));
-            }
-            Entry::Occupied(entry) => {
-                let value = entry.into_mut();
-                match value {
-                    IdentityEntry::One(previous) => {
-                        *value = IdentityEntry::Many(vec![*previous, slot]);
-                    }
-                    IdentityEntry::Many(slots) => {
-                        slots.push(slot);
-                    }
-                }
-            }
-        }
+        index.insert(entity.identity(), slot);
     }
     index
 }
 
 fn lookup_identity<'a, T: EntitySchema, S: IndexQuery>(
     entities: &'a [T],
-    index: &OnceLock<IdentityIndex>,
+    index: &OnceLock<IdentityIndex<'a>>,
     identity: &str,
     storage: &S,
 ) -> Result<Option<&'a T>, S::Error> {
     let index = index.get_or_init(|| build_identity_index(entities));
     storage.work(identity.len(), "model identity lookup hash")?;
-    let hash = identity_hash(identity);
     storage.work(1, "model identity lookup slot")?;
-    let Some(entry) = index.get(&hash) else {
+    let Some(entity) = index.get(identity).and_then(|slot| entities.get(*slot)) else {
         return Ok(None);
     };
-    let slots = match entry {
-        IdentityEntry::One(slot) => std::slice::from_ref(slot),
-        IdentityEntry::Many(slots) => slots.as_slice(),
-    };
-    for slot in slots.iter().rev() {
-        storage.work(1, "model identity lookup collision")?;
-        if let Some(entity) = entities.get(*slot) {
-            if storage.equal(
-                entity.identity(),
-                identity,
-                "model identity lookup comparison",
-            )? {
-                return Ok(Some(entity));
-            }
-        }
-    }
-    Ok(None)
+    storage.work(1, "model identity lookup collision")?;
+    Ok(storage
+        .equal(
+            entity.identity(),
+            identity,
+            "model identity lookup comparison",
+        )?
+        .then_some(entity))
 }
 
 pub(crate) mod sealed {
@@ -334,7 +212,7 @@ macro_rules! define_model_index {
         /// One-pass borrowed lookup index for neutral and native identities.
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
-            $($lookup: OnceLock<IdentityIndex>,)*
+            $($lookup: OnceLock<IdentityIndex<'a>>,)*
             procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
             identities: BorrowedIdentityIndex<'a, ()>,
@@ -394,18 +272,14 @@ macro_rules! define_model_index {
                 }
                 for carrier in &ir.model.surfaces {
                     if let Some(construction) = carrier.geometry.procedural_construction() {
-                        let (hash, found) = procedural_surfaces_by_id.find(construction.as_str());
-                        if let Some(position) = found {
-                            let procedural = procedural_surfaces_by_id.slots[&hash].as_slice()[position].1;
+                        if let Some(&procedural) = procedural_surfaces_by_id.slots.get(construction.as_str()) {
                             *procedural_surface_by_surface.entry(carrier.id.as_str(), || procedural) = procedural;
                         }
                     }
                 }
                 for carrier in &ir.model.curves {
                     if let Some(construction) = carrier.geometry.procedural_construction() {
-                        let (hash, found) = procedural_curves_by_id.find(construction.as_str());
-                        if let Some(position) = found {
-                            let procedural = procedural_curves_by_id.slots[&hash].as_slice()[position].1;
+                        if let Some(&procedural) = procedural_curves_by_id.slots.get(construction.as_str()) {
                             let members = procedural_curves_by_curve.entry(carrier.id.as_str(), Vec::new);
                             members.push(procedural);
                         }
@@ -509,6 +383,39 @@ mod tests {
     use crate::{NativeNamespace, NativeRecord};
 
     use serde_json::Map;
+
+    #[test]
+    fn repeated_borrowed_identity_keeps_the_first_value() {
+        let first = String::from("test:native:record#same");
+        let repeated = first.clone();
+        let calls = std::cell::Cell::new(0);
+        let mut index = super::BorrowedIdentityIndex::new();
+        for identity in [&first, &repeated] {
+            assert_eq!(
+                *index.entry(identity, || {
+                    calls.set(calls.get() + 1);
+                    calls.get()
+                }),
+                1
+            );
+        }
+        assert_eq!(calls.get(), 1);
+        assert_eq!(index.identities().count(), 1);
+        assert_eq!(
+            index
+                .get(&repeated, &super::StandardIndex, "test identity lookup")
+                .unwrap(),
+            Some(&1)
+        );
+        assert!(index
+            .get(
+                "test:native:record#missing",
+                &super::StandardIndex,
+                "test identity lookup"
+            )
+            .unwrap()
+            .is_none());
+    }
 
     #[test]
     fn distinct_borrowed_identities_are_each_indexed() {
@@ -699,41 +606,6 @@ mod tests {
                     record_bounds: None,
                 })
             .is_err());
-    }
-
-    #[test]
-    fn borrowed_identity_collisions_keep_both_values_and_compare_full_text() {
-        let query = "test:native:record#second";
-        let hash = super::identity_hash(query);
-        let mut index = super::BorrowedIdentityIndex {
-            slots: std::collections::HashMap::from([(
-                hash,
-                super::BorrowedIdentitySlots::One(("test:native:record#first", 7)),
-            )]),
-        };
-        assert_eq!(*index.entry(query, || 8), 8);
-        assert_eq!(
-            index.slots[&hash].as_slice(),
-            &[("test:native:record#first", 7), (query, 8)]
-        );
-        assert_eq!(
-            index
-                .get(query, &super::StandardIndex, "test collision lookup")
-                .unwrap(),
-            Some(&8)
-        );
-        assert_eq!(*index.entry(query, || 9), 8);
-
-        let other = super::BorrowedIdentityIndex {
-            slots: std::collections::HashMap::from([(
-                super::identity_hash("abcd"),
-                super::BorrowedIdentitySlots::One(("abce", ())),
-            )]),
-        };
-        assert!(other
-            .get("abcd", &super::StandardIndex, "test universe query")
-            .unwrap()
-            .is_none());
     }
 
     #[test]
