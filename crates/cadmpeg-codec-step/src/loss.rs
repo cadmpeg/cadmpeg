@@ -340,6 +340,9 @@ pub(crate) enum StepLossCode {
     OccurrenceExpansionOutputTruncated,
     /// Product occurrence expansion stopped a branch at its path-depth limit.
     OccurrenceExpansionDepthTruncated,
+    /// A non-manifold edge of a closed shell was written as one edge per
+    /// forward and reversed use pair.
+    NonManifoldEdgeSplit,
 }
 
 impl StepLossCode {
@@ -501,6 +504,7 @@ impl StepLossCode {
         Self::ParseExpansionBounded,
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
+        Self::NonManifoldEdgeSplit,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -682,6 +686,7 @@ impl StepLossCode {
             Self::ParseExpansionBounded => "parse.expansion-bounded",
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
+            Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
         }
     }
 
@@ -737,7 +742,8 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
-            | Self::SourceNativeRecordOmitted => Severity::Info,
+            | Self::SourceNativeRecordOmitted
+            | Self::NonManifoldEdgeSplit => Severity::Info,
             _ => Severity::Warning,
         }
     }
@@ -846,7 +852,8 @@ impl StepLossCode {
             | Self::LoopNoContinuousOrdering
             | Self::EdgeRecordMissing
             | Self::EdgeStartVertexMissing
-            | Self::EdgeEndVertexMissing => LossTaxonomy::TopologyNotTransferred,
+            | Self::EdgeEndVertexMissing
+            | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
@@ -1090,6 +1097,7 @@ mod tests {
                 "parse.expansion-bounded",
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
+                "topology.non-manifold-edge-split",
             ]
         );
     }

@@ -6,8 +6,9 @@ use cadmpeg_test_support::edit;
 
 use super::emit::{emit_attributes, emit_edges, CurveSenseRefs};
 use super::geometry::{
-    analytic_procedural_surface, edge_pcurve_parameter_ranges, is_asm_stream_delimiter,
-    is_known_record_head, pcurve_ranges_on_domain, point_vector, rational_four_arc_circle,
+    analytic_procedural_surface, collapsed_edges, edge_pcurve_parameter_ranges, faced_body_kind,
+    is_asm_stream_delimiter, is_known_record_head, pcurve_ranges_on_domain, point_vector,
+    rational_four_arc_circle,
 };
 use super::records::{self, BodyNativeKey};
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
@@ -1326,6 +1327,95 @@ fn a_non_finite_attribute_double_is_refused() {
     assert_eq!(
         error.to_string(),
         "malformed container: attribute record 1 (real-st-attrib) holds a non-finite number"
+    );
+}
+
+#[test]
+fn faced_body_kind_closes_on_balanced_uses_of_extended_edges() {
+    use cadmpeg_ir::topology::BodyKind;
+    use cadmpeg_ir::topology::Sense::{Forward, Reversed};
+
+    let shared = EdgeId::from(id(FORMAT, 1));
+    let touching = EdgeId::from(id(FORMAT, 2));
+    let apex = EdgeId::from(id(FORMAT, 3));
+    let no_collapsed = |_: &EdgeId| false;
+    let only_apex = |edge: &EdgeId| *edge == apex;
+
+    let non_manifold = [
+        (&shared, Forward),
+        (&shared, Reversed),
+        (&touching, Forward),
+        (&touching, Reversed),
+        (&touching, Forward),
+        (&touching, Reversed),
+    ];
+    assert_eq!(faced_body_kind(non_manifold, no_collapsed), BodyKind::Solid);
+    assert_eq!(
+        faced_body_kind(non_manifold[..5].iter().copied(), no_collapsed),
+        BodyKind::Sheet
+    );
+    assert_eq!(
+        faced_body_kind([(&shared, Forward), (&shared, Forward)], no_collapsed),
+        BodyKind::Sheet
+    );
+
+    let apex_loop = [(&shared, Forward), (&shared, Reversed), (&apex, Forward)];
+    assert_eq!(faced_body_kind(apex_loop, no_collapsed), BodyKind::Sheet);
+    assert_eq!(faced_body_kind(apex_loop, only_apex), BodyKind::Solid);
+    assert_eq!(
+        faced_body_kind([(&apex, Forward)], only_apex),
+        BodyKind::Sheet
+    );
+}
+
+#[test]
+fn collapsed_edges_need_one_vertex_and_a_point_carrier() {
+    let edge = |index, start, end, curve| Record {
+        index,
+        name: "edge".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(start),
+            Token::Double(0.0),
+            Token::Ref(end),
+            Token::Double(0.0),
+            Token::Ref(-1),
+            Token::Ref(curve),
+            Token::False,
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let curve = |index, name: &str| Record {
+        index,
+        name: name.into(),
+        tokens: Vec::new().into(),
+        offset: 0,
+        len: 0,
+    };
+    let records = vec![
+        edge(1, 10, 10, -1),
+        edge(2, 10, 10, 20),
+        edge(3, 10, 10, 21),
+        edge(4, 10, 11, -1),
+        edge(5, 10, 10, -1),
+        curve(20, "degenerate_curve"),
+        curve(21, "intcurve-curve"),
+    ];
+    let by_index = records
+        .iter()
+        .map(|record| (i64::try_from(record.index).expect("index fits"), record))
+        .collect();
+
+    let collapsed = collapsed_edges(&records, &by_index, &HashSet::from([1, 2, 3, 4]), FORMAT)
+        .expect("edge indices fit");
+
+    assert_eq!(
+        collapsed,
+        HashSet::from([EdgeId::from(id(FORMAT, 1)), EdgeId::from(id(FORMAT, 2))])
     );
 }
 
