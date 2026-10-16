@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Design object ordering tests.
+//! Design object and parameter ordering tests.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterId};
 
 use crate::native::{ObjectRecord, PropertyRecord};
 
@@ -396,4 +396,111 @@ fn design_object_ordering_is_linear_in_a_reverse_dependency_chain() {
             source_ordinals[OBJECTS - 1 - index]
         );
     }
+}
+
+fn parameter(id: usize, owner: usize, dependencies: &[usize]) -> DesignParameter {
+    let parameter_id = |index: usize| {
+        ParameterId::mint(format!("test:test:parameter#{index}")).expect("parameter id")
+    };
+    DesignParameter {
+        id: parameter_id(id),
+        owner: Some(FeatureId::mint(format!("test:test:feature#{owner}")).expect("feature id")),
+        ordinal: 0,
+        name: format!("P{id}"),
+        expression: String::new(),
+        display: None,
+        value: None,
+        dependencies: dependencies
+            .iter()
+            .map(|&index| parameter_id(index))
+            .collect(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    }
+}
+
+/// The ordering `order_parameters_by_dependencies` replaced: each step
+/// rescans the remaining parameters for the first ready one.
+fn pairwise_parameter_order(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
+    let known = parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut remaining = std::mem::take(parameters);
+    let mut emitted = BTreeSet::new();
+    let mut cycle_features = BTreeSet::new();
+    while !remaining.is_empty() {
+        let Some(index) = remaining.iter().position(|parameter| {
+            parameter
+                .dependencies
+                .iter()
+                .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
+        }) else {
+            cycle_features.extend(
+                remaining
+                    .iter()
+                    .filter_map(|parameter| parameter.owner.clone()),
+            );
+            parameters.append(&mut remaining);
+            break;
+        };
+        let parameter = remaining.remove(index);
+        emitted.insert(parameter.id.clone());
+        parameters.push(parameter);
+    }
+    cycle_features
+}
+
+#[test]
+fn parameter_ordering_matches_the_pairwise_selection() {
+    let mut random = Random(0x9e37_79b9_7f4a_7c15);
+    let mut cycles = 0;
+    for case in 0..200 {
+        let count = 1 + random.below(50);
+        let acyclic = case % 2 == 0;
+        let parameters = (0..count)
+            .map(|index| {
+                // Ids repeat and some dependencies name no parameter.
+                let id = random.below(count + count / 4);
+                let dependencies = (0..random.below(4))
+                    .map(|_| random.below(count + 4))
+                    .filter(|&dependency| !acyclic || dependency > id)
+                    .collect::<Vec<_>>();
+                parameter(id, index % 7, &dependencies)
+            })
+            .collect::<Vec<_>>();
+        let mut kahn = parameters.clone();
+        let mut pairwise = parameters;
+        let kahn_cycles = super::super::order_parameters_by_dependencies(&mut kahn);
+        let pairwise_cycles = pairwise_parameter_order(&mut pairwise);
+        assert_eq!(kahn, pairwise, "case {case}");
+        assert_eq!(kahn_cycles, pairwise_cycles, "case {case}");
+        cycles += usize::from(!kahn_cycles.is_empty());
+    }
+    assert!(cycles > 10, "only {cycles} cases exercised a cycle");
+}
+
+#[test]
+fn parameter_ordering_is_linear_in_a_reverse_dependency_chain() {
+    // The pairwise selection scans and shifts the remaining parameters per
+    // step: about 2^31 probes.
+    const PARAMETERS: usize = 1 << 16;
+    let mut parameters = (0..PARAMETERS)
+        .map(|index| {
+            let dependencies = if index + 1 < PARAMETERS {
+                vec![index + 1]
+            } else {
+                Vec::new()
+            };
+            parameter(index, 0, &dependencies)
+        })
+        .collect::<Vec<_>>();
+    let cycle_features = super::super::order_parameters_by_dependencies(&mut parameters);
+    assert!(cycle_features.is_empty());
+    assert!(parameters
+        .iter()
+        .rev()
+        .enumerate()
+        .all(|(index, parameter)| parameter.name == format!("P{index}")));
 }
