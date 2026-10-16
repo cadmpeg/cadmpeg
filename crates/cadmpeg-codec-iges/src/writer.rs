@@ -1830,10 +1830,13 @@ fn brep_entities(
 
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    let mut ignored_curves = 0_usize;
     for curve in curves {
-        if consumed_curve_ids.contains(curve.id.as_str())
-            || ignored_carriers.curves.contains(curve.id.as_str())
-        {
+        if consumed_curve_ids.contains(curve.id.as_str()) {
+            continue;
+        }
+        if ignored_carriers.curves.contains(curve.id.as_str()) {
+            ignored_curves += 1;
             continue;
         }
         let Some(status) = ownership.curve_status(curve, losses) else {
@@ -1861,6 +1864,7 @@ fn brep_entities(
         )?;
         mark_curve_descendants(ir, &curve.id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
+    ignored_carriers.report_omitted(ignored_curves, "B-rep", losses);
 
     let mut pcurve_indices = BTreeMap::new();
     for (pcurve_id, pcurve) in topology.pcurves {
@@ -2388,6 +2392,24 @@ struct IgnoredCarrierGeometry {
     points: std::collections::BTreeSet<String>,
 }
 
+impl IgnoredCarrierGeometry {
+    /// Reports the ignored edges, which no topology path writes, and the
+    /// `curves` ignored curves that the `path` writer skipped.
+    fn report_omitted(&self, curves: usize, path: &str, losses: &mut Vec<LossNote>) {
+        if !self.edges.is_empty() {
+            losses.push(IgesLossCode::WriterDuplicateCarrierOmitted.note(format!(
+                "{} free edge record(s) duplicating a written carrier were not written on the {path} path",
+                self.edges.len()
+            )));
+        }
+        if curves != 0 {
+            losses.push(IgesLossCode::WriterDuplicateCarrierOmitted.note(format!(
+                "{curves} free curve record(s) duplicating a written parameter curve were not written on the {path} path"
+            )));
+        }
+    }
+}
+
 fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecError> {
     let topology_edge_ids = ir
         .model
@@ -2666,10 +2688,13 @@ fn topology_entities(
 
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    let mut ignored_curves = 0_usize;
     for curve in curves {
-        if consumed_curves.contains(curve.id.as_str())
-            || ignored_carriers.curves.contains(curve.id.as_str())
-        {
+        if consumed_curves.contains(curve.id.as_str()) {
+            continue;
+        }
+        if ignored_carriers.curves.contains(curve.id.as_str()) {
+            ignored_curves += 1;
             continue;
         }
         let Some(status) = ownership.curve_status(curve, losses) else {
@@ -2697,6 +2722,7 @@ fn topology_entities(
         )?;
         mark_curve_descendants(ir, &curve.id, &mut consumed_curves, &mut BTreeSet::new())?;
     }
+    ignored_carriers.report_omitted(ignored_curves, "trimmed-sheet", losses);
 
     let mut pcurve_indices = BTreeMap::new();
     for (pcurve_id, pcurve) in topology.pcurves {
