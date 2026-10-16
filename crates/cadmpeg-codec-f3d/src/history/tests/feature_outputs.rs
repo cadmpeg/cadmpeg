@@ -45,10 +45,7 @@ fn output_binding_inputs() -> (
     crate::history_records::AsmHistory,
     cadmpeg_ir::topology::Body,
 ) {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalRelation, AsmHistoricalTopology,
-        AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmTopologyCache,
-    };
+    use crate::history_records::{AsmDeltaState, AsmHistoricalRelation, AsmHistoricalTopology};
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     let mut feature = base_feature();
     let mut scope = DesignParameterScope::empty(
@@ -70,46 +67,38 @@ fn output_binding_inputs() -> (
         owner_ref: 1,
         member_refs: Vec::new(),
     });
-    let mut delta = AsmHistoricalTopologyDelta::default();
-    delta.bodies.inserted.push(1);
-    let state = |state_id, node_index, next_ref, topology, transition| AsmDeltaState {
-        id: format!("f3d:asm-delta-state#{state_id}"),
-        parent: "f3d:asm-history#1".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref,
-        node_index,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: AsmTopologyCache::Complete(topology),
-        transition,
+    let state = |state_id, node_index, next_ref, topology| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:asm-delta-state#{state_id}"),
+                parent: "f3d:asm-history#1".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        id: "f3d:asm-history#1".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                1,
-                1,
-                Some(0),
-                current_topology,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(0),
-                    records: AsmHistoricalEntityDelta::default(),
-                    topology: delta,
-                }),
-            ),
-            state(0, 0, None, AsmHistoricalTopology::default(), None),
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(1, 1, Some(0), current_topology),
+            state(0, 0, None, AsmHistoricalTopology::default()),
         ],
-    };
+    );
     (feature, scope, history, active_body())
 }
 

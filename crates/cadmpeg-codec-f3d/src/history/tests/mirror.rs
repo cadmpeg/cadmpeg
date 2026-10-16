@@ -6,7 +6,7 @@ use crate::history::{
     selection::historical_mirror_face_operand_plane, selection::historical_mirror_plane,
     selection::historical_selection_identity_kind,
 };
-use crate::history_records::{AsmDeltaState, AsmHistory};
+use crate::history_records::AsmDeltaState;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
 #[test]
@@ -31,38 +31,40 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
         }],
         ..Default::default()
     };
-    let mut histories = [AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![AsmDeltaState {
-            id: "history:state#1".into(),
-            parent: "history".into(),
-            byte_offset: 0,
-            state_id: 1,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 1,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: vec![AsmEntityVersion {
+    let mut histories = [crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![(
+            AsmDeltaState {
+                id: "history:state#1".into(),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id: 1,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 1,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            vec![AsmEntityVersion {
                 entity_ref: 10,
                 record_ref: 30,
             }],
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-            transition: None,
-        }],
-    }];
+        )],
+    )];
 
     discard_projection_caches(&mut histories);
 
-    let retained = histories[0].states[0]
-        .topology()
+    let retained = histories[0]
+        .topology(&histories[0].states()[0])
         .expect("plane topology remains available to late Mirror binding");
     assert_eq!(retained.bodies, [99]);
     assert_eq!(retained.faces, [10]);
@@ -70,7 +72,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
     assert_eq!(retained.face_surfaces.len(), 1);
     assert_eq!(retained.surface_planes.len(), 1);
     assert_eq!(
-        histories[0].states[0].entity_versions,
+        histories[0].entity_versions(&histories[0].states()[0]),
         [AsmEntityVersion {
             entity_ref: 10,
             record_ref: 30,
@@ -146,30 +148,32 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
         ],
         ..Default::default()
     };
-    let history = AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![AsmDeltaState {
-            id: "history:state#1".into(),
-            parent: "history".into(),
-            byte_offset: 0,
-            state_id: 1,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 1,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-            transition: None,
-        }],
-    };
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![(
+            AsmDeltaState {
+                id: "history:state#1".into(),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id: 1,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 1,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )],
+    );
 
     let plane = historical_mirror_face_operand_plane(&operand, &history, 1)
         .expect("coincident preceding faces share one mirror plane");
@@ -177,12 +181,9 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
 
     let mut noncoincident = history;
-    noncoincident.states[0]
-        .topology_mut()
-        .expect("topology")
-        .surface_planes[1]
-        .origin
-        .z = 4.0;
+    crate::test_support::history::edit(&mut noncoincident, 0, |topology, _| {
+        topology.surface_planes[1].origin.z = 4.0;
+    });
     assert!(historical_mirror_face_operand_plane(&operand, &noncoincident, 1).is_none());
 }
 
@@ -259,30 +260,32 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
     assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
     assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
 
-    let history = AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![AsmDeltaState {
-            id: "history:state#1".into(),
-            parent: "history".into(),
-            byte_offset: 0,
-            state_id: 1,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 1,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology.clone()),
-            transition: None,
-        }],
-    };
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![(
+            AsmDeltaState {
+                id: "history:state#1".into(),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id: 1,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 1,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology.clone()),
+            Vec::new(),
+        )],
+    );
     let candidate =
         crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),

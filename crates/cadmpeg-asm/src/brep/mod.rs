@@ -19,7 +19,7 @@
 
 pub mod annotations;
 pub mod attributes;
-mod emit;
+pub mod emit;
 pub mod geometry;
 pub mod key_maps;
 pub mod records;
@@ -475,8 +475,9 @@ struct Carriers {
 /// grouped by entity kind. Every emit pass filters `records` against these
 /// sets so only reachable entities appear in the output.
 #[derive(Default)]
-struct Reachable {
-    faces: HashSet<i64>,
+pub struct Reachable {
+    /// Face slots admitted by the face pass.
+    pub faces: HashSet<i64>,
     loops: HashSet<i64>,
     coedges: HashSet<i64>,
     edges: HashSet<i64>,
@@ -493,7 +494,7 @@ struct Reachable {
 /// Wire-edge and free-vertex reachability collected per shell during the
 /// topology walk, consumed when emitting shell containers.
 #[derive(Default)]
-struct WireShellTopology {
+pub struct WireShellTopology {
     wire_edges_by_shell: HashMap<i64, Vec<i64>>,
     free_vertices_by_shell: HashMap<i64, Vec<i64>>,
     saved_free_edges: Vec<i64>,
@@ -549,6 +550,53 @@ pub fn decode_with_header(
     format: IdFormat,
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let token_table = nurbs::toks::SubtypeTable::from_records(records)
+        .with_save_format_version(header.and_then(|header| header.save_format_version));
+    decode_with_table(
+        ctx,
+        records,
+        bytes,
+        (header, &token_table),
+        stream,
+        format,
+        purpose,
+    )
+}
+
+/// Decode a History subset with the complete state's subtype numbering.
+/// The supplied table must carry the stream's save format version.
+pub fn decode_history_with_subtypes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    format: IdFormat,
+    subtypes: &nurbs::toks::SubtypeTable,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let header = asm_header::parse(ctx, bytes)?.map(|header| header.metadata);
+    decode_with_table(
+        ctx,
+        records,
+        bytes,
+        (header.as_ref(), subtypes),
+        "history",
+        format,
+        DecodePurpose::History,
+    )
+}
+
+fn decode_with_table(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    tables: (
+        Option<&crate::kernel_header::KernelHeader>,
+        &nurbs::toks::SubtypeTable,
+    ),
+    stream: &str,
+    format: IdFormat,
+    purpose: DecodePurpose,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let (header, token_table) = tables;
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
@@ -562,10 +610,7 @@ pub fn decode_with_header(
             record,
         );
     }
-    // Subtype-definition positions, built once for every carrier resolution.
-    let token_table = nurbs::toks::SubtypeTable::from_records(records)
-        .with_save_format_version(header.and_then(|header| header.save_format_version));
-    nurbs::toks::admit_subtype_references(ctx, records, &token_table)?;
+    nurbs::toks::admit_subtype_references(ctx, records, token_table)?;
     let save_format_major = header.and_then(crate::kernel_header::KernelHeader::save_format_major);
     let saved_entity_limit = header
         .and_then(|header| header.entity_count)
@@ -578,7 +623,7 @@ pub fn decode_with_header(
     let topology_context = TopologyContext {
         ctx,
         by_index: &by_index,
-        token_table: &token_table,
+        token_table,
         purpose,
         format,
     };
@@ -630,7 +675,7 @@ pub fn decode_with_header(
         &mut out,
         records,
         CoedgeDecodeInputs {
-            token_table: &token_table,
+            token_table,
             save_format_major,
         },
         &carriers,
@@ -695,3 +740,53 @@ fn inherited_attribute_target(
 mod tests;
 
 mod identity_rewrite;
+
+#[cfg(test)]
+mod supplied_subtype_tests {
+    #[test]
+    fn history_subset_admits_references_against_supplied_table() {
+        use crate::sab::{Record, Token};
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let definition: std::sync::Arc<[Token]> = vec![
+            Token::SubtypeOpen,
+            Token::Ident("example".into()),
+            Token::SubtypeClose,
+        ]
+        .into();
+        let table = crate::nurbs::toks::SubtypeTable::from_definitions(vec![(definition, 0)]);
+        let records = [Record {
+            index: 1,
+            name: "unused".into(),
+            offset: 0,
+            len: 0,
+            tokens: vec![
+                Token::SubtypeOpen,
+                Token::Ident("ref".into()),
+                Token::Long(0),
+                Token::SubtypeClose,
+            ]
+            .into(),
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(super::decode_history_with_subtypes(
+            &ctx,
+            &records,
+            &[],
+            crate::ids::IdFormat::from_literal("f3d").unwrap(),
+            &table
+        )
+        .is_err());
+        assert!(super::decode_with_purpose(
+            &ctx,
+            &records,
+            &[],
+            "history",
+            crate::ids::IdFormat::from_literal("f3d").unwrap(),
+            super::DecodePurpose::History
+        )
+        .is_ok());
+    }
+}

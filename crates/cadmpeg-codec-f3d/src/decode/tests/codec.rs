@@ -378,28 +378,28 @@ fn decode_retains_generated_asm_history_graph() {
     let history = &f3d_native(result.ir()).asm_histories[0];
     assert_eq!(history.stream_size(), Some(2));
     assert_eq!(history.history_entry_count(), Some(99));
-    assert_eq!(history.states.len(), 2);
-    assert_eq!(history.states[0].state_id, 2);
-    assert_eq!(history.states[0].next_ref, Some(1));
-    assert_eq!(history.states[0].bulletin_boards.len(), 1);
-    assert_eq!(history.states[0].bulletin_boards[0].changes.len(), 2);
-    assert_eq!(history.states[0].records.len(), 1);
-    assert_eq!(history.states[0].records[0].name(), "history_payload");
-    assert_eq!(history.states[0].records[0].revision_id, Some(1830));
+    assert_eq!(history.states().len(), 2);
+    assert_eq!(history.states()[0].state_id, 2);
+    assert_eq!(history.states()[0].next_ref, Some(1));
+    assert_eq!(history.states()[0].bulletin_boards.len(), 1);
+    assert_eq!(history.states()[0].bulletin_boards[0].changes.len(), 2);
+    assert_eq!(history.states()[0].records.len(), 1);
+    assert_eq!(history.states()[0].records[0].name(), "history_payload");
+    assert_eq!(history.states()[0].records[0].revision_id, Some(1830));
     let crate::history_records::AsmHistoryRecordFraming::Framed {
         entity_references, ..
-    } = &history.states[0].records[0].framing
+    } = &history.states()[0].records[0].framing
     else {
         panic!("framed history record");
     };
     assert_eq!(entity_references, &[1830, -1]);
-    assert!(!history.states[0].records[0].raw_bytes.is_empty());
+    assert!(!history.states()[0].records[0].raw_bytes.is_empty());
     assert!(matches!(
-        history.states[0].bulletin_boards[0].changes[1].kind,
+        history.states()[0].bulletin_boards[0].changes[1].kind,
         crate::history_records::AsmEntityChangeKind::Insert { .. }
     ));
-    assert_eq!(history.states[1].previous_ref, Some(0));
-    assert_eq!(history.states[1].next_ref, None);
+    assert_eq!(history.states()[1].previous_ref, Some(0));
+    assert_eq!(history.states()[1].next_ref, None);
     assert!(result.report().geometry_transferred());
 }
 
@@ -413,20 +413,20 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     update_f3d_native(&mut edited, |native| {
         let history = &mut native.asm_histories[0];
         assert!(history.byte_offset > 0);
-        assert!(history.states[0].byte_offset > 0);
+        assert!(history.states()[0].byte_offset > 0);
         history.preamble = Some(crate::history_records::AsmPreamble {
             stream_size: 8,
             history_entry_count: 120,
         });
-        history.states[0].state_id = 8;
-        history.states[0].version_flag = 4;
-        history.states[0].state_flag = 6;
-        history.states[0].previous_ref = Some(12);
-        history.states[0].next_ref = Some(14);
-        history.states[0].node_index = 16;
-        history.states[0].partner_ref = Some(18);
-        history.states[0].owner_ref = 20;
-        let board = &mut history.states[0].bulletin_boards[0];
+        history.states_mut()[0].state_id = 8;
+        history.states_mut()[0].version_flag = 4;
+        history.states_mut()[0].state_flag = 6;
+        history.states_mut()[0].previous_ref = Some(12);
+        history.states_mut()[0].next_ref = Some(14);
+        history.states_mut()[0].node_index = 16;
+        history.states_mut()[0].partner_ref = Some(18);
+        history.states_mut()[0].owner_ref = 20;
+        let board = &mut history.states_mut()[0].bulletin_boards[0];
         assert!(board.byte_offset > 0);
         board.owner_ref = 22;
         board.number = 24;
@@ -441,7 +441,8 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated history decode");
-    let state = &f3d_native(round_trip.ir()).asm_histories[0].states[0];
+    let native = f3d_native(round_trip.ir());
+    let state = &native.asm_histories[0].states()[0];
     assert_eq!(
         f3d_native(round_trip.ir()).asm_histories[0].stream_size(),
         Some(8)

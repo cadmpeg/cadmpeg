@@ -577,12 +577,12 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     let actual = &f3d_native(round_trip.ir()).asm_histories[0];
     assert_eq!(actual.stream_size(), expected.stream_size());
     assert_eq!(actual.history_entry_count(), expected.history_entry_count());
-    assert_eq!(actual.states.len(), expected.states.len());
-    assert_eq!(actual.states[0].state_id, expected.states[0].state_id);
-    assert_eq!(actual.states[0].bulletin_boards.len(), 1);
-    assert_eq!(actual.states[0].bulletin_boards[0].changes.len(), 2);
-    assert_eq!(actual.states[0].records.len(), 1);
-    assert_eq!(actual.states[0].records[0].name(), "history_payload");
+    assert_eq!(actual.states().len(), expected.states().len());
+    assert_eq!(actual.states()[0].state_id, expected.states()[0].state_id);
+    assert_eq!(actual.states()[0].bulletin_boards.len(), 1);
+    assert_eq!(actual.states()[0].bulletin_boards[0].changes.len(), 2);
+    assert_eq!(actual.states()[0].records.len(), 1);
+    assert_eq!(actual.states()[0].records[0].name(), "history_payload");
 }
 
 #[test]
@@ -642,7 +642,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     broken_chain
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);
+    f3d_native_mut(&mut broken_chain).asm_histories[0].states_mut()[0].next_ref = Some(99);
     let error = F3dCodec
         .plan(
             EncodeInput::new(&broken_chain, None),
