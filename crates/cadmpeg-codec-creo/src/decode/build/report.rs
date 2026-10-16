@@ -192,6 +192,25 @@ pub(in super::super) fn build_report(
         }
     }
     push_coverage_drop_losses(&mut losses, &coverage, &solve_work_caps)?;
+    let mut text_work_caps = std::collections::BTreeMap::<&str, usize>::new();
+    for (bound, count) in scan
+        .curves
+        .expressions
+        .iter()
+        .flat_map(|record| &record.text_work_caps)
+    {
+        *text_work_caps.entry(bound).or_default() += count;
+    }
+    for (bound, count) in text_work_caps {
+        push_report_loss(
+            &mut losses,
+            CreoLossCode::CurveExpressionTextCapped,
+            format_args!(
+                "{count} curve-equation relation condition(s) or assignment(s) have no value: \
+                 their string text exceeded {bound}."
+            ),
+        );
+    }
 
     Ok(DecodeBody {
         transfer: if container_only {

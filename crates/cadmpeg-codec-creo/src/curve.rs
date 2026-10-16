@@ -77,6 +77,9 @@ pub(crate) struct CurveExpressionRecord {
     pub(crate) unresolved_solve_control: bool,
     /// Curve-equation constructs prohibited by the Creo expression grammar.
     pub(crate) prohibited_constructs: Vec<String>,
+    /// Count of conditions and assignments, keyed by the text work cap that
+    /// dropped their value.
+    pub(crate) text_work_caps: BTreeMap<&'static str, usize>,
     /// Byte offset of the enclosing entity label.
     pub(crate) offset: usize,
     /// Byte offset of the `expression` field.
@@ -1087,6 +1090,7 @@ pub(crate) fn expression_records_with_model_name(
                 }
                 evaluation.solve_solutions.clear();
                 evaluation.solve_work_caps.clear();
+                evaluation.text_work_caps.clear();
             }
             synchronize_solve_blocks(
                 &mut solve_program.blocks,
@@ -1103,6 +1107,7 @@ pub(crate) fn expression_records_with_model_name(
                 solve_blocks: solve_program.blocks,
                 unresolved_solve_control: solve_program.unresolved_control,
                 prohibited_constructs,
+                text_work_caps: evaluation.text_work_caps,
                 offset,
                 expression_offset,
             });
@@ -1126,6 +1131,7 @@ pub(crate) fn reevaluate_expression_records(
             }
             evaluation.solve_solutions.clear();
             evaluation.solve_work_caps.clear();
+            evaluation.text_work_caps.clear();
         }
         synchronize_solve_blocks(
             &mut record.solve_blocks,
@@ -1134,6 +1140,7 @@ pub(crate) fn reevaluate_expression_records(
             &evaluation.solve_work_caps,
         );
         record.assignments = evaluation.assignments;
+        record.text_work_caps = evaluation.text_work_caps;
     }
     Ok(())
 }
@@ -1893,6 +1900,7 @@ struct CurveExpressionEvaluation {
     assignments: Vec<CurveExpressionAssignment>,
     solve_solutions: BTreeMap<usize, Vec<CurveExpressionValue>>,
     solve_work_caps: BTreeMap<usize, &'static str>,
+    text_work_caps: BTreeMap<&'static str, usize>,
 }
 
 fn copy_expression_value(value: &CurveExpressionValue) -> CurveExpressionValue {
@@ -1934,6 +1942,7 @@ fn evaluate_expression_program_details(
             assignments,
             solve_solutions: BTreeMap::new(),
             solve_work_caps: BTreeMap::new(),
+            text_work_caps: BTreeMap::new(),
         });
     }
 
@@ -1974,6 +1983,8 @@ fn evaluate_expression_program_details(
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
     let mut solve_solutions = BTreeMap::new();
     let mut solve_work_caps = BTreeMap::new();
+    let mut text_work_caps = BTreeMap::<&'static str, usize>::new();
+    let mut kept_text_bytes = 0usize;
     let mut solve_block_dimensions = BTreeMap::new();
     let mut solve_block_initial_values = BTreeMap::new();
     for (index, line) in lines.iter().enumerate() {
@@ -2022,23 +2033,23 @@ fn evaluate_expression_program_details(
             .iter()
             .find(|block| block.for_offset == line.offset)
         {
+            let mut block_work_cap = None;
             let affine_solution = match solve_block_dimensions.get(&block.offset) {
-                Some(dimensions) => {
-                    match infer_solve_variable_dimensions(ctx, block, &values, dimensions, context)?
-                    {
-                        Some(dimensions) => solve_affine_expression_block(
-                            ctx,
-                            block,
-                            &values,
-                            &dimensions,
-                            context,
-                        )?,
-                        None => None,
+                Some(dimensions) => match infer_solve_variable_dimensions(
+                    ctx,
+                    block,
+                    &values,
+                    dimensions,
+                    context,
+                    &mut block_work_cap,
+                )? {
+                    Some(dimensions) => {
+                        solve_affine_expression_block(ctx, block, &values, &dimensions, context)?
                     }
-                }
+                    None => None,
+                },
                 None => None,
             };
-            let mut nonlinear_work_cap = None;
             let solution = match affine_solution {
                 Some(solution) => Some(solution),
                 None => match (
@@ -2052,12 +2063,12 @@ fn evaluate_expression_program_details(
                         dimensions,
                         initial_values,
                         context,
-                        &mut nonlinear_work_cap,
+                        &mut block_work_cap,
                     )?,
                     _ => None,
                 },
             };
-            if let Some(bound) = nonlinear_work_cap {
+            if let Some(bound) = block_work_cap {
                 solve_work_caps.insert(block.offset, bound);
             }
             if let Some(solution) = solution {
@@ -2088,13 +2099,20 @@ fn evaluate_expression_program_details(
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
             let condition = if activity == CurveExpressionActivation::Active {
-                parse_relation_expression::<CurveExpressionValue>(
+                let mut text_capped = false;
+                let condition = parse_capped_relation_expression::<CurveExpressionValue>(
                     ctx,
                     condition_source,
                     &values,
                     context,
-                )?
-                .and_then(|value| value.truth())
+                    &mut text_capped,
+                )?;
+                if text_capped {
+                    *text_work_caps
+                        .entry("MAX_RELATION_EXPRESSION_TEXT_BYTES")
+                        .or_default() += 1;
+                }
+                condition.and_then(|value| value.truth())
             } else {
                 None
             };
@@ -2127,12 +2145,14 @@ fn evaluate_expression_program_details(
         }
         match activity {
             CurveExpressionActivation::Active => {
+                let mut text_capped = false;
                 assignment.value = if declaration_is_valid {
-                    parse_relation_expression::<CurveExpressionValue>(
+                    parse_capped_relation_expression::<CurveExpressionValue>(
                         ctx,
                         &assignment.expression,
                         &values,
                         context,
+                        &mut text_capped,
                     )?
                     .map(|value| apply_declared_relation_unit(ctx, value, declared_unit))
                     .transpose()?
@@ -2140,6 +2160,29 @@ fn evaluate_expression_program_details(
                 } else {
                     None
                 };
+                if text_capped {
+                    *text_work_caps
+                        .entry("MAX_RELATION_EXPRESSION_TEXT_BYTES")
+                        .or_default() += 1;
+                }
+                if let Some(text_len) = assignment
+                    .value
+                    .as_ref()
+                    .and_then(ExpressionValue::text_len)
+                {
+                    match kept_text_bytes
+                        .checked_add(text_len)
+                        .filter(|kept| *kept <= MAX_RELATION_PROGRAM_TEXT_BYTES)
+                    {
+                        Some(kept) => kept_text_bytes = kept,
+                        None => {
+                            assignment.value = None;
+                            *text_work_caps
+                                .entry("MAX_RELATION_PROGRAM_TEXT_BYTES")
+                                .or_default() += 1;
+                        }
+                    }
+                }
                 if let Some(value) = assignment.value.as_ref() {
                     let value = copy_expression_value(value);
                     values.insert(key, value);
@@ -2158,6 +2201,7 @@ fn evaluate_expression_program_details(
         assignments,
         solve_solutions,
         solve_work_caps,
+        text_work_caps,
     })
 }
 
@@ -2579,6 +2623,10 @@ trait ExpressionValue: Sized + Clone {
     ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
     fn negate_checked(self) -> Result<Option<Self>, cadmpeg_core::CodecError>;
     fn finite(&self) -> bool;
+    /// Bytes of string text this value holds, or `None` when it holds none.
+    fn text_len(&self) -> Option<usize> {
+        None
+    }
 }
 
 impl ExpressionValue for f64 {
@@ -4381,6 +4429,10 @@ impl ExpressionValue for DimensionProbeValue {
             DimensionProbeKind::Numeric(None) | DimensionProbeKind::Text(_) => true,
         }
     }
+
+    fn text_len(&self) -> Option<usize> {
+        self.text_value().map(str::len)
+    }
 }
 
 impl ExpressionValue for CurveExpressionValue {
@@ -4664,6 +4716,13 @@ impl ExpressionValue for CurveExpressionValue {
     fn finite(&self) -> bool {
         true
     }
+
+    fn text_len(&self) -> Option<usize> {
+        match self {
+            Self::String(text) => Some(text.len()),
+            _ => None,
+        }
+    }
 }
 
 fn quantity_additive(
@@ -4730,9 +4789,20 @@ struct ExpressionParser<'a, V> {
     ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
     resource_error: Option<cadmpeg_core::CodecError>,
     nesting: usize,
+    text_bytes: usize,
+    text_capped: bool,
 }
 
 const MAX_EXPRESSION_NESTING: usize = 128;
+
+/// String bytes one relation expression evaluation may materialize. Every
+/// literal, variable read, function result, and concatenation counts its full
+/// length, so repeated concatenation cannot double a string past this bound.
+const MAX_RELATION_EXPRESSION_TEXT_BYTES: usize = 4096;
+
+/// String bytes the assigned values of one relation program may keep. Each
+/// assignment keeps its own copy of its value.
+const MAX_RELATION_PROGRAM_TEXT_BYTES: usize = 65_536;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComparisonOperator {
@@ -4770,6 +4840,26 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
 
     fn finite_value(value: V) -> Option<V> {
         value.finite().then_some(value)
+    }
+
+    fn admit_text(&mut self, bytes: Option<usize>) -> Option<()> {
+        let Some(bytes) = bytes else {
+            return Some(());
+        };
+        match self
+            .text_bytes
+            .checked_add(bytes)
+            .filter(|total| *total <= MAX_RELATION_EXPRESSION_TEXT_BYTES)
+        {
+            Some(total) => {
+                self.text_bytes = total;
+                Some(())
+            }
+            None => {
+                self.text_capped = true;
+                None
+            }
+        }
     }
 
     fn whitespace(&mut self) {
@@ -4836,6 +4926,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
                 Some(b'+') => {
                     self.cursor += 1;
                     let right = self.term()?;
+                    if value.text_len().is_some() && right.text_len().is_some() {
+                        self.admit_text(value.text_len())?;
+                        self.admit_text(right.text_len())?;
+                    }
                     let result = value.add_checked(right);
                     value = Self::finite_value(self.admit(result)??)?;
                 }
@@ -4968,6 +5062,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         }
         (self.source.get(self.cursor) == Some(&delimiter)).then_some(())?;
         let source = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+        self.admit_text(Some(source.len()))?;
         let value = self.admit(Ok(source.to_owned()))?;
         self.cursor += 1;
         V::string(value)
@@ -5017,7 +5112,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             }
             let mut key = name.to_owned();
             key.make_ascii_lowercase();
-            return Some(self.values.get(&key)?.clone());
+            let value = self.values.get(&key)?;
+            self.admit_text(value.text_len())?;
+            return Some(value.clone());
         }
         (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
         let (function, scope) = creo_relation_function(name)?;
@@ -5042,7 +5139,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         self.cursor += 1;
         self.nesting -= 1;
         let result = V::function_checked(function, scope, &arguments, self.context);
-        self.admit(result)?
+        let value = self.admit(result)??;
+        self.admit_text(value.text_len())?;
+        Some(value)
     }
 }
 
@@ -5526,11 +5625,14 @@ fn format_relation_real(value: f64, decimals: Option<usize>, scientific: bool) -
     ))
 }
 
-fn parse_relation_expression<V: ExpressionValue>(
+/// Evaluates one relation expression. Sets `text_capped` when the expression
+/// has no value because it reached [`MAX_RELATION_EXPRESSION_TEXT_BYTES`].
+fn parse_capped_relation_expression<V: ExpressionValue>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     expression: &str,
     values: &BTreeMap<String, V>,
     context: RelationEvaluationContext<'_>,
+    text_capped: &mut bool,
 ) -> Result<Option<V>, cadmpeg_core::CodecError> {
     let mut parser = ExpressionParser {
         source: expression.as_bytes(),
@@ -5540,13 +5642,29 @@ fn parse_relation_expression<V: ExpressionValue>(
         ctx,
         resource_error: None,
         nesting: 0,
+        text_bytes: 0,
+        text_capped: false,
     };
     let value = parser.logical_or();
     if let Some(error) = parser.resource_error {
         return Err(error);
     }
     parser.whitespace();
-    Ok(value.filter(|value| parser.cursor == parser.source.len() && value.finite()))
+    let value = value.filter(|value| parser.cursor == parser.source.len() && value.finite());
+    *text_capped |= parser.text_capped && value.is_none();
+    Ok(value)
+}
+
+/// Evaluates one relation expression without reporting
+/// [`MAX_RELATION_EXPRESSION_TEXT_BYTES`]. Production callers use value types
+/// that carry no text, which have no value the cap could drop.
+fn parse_relation_expression<V: ExpressionValue>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    expression: &str,
+    values: &BTreeMap<String, V>,
+    context: RelationEvaluationContext<'_>,
+) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    parse_capped_relation_expression(ctx, expression, values, context, &mut false)
 }
 
 fn apply_declared_relation_unit(
@@ -5579,6 +5697,7 @@ fn infer_solve_variable_dimensions(
     values: &BTreeMap<String, CurveExpressionValue>,
     known_dimensions: &[Option<RelationDimension>],
     context: RelationEvaluationContext<'_>,
+    work_cap: &mut Option<&'static str>,
 ) -> Result<Option<Vec<RelationDimension>>, cadmpeg_core::CodecError> {
     if known_dimensions.len() != block.unknowns.len() {
         return Ok(None);
@@ -5619,23 +5738,32 @@ fn infer_solve_variable_dimensions(
     }
 
     let mut constraints = Vec::new();
+    let mut text_capped = false;
     for equation in &block.equations {
-        let Some(left) = parse_relation_expression::<DimensionProbeValue>(
+        let Some(left) = parse_capped_relation_expression::<DimensionProbeValue>(
             ctx,
             &equation.left,
             &probe_values,
             context,
+            &mut text_capped,
         )?
         else {
+            if text_capped {
+                *work_cap = Some("MAX_RELATION_EXPRESSION_TEXT_BYTES");
+            }
             return Ok(None);
         };
-        let Some(right) = parse_relation_expression::<DimensionProbeValue>(
+        let Some(right) = parse_capped_relation_expression::<DimensionProbeValue>(
             ctx,
             &equation.right,
             &probe_values,
             context,
+            &mut text_capped,
         )?
         else {
+            if text_capped {
+                *work_cap = Some("MAX_RELATION_EXPRESSION_TEXT_BYTES");
+            }
             return Ok(None);
         };
         for constraint in left.constraints.iter().chain(&right.constraints) {
@@ -5935,7 +6063,7 @@ fn solve_nonlinear_expression_block(
         return Ok(None);
     }
     let Some(variable_dimensions) =
-        infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)?
+        infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context, work_cap)?
     else {
         return Ok(None);
     };
@@ -6113,22 +6241,32 @@ fn refine_nonlinear_solution(
     let variable_count = variable_dimensions.len();
     let mut point = ctx.alloc_filled(seed.len(), 0.0, "creo nonlinear initial point")?;
     point.copy_from_slice(seed);
-    let Some(mut residuals) =
-        evaluate_nonlinear_residuals(ctx, block, values, variable_dimensions, &point, context)?
+    let Some(mut residuals) = evaluate_nonlinear_residuals(
+        ctx,
+        block,
+        values,
+        variable_dimensions,
+        &point,
+        context,
+        work_cap,
+    )?
     else {
         return Ok(None);
     };
     for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
         if nonlinear_residuals_converged(&residuals) {
-            let Some(mut rank_rows) = nonlinear_jacobian_rows(
-                ctx,
-                block,
-                values,
-                variable_dimensions,
-                &point,
-                &residuals,
-                context,
-            )?
+            let Some(mut rank_rows) =
+                nonlinear_jacobian_rows(ctx, variable_count, &point, &residuals, |probe| {
+                    evaluate_nonlinear_residuals(
+                        ctx,
+                        block,
+                        values,
+                        variable_dimensions,
+                        probe,
+                        context,
+                        work_cap,
+                    )
+                })?
             else {
                 return Ok(None);
             };
@@ -6137,15 +6275,18 @@ fn refine_nonlinear_solution(
             }
             return Ok(Some(point));
         }
-        let Some(mut rows) = nonlinear_jacobian_rows(
-            ctx,
-            block,
-            values,
-            variable_dimensions,
-            &point,
-            &residuals,
-            context,
-        )?
+        let Some(mut rows) =
+            nonlinear_jacobian_rows(ctx, variable_count, &point, &residuals, |probe| {
+                evaluate_nonlinear_residuals(
+                    ctx,
+                    block,
+                    values,
+                    variable_dimensions,
+                    probe,
+                    context,
+                    work_cap,
+                )
+            })?
         else {
             return Ok(None);
         };
@@ -6177,6 +6318,7 @@ fn refine_nonlinear_solution(
                     variable_dimensions,
                     &candidate,
                     context,
+                    work_cap,
                 )? {
                     let candidate_norm = nonlinear_residual_norm(&candidate_residuals, &residuals);
                     if nonlinear_residuals_converged(&candidate_residuals)
@@ -6207,15 +6349,18 @@ fn refine_nonlinear_solution(
         *work_cap = Some("MAX_NONLINEAR_SOLVE_ITERATIONS");
         return Ok(None);
     }
-    let Some(mut rank_rows) = nonlinear_jacobian_rows(
-        ctx,
-        block,
-        values,
-        variable_dimensions,
-        &point,
-        &residuals,
-        context,
-    )?
+    let Some(mut rank_rows) =
+        nonlinear_jacobian_rows(ctx, variable_count, &point, &residuals, |probe| {
+            evaluate_nonlinear_residuals(
+                ctx,
+                block,
+                values,
+                variable_dimensions,
+                probe,
+                context,
+                work_cap,
+            )
+        })?
     else {
         return Ok(None);
     };
@@ -6225,16 +6370,15 @@ fn refine_nonlinear_solution(
     Ok(Some(point))
 }
 
+/// Central-difference Jacobian rows of `residuals` at `point`, probing the
+/// residuals through `evaluate`.
 fn nonlinear_jacobian_rows(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    block: &CurveExpressionSolveBlock,
-    values: &BTreeMap<String, CurveExpressionValue>,
-    variable_dimensions: &[RelationDimension],
+    variable_count: usize,
     point: &[f64],
     residuals: &[SolveResidual],
-    context: RelationEvaluationContext<'_>,
+    mut evaluate: impl FnMut(&[f64]) -> Result<Option<Vec<SolveResidual>>, cadmpeg_core::CodecError>,
 ) -> Result<Option<Vec<AffineEquationRow>>, cadmpeg_core::CodecError> {
-    let variable_count = variable_dimensions.len();
     let mut rows = Vec::new();
     for (row_index, residual) in residuals.iter().enumerate() {
         let mut coefficients = Vec::new();
@@ -6246,26 +6390,10 @@ fn nonlinear_jacobian_rows(
             minus.copy_from_slice(point);
             plus[column] += step;
             minus[column] -= step;
-            let Some(plus_residuals) = evaluate_nonlinear_residuals(
-                ctx,
-                block,
-                values,
-                variable_dimensions,
-                &plus,
-                context,
-            )?
-            else {
+            let Some(plus_residuals) = evaluate(&plus)? else {
                 return Ok(None);
             };
-            let Some(minus_residuals) = evaluate_nonlinear_residuals(
-                ctx,
-                block,
-                values,
-                variable_dimensions,
-                &minus,
-                context,
-            )?
-            else {
+            let Some(minus_residuals) = evaluate(&minus)? else {
                 return Ok(None);
             };
             let Some(plus_residual) = plus_residuals.get(row_index) else {
@@ -6300,6 +6428,7 @@ fn evaluate_nonlinear_residuals(
     variable_dimensions: &[RelationDimension],
     point: &[f64],
     context: RelationEvaluationContext<'_>,
+    work_cap: &mut Option<&'static str>,
 ) -> Result<Option<Vec<SolveResidual>>, cadmpeg_core::CodecError> {
     if variable_dimensions.len() != block.unknowns.len() || point.len() != variable_dimensions.len()
     {
@@ -6327,23 +6456,32 @@ fn evaluate_nonlinear_residuals(
         evaluation_values.insert(key, value);
     }
     let mut residuals = Vec::new();
+    let mut text_capped = false;
     for equation in &block.equations {
-        let Some(left) = parse_relation_expression::<CurveExpressionValue>(
+        let Some(left) = parse_capped_relation_expression::<CurveExpressionValue>(
             ctx,
             &equation.left,
             &evaluation_values,
             context,
+            &mut text_capped,
         )?
         else {
+            if text_capped {
+                *work_cap = Some("MAX_RELATION_EXPRESSION_TEXT_BYTES");
+            }
             return Ok(None);
         };
-        let Some(right) = parse_relation_expression::<CurveExpressionValue>(
+        let Some(right) = parse_capped_relation_expression::<CurveExpressionValue>(
             ctx,
             &equation.right,
             &evaluation_values,
             context,
+            &mut text_capped,
         )?
         else {
+            if text_capped {
+                *work_cap = Some("MAX_RELATION_EXPRESSION_TEXT_BYTES");
+            }
             return Ok(None);
         };
         let Some((left, left_dimension)) = quantity_parts_ref(&left) else {
