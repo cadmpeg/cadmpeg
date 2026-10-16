@@ -2648,7 +2648,7 @@ impl<'a> F3dDecodeSession<'a> {
                 operands: &self.native.design_face_operands,
                 entity_operands: &self.native.design_entity_selection_operands,
                 body_recipe_operands: &self.native.design_body_recipe_operands,
-                histories: &self.native.asm_histories,
+                histories: &mut self.native.asm_histories,
             },
         )?;
         crate::history::bind_feature_path_selections(
