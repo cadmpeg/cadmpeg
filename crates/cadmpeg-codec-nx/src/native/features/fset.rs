@@ -332,8 +332,18 @@ mod tests {
         FeatureFsetReferenceGraph,
         BTreeMap<String, (&'static [u8], u64)>,
     ) {
-        let graph = serde_json::from_str(r#"{"id":"graph","operation_label":"nx:feature-history:operation-label#0-0000000001","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":["900001","900002"],"first_data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],"second_object_indices":[3,4,5],"raw_second_object_indices":["900003","900004","900005"],"second_data_blocks":["nx:om-data-blocks-0:block#3","nx:om-data-blocks-0:block#4","nx:om-data-blocks-0:block#5"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#)
-            .expect("complete FSET graph");
+        let graph = serde_json::from_str(
+            r#"{"id":"graph","operation_label":"nx:feature-history:operation-label#0-0000000001",
+                "selector":"s","first_object_indices":[1,2],
+                "raw_first_object_indices":["900001","900002"],
+                "first_data_blocks":["nx:om-data-blocks-0:block#1","nx:om-data-blocks-0:block#2"],
+                "second_object_indices":[3,4,5],
+                "raw_second_object_indices":["900003","900004","900005"],
+                "second_data_blocks":["nx:om-data-blocks-0:block#3","nx:om-data-blocks-0:block#4",
+                                      "nx:om-data-blocks-0:block#5"],
+                "source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#,
+        )
+        .expect("complete FSET graph");
         let blocks = (1u32..=5)
             .map(|ordinal| {
                 (

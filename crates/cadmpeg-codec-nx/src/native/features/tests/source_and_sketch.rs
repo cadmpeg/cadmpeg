@@ -178,15 +178,20 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 
     let missing_tool = BTreeMap::from([(10, 10)]);
     assert!(matches!(
-    crate::native::attach::boolean_feature_definition(&operation,
-        &missing_tool,
-        &crate::native::segments::BooleanOffsetStoreResolution::None,
-        &BTreeMap::new(),
-    ).unwrap(), FeatureDefinition::Operation(FeatureOperation::Combine {
-        operands,
-
-        ..
-    }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20")));
+        crate::native::attach::boolean_feature_definition(
+            &operation,
+            &missing_tool,
+            &crate::native::segments::BooleanOffsetStoreResolution::None,
+            &BTreeMap::new(),
+        )
+        .unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!(
+                (operands.target(), operands.tools()),
+                (BodySelection::Native(target), BodySelection::Native(tools))
+                    if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+            )
+    ));
 }
 
 #[test]
