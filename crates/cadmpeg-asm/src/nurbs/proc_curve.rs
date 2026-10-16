@@ -3,8 +3,8 @@
 
 use crate::kernel_header::RefWidth;
 use crate::nurbs::blend::{
-    decode_optional_rolling_ball_surface, decode_rolling_ball_side, decode_surface_ranges,
-    optional_rolling_ball_surface, surface_ranges,
+    decode_optional_rolling_ball_surface, decode_rolling_ball_side, optional_rolling_ball_surface,
+    surface_ranges,
 };
 use crate::nurbs::core::{
     curve_block, decode_curve_block, decode_surface_block, owned_curve_cache_resolving_refs,
@@ -16,9 +16,8 @@ use crate::nurbs::proc_surface::{
     EmbeddedLawFormula,
 };
 use crate::nurbs::reader::{
-    normalized, take_bool, take_double_payload, take_f64, take_float_array_payloads,
-    take_native_ident, take_native_string, take_native_vec3, take_range_value, take_tagged_int,
-    Nullable, LEN_TO_MM,
+    normalized, take_bool, take_double_payload, take_float_array_payloads, take_native_ident,
+    take_native_string, take_native_vec3, take_range_value, take_tagged_int, Nullable, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
     find_owned_intcurve_subtype, find_owned_subtype_marker, subtype_span,
@@ -2762,11 +2761,10 @@ fn decode_embedded_surface(
     position: &mut usize,
     int_width: RefWidth,
 ) -> Option<SurfaceGeometry> {
-    decode_embedded_surface_fields(bytes, position, int_width, false).map(|(surface, _)| surface)
+    decode_embedded_surface_fields(bytes, position, int_width, false).map(|support| support.surface)
 }
 
-/// Decode one embedded analytic or spline support surface. Token-space
-/// counterpart of [`decode_embedded_surface`].
+/// Decode one embedded analytic or spline support surface.
 pub(super) fn embedded_surface(cur: &mut Cur<'_>) -> Option<SurfaceGeometry> {
     embedded_surface_fields(cur, false).map(|value| value.surface)
 }
@@ -2786,7 +2784,6 @@ pub(super) fn embedded_support(cur: &mut Cur<'_>) -> Option<EmbeddedSupport> {
 }
 
 /// [`embedded_support`], preserving the four trailing U/V range fields.
-/// Token-space counterpart of [`decode_embedded_surface_with_ranges`].
 pub(super) fn embedded_surface_with_ranges(cur: &mut Cur<'_>) -> Option<EmbeddedSupport> {
     embedded_surface_fields(cur, true)
 }
@@ -2945,153 +2942,30 @@ fn embedded_surface_fields(cur: &mut Cur<'_>, preserve_ranges: bool) -> Option<E
     })
 }
 
+/// [`embedded_surface_with_ranges`] over the bytes at `position`, advanced
+/// past the support.
 pub(super) fn decode_embedded_surface_with_ranges(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     decode_embedded_surface_fields(bytes, position, int_width, true)
+        .map(|support| (support.surface, support.ranges))
 }
 
+/// Lex the payload at `position` and read one embedded support with the token
+/// grammar of [`embedded_surface_fields`], advancing `position` past it.
 fn decode_embedded_surface_fields(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
     preserve_ranges: bool,
-) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
-    let no_ranges = [[None, None], [None, None]];
-    let kind = take_native_ident(bytes, position)?;
-    if kind == "spline" {
-        let decoded = decode_surface_block(bytes, *position, int_width)?;
-        *position = decoded.end();
-        let ranges = if preserve_ranges {
-            decode_surface_ranges(bytes, position)?
-        } else {
-            no_ranges
-        };
-        return Some((
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(decoded.surface)),
-            ranges,
-        ));
-    }
-    let point = take_native_vec3(bytes, position, 0x13)?;
-    let point = Point3::new(
-        point[0] * LEN_TO_MM,
-        point[1] * LEN_TO_MM,
-        point[2] * LEN_TO_MM,
-    );
-    match kind.as_str() {
-        "plane" => {
-            let normal = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            let u_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            take_bool(bytes, position)?;
-            let ranges = if preserve_ranges {
-                decode_surface_ranges(bytes, position)?
-            } else {
-                no_ranges
-            };
-            let (origin, frame) = admitted_placement(point, normal, u_axis)?;
-            Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
-                    origin, frame,
-                ))),
-                ranges,
-            ))
-        }
-        "cone" => {
-            let native_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            let major = take_native_vec3(bytes, position, 0x14)?;
-            let radius = major[0].hypot(major[1]).hypot(major[2]) * LEN_TO_MM;
-            let ref_direction = normalized(major)?;
-            let ratio = take_f64(bytes, position)?;
-            take_bool(bytes, position)?;
-            take_bool(bytes, position)?;
-            let sine = take_f64(bytes, position)?;
-            let cosine = take_f64(bytes, position)?;
-            take_f64(bytes, position)?;
-            take_bool(bytes, position)?;
-            let ranges = if preserve_ranges {
-                decode_surface_ranges(bytes, position)?
-            } else {
-                for _ in 0..4 {
-                    take_bool(bytes, position)?;
-                }
-                no_ranges
-            };
-            let surface = if cone_is_circular_cylinder(sine, ratio) {
-                let (origin, frame) = admitted_placement(point, native_axis, ref_direction)?;
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
-                    origin,
-                    frame,
-                    PositiveLength::new(radius)?,
-                )))
-            } else {
-                let axis = if cone_axis_reversed(sine, cosine, ratio) {
-                    native_axis.negated()
-                } else {
-                    native_axis
-                };
-                let (origin, frame) = admitted_placement(point, axis, ref_direction)?;
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(ConeSurface::new(
-                    origin,
-                    frame,
-                    NonNegativeLength::new(radius)?,
-                    PositiveReal::new(ratio)?,
-                    Angle::new(sine.abs().atan2(cosine.abs()))?,
-                )))
-            };
-            Some((surface, ranges))
-        }
-        "sphere" => {
-            let radius = take_f64(bytes, position)? * LEN_TO_MM;
-            let ref_direction = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            take_bool(bytes, position)?;
-            let ranges = if preserve_ranges {
-                decode_surface_ranges(bytes, position)?
-            } else {
-                for _ in 0..4 {
-                    take_bool(bytes, position)?;
-                }
-                no_ranges
-            };
-            let (center, frame) = admitted_placement(point, axis, ref_direction)?;
-            Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(SphereSurface::new(
-                    center,
-                    frame,
-                    NonZeroLength::new(radius)?,
-                ))),
-                ranges,
-            ))
-        }
-        "torus" => {
-            let axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            let major_radius = take_f64(bytes, position)? * LEN_TO_MM;
-            let minor_radius = take_f64(bytes, position)? * LEN_TO_MM;
-            let ref_direction = normalized(take_native_vec3(bytes, position, 0x14)?)?;
-            take_bool(bytes, position)?;
-            let ranges = if preserve_ranges {
-                decode_surface_ranges(bytes, position)?
-            } else {
-                for _ in 0..4 {
-                    take_bool(bytes, position)?;
-                }
-                no_ranges
-            };
-            let (center, frame) = admitted_placement(point, axis, ref_direction)?;
-            Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(
-                    center,
-                    frame,
-                    PositiveLength::new(major_radius)?,
-                    NonZeroLength::new(minor_radius)?,
-                ))),
-                ranges,
-            ))
-        }
-        _ => None,
-    }
+) -> Option<EmbeddedSupport> {
+    let (tokens, offsets) = crate::sab::lex_payload(bytes, *position, int_width);
+    let mut cur = Cur::at(&tokens, 0);
+    let support = embedded_surface_fields(&mut cur, preserve_ranges)?;
+    *position = *offsets.get(cur.pos())?;
+    Some(support)
 }
 
 /// Native support presence, standalone geometry, the native chart of the
