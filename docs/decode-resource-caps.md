@@ -262,16 +262,20 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-creo`     | `src/curve.rs`                                     | `MAX_NONLINEAR_SOLVE_VARIABLES`           | `8`                                                     | 4    | Unknowns in one nonlinear solve block. A larger block is not attempted and stays unsolved (`None`); no loss at this site.                                                                                                                                                    |
 | `cadmpeg-codec-creo`     | `src/curve.rs`                                     | `MAX_NONLINEAR_SOLVE_ITERATIONS`          | `64`                                                    | 4    | Newton iterations. A block that has not converged stays unsolved; no loss at this site.                                                                                                                                                                                      |
 | `cadmpeg-codec-creo`     | `src/curve.rs`                                     | `MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS`   | `16`                                                    | 4    | Line-search halvings per iteration. No improving step leaves the block unsolved.                                                                                                                                                                                             |
+| `cadmpeg-codec-creo`     | `src/curve.rs`                                     | `MAX_RELATION_EXPRESSION_TEXT_BYTES`      | `4096`                                                  | 4    | String bytes one relation expression evaluation materializes: literals, variable reads, function results and concatenations. Excess leaves the condition or assignment without a value and reports `curve-expression.text-capped`; in a solve block it reports `curve-expression.solve-unresolved` naming the bound. |
+| `cadmpeg-codec-creo`     | `src/curve.rs`                                     | `MAX_RELATION_PROGRAM_TEXT_BYTES`         | `65_536`                                                | 4    | String bytes kept by the assigned values of one relation program. An assignment past it keeps no value and reports `curve-expression.text-capped`.                                                                                                                          |
 | `cadmpeg-codec-creo`     | `src/reference.rs`                                 | `MAX_FRAME_BYTES`                         | `12 * 9`                                                | 1    | Named conic frame: twelve scalar slots of at most nine bytes each.                                                                                                                                                                                                           |
 | `cadmpeg-codec-creo`     | `src/reference.rs`                                 | `MAX_FRAME_BYTES`                         | `12 * 9`                                                | 1    | Positional conic frame: the same twelve-slot width.                                                                                                                                                                                                                          |
-| `cadmpeg-codec-creo`     | `src/scalar.rs`                                    | `MAX_PLANE_SUPPORT_LANE_VARIANTS`         | `64`                                                    | 4    | Fixed result array for plane-support decodings, beside `enter_nested`. When full the walk stops and later variants are dropped without a signal.                                                                                                                             |
+| `cadmpeg-codec-creo`     | `src/scalar.rs`                                    | `MAX_PLANE_SUPPORT_LANE_VARIANTS`         | `64`                                                    | 4    | Fixed result array for plane-support decodings, beside `enter_nested`. When full the walk stops, the frame is not decoded, and `geometry.plane-support-variants-capped` is reported.                                                                                         |
+| `cadmpeg-codec-creo`     | `src/scalar.rs`                                    | `MAX_PLANE_SUPPORT_LANE_VISITS`           | `4096`                                                  | 4    | Steps of one plane-support lane search, which branches at each ambiguous slot. Exhaustion leaves the frame undecoded and reports `geometry.plane-support-variants-capped`.                                                                                                  |
 | `cadmpeg-codec-creo`     | `src/surface.rs`                                   | `MAX_INLINE_FRAME_CANDIDATES`             | `24`                                                    | 4    | Fixed arrays of inline-frame terminal closes and carriers. Overflow leaves the surface undecoded (`None`).                                                                                                                                                                   |
 | `cadmpeg-codec-creo`     | `src/surface.rs`                                   | `MAX_SUPPORT_FRAME_BYTES`                 | `12 * 9`                                                | 1    | Twelve scalar slots of at most nine bytes each.                                                                                                                                                                                                                              |
 | `cadmpeg-codec-creo`     | `src/surface.rs`                                   | `MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE`    | `3`                                                     | 2    | Declared slot count against remaining value bytes, before the token walk allocates.                                                                                                                                                                                          |
+| `cadmpeg-codec-creo`     | `src/decode/sweep/nurbs.rs`                        | `MAX_INTERPOLATION_MATRIX_ENTRIES`        | `1 << 20`                                               | 4    | Dense matrix entries implied by one interpolation spline curve or grid surface, checked before any matrix is built. Excess skips the curve or surface and records a lane refusal naming the bound, which the caller reports as a loss.                                     |
 | `cadmpeg-codec-creo`     | `src/decode/sweep/profiles.rs`                     | `MAX_CIRCULAR_PCURVE_SEGMENTS`            | `100_000`                                               | 2    | Quarter-turn segments implied by a record's arc span. Excess refuses the lane and records a lane refusal.                                                                                                                                                                    |
 | `cadmpeg-codec-creo`     | `src/decode/sweep/profiles.rs`                     | `MAX_NURBS_PROFILE_POINTS`                | `262_145`                                               | 4    | Sampled points of one NURBS profile. Excess leaves the profile unsampled (`None`).                                                                                                                                                                                           |
 | `cadmpeg-codec-creo`     | `src/decode/sweep/profiles.rs`                     | `MAX_DEPTH`                               | `24`                                                    | 4    | Adaptive subdivision depth of one NURBS profile span. A span not flat at the limit leaves the profile unsampled.                                                                                                                                                             |
-| `cadmpeg-codec-creo`     | `src/decode/sketch/equations_coordinate.rs`        | `MAX_SIGNED_BRANCHES`                     | `4096`                                                  | 4    | Sign branches (`2^n`) of a distance component. A larger component is skipped (`continue`); no loss at this site.                                                                                                                                                             |
+| `cadmpeg-codec-creo`     | `src/decode/sketch/equations_coordinate.rs`        | `MAX_SIGNED_BRANCHES`                     | `4096`                                                  | 4    | Sign branches (`2^n`) of a distance component. A larger component is skipped and reports `section.sign-branches-capped`; source metadata resolves every definition with the loss sink in both build modes.                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/container.rs`                                 | `MAX_UNCOMP`                              | `512 * 1024 * 1024`                                     | 2    | Declared uncompressed size of a block-marker candidate. Excess rejects the candidate and the marker walk continues.                                                                                                                                                          |
 | `cadmpeg-codec-sldprt`   | `src/swift.rs`                                     | `MAX_DEPTH`                               | `32`                                                    | 2    | SWIFT entity nesting depth. At the limit the caller skips that optional parse or feature walk.                                                                                                                                                                               |
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
@@ -356,16 +360,16 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 187.
+Production `MAX_*` constants: 191.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 64    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 76    |
+| 4    | Local work cap             | 80    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 187   |
+|      | Total                      | 191   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -374,7 +378,7 @@ By crate: `cadmpeg-core` 1, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
 `cadmpeg-protein` 2, `cadmpeg` 2, `cadmpeg-codec-step` 4,
 `cadmpeg-codec-iges` 14, `cadmpeg-codec-inventor` 2,
 `cadmpeg-codec-freecad` 9, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 13,
-`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 16, `cadmpeg-codec-sldprt` 11,
+`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
 and `cadmpeg-codec-catia` 44.
 
 ## Routing
@@ -423,5 +427,11 @@ Current codec routes:
   its operation or solution budget".
 - F3D recipe, pattern, parameter-order, spatial-profile, and history-binding
   bounds report losses. History binding uses `retained_bytes_available()`.
+- Creo relation string text is working storage, not retained bytes: native
+  record text is charged when it is serialized. Relation evaluation bounds it
+  with local text caps that drop the value and report
+  `curve-expression.text-capped`. Interpolation splines, plane-support lane
+  searches and section sign branches skip the item at a local cap and report
+  a loss naming the bound.
 - Inventor and FreeCAD have only kind 2 constants. `cadmpeg-codec-sat` has no
   production `MAX_*`.
