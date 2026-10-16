@@ -20,7 +20,7 @@ An `RSeDb` stream starts with a 16-byte database identifier, a u32 schema, an 8-
 
 ## 3. RSe metadata stream
 
-An `M<token>` stream starts with a u32 byte count and that many UTF-8 marker bytes. The supported marker is `RSe Meta Stream Version 8`. It is followed by u16 version 8, eight u16 header values, a u32-counted UTF-16LE display name, a 16-byte segment identifier, three u32 state words, two u32-counted UTF-8 timestamp strings, and a one-byte body form. One exact zlib member occupies the remainder of the stream.
+An `M<token>` stream starts with a u32 byte count and that many UTF-8 marker bytes. The supported marker is `RSe Meta Stream Version 8`. It is followed by u16 version 8, eight u16 header values, a u32-counted UTF-16LE display name, a 16-byte segment identifier, three u32 state words, two u32-counted UTF-8 timestamp strings, and a one-byte body form. The body form selects compression: method 1 is zlib and method 2 is Zstandard. Other methods are invalid. The compressed body occupies the remainder of the stream. Method 1 contains one complete zlib member with no trailing bytes. Method 2 contains one complete Zstandard frame with no trailing bytes. Concatenated frames and skippable frames are invalid. Truncated frames are invalid.
 
 The inflated body starts with seven u16 values and contains 11 sections plus a terminal 16-byte identifier. Sections 1 through 4 use a forward counted frame:
 
@@ -36,7 +36,7 @@ Sections 5 through 11 use backward framing. The eight bytes before a section pay
 
 ## 4. RSe bulk stream and records
 
-A `B<token>` stream starts with a 16-byte prefix and a u16 form. One exact zlib member occupies the remainder. The prefix and form are retained as envelope values; they do not select a segment by themselves.
+A `B<token>` stream starts with a 16-byte prefix and a u16 form. The low byte at offset 16 is the envelope value. The high byte at offset 17 is the compression method: 1 is zlib and 2 is Zstandard. Other methods are invalid. The compressed body starts at offset 18 and occupies the remainder. Its compression framing follows section 3. The prefix and full u16 form are retained as envelope values; they do not select a segment by themselves.
 
 Each stored section-1 block descriptor frames one record in block order. A record contains:
 

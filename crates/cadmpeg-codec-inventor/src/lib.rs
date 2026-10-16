@@ -99,3 +99,6 @@ impl CodecBackend for InventorCodec {
 mod golden_tests;
 #[cfg(test)]
 mod test_support;
+
+#[cfg(test)]
+mod integration_tests;

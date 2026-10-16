@@ -12,7 +12,7 @@ pub(crate) mod bulk_envelope {
     pub(crate) const LEN: usize = 18;
     /// Offset of `prefix` (`bytes[16]`). Spec §4.
     pub(crate) const PREFIX: usize = 0;
-    /// Offset of `form` (`u16`, little-endian). Spec §4.
+    /// Offset of `form` (`u8`). Spec §4.
     pub(crate) const FORM: usize = 16;
 }
 

@@ -605,9 +605,18 @@ anchor = "a 16-byte prefix"
 [[record.field]]
 name = "form"
 offset = 16
-type = "u16"
+type = "u8"
 source = "spec"
-anchor = "a u16 form"
+anchor = "The low byte at offset 16 is the envelope value"
+note = "Low byte of the retained u16 form."
+
+[[record.field]]
+name = "compression_method"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "The high byte at offset 17 is the compression method"
+note = "High byte of the retained u16 form: 1 = zlib; 2 = Zstandard."
 
 
 

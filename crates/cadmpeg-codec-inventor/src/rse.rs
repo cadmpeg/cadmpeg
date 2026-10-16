@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStreamId};
-use cadmpeg_container::compression::inflate_zlib_exact;
+use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zstd_exact};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::IdentityKey;
@@ -333,6 +333,10 @@ pub(crate) struct BulkForm(u16);
 impl BulkForm {
     pub(crate) const fn value(self) -> u16 {
         self.0
+    }
+
+    const fn compression_method(self) -> u8 {
+        self.0.to_le_bytes()[1]
     }
 }
 
@@ -758,7 +762,7 @@ fn parse_bulk_stream<'a>(
     let compressed = source
         .child(source.start() + envelope::LEN, source.end())
         .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;
-    let expanded = inflate_zlib_exact(ctx, compressed)?;
+    let expanded = expand_rse_body(ctx, compressed, form.compression_method())?;
     Ok(BulkEnvelope {
         prefix,
         form,
@@ -877,7 +881,7 @@ fn parse_meta_stream_v8<'a>(
     let compressed = source
         .child(cursor.position(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
-    let body = inflate_zlib_exact(ctx, compressed)?;
+    let body = expand_rse_body(ctx, compressed, body_form)?;
     let tables = parse_meta_tables(ctx, body)?;
     Ok(SegmentMeta {
         declared,
@@ -891,6 +895,20 @@ fn parse_meta_stream_v8<'a>(
         body,
         tables,
     })
+}
+
+fn expand_rse_body<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    method: u8,
+) -> Result<View<'a>, CodecError> {
+    match method {
+        1 => inflate_zlib_exact(ctx, source),
+        2 => inflate_zstd_exact(ctx, source),
+        _ => Err(CodecError::malformed(format_args!(
+            "unsupported RSe compression method {method}"
+        ))),
+    }
 }
 
 pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
@@ -1013,6 +1031,8 @@ pub(crate) fn database_band(path: &str) -> Option<StorageBand> {
 
 #[cfg(test)]
 mod tests {
+    mod compression;
+
     use std::collections::BTreeSet;
     use std::io::Write as _;
 
