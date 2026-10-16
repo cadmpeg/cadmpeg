@@ -16,6 +16,8 @@ use crate::records::{
     FeatureInputScalar, FeatureInputSurfaceSelection, PmiDimension,
 };
 
+use crate::resolved_features::feature_sources::FeatureSources;
+
 const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
     "feature_histories",
@@ -734,7 +736,7 @@ impl SldprtNative {
             lane.edge_selections.sort_by_key(|left| left.ordinal);
             lane.surface_selections = children(&surface_selections_by_parent, &lane.id);
             lane.surface_selections.sort_by_key(|left| left.ordinal);
-            let lane_features = features_with_lane_sources(&features, lane);
+            let lane_features = FeatureSources::for_lane(&features, lane);
             for record in &lane.edge_selections {
                 if edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -744,7 +746,7 @@ impl SldprtNative {
                 }
                 let references = match usize::try_from(record.offset) {
                     Ok(offset) => {
-                        let feature_kind = lane_features
+                        let feature_kind = features
                             .iter()
                             .find(|feature| feature.id == record.feature_ref)
                             .map(|feature| feature.kind.as_str())
@@ -878,7 +880,7 @@ impl SldprtNative {
                     )));
                 }
             }
-            let lane_features = features_with_lane_sources(&features, lane);
+            let lane_features = FeatureSources::for_lane(&features, lane);
             for record in &lane.edge_selections {
                 let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
@@ -1140,7 +1142,7 @@ fn edge_selection_disagrees_with_payload(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     record: &FeatureInputEdgeSelection,
-    edge_features: &[crate::records::Feature],
+    edge_features: &FeatureSources<'_>,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     Ok(match usize::try_from(record.offset) {
         Ok(offset) => crate::resolved_features::selections::compact_edge_selection_at(
@@ -1193,7 +1195,7 @@ fn surface_selection_disagrees_with_payload(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     record: &FeatureInputSurfaceSelection,
-    surface_features: &[crate::records::Feature],
+    surface_features: &FeatureSources<'_>,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     // An offset no index can name names no byte of the payload in memory, so
     // the selection states nothing the payload agrees with.
@@ -1223,23 +1225,6 @@ fn surface_selection_disagrees_with_payload(
             }
             Err(_) => None,
         } != record.terminal_feature_ref)
-}
-
-/// `features` with the object sources that `lane` names, or no features when
-/// the lane has no edge or surface selection to check against them.
-fn features_with_lane_sources(
-    features: &[crate::records::Feature],
-    lane: &FeatureInputLane,
-) -> Vec<crate::records::Feature> {
-    if lane.edge_selections.is_empty() && lane.surface_selections.is_empty() {
-        return Vec::new();
-    }
-    let mut features = features.to_vec();
-    crate::resolved_features::selections::enrich_feature_object_sources(
-        &mut features,
-        std::slice::from_ref(lane),
-    );
-    features
 }
 
 /// References to `records` grouped by parent id, each group in source order.

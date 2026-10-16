@@ -1040,7 +1040,7 @@ mod route_tests {
                 },
             )
         })
-        .expect("compute the circle parameter range from surface branch")
+        .expect("find the circle parameter range from the surface branch")
         .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
     }
@@ -1085,7 +1085,7 @@ mod route_tests {
                 },
             )
         })
-        .expect("compute the circle parameter range from surface branch")
+        .expect("find the circle parameter range from the surface branch")
         .is_none());
         assert!(crate::test_support::with_service_context(|ctx| {
             circle_parameter_range_from_surface_branch(
@@ -1103,7 +1103,7 @@ mod route_tests {
                 },
             )
         })
-        .expect("compute the circle parameter range from surface branch")
+        .expect("find the circle parameter range from the surface branch")
         .is_none());
         assert!(crate::test_support::with_service_context(|ctx| {
             circle_parameter_range_from_surface_branch(
@@ -1121,7 +1121,7 @@ mod route_tests {
                 },
             )
         })
-        .expect("compute the circle parameter range from surface branch")
+        .expect("find the circle parameter range from the surface branch")
         .is_none());
     }
 

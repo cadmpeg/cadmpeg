@@ -423,7 +423,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert_eq!(
         bodies_containing_edges(&ir, std::slice::from_ref(&edge_id))
-            .expect("compute the bodies containing edges"),
+            .expect("find the bodies containing the edges"),
         vec![body_id.clone()]
     );
 
@@ -439,7 +439,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert!(
         bodies_containing_edges(&duplicate_loop, std::slice::from_ref(&edge_id))
-            .expect("compute the bodies containing edges")
+            .expect("find the bodies containing the edges")
             .is_empty()
     );
 
@@ -458,7 +458,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert!(
         bodies_containing_edges(&duplicate_face, std::slice::from_ref(&edge_id))
-            .expect("compute the bodies containing edges")
+            .expect("find the bodies containing the edges")
             .is_empty()
     );
 
@@ -476,7 +476,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     );
     assert!(
         bodies_containing_edges(&duplicate_shell, std::slice::from_ref(&edge_id))
-            .expect("compute the bodies containing edges")
+            .expect("find the bodies containing the edges")
             .is_empty()
     );
 
@@ -489,7 +489,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert!(
         bodies_containing_edges(&duplicate_region, std::slice::from_ref(&edge_id))
-            .expect("compute the bodies containing edges")
+            .expect("find the bodies containing the edges")
             .is_empty()
     );
 
@@ -505,7 +505,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     });
     assert!(
         bodies_containing_edges(&duplicate_body, std::slice::from_ref(&edge_id))
-            .expect("compute the bodies containing edges")
+            .expect("find the bodies containing the edges")
             .is_empty()
     );
 }

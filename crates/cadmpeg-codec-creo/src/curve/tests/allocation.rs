@@ -249,7 +249,9 @@ fn affine_equation_merge_subtracts_coefficients() {
         constant: 1.0,
         coefficients: BTreeMap::from([("y".to_owned(), 1.0)]),
     };
-    let difference = left.combine_admitted(right, true).expect("service merge");
+    let difference = left
+        .combine(right, true)
+        .expect("subtract the affine expressions");
     assert_eq!(difference.constant, 1.0);
     assert_eq!(
         difference.coefficients,

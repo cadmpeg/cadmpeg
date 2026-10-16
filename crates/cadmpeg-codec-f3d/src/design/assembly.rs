@@ -289,10 +289,12 @@ pub(crate) fn project_assembly_joints(
                     .map_err(cadmpeg_core::CodecError::NotImplemented)?,
                 {
                     let [first, second] = carriers.selections().map(|selection| {
-                        super::identity::neutral_assembly_legacy_object_id(selection)
-                            .map(|id| JointOperand::root(id, Vec::new()))
+                        JointOperand::root(
+                            crate::ids::neutral_assembly_legacy_object_id(selection),
+                            Vec::new(),
+                        )
                     });
-                    [first?, second?]
+                    [first, second]
                 },
                 limits.as_ref(),
             ),
@@ -452,19 +454,27 @@ fn project_qualified_operands(
                                     crate::design::text::malformed_design(format_args!("{error}"))
                                 },
                             )?,
-                            super::identity::neutral_assembly_axial_object_id(&selectors[0])?,
+                            crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
                             Vec::new(),
                         )))
                     }
                     DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
                         scope_record_index,
-                    } => {
-                        project_joint_origin_operand(*scope_record_index, stream, scopes, features)
-                    }
+                    } => Ok(project_joint_origin_operand(
+                        *scope_record_index,
+                        stream,
+                        scopes,
+                        features,
+                    )),
                 },
                 DesignAssemblyOperandQualifier::JointOrigin {
                     scope_record_index, ..
-                } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
+                } => Ok(project_joint_origin_operand(
+                    *scope_record_index,
+                    stream,
+                    scopes,
+                    features,
+                )),
             }
         };
     let Some(first) = project(qualifiers[0])? else {
@@ -481,29 +491,27 @@ fn project_joint_origin_operand(
     stream: &str,
     scopes: &[DesignParameterScope],
     features: &[Feature],
-) -> Result<Option<JointOperand>, CodecError> {
-    let Some(target_scope) = unique_scope(
+) -> Option<JointOperand> {
+    let target_scope = unique_scope(
         scopes,
         stream,
         scope_record_index,
         &crate::records::feature::scope::DesignFeatureKind::JointOrigin,
-    ) else {
-        return Ok(None);
-    };
+    )?;
     if let Some(feature) = unique_feature(features, &target_scope.id) {
         if !matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
         ) {
-            return Ok(None);
+            return None;
         }
     } else if target_scope.joint_origin_transform().is_none() {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(JointOperand::root(
-        super::identity::neutral_feature_id(target_scope)?.into_string(),
+    Some(JointOperand::root(
+        crate::ids::neutral_feature_id(target_scope).into_string(),
         Vec::new(),
-    )))
+    ))
 }
 
 fn unique_scope<'a>(
@@ -1182,63 +1190,6 @@ mod tests {
         assert_ne!(
             crate::ids::neutral_assembly_axial_object_id(&first),
             crate::ids::neutral_assembly_axial_object_id(&second)
-        );
-    }
-
-    #[test]
-    fn assembly_axial_connector_identity_preserves_bytes() {
-        let mut identity = selector();
-        identity.external_link_name = "link:#% \u{2003}ç".to_owned();
-        for version in [
-            None,
-            Some(crate::records::feature::combine::DesignExternalVersion {
-                property_key: crate::records::identity::Located {
-                    value: "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF"
-                        .to_owned()
-                        .try_into()
-                        .unwrap(),
-                    offset: 0,
-                },
-                version_urn: crate::records::identity::Located {
-                    value: "urn:#% \u{a0}ç".to_owned(),
-                    offset: 0,
-                },
-            }),
-        ] {
-            identity.external_version = version;
-            assert_eq!(
-                crate::design::identity::neutral_assembly_axial_object_id(&identity).unwrap(),
-                crate::ids::neutral_assembly_axial_object_id(&identity)
-            );
-        }
-    }
-
-    #[test]
-    fn assembly_legacy_connector_identity_preserves_bytes() {
-        let selection = crate::records::feature::assembly::DesignAssemblyLegacySelection {
-            record_index: u32::MAX,
-            byte_offset: 0,
-            class_tag: "307".to_owned().try_into().unwrap(),
-            asset_id: "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF"
-                .to_owned()
-                .try_into()
-                .unwrap(),
-            asset_id_offset: 0,
-            context_id: "BCDEFABC-DEFA-4BCD-8EFA-BCDEFABCDEFA"
-                .to_owned()
-                .try_into()
-                .unwrap(),
-            context_id_offset: 0,
-            recipe_record_index: u32::MAX,
-            recipe_record_byte_offset: 0,
-            recipe_id: "Recipe:#% \u{2003}Ç".to_owned(),
-            recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
-            recipe_references: Vec::new(),
-            next_byte_offset: 0,
-        };
-        assert_eq!(
-            crate::design::identity::neutral_assembly_legacy_object_id(&selection).unwrap(),
-            crate::ids::neutral_assembly_legacy_object_id(&selection)
         );
     }
 }

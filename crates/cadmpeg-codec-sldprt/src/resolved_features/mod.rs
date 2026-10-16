@@ -111,6 +111,8 @@ mod relation_loci;
 
 mod relation_records;
 
+pub(crate) mod feature_sources;
+
 pub(crate) mod scalars;
 
 pub(crate) mod selections;

@@ -97,7 +97,7 @@ pub(crate) fn bind_form_cages(
                     push_form_cage_id(&mut resolved, &cage.id);
                 }
                 if valid && !resolved.is_empty() && distinct_form_cage_ids(&resolved) {
-                    let feature_id = crate::design::identity::neutral_feature_id(scope)?;
+                    let feature_id = crate::ids::neutral_feature_id(scope);
                     if let Some(feature) =
                         features.iter_mut().find(|feature| feature.id == feature_id)
                     {
@@ -158,7 +158,7 @@ pub(crate) fn bind_form_cages(
                 && resolved.len() == cages.len()
                 && distinct_form_cage_ids(&resolved)
             {
-                let feature_id = crate::design::identity::neutral_feature_id(scope)?;
+                let feature_id = crate::ids::neutral_feature_id(scope);
                 if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id)
                 {
                     if matches!(
@@ -187,7 +187,7 @@ pub(crate) fn bind_form_cages(
             && cages.len() == 1
             && cage_counts.as_slice() == [1]
         {
-            let feature_id = crate::design::identity::neutral_feature_id(scope)?;
+            let feature_id = crate::ids::neutral_feature_id(scope);
             if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
                 if matches!(
                     feature.evaluation.definition(),
@@ -240,7 +240,7 @@ pub(crate) fn bind_form_cages(
         if !distinct_form_cage_ids(&resolved) {
             continue;
         }
-        let feature_id = crate::design::identity::neutral_feature_id(scope)?;
+        let feature_id = crate::ids::neutral_feature_id(scope);
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };

@@ -527,8 +527,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             &profile_operand,
             &spatial_sketches[0],
             &resolution
-        )
-        .unwrap(),
+        ),
         Some(vec![0, 1])
     );
 
@@ -545,8 +544,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             &whole_sketch_operand,
             &spatial_sketches[0],
             &resolution
-        )
-        .unwrap(),
+        ),
         Some(vec![0, 1, 2])
     );
     assert_eq!(
@@ -587,8 +585,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             &profile_operand,
             &spatial_sketches[0],
             &noncoincident_resolution
-        )
-        .unwrap(),
+        ),
         None
     );
 }
@@ -638,7 +635,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         &sketch_entities,
     );
     assert_eq!(
-        resolved_loft_entity_selection_path(&group, &resolution).unwrap(),
+        resolved_loft_entity_selection_path(&group, &resolution),
         Some(
             PathRef::sketch_curves(
                 sketch.clone(),
@@ -660,11 +657,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         &sketches,
         &sketch_entities,
     );
-    assert!(
-        { resolved_loft_entity_selection_path(&group, &mixed_resolution) }
-            .unwrap()
-            .is_none()
-    );
+    assert!(resolved_loft_entity_selection_path(&group, &mixed_resolution).is_none());
 
     let incomplete_resolution = planar_resolution(
         &operands,
@@ -673,11 +666,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         &sketches,
         &sketch_entities,
     );
-    assert!(
-        { resolved_loft_entity_selection_path(&group, &incomplete_resolution) }
-            .unwrap()
-            .is_none()
-    );
+    assert!(resolved_loft_entity_selection_path(&group, &incomplete_resolution).is_none());
 }
 
 #[test]
@@ -726,7 +715,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
     };
 
     assert_eq!(
-        resolve_entity_selection_path(&group, &resolution).unwrap(),
+        resolve_entity_selection_path(&group, &resolution),
         Some(
             PathRef::spatial_sketch_curves(
                 spatial_sketch.clone(),
@@ -823,7 +812,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         spatial_sketch_entities: &[],
     };
     assert_eq!(
-        resolve_entity_selection_profile(&group, &resolution).unwrap(),
+        resolve_entity_selection_profile(&group, &resolution),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![1],)
                 .unwrap()
@@ -848,11 +837,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         spatial_sketches: &[],
         spatial_sketch_entities: &[],
     };
-    assert!(
-        { resolve_entity_selection_profile(&group, &ambiguous_resolution) }
-            .unwrap()
-            .is_none()
-    );
+    assert!(resolve_entity_selection_profile(&group, &ambiguous_resolution).is_none());
 }
 
 #[test]
@@ -908,7 +893,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     };
 
     assert_eq!(
-        resolve_entity_selection_profile(&group, &resolution).unwrap(),
+        resolve_entity_selection_profile(&group, &resolution),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_entities(sketch, vec![entity_id],)
                 .unwrap()
@@ -1008,8 +993,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
     .unwrap();
 
     assert_eq!(
-        resolved_sketch_profile_regions("stream", &operand, &source, &curves, &sketch_entities)
-            .unwrap(),
+        resolved_sketch_profile_regions("stream", &operand, &source, &curves, &sketch_entities),
         Some(vec![1, 0])
     );
 
@@ -1028,7 +1012,6 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         &curves,
         &sketch_entities
     )
-    .unwrap()
     .is_none());
 
     source
@@ -1047,7 +1030,6 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         &curves,
         &sketch_entities
     )
-    .unwrap()
     .is_none());
 }
 
@@ -1242,7 +1224,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         ),
     ];
     assert_eq!(
-        { crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops,) },
+        crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops,),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![3, 1, 2],)
                 .unwrap()
@@ -1266,7 +1248,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         ),
     ];
     assert_eq!(
-        { crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions,) },
+        crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions,),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
@@ -1280,30 +1262,26 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
     );
 
     assert_eq!(
-        {
-            crate::design::profile_select::merge_resolved_profile_selections(
-                &sketch,
-                &[loops[0].clone(), regions[0].clone()],
-            )
-        },
+        crate::design::profile_select::merge_resolved_profile_selections(
+            &sketch,
+            &[loops[0].clone(), regions[0].clone()],
+        ),
         None
     );
     assert_eq!(
-        {
-            crate::design::profile_select::merge_resolved_profile_selections(
-                &sketch,
-                &[
-                    loops[0].clone(),
-                    cadmpeg_ir::features::ProfileRef::Planar(
-                        cadmpeg_ir::features::PlanarProfileRef::sketch_selection(
-                            sketch.clone(),
-                            vec!["native-group".into()],
-                        )
-                        .unwrap(),
-                    ),
-                ],
-            )
-        },
+        crate::design::profile_select::merge_resolved_profile_selections(
+            &sketch,
+            &[
+                loops[0].clone(),
+                cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::sketch_selection(
+                        sketch.clone(),
+                        vec!["native-group".into()],
+                    )
+                    .unwrap(),
+                ),
+            ],
+        ),
         None
     );
 }

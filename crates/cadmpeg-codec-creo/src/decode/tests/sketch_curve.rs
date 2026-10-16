@@ -39,7 +39,7 @@ fn section_segment_radius_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
-    ({ checked_section_segment_radius_constraints(definition, sketch) })
+    checked_section_segment_radius_constraints(definition, sketch)
         .expect("compute the checked section segment radius constraints")
 }
 
@@ -49,14 +49,12 @@ fn section_segment_radius_constraints_for_emitted(
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
 ) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
-    ({
-        checked_section_segment_radius_constraints_for_emitted(
-            definition,
-            sketch,
-            emitted,
-            available_parameters,
-        )
-    })
+    checked_section_segment_radius_constraints_for_emitted(
+        definition,
+        sketch,
+        emitted,
+        available_parameters,
+    )
     .expect("compute the checked section segment radius constraints for emitted")
 }
 
@@ -180,7 +178,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").expect("valid test fixture");
     assert_eq!(
         section_segment_verhor_definition(&segment, &sketch, entity.clone())
-            .expect("service verhor admission"),
+            .expect("build the section segment orientation constraint"),
         Some(SketchConstraintDefinitionInput::Vertical {
             entity: entity.clone()
         })
@@ -188,7 +186,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     segment.vertical_horizontal = Some(1);
     assert_eq!(
         section_segment_verhor_definition(&segment, &sketch, entity.clone())
-            .expect("service verhor admission"),
+            .expect("build the section segment orientation constraint"),
         Some(SketchConstraintDefinitionInput::Horizontal {
             entity: entity.clone()
         })
@@ -200,7 +198,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         operands,
         ..
     }) = { section_segment_verhor_definition(&segment, &sketch, entity.clone()) }
-        .expect("service verhor admission")
+        .expect("build the section segment orientation constraint")
     else {
         panic!("an undefined line selector must remain native");
     };
@@ -216,7 +214,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
         section_segment_verhor_definition(&segment, &sketch, entity)
-            .expect("service verhor admission"),
+            .expect("build the section segment orientation constraint"),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     segment.vertical_horizontal = None;
@@ -226,7 +224,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
             &sketch,
             SketchEntityId::mint("synthetic:test:id#entity").expect("valid test fixture")
         )
-        .expect("service verhor admission"),
+        .expect("build the section segment orientation constraint"),
         None
     );
 }

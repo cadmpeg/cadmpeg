@@ -138,12 +138,12 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             1,
         )
     })
-    .expect("compute the resolved sketch profiles")
+    .expect("resolve the sketch profiles")
     .expect("spline profile");
     assert_eq!(profiles[0][0].start(), [1.0, 0.0]);
     assert_eq!(profiles[0][0].end(), [0.0, 1.0]);
     let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
-        .expect("compute the ordered extrusion profiles")
+        .expect("order the extrusion profiles")
         .expect("closed spline");
     let area = ordered[0].area();
     assert_eq!(
@@ -154,10 +154,10 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         profiles
     );
     assert!(area > 0.0);
-    assert!(profile_strictly_contains(&ctx, &profiles[0], [0.2, 0.2]).expect("service containment"));
-    assert!(
-        !profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0]).expect("service containment")
-    );
+    assert!(profile_strictly_contains(&ctx, &profiles[0], [0.2, 0.2])
+        .expect("check that the profile strictly contains the point"));
+    assert!(!profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0])
+        .expect("check that the profile strictly contains the point"));
     let diagonal = ProfileEntity::new(
         &ctx,
         SketchGeometry::nurbs(
@@ -332,7 +332,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     let outer = rectangle([-2.0, -2.0], [2.0, 2.0], false);
     let hole = rectangle([-1.0, -1.0], [1.0, 1.0], true);
     let profiles = ordered_extrusion_profiles(&ctx, vec![hole.clone(), outer.clone()])
-        .expect("compute the ordered extrusion profiles")
+        .expect("order the extrusion profiles")
         .expect("strict outer and hole");
     let outer_area = profiles[0].area();
     assert_eq!(profiles[0].entities(), &outer);
@@ -346,7 +346,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
             rectangle([-1.0, -1.0], [1.0, 1.0], false),
         ]
     )
-    .expect("compute the ordered extrusion profiles")
+    .expect("order the extrusion profiles")
     .is_none());
     assert!(ordered_extrusion_profiles(
         &ctx,
@@ -355,7 +355,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
             rectangle([1.0, -1.0], [3.0, 1.0], true),
         ]
     )
-    .expect("compute the ordered extrusion profiles")
+    .expect("order the extrusion profiles")
     .is_none());
 
     let circular_hole = [
@@ -388,7 +388,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         &ctx,
         vec![circular_hole, rectangle([-2.0, -2.0], [2.0, 2.0], false)],
     )
-    .expect("compute the ordered extrusion profiles")
+    .expect("order the extrusion profiles")
     .expect("arc-bounded hole");
     assert!(matches!(
         profiles[1].entities()[0].geometry(),

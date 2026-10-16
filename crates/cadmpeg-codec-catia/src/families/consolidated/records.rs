@@ -718,7 +718,8 @@ fn consolidated_edge_blocks_from_records(
 #[cfg(test)]
 fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
     let records = consolidated_records(data);
-    consolidated_topology_edge_runs_from_records(data, &records).expect("service decode")
+    consolidated_topology_edge_runs_from_records(data, &records)
+        .expect("decode the consolidated topology edge runs")
 }
 
 pub(crate) fn consolidated_topology_edge_runs_from_records(
@@ -771,7 +772,8 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_analytic_circle_edge_runs(data: &[u8]) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
     let records = consolidated_records(data);
-    consolidated_analytic_circle_edge_runs_from_records(data, &records).expect("service decode")
+    consolidated_analytic_circle_edge_runs_from_records(data, &records)
+        .expect("decode the consolidated analytic circle edge runs")
 }
 
 pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
@@ -858,7 +860,8 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
     let records = consolidated_records(data);
-    consolidated_class25_edge_runs_from_records(data, &records).expect("service decode")
+    consolidated_class25_edge_runs_from_records(data, &records)
+        .expect("decode the consolidated class 25 edge runs")
 }
 
 pub(crate) fn consolidated_class25_edge_runs_from_records(
@@ -924,7 +927,8 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
     let records = consolidated_records(data);
-    consolidated_edge_use_runs_from_records(data, &records).expect("service decode")
+    consolidated_edge_use_runs_from_records(data, &records)
+        .expect("decode the consolidated edge use runs")
 }
 
 pub(crate) fn consolidated_edge_use_runs_from_records(
@@ -2285,7 +2289,7 @@ mod tests {
                 &[None, binding()],
                 &carriers
             ))
-            .expect("service decode"),
+            .expect("resolve the support loci"),
             Some(vec![Point3::new(0.0, 0.0, 0.0); 2])
         );
         assert_eq!(
@@ -2295,7 +2299,7 @@ mod tests {
                 &[binding(), binding()],
                 &carriers
             ))
-            .expect("service decode"),
+            .expect("resolve the support loci"),
             None
         );
     }
@@ -2385,12 +2389,12 @@ mod tests {
         let binding = crate::test_support::with_service_context(|ctx| {
             super::resolve_side_support(ctx, pcurve, &points, &carriers)
         })
-        .expect("service decode")
+        .expect("resolve the side support")
         .expect("unique cylinder");
         let lifted = crate::test_support::with_service_context(|ctx| {
             super::support_points(ctx, &binding, pcurve, &carriers)
         })
-        .expect("service decode")
+        .expect("evaluate the support points")
         .expect("lifted cylinder sites");
         assert_eq!(
             lifted,

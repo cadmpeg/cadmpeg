@@ -2,9 +2,7 @@
 //! External ids and saved-section entity identity.
 
 use super::super::sketch::geometry::saved_section_entity_geometry;
-use super::super::sketch_ids::{
-    sketch_entity_id_admitted, sketch_identity_scope, sketch_native_ref_admitted,
-};
+use super::super::sketch_ids::{sketch_entity_id, sketch_identity_scope, sketch_native_ref};
 use super::super::sweep::nurbs::saved_spline_sketch_geometry;
 use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
@@ -192,7 +190,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
         format!("saved:offset:{offset}")
     };
     let id = if external_id.is_some() {
-        sketch_entity_id_admitted(sketch, &suffix)
+        sketch_entity_id(sketch, &suffix)
     } else {
         match kind {
             SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => {
@@ -210,7 +208,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
                 );
                 SketchEntityId::try_from(text).ok()
             }
-            _ => sketch_entity_id_admitted(sketch, &suffix),
+            _ => sketch_entity_id(sketch, &suffix),
         }
     };
     let Some(id) = id else {
@@ -228,7 +226,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
             ),
         )
         .with_construction(true)
-        .with_native_ref(Some(sketch_native_ref_admitted(sketch))),
+        .with_native_ref(Some(sketch_native_ref(sketch))),
         offset,
     )))
 }
@@ -387,16 +385,14 @@ mod tests {
         );
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let (entity, offset) = ({
-            super::unresolved_saved_section_entity(
-                &definition,
-                &sketch,
-                &saved,
-                &std::collections::BTreeSet::new(),
-                &std::collections::BTreeSet::new(),
-            )
-        })
-        .expect("service admission")
+        let (entity, offset) = super::unresolved_saved_section_entity(
+            &definition,
+            &sketch,
+            &saved,
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        )
+        .expect("build the unresolved saved section entity")
         .expect("saved dummy entity");
         assert_eq!(offset, 9);
         assert_eq!(

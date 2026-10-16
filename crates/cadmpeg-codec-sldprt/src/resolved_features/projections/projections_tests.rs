@@ -1452,14 +1452,12 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let groups = ({
-        variable_fillet_radius_groups(
-            "variable",
-            std::slice::from_ref(&history),
-            std::slice::from_ref(&lane),
-            &[&selection],
-        )
-    })
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+        &[&selection],
+    )
     .expect("vertex join");
     assert!(matches!(
         groups.as_slice(),
@@ -1645,9 +1643,8 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups =
-        ({ variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection]) })
-            .expect("legacy edge-control join");
+    let groups = variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection])
+        .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
         [super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
@@ -1714,14 +1711,12 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         terminal_feature_ref: None,
     };
 
-    let groups = ({
-        variable_fillet_radius_groups(
-            "variable",
-            std::slice::from_ref(&history),
-            &[],
-            &[&selection],
-        )
-    })
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        std::slice::from_ref(&history),
+        &[],
+        &[&selection],
+    )
     .expect("endpoint-less two-control roster");
     assert!(matches!(
         groups.as_slice(),

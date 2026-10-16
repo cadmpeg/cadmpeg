@@ -20,7 +20,8 @@ fn port_candidate_search_refuses_depth_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     assert_eq!(
-        bind_edge_port_candidates(&ctx, &ports, &candidates).expect("bind edge port candidates"),
+        bind_edge_port_candidates(&ctx, &ports, &candidates)
+            .expect("bind the edge port candidates"),
         Some(vec![[0, 1], [1, 2]]),
     );
 
@@ -30,7 +31,7 @@ fn port_candidate_search_refuses_depth_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     assert!(bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous)
-        .expect("bind edge port candidates")
+        .expect("bind the edge port candidates")
         .is_none());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -166,7 +167,7 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
     assert_eq!(
         topology
             .edge_vertices(&ctx)
-            .expect("compute the edge vertices")
+            .expect("resolve the edge vertices")
             .expect("resolved edge endpoints"),
         vec![[0, 1], [1, 2], [2, 3], [0, 3]]
     );
@@ -180,7 +181,7 @@ fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
 
     assert!(
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &local_ports)
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .is_some()
     );
     assert!(crate::solve::mesh_quotient::initial_mesh_quotient(
@@ -188,7 +189,7 @@ fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
         4,
         &prematurely_oriented_ports
     )
-    .expect("compute the initial mesh quotient")
+    .expect("build the initial mesh quotient")
     .is_none());
 }
 
@@ -343,7 +344,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     assert_eq!(
         selected
             .edge_vertices(&ctx)
-            .expect("compute the edge vertices")
+            .expect("resolve the edge vertices")
             .expect("selected edge vertices"),
         [[0, 1], [1, 2], [2, 3], [3, 0]]
     );
@@ -360,7 +361,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     assert_eq!(
         searched
             .edge_vertices(&ctx)
-            .expect("compute the edge vertices")
+            .expect("resolve the edge vertices")
             .expect("searched edge vertices")
             .into_iter()
             .map(|vertices| {
@@ -613,7 +614,7 @@ fn mesh_coverage_reports_one_gap_per_independent_cycle() {
     };
     let coverage =
         crate::test_support::with_service_context(|ctx| mesh_face_coverage(ctx, &analysis, &[]))
-            .expect("service decode")
+            .expect("build the mesh face coverage")
             .expect("uncovered cycles are valid");
     assert_eq!(coverage.len(), FACES);
     assert!(coverage
@@ -633,7 +634,7 @@ fn endpoint_pruning_with_known_domains_keeps_them() {
             &candidates,
         )
     })
-    .expect("service decode")
+    .expect("prune the mesh endpoint candidates")
     .expect("known domains admit the quad");
     assert_eq!(pruned, candidates);
 }

@@ -715,7 +715,7 @@ mod tests {
                         None,
                         None,
                     )
-                    .expect("compute the distinct domain matching") else {
+                    .expect("find a distinct domain matching") else {
                         continue;
                     };
                     let mut pruned = original.clone();
@@ -737,7 +737,7 @@ mod tests {
                                 None,
                                 Some(MatchingEdgeConstraint::Require(domain, point)),
                             )
-                            .expect("compute the distinct domain matching")
+                            .expect("find a distinct domain matching")
                             .is_some();
                             assert_eq!(
                                 pruned[domain].contains(&point),
@@ -765,7 +765,7 @@ mod tests {
             None,
             None,
         )
-        .expect("compute the distinct domain matching")
+        .expect("find a distinct domain matching")
         .is_none());
     }
 

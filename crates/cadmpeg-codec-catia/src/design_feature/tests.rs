@@ -899,7 +899,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         )
     })
     .unwrap();
-    ({ transfer.assign_parameter_owners(&mut ir, &native) }).unwrap();
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(
         ir.model
@@ -1029,7 +1029,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         )
     })
     .unwrap();
-    ({ transfer.assign_parameter_owners(&mut ir, &native) }).unwrap();
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     let child_feature =
         FeatureId::mint("synthetic:test:feature#child-operation").expect("identity grammar");
@@ -1078,23 +1078,20 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     ir.model.parameters.extend([first, second]);
 
     (normalize_parameter_names(&mut ir));
-    ({
-        assign_native_operation_parameter_values(
-            &mut ir,
-            &HashMap::from([
-                (
-                    ParameterId::mint("synthetic:test:id#first".to_string())
-                        .expect("identity grammar"),
-                    FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
-                ),
-                (
-                    ParameterId::mint("synthetic:test:id#second".to_string())
-                        .expect("identity grammar"),
-                    FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
-                ),
-            ]),
-        )
-    })
+    assign_native_operation_parameter_values(
+        &mut ir,
+        &HashMap::from([
+            (
+                ParameterId::mint("synthetic:test:id#first".to_string()).expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
+            ),
+            (
+                ParameterId::mint("synthetic:test:id#second".to_string())
+                    .expect("identity grammar"),
+                FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
+            ),
+        ]),
+    )
     .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
@@ -1145,16 +1142,14 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     ir.model.parameters.push(value);
 
     (normalize_parameter_names(&mut ir));
-    ({
-        assign_native_operation_parameter_values(
-            &mut ir,
-            &HashMap::from([(
-                ParameterId::mint("synthetic:test:id#pattern-parameter".to_string())
-                    .expect("identity grammar"),
-                FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
-            )]),
-        )
-    })
+    assign_native_operation_parameter_values(
+        &mut ir,
+        &HashMap::from([(
+            ParameterId::mint("synthetic:test:id#pattern-parameter".to_string())
+                .expect("identity grammar"),
+            FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
+        )]),
+    )
     .unwrap();
 
     assert_eq!(
@@ -1409,7 +1404,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
             pmi: None,
             native_ref: Some(parameter_entity.id.clone()),
         });
-    ({ transfer.assign_parameter_owners(&mut ir, &native) }).unwrap();
+    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
@@ -1592,7 +1587,9 @@ fn parameter_owner_resolves_through_entity_record_to_object_feature() {
     };
     let mut ir = CadIr::empty();
     ir.model.parameters.push(parameter("one", "owner-entity"));
-    ({ transfer.assign_parameter_owners(&mut ir, &native) }).expect("assign parameter owners");
+    transfer
+        .assign_parameter_owners(&mut ir, &native)
+        .expect("assign parameter owners");
     assert_eq!(ir.model.parameters[0].owner.as_ref(), Some(&feature_id));
 }
 
@@ -1646,7 +1643,7 @@ fn native_operation_map_holds_owned_parameter_value_by_name() {
         ir.model.parameters[0].id.clone(),
         ir.model.features[0].id.clone(),
     )]);
-    ({ assign_native_operation_parameter_values(&mut ir, &owners) })
+    assign_native_operation_parameter_values(&mut ir, &owners)
         .expect("assign native operation parameter values");
     let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
         ir.model.features[0].evaluation.definition()

@@ -619,7 +619,7 @@ mod tests {
 
         let candidates =
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("check pairs within bound");
+                .expect("find the endpoint pair candidates");
         assert_eq!(
             candidates
                 .iter()
@@ -630,7 +630,7 @@ mod tests {
         assert!(crate::test_support::with_service_context(|ctx| {
             pairs_within_bound(ctx, &occurrences[..4])
         })
-        .expect("check pairs within bound")
+        .expect("find the endpoint pair candidates")
         .is_empty());
     }
 
@@ -646,7 +646,7 @@ mod tests {
 
         assert_eq!(
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("check pairs within bound")
+                .expect("find the endpoint pair candidates")
                 .iter()
                 .map(|candidate| candidate.support_record_ordinals)
                 .collect::<Vec<_>>(),
@@ -676,7 +676,7 @@ mod tests {
 
         assert_eq!(
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("check pairs within bound")[0]
+                .expect("find the endpoint pair candidates")[0]
                 .support_record_ordinals,
             [1, 2]
         );
@@ -748,7 +748,7 @@ mod tests {
 
         assert!(
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("check pairs within bound")
+                .expect("find the endpoint pair candidates")
                 .is_empty()
         );
     }
@@ -765,7 +765,7 @@ mod tests {
 
         assert_eq!(
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("check pairs within bound")
+                .expect("find the endpoint pair candidates")
                 .iter()
                 .map(|candidate| candidate.support_record_ordinals)
                 .collect::<Vec<_>>(),

@@ -126,7 +126,7 @@ fn referenced_inline_compact_x_cylinder_accepts_oblique_trim_containment() {
             &scalar::ScalarCache::default(),
         )
     })
-    .expect("service scalar admission")
+    .expect("decode the inline surface body")
     .and_then(|body| body.carrier)
     .expect("compact X frame resolves from contained oblique-trim evidence") else {
         panic!("referenced inline body resolves a cylinder");
@@ -364,7 +364,7 @@ fn selector_envelope_places_a_compact_y_cylinder() {
                 &scalar::ScalarCache::default(),
             )
         })
-        .expect("service scalar admission")
+        .expect("decode the inline surface body")
         .and_then(|body| body.carrier)
         .and_then(|carrier| match carrier {
             InlineSurfaceCarrier::Cylinder { frame, .. } => Some(frame),
@@ -414,7 +414,7 @@ fn selector_envelope_decodes_bare_zero_and_oblique_outline() {
             &scalar::ScalarCache::default(),
         )
     })
-    .expect("service scalar admission")
+    .expect("decode the inline surface body")
     .and_then(|body| body.carrier)
     .expect("bare-zero selector envelope") else {
         panic!("selector envelope resolves a cylinder");
@@ -451,7 +451,7 @@ fn selector_placeholder_resolves_from_one_radial_extreme() {
             &scalar::ScalarCache::default(),
         )
     })
-    .expect("service scalar admission")
+    .expect("decode the inline surface body")
     .and_then(|body| body.carrier)
     .expect("radius-witnessed selector placeholder") else {
         panic!("selector placeholder resolves a cylinder");
@@ -512,7 +512,7 @@ fn four_bound_inline_envelope_accepts_oblique_axial_containment() {
             &scalar::ScalarCache::default(),
         )
     })
-    .expect("service scalar admission")
+    .expect("decode the inline surface body")
     .and_then(|body| body.carrier)
     .expect("contained four-bound envelope resolves one carrier") else {
         panic!("cylinder grammar resolves a cylinder carrier");
@@ -552,7 +552,7 @@ fn four_bound_inline_envelope_accepts_an_endpoint_anchored_oblique_trim() {
             &scalar::ScalarCache::default(),
         )
     })
-    .expect("service scalar admission")
+    .expect("decode the inline surface body")
     .and_then(|body| body.carrier)
     .expect("four-bound envelope and compact frame resolve one carrier") else {
         panic!("cylinder grammar resolves a cylinder carrier");
@@ -603,7 +603,7 @@ fn four_bound_inline_envelope_decodes_directrix_dict_outline() {
             &scalar::ScalarCache::default(),
         )
     })
-    .expect("service scalar admission")
+    .expect("decode the inline surface body")
     .and_then(|body| body.carrier)
     .expect("directrix-DICT outline and compact frame resolve one carrier") else {
         panic!("inline body resolves a cylinder carrier");
@@ -641,7 +641,7 @@ fn inline_envelope_rejects_lane_aliases_by_geometry() {
             &scalar::ScalarCache::default(),
         )
     })
-    .expect("service scalar admission")
+    .expect("decode the inline surface body")
     .and_then(|body| body.carrier)
     .expect("outline containment rejects the alternate scalar lane") else {
         panic!("inline body resolves a cylinder carrier");
@@ -682,7 +682,7 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert!(crate::decode::with_service_context(
         |ctx| torus.has_inline_non_plane_local_system_suffix(ctx)
     )
-    .expect("service scalar admission"));
+    .expect("check that the surface has an inline non-plane local system suffix"));
     assert_eq!(torus.boundary, SurfaceBodyBoundary::CompoundClose);
 
     let compact = [
@@ -701,7 +701,7 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert!(crate::decode::with_service_context(
         |ctx| cylinder.has_inline_non_plane_local_system_suffix(ctx)
     )
-    .expect("service scalar admission"));
+    .expect("check that the surface has an inline non-plane local system suffix"));
 }
 
 #[test]

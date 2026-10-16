@@ -180,7 +180,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#angle")
         .expect("identity grammar");
     assert!(matches!(
-        null_locus_dimension_definition(&axis_pair, &entity, "Angular Dimension-2", std::f64::consts::FRAC_PI_4, parameter.clone(), TEST_LINEAR_TOLERANCE).transpose().unwrap(),
+        null_locus_dimension_definition(&axis_pair, &entity, "Angular Dimension-2", std::f64::consts::FRAC_PI_4, parameter.clone(), TEST_LINEAR_TOLERANCE),
         Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
@@ -195,8 +195,6 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         parameter.clone(),
         TEST_LINEAR_TOLERANCE
     )
-    .transpose()
-    .unwrap()
     .is_none());
     let mut draft = axis_pair.into_draft();
     draft.loci[0].role = 13;
@@ -209,8 +207,6 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         parameter.clone(),
         TEST_LINEAR_TOLERANCE
     )
-    .transpose()
-    .unwrap()
     .is_none());
 
     let radial_entity = SketchEntity::new(
@@ -223,7 +219,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         .unwrap(),
     );
     assert!(matches!(
-        null_locus_dimension_definition(&pair, &radial_entity, "Diameter Dimension-2", 0.2, parameter.clone(), TEST_LINEAR_TOLERANCE).transpose().unwrap(),
+        null_locus_dimension_definition(&pair, &radial_entity, "Diameter Dimension-2", 0.2, parameter.clone(), TEST_LINEAR_TOLERANCE),
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
@@ -237,8 +233,6 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         parameter,
         0.0
     )
-    .transpose()
-    .unwrap()
     .is_none());
 }
 

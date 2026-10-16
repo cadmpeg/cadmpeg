@@ -1577,7 +1577,8 @@ pub(crate) fn b2_long_61_from_records(
 #[cfg(test)]
 fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
     let records = consolidated_records(data);
-    b2_class5b5c_records_from_records(data, &records).expect("service decode")
+    b2_class5b5c_records_from_records(data, &records)
+        .expect("decode the B2 class 5B and 5C control records")
 }
 
 pub(crate) fn b2_class5b5c_records_from_records(

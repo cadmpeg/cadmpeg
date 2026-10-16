@@ -44,6 +44,8 @@ pub(crate) enum F3dLossCode {
     HistoryBindingBudgetExceeded,
     /// A Design recipe side-sequence search exceeded its local work cap.
     RecipeSideSearchBudgetExceeded,
+    /// Ordering one owner scope's Design parameters exceeded its local work cap.
+    ParameterOrderBudgetExceeded,
     /// An ASM history span stays opaque because record framing failed.
     HistoryRecordFramingFailed,
     /// Design body-map pairs do not resolve to a body in the named BREP blob.
@@ -178,9 +180,9 @@ pub(crate) enum F3dLossCode {
     SourcePreservedImageUnavailable,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
-    /// The selected write target differs from the same-format source dialect.
     /// Export omits records named by the counted loss message.
     WriterAppearancePropertiesOmitted,
+    /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
@@ -214,6 +216,7 @@ impl F3dLossCode {
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::RecipeSideSearchBudgetExceeded,
+        Self::ParameterOrderBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
         Self::ReferenceImageNativeRetained,
@@ -311,6 +314,7 @@ impl F3dLossCode {
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
+            Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
@@ -405,6 +409,7 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::RecipeSideSearchBudgetExceeded
+            | Self::ParameterOrderBudgetExceeded
             | Self::HistoryRecordFramingFailed
             | Self::MeshContainerUndecoded
             | Self::MissingGeometryStream
@@ -511,6 +516,7 @@ impl F3dLossCode {
             | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
             | Self::RecipeSideSearchBudgetExceeded
+            | Self::ParameterOrderBudgetExceeded
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
@@ -626,6 +632,7 @@ mod tests {
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "feature.recipe-search-budget-exceeded",
+                "parameter.order-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
                 "appearance.reference-image-native",

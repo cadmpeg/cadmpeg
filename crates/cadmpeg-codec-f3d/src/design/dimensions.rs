@@ -24,17 +24,6 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-/// Unwrap `Ok`, or return `Some(Err)` from a function that returns
-/// `Option<Result<_, CodecError>>`.
-macro_rules! ok_or_some_err {
-    ($result:expr) => {
-        match $result {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        }
-    };
-}
-
 fn copy_dimension_source_kind(
     parameter: &DesignParameter,
 ) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
@@ -195,7 +184,11 @@ pub(crate) fn project_dimension_constraints(
     linear_tolerance: f64,
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
     let constraints = project_all_dimension_constraints(inputs, &[], linear_tolerance)?;
-    retain_planar_dimension_constraints(inputs.placements, spatial_sketches, constraints)
+    Ok(retain_planar_dimension_constraints(
+        inputs.placements,
+        spatial_sketches,
+        constraints,
+    ))
 }
 
 /// Project planar dimensions with direct Fusion presentation frames. The
@@ -210,14 +203,18 @@ pub(crate) fn project_dimension_constraints_with_presentations(
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
     let constraints =
         project_all_dimension_constraints(inputs, presentation_frames, linear_tolerance)?;
-    retain_planar_dimension_constraints(inputs.placements, spatial_sketches, constraints)
+    Ok(retain_planar_dimension_constraints(
+        inputs.placements,
+        spatial_sketches,
+        constraints,
+    ))
 }
 
 fn retain_planar_dimension_constraints(
     placements: &[DesignSketchPlacement],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     constraints: Vec<cadmpeg_ir::sketches::SketchConstraint>,
-) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
+) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     let mut spatial_sketch_ids = HashSet::new();
     for sketch in spatial_sketches {
         spatial_sketch_ids.insert(&sketch.id);
@@ -226,10 +223,9 @@ fn retain_planar_dimension_constraints(
     for constraint in constraints {
         let mut keep = true;
         for placement in placements {
-            if crate::design::identity::neutral_sketch_id(placement)? == constraint.sketch {
-                keep = !spatial_sketch_ids.contains(
-                    &crate::design::identity::neutral_spatial_sketch_id(placement)?,
-                );
+            if crate::ids::neutral_sketch_id(placement) == constraint.sketch {
+                keep =
+                    !spatial_sketch_ids.contains(&crate::ids::neutral_spatial_sketch_id(placement));
                 break;
             }
         }
@@ -237,7 +233,7 @@ fn retain_planar_dimension_constraints(
             output.push(constraint);
         }
     }
-    Ok(output)
+    output
 }
 
 fn project_all_dimension_constraints(
@@ -272,15 +268,12 @@ fn project_all_dimension_constraints(
             continue;
         };
         if let Ok(suffix) = u32::try_from(placement.entity_id.suffix()) {
-            sketches.insert(
-                (scope, suffix),
-                crate::design::identity::neutral_sketch_id(placement)?,
-            );
+            sketches.insert((scope, suffix), crate::ids::neutral_sketch_id(placement));
         }
         if let Some(scope_record_index) = placement.scope_record_index {
             sketches_by_scope.insert(
                 (scope, scope_record_index),
-                crate::design::identity::neutral_sketch_id(placement)?,
+                crate::ids::neutral_sketch_id(placement),
             );
         }
     }
@@ -349,7 +342,7 @@ fn project_all_dimension_constraints(
     let parameter_for = |scope: &str, companion_record_index: u32| {
         let record_index = *parameter_by_companion.get(&(scope, companion_record_index))?;
         let parameter = *parameters.get(&(scope, record_index))?;
-        Some(crate::design::identity::neutral_parameter_id(parameter).map(|id| (parameter, id)))
+        Some((parameter, crate::ids::neutral_parameter_id(parameter)))
     };
     let presentation_for_owner = |scope: &str, owner_record_index: u32| {
         let mut matches = presentation_frames.iter().filter(|frame| {
@@ -399,9 +392,9 @@ fn project_all_dimension_constraints(
                           field: cadmpeg_core::text::NonBlankString,
                           role: Option<u32>,
                           record_index: u32|
-     -> Result<SketchNativeOperand, CodecError> {
+     -> SketchNativeOperand {
         let geometry = native_geometry.get(&(scope, record_index));
-        Ok(SketchNativeOperand {
+        SketchNativeOperand {
             native_kind: match geometry {
                 Some((kind, _, _)) => kind.clone(),
                 None => cadmpeg_core::nonblank_literal!("record"),
@@ -411,7 +404,7 @@ fn project_all_dimension_constraints(
             native_ref: geometry
                 .filter(|_| !projected.contains_key(&(scope, record_index)))
                 .map(|(_, _, native_ref)| (*native_ref).to_owned()),
-        })
+        }
     };
     let native_definition =
         |scope: &str,
@@ -419,17 +412,17 @@ fn project_all_dimension_constraints(
          state: Option<u64>,
          operands: &[(cadmpeg_core::text::NonBlankString, Option<u32>, u32)],
          parameter|
-         -> Result<Definition, CodecError> {
+         -> Definition {
             let mut entity_ids = Vec::new();
             let mut native_operands = Vec::new();
             for (field, role, record_index) in operands {
                 if let Some(entity) = projected.get(&(scope, *record_index)) {
                     entity_ids.push(entity.id().clone());
                 }
-                let operand = native_operand(scope, field.clone(), *role, *record_index)?;
+                let operand = native_operand(scope, field.clone(), *role, *record_index);
                 native_operands.push(operand);
             }
-            Ok(Definition::Native {
+            Definition::Native {
                 native_kind: source_kind,
                 native_state: state,
                 native_flags: None,
@@ -437,37 +430,34 @@ fn project_all_dimension_constraints(
                 entities: entity_ids,
                 parameter: Some(parameter),
                 operands: native_operands,
-            })
+            }
         };
     let exact_definition = |scope: &str,
                             source_parameter: &DesignParameter,
                             indices: &[u32],
                             parameter: cadmpeg_ir::features::ParameterId|
-     -> Result<Option<Definition>, CodecError> {
+     -> Option<Definition> {
         if !design_dimension_unit(source_parameter) {
-            return Ok(None);
+            return None;
         }
         let source_kind = source_parameter.source_kind();
         let evaluated_value = source_parameter.evaluated_value().get();
         let mut entities = Vec::new();
         for record_index in indices {
-            let Some(entity) = projected.get(&(scope, *record_index)).copied() else {
-                return Ok(None);
-            };
+            let entity = projected.get(&(scope, *record_index)).copied()?;
             entities.push(entity);
         }
         if let [entity] = entities.as_slice() {
             let copied = parameter.clone();
             if let Some(definition) =
                 radial_dimension_definition(entity, source_kind, evaluated_value, copied)
-                    .transpose()?
             {
-                return Ok(Some(definition));
+                return Some(definition);
             }
         }
         if let [first, second] = entities.as_slice() {
             if first.id() == second.id() {
-                return Ok(None);
+                return None;
             }
         }
         if source_kind.starts_with("Linear Dimension") && entities.len() == 2 {
@@ -475,9 +465,8 @@ fn project_all_dimension_constraints(
             let copied = parameter.clone();
             if let Some(definition) =
                 directional_point_dimension(&entities, evaluated_mm, copied, linear_tolerance)
-                    .transpose()?
             {
-                return Ok(Some(definition));
+                return Some(definition);
             }
             if point_line_separation(entities[0], entities[1], evaluated_mm, linear_tolerance)
                 || parallel_line_separation(
@@ -493,14 +482,11 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             {
-                let mut ids = Vec::new();
-                for entity in &entities {
-                    ids.push(entity.id().clone());
-                }
-                return Ok(Some(Definition::Distance {
+                let ids: Vec<_> = entities.iter().map(|entity| entity.id().clone()).collect();
+                return Some(Definition::Distance {
                     entities: ids,
                     parameter,
-                }));
+                });
             }
             let (
                 SketchGeometryDefinition::Point {
@@ -514,18 +500,18 @@ fn project_all_dimension_constraints(
                 entities[1].geometry.definition(),
             )
             else {
-                return Ok(None);
+                return None;
             };
             let measured =
                 (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
             if linear_measurement_matches(measured, evaluated_mm, linear_tolerance) {
-                return Ok(Some(Definition::DistanceLoci {
+                return Some(Definition::DistanceLoci {
                     first: cadmpeg_ir::sketches::SketchLocus::Entity(entities[0].id().clone()),
                     second: cadmpeg_ir::sketches::SketchLocus::Entity(entities[1].id().clone()),
                     parameter,
-                }));
+                });
             }
-            return Ok(None);
+            return None;
         }
         if source_kind.starts_with("Angular Dimension")
             && entities.len() == 2
@@ -541,31 +527,28 @@ fn project_all_dimension_constraints(
                 evaluated_value,
             )
         {
-            return Ok(Some(Definition::Angle {
+            return Some(Definition::Angle {
                 first: entities[0].id().clone(),
                 second: entities[1].id().clone(),
                 parameter,
-            }));
+            });
         }
         if source_kind.starts_with("Angular Dimension") && entities.len() == 2 {
-            let Some((first, second)) =
-                indirect_angular_lines(scope, &entities, evaluated_value, &projected)
-            else {
-                return Ok(None);
-            };
-            return Ok(Some(Definition::Angle {
+            let (first, second) =
+                indirect_angular_lines(scope, &entities, evaluated_value, &projected)?;
+            return Some(Definition::Angle {
                 first,
                 second,
                 parameter,
-            }));
+            });
         }
-        Ok(None)
+        None
     };
     let exact_group_definition = |scope: &str,
                                   group: &DesignDimensionLocusGroup,
                                   parameter: &DesignParameter,
                                   parameter_id: cadmpeg_ir::features::ParameterId|
-     -> Option<Result<Definition, CodecError>> {
+     -> Option<Definition> {
         if !design_dimension_unit(parameter) {
             return None;
         }
@@ -582,37 +565,31 @@ fn project_all_dimension_constraints(
                 indices.push(locus.geometry_record_index);
             }
             let copied = parameter_id.clone();
-            match exact_definition(scope, parameter, &indices, copied) {
-                Ok(Some(definition)) => return Some(Ok(definition)),
-                Ok(None) => {}
-                Err(error) => return Some(Err(error)),
-            }
-        }
-        if group.state == 0 {
-            let counted_definition = ok_or_some_err!(counted_role_relation_at_tolerance(
-                &locus_entities,
-                &group.owner_kinds(),
-                linear_tolerance
-            )
-            .transpose());
-            if let Some(definition) = counted_definition {
-                return Some(Ok(definition));
-            }
-            if let Some(definition) = exact_counted_dimension_relation(&locus_entities).transpose()
-            {
+            if let Some(definition) = exact_definition(scope, parameter, &indices, copied) {
                 return Some(definition);
             }
         }
-        if let Some(definition) = ok_or_some_err!(radial_locus_dimension_definition(
+        if group.state == 0 {
+            let counted_definition = counted_role_relation_at_tolerance(
+                &locus_entities,
+                &group.owner_kinds(),
+                linear_tolerance,
+            );
+            if let Some(definition) = counted_definition {
+                return Some(definition);
+            }
+            if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
+                return Some(definition);
+            }
+        }
+        if let Some(definition) = radial_locus_dimension_definition(
             &locus_entities,
             entities,
             parameter.source_kind(),
             parameter.evaluated_value().get(),
-            &parameter_id
-        )
-        .transpose())
-        {
-            return Some(Ok(definition));
+            &parameter_id,
+        ) {
+            return Some(definition);
         }
         if parameter.source_kind().starts_with("Linear Dimension") {
             if group.state == 0x20 {
@@ -641,30 +618,23 @@ fn project_all_dimension_constraints(
                     id: parameter_id,
                     negated: factor.is_sign_negative(),
                 });
-                return Some(Ok(Definition::Offset {
+                return Some(Definition::Offset {
                     pairs,
                     distance,
                     parameter,
-                }));
+                });
             }
             let copied = parameter_id.clone();
-            if let Some(definition) = ok_or_some_err!(directional_point_dimension(
+            if let Some(definition) = directional_point_dimension(
                 &locus_entities,
                 parameter.evaluated_value().get() * 10.0,
                 copied,
-                linear_tolerance
-            )
-            .transpose())
-            {
-                return Some(Ok(definition));
+                linear_tolerance,
+            ) {
+                return Some(definition);
             }
             if group.state == 0 {
-                return ok_or_some_err!(two_locus_distance_dimension(
-                    &locus_entities,
-                    parameter_id
-                )
-                .transpose())
-                .map(Ok);
+                return two_locus_distance_dimension(&locus_entities, parameter_id);
             }
         }
         None
@@ -676,13 +646,10 @@ fn project_all_dimension_constraints(
             if group.state != 0 {
                 return None;
             }
-            let (parameter, parameter_id) =
-                ok_or_some_err!(parameter_for(scope, group.companion_record_index)?);
+            let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
             let copied = parameter_id.clone();
-            match exact_group_definition(scope, group, parameter, copied) {
-                Some(Ok(_)) => return None,
-                Some(Err(error)) => return Some(Err(error)),
-                None => {}
+            if exact_group_definition(scope, group, parameter, copied).is_some() {
+                return None;
             }
             let mut locus_entities = Vec::new();
             for locus in &group.loci {
@@ -700,18 +667,17 @@ fn project_all_dimension_constraints(
             }
             let sketch =
                 sketch_for_owner_or_geometry(scope, group.owner_reference, &locus_indices)?;
-            ok_or_some_err!(owner_scoped_radial_dimension_definition(
+            owner_scoped_radial_dimension_definition(
                 entities,
                 &sketch,
                 parameter,
                 &parameter_id,
-                linear_tolerance
-            )
-            .transpose())?;
-            Some(Ok((scope, group.record_index)))
+                linear_tolerance,
+            )?;
+            Some((scope, group.record_index))
         })();
         if let Some(result) = candidate {
-            radial_extension_annotation_groups.insert(result?);
+            radial_extension_annotation_groups.insert(result);
         }
     }
     let mut exact_pair_companions = HashSet::new();
@@ -720,7 +686,7 @@ fn project_all_dimension_constraints(
             continue;
         };
         let Some((parameter, parameter_id)) =
-            parameter_for(scope, pair.governing_companion_record_index).transpose()?
+            parameter_for(scope, pair.governing_companion_record_index)
         else {
             continue;
         };
@@ -728,7 +694,7 @@ fn project_all_dimension_constraints(
             pair.loci()[0].geometry_index(),
             pair.loci()[1].geometry_index(),
         ];
-        if exact_definition(scope, parameter, &indices, parameter_id)?.is_some() {
+        if exact_definition(scope, parameter, &indices, parameter_id).is_some() {
             exact_pair_companions.insert((scope, pair.governing_companion_record_index));
         }
     }
@@ -737,19 +703,15 @@ fn project_all_dimension_constraints(
         let Some(scope) = native_stream(&group.id) else {
             continue;
         };
-        let Some((parameter, parameter_id)) =
-            parameter_for(scope, group.companion_record_index).transpose()?
+        let Some((parameter, parameter_id)) = parameter_for(scope, group.companion_record_index)
         else {
             continue;
         };
-        match exact_group_definition(scope, group, parameter, parameter_id) {
-            Some(Ok(Definition::Offset {
-                parameter: Some(_), ..
-            })) => {
-                parameterized_offset_companions.insert((scope, group.companion_record_index));
-            }
-            Some(Err(error)) => return Err(error),
-            _ => {}
+        if let Some(Definition::Offset {
+            parameter: Some(_), ..
+        }) = exact_group_definition(scope, group, parameter, parameter_id)
+        {
+            parameterized_offset_companions.insert((scope, group.companion_record_index));
         }
     }
     let mut projected_dimension_companions = HashSet::new();
@@ -775,13 +737,12 @@ fn project_all_dimension_constraints(
         if radial_extension_annotation_groups.contains(&(scope, group.record_index)) {
             continue;
         }
-        let Some((parameter, parameter_id)) =
-            parameter_for(scope, group.companion_record_index).transpose()?
+        let Some((parameter, parameter_id)) = parameter_for(scope, group.companion_record_index)
         else {
             continue;
         };
         let copied = parameter_id.clone();
-        let definition = exact_group_definition(scope, group, parameter, copied).transpose()?;
+        let definition = exact_group_definition(scope, group, parameter, copied);
         if definition.as_ref().is_none_or(|definition| {
             constraint_parameters(definition).any(|id| id == &parameter_id)
         }) {
@@ -799,8 +760,7 @@ fn project_all_dimension_constraints(
             if exact_pair_companions.contains(&(scope, group.companion_record_index)) {
                 return None;
             }
-            let (parameter, parameter_id) =
-                ok_or_some_err!(parameter_for(scope, group.companion_record_index)?);
+            let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
             let mut locus_indices = Vec::new();
             for locus in &group.loci {
                 locus_indices.push(locus.geometry_record_index);
@@ -808,10 +768,7 @@ fn project_all_dimension_constraints(
             let sketch =
                 sketch_for_owner_or_geometry(scope, group.owner_reference, &locus_indices)?;
             let copied = parameter_id.clone();
-            let exact = match exact_group_definition(scope, group, parameter, copied).transpose() {
-                Ok(definition) => definition,
-                Err(error) => return Some(Err(error)),
-            };
+            let exact = exact_group_definition(scope, group, parameter, copied);
             let definition = if let Some(definition) = exact {
                 definition
             } else {
@@ -836,13 +793,13 @@ fn project_all_dimension_constraints(
                             locus.returned.value,
                         ));
                     }
-                    native_definition(
+                    Ok(native_definition(
                         scope,
                         copy_dimension_source_kind(parameter)?,
                         Some(u64::from(group.state)),
                         &operands,
                         parameter_id,
-                    )
+                    ))
                 })();
                 match fallback {
                     Ok(definition) => definition,
@@ -853,10 +810,7 @@ fn project_all_dimension_constraints(
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = group.id.clone();
             Some(Ok(SketchConstraint {
-                id: ok_or_some_err!(crate::design::identity::neutral_sketch_constraint_id(
-                    &group.id,
-                    group.record_index
-                )),
+                id: crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition,
                 name: None,
@@ -881,7 +835,7 @@ fn project_all_dimension_constraints(
             continue;
         };
         let Some((parameter, parameter_id)) =
-            parameter_for(scope, pair.governing_companion_record_index).transpose()?
+            parameter_for(scope, pair.governing_companion_record_index)
         else {
             continue;
         };
@@ -892,25 +846,21 @@ fn project_all_dimension_constraints(
         let Some(sketch) = sketch_for_geometry(scope, &indices) else {
             continue;
         };
-        let constraint_id =
-            crate::design::identity::neutral_dimension_constraint_id(&parameter_id, "pair")?;
+        let constraint_id = crate::ids::neutral_dimension_constraint_id(&parameter_id, "pair");
         let copied = parameter_id.clone();
-        let definition = exact_definition(scope, parameter, &indices, copied)?
-            .map(Ok)
-            .or_else(|| {
-                let [first_index, second_index] = indices;
-                let first = projected.get(&(scope, first_index))?;
-                let second = projected.get(&(scope, second_index))?;
-                symmetric_parallel_line_dimension_definition(
-                    first,
-                    second,
-                    (pair.loci()[0].role, pair.loci()[1].role),
-                    parameter,
-                    parameter_id.clone(),
-                    linear_tolerance,
-                )
-            })
-            .transpose()?;
+        let definition = exact_definition(scope, parameter, &indices, copied).or_else(|| {
+            let [first_index, second_index] = indices;
+            let first = projected.get(&(scope, first_index))?;
+            let second = projected.get(&(scope, second_index))?;
+            symmetric_parallel_line_dimension_definition(
+                first,
+                second,
+                (pair.loci()[0].role, pair.loci()[1].role),
+                parameter,
+                parameter_id.clone(),
+                linear_tolerance,
+            )
+        });
         let definition = if let Some(definition) = definition {
             definition
         } else {
@@ -931,7 +881,7 @@ fn project_all_dimension_constraints(
                     ),
                 ],
                 parameter_id,
-            )?
+            )
         };
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
         else {
@@ -959,10 +909,8 @@ fn project_all_dimension_constraints(
         .map(Ok)
         .chain(annotation_frames.iter().filter_map(|frame| {
             let scope = native_stream(&frame.id)?;
-            let (parameter, parameter_id) = ok_or_some_err!(parameter_for(
-                scope,
-                frame.governing_companion_record_index
-            )?);
+            let (parameter, parameter_id) =
+                parameter_for(scope, frame.governing_companion_record_index)?;
             let mut indices = Vec::new();
             for operand in frame.operands() {
                 if let Some(index) = operand.geometry_record_index {
@@ -971,17 +919,9 @@ fn project_all_dimension_constraints(
             }
             let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
             let constraint_id =
-                ok_or_some_err!(crate::design::identity::neutral_dimension_constraint_id(
-                    &parameter_id,
-                    "annotation"
-                ));
+                crate::ids::neutral_dimension_constraint_id(&parameter_id, "annotation");
             let copied = parameter_id.clone();
-            let exact = match exact_definition(scope, parameter, &indices, copied) {
-                Ok(definition) => definition,
-                Err(error) => return Some(Err(error)),
-            }
-            .map(Ok)
-            .or_else(|| {
+            let exact = exact_definition(scope, parameter, &indices, copied).or_else(|| {
                 annotation_offset_dimension_definition(
                     frame,
                     (parameter, &parameter_id),
@@ -991,7 +931,6 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             });
-            let exact = ok_or_some_err!(exact.transpose());
             let definition = if let Some(definition) = exact {
                 definition
             } else {
@@ -1013,7 +952,7 @@ fn project_all_dimension_constraints(
                                 cadmpeg_core::nonblank_literal!("locus"),
                                 Some(operand.role),
                                 index.get(),
-                            )?,
+                            ),
                         };
                         operands.push(native);
                     }
@@ -1068,27 +1007,22 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let (parameter, parameter_id) =
-                ok_or_some_err!(parameter_for(scope, pair.governing_companion_record_index)?);
+                parameter_for(scope, pair.governing_companion_record_index)?;
             let indices = [pair.loci()[1].geometry_index()];
             let sketch = sketch_for_geometry(scope, &indices)?;
             let constraint_id =
-                ok_or_some_err!(crate::design::identity::neutral_dimension_constraint_id(
-                    &parameter_id,
-                    "null-pair"
-                ));
+                crate::ids::neutral_dimension_constraint_id(&parameter_id, "null-pair");
             if design_dimension_unit(parameter) {
                 if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {
                     let copied = parameter_id.clone();
-                    if let Some(definition) = ok_or_some_err!(null_locus_dimension_definition(
+                    if let Some(definition) = null_locus_dimension_definition(
                         pair,
                         entity,
                         parameter.source_kind(),
                         parameter.evaluated_value().get(),
                         copied,
-                        linear_tolerance
-                    )
-                    .transpose())
-                    {
+                        linear_tolerance,
+                    ) {
                         let definition =
                             cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                                 .ok()?;
@@ -1127,7 +1061,7 @@ fn project_all_dimension_constraints(
                     cadmpeg_core::nonblank_literal!("locus"),
                     Some(pair.loci()[1].role),
                     pair.loci()[1].geometry_index(),
-                )?;
+                );
                 operands.push(native);
                 let mut entity_ids = Vec::new();
                 for record_index in &indices {
@@ -1206,15 +1140,11 @@ fn project_all_dimension_constraints(
         let Some(owner) = owners_by_companion.get(&(scope, companion_record_index)) else {
             continue;
         };
-        let Some((parameter, parameter_id)) =
-            parameter_for(scope, companion_record_index).transpose()?
-        else {
+        let Some((parameter, parameter_id)) = parameter_for(scope, companion_record_index) else {
             continue;
         };
-        let constraint_id = crate::design::identity::neutral_dimension_constraint_id(
-            &parameter_id,
-            "recipe-group",
-        )?;
+        let constraint_id =
+            crate::ids::neutral_dimension_constraint_id(&parameter_id, "recipe-group");
         let Some(sketch) = sketches_by_scope.get(&(scope, owner.scope_record_index())) else {
             continue;
         };
@@ -1228,12 +1158,12 @@ fn project_all_dimension_constraints(
                 parameter.evaluated_value().get() * 10.0,
                 &parameter_id,
                 linear_tolerance,
-            )?
+            )
         } else {
             Vec::default()
         };
         let copied = parameter_id.clone();
-        let repeated = repeated_linear_dimension(&linear_candidates, copied).transpose()?;
+        let repeated = repeated_linear_dimension(&linear_candidates, copied);
         let extension = recipe_extension_point_dimension(&linear_candidates, entities, &sketch);
         let radial = owner_scoped_radial_dimension_definition(
             entities,
@@ -1241,16 +1171,14 @@ fn project_all_dimension_constraints(
             parameter,
             &parameter_id,
             linear_tolerance,
-        )
-        .transpose()?;
+        );
         let concentric = concentric_circle_dimension_definition(
             entities,
             &sketch,
             parameter,
             &parameter_id,
             linear_tolerance,
-        )
-        .transpose()?;
+        );
         let definition = if let Some(radial) = radial {
             radial
         } else if linear_candidates.len() == 1 {
@@ -1283,7 +1211,7 @@ fn project_all_dimension_constraints(
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
-                entities: recipe_dimension_candidate_entities(&linear_candidates)?,
+                entities: recipe_dimension_candidate_entities(&linear_candidates),
                 parameter: Some(parameter_id),
                 operands,
             }
@@ -1329,8 +1257,7 @@ fn project_all_dimension_constraints(
         let projected = (|| {
             let scope = native_stream(companion.id())?;
             let owner = owners_by_companion.get(&(scope, companion.record_index()))?;
-            let (parameter, parameter_id) =
-                ok_or_some_err!(parameter_for(scope, companion.record_index())?);
+            let (parameter, parameter_id) = parameter_for(scope, companion.record_index())?;
             if parameter.kind() != DesignParameterKind::Dimension
                 || projected_parameters.contains(&parameter_id)
                 || container_only_payload_companions.contains(&(scope, companion.record_index()))
@@ -1348,11 +1275,10 @@ fn project_all_dimension_constraints(
                     && group.companion_record_index == companion.record_index()
             }) {
                 let copied = parameter_id.clone();
-                let (first, second) = match exact_group_definition(scope, group, parameter, copied)
-                {
-                    Some(Ok(Definition::Parallel { first, second })) => (first, second),
-                    Some(Err(error)) => return Some(Err(error)),
-                    _ => continue,
+                let Some(Definition::Parallel { first, second }) =
+                    exact_group_definition(scope, group, parameter, copied)
+                else {
+                    continue;
                 };
                 let members = [
                     entities.iter().find(|entity| entity.id() == &first),
@@ -1368,7 +1294,6 @@ fn project_all_dimension_constraints(
                 ) else {
                     continue;
                 };
-                let definition = ok_or_some_err!(definition);
                 if saw_parallel_axis_angle {
                     multiple_parallel_axis_angles = true;
                     parallel_axis_angle = None;
@@ -1459,7 +1384,6 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             });
-            let owner_scoped_definition = ok_or_some_err!(owner_scoped_definition.transpose());
             let presentation_definition = presentation_for_owner(scope, owner.record_index())
                 .and_then(|frame| {
                     presentation_dimension_definition(
@@ -1471,7 +1395,6 @@ fn project_all_dimension_constraints(
                         linear_tolerance,
                     )
                 });
-            let presentation_definition = ok_or_some_err!(presentation_definition.transpose());
             let exact_definition = presentation_definition
                 .or(parallel_axis_angle)
                 .or(owner_scoped_definition);
@@ -1515,10 +1438,7 @@ fn project_all_dimension_constraints(
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = companion.id().to_owned();
             Some(Ok(SketchConstraint {
-                id: ok_or_some_err!(crate::design::identity::neutral_dimension_constraint_id(
-                    &parameter_id,
-                    "companion-payload"
-                )),
+                id: crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
                 sketch,
                 definition,
                 name: None,
@@ -1552,7 +1472,7 @@ fn presentation_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1598,12 +1518,10 @@ fn presentation_dimension_definition(
                 parameter.evaluated_value().get() * 10.0,
                 linear_tolerance,
             )
-            .then(|| -> Result<_, CodecError> {
-                Ok(Definition::DistanceLoci {
-                    first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id().clone()),
-                    second: cadmpeg_ir::sketches::SketchLocus::End(entity.id().clone()),
-                    parameter: parameter_id.clone(),
-                })
+            .then(|| Definition::DistanceLoci {
+                first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id().clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::End(entity.id().clone()),
+                parameter: parameter_id.clone(),
             })
         }),
         [first, second] if parameter.source_kind().starts_with("Tangent Dimension") => {
@@ -1630,12 +1548,10 @@ fn presentation_dimension_definition(
                 &second.geometry,
                 parameter.evaluated_value().get(),
             )
-            .then(|| -> Result<_, CodecError> {
-                Ok(Definition::Angle {
-                    first: first.id().clone(),
-                    second: second.id().clone(),
-                    parameter: parameter_id.clone(),
-                })
+            .then(|| Definition::Angle {
+                first: first.id().clone(),
+                second: second.id().clone(),
+                parameter: parameter_id.clone(),
             })
         }
         _ => None,
@@ -1647,7 +1563,7 @@ fn tangent_radius_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1662,11 +1578,9 @@ fn tangent_radius_dimension_definition(
         parameter.evaluated_value().get() * 10.0,
         linear_tolerance,
     )
-    .then(|| -> Result<_, CodecError> {
-        Ok(Definition::Radius {
-            entity: entity.id().clone(),
-            parameter: parameter_id.clone(),
-        })
+    .then(|| Definition::Radius {
+        entity: entity.id().clone(),
+        parameter: parameter_id.clone(),
     })
 }
 
@@ -1676,7 +1590,7 @@ fn tangent_entity_distance_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1753,10 +1667,10 @@ fn tangent_entity_distance_definition(
     if matches != 1 {
         return None;
     }
-    Some(Ok(Definition::Distance {
+    Some(Definition::Distance {
         entities: vec![first.id().clone(), second.id().clone()],
         parameter: parameter_id.clone(),
-    }))
+    })
 }
 
 fn explicit_linear_dimension_definition(
@@ -1765,7 +1679,7 @@ fn explicit_linear_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
@@ -1783,10 +1697,10 @@ fn explicit_linear_dimension_definition(
         || parallel_line_separation(first, second, expected, linear_tolerance)
         || concentric_circle_separation(first, second, expected, linear_tolerance)
     {
-        return Some(Ok(Definition::Distance {
+        return Some(Definition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
             parameter: parameter_id.clone(),
-        }));
+        });
     }
     let (
         SketchGeometryDefinition::Point {
@@ -1801,15 +1715,13 @@ fn explicit_linear_dimension_definition(
     };
     let measured =
         (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
-    linear_measurement_matches(measured, expected, linear_tolerance).then(
-        || -> Result<_, CodecError> {
-            Ok(Definition::DistanceLoci {
-                first: SketchLocus::Entity(first.id().clone()),
-                second: SketchLocus::Entity(second.id().clone()),
-                parameter: parameter_id.clone(),
-            })
-        },
-    )
+    linear_measurement_matches(measured, expected, linear_tolerance).then(|| {
+        Definition::DistanceLoci {
+            first: SketchLocus::Entity(first.id().clone()),
+            second: SketchLocus::Entity(second.id().clone()),
+            parameter: parameter_id.clone(),
+        }
+    })
 }
 
 /// Resolve an angular parameter from the unique two-line point incidence
@@ -1821,7 +1733,7 @@ fn preceding_incident_angular_dimension_definition(
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: (&DesignParameter, &cadmpeg_ir::features::ParameterId),
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1894,11 +1806,11 @@ fn preceding_incident_angular_dimension_definition(
         matched = Some((key.0, key.1, first, second));
     }
     let (_, _, first, second) = matched?;
-    Some(Ok(Definition::Angle {
+    Some(Definition::Angle {
         first: first.id().clone(),
         second: second.id().clone(),
         parameter: parameter_id.clone(),
-    }))
+    })
 }
 
 /// Resolve an angular parameter when exactly one unordered line pair in its
@@ -1908,7 +1820,7 @@ fn owner_scoped_angular_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -1951,11 +1863,11 @@ fn owner_scoped_angular_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Ok(Definition::Angle {
+    Some(Definition::Angle {
         first: first.id().clone(),
         second: second.id().clone(),
         parameter: parameter_id.clone(),
-    }))
+    })
 }
 
 /// Bind an angular parameter to the common direction of one exact parallel
@@ -1964,7 +1876,7 @@ fn parallel_group_axis_angle_definition(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchAxis, SketchConstraintDefinitionInput as Definition, SketchGeometry,
         SketchGeometryDefinition,
@@ -1993,12 +1905,10 @@ fn parallel_group_axis_angle_definition(
         &horizontal_axis,
         parameter.evaluated_value().get(),
     ))
-    .then(|| -> Result<_, CodecError> {
-        Ok(Definition::AngleToAxis {
-            entity: first.id().clone(),
-            axis: SketchAxis::Horizontal,
-            parameter: parameter_id.clone(),
-        })
+    .then(|| Definition::AngleToAxis {
+        entity: first.id().clone(),
+        axis: SketchAxis::Horizontal,
+        parameter: parameter_id.clone(),
     })
 }
 
@@ -2010,7 +1920,7 @@ fn concentric_circle_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchDistanceMeasurement as Measurement,
         SketchGeometryDefinition, SketchLocus,
@@ -2058,10 +1968,10 @@ fn concentric_circle_dimension_definition(
     }
     match pairs.as_slice() {
         [] => None,
-        [(first, second)] => Some(Ok(Definition::Distance {
+        [(first, second)] => Some(Definition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
             parameter: parameter_id.clone(),
-        })),
+        }),
         _ => {
             let mut measurements = Vec::new();
             for (first, second) in pairs {
@@ -2071,10 +1981,10 @@ fn concentric_circle_dimension_definition(
                 };
                 measurements.push(measurement);
             }
-            Some(Ok(Definition::RepeatedDistance {
+            Some(Definition::RepeatedDistance {
                 measurements,
                 parameter: parameter_id.clone(),
-            }))
+            })
         }
     }
 }
@@ -2087,7 +1997,7 @@ fn unique_point_line_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -2128,10 +2038,10 @@ fn unique_point_line_dimension_definition(
         }
     }
     let (point, line) = matched?;
-    Some(Ok(Definition::Distance {
+    Some(Definition::Distance {
         entities: vec![point.id().clone(), line.id().clone()],
         parameter: parameter_id.clone(),
-    }))
+    })
 }
 
 /// Resolve an owner-scoped linear dimension when exactly one parallel-line
@@ -2142,7 +2052,7 @@ fn unique_parallel_line_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -2176,10 +2086,10 @@ fn unique_parallel_line_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Ok(Definition::Distance {
+    Some(Definition::Distance {
         entities: vec![first.id().clone(), second.id().clone()],
         parameter: parameter_id.clone(),
-    }))
+    })
 }
 
 /// Resolve an owner-scoped distance between fragmented parallel line carriers.
@@ -2189,7 +2099,7 @@ fn owner_scoped_parallel_line_set_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -2269,7 +2179,7 @@ fn owner_scoped_parallel_line_set_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Ok(Definition::ParallelLineSetDistance {
+    Some(Definition::ParallelLineSetDistance {
         first: carriers[first]
             .iter()
             .map(|entity| entity.id().clone())
@@ -2279,7 +2189,7 @@ fn owner_scoped_parallel_line_set_dimension_definition(
             .map(|entity| entity.id().clone())
             .collect(),
         parameter: parameter_id.clone(),
-    }))
+    })
 }
 
 /// Resolve the owner-scoped line lengths governed by one linear parameter.
@@ -2289,7 +2199,7 @@ fn owner_scoped_line_length_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
@@ -2324,15 +2234,15 @@ fn owner_scoped_line_length_dimension_definition(
         .collect::<Vec<_>>();
     match matches.as_slice() {
         [] => None,
-        [entity] => Some(Ok(Definition::DistanceLoci {
+        [entity] => Some(Definition::DistanceLoci {
             first: SketchLocus::Start(entity.id().clone()),
             second: SketchLocus::End(entity.id().clone()),
             parameter: parameter_id.clone(),
-        })),
-        _ => Some(Ok(Definition::RepeatedLength {
+        }),
+        _ => Some(Definition::RepeatedLength {
             entities: matches.iter().map(|entity| entity.id().clone()).collect(),
             parameter: parameter_id.clone(),
-        })),
+        }),
     }
 }
 
@@ -2343,7 +2253,7 @@ fn unique_point_class_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
@@ -2427,7 +2337,7 @@ fn unique_point_class_dimension_definition(
     let (first, second, du, dv, tolerance) = matched?;
     let first = SketchLocus::Entity(first.id().clone());
     let second = SketchLocus::Entity(second.id().clone());
-    Some(Ok(if du.abs() <= tolerance {
+    Some(if du.abs() <= tolerance {
         Definition::VerticalDistance {
             first,
             second,
@@ -2445,7 +2355,7 @@ fn unique_point_class_dimension_definition(
             second,
             parameter: parameter_id.clone(),
         }
-    }))
+    })
 }
 
 /// Resolve the owner-scoped circular measurements governed by one radial
@@ -2456,7 +2366,7 @@ fn owner_scoped_radial_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if !design_dimension_unit(parameter) {
@@ -2472,11 +2382,11 @@ fn owner_scoped_radial_dimension_definition(
             parameter_id.clone(),
             linear_tolerance,
         ) {
-            definitions.push(ok_or_some_err!(result));
+            definitions.push(result);
         }
     }
     if definitions.len() < 2 {
-        return definitions.pop().map(Ok);
+        return definitions.pop();
     }
     let radius = definitions
         .iter()
@@ -2496,7 +2406,7 @@ fn owner_scoped_radial_dimension_definition(
         members.push(entity);
     }
     let parameter = parameter_id.clone();
-    Some(Ok(if radius {
+    Some(if radius {
         Definition::RepeatedRadius {
             entities: members,
             parameter,
@@ -2506,7 +2416,7 @@ fn owner_scoped_radial_dimension_definition(
             entities: members,
             parameter,
         }
-    }))
+    })
 }
 
 pub(crate) fn constraint_parameters(
@@ -2607,16 +2517,13 @@ pub(crate) fn constraint_parameters(
 pub(crate) fn bind_offset_dimension_parameters(
     constraints: &mut Vec<cadmpeg_ir::sketches::SketchConstraint>,
     parameters: &[DesignParameter],
-) -> Result<(), CodecError> {
+) {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     let mut parameter_values = HashMap::new();
     for parameter in parameters {
         if let Some(value) = design_length(parameter) {
-            parameter_values.insert(
-                crate::design::identity::neutral_parameter_id(parameter)?,
-                value.get(),
-            );
+            parameter_values.insert(crate::ids::neutral_parameter_id(parameter), value.get());
         }
     }
     let mut bindings = Vec::new();
@@ -2667,12 +2574,7 @@ pub(crate) fn bind_offset_dimension_parameters(
             }
         }
         if let Some(offset_index) = candidate.filter(|_| !ambiguous) {
-            let parameter = cadmpeg_ir::features::ParameterId::try_from(
-                String::from_utf8(parameter.as_str().as_bytes().to_vec()).map_err(|_| {
-                    CodecError::malformed("validated offset parameter ID is not UTF-8")
-                })?,
-            )
-            .map_err(CodecError::malformed)?;
+            let parameter = parameter.clone();
             bindings.push((dimension_index, offset_index, parameter, parameter_value));
         }
     }
@@ -2687,11 +2589,6 @@ pub(crate) fn bind_offset_dimension_parameters(
     bindings.retain(|binding| offset_counts.get(&binding.1) == Some(&1));
     let mut removed = HashSet::new();
     for (dimension_index, offset_index, parameter, parameter_value) in bindings {
-        let parameter = cadmpeg_ir::features::ParameterId::try_from(
-            String::from_utf8(parameter.as_str().as_bytes().to_vec())
-                .map_err(|_| CodecError::malformed("validated offset parameter ID is not UTF-8"))?,
-        )
-        .map_err(CodecError::malformed)?;
         let applied = constraints[offset_index].definition.set_offset_parameter(
             cadmpeg_ir::sketches::OffsetParameter {
                 id: parameter,
@@ -2708,7 +2605,6 @@ pub(crate) fn bind_offset_dimension_parameters(
         index += 1;
         keep
     });
-    Ok(())
 }
 
 /// Project dimensions owned by model-space sketches without assigning them
@@ -2736,15 +2632,12 @@ pub(crate) fn project_spatial_dimension_constraints(
 
     let mut spatial_by_planar_id = HashMap::new();
     for placement in placements {
-        let spatial_id = crate::design::identity::neutral_spatial_sketch_id(placement)?;
+        let spatial_id = crate::ids::neutral_spatial_sketch_id(placement);
         if spatial_sketches
             .iter()
             .any(|sketch| sketch.id == spatial_id)
         {
-            spatial_by_planar_id.insert(
-                crate::design::identity::neutral_sketch_id(placement)?,
-                spatial_id,
-            );
+            spatial_by_planar_id.insert(crate::ids::neutral_sketch_id(placement), spatial_id);
         }
     }
     let mut spatial_by_scope = HashMap::new();
@@ -2754,9 +2647,7 @@ pub(crate) fn project_spatial_dimension_constraints(
         else {
             continue;
         };
-        if let Some(sketch) =
-            spatial_by_planar_id.get(&crate::design::identity::neutral_sketch_id(placement)?)
-        {
+        if let Some(sketch) = spatial_by_planar_id.get(&crate::ids::neutral_sketch_id(placement)) {
             let sketch = sketch.clone();
             spatial_by_scope.insert((scope, scope_record_index), sketch);
         }
@@ -2793,14 +2684,11 @@ pub(crate) fn project_spatial_dimension_constraints(
     for parameter in parameters {
         if let Some(length) = design_length(parameter) {
             parameter_lengths.insert(
-                crate::design::identity::neutral_parameter_id(parameter)?,
+                crate::ids::neutral_parameter_id(parameter),
                 length.get().abs(),
             );
         }
-        parameters_by_id.insert(
-            crate::design::identity::neutral_parameter_id(parameter)?,
-            parameter,
-        );
+        parameters_by_id.insert(crate::ids::neutral_parameter_id(parameter), parameter);
     }
     let source_constraints = project_all_dimension_constraints(inputs, &[], linear_tolerance)?;
     let mut parameter_constraint_counts = HashMap::new();
@@ -2818,10 +2706,8 @@ pub(crate) fn project_spatial_dimension_constraints(
     let mut source_parameters = HashSet::new();
     let mut projected = Vec::new();
     for constraint in source_constraints {
-        let projected_constraint = (|| -> Result<Option<SpatialSketchConstraint>, CodecError> {
-            let Some(sketch) = spatial_by_planar_id.get(&constraint.sketch) else {
-                return Ok(None);
-            };
+        let projected_constraint = (|| -> Option<SpatialSketchConstraint> {
+            let sketch = spatial_by_planar_id.get(&constraint.sketch)?;
             let sketch = sketch.clone();
             for parameter in constraint_parameters(constraint.definition.kind()) {
                 let id = parameter.clone();
@@ -2842,23 +2728,19 @@ pub(crate) fn project_spatial_dimension_constraints(
                         constraint.native_ref.as_deref(),
                         &sketch,
                         &spatial_by_record,
-                    )
-                    .transpose()?;
-                    let offset = parameter
-                        .as_ref()
-                        .and_then(|parameter_id| {
-                            let expected = *parameter_lengths.get(parameter_id)?;
-                            let parameter = parameters_by_id.get(parameter_id)?;
-                            let signed = design_length(parameter)?.get();
-                            spatial_counted_offset_dimension_definition(
-                                (native_kind.as_str(), native_state, &operands),
-                                (parameter_id, expected, signed),
-                                &sketch,
-                                spatial_sketches,
-                                &spatial_by_record,
-                            )
-                        })
-                        .transpose()?;
+                    );
+                    let offset = parameter.as_ref().and_then(|parameter_id| {
+                        let expected = *parameter_lengths.get(parameter_id)?;
+                        let parameter = parameters_by_id.get(parameter_id)?;
+                        let signed = design_length(parameter)?.get();
+                        spatial_counted_offset_dimension_definition(
+                            (native_kind.as_str(), native_state, &operands),
+                            (parameter_id, expected, signed),
+                            &sketch,
+                            spatial_sketches,
+                            &spatial_by_record,
+                        )
+                    });
                     let distance = parameter.as_ref().and_then(|parameter| {
                         let expected = *parameter_lengths.get(parameter)?;
                         let scope = native_stream(constraint.native_ref.as_deref()?)?;
@@ -2909,30 +2791,55 @@ pub(crate) fn project_spatial_dimension_constraints(
                             None
                         }
                     });
-                    let owner_scoped = (|| -> Result<Option<SpatialSketchConstraintDefinitionInput>, CodecError> {
+                    let owner_scoped = (|| -> Option<SpatialSketchConstraintDefinitionInput> {
                         if operands.len() != 1
                             || operands[0].native_kind != "dimension_companion"
                             || !operand_field(&operands[0]).is_some_and(|field| {
                                 field == "companion" || field == "companion_payload"
                             })
-                        { return Ok(None); }
-                        let Some(parameter_id) = parameter.as_ref() else { return Ok(None); };
-                        if parameter_constraint_counts.get(parameter_id) != Some(&1) {
-                            return Ok(None);
+                        {
+                            return None;
                         }
-                        let Some(parameter) = parameters_by_id.get(parameter_id) else { return Ok(None); };
-                        let line_length = owner_scoped_spatial_line_length_dimension_definition(spatial_entities, &sketch, parameter, parameter_id, linear_tolerance);
-                        line_length.map(Ok)
-                        .or_else(|| {
-                            unique_spatial_parallel_line_dimension_definition(spatial_entities, &sketch, parameter, parameter_id)
-                        })
-                        .or_else(|| {
-                            owner_scoped_spatial_repeated_profile_line_distance_definition(spatial_entities, spatial_sketches, &sketch, parameter, parameter_id)
-                        })
-                        .or_else(|| {
-                            owner_scoped_spatial_parallel_line_set_dimension_definition(spatial_entities, &sketch, parameter, parameter_id, linear_tolerance)
-                        }).transpose()
-                    })()?;
+                        let parameter_id = parameter.as_ref()?;
+                        if parameter_constraint_counts.get(parameter_id) != Some(&1) {
+                            return None;
+                        }
+                        let parameter = parameters_by_id.get(parameter_id)?;
+                        let line_length = owner_scoped_spatial_line_length_dimension_definition(
+                            spatial_entities,
+                            &sketch,
+                            parameter,
+                            parameter_id,
+                            linear_tolerance,
+                        );
+                        line_length
+                            .or_else(|| {
+                                unique_spatial_parallel_line_dimension_definition(
+                                    spatial_entities,
+                                    &sketch,
+                                    parameter,
+                                    parameter_id,
+                                )
+                            })
+                            .or_else(|| {
+                                owner_scoped_spatial_repeated_profile_line_distance_definition(
+                                    spatial_entities,
+                                    spatial_sketches,
+                                    &sketch,
+                                    parameter,
+                                    parameter_id,
+                                )
+                            })
+                            .or_else(|| {
+                                owner_scoped_spatial_parallel_line_set_dimension_definition(
+                                    spatial_entities,
+                                    &sketch,
+                                    parameter,
+                                    parameter_id,
+                                    linear_tolerance,
+                                )
+                            })
+                    })();
                     symmetry.or(offset).or(distance).or(owner_scoped).unwrap_or(
                         SpatialSketchConstraintDefinitionInput::Native {
                             native_kind,
@@ -2942,20 +2849,18 @@ pub(crate) fn project_spatial_dimension_constraints(
                         },
                     )
                 }
-                _ => return Ok(None),
+                _ => return None,
             };
-            let Some(definition) =
-                cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(definition).ok()
-            else {
-                return Ok(None);
-            };
-            Ok(Some(SpatialSketchConstraint {
+            let definition =
+                cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(definition)
+                    .ok()?;
+            Some(SpatialSketchConstraint {
                 id: constraint.id,
                 sketch,
                 definition,
                 native_ref: constraint.native_ref,
-            }))
-        })()?;
+            })
+        })();
         if let Some(projected_constraint) = projected_constraint {
             projected.push(projected_constraint);
         }
@@ -3065,10 +2970,7 @@ pub(crate) fn project_spatial_dimension_constraints(
             continue;
         };
         projected.push(SpatialSketchConstraint {
-            id: crate::design::identity::neutral_dimension_constraint_id(
-                parameter_id,
-                "companion-payload",
-            )?,
+            id: crate::ids::neutral_dimension_constraint_id(parameter_id, "companion-payload"),
             sketch,
             definition,
             native_ref: Some(constraint_native_ref),
@@ -3140,7 +3042,7 @@ fn unique_spatial_parallel_line_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
@@ -3179,11 +3081,11 @@ fn unique_spatial_parallel_line_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Ok(Definition::ParallelLineDistance {
+    Some(Definition::ParallelLineDistance {
         first: first.id().clone(),
         second: second.id().clone(),
         parameter: parameter_id.clone(),
-    }))
+    })
 }
 
 fn owner_scoped_spatial_repeated_profile_line_distance_definition(
@@ -3192,7 +3094,7 @@ fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
-) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchEntityPair,
     };
@@ -3246,11 +3148,9 @@ fn owner_scoped_spatial_repeated_profile_line_distance_definition(
             });
         }
     }
-    (pairs.len() >= 2).then(|| -> Result<_, CodecError> {
-        Ok(Definition::RepeatedParallelLineDistance {
-            pairs,
-            parameter: parameter_id.clone(),
-        })
+    (pairs.len() >= 2).then(|| Definition::RepeatedParallelLineDistance {
+        pairs,
+        parameter: parameter_id.clone(),
     })
 }
 
@@ -3260,7 +3160,7 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
@@ -3347,7 +3247,7 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
         }
     }
     let (first, second) = matched?;
-    Some(Ok(Definition::ParallelLineSetDistance {
+    Some(Definition::ParallelLineSetDistance {
         first: carriers[first]
             .iter()
             .map(|entity| entity.id().clone())
@@ -3357,7 +3257,7 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
             .map(|entity| entity.id().clone())
             .collect(),
         parameter: parameter_id.clone(),
-    }))
+    })
 }
 
 fn operand_field(operand: &cadmpeg_ir::sketches::SketchNativeOperand) -> Option<&str> {
@@ -3375,7 +3275,7 @@ fn spatial_reflection_symmetry(
     native_ref: Option<&str>,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
-) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraintDefinitionInput as Definition, SpatialSketchGeometryDefinition,
     };
@@ -3444,12 +3344,10 @@ fn spatial_reflection_symmetry(
         axis_start,
         axis_end,
     )
-    .then(|| -> Result<_, CodecError> {
-        Ok(Definition::Symmetric {
-            first: first.id().clone(),
-            second: second.id().clone(),
-            axis: axis.id().clone(),
-        })
+    .then(|| Definition::Symmetric {
+        first: first.id().clone(),
+        second: second.id().clone(),
+        axis: axis.id().clone(),
     })
 }
 
@@ -3463,7 +3361,7 @@ fn spatial_counted_offset_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
-) -> Option<Result<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
     use cadmpeg_ir::scalar::Length;
 
     use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Definition;
@@ -3584,7 +3482,7 @@ fn spatial_counted_offset_dimension_definition(
     if used.len() != loci.len() {
         return None;
     }
-    Some(Ok(Definition::Offset {
+    Some(Definition::Offset {
         sources,
         results,
         normal: normal.into(),
@@ -3593,7 +3491,7 @@ fn spatial_counted_offset_dimension_definition(
             id: parameter.clone(),
             negated: parameter_factor.is_sign_negative(),
         }),
-    }))
+    })
 }
 
 fn spatial_curve(geometry: &cadmpeg_ir::sketches::SpatialSketchGeometry) -> bool {
@@ -3708,7 +3606,7 @@ fn spatial_parallel_line_span_distance(
 fn repeated_linear_dimension(
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchDistanceMeasurement as Measurement,
         SketchLocus,
@@ -3759,10 +3657,10 @@ fn repeated_linear_dimension(
         entities.insert(second);
         measurements.push(measurement);
     }
-    Some(Ok(Definition::RepeatedDistance {
+    Some(Definition::RepeatedDistance {
         measurements,
         parameter,
-    }))
+    })
 }
 
 fn locus_entity_id(
@@ -3784,7 +3682,7 @@ pub(super) fn null_locus_dimension_definition(
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchAxis, SketchConstraintDefinitionInput as Definition, SketchGeometry,
         SketchGeometryDefinition,
@@ -3814,15 +3712,13 @@ pub(super) fn null_locus_dimension_definition(
         end: Point2::new(1.0, 0.0),
     })
     .ok()?;
-    line_angle_matches(&entity.geometry, &horizontal_axis, evaluated_value).then(
-        || -> Result<_, CodecError> {
-            Ok(Definition::AngleToAxis {
-                entity: entity.id().clone(),
-                axis: SketchAxis::Horizontal,
-                parameter,
-            })
-        },
-    )
+    line_angle_matches(&entity.geometry, &horizontal_axis, evaluated_value).then(|| {
+        Definition::AngleToAxis {
+            entity: entity.id().clone(),
+            axis: SketchAxis::Horizontal,
+            parameter,
+        }
+    })
 }
 
 fn radial_dimension_definition(
@@ -3830,7 +3726,7 @@ fn radial_dimension_definition(
     source_kind: &str,
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     radial_dimension_definition_at_tolerance(entity, source_kind, evaluated_value, parameter, 0.0)
 }
 
@@ -3840,7 +3736,7 @@ fn radial_dimension_definition_at_tolerance(
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
     };
@@ -3869,7 +3765,7 @@ fn radial_dimension_definition_at_tolerance(
     {
         return None;
     }
-    Some(Ok(if is_radius {
+    Some(if is_radius {
         Definition::Radius {
             entity: entity.id().clone(),
             parameter,
@@ -3879,7 +3775,7 @@ fn radial_dimension_definition_at_tolerance(
             entity: entity.id().clone(),
             parameter,
         }
-    }))
+    })
 }
 
 /// Resolve a parameterized linear annotation that governs an offset pair.
@@ -3898,7 +3794,7 @@ fn annotation_offset_dimension_definition(
     curves: &[SketchCurveIdentity],
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::scalar::Length;
 
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
@@ -4012,7 +3908,7 @@ fn annotation_offset_dimension_definition(
         result
     };
     let parameter_factor = offset_parameter_factor(distance.abs(), expected)?;
-    Some(Ok(Definition::Offset {
+    Some(Definition::Offset {
         pairs: vec![SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
@@ -4023,7 +3919,7 @@ fn annotation_offset_dimension_definition(
             id: parameter_id.clone(),
             negated: parameter_factor.is_sign_negative(),
         }),
-    }))
+    })
 }
 
 /// Resolve a radial locus group from its selected circular entity or from a
@@ -4034,7 +3930,7 @@ fn radial_locus_dimension_definition(
     source_kind: &str,
     evaluated_value: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -4044,11 +3940,11 @@ fn radial_locus_dimension_definition(
         if let Some(result) =
             radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
         {
-            direct.push(ok_or_some_err!(result));
+            direct.push(result);
         }
     }
     if direct.len() == 1 {
-        return direct.pop().map(Ok);
+        return direct.pop();
     }
     if !direct.is_empty() {
         let radius = direct
@@ -4077,7 +3973,7 @@ fn radial_locus_dimension_definition(
             unique.insert(id);
         }
         let parameter = parameter.clone();
-        return Some(Ok(if radius {
+        return Some(if radius {
             Definition::RepeatedRadius {
                 entities: ids,
                 parameter,
@@ -4087,7 +3983,7 @@ fn radial_locus_dimension_definition(
                 entities: ids,
                 parameter,
             }
-        }));
+        });
     }
 
     let sketch = &loci.first()?.sketch;
@@ -4129,7 +4025,7 @@ fn radial_locus_dimension_definition(
         if let Some(result) =
             radial_dimension_definition(entity, source_kind, evaluated_value, parameter.clone())
         {
-            let definition = ok_or_some_err!(result);
+            let definition = result;
             if matched.is_some() {
                 multiple = true;
             }
@@ -4139,7 +4035,7 @@ fn radial_locus_dimension_definition(
     if multiple {
         None
     } else {
-        matched.map(Ok)
+        matched
     }
 }
 
@@ -4391,25 +4287,25 @@ fn insert_dimension_binding<'a>(
 pub(super) fn exact_atomic_constraint(
     kind: SketchConstraintKind,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchCoordinateAxis,
         SketchGeometryDefinition as Geometry, SketchLocus,
     };
 
-    let lines = || -> Result<Option<_>, CodecError> {
+    let lines = || -> Option<_> {
         if entities.len() == 2
             && entities[0].id() != entities[1].id()
             && entities
                 .iter()
                 .all(|entity| matches!(*entity.geometry.definition(), Geometry::Line { .. }))
         {
-            Ok(Some((entities[0].id().clone(), entities[1].id().clone())))
+            Some((entities[0].id().clone(), entities[1].id().clone()))
         } else {
-            Ok(None)
+            None
         }
     };
-    let curves = || -> Result<Option<_>, CodecError> {
+    let curves = || -> Option<_> {
         if entities.len() == 2
             && entities[0].id() != entities[1].id()
             && entities.iter().all(|entity| {
@@ -4423,14 +4319,14 @@ pub(super) fn exact_atomic_constraint(
                 )
             })
         {
-            Ok(Some((entities[0].id().clone(), entities[1].id().clone())))
+            Some((entities[0].id().clone(), entities[1].id().clone()))
         } else {
-            Ok(None)
+            None
         }
     };
-    let equal_size_entities = || -> Result<Option<_>, CodecError> {
+    let equal_size_entities = || -> Option<_> {
         let [first, second] = entities else {
-            return Ok(None);
+            return None;
         };
         if first.id() != second.id()
             && matches!(
@@ -4443,12 +4339,12 @@ pub(super) fn exact_atomic_constraint(
                     | (Geometry::Ellipse { .. }, Geometry::Ellipse { .. })
             )
         {
-            Ok(Some((first.id().clone(), second.id().clone())))
+            Some((first.id().clone(), second.id().clone()))
         } else {
-            Ok(None)
+            None
         }
     };
-    Ok(match kind {
+    match kind {
         SketchConstraintKind::Coincident
             if entities.len() >= 2 && dimension_entity_ids_distinct(entities) =>
         {
@@ -4457,7 +4353,7 @@ pub(super) fn exact_atomic_constraint(
             })
         }
         SketchConstraintKind::Colinear => {
-            lines()?.map(|(first, second)| Definition::Collinear { first, second })
+            lines().map(|(first, second)| Definition::Collinear { first, second })
         }
         SketchConstraintKind::Concentric => {
             if entities.len() == 2
@@ -4470,11 +4366,9 @@ pub(super) fn exact_atomic_constraint(
                 })
             {
                 let (first, second) = (entities[0].id().clone(), entities[1].id().clone());
-                return Ok(Some(Definition::Concentric { first, second }));
+                return Some(Definition::Concentric { first, second });
             }
-            let Some((first, second, axis)) = reflected_symmetry(entities) else {
-                return Ok(None);
-            };
+            let (first, second, axis) = reflected_symmetry(entities)?;
             Some(Definition::Symmetric {
                 first: SketchLocus::Entity(first.id().clone()),
                 second: SketchLocus::Entity(second.id().clone()),
@@ -4482,9 +4376,7 @@ pub(super) fn exact_atomic_constraint(
             })
         }
         SketchConstraintKind::Symmetry => {
-            let Some((first, second, axis)) = reflected_symmetry(entities) else {
-                return Ok(None);
-            };
+            let (first, second, axis) = reflected_symmetry(entities)?;
             Some(Definition::Symmetric {
                 first: SketchLocus::Entity(first.id().clone()),
                 second: SketchLocus::Entity(second.id().clone()),
@@ -4492,14 +4384,14 @@ pub(super) fn exact_atomic_constraint(
             })
         }
         SketchConstraintKind::EqualLength => {
-            lines()?.map(|(first, second)| Definition::Equal { first, second })
+            lines().map(|(first, second)| Definition::Equal { first, second })
         }
-        SketchConstraintKind::Parallel => match lines()? {
+        SketchConstraintKind::Parallel => match lines() {
             Some((first, second)) => Some(Definition::Parallel { first, second }),
             None => midpoint_constraint(entities),
         },
         SketchConstraintKind::Perpendicular => {
-            lines()?.map(|(first, second)| Definition::Perpendicular { first, second })
+            lines().map(|(first, second)| Definition::Perpendicular { first, second })
         }
         SketchConstraintKind::Horizontal
             if entities.len() == 1
@@ -4522,7 +4414,7 @@ pub(super) fn exact_atomic_constraint(
                 SketchLocus::Entity(second),
                 SketchCoordinateAxis::V,
             ) else {
-                return Ok(None);
+                return None;
             };
             Some(Definition::SameCoordinate { relation })
         }
@@ -4547,26 +4439,26 @@ pub(super) fn exact_atomic_constraint(
                 SketchLocus::Entity(second),
                 SketchCoordinateAxis::U,
             ) else {
-                return Ok(None);
+                return None;
             };
             Some(Definition::SameCoordinate { relation })
         }
         SketchConstraintKind::Tangent => {
-            curves()?.map(|(first, second)| Definition::Tangent { first, second })
+            curves().map(|(first, second)| Definition::Tangent { first, second })
         }
         SketchConstraintKind::Curvature => {
-            curves()?.map(|(first, second)| Definition::Curvature { first, second })
+            curves().map(|(first, second)| Definition::Curvature { first, second })
         }
         SketchConstraintKind::Midpoint => midpoint_constraint(entities),
         SketchConstraintKind::Equal => {
-            equal_size_entities()?.map(|(first, second)| Definition::Equal { first, second })
+            equal_size_entities().map(|(first, second)| Definition::Equal { first, second })
         }
         SketchConstraintKind::Polygon
             if entities.len() >= 3 && dimension_entity_ids_distinct(entities) =>
         {
             let members = entities.iter().map(|entity| entity.id().clone()).collect();
             let Ok(polygon) = cadmpeg_ir::sketches::SketchPolygon::try_new(members) else {
-                return Ok(None);
+                return None;
             };
             Some(Definition::Polygon { polygon })
         }
@@ -4578,7 +4470,7 @@ pub(super) fn exact_atomic_constraint(
             })
         }
         _ => None,
-    })
+    }
 }
 
 pub(super) fn exact_coincident_loci(
@@ -4773,7 +4665,7 @@ fn directional_point_dimension(
     evaluated_mm: f64,
     parameter: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
@@ -4806,16 +4698,16 @@ fn directional_point_dimension(
         linear_tolerance,
     );
     match (horizontal, vertical) {
-        (true, false) => Some(Ok(Definition::HorizontalDistance {
+        (true, false) => Some(Definition::HorizontalDistance {
             first: first_locus,
             second: second_locus,
             parameter,
-        })),
-        (false, true) => Some(Ok(Definition::VerticalDistance {
+        }),
+        (false, true) => Some(Definition::VerticalDistance {
             first: first_locus,
             second: second_locus,
             parameter,
-        })),
+        }),
         (false, false) | (true, true) => None,
     }
 }
@@ -4826,7 +4718,7 @@ fn recipe_linear_dimension_candidates(
     evaluated_mm: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
+) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -4900,9 +4792,7 @@ fn recipe_linear_dimension_candidates(
                 evaluated_mm,
                 parameter.clone(),
                 0.0,
-            )
-            .transpose()?
-            {
+            ) {
                 candidates.push(definition);
             }
         }
@@ -4914,20 +4804,19 @@ fn recipe_linear_dimension_candidates(
         };
         candidates.push(definition);
     }
-    Ok(candidates)
+    candidates
 }
 
 fn recipe_dimension_candidate_entities(
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
-) -> Result<Vec<cadmpeg_ir::sketches::SketchEntityId>, CodecError> {
+) -> Vec<cadmpeg_ir::sketches::SketchEntityId> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     let mut entities = Vec::new();
-    let mut add = |entity: &cadmpeg_ir::sketches::SketchEntityId| -> Result<(), CodecError> {
+    let mut add = |entity: &cadmpeg_ir::sketches::SketchEntityId| {
         if !entities.contains(entity) {
             entities.push(entity.clone());
         }
-        Ok(())
     };
     for candidate in candidates {
         match candidate {
@@ -4936,18 +4825,18 @@ fn recipe_dimension_candidate_entities(
                 ..
             } => {
                 for entity in candidate_entities {
-                    add(entity)?;
+                    add(entity);
                 }
             }
             Definition::HorizontalDistance { first, second, .. }
             | Definition::VerticalDistance { first, second, .. } => {
-                add(locus_entity_id(first))?;
-                add(locus_entity_id(second))?;
+                add(locus_entity_id(first));
+                add(locus_entity_id(second));
             }
             _ => {}
         }
     }
-    Ok(entities)
+    entities
 }
 
 /// Resolve an ambiguous recipe-backed directional distance through one
@@ -5093,7 +4982,7 @@ fn symmetric_parallel_line_dimension_definition(
     parameter: &DesignParameter,
     parameter_id: cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     let (first_role, second_role) = roles;
@@ -5107,14 +4996,12 @@ fn symmetric_parallel_line_dimension_definition(
     }
     let separation = parallel_line_distance(first, second)?;
     let expected = parameter.evaluated_value().get() * 10.0;
-    linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(
-        || -> Result<_, CodecError> {
-            Ok(Definition::Distance {
-                entities: vec![first.id().clone(), second.id().clone()],
-                parameter: parameter_id,
-            })
-        },
-    )
+    linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(|| {
+        Definition::Distance {
+            entities: vec![first.id().clone(), second.id().clone()],
+            parameter: parameter_id,
+        }
+    })
 }
 
 fn line_segment(geometry: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
@@ -5259,16 +5146,16 @@ fn linear_measurement_matches(measured: f64, expected: f64, linear_tolerance: f6
 fn two_locus_distance_dimension(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: cadmpeg_ir::features::ParameterId,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if entities.len() != 2 || entities[0].id() == entities[1].id() {
         return None;
     }
-    Some(Ok(Definition::Distance {
+    Some(Definition::Distance {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
         parameter,
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -5281,15 +5168,13 @@ fn counted_role_relation(
         &crate::records::sketch_relations::constraint_kinds_from_state(owner_role).0,
         0.0,
     )
-    .transpose()
-    .unwrap()
 }
 
 fn counted_role_relation_at_tolerance(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_kinds: &[SketchConstraintKind],
     linear_tolerance: f64,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
     };
@@ -5309,17 +5194,17 @@ fn counted_role_relation_at_tolerance(
                     if dv.abs()
                         <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
-                    Some(Ok(Definition::Horizontal {
+                    Some(Definition::Horizontal {
                         entity: entity.id().clone(),
-                    }))
+                    })
                 }
                 SketchConstraintKind::Vertical
                     if du.abs()
                         <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
-                    Some(Ok(Definition::Vertical {
+                    Some(Definition::Vertical {
                         entity: entity.id().clone(),
-                    }))
+                    })
                 }
                 _ => None,
             }
@@ -5328,16 +5213,16 @@ fn counted_role_relation_at_tolerance(
             if exact_line_arc_tangency(entities, linear_tolerance)
                 || exact_circular_tangency(entities, linear_tolerance) =>
         {
-            Some(Ok(Definition::Tangent {
+            Some(Definition::Tangent {
                 first: first.id().clone(),
                 second: second.id().clone(),
-            }))
+            })
         }
         (SketchConstraintKind::Equal, [first, second]) if exact_equal_size(entities) => {
-            Some(Ok(Definition::Equal {
+            Some(Definition::Equal {
                 first: first.id().clone(),
                 second: second.id().clone(),
-            }))
+            })
         }
         _ => None,
     })
@@ -5622,39 +5507,39 @@ fn exact_centered_entity_relation(
 
 fn exact_counted_dimension_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
     if let Some(definition) = exact_centered_entity_relation(entities) {
-        return Ok(Some(definition));
+        return Some(definition);
     }
     if let Some((first, second, axis)) = reflected_symmetry(entities) {
-        return Ok(Some(Definition::Symmetric {
+        return Some(Definition::Symmetric {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
             axis: axis.id().clone(),
-        }));
+        });
     }
     let [first, second] = entities else {
-        return Ok(None);
+        return None;
     };
     if first.id() == second.id() {
-        return Ok(None);
+        return None;
     }
     let point_on_geometry = |point: &cadmpeg_ir::sketches::SketchEntity,
                              geometry: &cadmpeg_ir::sketches::SketchEntity|
-     -> Result<bool, CodecError> {
+     -> bool {
         let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
-            return Ok(false);
+            return false;
         };
         point_lies_on_sketch_geometry(position.get(), &geometry.geometry)
     };
-    if point_on_geometry(first, second)? || point_on_geometry(second, first)? {
-        return Ok(Some(Definition::Coincident {
+    if point_on_geometry(first, second) || point_on_geometry(second, first) {
+        return Some(Definition::Coincident {
             entities: vec![first.id().clone(), second.id().clone()],
-        }));
+        });
     }
     let (
         SketchGeometryDefinition::Line {
@@ -5667,7 +5552,7 @@ fn exact_counted_dimension_relation(
         },
     ) = (first.geometry.definition(), second.geometry.definition())
     else {
-        return Ok(None);
+        return None;
     };
     let first_direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
     let second_direction =
@@ -5679,7 +5564,7 @@ fn exact_counted_dimension_relation(
         || first_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
         || second_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
     {
-        return Ok(None);
+        return None;
     }
     let first_direction = Point2::new(
         first_direction.u / first_length,
@@ -5693,10 +5578,8 @@ fn exact_counted_dimension_relation(
         .u
         .mul_add(second_direction.v, -first_direction.v * second_direction.u);
     if cross.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 {
-        let Some(signed_offset) = parallel_line_offset(&first.geometry, &second.geometry) else {
-            return Ok(None);
-        };
-        return Ok(Some(
+        let signed_offset = parallel_line_offset(&first.geometry, &second.geometry)?;
+        return Some(
             if signed_offset.abs()
                 <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 * (1.0 + first_length)
             {
@@ -5710,34 +5593,35 @@ fn exact_counted_dimension_relation(
                     second: second.id().clone(),
                 }
             },
-        ));
+        );
     }
     let dot = first_direction
         .u
         .mul_add(second_direction.u, first_direction.v * second_direction.v);
-    (dot.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9)
-        .then(|| -> Result<_, CodecError> {
-            Ok(Definition::Perpendicular {
-                first: first.id().clone(),
-                second: second.id().clone(),
-            })
-        })
-        .transpose()
+
+    (dot.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9).then(|| {
+        Definition::Perpendicular {
+            first: first.id().clone(),
+            second: second.id().clone(),
+        }
+    })
 }
 
 pub(super) fn point_lies_on_sketch_geometry(
     point: Point2,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
-) -> Result<bool, CodecError> {
+) -> bool {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() {
         if curve.periodic() {
-            return Ok(false);
+            return false;
         }
         let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
             * (1.0 + point.u.abs().max(point.v.abs()));
         let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
+        // This standalone evaluator uses no decode context or depth entry,
+        // so it cannot produce a resource refusal.
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             curve.degree(),
             curve.knots(),
@@ -5746,8 +5630,7 @@ pub(super) fn point_lies_on_sketch_geometry(
             point,
             tolerance,
         )
-        .map(|contained| contained.unwrap_or(false))
-        .map_err(CodecError::ResourceLimit);
+        .is_ok_and(|contained| contained == Some(true));
     }
 
     let close = |left: f64, right: f64| {
@@ -5757,7 +5640,7 @@ pub(super) fn point_lies_on_sketch_geometry(
                 <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     * (1.0 + left.abs().max(right.abs()))
     };
-    Ok((|| match geometry.definition() {
+    match geometry.definition() {
         SketchGeometryDefinition::Point { position } => sketch_points_close(point, position.get()),
         SketchGeometryDefinition::Line { start, end } => {
             let direction = Point2::new(end.u - start.u, end.v - start.v);
@@ -5882,7 +5765,7 @@ pub(super) fn point_lies_on_sketch_geometry(
         | SketchGeometryDefinition::Text { .. }
         | SketchGeometryDefinition::ExternalReference { .. }
         | SketchGeometryDefinition::Native { .. } => false,
-    })())
+    }
 }
 
 struct CountedOffset {
@@ -6031,7 +5914,7 @@ pub(super) fn exact_offset_constraint(
     relation: &SketchRelation,
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
-) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
@@ -6109,11 +5992,11 @@ pub(super) fn exact_offset_constraint(
             source_reversed,
         });
     }
-    Some(Ok(Definition::Offset {
+    Some(Definition::Offset {
         pairs,
         distance: Length::new(canonical_distance?)?,
         parameter: None,
-    }))
+    })
 }
 
 fn offset_source_reversed(distance: f64, canonical: &mut Option<f64>) -> Option<bool> {

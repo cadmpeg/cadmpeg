@@ -24,11 +24,9 @@ fn named_point_block_use_admits_fixture() {
     .expect("composed feature-history container");
     let references = feature_sketch_references(&container).expect("named point references");
     let points = offset_store_named_points(&container).expect("named point blocks");
-    assert!(
-        !{ feature_sketch_named_point_block_uses(&references, &points) }
-            .expect("admitted block use")
-            .is_empty()
-    );
+    assert!(!feature_sketch_named_point_block_uses(&references, &points)
+        .expect("admitted block use")
+        .is_empty());
 }
 
 #[test]

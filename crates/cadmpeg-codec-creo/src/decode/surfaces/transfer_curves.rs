@@ -747,7 +747,7 @@ mod tests {
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
-        .expect("service boundary transfer");
+        .expect("transfer the NURBS boundary curves");
         assert_eq!(service.ids.len(), 1);
         assert_eq!(service.endpoint_witnesses.len(), 1);
     }

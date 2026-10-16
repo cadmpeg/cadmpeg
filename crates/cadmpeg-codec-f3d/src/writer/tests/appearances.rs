@@ -97,7 +97,8 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     );
     assert!(round_trip.ir().model.appearance_bindings.is_empty());
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native(ctx, round_trip.ir()).expect("service native validation")
+        crate::validate::validate_native(ctx, round_trip.ir())
+            .expect("validate the native namespace")
     })
     .is_empty());
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())

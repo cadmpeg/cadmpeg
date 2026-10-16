@@ -315,7 +315,8 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         .first()
         .is_some_and(|use_| use_.parameter_range.is_some()));
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native(ctx, round_trip.ir()).expect("service native validation")
+        crate::validate::validate_native(ctx, round_trip.ir())
+            .expect("validate the native namespace")
     })
     .is_empty());
 }

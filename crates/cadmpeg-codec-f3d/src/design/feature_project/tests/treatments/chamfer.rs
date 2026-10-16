@@ -59,7 +59,9 @@ fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
     )];
     let owners = [localized_fillet_owner(10, 11, 0)];
 
-    let (refused, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: refused, ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -83,7 +85,9 @@ fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
     ));
 
     let group = localized_fillet_group(100, 0, vec![200]);
-    let (accepted, _) = crate::test_support::with_decode_context(|ctx| {
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features: accepted, ..
+    } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         crate::design::feature_project::project_parameter_design_with_edge_identities(

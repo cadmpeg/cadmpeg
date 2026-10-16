@@ -312,7 +312,7 @@ fn decode_transfers_generated_protein_appearance() {
         .iter()
         .all(|member| member.flags == 0));
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native(ctx, result.ir()).expect("service native validation")
+        crate::validate::validate_native(ctx, result.ir()).expect("validate the native namespace")
     })
     .is_empty());
 }

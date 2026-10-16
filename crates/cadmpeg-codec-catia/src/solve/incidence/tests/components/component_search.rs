@@ -26,7 +26,7 @@ fn incidence_components_filter_complete_solutions_during_search() {
         None,
         &|pairs| Ok(pairs[1] == [2, 3]),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("filtered component solution");
 
     assert_eq!(solutions, vec![vec![[0, 1], [2, 3], [1, 2], [3, 0]]]);
@@ -62,7 +62,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
         }),
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("partially constrained component solutions");
 
     assert_eq!(solutions, vec![vec![[0, 0], [300, 300]]]);
@@ -100,7 +100,7 @@ fn incidence_components_visit_every_independent_combination() {
             Ok(ControlFlow::Continue(()))
         },
     )
-    .expect("service decode");
+    .expect("visit the component incidence pair solutions");
 
     assert_eq!(
         outcome,
@@ -181,11 +181,11 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
     let mut quotient = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
     quotient
         .merge(0, 1)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("first closed edge");
     quotient
         .merge(2, 3)
-        .expect("service merge")
+        .expect("merge the components")
         .expect("second closed edge");
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
@@ -199,7 +199,7 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
         None,
         &|_| Ok(true),
     )
-    .expect("compute the component incidence pair solutions")
+    .expect("find the component incidence pair solutions")
     .expect("globally assignable component solution");
 
     assert_eq!(solutions, vec![vec![[0, 0], [1, 1]]]);
@@ -235,7 +235,7 @@ fn incidence_components_preflight_quotient_impossible_domains() {
     for edge in 0..choices.len() {
         quotient
             .merge(edge * 2, edge * 2 + 1)
-            .expect("service merge")
+            .expect("merge the components")
             .expect("closed edge");
     }
     let mut visited = false;
@@ -429,7 +429,7 @@ fn compact_boundary_advance_completes_a_two_edge_cycle() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("compute the initial mesh quotient")
+            .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let advance = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(10_000);

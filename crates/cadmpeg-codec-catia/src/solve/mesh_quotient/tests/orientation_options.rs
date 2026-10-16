@@ -32,7 +32,7 @@ fn open_single_edge_boundary_has_no_orientation_options() {
             .map(|options| options.is_empty())
     };
     catia_test_context!(service_ctx);
-    assert!(run(&service_ctx).expect("compute the assignment options"));
+    assert!(run(&service_ctx).expect("find the assignment orientation options"));
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn edge_domains_outside_the_quotient_are_not_viable() {
     );
     assert!(!quotient
         .edge_domains_viable(&[vec![[2, 3]]])
-        .expect("check edge domains viable"));
+        .expect("check that the edge domains are viable"));
 }
 
 #[test]

@@ -22,8 +22,8 @@ use super::super::sketch::radii::{
 };
 use super::super::sketch::skamp::section_segment_rows;
 use super::super::sketch_ids::{
-    feature_definition_has_sketch_design, model_sketch_id, sketch_constraint_id_admitted,
-    sketch_entity_id_admitted, sketch_feature_id_admitted, sketch_native_ref_admitted,
+    feature_definition_has_sketch_design, model_sketch_id, sketch_constraint_id, sketch_entity_id,
+    sketch_feature_id, sketch_native_ref,
 };
 use super::super::uniqueness::unique_feature_section_transform;
 use super::entities::{transfer_section_entities, SectionEntityTransfer};
@@ -507,7 +507,7 @@ pub(in super::super) fn transfer_sketches(
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (external_id, offset) in solver_only_section_entities(definition) {
-            let Some(id) = sketch_entity_id_admitted(&sketch_id, external_id) else {
+            let Some(id) = sketch_entity_id(&sketch_id, external_id) else {
                 continue;
             };
             if entities.iter().any(|entity| entity.id() == &id) {
@@ -543,7 +543,7 @@ pub(in super::super) fn transfer_sketches(
                     ),
                 )
                 .with_construction(true)
-                .with_native_ref(Some(sketch_native_ref_admitted(&sketch_id))),
+                .with_native_ref(Some(sketch_native_ref(&sketch_id))),
             );
         }
         let (emitted_entity_ids, emitted_entity_geometry) = emitted_entity_views(&entities);
@@ -553,7 +553,7 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             }
             let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
-            let Some(entity) = sketch_entity_id_admitted(&sketch_id, &suffix) else {
+            let Some(entity) = sketch_entity_id(&sketch_id, &suffix) else {
                 continue;
             };
             if let Some(definition) =
@@ -580,7 +580,7 @@ pub(in super::super) fn transfer_sketches(
             } else {
                 format!("centered_line:offset:{}", segment.offset)
             };
-            let Some(entity) = sketch_entity_id_admitted(&sketch_id, &suffix) else {
+            let Some(entity) = sketch_entity_id(&sketch_id, &suffix) else {
                 continue;
             };
             let definition = native_section_segment_verhor_definition(
@@ -612,7 +612,7 @@ pub(in super::super) fn transfer_sketches(
             } else {
                 format!("bounded_curve:offset:{}", segment.offset)
             };
-            let Some(entity) = sketch_entity_id_admitted(&sketch_id, &suffix) else {
+            let Some(entity) = sketch_entity_id(&sketch_id, &suffix) else {
                 continue;
             };
             let definition = native_section_segment_verhor_definition(
@@ -644,7 +644,7 @@ pub(in super::super) fn transfer_sketches(
             } else {
                 format!("reference_line:offset:{}", segment.offset)
             };
-            let Some(entity) = sketch_entity_id_admitted(&sketch_id, &suffix) else {
+            let Some(entity) = sketch_entity_id(&sketch_id, &suffix) else {
                 continue;
             };
             let definition = native_section_segment_verhor_definition(
@@ -672,7 +672,7 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             };
             let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
-            let Some(entity) = sketch_entity_id_admitted(&sketch_id, &suffix) else {
+            let Some(entity) = sketch_entity_id(&sketch_id, &suffix) else {
                 continue;
             };
             let definition = native_section_segment_verhor_definition(
@@ -891,11 +891,11 @@ pub(in super::super) fn transfer_sketches(
                 visible: None,
                 placement,
                 profiles,
-                native_ref: Some(sketch_native_ref_admitted(&sketch_id)),
+                native_ref: Some(sketch_native_ref(&sketch_id)),
             },
         )?;
         if owned_section_feature_id(scan, definition.identity.id()).is_none() {
-            let Some(feature_id) = sketch_feature_id_admitted(&sketch_id) else {
+            let Some(feature_id) = sketch_feature_id(&sketch_id) else {
                 continue;
             };
             annotate(
@@ -925,7 +925,7 @@ pub(in super::super) fn transfer_sketches(
                         )),
                     }),
                 ),
-                native_ref: Some(sketch_native_ref_admitted(&sketch_id)),
+                native_ref: Some(sketch_native_ref(&sketch_id)),
             };
             source_carriers.admit_feature(ctx, ir, feature)?;
         }
@@ -972,7 +972,7 @@ fn emit_verhor_constraint(
     if !reconcile_constraint_entity_references(&mut constraint_definition, emitted_entity_ids) {
         return Ok(());
     }
-    let Some(id) = sketch_constraint_id_admitted(sketch, format_args!("verhor:{suffix}")) else {
+    let Some(id) = sketch_constraint_id(sketch, format_args!("verhor:{suffix}")) else {
         return Ok(());
     };
     let Ok(definition) =
@@ -1001,7 +1001,7 @@ fn emit_verhor_constraint(
         label_distance: None,
         label_position: None,
         metadata: None,
-        native_ref: Some(sketch_native_ref_admitted(sketch)),
+        native_ref: Some(sketch_native_ref(sketch)),
     };
     admit_constraint_row(ctx, constraints, constraint)
 }

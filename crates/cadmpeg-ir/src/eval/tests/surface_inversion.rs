@@ -26,7 +26,7 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
         None,
         &cadmpeg_core::decode::WorkBudget::new(crate::eval::DEFAULT_NURBS_SURFACE_INVERSION_WORK),
     )
-    .expect("compute the NURBS surface closest parameter")
+    .expect("find the closest NURBS surface parameters")
     .expect("closest surface parameter");
     assert!((closest.u - 0.3).abs() < 1.0e-12);
     assert!((closest.v - 0.7).abs() < 1.0e-12);
@@ -37,7 +37,7 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
         None,
         0.19
     )
-    .expect("check NURBS surface parameter within tolerance")
+    .expect("find the NURBS surface parameters within tolerance")
     .is_none());
     assert!(nurbs_surface_parameter_within_tolerance(
         &cadmpeg_test_support::service_decode_context(),
@@ -46,7 +46,7 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
         None,
         0.2 + EPS_INVERSE_CONTRACT_MARGIN
     )
-    .expect("check NURBS surface parameter within tolerance")
+    .expect("find the NURBS surface parameters within tolerance")
     .is_some());
 }
 
@@ -64,7 +64,7 @@ fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
             tolerance,
             &budget(),
         )
-        .expect("check NURBS surface parameter within tolerance")
+        .expect("find the NURBS surface parameters within tolerance")
         .is_none());
     }
     let tolerance = crate::scalar::NonNegativeReal::new(0.2 + 1.0e-12).unwrap();
@@ -88,7 +88,7 @@ fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
             tolerance.get(),
             &budget(),
         )
-        .expect("check NURBS surface parameter within tolerance")
+        .expect("find the NURBS surface parameters within tolerance")
     );
 }
 
@@ -106,7 +106,7 @@ fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
         EPS_SURFACE_INVERSE_FIT,
         &budget,
     )
-    .expect("check NURBS surface parameter within tolerance")
+    .expect("find the NURBS surface parameters within tolerance")
     .is_none());
     assert!(budget.exhausted());
 
@@ -119,7 +119,7 @@ fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
         EPS_SURFACE_INVERSE_FIT,
         &budget,
     )
-    .expect("check NURBS surface parameter within tolerance")
+    .expect("find the NURBS surface parameters within tolerance")
     .expect("a valid surface fits within a larger caller-owned budget");
     assert!((parameters.u - 0.3).abs() < 1.0e-12);
     assert!((parameters.v - 0.7).abs() < 1.0e-12);
@@ -164,7 +164,7 @@ fn budgeted_nurbs_surface_inverse_accepts_a_fit_qualified_seed_first() {
         FIT_TOLERANCE,
         &budget,
     )
-    .expect("check NURBS surface parameter within tolerance")
+    .expect("find the NURBS surface parameters within tolerance")
     .expect("a fit-qualified continuation seed does not need global search");
 
     assert_eq!(parameters, Point2::new(0.3, 0.7));
@@ -211,7 +211,7 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
         FIT_TOLERANCE,
         &budget,
     )
-    .expect("check NURBS surface parameter within tolerance")
+    .expect("find the NURBS surface parameters within tolerance")
     .expect("a nearby seed should be refined before global patch search");
 
     assert!((parameters.u - 0.3).abs() <= PARAMETER_TOLERANCE);
@@ -274,7 +274,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
         None,
         EPS_SURFACE_INVERSE_FIT,
     )
-    .expect("check NURBS surface parameter within tolerance")
+    .expect("find the NURBS surface parameters within tolerance")
     .expect("rational multi-span inverse");
     assert!((parameters.u - 0.75).abs() < 1.0e-9);
     assert!((parameters.v - 0.4).abs() < 1.0e-9);

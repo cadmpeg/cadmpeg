@@ -1265,6 +1265,6 @@ fn decode_links_value_block_graph_to_its_catalog() {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service decode");
+    .expect("decode the native namespace");
     assert!(native.object_graphs[0].catalog.is_some());
 }

@@ -222,20 +222,18 @@ fn saved_line_joins_through_order_table() {
         .expect("test spline allocation")
         .is_empty()
     );
-    let (native_entity, offset) = ({
-        unresolved_saved_section_entity(
-            &incomplete,
-            &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),
-            &incomplete
-                .saved_section
-                .as_ref()
-                .expect("saved section")
-                .entities[0],
-            &unique_saved_section_internal_ids(&incomplete),
-            &BTreeSet::new(),
-        )
-    })
-    .expect("service saved entity admission")
+    let (native_entity, offset) = unresolved_saved_section_entity(
+        &incomplete,
+        &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),
+        &incomplete
+            .saved_section
+            .as_ref()
+            .expect("saved section")
+            .entities[0],
+        &unique_saved_section_internal_ids(&incomplete),
+        &BTreeSet::new(),
+    )
+    .expect("build the unresolved saved section entity")
     .expect("valid test fixture");
     assert_eq!(offset, 20);
     assert_eq!(
@@ -790,22 +788,18 @@ fn saved_line_joins_through_order_table() {
         .expect("relations")
         .skamps()[0]
         .items[1];
-    assert!({
-        section_skamp_point_locus(
-            &solver_families,
-            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-            point_item,
-        )
-    }
+    assert!(section_skamp_point_locus(
+        &solver_families,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+        point_item,
+    )
     .is_some());
-    assert!({
-        section_skamp_incidence_locus(
-            &solver_families,
-            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-            line_item,
-            Some(&solver_geometry),
-        )
-    }
+    assert!(section_skamp_incidence_locus(
+        &solver_families,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+        line_item,
+        Some(&solver_geometry),
+    )
     .is_some());
     assert!(
         matches!(

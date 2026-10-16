@@ -900,7 +900,7 @@ mod tests {
         let bytes = [b'A', 0];
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("service context");
+            .expect("build the decode context");
         assert_eq!(
             Cursor::new(root)
                 .utf16_counted(&ctx, "value", 1)
@@ -924,7 +924,7 @@ mod tests {
     fn assert_diagnostic_not_implemented(bytes: &[u8], document_kind: &DocumentKind) {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-            .expect("service context");
+            .expect("build the decode context");
         assert!(matches!(
             parse_stream(&ctx, root, stream_id(), document_kind),
             Err(CodecError::NotImplemented(_))

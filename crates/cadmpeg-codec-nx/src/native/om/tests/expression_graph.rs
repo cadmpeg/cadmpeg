@@ -540,17 +540,15 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
             .map(String::as_str),
         Some("degree")
     );
-    assert!(
-        ({ feature_completeness::incomplete_expression_parameters(&ir) })
-            .unwrap()
-            .is_empty()
-    );
+    assert!(feature_completeness::incomplete_expression_parameters(&ir)
+        .unwrap()
+        .is_empty());
 
     ir.model.parameters[0]
         .properties
         .insert(cadmpeg_core::nonblank_literal!("unit"), "native".into());
     assert_eq!(
-        ({ feature_completeness::incomplete_expression_parameters(&ir) }).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
         [
             ir.model.parameters[0].id.clone(),
             ir.model.parameters[2].id.clone(),
@@ -643,25 +641,23 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
             cadmpeg_ir::scalar::Length::new(value).unwrap(),
         ));
     }
-    assert!(
-        ({ feature_completeness::incomplete_expression_parameters(&ir) })
-            .unwrap()
-            .is_empty()
-    );
+    assert!(feature_completeness::incomplete_expression_parameters(&ir)
+        .unwrap()
+        .is_empty());
 
     let mut inconsistent = ir.clone();
     inconsistent.model.parameters[1].value = Some(cadmpeg_ir::features::ParameterValue::Length(
         cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
     ));
     assert_eq!(
-        ({ feature_completeness::incomplete_expression_parameters(&inconsistent) }).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&inconsistent).unwrap(),
         [inconsistent.model.parameters[1].id.clone()].into()
     );
 
     let mut duplicate_name = ir.clone();
     duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
     assert_eq!(
-        ({ feature_completeness::incomplete_expression_parameters(&duplicate_name) }).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&duplicate_name).unwrap(),
         duplicate_name.model.parameters[..2]
             .iter()
             .map(|parameter| parameter.id.clone())
@@ -671,7 +667,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
     let mut unevaluated = ir.clone();
     unevaluated.model.parameters[1].value = None;
     assert_eq!(
-        ({ feature_completeness::incomplete_expression_parameters(&unevaluated) }).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&unevaluated).unwrap(),
         [unevaluated.model.parameters[1].id.clone()].into()
     );
 
@@ -685,7 +681,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
         ),
     );
     assert_eq!(
-        ({ feature_completeness::incomplete_expression_parameters(&operation_owned) }).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&operation_owned).unwrap(),
         [operation_owned.model.parameters[1].id.clone()].into()
     );
 }
@@ -732,7 +728,7 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
         .iter()
         .all(|parameter| parameter.dependencies.is_empty()));
     assert_eq!(
-        ({ feature_completeness::incomplete_expression_parameters(&ir) }).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
         ir.model
             .parameters
             .iter()
@@ -740,7 +736,7 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
             .collect()
     );
     let mut losses = Vec::new();
-    ({ crate::decode::report::append_design_intent_losses(&ir, &mut losses) }).unwrap();
+    crate::decode::report::append_design_intent_losses(&ir, &mut losses).unwrap();
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("2 NX expression parameter(s)"));
 }
@@ -802,7 +798,7 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
         ));
     }
     assert_eq!(
-        ({ feature_completeness::incomplete_expression_parameters(&ir) }).unwrap(),
+        feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
         ir.model.parameters[2..]
             .iter()
             .map(|parameter| parameter.id.clone())

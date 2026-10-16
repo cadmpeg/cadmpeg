@@ -387,7 +387,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     });
     let mut annotations = AnnotationBuilder::new();
 
-    ({ attach_active_configuration_parameter_values(&mut ir, &mut annotations) })
+    attach_active_configuration_parameter_values(&mut ir, &mut annotations)
         .expect("valid exactness fields");
 
     assert_eq!(
@@ -482,7 +482,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
-        ({ attach_active_configuration_parameter_values(&mut ir, &mut annotations) })
+        attach_active_configuration_parameter_values(&mut ir, &mut annotations)
             .expect("valid exactness fields");
 
         assert!(ir.model.configurations[0].parameter_values.is_empty());
@@ -618,7 +618,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     ];
     let mut annotations = AnnotationBuilder::new();
 
-    ({ attach_current_feature_states(&mut ir, &mut annotations) }).expect("valid exactness fields");
+    attach_current_feature_states(&mut ir, &mut annotations).expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));

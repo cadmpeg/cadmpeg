@@ -1338,16 +1338,14 @@ pub(crate) fn bind_face_operand_candidates(
         {
             operand.unreferenced_candidate_faces.push(face.clone());
         }
-        for face in operand
-            .recipe_references
-            .iter()
-            .filter(|reference| reference.design_reference == design_reference)
-            .flat_map(|reference| &reference.alternate_selector_faces)
-        {
+        operand.alternate_selector_candidate_faces.extend(
             operand
-                .alternate_selector_candidate_faces
-                .push(face.clone());
-        }
+                .recipe_references
+                .iter()
+                .filter(|reference| reference.design_reference == design_reference)
+                .flat_map(|reference| &reference.alternate_selector_faces)
+                .cloned(),
+        );
         operand
             .alternate_selector_candidate_faces
             .sort_by(|left, right| left.as_str().cmp(right.as_str()));

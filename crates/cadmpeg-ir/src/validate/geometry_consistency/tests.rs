@@ -412,7 +412,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
         &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([2.0, 3.0])),
         &mut findings,
     )
-    .expect("check procedural support consistency");
+    .expect("check that the procedural support is consistent");
     assert!(findings.is_empty());
 
     check_procedural_support_consistency(
@@ -420,7 +420,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
         &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([3.0, 2.0])),
         &mut findings,
     )
-    .expect("check procedural support consistency");
+    .expect("check that the procedural support is consistent");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("support side 0"));
 }
@@ -433,7 +433,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
         &crate::index::ModelIndex::new_model_only(&mapped_surface_offset()),
         &mut findings,
     )
-    .expect("check procedural support consistency");
+    .expect("check that the procedural support is consistent");
     assert!(findings.is_empty());
 
     let mut context_first = mapped_surface_offset();
@@ -479,7 +479,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
         &crate::index::ModelIndex::new_model_only(&context_first),
         &mut findings,
     )
-    .expect("check procedural support consistency");
+    .expect("check that the procedural support is consistent");
     assert!(findings.is_empty());
 
     let mut ir = mapped_surface_offset();
@@ -498,7 +498,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("check procedural support consistency");
+    .expect("check that the procedural support is consistent");
     assert_eq!(findings.len(), 2);
     assert!(findings
         .iter()
@@ -517,7 +517,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("check pcurve surface consistency");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(findings.is_empty(), "{findings:#?}");
 
     let mut mismatched = ir;
@@ -539,7 +539,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
         &crate::index::ModelIndex::new_model_only(&mismatched),
         &mut findings,
     )
-    .expect("check pcurve surface consistency");
+    .expect("check that the pcurve is consistent with the surface");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("pcurve mapped through"));
 }
@@ -618,7 +618,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("check pcurve surface consistency");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -645,7 +645,7 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("check pcurve surface consistency");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -680,7 +680,7 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("check pcurve surface consistency");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -1404,7 +1404,7 @@ fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("check procedural support consistency");
+    .expect("check that the procedural support is consistent");
     assert_eq!(findings.len(), 1, "{findings:?}");
     assert_eq!(
         findings[0].message,
@@ -1456,7 +1456,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
         &crate::index::ModelIndex::new_model_only(&ir),
         &mut findings,
     )
-    .expect("check pcurve surface consistency");
+    .expect("check that the pcurve is consistent with the surface");
     assert!(
         findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(coedge_id.as_str())

@@ -15,7 +15,7 @@ fn references_result() -> Result<BrepFaceReferences, CodecError> {
 
 #[test]
 fn brep_face_references_preserve_service_loop_order() {
-    let references = references_result().expect("service face references admitted");
+    let references = references_result().expect("build the face references");
     assert_eq!(references.face.as_str(), "creo:visibgeom:face#5");
     assert_eq!(references.shell_id.as_str(), "creo:visibgeom:shell#1");
     assert_eq!(

@@ -1611,7 +1611,7 @@ fn decode_plane_support_lane_variants(
 #[cfg(test)]
 fn decode_plane_support_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
     crate::decode::with_service_context(|ctx| decode_plane_support_local_system(ctx, body, cache))
-        .expect("service scalar admission")
+        .expect("decode the plane support local system")
         .map(|(values, _)| values.get())
 }
 
@@ -2733,7 +2733,7 @@ mod tests {
             let frame = crate::decode::with_service_context(|ctx| {
                 decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
             })
-            .expect("service scalar admission")
+            .expect("decode the inline non-plane local system prefix")
             .into_iter()
             .find_map(|prefix| match prefix {
                 InlineNonPlaneLocalSystemPrefix::Compact(frame)
@@ -2814,7 +2814,7 @@ mod tests {
                 &body,
                 &ScalarCache::default()
             ))
-            .expect("service scalar admission")
+            .expect("decode the plane support local system")
             .map(|(values, layout)| (values.get(), layout)),
             Some((
                 [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,],
@@ -2835,7 +2835,7 @@ mod tests {
         assert!(crate::decode::with_service_context(|ctx| {
             decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
         })
-        .expect("service scalar admission")
+        .expect("decode the inline non-plane local system prefix")
         .into_iter()
         .any(|prefix| matches!(
             prefix,
@@ -2856,7 +2856,7 @@ mod tests {
         assert!(crate::decode::with_service_context(|ctx| {
             decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
         })
-        .expect("service scalar admission")
+        .expect("decode the inline non-plane local system prefix")
         .into_iter()
         .any(|prefix| matches!(
             prefix,
@@ -2920,7 +2920,7 @@ mod tests {
             crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
                 ctx, &body, &cache
             ))
-            .expect("service scalar admission")
+            .expect("decode the plane support local system")
             .map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
@@ -2930,7 +2930,7 @@ mod tests {
                 &[0x10; 12],
                 &ScalarCache::default()
             ))
-            .expect("service scalar admission")
+            .expect("decode the plane support local system")
             .map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
@@ -3063,7 +3063,7 @@ mod tests {
         let (slots, layout) = crate::decode::with_service_context(|ctx| {
             decode_plane_support_local_system(ctx, &body, &ScalarCache::default())
         })
-        .expect("service scalar admission")
+        .expect("decode the plane support local system")
         .expect("complete diagonal support image");
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert_eq!(
@@ -3114,7 +3114,7 @@ mod tests {
         let (slots, layout) = crate::decode::with_service_context(|ctx| {
             decode_plane_support_local_system(ctx, &body, &cache)
         })
-        .expect("service scalar admission")
+        .expect("decode the plane support local system")
         .expect("lane-ambiguous frame has one valid orthogonal interpretation");
         let slots = slots.get();
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
@@ -3147,7 +3147,7 @@ mod tests {
             crate::decode::with_service_context(|ctx| decode_plane_support_lane_variants(
                 ctx, &body, &cache
             ))
-            .expect("service scalar admission")
+            .expect("decode the plane support lane variants")
             .count(),
             1
         );
@@ -3155,7 +3155,7 @@ mod tests {
             crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
                 ctx, &body, &cache
             ))
-            .expect("service scalar admission")
+            .expect("decode the plane support local system")
             .is_none()
         );
     }

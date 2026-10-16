@@ -1475,7 +1475,7 @@ mod tests {
 
         let transferred = crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch entities")
+                .expect("transfer the native sketch entities")
         });
         assert_eq!(transferred.len(), 1);
         assert!(transferred.contains("catia:outer:object-record#geometry-field"));
@@ -1523,7 +1523,7 @@ mod tests {
                 &transfer,
                 &graph_scope
             )
-            .expect("transfer native sketch entities"))
+            .expect("transfer the native sketch entities"))
             .is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
@@ -1562,7 +1562,7 @@ mod tests {
                 &transfer,
                 &graph_scope
             )
-            .expect("transfer native sketch entities"))
+            .expect("transfer the native sketch entities"))
             .is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
@@ -1573,7 +1573,7 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
         crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch entities")
+                .expect("transfer the native sketch entities")
         });
         assert!(!ir.model.sketch_entities.is_empty());
         let duplicates = ir.model.sketch_entities.clone();
@@ -1593,7 +1593,7 @@ mod tests {
 
         crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch entities")
+                .expect("transfer the native sketch entities")
         });
         assert_eq!(
             crate::test_support::with_service_context(|ctx| transfer_native_sketch_constraints(
@@ -1715,7 +1715,7 @@ mod tests {
         let (mut ir, native, transfer, graph_scope) = native_sketch_constraint_fixture();
         crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch entities")
+                .expect("transfer the native sketch entities")
         });
         let error = crate::test_support::with_entity_limit(0, |ctx| {
             transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
@@ -1742,7 +1742,7 @@ mod tests {
 
         crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch entities")
+                .expect("transfer the native sketch entities")
         });
         assert!(crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
@@ -1765,7 +1765,7 @@ mod tests {
 
         crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-                .expect("transfer native sketch entities")
+                .expect("transfer the native sketch entities")
         });
         assert!(crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
@@ -2125,7 +2125,7 @@ mod tests {
         let admitted = crate::test_support::with_service_context(|ctx| {
             transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
         })
-        .expect("transfer native sketch entities");
+        .expect("transfer the native sketch entities");
         assert!(admitted.is_empty());
     }
 

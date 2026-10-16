@@ -254,7 +254,7 @@ pub(super) fn sketch_identity_scope(sketch: &SketchId) -> &str {
         .unwrap_or(sketch.as_str())
 }
 
-pub(super) fn sketch_entity_id_admitted(
+pub(super) fn sketch_entity_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
 ) -> Option<SketchEntityId> {
@@ -265,7 +265,7 @@ pub(super) fn sketch_entity_id_admitted(
     SketchEntityId::try_from(text).ok()
 }
 
-pub(super) fn sketch_constraint_id_admitted(
+pub(super) fn sketch_constraint_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
 ) -> Option<SketchConstraintId> {
@@ -276,14 +276,11 @@ pub(super) fn sketch_constraint_id_admitted(
     SketchConstraintId::try_from(text).ok()
 }
 
-pub(super) fn sketch_native_ref_admitted(sketch: &SketchId) -> String {
+pub(super) fn sketch_native_ref(sketch: &SketchId) -> String {
     format!("creo:featdefs:sketch#{}", sketch_identity_scope(sketch))
 }
 
-pub(super) fn sketch_section_curve_id_admitted(
-    sketch: &SketchId,
-    suffix: impl std::fmt::Display,
-) -> String {
+pub(super) fn sketch_section_curve_id(sketch: &SketchId, suffix: impl std::fmt::Display) -> String {
     let namespace = &crate::identity::FEATDEFS_SECTION_CURVE;
     format!(
         "{}:{}:{}#{}:{suffix}",
@@ -294,7 +291,7 @@ pub(super) fn sketch_section_curve_id_admitted(
     )
 }
 
-pub(super) fn typed_sketch_section_curve_id_admitted(
+pub(super) fn typed_sketch_section_curve_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
 ) -> Option<CurveId> {
@@ -309,14 +306,14 @@ pub(super) fn typed_sketch_section_curve_id_admitted(
     CurveId::try_from(text).ok()
 }
 
-pub(super) fn sketch_point_ref_admitted(sketch: &SketchId, point: u32) -> String {
+pub(super) fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
     format!(
         "creo:featdefs:sketch#{}:point#{point}",
         sketch_identity_scope(sketch)
     )
 }
 
-pub(super) fn sketch_feature_id_admitted(sketch: &SketchId) -> Option<IrFeatureId> {
+pub(super) fn sketch_feature_id(sketch: &SketchId) -> Option<IrFeatureId> {
     let namespace = &crate::identity::MODEL_SKETCH_FEATURE;
     let text = format!(
         "{}:{}:{}#{}",

@@ -181,7 +181,7 @@ impl CodecBackend for F3dCodec {
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
         if !prefix.starts_with(ZIP_MAGIC) {
-            if cadmpeg_container::ArchiveSnapshot::has_footer(ctx, prefix)? {
+            if cadmpeg_container::ArchiveSnapshot::has_footer(prefix) {
                 match cadmpeg_container::ArchiveSnapshot::contains_matching_name(
                     ctx,
                     cadmpeg_core::decode::View::over_retained(prefix),

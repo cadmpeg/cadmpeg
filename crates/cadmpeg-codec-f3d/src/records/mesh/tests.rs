@@ -773,7 +773,7 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
         serde_json::from_value(rows).unwrap()
     )
     .is_err());
-    assert!({ crate::records::mesh::DesignMeshTextureTable::new(record(29), Vec::new()) }.is_ok());
+    assert!(crate::records::mesh::DesignMeshTextureTable::new(record(29), Vec::new()).is_ok());
 }
 
 #[test]

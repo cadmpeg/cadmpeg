@@ -71,7 +71,7 @@ fn push_rejected_extrusion(
         .push((body_id, reason));
 }
 
-fn cap_coedge_ids_admitted(
+fn cap_coedge_ids(
     feature_id: u32,
     profile_index: usize,
     count: usize,
@@ -631,9 +631,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             bottom_loops.push(copy_id!(bottom_loop));
             top_loops.push(copy_id!(top_loop));
             let bottom_coedges =
-                cap_coedge_ids_admitted(feature_id, profile_index, count, "bottom-cap", true)?;
-            let top_coedges =
-                cap_coedge_ids_admitted(feature_id, profile_index, count, "top-cap", false)?;
+                cap_coedge_ids(feature_id, profile_index, count, "bottom-cap", true)?;
+            let top_coedges = cap_coedge_ids(feature_id, profile_index, count, "top-cap", false)?;
             ctx.charge_entities(1, "admit Creo model loops")?;
             ir.model.loops.push(IrLoop {
                 id: copy_id!(bottom_loop),
