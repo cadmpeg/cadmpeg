@@ -11,7 +11,10 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::{SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT, VERIFIED_KERNELS};
+use super::{
+    dialect_loss, dialect_losses, SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT,
+    VERIFIED_KERNELS,
+};
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
@@ -26,20 +29,7 @@ use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 
 fn classify_layers(scan: &crate::container::ContainerScan<'_>) -> super::LayerClassification {
-    super::classify_layers(&cadmpeg_test_support::service_decode_context(), scan)
-        .expect("test dialect classification fits service policy")
-}
-
-fn dialect_loss(
-    matched: &cadmpeg_core::dialect::DialectMatch,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    super::dialect_loss(&cadmpeg_test_support::service_decode_context(), matched)
-        .expect("test dialect loss fits service policy")
-}
-
-fn dialect_losses(layers: &DialectLayers) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    super::dialect_losses(&cadmpeg_test_support::service_decode_context(), layers)
-        .expect("test dialect losses fit service policy")
+    super::classify_layers(scan).expect("admitted Parasolid schemas are schema tokens")
 }
 
 #[test]
@@ -108,14 +98,12 @@ fn parasolid_schema_evidence_emits_a_kernel_layer() {
 fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
-        &cadmpeg_test_support::service_decode_context(),
         cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
             .expect("the fixture text is a schema token"),
         cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
-    )
-    .expect("kernel classification fits policy");
+    );
     let layers = DialectLayers::of(host)
         .with(kernel.into_matched())
         .expect("distinct dialect layer keys");
@@ -167,9 +155,7 @@ fn duplicate_carrier_identity_is_omitted_with_a_typed_loss() {
 
     assert_eq!(kernel_count, 2);
     let mut losses = Vec::new();
-    classification
-        .append_losses(&cadmpeg_test_support::service_decode_context(), &mut losses)
-        .expect("test dialect losses fit service policy");
+    classification.append_losses(&mut losses);
     assert_eq!(
         losses
             .iter()

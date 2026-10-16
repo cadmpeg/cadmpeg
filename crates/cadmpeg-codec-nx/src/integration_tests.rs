@@ -98,9 +98,7 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
 fn inspect_summary_preserves_preview_attributes_under_service_profile() {
     let mut scan = one_preview_summary_scan();
     scan.streams[0].file_offset = 123_456_789;
-    let summary =
-        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
-            .expect("summarize the inspection");
+    let summary = crate::inspect::summarize(&scan).expect("summarize the inspection");
     assert_eq!(summary.entries[0].name, "parasolid#0");
     assert_eq!(
         summary.entries[0].attributes,
@@ -122,9 +120,7 @@ fn invalid_legacy_storage_summary_scan() -> crate::decode::Scan<'static> {
 #[test]
 fn inspect_summary_preserves_invalid_legacy_storage_note() {
     let scan = invalid_legacy_storage_summary_scan();
-    let summary =
-        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
-            .expect("summarize the inspection");
+    let summary = crate::inspect::summarize(&scan).expect("summarize the inspection");
     assert!(summary.notes.iter().any(|note| {
         note == "parasolid#0: verbatim container entry stores fewer bytes than it expands to: 2/3"
     }));
