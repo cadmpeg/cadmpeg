@@ -154,7 +154,7 @@ fn decode_instances_from(
         .map(|entry| {
             let instance = archive.open(ctx, &entry.name)?;
             let frames = cadmpeg_protein::framing::record_frames(instance.window())?;
-            let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, &frames)?;
+            let outcome = cadmpeg_protein::decode_frames(ctx, &mut catalog, &frames)?;
             Ok(ProteinInstanceRecords {
                 entry_name: entry.name.clone(),
                 records: outcome.records,

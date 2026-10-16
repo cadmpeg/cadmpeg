@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ContainerSummary;
 
@@ -13,10 +12,7 @@ use crate::{container, decode, deltas, native, parasolid, topology};
 
 /// Build the container summary: one entry per catalogued directory stream, plus
 /// one per embedded Parasolid stream, and the shared container notes.
-pub(super) fn summarize(
-    ctx: &DecodeContext<'_>,
-    scan: &decode::Scan,
-) -> Result<ContainerSummary, CodecError> {
+pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
     let semantic_streams = (scan.count(parasolid::StreamKind::Partition) != 0)
         .then(|| native::substrate::topology_streams(scan))
@@ -277,7 +273,7 @@ pub(super) fn summarize(
         });
     }
 
-    let (classification, mut notes) = crate::scan_notes::summarize(ctx, scan)?;
+    let (classification, mut notes) = crate::scan_notes::summarize(scan)?;
 
     notes.extend(storage_notes);
     let container_kind = classification.container_kind();

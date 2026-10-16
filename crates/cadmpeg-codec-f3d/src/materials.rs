@@ -587,8 +587,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let catalog = definition_catalog(ctx, protein)?;
         let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
         let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
-            let outcome =
-                cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, &record_frames)?;
+            let outcome = cadmpeg_protein::decode_frames(ctx, &mut schema_catalog, &record_frames)?;
             for rejected in &outcome.rejected {
                 let note = format!(
                     "Protein {} record {} rejected: {}",

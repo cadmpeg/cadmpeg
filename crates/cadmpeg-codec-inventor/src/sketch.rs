@@ -1056,7 +1056,7 @@ pub(crate) fn project(
             entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
         );
-        if !raw_entities.contains_key(&key) {
+        if raw_entities.get(&key).and_then(Option::as_ref).is_none() {
             unresolved_entities += 1;
             continue;
         }
@@ -1109,7 +1109,7 @@ pub(crate) fn project(
             sketch.identity.segment_token.as_str(),
             sketch.identity.record_ordinal,
         );
-        if !raw_sketches.contains_key(&key) {
+        if raw_sketches.get(&key).and_then(Option::as_ref).is_none() {
             unresolved_sketches += 1;
             continue;
         }
@@ -1191,10 +1191,14 @@ pub(crate) fn project(
     let mut constraints = Vec::new();
     let mut projected_constraint_keys = HashSet::new();
     for constraint in &inventory.constraints {
-        if raw_constraints.contains_key(&(
-            constraint.identity.segment_token.as_str(),
-            constraint.identity.record_ordinal,
-        )) {
+        if raw_constraints
+            .get(&(
+                constraint.identity.segment_token.as_str(),
+                constraint.identity.record_ordinal,
+            ))
+            .and_then(Option::as_ref)
+            .is_some()
+        {
             if let Some(projected) =
                 project_constraint(ctx, constraint, &projected_entity_by_key, &parameter_index)
                     .transpose()?
@@ -1946,15 +1950,18 @@ fn line_component(
     lines: &[&SketchEntity],
     adjacency: &HashMap<&str, Vec<usize>>,
 ) -> HashSet<usize> {
-    let mut component = HashSet::new();
+    let mut component = HashSet::from([start]);
+    let mut expanded = HashSet::new();
     let mut pending = vec![start];
     while let Some(index) = pending.pop() {
-        if !component.insert(index) {
-            continue;
-        }
         for point in &lines[index].endpoint_refs {
-            if let Some(neighbours) = adjacency.get(point.as_str()) {
-                pending.extend(neighbours);
+            if !expanded.insert(point.as_str()) {
+                continue;
+            }
+            for &neighbour in adjacency.get(point.as_str()).into_iter().flatten() {
+                if component.insert(neighbour) {
+                    pending.push(neighbour);
+                }
             }
         }
     }
@@ -2011,9 +2018,10 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 mod tests {
     use super::{
         inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
-        project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcTransformPayload,
-        SketchConstraintTag, SketchEntityTag, SketchInventory, COINCIDENT_TYPE, DIRECTION_TYPE,
-        HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
+        project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSketchPayload,
+        PmDcTransformPayload, SketchConstraintTag, SketchEntityTag, SketchInventory,
+        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE,
+        TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -2070,6 +2078,43 @@ mod tests {
             ("point-b", vec![0_usize]),
         ]);
         assert_eq!(super::line_component(0, &[&entity], &adjacency).len(), 1);
+    }
+
+    #[test]
+    fn lines_sharing_one_endpoint_form_one_component_and_no_profile() {
+        const LINES: u32 = 1 << 14;
+        let lines = (0..LINES)
+            .map(|ordinal| {
+                cadmpeg_ir::sketches::SketchEntity::new(
+                    cadmpeg_ir::sketches::SketchEntityId::mint(format!(
+                        "inventor:test:entity#{ordinal}"
+                    ))
+                    .expect("entity id"),
+                    cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1")
+                        .expect("sketch id"),
+                    cadmpeg_ir::sketches::SketchGeometry::try_from(
+                        cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
+                            start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                            end: cadmpeg_ir::math::Point2::new(1.0, f64::from(ordinal)),
+                        },
+                    )
+                    .expect("line geometry"),
+                )
+                .with_endpoint_refs(vec!["hub".to_owned(), format!("tip-{ordinal}")])
+            })
+            .collect::<Vec<_>>();
+        let entities = lines.iter().collect::<Vec<_>>();
+        let mut adjacency = std::collections::HashMap::<&str, Vec<usize>>::new();
+        for (index, line) in lines.iter().enumerate() {
+            for endpoint in &line.endpoint_refs {
+                adjacency.entry(endpoint.as_str()).or_default().push(index);
+            }
+        }
+
+        let component = super::line_component(0, &entities, &adjacency);
+
+        assert_eq!(component, (0..entities.len()).collect());
+        assert!(super::build_profiles(&entities).is_empty());
     }
 
     #[test]
@@ -2663,8 +2708,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn projects_generated_closed_square_and_resolved_plane() {
+    /// Four points and four lines closing a square, listed by one sketch placed
+    /// on a resolved plane, and that sketch's payload.
+    fn closed_square_inventory() -> (SketchInventory, PmDcSketchPayload) {
         let mut transform = parse(
             &{
                 let mut bytes = content(0);
@@ -2765,7 +2811,7 @@ mod tests {
                 )
             })
             .collect();
-        let mut inventory = SketchInventory {
+        let inventory = SketchInventory {
             sketches: vec![located_sketch],
             entities,
             transforms: vec![transform],
@@ -2773,6 +2819,12 @@ mod tests {
             constraints: Vec::new(),
             issues: Vec::new(),
         };
+        (inventory, sketch)
+    }
+
+    #[test]
+    fn projects_generated_closed_square_and_resolved_plane() {
+        let (mut inventory, sketch) = closed_square_inventory();
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("projection context");
@@ -2824,6 +2876,78 @@ mod tests {
         assert_eq!(incomplete.unresolved_constraints, 1);
         assert!(incomplete.sketches.is_empty());
         assert!(incomplete.entities.is_empty());
+    }
+
+    /// The closed square with a horizontal constraint on its first line, the
+    /// constraint listed by the sketch.
+    fn constrained_square_inventory() -> SketchInventory {
+        let (mut inventory, mut sketch) = closed_square_inventory();
+        let mut horizontal = constraint_header(11, 0);
+        horizontal.extend_from_slice(&8_u32.to_le_bytes());
+        horizontal.push(1);
+        let horizontal = parse(&horizontal, |_, source| {
+            parse_constraint(SketchConstraintTag::Horizontal, source, 22)
+                .expect("horizontal constraint")
+        });
+        inventory.constraints.push(Located::new(
+            horizontal,
+            crate::record_identity::RecordTypeId::from_bytes(HORIZONTAL_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            11,
+        ));
+        let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
+        references.push(PmDcReference::new(12, false).expect("test reference index fits 31 bits"));
+        sketch.entities =
+            PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
+        inventory.sketches[0] = Located::new(
+            sketch,
+            crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            2,
+        );
+        inventory
+    }
+
+    #[test]
+    fn duplicated_sketch_record_keys_are_unresolved_and_not_projected() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let unique = project(&ctx, &constrained_square_inventory(), &[]).expect("projection");
+        assert_eq!(
+            (
+                unique.sketches.len(),
+                unique.entities.len(),
+                unique.constraints.len()
+            ),
+            (1, 8, 1)
+        );
+
+        let duplications: [fn(&mut SketchInventory); 3] = [
+            |inventory| inventory.entities.push(inventory.entities[4].clone()),
+            |inventory| inventory.sketches.push(inventory.sketches[0].clone()),
+            |inventory| inventory.constraints.push(inventory.constraints[0].clone()),
+        ];
+        for duplicate in duplications {
+            let mut inventory = constrained_square_inventory();
+            duplicate(&mut inventory);
+            let projected = project(&ctx, &inventory, &[]).expect("projection");
+            assert!(projected.sketches.is_empty());
+            assert!(projected.entities.is_empty());
+            assert!(projected.constraints.is_empty());
+            assert_eq!(
+                (
+                    projected.unresolved_sketches,
+                    projected.unresolved_entities,
+                    projected.unresolved_constraints
+                ),
+                (
+                    inventory.sketches.len(),
+                    inventory.entities.len(),
+                    inventory.constraints.len()
+                )
+            );
+        }
     }
     #[test]
     fn point_tail_wire_requires_both_fields() {
