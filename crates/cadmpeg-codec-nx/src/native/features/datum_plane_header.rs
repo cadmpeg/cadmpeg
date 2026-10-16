@@ -701,7 +701,10 @@ mod tests {
             }
         }
         for count in [0, 1] {
-            let wire = serde_json::json!({ "id": "header", "operation_label": "operation", "control": 0, "declared_count": count, "branch_tag": 255, "source_offset": 0 });
+            let wire = serde_json::json!({
+                "id": "header", "operation_label": "operation", "control": 0,
+                "declared_count": count, "branch_tag": 255, "source_offset": 0
+            });
             let error = serde_json::from_value::<FeatureDatumPlaneHeader>(wire).unwrap_err();
             assert!(error.to_string().contains("declared_count"));
         }

@@ -282,8 +282,16 @@ mod tests {
         FeatureDeleteReferenceField,
         BTreeMap<String, (&'static [u8], u64)>,
     ) {
-        let field = serde_json::from_str(r#"{"id":"field","operation_label":"nx:feature-history:operation-label#0-0000000001","control":255,"object_indices":[32,33,34,35,36],"raw_object_indices":["f020","f021","f022","f023","f024"],"data_blocks":["nx:om-data-blocks-0:block#32","nx:om-data-blocks-0:block#33","nx:om-data-blocks-0:block#34","nx:om-data-blocks-0:block#35","nx:om-data-blocks-0:block#36"],"source_offset":100,"object_index_source_offsets":[107,109,111,113,115]}"#)
-            .expect("complete DELETE field");
+        let field = serde_json::from_str(
+            r#"{"id":"field","operation_label":"nx:feature-history:operation-label#0-0000000001",
+                "control":255,"object_indices":[32,33,34,35,36],
+                "raw_object_indices":["f020","f021","f022","f023","f024"],
+                "data_blocks":["nx:om-data-blocks-0:block#32","nx:om-data-blocks-0:block#33",
+                               "nx:om-data-blocks-0:block#34","nx:om-data-blocks-0:block#35",
+                               "nx:om-data-blocks-0:block#36"],
+                "source_offset":100,"object_index_source_offsets":[107,109,111,113,115]}"#,
+        )
+        .expect("complete DELETE field");
         let blocks = (32u32..=36)
             .map(|ordinal| {
                 (

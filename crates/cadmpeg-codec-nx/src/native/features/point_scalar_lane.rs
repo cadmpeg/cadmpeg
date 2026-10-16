@@ -168,7 +168,14 @@ mod tests {
 
     #[test]
     fn point_scalar_lane_requires_derived_positions_and_complete_physical_spans() {
-        let wire: serde_json::Value = serde_json::from_str(r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":["2ff0000000000000","3000000000000000","3008000000000000","3010000000000000","3014000000000000","3018000000000000"],"source_offsets":[100,110,118,126,134,142]}"#).unwrap();
+        let wire: serde_json::Value = serde_json::from_str(
+            r#"{"id":"lane","operation_label":"operation","construction_header":"header",
+                "data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],
+                "raw_values":["2ff0000000000000","3000000000000000","3008000000000000",
+                              "3010000000000000","3014000000000000","3018000000000000"],
+                "source_offsets":[100,110,118,126,134,142]}"#,
+        )
+        .unwrap();
         for slot in 2..6 {
             let mut invalid = wire.clone();
             invalid["source_offsets"][slot] =
