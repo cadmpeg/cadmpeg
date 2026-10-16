@@ -8,6 +8,7 @@ use super::endpoints::{
     legacy_wide_profile_roster_curve, marker_profile_curve_role,
     wide_indexed_curve_endpoint_indices,
 };
+use super::feature_sources::{lane_added_source, FeatureSources};
 use super::markers::{
     linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_native_code,
 };
@@ -43,7 +44,6 @@ use crate::layout::{
     cosmetic_thread_component_edge_wrapper_prefix as component_edge,
     cosmetic_thread_repeated_edge_ref_prefix as repeated_edge_ref,
 };
-use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use cadmpeg_core::decode::u64_from_index;
 
@@ -292,6 +292,7 @@ pub(super) fn compact_edge_selections(
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputEdgeSelection>, CodecError> {
     let history_features = history_features_with_object_sources(histories, lane);
+    let selection_features = FeatureSources::new(&history_features);
     let objects = selection_objects(histories, lane);
     let lane_key = lane
         .id
@@ -370,7 +371,7 @@ pub(super) fn compact_edge_selections(
                 &lane.native_payload,
                 offset,
                 &components,
-                &history_features,
+                &selection_features,
                 &feature.id,
             )?;
             let producer_feature_refs = compact_edge_producer_features_at(
@@ -378,7 +379,7 @@ pub(super) fn compact_edge_selections(
                 &lane.native_payload,
                 offset,
                 &components,
-                &history_features,
+                &selection_features,
                 &feature.id,
             )?;
             let id = format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}");
@@ -490,6 +491,7 @@ pub(super) fn compact_surface_selections(
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputSurfaceSelection>, CodecError> {
     let history_features = history_features_with_object_sources(histories, lane);
+    let selection_features = FeatureSources::new(&history_features);
     let mut classes = lane
         .classes
         .iter()
@@ -745,12 +747,12 @@ pub(super) fn compact_surface_selections(
                 &lane.native_payload,
                 offset,
                 &components,
-                &history_features,
+                &selection_features,
             );
             let producer_feature_refs = surface_selection_producer_features(
                 &components,
                 terminal_feature_ref.as_deref(),
-                &history_features,
+                &selection_features,
             );
             let id = format!("sldprt:feature-input:surface-selection#{lane_key}:{offset}");
             let parent = lane.id.clone();
@@ -1197,10 +1199,7 @@ pub(crate) fn enrich_feature_object_sources(
         let mut source = None;
         let mut ambiguous = false;
         for lane in lanes {
-            let Some(candidate) = feature_object_name(feature, lane)
-                .and_then(|name| name.object_id)
-                .and_then(ObjectId::value)
-            else {
+            let Some(candidate) = lane_added_source(feature, lane) else {
                 continue;
             };
             match source {
@@ -1214,7 +1213,7 @@ pub(crate) fn enrich_feature_object_sources(
         }
         if !ambiguous {
             if let Some(source) = source {
-                feature.source_id = FeatureSource::from_value(source);
+                feature.source_id = Some(source);
             }
         }
     }
@@ -2966,7 +2965,7 @@ pub(crate) fn compact_edge_owner_feature_at(
     payload: &[u8],
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
-    features: &[crate::records::Feature],
+    features: &FeatureSources<'_>,
     consumer_ref: &str,
 ) -> Result<Option<String>, CodecError> {
     let count = marker
@@ -2987,13 +2986,13 @@ pub(crate) fn compact_edge_owner_feature_at(
         owner
     };
     if let Some(source) = owner_source {
-        for feature in features {
+        for feature in features.iter() {
             if feature.source_value() != Some(source) {
                 continue;
             }
             if let Some(consumer) = component_path_consumer(features, consumer_ref) {
                 if component_feature_precedes(feature, consumer) {
-                    return Ok(Some(feature.id.clone()));
+                    return Ok(Some(feature.feature.id.clone()));
                 }
             }
             break;
@@ -3007,7 +3006,7 @@ pub(crate) fn compact_edge_producer_features_at(
     payload: &[u8],
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
-    features: &[crate::records::Feature],
+    features: &FeatureSources<'_>,
     consumer_ref: &str,
 ) -> Result<Vec<String>, CodecError> {
     let mut producers = component_path_input_features(components, features, consumer_ref);
@@ -3032,13 +3031,13 @@ pub(crate) fn surface_selection_terminal_feature_at(
     payload: &[u8],
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
-    features: &[crate::records::Feature],
+    features: &FeatureSources<'_>,
 ) -> Option<String> {
     if let Some(source) = compact_single_face_reference_record_at(payload, marker)
         .and_then(|ComponentPathReference(_, source)| source)
     {
         let mut found = None;
-        for feature in features {
+        for feature in features.iter() {
             if feature.source_value() != Some(source) {
                 continue;
             }
@@ -3049,10 +3048,10 @@ pub(crate) fn surface_selection_terminal_feature_at(
             found = Some(feature);
         }
         if let Some(feature) = found {
-            return Some(feature.id.clone());
+            return Some(feature.feature.id.clone());
         }
     }
-    component_path_terminal_feature(components, features)
+    component_path_terminal_feature(components, features.iter())
 }
 
 fn compact_homogeneous_edge_ids(
