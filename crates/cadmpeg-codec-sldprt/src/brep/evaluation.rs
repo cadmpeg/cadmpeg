@@ -6,6 +6,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) fn curve_point(
     ctx: &DecodeContext<'_>,
@@ -84,23 +85,42 @@ pub(crate) fn surface_point(
 
 const SURFACE_SOLVER_LOCAL_WORK: usize = 1_000_000;
 
+fn surface_solver_work_capped_loss() -> LossNote {
+    crate::loss::SldprtLossCode::GeometrySurfaceSolverWorkCapped.note(format!(
+        "NURBS surface solver exceeded the local work cap SURFACE_SOLVER_LOCAL_WORK \
+         ({SURFACE_SOLVER_LOCAL_WORK}); the derived pcurve is skipped."
+    ))
+}
+
+fn with_surface_solver_work<T>(
+    work: usize,
+    losses: &mut Vec<LossNote>,
+    run: impl FnOnce(&WorkBudget) -> Result<Option<T>, CodecError>,
+) -> Result<Option<T>, CodecError> {
+    let budget = WorkBudget::new(work);
+    let result = run(&budget);
+    if budget.exhausted() {
+        losses.push(surface_solver_work_capped_loss());
+        return Ok(None);
+    }
+    result
+}
+
 pub(super) fn nurbs_surface_parameter_within_tolerance(
     ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     point: cadmpeg_ir::math::Point3,
     seed: Option<cadmpeg_ir::math::Point2>,
     tolerance: f64,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
-    let budget = WorkBudget::new(SURFACE_SOLVER_LOCAL_WORK);
-    let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
-        ctx, surface, point, seed, tolerance, &budget,
-    );
-    // Local exhaustion leaves the inversion unsolved; the caller skips the
-    // derived pcurve.
-    if budget.exhausted() {
-        return Ok(None);
-    }
-    Ok(result?)
+    with_surface_solver_work(SURFACE_SOLVER_LOCAL_WORK, losses, |budget| {
+        Ok(
+            cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
+                ctx, surface, point, seed, tolerance, budget,
+            )?,
+        )
+    })
 }
 
 pub(super) fn nurbs_surface_parameter_segment_chord_bound(
@@ -108,17 +128,13 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     parameters: [cadmpeg_ir::math::Point2; 2],
     chord: [cadmpeg_ir::math::Point3; 2],
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<f64>, CodecError> {
-    let budget = WorkBudget::new(SURFACE_SOLVER_LOCAL_WORK);
-    let result = cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
-        ctx, surface, parameters, chord, &budget,
-    );
-    // Local exhaustion leaves the chord uncertified; the caller skips the
-    // derived pcurve.
-    if budget.exhausted() {
-        return Ok(None);
-    }
-    result
+    with_surface_solver_work(SURFACE_SOLVER_LOCAL_WORK, losses, |budget| {
+        cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
+            ctx, surface, parameters, chord, budget,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -177,11 +193,54 @@ mod tests {
 
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut losses = Vec::new();
         assert!(super::nurbs_surface_parameter_within_tolerance(
-            &ctx, &surface, point, None, 1.0e-3
+            &ctx,
+            &surface,
+            point,
+            None,
+            1.0e-3,
+            &mut losses
         )
         .unwrap()
         .is_none());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "geometry.surface-solver-work-capped"
+        );
+        assert!(losses[0].message.contains("SURFACE_SOLVER_LOCAL_WORK"));
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
+    fn surface_chord_bound_skips_when_the_local_solver_slice_is_exhausted() {
+        let surface = dense_wavy_surface();
+        let parameters = [
+            cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            cadmpeg_ir::math::Point2::new(76.0, 76.0),
+        ];
+        let chord = [
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(76.0, 76.0, 50.0),
+        ];
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut losses = Vec::new();
+        assert!(super::with_surface_solver_work(0, &mut losses, |budget| {
+            cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
+                &ctx, &surface, parameters, chord, budget,
+            )
+        })
+        .unwrap()
+        .is_none());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "geometry.surface-solver-work-capped"
+        );
+        assert!(losses[0].message.contains("SURFACE_SOLVER_LOCAL_WORK"));
         assert!(ctx.finish_session().is_ok());
     }
 }
