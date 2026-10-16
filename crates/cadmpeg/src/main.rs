@@ -82,7 +82,13 @@ enum LimitProfile {
 }
 
 impl DecodeArgs {
+    /// Options for a full decode, or a container-only one on request.
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
+        self.options_at(cadmpeg_core::decode::DecodeDepth::Full)
+    }
+
+    /// Options for a decode at `depth`, or a container-only one on request.
+    fn options_at(&self, depth: cadmpeg_core::decode::DecodeDepth) -> cadmpeg_ir::DecodeOptions {
         let limits = self.limits.limits(self.max_input_bytes);
         let mode = if self.no_salvage {
             cadmpeg_core::decode::DecodeMode::Strict
@@ -92,7 +98,7 @@ impl DecodeArgs {
         let depth = if self.container_only {
             cadmpeg_core::decode::DecodeDepth::Container
         } else {
-            cadmpeg_core::decode::DecodeDepth::Full
+            depth
         };
         cadmpeg_ir::DecodeOptions {
             depth,
@@ -148,6 +154,10 @@ enum Command {
         /// Write output even if no geometry was decoded.
         #[arg(long)]
         allow_empty: bool,
+        /// Decode the whole source, design intent included, even when the
+        /// output format needs only its geometry.
+        #[arg(long, conflicts_with = "container_only")]
+        full_decode: bool,
         /// Do not write if a loss was reported. `--reject-lossy=decode` refuses
         /// only on decode loss, `=export` only on export loss, and the bare
         /// flag on either.
@@ -391,6 +401,7 @@ fn main() -> ExitCode {
             destinations,
             allow_errors,
             allow_empty,
+            full_decode,
             reject_lossy,
             input_args,
             decode,
@@ -399,6 +410,7 @@ fn main() -> ExitCode {
                 losses: reject_lossy.unwrap_or_default(),
                 allow_errors,
                 allow_empty,
+                full_decode,
                 destination: destinations.destination,
                 report: destinations.report,
                 forced_input: input_args.input_format,

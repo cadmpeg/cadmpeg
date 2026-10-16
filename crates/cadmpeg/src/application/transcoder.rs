@@ -5,7 +5,9 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::write::{
+    target::TargetRequest, DepthNeed, EncodeInput, Encoder, ExportPlan,
+};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use clap::ValueEnum;
@@ -32,6 +34,14 @@ pub(crate) struct SourceRequest<'a> {
 pub(crate) struct ExportTarget {
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
+}
+
+impl ExportTarget {
+    /// The decode depth the selected encoder plans from.
+    #[must_use]
+    pub(crate) fn needs(&self) -> DepthNeed {
+        self.encoder.needs()
+    }
 }
 
 /// The output format and target token selected by the command line.

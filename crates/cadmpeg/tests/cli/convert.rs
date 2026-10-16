@@ -102,6 +102,46 @@ fn convert_stdout_contains_only_json_artifact() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("check: OK"));
 }
 
+/// The decode report line names the depth the codec delivered. A codec with
+/// no geometry-depth cut delivers `full` for STEP's geometry request, with or
+/// without `--full-decode`, which excludes `--container-only`.
+#[test]
+fn convert_reports_the_delivered_depth() {
+    let dir = tempdir().unwrap();
+    let input = geometryless_creo(dir.path(), "empty.prt");
+    for extra in [None, Some("--full-decode")] {
+        let mut args = vec![
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--allow-empty",
+        ];
+        args.extend(extra);
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(args)
+            .assert()
+            .success()
+            .stderr(predicate::str::contains(
+                "depth=full, geometry_transferred=false",
+            ));
+    }
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--full-decode",
+            "--container-only",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
 /// `--to` names the schema, in both spellings the grammar admits.
 ///
 /// `step:ap242-e3` is the registry id; `ap242e3` is the catalog alias. The

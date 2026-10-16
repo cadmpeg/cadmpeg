@@ -21,6 +21,8 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
 
 CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 6, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 
+`convert` decodes native input at the depth the selected encoder needs, `DepthNeed::request`: `geometry` for STEP, IGES, and Rhino, and `full` otherwise. `--full-decode` decodes at `full` whatever the output needs. `--container-only` decodes at `container` for every command and conflicts with `--full-decode`. `dump`, `check`, and `diff` decode at `full`. The decode report line on stderr prints the depth the codec delivered.
+
 A successful dump is not a checked model.
 
 ## Source recovery
