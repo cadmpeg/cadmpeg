@@ -43,6 +43,18 @@ fn history(states: Vec<crate::test_support::history::State>) -> AsmHistory {
     crate::test_support::history::history("history".into(), 0, None, false, states)
 }
 
+fn unbound_history_state(
+    state_id: i64,
+    previous_state_id: Option<i64>,
+) -> crate::test_support::history::State {
+    let (state, _, versions) = history_state(state_id, previous_state_id);
+    (state, None, versions)
+}
+
+fn unbound_history(states: Vec<crate::test_support::history::State>) -> AsmHistory {
+    crate::test_support::history::history("history".into(), 0, None, true, states)
+}
+
 fn scope(
     record_index: u32,
     byte_offset: u64,
@@ -250,4 +262,103 @@ fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     assert!(
         with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[])).is_err()
     );
+}
+
+#[test]
+fn duplicate_scope_selection_follows_header_link_when_transition_disagrees() {
+    let mut bound = history(vec![
+        history_state(10, Some(6)),
+        history_state(6, Some(4)),
+        history_state(4, None),
+    ]);
+    bound.states_mut()[0]
+        .transition
+        .as_mut()
+        .unwrap()
+        .previous_state_id = Some(4);
+    let histories = [bound];
+    let mut omitted_predecessor = scope(43, 300, 10, 6);
+    omitted_predecessor
+        .try_edit(|draft| {
+            draft.previous_history_state_id = None;
+            draft.previous_history_state_id_offset = None;
+        })
+        .unwrap();
+    let mut scopes = vec![
+        scope(42, 100, 10, 6),
+        scope(42, 200, 12, 11),
+        omitted_predecessor,
+        scope(43, 400, 12, 11),
+    ];
+    for index in [1, 3] {
+        scopes[index].feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
+    }
+
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
+        .expect("unique header-linked envelopes");
+
+    assert_eq!(scopes.len(), 2);
+    assert_eq!(scopes[0].record_index, 42);
+    assert_eq!(scopes[0].byte_offset(), 100);
+    assert_eq!(scopes[1].record_index, 43);
+    assert_eq!(scopes[1].byte_offset(), 300);
+}
+
+#[test]
+fn duplicate_scope_selection_is_equal_with_and_without_history_binding() {
+    let bound = history(vec![
+        history_state(10, Some(6)),
+        history_state(6, Some(4)),
+        history_state(4, Some(2)),
+        history_state(2, None),
+    ]);
+    let unbound = unbound_history(vec![
+        unbound_history_state(10, Some(6)),
+        unbound_history_state(6, Some(4)),
+        unbound_history_state(4, Some(2)),
+        unbound_history_state(2, None),
+    ]);
+    assert!(bound
+        .states()
+        .iter()
+        .all(|state| state.transition.is_some()));
+    assert!(unbound
+        .states()
+        .iter()
+        .all(|state| state.transition.is_none()));
+    let mut omitted_predecessor = scope(44, 500, 6, 4);
+    omitted_predecessor
+        .try_edit(|draft| {
+            draft.previous_history_state_id = None;
+            draft.previous_history_state_id_offset = None;
+        })
+        .unwrap();
+    let mut scopes = vec![
+        scope(42, 100, 10, 6),
+        scope(42, 200, 12, 11),
+        scope(43, 300, 10, 4),
+        scope(43, 400, 12, 11),
+        omitted_predecessor,
+        scope(44, 600, 12, 11),
+    ];
+    for index in [1, 3, 5] {
+        scopes[index].feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
+    }
+    let expected_ids = [0, 2, 4].map(|index| scopes[index].id.clone());
+    let mut bound_scopes = scopes.clone();
+    let mut unbound_scopes = scopes;
+
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut bound_scopes, &[bound]))
+        .expect("bound history envelopes");
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut unbound_scopes, &[unbound]))
+        .expect("unbound history envelopes");
+
+    let retained_ids = |scopes: &[DesignParameterScope]| {
+        scopes
+            .iter()
+            .map(|scope| scope.id.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(retained_ids(&bound_scopes), retained_ids(&unbound_scopes));
+    assert_eq!(retained_ids(&bound_scopes), expected_ids);
 }
