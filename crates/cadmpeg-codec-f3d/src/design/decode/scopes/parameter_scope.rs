@@ -511,9 +511,10 @@ fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {
 /// Admit one envelope for every logical scope identity.
 ///
 /// Some Design streams retain more than one complete envelope for one record
-/// index. A history-bound envelope is authoritative when exactly one
-/// candidate resolves to a unique ASM state transition; an unresolved group
-/// remains an error so a duplicate cannot be selected by byte order.
+/// index. An envelope is history-bound when it resolves to one ASM state pair
+/// through the history header links. Binding output is not read, so selection
+/// does not depend on whether history binding ran. Exactly one history-bound
+/// envelope is authoritative. An unresolved group remains an error.
 pub(crate) fn admit_history_bound_scope_variants(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
@@ -542,12 +543,16 @@ pub(crate) fn admit_history_bound_scope_variants(
                 continue;
             };
             let Some(previous_state_id) =
-                crate::history::effective_scope_previous_history_state_id(scope, histories)
+                crate::history::header_scope_previous_history_state_id(scope, histories)
             else {
                 continue;
             };
-            if crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
-                .is_some()
+            if crate::history::unique_header_history_state_pair(
+                histories,
+                state_id,
+                previous_state_id,
+            )
+            .is_some()
                 && history_bound.replace(*index).is_some()
             {
                 multiple_history_bounds = true;

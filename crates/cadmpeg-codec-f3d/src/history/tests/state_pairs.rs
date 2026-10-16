@@ -21,6 +21,7 @@ use crate::history::edge_changes_across_state_chain;
 use crate::history::edge_recipe_reference_context;
 use crate::history::effective_scope_previous_history_state_id;
 use crate::history::face_changes_across_state_chain;
+use crate::history::header_scope_previous_history_state_id;
 use crate::history::historical_edge_axis;
 use crate::history::historical_face_support_contexts;
 use crate::history::historical_loop_boundary;
@@ -39,6 +40,7 @@ use crate::history::selection::snapshot_edge_identity_revision;
 use crate::history::selection::HistoricalIdentityIndex;
 use crate::history::terminal_edge_recipe_faces;
 use crate::history::terminal_edge_recipe_reference_faces;
+use crate::history::unique_header_history_state_pair;
 use crate::history::unique_history_state;
 use crate::history::unique_history_state_pair;
 use crate::history::EdgeBoundaryContext;
@@ -51,6 +53,55 @@ use crate::history_records::AsmHistoryRecord;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::historical_context::AsmFaceBoundary;
 use std::collections::{BTreeSet, HashMap, HashSet};
+
+#[test]
+fn header_state_pairs_ignore_bound_transition_predecessors() {
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                next_ref,
+                ..change_state(state_id)
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
+    };
+    let mut history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(10, Some(6)), state(6, Some(4)), state(4, None)],
+    );
+    history.states_mut()[0]
+        .transition
+        .as_mut()
+        .unwrap()
+        .previous_state_id = Some(4);
+    let histories = [history];
+    let (_, current, previous) =
+        unique_header_history_state_pair(&histories, 10, 6).expect("header state pair");
+    assert_eq!(current.state_id, 10);
+    assert_eq!(previous.state_id, 6);
+    assert!(unique_history_state_pair(&histories, 10, 6).is_none());
+
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:native:scope#0",
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
+        0,
+    );
+    scope
+        .try_edit(|draft| draft.history_state_id = Some(10))
+        .unwrap();
+    assert_eq!(
+        header_scope_previous_history_state_id(&scope, &histories),
+        Some(6)
+    );
+    assert_eq!(
+        effective_scope_previous_history_state_id(&scope, &histories),
+        None
+    );
+}
 
 #[test]
 fn state_pairs_are_resolved_within_one_reachable_history() {
