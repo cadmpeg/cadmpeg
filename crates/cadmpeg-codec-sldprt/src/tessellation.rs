@@ -14,6 +14,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
@@ -804,6 +805,7 @@ struct SurfaceCandidate<'a> {
 pub(crate) fn assign_unique_surface_owners(
     ctx: &DecodeContext<'_>,
     model: &mut cadmpeg_ir::document::Model,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     for face in &model.faces {
         if let Some(stated) = face.tolerance {
@@ -898,7 +900,7 @@ pub(crate) fn assign_unique_surface_owners(
             })
         })();
         if let Some(mut candidate) = candidate {
-            candidate.trim = analytic_trim(face, candidate.surface, &topology);
+            candidate.trim = analytic_trim(face, candidate.surface, &topology, losses);
             candidates.push(candidate);
         }
     }
@@ -1569,6 +1571,7 @@ fn planar_boundary_samples(
     surface: &SurfaceGeometry,
     frame: PlaneFrame,
     limits: BoundaryTolerance,
+    losses: &mut Vec<LossNote>,
 ) -> Option<(Vec<Point2>, f64)> {
     let BoundaryTolerance {
         tolerance,
@@ -1627,6 +1630,7 @@ fn planar_boundary_samples(
                     tolerance,
                     sampling_tolerance,
                 },
+                losses,
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
@@ -1681,6 +1685,7 @@ fn planar_boundary_samples(
                     tolerance,
                     sampling_tolerance,
                 },
+                losses,
             )
         }
         _ => None,
@@ -1704,13 +1709,22 @@ impl PlanarArc {
         surface: &SurfaceGeometry,
         frame: PlaneFrame,
         limits: BoundaryTolerance,
+        losses: &mut Vec<LossNote>,
     ) -> Option<(Vec<Point2>, f64)> {
         let BoundaryTolerance {
             tolerance,
             sampling_tolerance,
         } = limits;
         let radius = self.first_radius.max(self.second_radius);
-        let (segments, boundary_tolerance) = planar_arc_segments(span, radius, sampling_tolerance)?;
+        let (segments, boundary_tolerance) =
+            match planar_arc_segments(span, radius, sampling_tolerance) {
+                Ok(Some(pair)) => pair,
+                Ok(None) => return None,
+                Err(limit) => {
+                    losses.push(planar_arc_segment_cap_loss(limit));
+                    return None;
+                }
+            };
         let solved_surface = surface.solved()?;
         let mut points = Vec::new();
         for index in 0..segments {
@@ -1765,6 +1779,23 @@ fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
         .then_some(span)
 }
 
+#[derive(Clone, Copy)]
+enum PlanarArcSegmentCap {
+    Unrepresentable,
+    Requested(usize),
+}
+
+fn planar_arc_segment_cap_loss(limit: PlanarArcSegmentCap) -> LossNote {
+    let bound = MAX_PLANAR_TRIM_ARC_SEGMENTS;
+    let detail = match limit {
+        PlanarArcSegmentCap::Requested(count) => format!("requested {count} segments"),
+        PlanarArcSegmentCap::Unrepresentable => "segment count is not representable".to_owned(),
+    };
+    crate::loss::SldprtLossCode::TessellationPlanarArcSegmentCap.note(format!(
+        "planar trim arc {detail}, above MAX_PLANAR_TRIM_ARC_SEGMENTS ({bound}); the arc is skipped."
+    ))
+}
+
 /// Answer the segment count and the sagitta the chords leave.
 ///
 /// A chord whose sagitta is `tolerance` subtends `2 * asin(half_chord)` with
@@ -1775,32 +1806,46 @@ fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
 /// circle is the diameter, so a tolerance at or beyond it admits the whole
 /// circle in one segment, and the sine of the quarter span stays at one.
 ///
-/// `None` when the span is not finite or the segment count has no exact
-/// floating-point value.
-fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> Option<(usize, f64)> {
+/// `Ok(None)` when the span is not finite or has no exact floating-point
+/// segment count in `(0, MAX_PLANAR_TRIM_ARC_SEGMENTS]`. `Err` when meeting
+/// the sampling tolerance would exceed the local segment cap.
+fn planar_arc_segments(
+    span: f64,
+    radius: f64,
+    tolerance: f64,
+) -> Result<Option<(usize, f64)>, PlanarArcSegmentCap> {
     if !span.is_finite() {
-        return None;
+        return Ok(None);
     }
     let half_chord = (0.5 * (tolerance / radius)).min(1.0).sqrt();
     let maximum_span = 4.0 * half_chord.asin();
     let requested = if maximum_span.is_finite() && maximum_span > EPS_CYLINDER_ANGLE {
-        match cadmpeg_core::convert::truncate_f64_to_usize((span.abs() / maximum_span).ceil()) {
-            Some(count) => count,
-            None => MAX_PLANAR_TRIM_ARC_SEGMENTS,
-        }
+        cadmpeg_core::convert::truncate_f64_to_usize((span.abs() / maximum_span).ceil())
     } else {
-        MAX_PLANAR_TRIM_ARC_SEGMENTS
+        None
     };
-    let segments = requested.clamp(1, MAX_PLANAR_TRIM_ARC_SEGMENTS);
-    let actual_span = span.abs() / cadmpeg_core::convert::f64_from_index(segments)?;
+    let Some(requested) = requested else {
+        return Err(PlanarArcSegmentCap::Unrepresentable);
+    };
+    if requested == 0 {
+        return Ok(None);
+    }
+    if requested > MAX_PLANAR_TRIM_ARC_SEGMENTS {
+        return Err(PlanarArcSegmentCap::Requested(requested));
+    }
+    let Some(segment_value) = cadmpeg_core::convert::f64_from_index(requested) else {
+        return Ok(None);
+    };
+    let actual_span = span.abs() / segment_value;
     let sine = (actual_span / 4.0).sin();
-    Some((segments, (radius * sine) * (2.0 * sine)))
+    Ok(Some((requested, (radius * sine) * (2.0 * sine))))
 }
 
 fn planar_trim(
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     topology: &TrimTopology<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<PlanarTrim> {
     let TrimTopology {
         loops,
@@ -1866,6 +1911,7 @@ fn planar_trim(
                     tolerance,
                     sampling_tolerance,
                 },
+                losses,
             )?;
             polygon.extend(samples);
             boundary_tolerance = boundary_tolerance.max(sample_tolerance);
@@ -2333,10 +2379,11 @@ fn analytic_trim(
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     topology: &TrimTopology<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Option<AnalyticTrim> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            planar_trim(face, surface, topology)
+            planar_trim(face, surface, topology, losses)
                 .or_else(|| planar_hole_trim(face, surface, topology))
                 .map(AnalyticTrim::Planar)
         }

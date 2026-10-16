@@ -1870,7 +1870,10 @@ fn decode_graph(
                                 f.surface_attr,
                                 surface,
                                 *endpoint_positions,
-                                pcurve_refusal,
+                                &mut IntersectionPcurveSinks {
+                                    refusal: pcurve_refusal,
+                                    losses: &mut out.losses,
+                                },
                             )?
                         else {
                             return Ok(None);
@@ -4372,6 +4375,11 @@ fn analytic_pcurve_chord_bound(
     bound.is_finite().then_some(bound)
 }
 
+struct IntersectionPcurveSinks<'a> {
+    refusal: &'a mut crate::lane_refusal::LaneRefusals,
+    losses: &'a mut Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
 fn intersection_support_pcurve(
     ctx: &DecodeContext<'_>,
     support_data: &super::intersection::IntersectionSupportData,
@@ -4379,7 +4387,7 @@ fn intersection_support_pcurve(
     surface_attr: u16,
     surface: &SurfaceGeometry,
     edge_endpoints: [cadmpeg_ir::math::Point3; 2],
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    sinks: &mut IntersectionPcurveSinks<'_>,
 ) -> Result<Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)>, cadmpeg_core::CodecError>
 {
     macro_rules! some_or_none {
@@ -4460,6 +4468,7 @@ fn intersection_support_pcurve(
                             point.get(),
                             control_points.last().copied(),
                             support_data.fit_tolerance_mm,
+                            sinks.losses,
                         ) {
                             Ok(Some(parameters)) => parameters,
                             Ok(None) => return Ok(None),
@@ -4532,6 +4541,7 @@ fn intersection_support_pcurve(
                     target,
                     Some(control_points[index]),
                     tolerance,
+                    sinks.losses,
                 ) {
                     Ok(Some(parameters)) => parameters.get(),
                     Ok(None) => return Ok(None),
@@ -4613,6 +4623,7 @@ fn intersection_support_pcurve(
                         surface,
                         [parameters[0], parameters[1]],
                         [chord[0].get(), chord[1].get()],
+                        sinks.losses,
                     )?;
                     error.is_none_or(|error| error > support_data.fit_tolerance_mm)
                 }
@@ -4634,7 +4645,7 @@ fn intersection_support_pcurve(
             match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
-                    refusal.note(
+                    sinks.refusal.note(
                         format_args!(
                             "sldprt intersection support pcurve for surface attr {surface_attr}"
                         ),
@@ -6665,7 +6676,10 @@ mod tests {
             surface_attr,
             surface,
             edge_endpoints,
-            refusal,
+            &mut super::IntersectionPcurveSinks {
+                refusal,
+                losses: &mut Vec::new(),
+            },
         )
     }
 

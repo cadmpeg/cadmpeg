@@ -2977,7 +2977,7 @@ fn build_geometry_ir(
         &persistent_face_bindings,
     );
     let remaining_assignments =
-        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model)?;
+        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model, &mut pmi_losses)?;
     assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
