@@ -7,8 +7,7 @@ use crate::design::profile_select::{
 };
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
-    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory,
+    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
 };
 use crate::ids::neutral_spatial_sketch_curve_id;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -119,48 +118,43 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
         .collect(),
         ..Default::default()
     };
-    let state = |state_id, topology, transition| AsmDeltaState {
-        id: format!("history:state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 0,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
+    let state = |state_id, topology, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history:state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 0,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![
             state(1, AsmHistoricalTopology::default(), None),
-            state(
-                2,
-                topology,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: crate::history_records::AsmHistoricalEntityDelta::default(),
-                    topology: AsmHistoricalTopologyDelta {
-                        faces: crate::history_records::AsmHistoricalEntityDelta {
-                            inserted: vec![1],
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                }),
-            ),
+            state(2, topology, Some(1)),
         ],
-    };
+    );
+    assert_eq!(history.check_transitions(), Ok(()));
+    assert!(history
+        .states()
+        .iter()
+        .all(|state| history.topology(state).is_some()));
 
     assert_eq!(
         transition_spatial_profile_selection(&sketch, &entities, &[history], 2, 1, 1.0e-6).unwrap(),

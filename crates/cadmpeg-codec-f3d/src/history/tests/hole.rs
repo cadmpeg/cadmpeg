@@ -3,10 +3,10 @@
 
 use crate::history::selection::bind_hole_selection_history;
 use crate::history_records::AsmHistoricalPlane;
+use crate::history_records::AsmHistory;
 use crate::history_records::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalCylinder,
-    AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory,
+    AsmHistoricalTopology,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -26,29 +26,41 @@ fn plane(surface: i64, origin: Point3, normal: Vector3) -> AsmHistoricalPlane {
 fn state(
     state_id: i64,
     topology: AsmHistoricalTopology,
-    transition: Option<AsmHistoricalTransition>,
-) -> AsmDeltaState {
-    AsmDeltaState {
-        id: format!("history-state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: vec![AsmEntityVersion {
-            entity_ref: 7,
-            record_ref: 7,
-        }],
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
-    }
+    next_ref: Option<i64>,
+) -> crate::test_support::history::State {
+    (
+        AsmDeltaState {
+            id: format!("history-state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(topology),
+        vec![
+            AsmEntityVersion {
+                entity_ref: 7,
+                record_ref: 7,
+            },
+            AsmEntityVersion {
+                entity_ref: 10,
+                record_ref: if state_id == 2 { 110 } else { 10 },
+            },
+            AsmEntityVersion {
+                entity_ref: 20,
+                record_ref: if state_id == 2 { 120 } else { 20 },
+            },
+        ],
+    )
 }
 
 fn test_history() -> AsmHistory {
@@ -82,29 +94,13 @@ fn test_history() -> AsmHistory {
         face_surfaces: vec![carrier(10, 100), carrier(20, 200), carrier(30, 300)],
         ..AsmHistoricalTopology::default()
     };
-    let mut topology_delta = AsmHistoricalTopologyDelta::default();
-    topology_delta.faces.inserted = vec![30];
-    topology_delta.faces.updated = vec![10, 20];
-    topology_delta.edges.inserted = vec![70];
-    topology_delta.surfaces.inserted = vec![300];
-    AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                2,
-                result,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: AsmHistoricalEntityDelta::default(),
-                    topology: topology_delta,
-                }),
-            ),
-            state(1, preceding, None),
-        ],
-    }
+    crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, result, Some(1)), state(1, preceding, None)],
+    )
 }
 
 fn hole_scope() -> crate::records::feature::scope::DesignParameterScope {
@@ -198,16 +194,12 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
 #[test]
 fn edge_backed_hole_selection_rejects_ambiguous_support_planes() {
     let mut history = test_history();
-    history.states[1]
-        .topology_mut()
-        .expect("preceding topology")
-        .surface_planes[0]
-        .origin = Point3::new(0.0, 0.0, 0.0);
-    history.states[1]
-        .topology_mut()
-        .expect("preceding topology")
-        .surface_planes[1]
-        .normal = Vector3::new(0.0, 0.0, 1.0);
+    crate::test_support::history::edit(&mut history, 1, |topology, _| {
+        topology.surface_planes[0].origin = Point3::new(0.0, 0.0, 0.0);
+    });
+    crate::test_support::history::edit(&mut history, 1, |topology, _| {
+        topology.surface_planes[1].normal = Vector3::new(0.0, 0.0, 1.0);
+    });
     let mut scope = hole_scope();
 
     { bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]) }.unwrap();

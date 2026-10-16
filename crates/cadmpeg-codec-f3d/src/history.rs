@@ -11,6 +11,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+pub(crate) mod binding;
 mod body_candidates;
 mod body_index;
 mod cache;
@@ -30,12 +31,12 @@ use topology_cache::{TopologyQueryCache, VertexBoundaryIndex};
 use treatment_index::TreatmentCache;
 
 use crate::bytes::int_at;
+use crate::history_records::AsmHistoricalTopologyDelta;
 use crate::history_records::{
-    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
+    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind,
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
-    AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint,
-    AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
+    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
 use crate::records::topology::{
     body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
@@ -66,28 +67,28 @@ const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1.0e-9;
 const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1.0e-8;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
-    if history.states.is_empty() {
+    if history.states().is_empty() {
         return false;
     }
     let mut by_index = HashMap::new();
-    for state in &history.states {
+    for state in history.states() {
         by_index.insert(state.node_index, state);
     }
-    if by_index.len() != history.states.len()
+    if by_index.len() != history.states().len()
         || history
-            .states
+            .states()
             .iter()
             .any(|state| state.node_index < 0 || state.parent != history.id)
     {
         return false;
     }
     let mut heads = history
-        .states
+        .states()
         .iter()
         .filter(|state| state.previous_ref.is_none());
     let head = heads.next();
     let tails = history
-        .states
+        .states()
         .iter()
         .filter(|state| state.next_ref.is_none())
         .count();
@@ -133,7 +134,7 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
         previous = Some(index);
         current = state.next_ref;
     }
-    visited.len() == history.states.len()
+    visited.len() == history.states().len()
 }
 
 /// Decode the construction-history tail of an ASM stream: every `delta_state`
@@ -144,11 +145,14 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// `bytes` carries no `delta_state` record (the stream is a construction
 /// snapshot with no history tail) or a malformed history body. `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
+/// `remaining_retained_bytes` is the session's remaining retained-byte allowance,
+/// less the estimates reserved for earlier history streams.
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     width: RefWidth,
+    remaining_retained_bytes: &mut u64,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let preamble_offset = bytes
         .windows(PREAMBLE.len())
@@ -229,16 +233,15 @@ pub(crate) fn decode(
             owner_ref,
             bulletin_boards,
             records,
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Absent,
             transition: None,
         });
     }
     bind_snapshot_revision_ids(&mut states)?;
-    let record_table_binding_budget_exceeded = bind_historical_entity_versions(&mut states)?
-        == TableBindingCost::Exceeded
-        || bind_complete_record_tables(ctx, &mut states, bytes, width)?
-            == TableBindingCost::Exceeded;
+    let binding_budget_exceeded = admit_history_binding(&states, remaining_retained_bytes)?
+        == HistoryBindingAdmission::Skipped;
+    if !binding_budget_exceeded {
+        bind_complete_record_tables(ctx, &mut states, bytes, width)?;
+    }
     if states.is_empty() {
         return Ok(None);
     }
@@ -250,13 +253,13 @@ pub(crate) fn decode(
             history_entry_count,
         });
     let offset = history_offset;
-    Ok(Some(AsmHistory {
-        id: history_id,
-        byte_offset: u64_from_index(offset),
+    Ok(Some(AsmHistory::new(
+        history_id,
+        u64_from_index(offset),
         preamble,
-        record_table_binding_budget_exceeded,
+        binding_budget_exceeded,
         states,
-    }))
+    )))
 }
 
 fn bind_snapshot_revision_ids(
@@ -310,7 +313,7 @@ fn is_history_boundary_record(record: &AsmHistoryRecord) -> bool {
     )
 }
 
-fn archived_active_record_count(
+pub(crate) fn archived_active_record_count(
     states: &[AsmDeltaState],
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
     let mut archived = Vec::new();
@@ -341,7 +344,7 @@ fn archived_active_record_count(
 /// snapshot. Insert-only chains use the active records themselves as every
 /// revision, so their bulletin-board references must cover every non-header
 /// slot exactly once.
-fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
+pub(crate) fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
     let mut has_boundary_record = false;
     for record in states.iter().flat_map(|state| &state.records) {
         if record.revision_id.is_some() || !is_history_boundary_record(record) {
@@ -372,14 +375,27 @@ fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
         .and_then(|count| usize::try_from(count).ok())
 }
 
-/// Project the entity-to-record version map onto every state.
-///
-/// The projection holds one map of the active record count per state. A
-/// history whose estimate exceeds [`HISTORY_BINDING_MAX_WORK_UNITS`] is not
-/// projected and reports [`TableBindingCost::Exceeded`].
-fn bind_historical_entity_versions(
-    states: &mut [AsmDeltaState],
-) -> Result<TableBindingCost, cadmpeg_core::CodecError> {
+/// Estimated native `asm_delta_states` text bytes per changed record slot.
+/// History streams with 206 to 385,790 changed slots retain 96.96 to 161.14
+/// complete-scope bytes per slot. Rounded up to the next ten bytes.
+pub(crate) const HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT: u64 = 170;
+
+/// Whether one history stream's estimated retained bytes fit the session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HistoryBindingAdmission {
+    /// The estimate fits; it is reserved and the history is bound.
+    Admitted,
+    /// The estimate exceeds the remaining allowance; historical topology is skipped.
+    Skipped,
+}
+
+/// Validate the chain, then reserve its estimated retained bytes before decoding
+/// record tables. A skipped history leaves the allowance unchanged and has no
+/// transitions. A chain that does not validate is admitted and stays unbound.
+pub(crate) fn admit_history_binding(
+    states: &[AsmDeltaState],
+    remaining_retained_bytes: &mut u64,
+) -> Result<HistoryBindingAdmission, cadmpeg_core::CodecError> {
     let mut archived_ids = Vec::new();
     for revision_id in states
         .iter()
@@ -392,22 +408,50 @@ fn bind_historical_entity_versions(
     let Some(active_count) =
         archived_active_record_count(states)?.or_else(|| insert_only_active_record_count(states))
     else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(HistoryBindingAdmission::Admitted);
     };
-    if complete_table_binding_cost(states.iter().map(|_| active_count))
-        == TableBindingCost::Exceeded
-    {
-        return Ok(TableBindingCost::Exceeded);
-    }
     let Ok(active_count) = i64::try_from(active_count) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(HistoryBindingAdmission::Admitted);
     };
+    let mut changed_slots = Some(0_u64);
+    if !walk_entity_versions(states, active_count, &archived_ids, |ordinal, versions| {
+        let state = &states[ordinal];
+        if state.next_ref.is_none() {
+            changed_slots =
+                changed_slots.and_then(|total| total.checked_add(u64_from_index(versions.len())));
+        }
+        for board in &state.bulletin_boards {
+            changed_slots = changed_slots
+                .and_then(|total| total.checked_add(u64_from_index(board.changes.len())));
+        }
+    }) {
+        return Ok(HistoryBindingAdmission::Admitted);
+    }
+    let Some(remaining) = changed_slots
+        .and_then(|count| count.checked_mul(HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT))
+        .and_then(|estimate| remaining_retained_bytes.checked_sub(estimate))
+    else {
+        return Ok(HistoryBindingAdmission::Skipped);
+    };
+    *remaining_retained_bytes = remaining;
+    Ok(HistoryBindingAdmission::Admitted)
+}
+
+/// Walk the state chain from its head and give each state's entity-to-record
+/// version map to `visit`. Returns false, after a partial walk, when the chain
+/// or a bulletin-board change is inconsistent with the archived revisions.
+pub(crate) fn walk_entity_versions(
+    states: &[AsmDeltaState],
+    active_count: i64,
+    archived_ids: &[i64],
+    mut visit: impl FnMut(usize, &BTreeMap<i64, i64>),
+) -> bool {
     let mut by_node = HashMap::new();
     for (ordinal, state) in states.iter().enumerate() {
         by_node.insert(state.node_index, ordinal);
     }
     if by_node.len() != states.len() {
-        return Ok(TableBindingCost::Admitted);
+        return false;
     }
     let mut heads = states
         .iter()
@@ -415,37 +459,23 @@ fn bind_historical_entity_versions(
         .filter(|(_, state)| state.previous_ref.is_none())
         .map(|(ordinal, _)| ordinal);
     let Some(mut ordinal) = heads.next() else {
-        return Ok(TableBindingCost::Admitted);
+        return false;
     };
     if heads.next().is_some() {
-        return Ok(TableBindingCost::Admitted);
+        return false;
     }
 
     let mut versions = BTreeMap::new();
     for id in 0..active_count {
         versions.insert(id, id);
     }
-    let mut projected = HashMap::new();
     let mut visited = HashSet::new();
     loop {
         let state = &states[ordinal];
-
-        if visited.contains(&state.node_index) {
-            return Ok(TableBindingCost::Admitted);
+        if !visited.insert(state.node_index) {
+            return false;
         }
-
-        visited.insert(state.node_index);
-
-        let mut state_versions = Vec::new();
-
-        for (&entity_ref, &record_ref) in &versions {
-            state_versions.push(AsmEntityVersion {
-                entity_ref,
-                record_ref,
-            });
-        }
-
-        projected.insert(state.node_index, state_versions);
+        visit(ordinal, &versions);
         for change in state
             .bulletin_boards
             .iter()
@@ -454,18 +484,18 @@ fn bind_historical_entity_versions(
             match change.kind {
                 AsmEntityChangeKind::Update { old, new } => {
                     if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
-                        return Ok(TableBindingCost::Admitted);
+                        return false;
                     }
                     versions.insert(new, old);
                 }
                 AsmEntityChangeKind::Insert { new } => {
                     if versions.remove(&new).is_none() {
-                        return Ok(TableBindingCost::Admitted);
+                        return false;
                     }
                 }
                 AsmEntityChangeKind::Delete { old } => {
                     if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
-                        return Ok(TableBindingCost::Admitted);
+                        return false;
                     }
                     versions.insert(old, old);
                 }
@@ -475,56 +505,11 @@ fn bind_historical_entity_versions(
             break;
         };
         let Some(&next_ordinal) = by_node.get(&next) else {
-            return Ok(TableBindingCost::Admitted);
+            return false;
         };
         ordinal = next_ordinal;
     }
-    if visited.len() != states.len() || versions.len() != 1 || versions.get(&0) != Some(&0) {
-        return Ok(TableBindingCost::Admitted);
-    }
-    for state in states {
-        state.entity_versions = projected.remove(&state.node_index).unwrap_or_default();
-    }
-    Ok(TableBindingCost::Admitted)
-}
-
-/// Estimated work for decoding one record in one historical state. A state
-/// snapshot traverses the record table repeatedly to build topology,
-/// incidence, and carrier projections, so the estimate is proportional to the
-/// state-by-record cross product.
-const HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY: u64 = 4096;
-/// Codec-local bound on the complete-history binding estimate. The binding is
-/// optional enrichment; a deep history past this bound skips historical
-/// topology and reports the skip.
-const HISTORY_BINDING_MAX_WORK_UNITS: u64 = 4_000_000_000;
-
-/// Whether binding every historical record table fits the decode policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TableBindingCost {
-    /// The estimated cache and work fit the policy ceilings.
-    Admitted,
-    /// The estimate exceeds a policy ceiling; historical topology is skipped.
-    Exceeded,
-}
-
-/// Estimate the complete-history binding from the per-state table lengths.
-///
-/// The estimate is compared with the codec-local bound before any cache is
-/// built. Exceeding it skips the optional historical topology; the decode
-/// continues and reports the skip.
-fn complete_table_binding_cost(table_lengths: impl IntoIterator<Item = usize>) -> TableBindingCost {
-    let fits = table_lengths
-        .into_iter()
-        .try_fold(0_u64, |total, length| {
-            total.checked_add(u64_from_index(length))
-        })
-        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY))
-        .is_some_and(|work| work <= HISTORY_BINDING_MAX_WORK_UNITS);
-    if fits {
-        TableBindingCost::Admitted
-    } else {
-        TableBindingCost::Exceeded
-    }
+    visited.len() == states.len() && versions.len() == 1 && versions.get(&0) == Some(&0)
 }
 
 fn bind_complete_record_tables(
@@ -532,9 +517,18 @@ fn bind_complete_record_tables(
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: RefWidth,
-) -> Result<TableBindingCost, cadmpeg_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
+    binding::bind(ctx, states, bytes, width).map(|_| ())
+}
+
+pub(crate) fn decode_record_archive(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &[AsmDeltaState],
+    bytes: &[u8],
+    width: RefWidth,
+) -> Result<Option<HistoricalRecordArchive>, cadmpeg_core::CodecError> {
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(None);
     };
     let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
     let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
@@ -543,24 +537,19 @@ fn bind_complete_record_tables(
         Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
             return Err(error.into_codec_error())
         }
-        Err(_) => return Ok(TableBindingCost::Admitted),
+        Err(_) => return Ok(None),
     };
 
-    if complete_table_binding_cost(states.iter().map(|state| state.entity_versions.len()))
-        == TableBindingCost::Exceeded
-    {
-        return Ok(TableBindingCost::Exceeded);
-    }
     let insert_only = insert_only_active_record_count(states);
     let archived_count = archived_active_record_count(states)?;
     let Some(active_count) = archived_count.or(insert_only) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(None);
     };
     if insert_only.is_some() && framed.len() != active_count {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(None);
     }
     let Some(active_records) = framed.get(..active_count) else {
-        return Ok(TableBindingCost::Admitted);
+        return Ok(None);
     };
     let mut archived_frames = HashMap::new();
     for record in states
@@ -569,16 +558,16 @@ fn bind_complete_record_tables(
         .filter(|record| record.revision_id.is_some())
     {
         let Some(revision_id) = record.revision_id else {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(None);
         };
         let Some(offset) = usize::try_from(record.byte_offset).ok() else {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(None);
         };
         let Some(limit) = offset.checked_add(record.raw_bytes.len()) else {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(None);
         };
         if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(None);
         }
         let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
             Ok(records) => records,
@@ -588,95 +577,30 @@ fn bind_complete_record_tables(
             Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
                 return Err(error.into_codec_error())
             }
-            Err(_) => return Ok(TableBindingCost::Admitted),
+            Err(_) => return Ok(None),
         };
         if framed.len() != 1 {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(None);
         }
         let Some(framed) = framed.pop() else {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(None);
         };
         if framed.name != record.name() {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(None);
         }
 
         if archived_frames.insert(revision_id, framed).is_some() {
-            return Ok(TableBindingCost::Admitted);
+            return Ok(None);
         }
     }
-    let Some(archive) = historical_record_archive(states, active_records, archived_frames) else {
-        return Ok(TableBindingCost::Admitted);
-    };
-    let mut complete = true;
-    for state in states.iter_mut() {
-        let Some(records) = materialize_record_table(state, &archive) else {
-            complete = false;
-            break;
-        };
-        let decoded =
-            match crate::brep::decode_history_topology(ctx, &records, bytes, crate::ids::ID_FORMAT)
-            {
-                Ok(decoded) => decoded,
-                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => {
-                    complete = false;
-                    break;
-                }
-            };
-        let Some(topology) = historical_topology_with_tags(&decoded)? else {
-            complete = false;
-            break;
-        };
-        state.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology);
-    }
-    if complete {
-        bind_historical_transitions(states);
-        // Keep only record revisions that can be named by a late persistent
-        // selection. Non-topological ASM attributes do not participate in
-        // feature selection and need not survive projection finalization.
-        for state in states {
-            if let Some(topology) = state.topology() {
-                let slots = topology_entity_slots(topology);
-                state
-                    .entity_versions
-                    .retain(|version| slots.contains(&version.entity_ref));
-            } else {
-                state.entity_versions.clear();
-            }
-        }
-    } else {
-        for state in states {
-            state.topology_cache = crate::history_records::AsmTopologyCache::Absent;
-        }
-    }
-    Ok(TableBindingCost::Admitted)
+    Ok(historical_record_archive(
+        states,
+        active_records,
+        archived_frames,
+    ))
 }
 
-fn topology_entity_slots(topology: &AsmHistoricalTopology) -> HashSet<i64> {
-    let families = [
-        &topology.bodies,
-        &topology.regions,
-        &topology.shells,
-        &topology.faces,
-        &topology.loops,
-        &topology.coedges,
-        &topology.edges,
-        &topology.vertices,
-        &topology.points,
-        &topology.surfaces,
-        &topology.curves,
-        &topology.pcurves,
-    ];
-
-    let mut slots = HashSet::new();
-
-    for slot in families.into_iter().flatten() {
-        slots.insert(*slot);
-    }
-    slots
-}
-
-type HistoricalRecordArchive = HashMap<i64, cadmpeg_asm::sab::Record>;
+pub(crate) type HistoricalRecordArchive = HashMap<i64, cadmpeg_asm::sab::Record>;
 
 fn historical_record_archive(
     states: &[AsmDeltaState],
@@ -771,180 +695,25 @@ fn clone_historical_token(token: &cadmpeg_asm::sab::Token) -> cadmpeg_asm::sab::
     }
 }
 
-fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
-    let mut by_node = HashMap::new();
-
-    for (ordinal, state) in states.iter().enumerate() {
-        by_node.insert(state.node_index, ordinal);
-    }
-    if by_node.len() != states.len() {
-        return;
-    }
-
-    let mut transitions = Vec::new();
-
-    for state in states.iter() {
-        let previous = match state.next_ref {
-            Some(node) => {
-                let Some(&ordinal) = by_node.get(&node) else {
-                    return;
-                };
-                states.get(ordinal)
-            }
-            None => None,
-        };
-        let Some(transition) = historical_transition(state, previous) else {
-            return;
-        };
-        transitions.push(transition);
-    }
-    for (state, transition) in states.iter_mut().zip(transitions) {
-        state.transition = Some(transition);
-    }
-}
-
-fn retain_mirror_plane_topology(
-    mut topology: AsmHistoricalTopology,
-) -> Option<AsmHistoricalTopology> {
-    let retained = AsmHistoricalTopology {
-        bodies: std::mem::take(&mut topology.bodies),
-        regions: std::mem::take(&mut topology.regions),
-        shells: std::mem::take(&mut topology.shells),
-        faces: std::mem::take(&mut topology.faces),
-        loops: std::mem::take(&mut topology.loops),
-        coedges: std::mem::take(&mut topology.coedges),
-        edges: std::mem::take(&mut topology.edges),
-        vertices: std::mem::take(&mut topology.vertices),
-        points: std::mem::take(&mut topology.points),
-        surfaces: std::mem::take(&mut topology.surfaces),
-        curves: std::mem::take(&mut topology.curves),
-        pcurves: std::mem::take(&mut topology.pcurves),
-        face_surfaces: std::mem::take(&mut topology.face_surfaces),
-        surface_planes: std::mem::take(&mut topology.surface_planes),
-        loop_coedges: std::mem::take(&mut topology.loop_coedges),
-        coedge_topology: std::mem::take(&mut topology.coedge_topology),
-        face_loops: std::mem::take(&mut topology.face_loops),
-        edge_curves: std::mem::take(&mut topology.edge_curves),
-        coedge_pcurves: std::mem::take(&mut topology.coedge_pcurves),
-        curve_axes: std::mem::take(&mut topology.curve_axes),
-        ..Default::default()
-    };
-    (!retained.face_surfaces.is_empty()
-        || !retained.surface_planes.is_empty()
-        || !retained.loop_coedges.is_empty()
-        || !retained.coedge_topology.is_empty()
-        || !retained.face_loops.is_empty()
-        || !retained.edge_curves.is_empty()
-        || !retained.coedge_pcurves.is_empty()
-        || !retained.curve_axes.is_empty())
-    .then_some(retained)
-}
-
-/// Release complete historical snapshots after every projection consumer has
-/// finished. Raw history records, sparse transitions, and the compact
-/// plane-selection topology remain retained.
+/// Release derived topologies after projection and retain only late-selection rows.
 pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
     for history in histories {
-        for state in &mut history.states {
-            let topology = match std::mem::take(&mut state.topology_cache) {
-                crate::history_records::AsmTopologyCache::Absent
-                | crate::history_records::AsmTopologyCache::Released => None,
-                crate::history_records::AsmTopologyCache::Complete(topology)
-                | crate::history_records::AsmTopologyCache::Retained(topology) => {
-                    retain_mirror_plane_topology(topology)
-                }
-            };
-            if let Some(topology) = topology {
-                let slots = topology_entity_slots(&topology);
-                state
-                    .entity_versions
-                    .retain(|version| slots.contains(&version.entity_ref));
-                state.topology_cache = crate::history_records::AsmTopologyCache::Retained(topology);
-            } else {
-                state.entity_versions.clear();
-                state.topology_cache = crate::history_records::AsmTopologyCache::Released;
+        history.topology_scope = crate::history_records::AsmTopologyScope::Retained;
+        for state in history.states_mut() {
+            if let Some(transition) = &mut state.transition {
+                transition.rows.retain_projection_rows();
             }
         }
+        history.release_topologies();
     }
 }
 
 pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
     !histories.is_empty()
-        && histories
-            .iter()
-            .all(crate::history_records::AsmHistory::projection_finalized)
-}
-
-fn historical_transition(
-    current: &AsmDeltaState,
-    previous: Option<&AsmDeltaState>,
-) -> Option<AsmHistoricalTransition> {
-    let current_topology = current.topology()?;
-    let previous_topology = previous.and_then(|state| state.topology());
-    // The version maps and record keys are scratch for this transition.
-    let current_versions = historical_version_map(&current.entity_versions);
-    let previous_versions = match previous {
-        Some(state) => historical_version_map(&state.entity_versions),
-        None => BTreeMap::new(),
-    };
-    let delta = |current: &[i64], previous: &[i64]| {
-        entity_delta(current, previous, &current_versions, &previous_versions)
-    };
-    let empty = AsmHistoricalTopology::default();
-    let previous_topology = previous_topology.unwrap_or(&empty);
-    let current_record_keys = current_versions.keys().copied().collect::<Vec<_>>();
-    let previous_record_keys = previous_versions.keys().copied().collect::<Vec<_>>();
-    Some(AsmHistoricalTransition {
-        previous_state_id: previous.map(|state| state.state_id),
-        records: entity_delta(
-            &current_record_keys,
-            &previous_record_keys,
-            &current_versions,
-            &previous_versions,
-        ),
-        topology: AsmHistoricalTopologyDelta {
-            bodies: delta(&current_topology.bodies, &previous_topology.bodies),
-            regions: delta(&current_topology.regions, &previous_topology.regions),
-            shells: delta(&current_topology.shells, &previous_topology.shells),
-            faces: delta(&current_topology.faces, &previous_topology.faces),
-            loops: delta(&current_topology.loops, &previous_topology.loops),
-            coedges: delta(&current_topology.coedges, &previous_topology.coedges),
-            edges: delta(&current_topology.edges, &previous_topology.edges),
-            vertices: delta(&current_topology.vertices, &previous_topology.vertices),
-            points: delta(&current_topology.points, &previous_topology.points),
-            surfaces: delta(&current_topology.surfaces, &previous_topology.surfaces),
-            curves: delta(&current_topology.curves, &previous_topology.curves),
-            pcurves: delta(&current_topology.pcurves, &previous_topology.pcurves),
-        },
-    })
-}
-
-fn historical_version_map(versions: &[AsmEntityVersion]) -> BTreeMap<i64, i64> {
-    let mut indexed = BTreeMap::new();
-    for version in versions {
-        indexed.insert(version.entity_ref, version.record_ref);
-    }
-    indexed
-}
-
-fn entity_delta(
-    current: &[i64],
-    previous: &[i64],
-    current_versions: &BTreeMap<i64, i64>,
-    previous_versions: &BTreeMap<i64, i64>,
-) -> AsmHistoricalEntityDelta {
-    let current = current.iter().copied().collect::<BTreeSet<_>>();
-    let previous = previous.iter().copied().collect::<BTreeSet<_>>();
-
-    AsmHistoricalEntityDelta {
-        inserted: current.difference(&previous).copied().collect::<Vec<_>>(),
-        deleted: previous.difference(&current).copied().collect::<Vec<_>>(),
-        updated: current
-            .intersection(&previous)
-            .copied()
-            .filter(|entity| current_versions.get(entity) != previous_versions.get(entity))
-            .collect::<Vec<_>>(),
-    }
+        && histories.iter().all(|history| {
+            history.topology_scope == crate::history_records::AsmTopologyScope::Retained
+                && !history.states().is_empty()
+        })
 }
 
 pub(crate) fn bind_feature_outputs(
@@ -957,13 +726,13 @@ pub(crate) fn bind_feature_outputs(
     let mut body_closures = HistoricalBodyClosureCache::default();
     for history in histories {
         let mut by_node = HashMap::new();
-        for state in &history.states {
+        for state in history.states() {
             by_node.insert(state.node_index, state);
         }
-        if by_node.len() != history.states.len() {
+        if by_node.len() != history.states().len() {
             continue;
         }
-        for state in &history.states {
+        for state in history.states() {
             let previous = match state.next_ref {
                 Some(node) => match by_node.get(&node) {
                     Some(previous) => Some(*previous),
@@ -971,7 +740,8 @@ pub(crate) fn bind_feature_outputs(
                 },
                 None => None,
             };
-            let Some(outputs) = affected_body_refs(state, previous, &mut body_closures) else {
+            let Some(outputs) = affected_body_refs(history, state, previous, &mut body_closures)
+            else {
                 continue;
             };
             state_outputs
@@ -1006,7 +776,7 @@ pub(crate) fn bind_feature_outputs(
         };
         let transition_matches = histories
             .iter()
-            .flat_map(|history| &history.states)
+            .flat_map(crate::history_records::AsmHistory::states)
             .filter(|state| state.state_id == state_id)
             .map(|state| {
                 state
@@ -1315,7 +1085,7 @@ pub(crate) fn bind_feature_body_selections(
                             return;
                         };
                         let history_states = unique_feature_history_states(history);
-                        let Some(body) = singleton_revised_input_body_across_state_chain(state, previous_state_id, &history_states) else {
+                        let Some(body) = singleton_revised_input_body_across_state_chain(history, state, previous_state_id, &history_states) else {
                             return;
                         };
                         let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
@@ -1568,10 +1338,10 @@ pub(crate) fn bind_feature_body_selections(
             let history_states = unique_feature_history_states(history);
             let body = match proof {
                 BodySelectionProof::TopologyStableRevision => {
-                    singleton_body_revision_across_state_chain(state, previous_state_id, &history_states)
+                    singleton_body_revision_across_state_chain(history, state, previous_state_id, &history_states)
                 }
                 BodySelectionProof::RevisedInput => {
-                    singleton_revised_input_body_across_state_chain(state, previous_state_id, &history_states)
+                    singleton_revised_input_body_across_state_chain(history, state, previous_state_id, &history_states)
                 }
             };
             let Some(body) = body else {
@@ -2076,7 +1846,7 @@ enum BodySelectionProof {
 
 fn unique_feature_history_states(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaState>> {
     let mut states = HashMap::new();
-    for state in &history.states {
+    for state in history.states() {
         states
             .entry(state.state_id)
             .and_modify(|existing| *existing = None)
@@ -2086,6 +1856,7 @@ fn unique_feature_history_states(history: &AsmHistory) -> HashMap<i64, Option<&A
 }
 
 fn singleton_revised_input_body_across_state_chain<'a>(
+    history: &AsmHistory,
     state: &'a AsmDeltaState,
     previous_state_id: i64,
     states: &HashMap<i64, Option<&'a AsmDeltaState>>,
@@ -2113,18 +1884,19 @@ fn singleton_revised_input_body_across_state_chain<'a>(
         };
         current = previous;
     }
-    let input = current.topology()?;
+    let input = history.topology(current)?;
     let mut candidates = input.bodies.iter().filter(|body| revised.contains(body));
     let body = candidates.next().copied()?;
     candidates.next().is_none().then_some(body)
 }
 
 fn singleton_body_revision_across_state_chain<'a>(
+    history: &AsmHistory,
     state: &'a AsmDeltaState,
     previous_state_id: i64,
     states: &HashMap<i64, Option<&'a AsmDeltaState>>,
 ) -> Option<i64> {
-    let result_topology = state.topology()?;
+    let result_topology = history.topology(state)?;
     let mut current = state;
     let mut visited = HashSet::new();
     let mut selected = None;
@@ -2150,7 +1922,7 @@ fn singleton_body_revision_across_state_chain<'a>(
         current = previous;
     }
     let body = selected?;
-    let input_topology = current.topology()?;
+    let input_topology = history.topology(current)?;
     (result_topology.bodies.contains(&body) && input_topology.bodies.contains(&body))
         .then_some(body)
 }
@@ -2261,7 +2033,7 @@ pub(crate) fn bind_feature_face_selections(
                 if transition.previous_state_id != Some(previous_state_id) {
                     break 'feature_edit;
                 }
-                let Some(_topology) = previous.topology() else {
+                let Some(_topology) = history.topology(previous) else {
                     break 'feature_edit;
                 };
                 match definition {
@@ -2917,19 +2689,17 @@ pub(crate) fn project_feature_input_topologies(
         else {
             continue;
         };
-        let Some(state) = scope
+        let Some((history, state)) = scope
             .history_state_id()
             .and_then(|state_id| {
                 unique_history_state_pair(scoped_histories, state_id, previous_state_id)
-                    .map(|(_, _, previous)| previous)
+                    .map(|(history, _, previous)| (history, previous))
             })
-            .or_else(|| {
-                unique_history_state(scoped_histories, previous_state_id).map(|(_, state)| state)
-            })
+            .or_else(|| unique_history_state(scoped_histories, previous_state_id))
         else {
             continue;
         };
-        let Some(topology) = state.topology() else {
+        let Some(topology) = history.topology(state) else {
             continue;
         };
         let prefix = crate::ids::feature_input_prefix(&feature.id, previous_state_id);
@@ -3039,10 +2809,10 @@ pub(crate) fn bind_vertex_recipe_history(
             let Some(state_id) = state_id else {
                 continue;
             };
-            let Some((_, state)) = unique_history_state(histories, state_id) else {
+            let Some((history, state)) = unique_history_state(histories, state_id) else {
                 continue;
             };
-            let Some(topology) = state.topology() else {
+            let Some(topology) = history.topology(state) else {
                 continue;
             };
             let Some((vertex, position)) =
@@ -3071,10 +2841,10 @@ pub(crate) fn bind_vertex_recipe_history(
         let Some(state_id) = state_id else {
             continue;
         };
-        let Some((_, state)) = unique_history_state(histories, state_id) else {
+        let Some((history, state)) = unique_history_state(histories, state_id) else {
             continue;
         };
-        let Some(topology) = state.topology() else {
+        let Some(topology) = history.topology(state) else {
             continue;
         };
         let [first, second, third] = construction.inputs();
@@ -3132,7 +2902,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
         ) else {
             continue;
         };
-        let Some((_, _, previous)) = bound_history_state_pair(
+        let Some((history, _, previous)) = bound_history_state_pair(
             &scope.id,
             state_id,
             previous_state_id,
@@ -3141,7 +2911,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
         ) else {
             continue;
         };
-        let Some(topology) = previous.topology() else {
+        let Some(topology) = history.topology(previous) else {
             continue;
         };
         for reference in &mut operand.recipe.recipe_references {
@@ -3344,7 +3114,7 @@ fn unique_history_state(
 ) -> Option<(&AsmHistory, &AsmDeltaState)> {
     let mut matches = histories.iter().filter_map(|history| {
         let mut states = history
-            .states
+            .states()
             .iter()
             .filter(|state| state.state_id == state_id);
         let state = states.next()?;
@@ -3356,7 +3126,7 @@ fn unique_history_state(
 
 fn unique_history_state_in(history: &AsmHistory, state_id: i64) -> bool {
     let mut states = history
-        .states
+        .states()
         .iter()
         .filter(|state| state.state_id == state_id);
     states.next().is_some() && states.next().is_none()
@@ -3424,17 +3194,17 @@ pub(crate) fn hem_geometry_semantics(
     ) else {
         return unresolved;
     };
-    let Some((_, state, previous)) =
+    let Some((history, state, previous)) =
         unique_history_state_pair(histories, state_id, previous_state_id)
     else {
         return unresolved;
     };
     let (Some(previous_topology), Some(transition)) =
-        (previous.topology(), state.transition.as_ref())
+        (history.topology(previous), state.transition.as_ref())
     else {
         return unresolved;
     };
-    let Some(current_topology) = state.topology() else {
+    let Some(current_topology) = history.topology(state) else {
         return unresolved;
     };
     let inserted_surfaces = &transition.topology.surfaces.inserted;
@@ -3609,7 +3379,7 @@ fn history_state_pair(
     require_direct: bool,
 ) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
     let mut states = history
-        .states
+        .states()
         .iter()
         .filter(|state| state.state_id == state_id);
     let state = states.next()?;
@@ -3619,7 +3389,7 @@ fn history_state_pair(
         return None;
     }
     let mut previous_states = history
-        .states
+        .states()
         .iter()
         .filter(|state| state.state_id == previous_state_id);
     let previous = previous_states.next()?;
@@ -3851,7 +3621,7 @@ fn history_state_reaches(
     previous_state_id: i64,
 ) -> bool {
     let mut current = state;
-    for _ in 0..=history.states.len() {
+    for _ in 0..=history.states().len() {
         if current.state_id == previous_state_id {
             return true;
         }
@@ -3859,7 +3629,7 @@ fn history_state_reaches(
             return false;
         };
         let mut states = history
-            .states
+            .states()
             .iter()
             .filter(|state| state.state_id == previous_state_id);
         let Some(previous) = states.next() else {
@@ -3880,7 +3650,7 @@ fn history_state_reaches(
 fn linked_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Option<i64> {
     let linked = state.next_ref.and_then(|node_index| {
         let mut states = history
-            .states
+            .states()
             .iter()
             .filter(|candidate| candidate.node_index == node_index);
         let previous = states.next()?;
@@ -3900,7 +3670,7 @@ fn linked_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Opti
 
 fn history_state_index(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaState>> {
     let mut states = HashMap::new();
-    for state in &history.states {
+    for state in history.states() {
         states
             .entry(state.state_id)
             .and_modify(|state| *state = None)
@@ -4090,7 +3860,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             continue;
         };
         let states = state_indexes.get(history, history_state_index);
-        let Some(topology) = previous.topology() else {
+        let Some(topology) = history.topology(previous) else {
             continue;
         };
         for reference in &mut operand.recipe_references {
@@ -4293,7 +4063,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     let pattern = if feature_family
                         == Some(crate::design::DesignFeatureFamily::CircularPattern)
                     {
-                        if let Some(result) = state.topology() {
+                        if let Some(result) = history.topology(state) {
                             resolve_pattern_face_by_surface_radius(
                                 crate::design::face_resolve::face_operand_candidates(operand),
                                 topology,
@@ -4351,7 +4121,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .as_ref()
                 .is_some_and(|transition| transition.previous_state_id == Some(previous_state_id))
         {
-            if let Some((result, transition)) = state.topology().zip(state.transition.as_ref()) {
+            if let Some((result, transition)) =
+                history.topology(state).zip(state.transition.as_ref())
+            {
                 if let Some(face) = resolve_bounded_face_recipe_target(
                     operand,
                     topology,
@@ -4366,7 +4138,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         if operand.resolved_face_slots.is_empty()
             && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Draft
         {
-            if let Some(result) = state.topology() {
+            if let Some(result) = history.topology(state) {
                 if let Some(face) =
                     resolve_draft_face_by_surface_transition(operand, topology, result)
                 {
@@ -4970,7 +4742,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             continue;
         };
         let states = state_indexes.get(history, history_state_index);
-        let Some(topology) = previous.topology() else {
+        let Some(topology) = history.topology(previous) else {
             continue;
         };
         if face_changes_across_state_chain(state, previous.state_id, states).is_none() {
@@ -5077,11 +4849,12 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(body_slot) = operand.resolved_body_slot else {
             continue;
         };
-        let Some((_, _, previous)) = body_recipe_operand_history_pair(operand, scopes, histories)
+        let Some((history, _, previous)) =
+            body_recipe_operand_history_pair(operand, scopes, histories)
         else {
             continue;
         };
-        let Some(topology) = previous.topology() else {
+        let Some(topology) = history.topology(previous) else {
             continue;
         };
         let Some(faces) = complete_bodies
@@ -5336,7 +5109,8 @@ fn bind_profile_face_group_cardinality(
             };
             let states = state_indexes.get(history, history_state_index);
             let changed_faces = face_changes_across_state_chain(state, previous_state_id, states);
-            let (Some(topology), Some(changed_faces)) = (previous.topology(), changed_faces) else {
+            let (Some(topology), Some(changed_faces)) = (history.topology(previous), changed_faces)
+            else {
                 continue;
             };
             let paired_aggregate = crate::design::face_resolve::is_paired_extrude_profile_aggregate(
@@ -5524,7 +5298,11 @@ fn historical_face_support_contexts<'a>(
             binding.carrier
         } else {
             let mut carriers = HashSet::new();
-            for topology in history.states.iter().filter_map(|state| state.topology()) {
+            for topology in history
+                .states()
+                .iter()
+                .filter_map(|state| history.topology(state))
+            {
                 let mut bindings = topology
                     .face_surfaces
                     .iter()
@@ -6015,7 +5793,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
     let mut terminal_topologies = Vec::new();
     for history in histories {
         let mut preceding = HashSet::new();
-        for state in &history.states {
+        for state in history.states() {
             if let Some(previous) = state
                 .transition
                 .as_ref()
@@ -6025,11 +5803,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
             }
         }
         let mut terminals = history
-            .states
+            .states()
             .iter()
             .filter(|state| !preceding.contains(&state.state_id));
         if let Some(state) = terminals.next().filter(|_| terminals.next().is_none()) {
-            if let Some(topology) = state.topology() {
+            if let Some(topology) = history.topology(state) {
                 terminal_topologies.push((state.state_id, topology));
             }
         }
@@ -6092,7 +5870,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
         ) else {
             continue;
         };
-        let (Some(result_topology), Some(topology)) = (state.topology(), previous.topology())
+        let (Some(result_topology), Some(topology)) =
+            (history.topology(state), history.topology(previous))
         else {
             continue;
         };
@@ -6844,6 +6623,7 @@ pub(crate) fn same_axis_line(
 }
 
 fn affected_body_refs<'a>(
+    history: &'a AsmHistory,
     current: &'a AsmDeltaState,
     previous: Option<&'a AsmDeltaState>,
     body_closures: &mut HistoricalBodyClosureCache<'a>,
@@ -6852,11 +6632,11 @@ fn affected_body_refs<'a>(
     if transition.previous_state_id != previous.map(|state| state.state_id) {
         return None;
     }
-    let current_topology = current.topology()?;
+    let current_topology = history.topology(current)?;
     let current_changes = changed_family_refs(&transition.topology, false);
     let mut affected = body_closures.intersecting(current_topology, &current_changes)?;
     if let Some(previous) = previous {
-        let previous_topology = previous.topology()?;
+        let previous_topology = history.topology(previous)?;
         let deleted = changed_family_refs(&transition.topology, true);
         let previous_affected = body_closures.intersecting(previous_topology, &deleted)?;
         for body in previous_affected {
@@ -7416,38 +7196,31 @@ pub(crate) fn historical_topology_with_tags(
             },
         );
     }
+    topology
+        .persistent_subentity_tags
+        .sort_by_key(|tag| tag.entity_ref);
     Ok(Some(topology))
 }
 
-fn materialize_record_table(
-    state: &AsmDeltaState,
+#[cfg(test)]
+pub(crate) fn materialize_record_table(
+    versions: &BTreeMap<i64, i64>,
     archive: &HistoricalRecordArchive,
 ) -> Option<Vec<cadmpeg_asm::sab::Record>> {
-    if state.entity_versions.is_empty() {
+    if versions.is_empty() {
         return None;
     }
-
-    let mut present = HashSet::new();
-
-    for version in &state.entity_versions {
-        present.insert(version.entity_ref);
-    }
-    if present.len() != state.entity_versions.len() {
-        return None;
-    }
-
     let mut records = Vec::new();
-
-    for version in &state.entity_versions {
-        let record = archive.get(&version.record_ref)?;
-        if i64::try_from(record.index).ok() != Some(version.entity_ref) {
+    for (&entity_ref, record_ref) in versions {
+        let record = archive.get(record_ref)?;
+        if i64::try_from(record.index).ok() != Some(entity_ref) {
             return None;
         }
         for token in record.tokens.iter() {
             let cadmpeg_asm::sab::Token::Ref(reference) = token else {
                 continue;
             };
-            if *reference >= 0 && !present.contains(reference) {
+            if *reference >= 0 && !versions.contains_key(reference) {
                 return None;
             }
         }

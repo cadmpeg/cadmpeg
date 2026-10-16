@@ -40,7 +40,7 @@ pub(crate) enum F3dLossCode {
     LocalOccurrenceUnplaced,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
-    /// ASM history binding work exceeded the decoder safety budget.
+    /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
     HistoryBindingBudgetExceeded,
     /// A Design recipe side-sequence search exceeded its local work cap.
     RecipeSideSearchBudgetExceeded,

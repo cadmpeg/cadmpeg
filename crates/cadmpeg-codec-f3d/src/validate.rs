@@ -4021,11 +4021,11 @@ fn valid_vertex_recipe(
             let mut states = native
                 .asm_histories
                 .iter()
-                .flat_map(|history| &history.states)
-                .filter(|state| state.state_id == state_id);
-            states.next().is_some_and(|state| {
+                .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+                .filter(|(_, state)| state.state_id == state_id);
+            states.next().is_some_and(|(history, state)| {
                 states.next().is_none()
-                    && state.topology().map_or_else(
+                    && history.topology(state).map_or_else(
                         || history::projection_was_finalized(&native.asm_histories),
                         |topology| topology.vertices.contains(&vertex_slot),
                     )
@@ -6212,7 +6212,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         native
                             .asm_histories
                             .iter()
-                            .flat_map(|history| &history.states)
+                            .flat_map(crate::history_records::AsmHistory::states)
                             .any(|state| state.state_id == *state_id)
                     })
             } else {
@@ -6551,7 +6551,7 @@ fn validate_face_boundaries<'a>(
     let native = ctx.native;
     let mut states = HashMap::new();
     for history in &native.asm_histories {
-        for state in &history.states {
+        for state in history.states() {
             states.insert(state.id.as_str(), state);
         }
     }
@@ -8631,6 +8631,15 @@ fn validate_subentity_tags(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     for history in &native.asm_histories {
+        if let Err(error) = history.check_transitions() {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: format!("Fusion ASM history transition is invalid: {error:?}"),
+                entity: Some(history.id.clone()),
+                related: Vec::new(),
+            });
+        }
         let coherent = history::graph_is_coherent(history);
         if !coherent {
             push_constant_finding(

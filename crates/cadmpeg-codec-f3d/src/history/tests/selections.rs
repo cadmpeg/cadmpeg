@@ -13,14 +13,14 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::active_brep_face_matches_source;
-use crate::history::bind_historical_entity_versions;
+use crate::history::admit_history_binding;
+use crate::history::archived_active_record_count;
 use crate::history::bind_snapshot_revision_ids;
 use crate::history::body_revision_without_topology_change;
 use crate::history::combine_recipe_family_tool_slots;
 use crate::history::grouped_reference_face_candidate;
 use crate::history::historical_body_slot;
 use crate::history::historical_record_archive;
-use crate::history::historical_transition;
 use crate::history::insert_only_active_record_count;
 use crate::history::materialize_record_table;
 use crate::history::pattern_combine_tool_slots;
@@ -34,9 +34,8 @@ use crate::history::singleton_revised_input_body_across_state_chain;
 use crate::history::TopologyStableBodyRevision;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
-    AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding,
-    AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
+    AsmHistoricalCarrierBinding, AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistoricalTransition, AsmHistoryRecord,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
@@ -44,30 +43,30 @@ use std::collections::{HashMap, HashSet};
 
 #[test]
 fn entity_selection_face_proofs_preserve_history_namespaces() {
-    let state = |parent: &str, state_id, topology| AsmDeltaState {
-        id: format!("{parent}-state-{state_id}"),
-        parent: parent.into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition: None,
+    let state = |parent: &str, state_id, topology| {
+        (
+            AsmDeltaState {
+                id: format!("{parent}-state-{state_id}"),
+                parent: parent.into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
-    let history = |id: &str, state| AsmHistory {
-        id: id.into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state],
+    let history = |id: &str, state| {
+        crate::test_support::history::history(id.into(), 0, None, false, vec![state])
     };
     let unrelated = history(
         "unrelated",
@@ -125,22 +124,24 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
 
 #[test]
 fn hole_face_selection_history_binds_the_unique_persistent_face() {
-    let state = AsmDeltaState {
-        id: "selected-state-2".into(),
-        parent: "selected".into(),
-        byte_offset: 0,
-        state_id: 2,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 2,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
+    let state = (
+        AsmDeltaState {
+            id: "selected-state-2".into(),
+            parent: "selected".into(),
+            byte_offset: 0,
+            state_id: 2,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 2,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(AsmHistoricalTopology {
             faces: vec![30],
             loops: vec![20],
             coedges: vec![10],
@@ -159,15 +160,10 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
             }],
             ..AsmHistoricalTopology::default()
         }),
-        transition: None,
-    };
-    let history = AsmHistory {
-        id: "selected".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state],
-    };
+        Vec::new(),
+    );
+    let history =
+        crate::test_support::history::history("selected".into(), 0, None, false, vec![state]);
     let face_selection = crate::records::feature::hole::DesignHoleFaceSelection {
         record_index: 100,
         byte_offset: 0,
@@ -296,23 +292,27 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         .expect("edge identity")
     };
     let mut operands = vec![identity(2, 0, 10), identity(2, 1, 11), identity(3, 0, 12)];
-    let state = |state_id, topology, transition| AsmDeltaState {
-        id: format!("history:state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
+    let state = |state_id, topology, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history:state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
     let previous = state(
         7,
@@ -322,22 +322,14 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         },
         None,
     );
-    let current = state(
-        8,
-        AsmHistoricalTopology::default(),
-        Some(AsmHistoricalTransition {
-            previous_state_id: Some(7),
-            records: AsmHistoricalEntityDelta::default(),
-            topology: AsmHistoricalTopologyDelta::default(),
-        }),
+    let current = state(8, AsmHistoricalTopology::default(), Some(7));
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![current, previous],
     );
-    let history = AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![current, previous],
-    };
 
     bind_edge_identity_history(
         &mut operands,
@@ -354,108 +346,124 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
 
 #[test]
 fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
-            bodies: vec![7],
-            ..AsmHistoricalTopology::default()
-        }),
-        transition,
+    let state = |state_id, bodies: &[i64], versions: &[(i64, i64)]| {
+        (
+            AsmDeltaState {
+                id: format!("state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                bodies: bodies.to_vec(),
+                ..Default::default()
+            }),
+            versions
+                .iter()
+                .map(|&(entity_ref, record_ref)| AsmEntityVersion {
+                    entity_ref,
+                    record_ref,
+                })
+                .collect(),
+        )
     };
-    let previous = state(10, None);
-    let mut transition = AsmHistoricalTransition {
-        previous_state_id: Some(10),
-        records: AsmHistoricalEntityDelta::default(),
-        topology: AsmHistoricalTopologyDelta::default(),
-    };
-    transition.topology.bodies.updated.push(7);
-    let current = state(11, Some(transition.clone()));
+    let history =
+        |states| crate::test_support::history::history("history".into(), 0, None, false, states);
+    let stable = history(vec![state(11, &[7], &[(7, 2)]), state(10, &[7], &[(7, 1)])]);
     assert_eq!(
-        body_revision_without_topology_change(&current),
+        body_revision_without_topology_change(&stable.states()[0]),
         Some(TopologyStableBodyRevision::Revised(7))
     );
 
-    transition.topology.points.updated.push(31);
-    transition.topology.surfaces.inserted.push(32);
-    transition.topology.curves.deleted.push(33);
-    transition.topology.pcurves.updated.push(34);
-    let carrier_revisions = state(11, Some(transition.clone()));
+    let mut carrier_new = state(11, &[7], &[(7, 2), (31, 2), (32, 1), (34, 2)]);
+    let mut carrier_old = state(10, &[7], &[(7, 1), (31, 1), (33, 1), (34, 1)]);
+    carrier_new.1.as_mut().unwrap().points = vec![31];
+    carrier_new.1.as_mut().unwrap().surfaces = vec![32];
+    carrier_new.1.as_mut().unwrap().pcurves = vec![34];
+    carrier_old.1.as_mut().unwrap().points = vec![31];
+    carrier_old.1.as_mut().unwrap().curves = vec![33];
+    carrier_old.1.as_mut().unwrap().pcurves = vec![34];
+    let carrier_revisions = history(vec![carrier_new.clone(), carrier_old.clone()]);
     assert_eq!(
-        body_revision_without_topology_change(&carrier_revisions),
+        body_revision_without_topology_change(&carrier_revisions.states()[0]),
         Some(TopologyStableBodyRevision::Revised(7))
     );
 
-    let mut intermediate_transition = AsmHistoricalTransition {
-        previous_state_id: Some(10),
-        records: AsmHistoricalEntityDelta::default(),
-        topology: AsmHistoricalTopologyDelta::default(),
-    };
-    intermediate_transition.topology.bodies.updated.push(7);
-    let intermediate = state(11, Some(intermediate_transition));
-    transition.previous_state_id = Some(11);
-    let result = state(12, Some(transition.clone()));
-    let states = HashMap::from([
-        (10, Some(&previous)),
-        (11, Some(&intermediate)),
-        (12, Some(&result)),
+    carrier_new.0.state_id = 12;
+    carrier_new.0.node_index = 12;
+    let mut intermediate = carrier_old.clone();
+    intermediate.0.state_id = 11;
+    intermediate.0.node_index = 11;
+    intermediate.2[0].record_ref = 2;
+    carrier_new.2[0].record_ref = 3;
+    let chain = history(vec![carrier_new.clone(), intermediate, carrier_old.clone()]);
+    let states = chain
+        .states()
+        .iter()
+        .map(|state| (state.state_id, Some(state)))
+        .collect();
+    assert_eq!(
+        singleton_body_revision_across_state_chain(&chain, &chain.states()[0], 10, &states),
+        Some(7)
+    );
+
+    let split = history(vec![
+        state(21, &[7, 8, 9], &[(7, 2), (8, 1), (9, 1)]),
+        state(20, &[7, 8], &[(7, 1), (8, 1)]),
     ]);
+    let states = split
+        .states()
+        .iter()
+        .map(|state| (state.state_id, Some(state)))
+        .collect();
     assert_eq!(
-        singleton_body_revision_across_state_chain(&result, 10, &states),
+        singleton_revised_input_body_across_state_chain(&split, &split.states()[0], 20, &states),
         Some(7)
     );
-
-    let topology = |bodies: &[i64]| AsmHistoricalTopology {
-        bodies: bodies.to_vec(),
-        ..AsmHistoricalTopology::default()
-    };
-    let mut split_previous = state(20, None);
-    split_previous.topology_cache =
-        crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8]));
-    let mut split_transition = AsmHistoricalTransition {
-        previous_state_id: Some(20),
-        records: AsmHistoricalEntityDelta::default(),
-        topology: AsmHistoricalTopologyDelta::default(),
-    };
-    split_transition.topology.bodies.updated.push(7);
-    split_transition.topology.bodies.inserted.push(9);
-    let mut split_result = state(21, Some(split_transition.clone()));
-    split_result.topology_cache =
-        crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
-    let split_states = HashMap::from([(20, Some(&split_previous)), (21, Some(&split_result))]);
+    let ambiguous = history(vec![
+        state(21, &[7, 8, 9], &[(7, 2), (8, 2), (9, 1)]),
+        state(20, &[7, 8], &[(7, 1), (8, 1)]),
+    ]);
+    let states = ambiguous
+        .states()
+        .iter()
+        .map(|state| (state.state_id, Some(state)))
+        .collect();
     assert_eq!(
-        singleton_revised_input_body_across_state_chain(&split_result, 20, &split_states),
-        Some(7)
-    );
-
-    split_transition.topology.bodies.updated.push(8);
-    let mut ambiguous_split = state(21, Some(split_transition));
-    ambiguous_split.topology_cache =
-        crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
-    let ambiguous_states =
-        HashMap::from([(20, Some(&split_previous)), (21, Some(&ambiguous_split))]);
-    assert_eq!(
-        singleton_revised_input_body_across_state_chain(&ambiguous_split, 20, &ambiguous_states),
+        singleton_revised_input_body_across_state_chain(
+            &ambiguous,
+            &ambiguous.states()[0],
+            20,
+            &states
+        ),
         None
     );
 
-    transition.previous_state_id = Some(10);
-    transition.topology.faces.updated.push(19);
-    let topology_changing = state(11, Some(transition));
+    carrier_new.0.state_id = 11;
+    carrier_new.0.node_index = 11;
+    carrier_new.1.as_mut().unwrap().faces = vec![19];
+    carrier_old.1.as_mut().unwrap().faces = vec![19];
+    carrier_new.2.push(AsmEntityVersion {
+        entity_ref: 19,
+        record_ref: 2,
+    });
+    carrier_old.2.push(AsmEntityVersion {
+        entity_ref: 19,
+        record_ref: 1,
+    });
+    let topology_changing = history(vec![carrier_new, carrier_old]);
     assert_eq!(
-        body_revision_without_topology_change(&topology_changing),
+        body_revision_without_topology_change(&topology_changing.states()[0]),
         None
     );
 }
@@ -750,29 +758,33 @@ fn active_brep_face_namespace_accepts_default_or_matching_named_source() {
 
 #[test]
 fn historical_transition_separates_membership_and_revision_changes() {
-    let state = |state_id, versions: &[(i64, i64)], topology| AsmDeltaState {
-        id: format!("state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: versions
-            .iter()
-            .map(|&(entity_ref, record_ref)| AsmEntityVersion {
-                entity_ref,
-                record_ref,
-            })
-            .collect(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition: None,
+    let state = |state_id, versions: &[(i64, i64)], topology| {
+        (
+            AsmDeltaState {
+                id: format!("state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            versions
+                .iter()
+                .map(|&(entity_ref, record_ref)| AsmEntityVersion {
+                    entity_ref,
+                    record_ref,
+                })
+                .collect(),
+        )
     };
     let previous = state(
         10,
@@ -795,7 +807,28 @@ fn historical_transition_separates_membership_and_revision_changes() {
         },
     );
 
-    let transition = historical_transition(&current, Some(&previous)).unwrap();
+    let versions = |state: &crate::test_support::history::State| {
+        state
+            .2
+            .iter()
+            .map(|row| (row.entity_ref, row.record_ref))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let old_versions = versions(&previous);
+    let new_versions = versions(&current);
+    let transition = AsmHistoricalTransition::between(
+        Some(crate::history_records::AsmStateSnapshot {
+            state_id: previous.0.state_id,
+            topology: previous.1.as_ref().unwrap(),
+            versions: &old_versions,
+        }),
+        crate::history_records::AsmStateSnapshot {
+            state_id: current.0.state_id,
+            topology: current.1.as_ref().unwrap(),
+            versions: &new_versions,
+        },
+    )
+    .unwrap();
     assert_eq!(transition.previous_state_id, Some(10));
     assert_eq!(transition.topology.bodies.inserted, [2]);
     assert_eq!(transition.topology.bodies.updated, [1]);
@@ -856,8 +889,6 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
                 raw_bytes: vec![0x11].into(),
             })
             .collect(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: None,
     };
 
@@ -878,72 +909,96 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
     let state = |node_index, next_ref, inserted: &[i64]| {
         let state_id = format!("state-{node_index}");
         let board_id = format!("board-{node_index}");
-        AsmDeltaState {
-            id: state_id.clone(),
-            parent: "history".into(),
-            byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
-            state_id: 10 - node_index,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: (node_index > 0).then_some(node_index - 1),
-            next_ref,
-            node_index,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: vec![AsmBulletinBoard {
-                id: board_id.clone(),
-                parent: state_id.clone(),
+        (
+            AsmDeltaState {
+                id: state_id.clone(),
+                parent: "history".into(),
                 byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                state_id: 10 - node_index,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: (node_index > 0).then_some(node_index - 1),
+                next_ref,
+                node_index,
+                partner_ref: None,
                 owner_ref: 0,
-                number: 2,
-                changes: inserted
-                    .iter()
-                    .enumerate()
-                    .map(|(index, new_ref)| AsmEntityChange {
-                        id: format!("change-{node_index}-{index}"),
-                        parent: board_id.clone(),
-                        byte_offset: u64_from_index(index),
-                        kind: AsmEntityChangeKind::Insert { new: *new_ref },
-                    })
-                    .collect(),
-            }],
-            records: vec![AsmHistoryRecord {
-                id: format!("record-{node_index}"),
-                parent: state_id,
-                revision_id: None,
-                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
-                framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                    index: 0,
-                    name: "End-of-ASM-History-Section".into(),
-                    entity_references: Vec::new(),
-                },
-                raw_bytes: vec![0x11].into(),
-            }],
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Absent,
-            transition: None,
-        }
+                bulletin_boards: vec![AsmBulletinBoard {
+                    id: board_id.clone(),
+                    parent: state_id.clone(),
+                    byte_offset: u64::try_from(node_index)
+                        .expect("fixture reference is nonnegative"),
+                    owner_ref: 0,
+                    number: 2,
+                    changes: inserted
+                        .iter()
+                        .enumerate()
+                        .map(|(index, new_ref)| AsmEntityChange {
+                            id: format!("change-{node_index}-{index}"),
+                            parent: board_id.clone(),
+                            byte_offset: u64_from_index(index),
+                            kind: AsmEntityChangeKind::Insert { new: *new_ref },
+                        })
+                        .collect(),
+                }],
+                records: vec![AsmHistoryRecord {
+                    id: format!("record-{node_index}"),
+                    parent: state_id,
+                    revision_id: None,
+                    byte_offset: u64::try_from(node_index)
+                        .expect("fixture reference is nonnegative"),
+                    framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                        index: 0,
+                        name: "End-of-ASM-History-Section".into(),
+                        entity_references: Vec::new(),
+                    },
+                    raw_bytes: vec![0x11].into(),
+                }],
+                transition: None,
+            },
+            None::<AsmHistoricalTopology>,
+            Vec::<AsmEntityVersion>::new(),
+        )
     };
-    let mut states = vec![
-        state(0, Some(1), &[1]),
-        state(1, Some(2), &[2]),
-        state(2, None, &[3]),
+    let states = vec![
+        state(0, Some(1), &[1]).0,
+        state(1, Some(2), &[2]).0,
+        state(2, None, &[3]).0,
     ];
 
-    {
-        assert_eq!(insert_only_active_record_count(&states), Some(4));
-        bind_historical_entity_versions(&mut states).unwrap();
-    };
+    assert_eq!(insert_only_active_record_count(&states), Some(4));
+    admit_history_binding(&states, &mut { u64::MAX }).unwrap();
+    let active_count = archived_active_record_count(&states)
+        .unwrap()
+        .or_else(|| insert_only_active_record_count(&states))
+        .unwrap();
+    let mut archived_ids: Vec<_> = states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter_map(|r| r.revision_id)
+        .collect();
+    archived_ids.sort_unstable();
+    let mut versions_by_state = vec![Vec::new(); states.len()];
+    assert!(crate::history::walk_entity_versions(
+        &states,
+        i64::try_from(active_count).unwrap(),
+        &archived_ids,
+        |ordinal, versions| {
+            versions_by_state[ordinal] = versions
+                .iter()
+                .map(|(&entity_ref, &record_ref)| AsmEntityVersion {
+                    entity_ref,
+                    record_ref,
+                })
+                .collect();
+        }
+    ));
 
     assert_eq!(
-        states
-            .iter()
-            .map(|state| state.entity_versions.len())
-            .collect::<Vec<_>>(),
+        versions_by_state.iter().map(Vec::len).collect::<Vec<_>>(),
         [4, 3, 2]
     );
     assert_eq!(
-        states[1].entity_versions,
+        versions_by_state[1],
         [
             AsmEntityVersion {
                 entity_ref: 0,
@@ -988,8 +1043,6 @@ fn insert_only_history_rejects_gaps_and_updates() {
             },
             raw_bytes: vec![0x11].into(),
         }],
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
         transition: None,
     };
     let board = AsmBulletinBoard {
@@ -1030,44 +1083,48 @@ fn materialized_record_table_normalizes_revision_references() {
     archived_bytes.push(0x11);
     let state_id = "state".to_string();
     let board_id = "board".to_string();
-    let state = AsmDeltaState {
-        id: state_id.clone(),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id: 1,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: vec![AsmBulletinBoard {
-            id: board_id.clone(),
-            parent: state_id.clone(),
+    let state = (
+        AsmDeltaState {
+            id: state_id.clone(),
+            parent: "history".into(),
             byte_offset: 0,
+            state_id: 1,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 0,
+            partner_ref: None,
             owner_ref: 0,
-            number: 2,
-            changes: vec![AsmEntityChange {
-                id: "change".into(),
-                parent: board_id,
+            bulletin_boards: vec![AsmBulletinBoard {
+                id: board_id.clone(),
+                parent: state_id.clone(),
                 byte_offset: 0,
-                kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
+                owner_ref: 0,
+                number: 2,
+                changes: vec![AsmEntityChange {
+                    id: "change".into(),
+                    parent: board_id,
+                    byte_offset: 0,
+                    kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
+                }],
             }],
-        }],
-        records: vec![AsmHistoryRecord {
-            id: "record".into(),
-            parent: state_id,
-            revision_id: Some(2),
-            byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                index: 0,
-                name: "edge".into(),
-                entity_references: vec![2],
-            },
-            raw_bytes: archived_bytes.clone().into(),
-        }],
-        entity_versions: vec![
+            records: vec![AsmHistoryRecord {
+                id: "record".into(),
+                parent: state_id,
+                revision_id: Some(2),
+                byte_offset: 0,
+                framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                    index: 0,
+                    name: "edge".into(),
+                    entity_references: vec![2],
+                },
+                raw_bytes: archived_bytes.clone().into(),
+            }],
+            transition: None,
+        },
+        None::<AsmHistoricalTopology>,
+        vec![
             AsmEntityVersion {
                 entity_ref: 0,
                 record_ref: 0,
@@ -1077,9 +1134,7 @@ fn materialized_record_table_normalizes_revision_references() {
                 record_ref: 2,
             },
         ],
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
-        transition: None,
-    };
+    );
     let active = ["asmheader", "edge"]
         .into_iter()
         .enumerate()
@@ -1103,13 +1158,20 @@ fn materialized_record_table_normalizes_revision_references() {
     .try_into()
     .expect("one archived record");
     let archive = historical_record_archive(
-        std::slice::from_ref(&state),
+        std::slice::from_ref(&state.0),
         &active,
         HashMap::from([(2, framed)]),
     )
     .expect("complete historical record archive");
-    let table =
-        materialize_record_table(&state, &archive).expect("complete historical RecordTable");
+    let table = materialize_record_table(
+        &state
+            .2
+            .iter()
+            .map(|v| (v.entity_ref, v.record_ref))
+            .collect(),
+        &archive,
+    )
+    .expect("complete historical RecordTable");
 
     assert_eq!(table.len(), 2);
     assert_eq!(table[1].index, 1);
@@ -1132,44 +1194,48 @@ fn qualified_history_marker_remains_an_archived_record() {
     archived_bytes.push(0x11);
     let state_id = "state".to_string();
     let board_id = "board".to_string();
-    let state = AsmDeltaState {
-        id: state_id.clone(),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id: 1,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: vec![AsmBulletinBoard {
-            id: board_id.clone(),
-            parent: state_id.clone(),
+    let state = (
+        AsmDeltaState {
+            id: state_id.clone(),
+            parent: "history".into(),
             byte_offset: 0,
+            state_id: 1,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 0,
+            partner_ref: None,
             owner_ref: 0,
-            number: 2,
-            changes: vec![AsmEntityChange {
-                id: "change".into(),
-                parent: board_id,
+            bulletin_boards: vec![AsmBulletinBoard {
+                id: board_id.clone(),
+                parent: state_id.clone(),
                 byte_offset: 0,
-                kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
+                owner_ref: 0,
+                number: 2,
+                changes: vec![AsmEntityChange {
+                    id: "change".into(),
+                    parent: board_id,
+                    byte_offset: 0,
+                    kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
+                }],
             }],
-        }],
-        records: vec![AsmHistoryRecord {
-            id: "record".into(),
-            parent: state_id,
-            revision_id: Some(2),
-            byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                index: 0,
-                name: "End-of-ASM-History-Section".into(),
-                entity_references: vec![2],
-            },
-            raw_bytes: archived_bytes.clone().into(),
-        }],
-        entity_versions: vec![
+            records: vec![AsmHistoryRecord {
+                id: "record".into(),
+                parent: state_id,
+                revision_id: Some(2),
+                byte_offset: 0,
+                framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                    index: 0,
+                    name: "End-of-ASM-History-Section".into(),
+                    entity_references: vec![2],
+                },
+                raw_bytes: archived_bytes.clone().into(),
+            }],
+            transition: None,
+        },
+        None::<AsmHistoricalTopology>,
+        vec![
             AsmEntityVersion {
                 entity_ref: 0,
                 record_ref: 0,
@@ -1179,9 +1245,7 @@ fn qualified_history_marker_remains_an_archived_record() {
                 record_ref: 2,
             },
         ],
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
-        transition: None,
-    };
+    );
     let active = ["asmheader", "body"]
         .into_iter()
         .enumerate()
@@ -1205,7 +1269,7 @@ fn qualified_history_marker_remains_an_archived_record() {
     .try_into()
     .expect("one archived record");
     let archive = historical_record_archive(
-        std::slice::from_ref(&state),
+        std::slice::from_ref(&state.0),
         &active,
         HashMap::from([(2, framed)]),
     )
@@ -1220,48 +1284,51 @@ fn qualified_history_marker_remains_an_archived_record() {
 fn reverse_history_builds_complete_entity_version_maps() {
     let state = |node_index, previous_ref, next_ref, old_ref, new_ref| {
         let board_id = format!("board-{node_index}");
-        AsmDeltaState {
-            id: format!("state-{node_index}"),
-            parent: "history".into(),
-            byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
-            state_id: 10 - node_index,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref,
-            next_ref,
-            node_index,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: vec![AsmBulletinBoard {
-                id: board_id.clone(),
-                parent: format!("state-{node_index}"),
+        (
+            AsmDeltaState {
+                id: format!("state-{node_index}"),
+                parent: "history".into(),
                 byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                state_id: 10 - node_index,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref,
+                next_ref,
+                node_index,
+                partner_ref: None,
                 owner_ref: 0,
-                number: 2,
-                changes: vec![AsmEntityChange {
-                    id: format!("change-{node_index}"),
-                    parent: board_id,
+                bulletin_boards: vec![AsmBulletinBoard {
+                    id: board_id.clone(),
+                    parent: format!("state-{node_index}"),
                     byte_offset: u64::try_from(node_index)
                         .expect("fixture reference is nonnegative"),
-                    kind: match (old_ref, new_ref) {
-                        (Some(old), Some(new)) => AsmEntityChangeKind::Update { old, new },
-                        (None, Some(new)) => AsmEntityChangeKind::Insert { new },
-                        (Some(old), None) => AsmEntityChangeKind::Delete { old },
-                        (None, None) => unreachable!(),
-                    },
+                    owner_ref: 0,
+                    number: 2,
+                    changes: vec![AsmEntityChange {
+                        id: format!("change-{node_index}"),
+                        parent: board_id,
+                        byte_offset: u64::try_from(node_index)
+                            .expect("fixture reference is nonnegative"),
+                        kind: match (old_ref, new_ref) {
+                            (Some(old), Some(new)) => AsmEntityChangeKind::Update { old, new },
+                            (None, Some(new)) => AsmEntityChangeKind::Insert { new },
+                            (Some(old), None) => AsmEntityChangeKind::Delete { old },
+                            (None, None) => unreachable!(),
+                        },
+                    }],
                 }],
-            }],
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Absent,
-            transition: None,
-        }
+                records: Vec::new(),
+                transition: None,
+            },
+            None::<AsmHistoricalTopology>,
+            Vec::<AsmEntityVersion>::new(),
+        )
     };
     let mut states = vec![
-        state(0, None, Some(1), Some(3), Some(1)),
-        state(1, Some(0), Some(2), Some(4), Some(1)),
-        state(2, Some(1), Some(3), None, Some(2)),
-        state(3, Some(2), None, None, Some(1)),
+        state(0, None, Some(1), Some(3), Some(1)).0,
+        state(1, Some(0), Some(2), Some(4), Some(1)).0,
+        state(2, Some(1), Some(3), None, Some(2)).0,
+        state(3, Some(2), None, None, Some(1)).0,
     ];
     states[0].records = [3, 4]
         .map(|revision_id| AsmHistoryRecord {
@@ -1278,17 +1345,39 @@ fn reverse_history_builds_complete_entity_version_maps() {
         })
         .into();
 
-    bind_historical_entity_versions(&mut states).unwrap();
+    admit_history_binding(&states, &mut { u64::MAX }).unwrap();
+    let active_count = archived_active_record_count(&states)
+        .unwrap()
+        .or_else(|| insert_only_active_record_count(&states))
+        .unwrap();
+    let mut archived_ids: Vec<_> = states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter_map(|r| r.revision_id)
+        .collect();
+    archived_ids.sort_unstable();
+    let mut versions_by_state = vec![Vec::new(); states.len()];
+    assert!(crate::history::walk_entity_versions(
+        &states,
+        i64::try_from(active_count).unwrap(),
+        &archived_ids,
+        |ordinal, versions| {
+            versions_by_state[ordinal] = versions
+                .iter()
+                .map(|(&entity_ref, &record_ref)| AsmEntityVersion {
+                    entity_ref,
+                    record_ref,
+                })
+                .collect();
+        }
+    ));
 
     assert_eq!(
-        states
-            .iter()
-            .map(|state| state.entity_versions.len())
-            .collect::<Vec<_>>(),
+        versions_by_state.iter().map(Vec::len).collect::<Vec<_>>(),
         [3, 3, 3, 2]
     );
     assert_eq!(
-        states[1].entity_versions,
+        versions_by_state[1],
         [
             AsmEntityVersion {
                 entity_ref: 0,
@@ -1304,7 +1393,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
             },
         ]
     );
-    assert_eq!(states[2].entity_versions[1].record_ref, 4);
+    assert_eq!(versions_by_state[2][1].record_ref, 4);
 }
 
 #[test]

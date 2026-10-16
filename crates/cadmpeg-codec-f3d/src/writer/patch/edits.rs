@@ -2232,7 +2232,7 @@ pub(super) fn validate_history_state_edits(
     let mut edits: BTreeMap<String, HistoryEdits> = BTreeMap::new();
     for history in target {
         let before = baseline_by_id[history.id.as_str()];
-        if before.states.len() != history.states.len() {
+        if before.states().len() != history.states().len() {
             return Err(CodecError::NotImplemented(format!(
                 "F3D history edit changes the state count: {}",
                 history.id
@@ -2240,7 +2240,7 @@ pub(super) fn validate_history_state_edits(
         }
         let mut normalized = history.clone();
         normalized.preamble = before.preamble;
-        for (state, before_state) in normalized.states.iter_mut().zip(&before.states) {
+        for (state, before_state) in normalized.states_mut().iter_mut().zip(before.states()) {
             state.state_id = before_state.state_id;
             state.version_flag = before_state.version_flag;
             state.state_flag = before_state.state_flag;
@@ -2289,7 +2289,7 @@ pub(super) fn validate_history_state_edits(
             })?;
         if let Some(preamble) = history.preamble {
             if history
-                .states
+                .states()
                 .first()
                 .is_none_or(|state| state.state_id != preamble.stream_size)
                 || preamble.history_entry_count < 0
@@ -2319,7 +2319,7 @@ pub(super) fn validate_history_state_edits(
                 history_entry_count: preamble.history_entry_count,
             });
         }
-        for (state, before_state) in history.states.iter().zip(&before.states) {
+        for (state, before_state) in history.states().iter().zip(before.states()) {
             if state != before_state {
                 edits
                     .entry(stream.clone())

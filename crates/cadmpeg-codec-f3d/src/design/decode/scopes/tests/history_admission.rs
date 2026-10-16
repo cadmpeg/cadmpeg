@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::parameter_scope::admit_history_bound_scope_variants;
-use crate::history_records::{
-    AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory,
-};
+use crate::history_records::AsmHistory;
+use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::feature::scope::DesignParameterScope;
 
 fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
@@ -15,41 +13,34 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
     run(&ctx)
 }
 
-fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState {
-    AsmDeltaState {
-        id: format!("history:state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition: previous_state_id.map(|previous_state_id| AsmHistoricalTransition {
-            previous_state_id: Some(previous_state_id),
-            records: AsmHistoricalEntityDelta::default(),
-            topology: AsmHistoricalTopologyDelta::default(),
-        }),
-    }
+fn history_state(
+    state_id: i64,
+    previous_state_id: Option<i64>,
+) -> crate::test_support::history::State {
+    (
+        AsmDeltaState {
+            id: format!("history:state#{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: previous_state_id,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(AsmHistoricalTopology::default()),
+        Vec::new(),
+    )
 }
 
-fn history(states: Vec<AsmDeltaState>) -> AsmHistory {
-    AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states,
-    }
+fn history(states: Vec<crate::test_support::history::State>) -> AsmHistory {
+    crate::test_support::history::history("history".into(), 0, None, false, states)
 }
 
 fn scope(
@@ -121,8 +112,10 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
     let mut scopes = vec![scope(42, 100, 7, 6), scope(42, 200, 9, 8)];
     scopes[1].feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let histories = [history(vec![
-        history_state(7, Some(6)),
         history_state(9, Some(8)),
+        history_state(8, Some(7)),
+        history_state(7, Some(6)),
+        history_state(6, None),
     ])];
 
     assert!(

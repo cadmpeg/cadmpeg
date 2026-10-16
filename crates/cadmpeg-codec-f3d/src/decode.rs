@@ -1771,11 +1771,11 @@ fn report_design_projection_gaps(
     let history_budget_skips = native
         .asm_histories
         .iter()
-        .filter(|history| history.record_table_binding_budget_exceeded)
+        .filter(|history| history.binding_budget_exceeded)
         .count();
     if history_budget_skips != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
-            "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
+            "{history_budget_skips} ASM history stream(s) retain no historical topology because their estimated retained size exceeded the decode session's remaining retained-byte allowance."
         ),);
     }
     let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(
@@ -1804,7 +1804,7 @@ fn report_design_projection_gaps(
     for error in native
         .asm_histories
         .iter()
-        .flat_map(|history| &history.states)
+        .flat_map(crate::history_records::AsmHistory::states)
         .flat_map(|state| &state.records)
         .filter_map(|record| record.framing_error())
     {
@@ -2386,8 +2386,11 @@ impl<'a> F3dDecodeSession<'a> {
     fn decode_design_graph(&mut self, path: &SessionPath) -> Result<(), CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
+        let mut remaining_retained_bytes = ctx.retained_bytes_available();
         for history_brep in container::history_breps(scan) {
-            if let Some(history) = decode_asm_history(ctx, scan, history_brep)? {
+            if let Some(history) =
+                decode_asm_history(ctx, scan, history_brep, &mut remaining_retained_bytes)?
+            {
                 self.native.asm_histories.push(history);
             }
         }
@@ -2411,6 +2414,9 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_record_headers,
         )?;
         extend_related_design_records(self.ctx, scan, &mut self.native)?;
+        for history in &mut self.native.asm_histories {
+            history.release_topologies();
+        }
         self.native.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
         self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
         self.native.sketch_curve_identities =
@@ -4405,7 +4411,7 @@ fn populate_annotations(
         }
         for history in &native.asm_histories {
             note!(&history.id, "history_stream");
-            for state in &history.states {
+            for state in history.states() {
                 note!(&state.id, "delta_state");
                 for board in &state.bulletin_boards {
                     note!(&board.id, "BulletinBoard");
@@ -4470,6 +4476,7 @@ fn decode_asm_history(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     history_brep: &BrepFacts,
+    remaining_retained_bytes: &mut u64,
 ) -> Result<Option<crate::history_records::AsmHistory>, CodecError> {
     let width = history_brep
         .kernel
@@ -4479,7 +4486,13 @@ fn decode_asm_history(
             header.width
         });
     let bytes = scan.entry_bytes(&history_brep.name)?;
-    crate::history::decode(ctx, bytes, &history_brep.name, width)
+    crate::history::decode(
+        ctx,
+        bytes,
+        &history_brep.name,
+        width,
+        remaining_retained_bytes,
+    )
 }
 
 fn collect_related_indices<'a>(

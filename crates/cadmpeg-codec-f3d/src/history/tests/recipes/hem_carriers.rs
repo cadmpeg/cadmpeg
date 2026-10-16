@@ -35,13 +35,13 @@ fn hem_bend_carriers_prove_directional_gap_forms() {
 fn hem_carrier_offsets_prove_fold_direction() {
     use crate::history_records::{
         AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder,
-        AsmHistoricalEntityDelta, AsmHistoricalPlane, AsmHistoricalRelation, AsmHistoricalTopology,
-        AsmHistoricalTopologyDelta, AsmHistoricalTransition,
+        AsmHistoricalPlane, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTransition,
     };
     use cadmpeg_ir::features::SheetMetalHemDirection;
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let previous = AsmHistoricalTopology {
+        surfaces: vec![11],
         coedge_topology: vec![AsmHistoricalCoedge {
             coedge: 6,
             owner_loop: 5,
@@ -69,17 +69,25 @@ fn hem_carrier_offsets_prove_fold_direction() {
         }],
         ..Default::default()
     };
-    let transition = AsmHistoricalTransition {
-        previous_state_id: Some(1),
-        records: Default::default(),
-        topology: AsmHistoricalTopologyDelta {
-            surfaces: AsmHistoricalEntityDelta {
-                inserted: vec![12, 13],
-                ..Default::default()
-            },
-            ..Default::default()
-        },
+    let newer = AsmHistoricalTopology {
+        surfaces: vec![11, 12, 13],
+        ..previous.clone()
     };
+    let old_versions = std::collections::BTreeMap::from([(11, 11)]);
+    let new_versions = std::collections::BTreeMap::from([(11, 11), (12, 12), (13, 13)]);
+    let transition = AsmHistoricalTransition::between(
+        Some(crate::history_records::AsmStateSnapshot {
+            state_id: 1,
+            topology: &previous,
+            versions: &old_versions,
+        }),
+        crate::history_records::AsmStateSnapshot {
+            state_id: 2,
+            topology: &newer,
+            versions: &new_versions,
+        },
+    )
+    .unwrap();
     let cylinder = |origin| AsmHistoricalCylinder {
         surface: 12,
         origin,

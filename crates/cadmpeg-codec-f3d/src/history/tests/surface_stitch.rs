@@ -12,9 +12,8 @@
 )]
 
 use crate::history::bind_feature_face_selections;
-use crate::history_records::{
-    AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
-};
+use crate::history_records::AsmHistory;
+use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
 struct StitchFixture {
@@ -162,43 +161,35 @@ fn surface_stitch_fixture() -> StitchFixture {
         .unwrap()
     };
     let operands = vec![operand(100, 200, 30), operand(110, 210, 31)];
-    let state = |state_id, transition| AsmDeltaState {
-        id: format!("{history_id}:state#{state_id}"),
-        parent: history_id.clone(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition,
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("{history_id}:state#{state_id}"),
+                parent: history_id.clone(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
     };
-    let history = AsmHistory {
-        id: history_id.clone(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                2,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
-            ),
-            state(1, None),
-        ],
-    };
+    let history = crate::test_support::history::history(
+        history_id.clone(),
+        0,
+        None,
+        false,
+        vec![state(2, Some(1)), state(1, None)],
+    );
     let feature_id = FeatureId::mint("f3d:model:feature#42").expect("identity grammar");
     let mut feature = Feature {
         id: feature_id.clone(),

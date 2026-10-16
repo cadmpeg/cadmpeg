@@ -6,38 +6,36 @@ use crate::history::{
 };
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,
-    AsmHistoricalTopology, AsmHistory,
+    AsmHistoricalTopology,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-fn state(state_id: i64) -> AsmDeltaState {
-    AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
-        transition: None,
-    }
+fn state(state_id: i64) -> crate::test_support::history::State {
+    (
+        AsmDeltaState {
+            id: format!("f3d:history:state#{state_id}"),
+            parent: "f3d:history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        None,
+        Vec::new(),
+    )
 }
 #[test]
 fn history_state_queries_reuse_indexes_and_reject_duplicate_states() {
-    let history = |states| AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states,
+    let history = |states| {
+        crate::test_support::history::history("f3d:history".into(), 0, None, false, states)
     };
     let duplicate = history(vec![state(1), state(1)]);
     let unique = history(vec![state(1)]);

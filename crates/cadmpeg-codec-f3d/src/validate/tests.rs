@@ -38,6 +38,7 @@ mod face_boundary;
 mod face_group;
 mod face_operand;
 mod fillet_group;
+mod history_transitions;
 mod operand_group_carrier;
 mod parameter_scope;
 mod timeline;

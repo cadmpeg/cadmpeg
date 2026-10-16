@@ -11,10 +11,7 @@ use crate::records::topology::{
 
 #[test]
 fn move_body_selection_uses_unique_owning_history() {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-        AsmHistoricalTransition, AsmHistory,
-    };
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use cadmpeg_ir::features::{
         BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
@@ -82,50 +79,46 @@ fn move_body_selection_uses_unique_owning_history() {
     };
     let state = |state_id: i64,
                  parent: &str,
-                 transition: Option<AsmHistoricalTransition>|
-     -> AsmDeltaState {
-        AsmDeltaState {
-            id: format!("f3d:{parent}:asm-delta-state#{state_id}"),
-            parent: parent.into(),
-            byte_offset: 0,
-            state_id,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: state_id,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(topology()),
-            transition,
-        }
+                 next_ref: Option<i64>|
+     -> crate::test_support::history::State {
+        (
+            AsmDeltaState {
+                id: format!("f3d:{parent}:asm-delta-state#{state_id}"),
+                parent: parent.into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology()),
+            vec![crate::history_records::AsmEntityVersion {
+                entity_ref: 1,
+                record_ref: state_id,
+            }],
+        )
     };
-    let mut transition = AsmHistoricalTransition {
-        previous_state_id: Some(41),
-        records: AsmHistoricalEntityDelta::default(),
-        topology: AsmHistoricalTopologyDelta::default(),
-    };
-    transition.topology.bodies.updated.push(1);
-    let history = AsmHistory {
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(42, "history", Some(transition)),
-            state(41, "history", None),
-        ],
-    };
-    let unrelated_history = AsmHistory {
-        id: "unrelated-history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state(41, "unrelated-history", None)],
-    };
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(42, "history", Some(41)), state(41, "history", None)],
+    );
+    let unrelated_history = crate::test_support::history::history(
+        "unrelated-history".into(),
+        0,
+        None,
+        false,
+        vec![state(41, "unrelated-history", None)],
+    );
     let histories = [history, unrelated_history];
     let mut feature = Feature {
         id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
