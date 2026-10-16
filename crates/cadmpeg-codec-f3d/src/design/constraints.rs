@@ -161,7 +161,7 @@ pub(crate) fn project_sketch_constraints(
                 };
                 match loci {
                     Some(loci) => Some(loci),
-                    None => exact_atomic_constraint(kind, &semantic_entities)?,
+                    None => exact_atomic_constraint(kind, &semantic_entities),
                 }
             } else {
                 None
@@ -182,7 +182,7 @@ pub(crate) fn project_sketch_constraints(
             let definition = if definition.is_some() {
                 definition
             } else {
-                exact_offset_constraint(relation, scope, &projected).transpose()?
+                exact_offset_constraint(relation, scope, &projected)
             };
             let definition = match definition {
                 Some(definition) => Some(definition),

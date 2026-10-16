@@ -516,8 +516,6 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         std::slice::from_ref(&sketch),
         &by_record,
     )
-    .transpose()
-    .unwrap()
     .expect("counted spatial offset");
     assert!(matches!(
         definition,
@@ -542,8 +540,6 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         std::slice::from_ref(&sketch),
         &by_record
     )
-    .transpose()
-    .unwrap()
     .is_none());
     assert!(spatial_counted_offset_dimension_definition(
         ("Linear Dimension-1", Some(0x20), &operands),
@@ -552,8 +548,6 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         std::slice::from_ref(&sketch),
         &by_record
     )
-    .transpose()
-    .unwrap()
     .is_none());
     let outside_source = entity(
         99,
@@ -575,8 +569,6 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         std::slice::from_ref(&sketch),
         &by_record
     )
-    .transpose()
-    .unwrap()
     .is_none());
     let mut wrong_operand_kind = operands.clone();
     wrong_operand_kind[0].native_kind = cadmpeg_core::text::NonBlankString::new("point").unwrap();
@@ -587,8 +579,6 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         std::slice::from_ref(&sketch),
         &by_record
     )
-    .transpose()
-    .unwrap()
     .is_none());
     let mut ambiguous_sketch = sketch.clone();
     ambiguous_sketch.profiles.push(sketch.profiles[0].clone());
@@ -599,8 +589,6 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         std::slice::from_ref(&ambiguous_sketch),
         &by_record
     )
-    .transpose()
-    .unwrap()
     .is_none());
 }
 
@@ -726,7 +714,7 @@ fn counted_roles_require_matching_solved_geometry() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::design::dimensions::counted_role_relation_at_tolerance(&[&tangent_circle, &rounded_tangent_arc], &[crate::records::sketch_relations::SketchConstraintKind::Tangent], TEST_LINEAR_TOLERANCE).transpose().unwrap(),
+        crate::design::dimensions::counted_role_relation_at_tolerance(&[&tangent_circle, &rounded_tangent_arc], &[crate::records::sketch_relations::SketchConstraintKind::Tangent], TEST_LINEAR_TOLERANCE),
         Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == tangent_circle.id() && &second == rounded_tangent_arc.id()
     ));
