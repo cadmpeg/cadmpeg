@@ -5,6 +5,8 @@ use super::{DecodeContext, ResourceDimension, ResourceFailure, View};
 use crate::CodecError;
 use zstd::zstd_safe::{self, DCtx, DParameter, InBuffer, OutBuffer};
 
+/// The largest window the linked decoder can open on this target. A larger
+/// frame is outside the reader, not over a session ceiling.
 const MAX_DECODER_WINDOW: u64 = 1_u64 << if usize::BITS == 32 { 30 } else { 31 };
 
 /// One Zstandard decoder over an admitted input.
@@ -17,15 +19,17 @@ pub struct ZstdDecoder<'ctx, 'input> {
 }
 
 impl<'input> DecodeContext<'input> {
-    /// Inspects all frame windows before allocating a decoder. The largest
-    /// frame window must fit the per-expansion decompression ceiling.
+    /// Inspects all frame windows before allocating a decoder. Each frame
+    /// window must fit the per-expansion decompression allowance; a window
+    /// that fits it but not the decoder is
+    /// [`CodecError::NotImplemented`] and leaves the session open.
     pub fn open_zstd<'ctx>(
         &'ctx self,
         source: View<'input>,
     ) -> Result<ZstdDecoder<'ctx, 'input>, CodecError> {
         let mut offset = 0;
         let mut largest_window = 0_u64;
-        let ceiling = window_ceiling(self);
+        let allowance = self.per_expand_allowance();
         while offset < source.window().len() {
             let frame = source
                 .child(source.start() + offset, source.end())
@@ -33,15 +37,18 @@ impl<'input> DecodeContext<'input> {
                     CodecError::Malformed("Zstandard frame offset escapes input".into())
                 })?;
             let window = frame_window(frame)?;
-            if window > ceiling {
+            if window > allowance {
                 return Err(self.budget.refuse(
                     ResourceDimension::DecompressedBytes,
                     ResourceFailure::BudgetExceeded,
-                    ceiling,
+                    allowance,
                     0,
                     window,
                     "Zstandard window",
                 ));
+            }
+            if window > MAX_DECODER_WINDOW {
+                return Err(window_unsupported(window));
             }
             largest_window = largest_window.max(window);
             let size = zstd_safe::find_frame_compressed_size(frame.window())
@@ -60,7 +67,7 @@ impl<'input> DecodeContext<'input> {
         })?;
         // Round the inspected maximum up to the next permitted log, with the
         // decoder's format minimum of 1 KiB. Each actual frame was checked
-        // against the exact ceiling above before allocation.
+        // against the exact allowance above before allocation.
         let minimum_window = largest_window.max(1024);
         let window_log = u64::BITS - (minimum_window - 1).leading_zeros();
         decoder
@@ -110,13 +117,10 @@ impl ZstdDecoder<'_, '_> {
     }
 }
 
-/// The largest window a decoder may open: the per-expansion decompression
-/// ceiling, capped by the decoder's addressable window.
-fn window_ceiling(ctx: &DecodeContext<'_>) -> u64 {
-    ctx.policy()
-        .limits
-        .max_decompressed_bytes_per_expand
-        .min(MAX_DECODER_WINDOW)
+fn window_unsupported(window: u64) -> CodecError {
+    CodecError::NotImplemented(format!(
+        "Zstandard window of {window} bytes exceeds the {MAX_DECODER_WINDOW}-byte decoder window"
+    ))
 }
 
 fn zstd_error(ctx: &DecodeContext<'_>, code: usize, window: u64) -> CodecError {
@@ -127,14 +131,7 @@ fn zstd_error(ctx: &DecodeContext<'_>, code: usize, window: u64) -> CodecError {
             .budget
             .retained_allocation_failed(window, "Zstandard decoder allocation"),
         zstd_safe::zstd_sys::ZSTD_ErrorCode::ZSTD_error_frameParameter_windowTooLarge => {
-            ctx.budget.refuse(
-                ResourceDimension::DecompressedBytes,
-                ResourceFailure::BudgetExceeded,
-                window_ceiling(ctx),
-                0,
-                window,
-                "Zstandard decoder window",
-            )
+            window_unsupported(window)
         }
         _ => CodecError::malformed(format_args!(
             "invalid Zstandard stream: {}",
@@ -185,8 +182,56 @@ fn frame_window(mut frame: View<'_>) -> Result<u64, CodecError> {
 
 #[cfg(test)]
 mod tests {
+    use super::MAX_DECODER_WINDOW;
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
+
+    /// A frame header with a non-single-segment window of `window` bytes,
+    /// followed by one empty raw block.
+    fn frame_with_window(window: u64) -> Vec<u8> {
+        let exponent = u8::try_from(window.trailing_zeros() - 10).expect("window exponent");
+        vec![0x28, 0xb5, 0x2f, 0xfd, 0, exponent << 3, 1, 0, 0]
+    }
+
+    #[test]
+    fn zstd_window_refuses_against_the_per_expand_allowance() {
+        let window = 32 << 20;
+        let bytes = frame_with_window(window);
+        let policy = DecodePolicy::service();
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let allowance = ctx.per_expand_allowance();
+        assert!(allowance < window);
+        assert!(window < policy.limits.max_decompressed_bytes_per_expand);
+        let Err(CodecError::ResourceLimit(limit)) = ctx.open_zstd(root) else {
+            panic!("a window above the allowance refuses");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
+        assert_eq!(limit.limit, allowance);
+        assert_eq!(limit.additional, window);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(fused)) if fused == limit)
+        );
+    }
+
+    #[test]
+    fn zstd_window_above_the_decoder_is_unsupported_and_leaves_the_session_open() {
+        let window = MAX_DECODER_WINDOW * 2;
+        let mut bytes = frame_with_window(window);
+        // Each input byte raises the per-expand allowance by 256 bytes.
+        bytes.resize(usize::try_from(window / 256).expect("padding length"), 0);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_per_expand = window;
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        assert!(ctx.per_expand_allowance() >= window);
+        assert!(matches!(
+            ctx.open_zstd(root),
+            Err(CodecError::NotImplemented(message)) if message.contains("decoder window")
+        ));
+        assert_eq!(ctx.resource_refusal(), None);
+        assert!(ctx.finish_session().is_ok());
+    }
 
     #[test]
     fn zstd_checks_each_window_before_decoder_allocation() {

@@ -143,7 +143,7 @@ impl<'a> DecodeContext<'a> {
         self.budget.decompression_allowance()
     }
 
-    fn per_expand_allowance(&self) -> u64 {
+    pub(super) fn per_expand_allowance(&self) -> u64 {
         self.budget.proportional_allowance(
             self.budget
                 .policy()
