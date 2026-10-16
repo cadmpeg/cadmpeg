@@ -981,6 +981,7 @@ fn edit_stream(
         false,
     )?;
     let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
+        .streams
         .into_iter()
         .nth(stream_ordinal)
         .ok_or_else(|| {

@@ -5,6 +5,7 @@ use super::super::{
     polygon_contains, triangulate_polygon, CircularHole, PlanarHole, EPS_DISPLAY_QUANTIZATION,
     MAX_PLANAR_TRIM_ARC_SEGMENTS,
 };
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::planar::segments_intersect;
 use cadmpeg_ir::math::Point2;
 const EPS_DISTANCE: f64 = 1e-7;
@@ -20,14 +21,22 @@ fn numerical_audit_tessellation_keeps_small_crossings_and_triangles() {
         ));
         let p = [Point2::new(0., 0.), Point2::new(d, 0.), Point2::new(0., d)];
         assert!(is_simple_polygon(&p, EPS_DISTANCE));
-        assert_eq!(triangulate_polygon(&p, EPS_DISTANCE), Some(vec![p]));
+        assert_eq!(
+            triangulate_polygon(&p, EPS_DISTANCE, &WorkBudget::new(usize::MAX)),
+            Some(vec![p])
+        );
         let square = [
             Point2::new(0., 0.),
             Point2::new(d, 0.),
             Point2::new(d, d),
             Point2::new(0., d),
         ];
-        assert_eq!(triangulate_polygon(&square, EPS_DISTANCE).unwrap().len(), 2);
+        assert_eq!(
+            triangulate_polygon(&square, EPS_DISTANCE, &WorkBudget::new(usize::MAX))
+                .unwrap()
+                .len(),
+            2
+        );
     }
 }
 #[test]
@@ -56,7 +65,12 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
         Point2::new(0.0, 2.0),
     ];
     assert!(is_simple_polygon(&concave, CONTAINMENT_TOLERANCE));
-    assert!(PlanarHole::polygon(concave.clone(), CONTAINMENT_TOLERANCE).is_some());
+    assert!(PlanarHole::polygon(
+        concave.clone(),
+        CONTAINMENT_TOLERANCE,
+        &WorkBudget::new(usize::MAX)
+    )
+    .is_some());
     assert!(polygon_contains(
         &concave,
         Point2::new(1.0, 1.0),
@@ -85,18 +99,19 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
 const EPS_FOLLOWUP_ARC_SAGITTA: f64 = 1e-9;
 
 #[test]
-fn planar_arc_segment_cap_skips_and_names_the_bound() {
-    let limit = planar_arc_segments(1e-5, 1e12, EPS_FOLLOWUP_ARC_SAGITTA)
-        .expect_err("a count above the local cap must skip");
-    let loss = super::super::planar_arc_segment_cap_loss(limit);
-    assert_eq!(
-        loss.code.local_code(),
-        "tessellation.planar-arc-segment-cap"
-    );
-    assert!(loss.message.contains("MAX_PLANAR_TRIM_ARC_SEGMENTS"));
-    assert!(loss
-        .message
-        .contains(&MAX_PLANAR_TRIM_ARC_SEGMENTS.to_string()));
+fn numerical_followup_arc_error_retains_the_sagitta_at_the_segment_cap() {
+    let (segments, error) =
+        planar_arc_segments(1e-5, 1e12, EPS_FOLLOWUP_ARC_SAGITTA).expect("segment count is exact");
+    assert_eq!(segments, MAX_PLANAR_TRIM_ARC_SEGMENTS);
+    let expected = 2e12
+        * (1e-5
+            / (4.0
+                * cadmpeg_core::convert::f64_from_index(segments)
+                    .expect("segment count is exact")))
+        .sin()
+        .powi(2);
+    assert!(error > EPS_FOLLOWUP_ARC_SAGITTA);
+    assert!((error / expected - 1.0).abs() <= 4.0 * f64::EPSILON);
 }
 
 #[test]

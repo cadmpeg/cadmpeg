@@ -503,6 +503,50 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
     }));
 }
 
+#[test]
+fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
+    let scan = ContainerScan {
+        source_image: &[],
+        version: 0,
+        blocks: Vec::new(),
+        directory: Vec::new(),
+        cache_cells: Vec::new(),
+        compound_streams: Vec::new(),
+        solidworks: crate::container::SolidWorksEnvelopeScan::default(),
+    };
+    let mut decoded = Brep::default();
+    decoded.stats.surface_solver_capped.push("coedge#1");
+    decoded.stats.surface_solver_capped.push("coedge#2");
+    let mut partition = Brep::default();
+    partition.stats.surface_solver_capped.push("coedge#3");
+    super::super::merge_brep(&mut decoded, partition).unwrap();
+
+    let classification =
+        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap();
+    let report = super::super::build_geometry_report(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+        &mut decoded,
+        &classification,
+        crate::container::notes(&scan),
+    )
+    .unwrap();
+    let capped = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::SldprtLossCode::GeometrySurfaceSolverWorkCapped.kind()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(capped.len(), 1);
+    assert_eq!(
+        capped[0].message,
+        "3 coedge pcurve(s) were skipped because a NURBS surface solve exceeded the local work \
+         cap SURFACE_SOLVER_LOCAL_WORK (1000000): coedge#1, coedge#2, coedge#3."
+    );
+}
+
 fn unresolved_swift_source() -> Vec<u8> {
     let mut source = crate::test_support::container::synthetic_sldprt();
     source.extend(crate::test_support::container::make_block(

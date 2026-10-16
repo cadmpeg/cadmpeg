@@ -123,6 +123,7 @@ mod tests {
             .expect("root");
         let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
             .expect("a frame above the local cap is skipped");
-        assert!(streams.is_empty());
+        assert!(streams.streams.is_empty());
+        assert!(!streams.probe_capped);
     }
 }

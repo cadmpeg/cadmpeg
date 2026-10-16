@@ -6,7 +6,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) fn curve_point(
     ctx: &DecodeContext<'_>,
@@ -83,24 +82,20 @@ pub(crate) fn surface_point(
     )?)
 }
 
-const SURFACE_SOLVER_LOCAL_WORK: usize = 1_000_000;
+/// Work one NURBS surface solve may spend before its pcurve is skipped.
+pub(crate) const SURFACE_SOLVER_LOCAL_WORK: usize = 1_000_000;
 
-fn surface_solver_work_capped_loss() -> LossNote {
-    crate::loss::SldprtLossCode::GeometrySurfaceSolverWorkCapped.note(format!(
-        "NURBS surface solver exceeded the local work cap SURFACE_SOLVER_LOCAL_WORK \
-         ({SURFACE_SOLVER_LOCAL_WORK}); the derived pcurve is skipped."
-    ))
-}
-
+/// Run one budgeted solve. An exhausted budget sets `capped` and answers
+/// `None`; the caller names the skipped entity.
 fn with_surface_solver_work<T>(
     work: usize,
-    losses: &mut Vec<LossNote>,
+    capped: &mut bool,
     run: impl FnOnce(&WorkBudget) -> Result<Option<T>, CodecError>,
 ) -> Result<Option<T>, CodecError> {
     let budget = WorkBudget::new(work);
     let result = run(&budget);
     if budget.exhausted() {
-        losses.push(surface_solver_work_capped_loss());
+        *capped = true;
         return Ok(None);
     }
     result
@@ -112,9 +107,9 @@ pub(super) fn nurbs_surface_parameter_within_tolerance(
     point: cadmpeg_ir::math::Point3,
     seed: Option<cadmpeg_ir::math::Point2>,
     tolerance: f64,
-    losses: &mut Vec<LossNote>,
+    capped: &mut bool,
 ) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
-    with_surface_solver_work(SURFACE_SOLVER_LOCAL_WORK, losses, |budget| {
+    with_surface_solver_work(SURFACE_SOLVER_LOCAL_WORK, capped, |budget| {
         Ok(
             cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
                 ctx, surface, point, seed, tolerance, budget,
@@ -128,9 +123,9 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     parameters: [cadmpeg_ir::math::Point2; 2],
     chord: [cadmpeg_ir::math::Point3; 2],
-    losses: &mut Vec<LossNote>,
+    capped: &mut bool,
 ) -> Result<Option<f64>, CodecError> {
-    with_surface_solver_work(SURFACE_SOLVER_LOCAL_WORK, losses, |budget| {
+    with_surface_solver_work(SURFACE_SOLVER_LOCAL_WORK, capped, |budget| {
         cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
             ctx, surface, parameters, chord, budget,
         )
@@ -193,23 +188,18 @@ mod tests {
 
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut losses = Vec::new();
+        let mut capped = false;
         assert!(super::nurbs_surface_parameter_within_tolerance(
             &ctx,
             &surface,
             point,
             None,
             1.0e-3,
-            &mut losses
+            &mut capped
         )
         .unwrap()
         .is_none());
-        assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code.local_code(),
-            "geometry.surface-solver-work-capped"
-        );
-        assert!(losses[0].message.contains("SURFACE_SOLVER_LOCAL_WORK"));
+        assert!(capped);
         assert!(ctx.finish_session().is_ok());
     }
 
@@ -227,20 +217,15 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut losses = Vec::new();
-        assert!(super::with_surface_solver_work(0, &mut losses, |budget| {
+        let mut capped = false;
+        assert!(super::with_surface_solver_work(0, &mut capped, |budget| {
             cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
                 &ctx, &surface, parameters, chord, budget,
             )
         })
         .unwrap()
         .is_none());
-        assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code.local_code(),
-            "geometry.surface-solver-work-capped"
-        );
-        assert!(losses[0].message.contains("SURFACE_SOLVER_LOCAL_WORK"));
+        assert!(capped);
         assert!(ctx.finish_session().is_ok());
     }
 }

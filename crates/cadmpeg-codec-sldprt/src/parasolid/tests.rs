@@ -71,7 +71,9 @@ fn inner_parasolid_frame_refuses_before_expansion_exceeds_per_expand_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+        .unwrap()
+        .streams;
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].payload, stream);
 }
@@ -96,6 +98,7 @@ fn declared_frame_above_local_cap_is_skipped_without_allocation() {
     assert!(
         crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
             .unwrap()
+            .streams
             .is_empty()
     );
     assert!(ctx.finish_session().is_ok());
@@ -122,7 +125,9 @@ fn zlib_probe_work_cap_ends_the_probe_without_fusing_the_session() {
     stream.extend([0; 512]);
     let within = zlib_probe_payload(&stream, 4);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let streams = crate::parasolid::extract_streams_with_offsets(&within, &ctx).unwrap();
+    let streams = crate::parasolid::extract_streams_with_offsets(&within, &ctx)
+        .unwrap()
+        .streams;
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].payload, stream);
 
@@ -131,6 +136,7 @@ fn zlib_probe_work_cap_ends_the_probe_without_fusing_the_session() {
     assert!(
         crate::parasolid::extract_streams_with_offsets(&beyond, &ctx)
             .unwrap()
+            .streams
             .is_empty()
     );
     assert!(ctx.finish_session().is_ok());
@@ -182,8 +188,32 @@ fn chained_parasolid_concatenation_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).expect("root");
     let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
-        .expect("extract streams with offsets");
+        .expect("extract streams with offsets")
+        .streams;
     assert_eq!(streams[0].payload, stream);
+}
+
+#[test]
+fn legacy_zlib_probe_reports_its_work_cap() {
+    use crate::parasolid::PROBE_WORK_PER_PAYLOAD_BYTE;
+    use crate::test_support::parasolid::legacy_probe_payload;
+
+    let stream = parasolid_with_body("partition body", "SCH_SW_33103_11000", &vec![0x31; 5000]);
+    let arena = DecodeArena::new();
+    let within = legacy_probe_payload(&stream, PROBE_WORK_PER_PAYLOAD_BYTE - 1);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&within, &arena, &DecodePolicy::service()).unwrap();
+    let extracted = crate::parasolid::extract_streams_with_offsets(&within, &ctx).unwrap();
+    assert!(!extracted.probe_capped);
+    assert_eq!(extracted.streams.len(), 1);
+    assert_eq!(extracted.streams[0].payload, stream);
+
+    let beyond = legacy_probe_payload(&stream, PROBE_WORK_PER_PAYLOAD_BYTE + 1);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&beyond, &arena, &DecodePolicy::service()).unwrap();
+    let extracted = crate::parasolid::extract_streams_with_offsets(&beyond, &ctx).unwrap();
+    assert!(extracted.probe_capped);
+    assert!(extracted.streams.is_empty());
 }
 
 #[test]
@@ -197,7 +227,9 @@ fn legacy_zlib_candidate_is_extracted() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+        .unwrap()
+        .streams;
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].payload, stream);
 }
@@ -258,7 +290,9 @@ fn parasolid_extracts_every_direct_stream_in_block() {
         "SCH_SW_33103_11000",
         &world_point(60, [2.0, 0.0, 0.0]),
     ));
-    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+        .unwrap()
+        .streams;
     assert_eq!(streams.len(), 2);
     assert!(streams[0].header.description.contains("partition"));
     assert!(streams[1].header.description.contains("deltas"));
@@ -283,7 +317,9 @@ fn parasolid_reassembles_chained_sections_before_header_parsing() {
         ],
     ]);
 
-    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+        .unwrap()
+        .streams;
     assert_eq!(streams.len(), 2);
     assert_eq!(streams[0].offset, offsets[0]);
     assert_eq!(streams[0].payload, partition);
@@ -303,7 +339,9 @@ fn parasolid_reassembles_the_degenerate_one_frame_wrapper() {
     payload.extend_from_slice(&member);
     payload.extend_from_slice(b"trailer!");
 
-    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+        .unwrap()
+        .streams;
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].offset, 0);
     assert_eq!(streams[0].payload, stream);
@@ -324,6 +362,7 @@ fn wrapped_member_requires_the_parasolid_header_at_byte_zero() {
     assert!(
         crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
             .unwrap()
+            .streams
             .is_empty()
     );
 }
@@ -345,6 +384,7 @@ fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
     assert!(
         crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
             .unwrap()
+            .streams
             .is_empty()
     );
 }
@@ -356,6 +396,7 @@ fn parasolid_does_not_split_at_an_unframed_interior_signature() {
     assert!(
         crate::parasolid::extract_streams_with_offsets(b"PS\0\0not-a-stream-header", &ctx)
             .unwrap()
+            .streams
             .is_empty()
     );
 
@@ -369,7 +410,9 @@ fn parasolid_does_not_split_at_an_unframed_interior_signature() {
     let second_offset = first.len();
     first.extend_from_slice(&second);
 
-    let streams = crate::parasolid::extract_streams_with_offsets(&first, &ctx).unwrap();
+    let streams = crate::parasolid::extract_streams_with_offsets(&first, &ctx)
+        .unwrap()
+        .streams;
     assert_eq!(streams.len(), 2);
     assert_eq!(streams[0].offset, 0);
     assert_eq!(streams[1].offset, second_offset);
