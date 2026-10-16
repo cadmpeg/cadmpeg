@@ -154,87 +154,40 @@ pub(crate) fn decode(
     width: RefWidth,
     remaining_retained_bytes: &mut u64,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
-    let preamble_offset = bytes
-        .windows(PREAMBLE.len())
-        .position(|window| window == PREAMBLE);
-    let history_offset = preamble_offset.unwrap_or(0);
-    let history_id =
-        crate::ids::native_scoped_id(stream, "asm-history", format_args!("{history_offset:010}"));
-    let mut delta_offsets = Vec::new();
-    let mut search = 0usize;
-    while let Some(relative) = bytes[search..]
-        .windows(DELTA.len())
-        .position(|window| window == DELTA)
-    {
-        let offset = search + relative;
-
-        delta_offsets.push(offset);
-        search = offset + DELTA.len();
-    }
+    let framing = HistoryFraming::scan(bytes, stream);
     let mut states = Vec::new();
-    for (ordinal, &offset) in delta_offsets.iter().enumerate() {
-        let state_record_id =
-            crate::ids::native_scoped_id(stream, "asm-delta-state", format_args!("{offset:010}"));
-        let mut position = offset + DELTA.len();
-        let Some((
-            state_id,
-            version_flag,
-            state_flag,
-            previous,
-            next,
-            node_index,
-            partner,
-            owner_ref,
-        )) = (|| {
-            Some((
-                take_int(bytes, &mut position, 0x04, width)?,
-                take_int(bytes, &mut position, 0x04, width)?,
-                take_int(bytes, &mut position, 0x04, width)?,
-                take_int(bytes, &mut position, 0x0c, width)?,
-                take_int(bytes, &mut position, 0x0c, width)?,
-                take_int(bytes, &mut position, 0x0c, width)?,
-                take_int(bytes, &mut position, 0x0c, width)?,
-                take_int(bytes, &mut position, 0x0c, width)?,
-            ))
-        })()
-        else {
-            return Ok(None);
+    for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
+        let header = match read_delta_state_header(bytes, offset, width) {
+            DeltaStateHeaderRead::Framed(header) => header,
+            DeltaStateHeaderRead::Unframed => continue,
+            DeltaStateHeaderRead::Invalid => return Ok(None),
         };
-        if bytes.get(position) != Some(&0x0b) {
-            continue;
-        }
-        let Some((bulletin_boards, body_end)) =
-            decode_bulletin_boards(bytes, position + 1, stream, offset, &state_record_id, width)
-        else {
+        let state_record_id = header.record_id(stream);
+        let Some((bulletin_boards, body_end)) = decode_bulletin_boards(
+            bytes,
+            header.body_start,
+            stream,
+            offset,
+            &state_record_id,
+            width,
+        ) else {
             return Ok(None);
         };
         let records = decode_history_records(
             ctx,
             bytes,
             body_end,
-            delta_offsets.get(ordinal + 1).copied(),
+            framing.delta_offsets.get(ordinal + 1).copied(),
             stream,
             &state_record_id,
             width,
         )?;
-
-        let parent = history_id.clone();
-        states.push(AsmDeltaState {
-            id: state_record_id,
-            parent,
-            byte_offset: u64_from_index(offset),
-            state_id,
-            version_flag,
-            state_flag,
-            previous_ref: (previous >= 0).then_some(previous),
-            next_ref: (next >= 0).then_some(next),
-            node_index,
-            partner_ref: (partner >= 0).then_some(partner),
-            owner_ref,
+        states.push(header.into_state(
+            state_record_id,
+            &framing.history_id,
             bulletin_boards,
             records,
-            transition: None,
-        });
+        ));
     }
     bind_snapshot_revision_ids(&mut states)?;
     let binding_budget_exceeded = admit_history_binding(&states, remaining_retained_bytes)?
@@ -245,21 +198,200 @@ pub(crate) fn decode(
     if states.is_empty() {
         return Ok(None);
     }
-
-    let preamble = preamble_offset
-        .and_then(|offset| decode_preamble(bytes, offset + PREAMBLE.len(), width))
-        .map(|(stream_size, history_entry_count)| AsmPreamble {
-            stream_size,
-            history_entry_count,
-        });
-    let offset = history_offset;
-    Ok(Some(AsmHistory::new(
-        history_id,
-        u64_from_index(offset),
-        preamble,
+    Ok(Some(framing.into_history(
+        bytes,
+        width,
         binding_budget_exceeded,
         states,
     )))
+}
+
+/// Decode the header-only index of one ASM history stream.
+///
+/// Each state carries its identity and chain links (state id, node index,
+/// previous and next references) and no bulletin boards, record table or
+/// bound transition. The index rejects a stream on the same header and
+/// framing conditions as [`decode`]; it does not read the bulletin boards,
+/// so a stream whose boards are malformed still has an index.
+pub(crate) fn decode_header_index(
+    bytes: &[u8],
+    stream: &str,
+    width: RefWidth,
+) -> Option<AsmHistory> {
+    let framing = HistoryFraming::scan(bytes, stream);
+    let mut states = Vec::new();
+    for &offset in &framing.delta_offsets {
+        let header = match read_delta_state_header(bytes, offset, width) {
+            DeltaStateHeaderRead::Framed(header) => header,
+            DeltaStateHeaderRead::Unframed => continue,
+            DeltaStateHeaderRead::Invalid => return None,
+        };
+        states.push(header.into_state(
+            header.record_id(stream),
+            &framing.history_id,
+            Vec::new(),
+            Vec::new(),
+        ));
+    }
+    if states.is_empty() {
+        return None;
+    }
+    Some(framing.into_history(bytes, width, false, states))
+}
+
+/// Stream-level layout of one ASM history: its preamble and `delta_state` offsets.
+struct HistoryFraming {
+    preamble_offset: Option<usize>,
+    history_offset: usize,
+    history_id: String,
+    delta_offsets: Vec<usize>,
+}
+
+impl HistoryFraming {
+    fn scan(bytes: &[u8], stream: &str) -> Self {
+        let preamble_offset = bytes
+            .windows(PREAMBLE.len())
+            .position(|window| window == PREAMBLE);
+        let history_offset = preamble_offset.unwrap_or(0);
+        let history_id = crate::ids::native_scoped_id(
+            stream,
+            "asm-history",
+            format_args!("{history_offset:010}"),
+        );
+        let mut delta_offsets = Vec::new();
+        let mut search = 0usize;
+        while let Some(relative) = bytes[search..]
+            .windows(DELTA.len())
+            .position(|window| window == DELTA)
+        {
+            let offset = search + relative;
+
+            delta_offsets.push(offset);
+            search = offset + DELTA.len();
+        }
+        Self {
+            preamble_offset,
+            history_offset,
+            history_id,
+            delta_offsets,
+        }
+    }
+
+    fn into_history(
+        self,
+        bytes: &[u8],
+        width: RefWidth,
+        binding_budget_exceeded: bool,
+        states: Vec<AsmDeltaState>,
+    ) -> AsmHistory {
+        let preamble = self
+            .preamble_offset
+            .and_then(|offset| decode_preamble(bytes, offset + PREAMBLE.len(), width))
+            .map(|(stream_size, history_entry_count)| AsmPreamble {
+                stream_size,
+                history_entry_count,
+            });
+        AsmHistory::new(
+            self.history_id,
+            u64_from_index(self.history_offset),
+            preamble,
+            binding_budget_exceeded,
+            states,
+        )
+    }
+}
+
+/// Fixed integer header of one `delta_state` record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DeltaStateHeader {
+    offset: usize,
+    state_id: i64,
+    version_flag: i64,
+    state_flag: i64,
+    previous: i64,
+    next: i64,
+    node_index: i64,
+    partner: i64,
+    owner_ref: i64,
+    /// First byte after the `0x0b` marker that opens the state body.
+    body_start: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeltaStateHeaderRead {
+    /// The header is complete and the state body opens with `0x0b`.
+    Framed(DeltaStateHeader),
+    /// The header is complete and no state body follows it.
+    Unframed,
+    /// A header integer is missing or mistagged.
+    Invalid,
+}
+
+fn read_delta_state_header(bytes: &[u8], offset: usize, width: RefWidth) -> DeltaStateHeaderRead {
+    let mut position = offset + DELTA.len();
+    let Some([state_id, version_flag, state_flag, previous, next, node_index, partner, owner_ref]) =
+        (|| {
+            Some([
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+            ])
+        })()
+    else {
+        return DeltaStateHeaderRead::Invalid;
+    };
+    if bytes.get(position) != Some(&0x0b) {
+        return DeltaStateHeaderRead::Unframed;
+    }
+    DeltaStateHeaderRead::Framed(DeltaStateHeader {
+        offset,
+        state_id,
+        version_flag,
+        state_flag,
+        previous,
+        next,
+        node_index,
+        partner,
+        owner_ref,
+        body_start: position + 1,
+    })
+}
+
+impl DeltaStateHeader {
+    fn record_id(&self, stream: &str) -> String {
+        let offset = self.offset;
+        crate::ids::native_scoped_id(stream, "asm-delta-state", format_args!("{offset:010}"))
+    }
+
+    fn into_state(
+        self,
+        id: String,
+        history_id: &str,
+        bulletin_boards: Vec<crate::history_records::AsmBulletinBoard>,
+        records: Vec<crate::history_records::AsmHistoryRecord>,
+    ) -> AsmDeltaState {
+        AsmDeltaState {
+            id,
+            parent: history_id.to_owned(),
+            byte_offset: u64_from_index(self.offset),
+            state_id: self.state_id,
+            version_flag: self.version_flag,
+            state_flag: self.state_flag,
+            previous_ref: (self.previous >= 0).then_some(self.previous),
+            next_ref: (self.next >= 0).then_some(self.next),
+            node_index: self.node_index,
+            partner_ref: (self.partner >= 0).then_some(self.partner),
+            owner_ref: self.owner_ref,
+            bulletin_boards,
+            records,
+            transition: None,
+        }
+    }
 }
 
 fn bind_snapshot_revision_ids(
