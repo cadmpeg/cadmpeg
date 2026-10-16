@@ -17,8 +17,8 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
         edges: keys.to_vec(),
         vertices: keys.to_vec(),
         points: keys.to_vec(),
-        surfaces: keys.to_vec(),
-        curves: keys.to_vec(),
+        surfaces: keys.iter().flat_map(|&key| [key, key]).collect(),
+        curves: keys.iter().flat_map(|&key| [key, key, key]).collect(),
         pcurves: keys.to_vec(),
         surface_radii: keys
             .iter()
@@ -749,5 +749,98 @@ fn tag_groups_keep_decode_order_within_each_entity() {
             group.tags.iter().map(|tag| tag.ordinal).collect::<Vec<_>>(),
             [0, 1]
         );
+    }
+}
+
+#[test]
+fn carrier_groups_preserve_membership_multiplicity_changes() {
+    let topologies = [
+        AsmHistoricalTopology::default(),
+        AsmHistoricalTopology {
+            surfaces: vec![2, 2, 4],
+            curves: vec![3, 3, 3],
+            ..Default::default()
+        },
+        AsmHistoricalTopology {
+            surfaces: vec![2, 4, 4, 4],
+            curves: vec![3, 3, 3, 5, 5],
+            ..Default::default()
+        },
+        AsmHistoricalTopology {
+            surfaces: vec![4, 4],
+            ..Default::default()
+        },
+        AsmHistoricalTopology::default(),
+    ];
+    let versions: Vec<BTreeMap<_, _>> = topologies
+        .iter()
+        .map(|topology| topology.slots().into_iter().map(|key| (key, key)).collect())
+        .collect();
+    let mut materialized = AsmHistoricalTopology::default();
+    let mut retained = AsmHistoricalTopology::default();
+    let mut materialized_versions = Vec::new();
+    for index in 0usize..topologies.len() {
+        let snapshot = |index: usize| AsmStateSnapshot {
+            state_id: i64::try_from(index).unwrap(),
+            topology: &topologies[index],
+            versions: &versions[index],
+        };
+        let transition =
+            AsmHistoricalTransition::between(index.checked_sub(1).map(snapshot), snapshot(index))
+                .unwrap();
+        if index == 1 {
+            assert_eq!(transition.topology.surfaces.inserted, [2, 4]);
+            assert_eq!(transition.topology.curves.inserted, [3]);
+            assert_eq!(transition.rows.surfaces.set[0].rows, [2, 2]);
+            assert_eq!(transition.rows.curves.set[0].rows, [3, 3, 3]);
+        }
+        if index == 2 {
+            assert_eq!(
+                transition.topology.surfaces,
+                AsmHistoricalEntityDelta::default()
+            );
+            assert_eq!(transition.rows.surfaces.set.len(), 2);
+        }
+        let mut decoded: AsmHistoricalTransition =
+            serde_json::from_slice(&serde_json::to_vec(&transition).unwrap()).unwrap();
+        decoded.apply_versions(&mut materialized_versions).unwrap();
+        decoded.apply_topology(&mut materialized).unwrap();
+        assert_eq!(materialized, topologies[index]);
+        decoded.rows.retain_projection_rows();
+        decoded.apply_topology(&mut retained).unwrap();
+        assert_eq!(retained, topologies[index]);
+    }
+}
+
+#[test]
+fn carrier_groups_reject_inconsistent_memberships() {
+    let cases: Vec<fn(&mut AsmHistory)> = vec![
+        |history| {
+            transition_mut(history, 1).rows.surfaces.set[0].rows.clear();
+        },
+        |history| {
+            transition_mut(history, 1).rows.curves.set[0].rows.push(99);
+        },
+        |history| {
+            transition_mut(history, 1).rows.surfaces.set.pop();
+        },
+        |history| {
+            transition_mut(history, 1).topology.curves.inserted.pop();
+        },
+    ];
+    for (case, corrupt) in cases.into_iter().enumerate() {
+        let mut history = chain();
+        corrupt(&mut history);
+        assert_eq!(
+            history.check_transitions(),
+            Err(AsmTransitionError::MembershipCoverage),
+            "case {case}"
+        );
+        let head = history
+            .states
+            .iter()
+            .find(|state| state.state_id == 3)
+            .unwrap();
+        assert!(history.topology(head).is_none(), "case {case}");
     }
 }

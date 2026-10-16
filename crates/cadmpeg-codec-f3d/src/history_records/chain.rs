@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sorted historical row diffs and lazy chain materialization.
 use super::{
-    AsmDeltaState, AsmEntityVersion, AsmHistoricalEntityDelta, AsmHistoricalEntityTags,
-    AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistoricalRowsDelta, AsmHistoricalTopology,
-    AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmTopologyScope,
-    AsmTransitionError,
+    AsmDeltaState, AsmEntityVersion, AsmHistoricalEntityDelta, AsmHistoricalEntityRows,
+    AsmHistoricalEntityTags, AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistoricalRowsDelta,
+    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
+    AsmTopologyScope, AsmTransitionError,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
@@ -169,6 +169,52 @@ fn entity_tags(topology: &AsmHistoricalTopology) -> Vec<AsmHistoricalEntityTags>
     groups
 }
 
+fn entity_rows(family: &[i64]) -> Vec<AsmHistoricalEntityRows> {
+    let mut groups: Vec<AsmHistoricalEntityRows> = Vec::new();
+    for &entity_ref in family {
+        if let Some(last) = groups
+            .last_mut()
+            .filter(|last| last.entity_ref == entity_ref)
+        {
+            last.rows.push(entity_ref);
+        } else {
+            groups.push(AsmHistoricalEntityRows {
+                entity_ref,
+                rows: vec![entity_ref],
+            });
+        }
+    }
+    groups
+}
+
+fn apply_entity_rows(
+    membership: &AsmHistoricalEntityDelta,
+    rows: &AsmHistoricalRowDelta<AsmHistoricalEntityRows>,
+    family: &mut Vec<i64>,
+    updated_records: &[i64],
+) -> Result<(), AsmTransitionError> {
+    if rows.is_empty()
+        && membership.inserted.is_empty()
+        && membership.deleted.is_empty()
+        && membership.updated.is_empty()
+    {
+        return Ok(());
+    }
+    let mut groups = entity_rows(family);
+    let mut keys = groups.iter().map(AsmHistoricalRow::key).collect();
+    apply_membership(membership, &mut keys, updated_records)?;
+    rows.apply(&mut groups)?;
+    if !groups.iter().map(AsmHistoricalRow::key).eq(keys)
+        || groups.iter().any(|group| {
+            group.rows.is_empty() || group.rows.iter().any(|&row| row != group.entity_ref)
+        })
+    {
+        return Err(AsmTransitionError::MembershipCoverage);
+    }
+    *family = groups.into_iter().flat_map(|group| group.rows).collect();
+    Ok(())
+}
+
 impl AsmHistoricalTransition {
     /// Forward change from `older`, or empty before the tail, to `newer`.
     pub(crate) fn between(
@@ -182,7 +228,18 @@ impl AsmHistoricalTransition {
             .as_ref()
             .map_or(&empty_versions, |state| state.versions);
         let new = newer.topology;
+
+        let old_surfaces = entity_rows(&old_topology.surfaces);
+        let new_surfaces = entity_rows(&new.surfaces);
+        let old_curves = entity_rows(&old_topology.curves);
+        let new_curves = entity_rows(&new.curves);
         let delta = |new: &[i64], old: &[i64]| entity_delta(new, old, newer.versions, old_versions);
+        let grouped_delta = |new: &[AsmHistoricalEntityRows], old: &[AsmHistoricalEntityRows]| {
+            delta(
+                &new.iter().map(AsmHistoricalRow::key).collect::<Vec<_>>(),
+                &old.iter().map(AsmHistoricalRow::key).collect::<Vec<_>>(),
+            )
+        };
         let records = delta(
             &newer.versions.keys().copied().collect::<Vec<_>>(),
             &old_versions.keys().copied().collect::<Vec<_>>(),
@@ -216,11 +273,13 @@ impl AsmHistoricalTransition {
                 edges: delta(&new.edges, &old_topology.edges)?,
                 vertices: delta(&new.vertices, &old_topology.vertices)?,
                 points: delta(&new.points, &old_topology.points)?,
-                surfaces: delta(&new.surfaces, &old_topology.surfaces)?,
-                curves: delta(&new.curves, &old_topology.curves)?,
+                surfaces: grouped_delta(&new_surfaces, &old_surfaces)?,
+                curves: grouped_delta(&new_curves, &old_curves)?,
                 pcurves: delta(&new.pcurves, &old_topology.pcurves)?,
             },
             rows: AsmHistoricalRowsDelta {
+                surfaces: AsmHistoricalRowDelta::between(&old_surfaces, &new_surfaces)?,
+                curves: AsmHistoricalRowDelta::between(&old_curves, &new_curves)?,
                 surface_radii: AsmHistoricalRowDelta::between(
                     &old_topology.surface_radii,
                     &new.surface_radii,
@@ -354,13 +413,15 @@ impl AsmHistoricalTransition {
             &mut topology.points,
             &self.records.updated,
         )?;
-        apply_membership(
+        apply_entity_rows(
             &self.topology.surfaces,
+            &self.rows.surfaces,
             &mut topology.surfaces,
             &self.records.updated,
         )?;
-        apply_membership(
+        apply_entity_rows(
             &self.topology.curves,
+            &self.rows.curves,
             &mut topology.curves,
             &self.records.updated,
         )?;
