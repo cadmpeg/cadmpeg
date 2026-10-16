@@ -90,6 +90,8 @@ pub(crate) struct Loop {
 }
 
 impl Loop {
+    /// Validates `half_edges` as one closed ring on `face_id`. `graph` must be
+    /// sorted by half-edge identifier.
     pub(crate) fn new(
         face_id: Option<NonZeroU32>,
         half_edges: Vec<HalfEdgeId>,
@@ -98,17 +100,20 @@ impl Loop {
         if half_edges.is_empty() {
             return None;
         }
-        for (index, (id, next)) in half_edges
-            .iter()
-            .zip(half_edges.iter().cycle().skip(1))
-            .enumerate()
-        {
-            if half_edges.iter().take(index).any(|previous| previous == id) {
+        let mut seen = BTreeSet::new();
+        for (id, next) in half_edges.iter().zip(half_edges.iter().cycle().skip(1)) {
+            if !seen.insert(*id) {
                 return None;
             }
-            let mut candidates = graph.iter().filter(|edge| edge.id == *id);
-            let edge = candidates.next()?;
-            if candidates.next().is_some() || edge.face_id != face_id || edge.next != Some(*next) {
+            let index = graph.binary_search_by_key(id, |edge| edge.id).ok()?;
+            let repeated = index
+                .checked_sub(1)
+                .and_then(|before| graph.get(before))
+                .into_iter()
+                .chain(graph.get(index + 1))
+                .any(|neighbour| neighbour.id == *id);
+            let edge = &graph[index];
+            if repeated || edge.face_id != face_id || edge.next != Some(*next) {
                 return None;
             }
         }
@@ -534,10 +539,11 @@ pub(crate) fn selected_body_count(
 /// Ambiguous or missing successors remain `None` and cannot form loops.
 pub(crate) fn build(rows: &[CurveTopologyRow]) -> Result<(Vec<HalfEdge>, Vec<Loop>), CodecError> {
     let rows = crate::identity::uniquely_identified_rows(rows, |row| row.id);
-    let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
+    let mut face_curve_sides: BTreeMap<(Option<NonZeroU32>, u32), Vec<HalfEdgeId>> =
+        BTreeMap::new();
     for row in &rows {
         for side in [Side::Zero, Side::One] {
-            let sides = match face_sides.entry(row.faces[side.index()]) {
+            let sides = match face_curve_sides.entry((row.faces[side.index()], row.id)) {
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
@@ -551,11 +557,10 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> Result<(Vec<HalfEdge>, Vec<Loo
     for row in rows {
         for side in [Side::Zero, Side::One] {
             let face_id = row.faces[side.index()];
-            let mut candidates = face_sides
-                .get(&face_id)
+            let mut candidates = face_curve_sides
+                .get(&(face_id, row.next_edges[side.index()]))
                 .into_iter()
                 .flatten()
-                .filter(|id| id.curve_id == row.next_edges[side.index()])
                 .copied();
             let next = match (candidates.next(), candidates.next()) {
                 (Some(candidate), None) => Some(candidate),
@@ -580,11 +585,17 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> Result<(Vec<HalfEdge>, Vec<Loo
     };
     let mut consumed = BTreeSet::new();
     let mut open = BTreeSet::new();
+    // A walk that reaches a `cyclic` member, a `consumed` member, or a `tail`
+    // member from outside that cycle ends in a cycle without its start, so it
+    // forms no loop and marks nothing open.
+    let mut cyclic = BTreeSet::new();
+    let mut tail = BTreeSet::new();
     let mut loops = Vec::new();
     for edge in &edges {
-        if consumed.contains(&edge.id) || open.contains(&edge.id) {
+        if consumed.contains(&edge.id) || open.contains(&edge.id) || tail.contains(&edge.id) {
             continue;
         }
+        let start_on_cycle = cyclic.contains(&edge.id);
         let mut ring = Vec::new();
         let mut seen = BTreeSet::new();
         let mut current = edge.id;
@@ -592,6 +603,14 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> Result<(Vec<HalfEdge>, Vec<Loo
         loop {
             if open.contains(&current) {
                 open_ended = true;
+                break;
+            }
+            if !start_on_cycle
+                && (tail.contains(&current)
+                    || consumed.contains(&current)
+                    || cyclic.contains(&current))
+            {
+                tail.extend(std::mem::take(&mut ring));
                 break;
             }
             if seen.contains(&current) {
@@ -602,6 +621,9 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> Result<(Vec<HalfEdge>, Vec<Loo
                     let closed = Loop::new(edge.face_id, std::mem::take(&mut ring), &edges)
                         .ok_or_else(|| CodecError::malformed("invalid derived Creo closed ring"))?;
                     loops.push(closed);
+                } else if let Some(entry) = ring.iter().position(|id| *id == current) {
+                    tail.extend(ring[..entry].iter().copied());
+                    cyclic.extend(ring[entry..].iter().copied());
                 }
                 break;
             }
