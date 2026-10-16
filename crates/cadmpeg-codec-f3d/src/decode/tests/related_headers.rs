@@ -44,7 +44,7 @@ fn compact_thread_trailer_record_is_a_related_record() {
             draft.payload = DesignScopePayload::Thread(Some(construction));
         })
         .unwrap();
-    let indices = super::super::scope_related_indices(&[scope]);
+    let indices = super::super::design_intent::scope_related_indices(&[scope]);
     let stream = "f3d:Design/BulkStream.dat".to_owned();
     assert_eq!(
         indices,

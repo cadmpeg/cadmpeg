@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 
+use crate::loss::F3dLossCode;
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
@@ -90,6 +91,16 @@ pub(crate) fn write_semantic(
                 "the salvage decode of the source image refused: {other}"
             )),
         })?;
+    if baseline
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
+    {
+        return Err(CodecError::NotImplemented(
+            "F3D semantic patching refuses a source whose design intent was not decoded".into(),
+        ));
+    }
     let baseline_native = f3d_native(baseline.ir())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),

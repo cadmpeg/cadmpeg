@@ -14,7 +14,7 @@
 //! [`LossNote::code`] under the `f3d` namespace.
 
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNote, LossTaxonomy, NamespacedLossKind},
     Severity,
 };
 
@@ -200,6 +200,8 @@ pub(crate) enum F3dLossCode {
     ManifestMetadataUnresolved,
     /// An optional bounded archive payload is unreadable.
     ArchiveEntryUnreadable,
+    /// Design-intent decoding failed; its sketches, features and history were dropped.
+    DesignIntentUndecoded,
 }
 
 impl F3dLossCode {
@@ -294,6 +296,7 @@ impl F3dLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
         Self::ArchiveEntryUnreadable,
+        Self::DesignIntentUndecoded,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -394,6 +397,7 @@ impl F3dLossCode {
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::DesignIntentUndecoded => "design.intent-undecoded",
         }
     }
 
@@ -416,7 +420,8 @@ impl F3dLossCode {
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::TsplineCageUndecoded => Severity::Error,
+            | Self::TsplineCageUndecoded
+            | Self::DesignIntentUndecoded => Severity::Error,
             Self::GeometryNotTransferred
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
@@ -563,9 +568,9 @@ impl F3dLossCode {
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
             }
-            Self::MeshContainerUndecoded | Self::DialectLayerCollision => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::MeshContainerUndecoded
+            | Self::DialectLayerCollision
+            | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
             Self::BodylessDesignCarrier
             | Self::NurbsSurfaceCarrier
@@ -590,20 +595,34 @@ impl F3dLossCode {
         }
     }
 
-    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
+    /// Strict floor pinned by this local code.
+    ///
+    /// Defaults to the taxonomy floor. `DesignIntentUndecoded` pins Warning
+    /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
+    /// document whose design intent was dropped.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::DesignIntentUndecoded => Some(Severity::Warning),
+            other => other.shared_taxonomy().strict_floor(),
+        }
+    }
+
+    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+        NamespacedLossKind::new(
             cadmpeg_ir::loss_namespace!("f3d"),
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `f3d/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code; the strict floor comes from [`Self::strict_floor`].
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -710,6 +729,7 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "source.archive-entry-unreadable",
+                "design.intent-undecoded",
             ]
         );
     }
