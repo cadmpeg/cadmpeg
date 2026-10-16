@@ -18,5 +18,8 @@ serde_json.workspace = true
 toml.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+cadmpeg-ir = { workspace = true, features = ["examples"] }
+
 [lints]
 workspace = true

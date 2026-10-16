@@ -15,6 +15,7 @@ pub mod assembly;
 pub mod bytes;
 pub mod compound;
 pub mod decode;
+pub mod depth;
 pub mod detection;
 pub mod edit;
 pub mod golden;
