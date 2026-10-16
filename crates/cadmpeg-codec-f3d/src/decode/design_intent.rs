@@ -12,6 +12,7 @@ use cadmpeg_ir::{
     document::Model,
     features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology},
     geometry::Surface,
+    products::AssemblyJoint,
     report::loss::LossNote,
     sketches::{
         Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
@@ -235,6 +236,8 @@ pub(super) struct DesignModel {
     pub(super) spatial_sketches: Vec<SpatialSketch>,
     pub(super) spatial_sketch_entities: Vec<SpatialSketchEntity>,
     pub(super) spatial_sketch_constraints: Vec<SpatialSketchConstraint>,
+    /// Joints read the `Component Insert` and joint-origin features.
+    pub(super) assembly_joints: Vec<AssemblyJoint>,
 }
 
 impl DesignModel {
@@ -252,6 +255,7 @@ impl DesignModel {
             spatial_sketches,
             spatial_sketch_entities,
             spatial_sketch_constraints,
+            assembly_joints,
         } = self;
         model.configurations = configurations;
         model.features = features;
@@ -264,6 +268,7 @@ impl DesignModel {
         model.spatial_sketches = spatial_sketches;
         model.spatial_sketch_entities = spatial_sketch_entities;
         model.spatial_sketch_constraints = spatial_sketch_constraints;
+        model.assembly_joints = assembly_joints;
     }
 }
 
@@ -804,6 +809,26 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.configurations,
         &model.features,
     );
+    if let Some(table) = prereqs.xref_table() {
+        crate::xref::bind_component_insert_features(
+            &mut model.features,
+            &design.design_parameter_scopes,
+            table,
+        );
+    }
+    crate::design::components::project_derived_instance_features(
+        &mut model.features,
+        &design.design_parameter_scopes,
+    );
+    crate::design::components::bind_unresolved_component_insert_features(
+        &mut model.features,
+        &design.design_parameter_scopes,
+    );
+    model.assembly_joints = crate::design::assembly::project_assembly_joints(
+        &design.design_parameter_scopes,
+        &prereqs.design_component_occurrences,
+        &model.features,
+    )?;
     Ok(DesignOutputs {
         native: design,
         model,
