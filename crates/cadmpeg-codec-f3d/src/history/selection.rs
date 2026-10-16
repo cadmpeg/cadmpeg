@@ -9,7 +9,7 @@ use super::{
     EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
     HOLE_SUPPORT_NORMAL_TOLERANCE, HOLE_SUPPORT_POINT_TOLERANCE,
 };
-use crate::history_records::{AsmHistoricalTopology, AsmHistory};
+use crate::history_records::{AsmHistoricalTopology, AsmHistory, AsmTopologyScope};
 use crate::records::{
     bodies::DesignBodyBinding,
     recipes::DesignComponentNamingSpace,
@@ -420,12 +420,12 @@ impl HistoricalIdentityIndex {
             };
         }
         let ambiguous_states = ambiguous_history_state_ids(&histories);
-        for state in histories
+        for (history, state) in histories
             .iter()
-            .flat_map(|history| &history.states)
-            .filter(|state| !ambiguous_states.contains(&state.state_id))
+            .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+            .filter(|(_, state)| !ambiguous_states.contains(&state.state_id))
         {
-            for version in &state.entity_versions {
+            for version in history.entity_versions(state) {
                 if record_refs.contains(&version.record_ref) {
                     let membership = revisions.entry(version.record_ref).or_default();
                     membership.entity_refs.insert(version.entity_ref);
@@ -443,21 +443,18 @@ impl HistoricalIdentityIndex {
         // Finalized histories retain the entity-slot membership and the
         // bulletin-board chain after their geometry caches are compacted.
         for history in histories.iter().filter(|history| {
-            !history.states.is_empty()
-                && history
-                    .states
-                    .iter()
-                    .all(|state| match &state.topology_cache {
-                        crate::history_records::AsmTopologyCache::Absent => false,
-                        crate::history_records::AsmTopologyCache::Complete(_) => true,
-                        crate::history_records::AsmTopologyCache::Retained(_) => {
-                            history.projection_finalized()
-                        }
-                        crate::history_records::AsmTopologyCache::Released => false,
-                    })
+            let states = history.states();
+            !states.is_empty()
+                && states.iter().all(|state| state.transition.is_some())
+                && match history.topology_scope {
+                    AsmTopologyScope::Complete => true,
+                    AsmTopologyScope::Retained => {
+                        states.iter().all(|state| history.topology(state).is_some())
+                    }
+                }
         }) {
             for change in history
-                .states
+                .states()
                 .iter()
                 .flat_map(|state| &state.bulletin_boards)
                 .flat_map(|board| &board.changes)
@@ -482,12 +479,12 @@ impl HistoricalIdentityIndex {
         ) {
             entity_refs.insert(entity_ref);
         }
-        for state in histories
+        for (history, state) in histories
             .iter()
-            .flat_map(|history| &history.states)
-            .filter(|state| !ambiguous_states.contains(&state.state_id))
+            .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+            .filter(|(_, state)| !ambiguous_states.contains(&state.state_id))
         {
-            let Some(topology) = state.topology() else {
+            let Some(topology) = history.topology(state) else {
                 continue;
             };
             let families: [(AsmHistoricalEntityKind, &[i64]); 12] = [
@@ -594,7 +591,7 @@ pub(super) fn historical_selection_identity_kind(
 fn ambiguous_history_state_ids(histories: &[&AsmHistory]) -> HashSet<i64> {
     let mut unique = HashSet::new();
     let mut ambiguous = HashSet::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
+    for state in histories.iter().flat_map(|history| history.states()) {
         if !unique.insert(state.state_id) {
             ambiguous.insert(state.state_id);
         }
@@ -752,15 +749,15 @@ pub(crate) fn bind_entity_selection_history(
         };
         let mut matching_states = histories
             .iter()
-            .flat_map(|history| &history.states)
-            .filter(|state| state.state_id == previous_state_id);
-        let Some(state) = matching_states.next() else {
+            .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+            .filter(|(_, state)| state.state_id == previous_state_id);
+        let Some((history, state)) = matching_states.next() else {
             continue;
         };
         if matching_states.next().is_some() {
             continue;
         }
-        let Some(topology) = state.topology() else {
+        let Some(topology) = history.topology(state) else {
             continue;
         };
         let selections = std::iter::once((0, operand.primary_identity)).chain(
@@ -863,8 +860,8 @@ fn hole_transition_face_candidate(
     if transition.previous_state_id != Some(previous_state_id) {
         return Ok(None);
     }
-    let result_topology = some!(result_state.topology());
-    let preceding_topology = some!(preceding_state.topology());
+    let result_topology = some!(history.topology(result_state));
+    let preceding_topology = some!(history.topology(preceding_state));
     let point = cadmpeg_ir::math::Point3::new(position[0], position[1], position[2]);
     if position.iter().any(|coordinate| !coordinate.is_finite()) {
         return Ok(None);
@@ -1076,7 +1073,7 @@ pub(super) fn historical_pattern_identity_axes(
 
 pub(super) fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistory) -> Option<u64> {
     let mut matches = history
-        .states
+        .states()
         .iter()
         .flat_map(|state| &state.records)
         .filter(|record| match &record.framing {
@@ -1108,12 +1105,12 @@ pub(super) fn historical_pattern_identity_axes_for_selection(
     let mut axes = Vec::new();
     let mut matched_state_ids = HashSet::new();
     for state in history
-        .states
+        .states()
         .iter()
         .filter(|state| state_ids.contains(&state.state_id))
     {
         matched_state_ids.insert(state.state_id);
-        let Some(topology) = state.topology() else {
+        let Some(topology) = history.topology(state) else {
             return Vec::new();
         };
         let state_axes =
@@ -1476,14 +1473,14 @@ fn historical_mirror_plane_in_state(
         return None;
     }
     let mut matching_states = history
-        .states
+        .states()
         .iter()
         .filter(|state| state.state_id == state_id);
     let state = matching_states.next()?;
     if matching_states.next().is_some() {
         return None;
     }
-    let topology = state.topology()?;
+    let topology = history.topology(state)?;
     match candidate.historical.kind {
         AsmHistoricalEntityKind::Coedge => {
             historical_mirror_coedge_plane(candidate.historical.entity_ref, topology)
@@ -1501,14 +1498,14 @@ fn historical_mirror_plane_for_face_slot(
     history: &AsmHistory,
 ) -> Option<HistoricalMirrorPlane> {
     let mut matching_states = history
-        .states
+        .states()
         .iter()
         .filter(|state| state.state_id == state_id);
     let state = matching_states.next()?;
     if matching_states.next().is_some() {
         return None;
     }
-    let topology = state.topology()?;
+    let topology = history.topology(state)?;
     historical_mirror_plane_for_face_slot_in_topology(face_slot, topology)
 }
 
@@ -1730,7 +1727,7 @@ pub(super) fn entity_selection_face_candidates(
         let mut face_slot = None;
         for state_id in &state_ids {
             let mut states = history
-                .states
+                .states()
                 .iter()
                 .filter(|state| state.state_id == *state_id);
             let Some(state) = states.next() else {
@@ -1739,7 +1736,7 @@ pub(super) fn entity_selection_face_candidates(
             if states.next().is_some() {
                 continue 'histories;
             }
-            let Some(topology) = state.topology() else {
+            let Some(topology) = history.topology(state) else {
                 continue 'histories;
             };
             let mut faces = historical_identity_faces(kind, entity_ref, topology).into_iter();
@@ -1922,7 +1919,7 @@ pub(crate) fn bind_edge_identity_history(
             continue;
         };
         let mut previous_states = history
-            .states
+            .states()
             .iter()
             .filter(|state| state.state_id == previous_state_id);
         let Some(previous_state) = previous_states.next() else {
@@ -1931,12 +1928,12 @@ pub(crate) fn bind_edge_identity_history(
         if previous_states.next().is_some() {
             continue;
         }
-        let Some(topology) = previous_state.topology() else {
+        let Some(topology) = history.topology(previous_state) else {
             continue;
         };
         if let Some(current_state_id) = current_state_id {
             let mut current_states = history
-                .states
+                .states()
                 .iter()
                 .filter(|state| state.state_id == current_state_id);
             let current_state = current_states.next();
@@ -1946,7 +1943,7 @@ pub(crate) fn bind_edge_identity_history(
             {
                 let key = (history.id.clone(), current_state_id, previous_state_id);
                 if !treatment_candidates_by_transition.contains_key(&key) {
-                    if let Some(result) = current_state.and_then(|state| state.topology()) {
+                    if let Some(result) = current_state.and_then(|state| history.topology(state)) {
                         let mut preceding_faces = HashSet::new();
                         for face in &topology.faces {
                             preceding_faces.insert(*face);

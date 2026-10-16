@@ -747,9 +747,12 @@ fn historical_face_profile_selection(
     };
     let mut states = scoped_histories
         .iter()
-        .flat_map(|history| &history.states)
-        .filter(|state| state.state_id == previous_state_id);
-    let Some(topology) = states.next().and_then(|state| state.topology()) else {
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == previous_state_id);
+    let Some((history, state)) = states.next() else {
+        return Ok(None);
+    };
+    let Some(topology) = history.topology(state) else {
         return Ok(None);
     };
     if states.next().is_some() {
@@ -1306,9 +1309,9 @@ fn transition_profile_selection(
     let mut states = resolution
         .histories
         .iter()
-        .flat_map(|history| &history.states)
-        .filter(|state| state.state_id == state_id);
-    let state = geometric!(states.next());
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == state_id);
+    let (history, state) = geometric!(states.next());
     if states.next().is_some()
         || state
             .transition
@@ -1318,7 +1321,7 @@ fn transition_profile_selection(
     {
         return Ok(None);
     }
-    let topology = geometric!(state.topology());
+    let topology = geometric!(history.topology(state));
     let inserted_faces = &geometric!(state.transition.as_ref())
         .topology
         .faces
@@ -1369,13 +1372,13 @@ fn transition_profile_selection(
     let mut previous_states = resolution
         .histories
         .iter()
-        .flat_map(|history| &history.states)
-        .filter(|state| state.state_id == previous_state_id);
-    let previous = geometric!(previous_states.next());
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == previous_state_id);
+    let (previous_history, previous) = geometric!(previous_states.next());
     if previous_states.next().is_some() {
         return Ok(None);
     }
-    let previous_topology = geometric!(previous.topology());
+    let previous_topology = geometric!(previous_history.topology(previous));
     let deleted = &geometric!(state.transition.as_ref()).topology.faces.deleted;
     let faces = geometric!(unique_multi_face_deleted_carrier_family(
         deleted,
@@ -1588,9 +1591,9 @@ fn transition_spatial_profile_selection(
 ) -> Result<Option<u32>, CodecError> {
     let mut states = histories
         .iter()
-        .flat_map(|history| &history.states)
-        .filter(|state| state.state_id == state_id);
-    let Some(state) = states.next() else {
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == state_id);
+    let Some((history, state)) = states.next() else {
         return Ok(None);
     };
     if states.next().is_some()
@@ -1602,7 +1605,7 @@ fn transition_spatial_profile_selection(
     {
         return Ok(None);
     }
-    let Some(topology) = state.topology() else {
+    let Some(topology) = history.topology(state) else {
         return Ok(None);
     };
     // The document linear tolerance is admitted at or above the analytic floor
@@ -1633,15 +1636,15 @@ fn transition_spatial_profile_selection(
     }
     let mut previous_states = histories
         .iter()
-        .flat_map(|history| &history.states)
-        .filter(|state| state.state_id == previous_state_id);
-    let Some(previous) = previous_states.next() else {
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+        .filter(|(_, state)| state.state_id == previous_state_id);
+    let Some((previous_history, previous)) = previous_states.next() else {
         return Ok(None);
     };
     if previous_states.next().is_some() {
         return Ok(None);
     }
-    let Some(previous_topology) = previous.topology() else {
+    let Some(previous_topology) = previous_history.topology(previous) else {
         return Ok(None);
     };
     unique(&transition.topology.faces.deleted, previous_topology)
@@ -1909,11 +1912,14 @@ fn historical_selection_regions(
     // when the kernel header is read, so it drives the comparisons unchanged.
     let tolerance = linear_tolerance;
     let mut states = HashMap::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
+    for (history, state) in histories
+        .iter()
+        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+    {
         if let Some(previous) = states.get_mut(&state.state_id) {
             *previous = None;
         } else {
-            states.insert(state.state_id, Some(state));
+            states.insert(state.state_id, Some((history, state)));
         }
     }
     let Some(first_member) = members.first() else {
@@ -1943,7 +1949,7 @@ fn historical_selection_regions(
         let Some(topology) = states
             .get(&state_id)
             .and_then(|state| state.as_ref())
-            .and_then(|state| state.topology())
+            .and_then(|(history, state)| history.topology(state))
         else {
             continue;
         };

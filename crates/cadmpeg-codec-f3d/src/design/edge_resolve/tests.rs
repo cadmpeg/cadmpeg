@@ -424,9 +424,7 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
 
 #[test]
 fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repeats() {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology, AsmHistory,
-    };
+    use crate::history_records::{AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology};
     use crate::records::feature::work_geometry::{
         DesignEdgeTreatmentVertexOperand, DesignVertexRecipe,
     };
@@ -493,22 +491,24 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         )
         .unwrap(),
     };
-    let state = AsmDeltaState {
-        id: "f3d:test:state#7".into(),
-        parent: "f3d:test:history".into(),
-        byte_offset: 0,
-        state_id: 7,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 7,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
+    let state = (
+        AsmDeltaState {
+            id: "f3d:test:state#7".into(),
+            parent: "f3d:test:history".into(),
+            byte_offset: 0,
+            state_id: 7,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 7,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(AsmHistoricalTopology {
             edges: vec![17],
             vertices: vec![3, 4, 5],
             edge_vertices: vec![AsmHistoricalEdge {
@@ -518,17 +518,15 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             }],
             ..AsmHistoricalTopology::default()
         }),
-        transition: None,
-    };
-    let history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "f3d:test:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state],
-    };
+        Vec::new(),
+    );
+    let history = crate::test_support::history::history(
+        "f3d:test:history".into(),
+        0,
+        None,
+        false,
+        vec![state],
+    );
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
     let corners = [corner(10, 0, 3), corner(12, 2, 4)];

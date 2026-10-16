@@ -657,7 +657,7 @@ pub(super) fn validate_source_less_history_graph(
     let states = native
         .asm_histories
         .iter()
-        .flat_map(|history| &history.states)
+        .flat_map(crate::history_records::AsmHistory::states)
         .collect::<Vec<_>>();
     let boards = states
         .iter()
@@ -694,7 +694,7 @@ pub(super) fn validate_source_less_history_graph(
         match history.preamble {
             Some(preamble)
                 if history
-                    .states
+                    .states()
                     .first()
                     .is_some_and(|state| state.state_id == preamble.stream_size)
                     && preamble.history_entry_count >= 0 => {}

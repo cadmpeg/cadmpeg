@@ -177,3 +177,5 @@ pub(crate) mod zip_test;
 pub(crate) mod assembly_test;
 
 pub(crate) mod procedural_test;
+
+pub(crate) mod history;

@@ -3,9 +3,7 @@ use crate::history::{
     selection::bind_mirror_selection_planes, selection::design_geometry_mirror_plane,
     selection::historical_loop_plane, selection::historical_mirror_plane,
 };
-use crate::history_records::{
-    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalTopology, AsmHistory,
-};
+use crate::history_records::{AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalTopology};
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
 #[test]
@@ -106,42 +104,38 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             "next_record_index": 42, "next_byte_offset": 29
         }))
         .expect("mirror plane selection");
-    let state = |state_id, topology, transition| crate::history_records::AsmDeltaState {
-        id: format!("history:state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
+    let state = |state_id, topology, next_ref| {
+        (
+            crate::history_records::AsmDeltaState {
+                id: format!("history:state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
-    let history = crate::history_records::AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![
             state(
                 2,
                 crate::history_records::AsmHistoricalTopology::default(),
-                Some(crate::history_records::AsmHistoricalTransition {
-                    record_revisions: Vec::new(),
-                    rows: crate::history_records::AsmHistoricalRowsDelta::default(),
-                    previous_state_id: Some(1),
-                    records: Default::default(),
-                    topology: Default::default(),
-                }),
+                Some(1),
             ),
             state(
                 1,
@@ -161,7 +155,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
                 None,
             ),
         ],
-    };
+    );
 
     {
         bind_mirror_selection_planes(
@@ -314,23 +308,27 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         }],
         ..AsmHistoricalTopology::default()
     };
-    let state = |state_id, topology| AsmDeltaState {
-        id: format!("history:state#{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition: None,
+    let state = |state_id, topology| {
+        (
+            AsmDeltaState {
+                id: format!("history:state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
     let candidate =
         crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
@@ -342,15 +340,13 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
             },
             face_slot: 27,
         };
-    let mut history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![state(2, topology()), state(1, topology())],
-    };
+    let mut history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, topology()), state(1, topology())],
+    );
 
     let plane = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
         .expect("stable selected-face plane");
@@ -363,20 +359,31 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         }
     );
     assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
-    history.states[0].topology_mut().unwrap().surface_planes[0]
-        .normal
-        .z = -1.0;
+    crate::test_support::history::edit(&mut history, 0, |topology, _| {
+        topology.surface_planes[0].normal.z = -1.0;
+    });
     assert!(historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history)).is_some());
     assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
-    history.states[0].topology_mut().unwrap().surface_planes[0]
-        .origin
-        .z = 4.0;
+    crate::test_support::history::edit(&mut history, 0, |topology, _| {
+        topology.surface_planes[0].origin.z = 4.0;
+    });
     assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_none());
-    let duplicate = history.states[1].topology().unwrap().face_surfaces[0].clone();
-    history.states[1]
-        .topology_mut()
+    let duplicate = history
+        .topology(&history.states()[1])
         .unwrap()
+        .face_surfaces[0]
+        .clone();
+    history.states_mut()[1]
+        .transition
+        .as_mut()
+        .unwrap()
+        .rows
         .face_surfaces
+        .set
         .push(duplicate);
+    assert_eq!(
+        history.check_transitions(),
+        Err(crate::history_records::AsmTransitionError::UnsortedFamily)
+    );
     assert!(historical_mirror_plane(&candidate, 1, &[history]).is_none());
 }

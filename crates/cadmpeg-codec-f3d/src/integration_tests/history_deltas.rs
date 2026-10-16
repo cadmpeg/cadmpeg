@@ -1,58 +1,132 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Compare chain reconstruction with complete decode snapshots.
+//! Compare chain reconstruction with independent full record-table decodes.
 
-use crate::history_records::AsmHistory;
+use crate::history_records::{AsmEntityVersion, AsmHistoricalTopology, AsmHistory};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use std::collections::BTreeMap;
 
-fn compare(histories: &[AsmHistory]) {
-    for history in histories {
-        for state in &history.states {
-            assert_eq!(
-                history.topology(state),
-                state.topology(),
-                "{} state {}",
-                history.id,
-                state.state_id
-            );
-            assert_eq!(
-                history.entity_versions(state),
-                state.entity_versions,
-                "{} state {}",
-                history.id,
-                state.state_id
-            );
-            assert_eq!(
-                history.check_transitions(),
-                Ok(()),
-                "{} state {}",
-                history.id,
-                state.state_id
-            );
+type Snapshot = (usize, AsmHistoricalTopology, BTreeMap<i64, i64>);
+
+fn full_decode(
+    ctx: &DecodeContext<'_>,
+    history: &AsmHistory,
+    bytes: &[u8],
+    width: cadmpeg_asm::kernel_header::RefWidth,
+) -> Vec<Snapshot> {
+    let states = history.states();
+    let archive = crate::history::decode_record_archive(ctx, states, bytes, width)
+        .unwrap()
+        .unwrap();
+    let active_count = crate::history::archived_active_record_count(states)
+        .unwrap()
+        .or_else(|| crate::history::insert_only_active_record_count(states))
+        .unwrap();
+    let mut archived_ids: Vec<_> = states
+        .iter()
+        .flat_map(|s| &s.records)
+        .filter_map(|r| r.revision_id)
+        .collect();
+    archived_ids.sort_unstable();
+    let mut snapshots = Vec::new();
+    assert!(crate::history::walk_entity_versions(
+        states,
+        i64::try_from(active_count).unwrap(),
+        &archived_ids,
+        |ordinal, versions| {
+            let records = crate::history::materialize_record_table(versions, &archive).unwrap();
+            let decoded =
+                crate::brep::decode_history_topology(ctx, &records, bytes, crate::ids::ID_FORMAT)
+                    .unwrap();
+            let topology = crate::history::historical_topology_with_tags(&decoded)
+                .unwrap()
+                .unwrap();
+            snapshots.push((ordinal, topology, versions.clone()));
         }
+    ));
+    snapshots
+}
+
+fn retained(topology: &AsmHistoricalTopology) -> Option<AsmHistoricalTopology> {
+    let retained = AsmHistoricalTopology {
+        bodies: topology.bodies.clone(),
+        regions: topology.regions.clone(),
+        shells: topology.shells.clone(),
+        faces: topology.faces.clone(),
+        loops: topology.loops.clone(),
+        coedges: topology.coedges.clone(),
+        edges: topology.edges.clone(),
+        vertices: topology.vertices.clone(),
+        points: topology.points.clone(),
+        surfaces: topology.surfaces.clone(),
+        curves: topology.curves.clone(),
+        pcurves: topology.pcurves.clone(),
+        face_surfaces: topology.face_surfaces.clone(),
+        surface_planes: topology.surface_planes.clone(),
+        loop_coedges: topology.loop_coedges.clone(),
+        coedge_topology: topology.coedge_topology.clone(),
+        face_loops: topology.face_loops.clone(),
+        edge_curves: topology.edge_curves.clone(),
+        coedge_pcurves: topology.coedge_pcurves.clone(),
+        curve_axes: topology.curve_axes.clone(),
+        ..Default::default()
+    };
+    (!retained.face_surfaces.is_empty()
+        || !retained.surface_planes.is_empty()
+        || !retained.loop_coedges.is_empty()
+        || !retained.coedge_topology.is_empty()
+        || !retained.face_loops.is_empty()
+        || !retained.edge_curves.is_empty()
+        || !retained.coedge_pcurves.is_empty()
+        || !retained.curve_axes.is_empty())
+    .then_some(retained)
+}
+
+fn compare(history: &AsmHistory, snapshots: &[Snapshot], is_retained: bool) {
+    assert_eq!(history.check_transitions(), Ok(()), "{}", history.id);
+    for (ordinal, topology, versions) in snapshots {
+        let state = &history.states()[*ordinal];
+        let retained = is_retained.then(|| retained(topology));
+        let expected = retained.as_ref().map_or(Some(topology), Option::as_ref);
+        assert_eq!(
+            history.topology(state),
+            expected,
+            "{} state {}",
+            history.id,
+            state.state_id
+        );
+        let expected_versions: Vec<_> = expected.map_or_else(Vec::new, |topology| {
+            let slots = topology.slots();
+            versions
+                .iter()
+                .filter(|(slot, _)| slots.contains(slot))
+                .map(|(&entity_ref, &record_ref)| AsmEntityVersion {
+                    entity_ref,
+                    record_ref,
+                })
+                .collect()
+        });
+        assert_eq!(
+            history.entity_versions(state),
+            expected_versions,
+            "{} state {}",
+            history.id,
+            state.state_id
+        );
     }
 }
 
-fn sizes(histories: &[AsmHistory]) -> (usize, usize) {
+fn transition_bytes(histories: &[AsmHistory]) -> usize {
     let transitions: Vec<_> = histories
         .iter()
-        .flat_map(|h| h.states.iter().map(|s| &s.transition))
+        .flat_map(|h| h.states().iter().map(|s| &s.transition))
         .collect();
-    let snapshots: Vec<_> = histories
-        .iter()
-        .flat_map(|h| h.states.iter().map(|s| (s.topology(), &s.entity_versions)))
-        .collect();
-    (
-        serde_json::to_vec(&transitions).unwrap().len(),
-        serde_json::to_vec(&snapshots).unwrap().len(),
-    )
+    serde_json::to_vec(&transitions).unwrap().len()
 }
 
 #[test]
 #[ignore = "requires CADMPEG_F3D_HISTORY_ORACLE design paths"]
 fn history_deltas_match_snapshots() {
-    let Ok(paths) = std::env::var("CADMPEG_F3D_HISTORY_ORACLE") else {
-        return;
-    };
+    let paths = std::env::var("CADMPEG_F3D_HISTORY_ORACLE").unwrap();
     for path in paths.split(':') {
         let bytes = std::fs::read(path).unwrap();
         let arena = DecodeArena::new();
@@ -61,6 +135,7 @@ fn history_deltas_match_snapshots() {
         let scan = crate::container::scan(&ctx, root).unwrap();
         let mut allowance = crate::history::history_binding_allowance(&policy);
         let mut histories = Vec::new();
+        let mut snapshots = Vec::new();
         for brep in crate::container::history_breps(&scan) {
             let width = brep
                 .kernel
@@ -75,52 +150,31 @@ fn history_deltas_match_snapshots() {
             {
                 assert!(
                     history
-                        .states
+                        .states()
                         .iter()
-                        .all(|state| state.topology().is_some()),
+                        .all(|state| history.topology(state).is_some()),
                     "{path}: unbound history {}",
                     history.id
                 );
+                let decoded = full_decode(&ctx, &history, bytes, width);
+                compare(&history, &decoded, false);
+                snapshots.push(decoded);
                 histories.push(history);
             }
         }
         assert!(!histories.is_empty(), "{path}: no histories");
-        let states: usize = histories.iter().map(|history| history.states.len()).sum();
-        let entries: usize = histories
+        let states: usize = histories.iter().map(|h| h.states().len()).sum();
+        let state_records: usize = snapshots
             .iter()
-            .flat_map(|history| &history.states)
-            .map(|state| {
-                let transition = state.transition.as_ref().unwrap();
-                transition.records.inserted.len()
-            })
+            .flatten()
+            .map(|(_, _, versions)| versions.len())
             .sum();
-        // Count complete state-record maps independently of retained topology maps.
-        let mut state_records = 0;
-        for history in &histories {
-            for state in &history.states {
-                let mut current = Some(state);
-                let mut count: i64 = 0;
-                while let Some(node) = current {
-                    let records = &node.transition.as_ref().unwrap().records;
-                    count += i64::try_from(records.inserted.len()).unwrap()
-                        - i64::try_from(records.deleted.len()).unwrap();
-                    current = node.next_ref.map(|next| {
-                        history
-                            .states
-                            .iter()
-                            .find(|state| state.node_index == next)
-                            .unwrap()
-                    });
-                }
-                state_records += usize::try_from(count).unwrap();
-            }
-        }
-        assert!(entries > 0);
-        compare(&histories);
-        let before = sizes(&histories);
+        let before = transition_bytes(&histories);
         crate::history::discard_projection_caches(&mut histories);
-        compare(&histories);
-        let after = sizes(&histories);
-        println!("{path}\thistories={}\tstates={states}\tstate_records={state_records}\tcomplete_transitions_bytes={}\tcomplete_snapshots_bytes={}\tretained_transitions_bytes={}\tretained_snapshots_bytes={}", histories.len(), before.0, before.1, after.0, after.1);
+        for (history, snapshots) in histories.iter().zip(&snapshots) {
+            compare(history, snapshots, true);
+        }
+        let after = transition_bytes(&histories);
+        println!("{path}\thistories={}\tstates={states}\tstate_records={state_records}\tcomplete_transitions_bytes={before}\tretained_transitions_bytes={after}", histories.len());
     }
 }

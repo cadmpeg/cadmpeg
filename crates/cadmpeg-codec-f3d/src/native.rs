@@ -28,8 +28,7 @@ use serde::{Deserialize, Serialize};
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use crate::history_records::{
-    AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
-    AsmHistoricalTransition, AsmHistory, AsmTopologyCacheKind,
+    AsmBulletinBoard, AsmDeltaState, AsmHistoricalTransition, AsmHistory,
 };
 use crate::records::{
     act::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference},
@@ -229,12 +228,6 @@ struct FlatAsmDeltaState<'a> {
     owner_ref: i64,
     bulletin_boards: EmptyList,
     records: EmptyList,
-    #[serde(skip_serializing_if = "slice_is_empty")]
-    entity_versions: &'a [AsmEntityVersion],
-    #[serde(skip_serializing_if = "crate::history_records::is_default")]
-    topology_cache: AsmTopologyCacheKind,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    topology: Option<&'a AsmHistoricalTopology>,
     #[serde(skip_serializing_if = "Option::is_none")]
     transition: Option<&'a AsmHistoricalTransition>,
 }
@@ -255,9 +248,6 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
             owner_ref: state.owner_ref,
             bulletin_boards: EmptyList,
             records: EmptyList,
-            entity_versions: &state.entity_versions,
-            topology_cache: state.topology_cache_kind(),
-            topology: state.topology(),
             transition: state.transition.as_ref(),
         }
     }
@@ -296,10 +286,6 @@ impl Serialize for EmptyList {
     }
 }
 
-fn slice_is_empty<T>(slice: &&[T]) -> bool {
-    slice.is_empty()
-}
-
 fn emit_asm_histories(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model: &F3dNative,
@@ -325,7 +311,7 @@ fn emit_asm_delta_states(
         model
             .asm_histories
             .iter()
-            .flat_map(|history| &history.states)
+            .flat_map(crate::history_records::AsmHistory::states)
             .map(FlatAsmDeltaState::from),
     )
 }
@@ -342,7 +328,7 @@ fn emit_asm_bulletin_boards(
         model
             .asm_histories
             .iter()
-            .flat_map(|history| &history.states)
+            .flat_map(crate::history_records::AsmHistory::states)
             .flat_map(|state| &state.bulletin_boards)
             .map(FlatAsmBulletinBoard::from),
     )
@@ -357,7 +343,7 @@ fn emit_asm_entity_changes(
     let records = model
         .asm_histories
         .iter()
-        .flat_map(|history| &history.states)
+        .flat_map(crate::history_records::AsmHistory::states)
         .flat_map(|state| &state.bulletin_boards)
         .flat_map(|board| &board.changes);
     namespace.set_arena_from(ctx, row.arena, records)
@@ -372,7 +358,7 @@ fn emit_asm_history_records(
     let records = model
         .asm_histories
         .iter()
-        .flat_map(|history| &history.states)
+        .flat_map(crate::history_records::AsmHistory::states)
         .flat_map(|state| &state.records);
     namespace.set_arena_from(ctx, row.arena, records)
 }
@@ -1106,7 +1092,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             model
                 .asm_histories
                 .iter()
-                .map(|history| history.states.len())
+                .map(|history| history.states().len())
                 .sum()
         },
         counts_toward_emptiness: true,
@@ -1120,7 +1106,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             model
                 .asm_histories
                 .iter()
-                .flat_map(|history| &history.states)
+                .flat_map(crate::history_records::AsmHistory::states)
                 .map(|state| state.bulletin_boards.len())
                 .sum()
         },
@@ -1135,7 +1121,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             model
                 .asm_histories
                 .iter()
-                .flat_map(|history| &history.states)
+                .flat_map(crate::history_records::AsmHistory::states)
                 .flat_map(|state| &state.bulletin_boards)
                 .map(|board| board.changes.len())
                 .sum()
@@ -1151,7 +1137,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             model
                 .asm_histories
                 .iter()
-                .flat_map(|history| &history.states)
+                .flat_map(crate::history_records::AsmHistory::states)
                 .map(|state| state.records.len())
                 .sum()
         },
@@ -1590,7 +1576,7 @@ impl F3dNative {
             |state| &state.parent,
         )?;
         for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
-            history.states = states;
+            *history.states_mut() = states;
         }
         Ok(native)
     }

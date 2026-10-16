@@ -7,10 +7,7 @@ use std::collections::HashMap;
 
 #[test]
 fn sole_transition_deletion_does_not_supply_operand_identity() {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-        AsmHistoricalTransition, AsmHistory,
-    };
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 
     let stream = "f3d:Design/BulkStream.dat";
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -49,23 +46,27 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             "next_byte_offset": 160
         }))
         .expect("edge operand");
-    let state = |state_id, topology, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition,
+    let state = |state_id, topology, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:state#{state_id}"),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(topology),
+            Vec::new(),
+        )
     };
     let previous = state(
         1,
@@ -81,29 +82,15 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             edges: vec![99],
             ..AsmHistoricalTopology::default()
         },
-        Some(AsmHistoricalTransition {
-            record_revisions: Vec::new(),
-            rows: crate::history_records::AsmHistoricalRowsDelta::default(),
-            previous_state_id: Some(1),
-            records: AsmHistoricalEntityDelta::default(),
-            topology: AsmHistoricalTopologyDelta {
-                edges: AsmHistoricalEntityDelta {
-                    deleted: vec![17],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        }),
+        Some(1),
     );
-    let history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![previous, current],
-    };
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![previous, current],
+    );
     let scope_histories = HashMap::from([(scope.id.clone(), history.id.clone())]);
 
     bind_edge_operand_history_candidates(

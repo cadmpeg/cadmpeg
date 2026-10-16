@@ -2,11 +2,7 @@
 use crate::history::bind_profile_face_group_cardinality;
 use crate::history_records::AsmDeltaState;
 use crate::history_records::AsmHistoricalCarrierBinding;
-use crate::history_records::AsmHistoricalEntityDelta;
 use crate::history_records::AsmHistoricalTopology;
-use crate::history_records::AsmHistoricalTopologyDelta;
-use crate::history_records::AsmHistoricalTransition;
-use crate::history_records::AsmHistory;
 use cadmpeg_core::decode::u64_from_index;
 use std::collections::HashMap;
 
@@ -210,58 +206,50 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         ],
         ..AsmHistoricalTopology::default()
     };
-    let state = |state_id, topology_cache, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache,
-        transition,
+    let state = |state_id, topology, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:state#{state_id}"),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            topology,
+            Vec::new(),
+        )
     };
-    let previous = state(
-        1,
-        crate::history_records::AsmTopologyCache::Complete(previous_topology),
-        None,
-    );
-    let mut transition = AsmHistoricalTransition {
-        record_revisions: Vec::new(),
-        rows: crate::history_records::AsmHistoricalRowsDelta::default(),
-        previous_state_id: Some(1),
-        records: AsmHistoricalEntityDelta::default(),
-        topology: AsmHistoricalTopologyDelta::default(),
-    };
-    transition.topology.faces.deleted = vec![11, 10];
+    let previous = state(1, Some(previous_topology), None);
     let current = state(
         2,
-        crate::history_records::AsmTopologyCache::Absent,
-        Some(transition),
+        Some(AsmHistoricalTopology {
+            faces: vec![20],
+            ..Default::default()
+        }),
+        Some(1),
     );
-    let history = AsmHistory {
-        topology_scope: crate::history_records::AsmTopologyScope::Complete,
-        materialized: crate::history_records::MaterializedTopologies::default(),
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![previous, current],
-    };
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![previous, current],
+    );
     let bound_history_id = history.id.clone();
     let mut unrelated_history = history.clone();
     unrelated_history.id = "f3d:other-history".into();
-    unrelated_history.states[0]
-        .topology_mut()
-        .expect("unrelated preceding topology")
-        .faces = vec![30, 31, 40];
+    crate::test_support::history::edit(&mut unrelated_history, 0, |topology, _| {
+        topology.faces = vec![30, 31, 40];
+    });
     let histories = vec![history, unrelated_history];
     let scope_histories = HashMap::from([(scope.id.clone(), bound_history_id)]);
 
