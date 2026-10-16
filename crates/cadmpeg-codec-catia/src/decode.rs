@@ -46,8 +46,11 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
 ///
-/// When [`DecodeOptions::container_only`] is set, the result contains source
-/// metadata and container diagnostics without entity decoding.
+/// When [`DecodeOptions::depth`] is [`DecodeDepth::Container`], the result
+/// contains source metadata and container diagnostics without entity decoding.
+///
+/// [`DecodeOptions::depth`]: cadmpeg_ir::DecodeOptions::depth
+/// [`DecodeDepth::Container`]: cadmpeg_core::decode::DecodeDepth::Container
 ///
 /// Otherwise each route in [`crate::families::ROUTES`] whose applicability
 /// predicate accepts the scanned variant is tried in table order; the first to

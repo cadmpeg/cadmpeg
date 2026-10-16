@@ -298,7 +298,7 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
                 .decode(
                     &mut Cursor::new(bytes),
                     &DecodeOptions {
-                        container_only: true,
+                        depth: cadmpeg_core::decode::DecodeDepth::Container,
                         ..DecodeOptions::default()
                     },
                 )
@@ -329,7 +329,7 @@ fn assert_entity_resource_limit(error: &cadmpeg_ir::DecodeFailure) {
 #[test]
 fn container_only_raw_payload_refuses_entity_before_copy() {
     let mut options = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
     options.policy.limits.max_entities = 0;
@@ -356,7 +356,7 @@ fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
     let mut reached = false;
     for _ in 0..512 {
         let mut options = DecodeOptions {
-            container_only: true,
+            depth: cadmpeg_core::decode::DecodeDepth::Container,
             ..DecodeOptions::default()
         };
         options.policy.limits.max_retained_bytes = cap;
@@ -475,7 +475,7 @@ fn every_decode_path_populates_v1_annotations() {
             .decode(
                 &mut Cursor::new(standard_catpart()),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

@@ -24,7 +24,7 @@ use std::process::ExitCode;
 
 use crate::application::artifact_store::OptionalFileDestination;
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use clap::{Args, Subcommand, ValueEnum};
 
 use crate::LimitProfile;
@@ -761,7 +761,7 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
         limits,
         ..DecodePolicy::default()
     };
-    let ctx = DecodeContext::new(&arena, &policy, false);
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let mut file =
         File::open(file_path).with_context(|| format!("reading {}", file_path.display()))?;
     let mut bytes = Vec::new();

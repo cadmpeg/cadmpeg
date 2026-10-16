@@ -18,7 +18,7 @@ use super::{
     Decoded, FormatId,
 };
 use crate::ContainerSummary;
-use cadmpeg_core::decode::{DecodeContext, DecodeMode, InspectOptions, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, DecodeMode, InspectOptions, View};
 use cadmpeg_core::CodecError;
 
 fn decoded(ir: CadIr) -> Decoded {
@@ -211,9 +211,9 @@ fn sealed_decode_refuses_a_cyclic_model_as_malformed() {
     );
 }
 
-fn strict_options(container_only: bool) -> DecodeOptions {
+fn strict_options(depth: DecodeDepth) -> DecodeOptions {
     let mut options = DecodeOptions {
-        container_only,
+        depth,
         ..DecodeOptions::default()
     };
     options.policy.mode = DecodeMode::Strict;
@@ -223,7 +223,10 @@ fn strict_options(container_only: bool) -> DecodeOptions {
 #[test]
 fn the_strict_gate_refuses_a_full_decode_on_a_reject_floor_loss() {
     let error = RejectFloorCodec
-        .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &strict_options(false))
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &strict_options(DecodeDepth::Full),
+        )
         .unwrap_err();
 
     match error {
@@ -243,7 +246,10 @@ fn the_strict_gate_refuses_a_full_decode_on_a_reject_floor_loss() {
 #[test]
 fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
     let result = RejectFloorCodec
-        .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &strict_options(true))
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &strict_options(DecodeDepth::Container),
+        )
         .unwrap();
 
     assert!(result.report().container_only());

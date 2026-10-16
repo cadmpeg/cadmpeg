@@ -39,7 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The result holds the decoded `CadIr` and a `DecodeReport`. Read
 `report.losses` before trusting geometry. Set
-`DecodeOptions::container_only` for archive metadata without B-rep decoding.
+`DecodeOptions::depth` to `DecodeDepth::Container` for archive metadata
+without B-rep decoding.
 `F3dCodec::inspect` returns classified ZIP entries and B-rep header facts.
 
 ## Encode

@@ -89,8 +89,13 @@ impl DecodeArgs {
         } else {
             cadmpeg_core::decode::DecodeMode::Salvage
         };
+        let depth = if self.container_only {
+            cadmpeg_core::decode::DecodeDepth::Container
+        } else {
+            cadmpeg_core::decode::DecodeDepth::Full
+        };
         cadmpeg_ir::DecodeOptions {
-            container_only: self.container_only,
+            depth,
             policy: cadmpeg_core::decode::DecodePolicy { mode, limits },
         }
     }

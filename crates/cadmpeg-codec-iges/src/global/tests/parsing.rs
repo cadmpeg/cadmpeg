@@ -277,7 +277,10 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
     );
 
     let error = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(

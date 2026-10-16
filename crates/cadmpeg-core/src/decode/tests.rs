@@ -8,8 +8,8 @@ use crate::CodecError;
 
 use super::u64_from_index;
 use super::{
-    ByteRange, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ResourceDimension,
-    ResourceLimits, WorkBudget,
+    ByteRange, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ExpandSpec,
+    ResourceDimension, ResourceLimits, WorkBudget,
 };
 
 fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
@@ -49,12 +49,14 @@ fn read_root_uses_sized_and_fallback_read_paths() {
 
     let arena = DecodeArena::new();
     let mut seekable = Cursor::new(bytes.clone());
-    let (_, root) = DecodeContext::read_root(&mut seekable, &arena, &policy, false).unwrap();
+    let (_, root) =
+        DecodeContext::read_root(&mut seekable, &arena, &policy, DecodeDepth::Full).unwrap();
     assert_eq!(root.window(), bytes.as_slice());
 
     let arena = DecodeArena::new();
     let mut fallback = Unseekable::new(bytes.clone());
-    let (_, root) = DecodeContext::read_root(&mut fallback, &arena, &policy, false).unwrap();
+    let (_, root) =
+        DecodeContext::read_root(&mut fallback, &arena, &policy, DecodeDepth::Full).unwrap();
     assert_eq!(root.window(), bytes.as_slice());
 }
 

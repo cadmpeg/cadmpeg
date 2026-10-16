@@ -12,7 +12,7 @@
 //! codec wrapper stamps the identity the IR source authored onto the report.
 //! Untyped surface and curve carriers become opaque geometry linked to the
 //! retained Parasolid source record. If no body stream yields geometry, decoding returns a
-//! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
+//! metadata-only IR and blocking loss notes. `DecodeDepth::Container`
 //! requests the metadata-only path.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};

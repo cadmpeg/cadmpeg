@@ -1105,7 +1105,10 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
 #[test]
 fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
-    let opts = options_in(DecodeMode::Salvage, true);
+    let opts = options_in(
+        DecodeMode::Salvage,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    );
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report().geometry_transferred());
     assert!(result.report().container_only());
@@ -1116,7 +1119,10 @@ fn container_only_preserves_streams_without_geometry() {
 #[test]
 fn container_only_does_not_decode_bounded_object_model_records() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
-    let opts = options_in(DecodeMode::Salvage, true);
+    let opts = options_in(
+        DecodeMode::Salvage,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    );
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
 
     assert_eq!(result.ir().model.entity_count(), 0);
@@ -1299,7 +1305,10 @@ fn container_only_retains_typed_saved_toggle_payload() {
         NxCodec
             .decode(
                 &mut Cursor::new(file),
-                &options_in(DecodeMode::Salvage, true),
+                &options_in(
+                    DecodeMode::Salvage,
+                    cadmpeg_core::decode::DecodeDepth::Container,
+                ),
             )
             .unwrap(),
     );

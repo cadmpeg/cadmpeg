@@ -298,7 +298,7 @@ mod budget {
                     .decode(
                         &mut Cursor::new(case.bytes),
                         &DecodeOptions {
-                            container_only: false,
+                            depth: cadmpeg_core::decode::DecodeDepth::Full,
                             policy,
                         },
                     )

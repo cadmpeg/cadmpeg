@@ -230,7 +230,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
 pub(crate) fn strict_options() -> DecodeOptions {
     use cadmpeg_core::decode::{DecodeMode, DecodePolicy};
     DecodeOptions {
-        container_only: false,
+        depth: cadmpeg_core::decode::DecodeDepth::Full,
         policy: DecodePolicy {
             mode: DecodeMode::Strict,
             ..DecodePolicy::desktop()

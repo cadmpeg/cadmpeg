@@ -11,7 +11,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::ExportPlan;
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -133,7 +133,7 @@ pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String, C
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_input_bytes = max_bytes;
-    let ctx = DecodeContext::new(&arena, &policy, false);
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let mut bytes = Vec::new();
     ctx.complete_input(&mut file, &mut bytes)?;
     let text =
@@ -354,7 +354,7 @@ impl Write for TempFileWriter<'_> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::default_trait_access)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_core::CodecError;
     use std::fs::File;
     #[cfg(feature = "nx")]
@@ -386,7 +386,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_input_bytes = max_bytes;
-        let ctx = DecodeContext::new(&arena, &policy, false);
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
         let mut file = File::open(path)?;
         let result =
             cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, prefix_len);

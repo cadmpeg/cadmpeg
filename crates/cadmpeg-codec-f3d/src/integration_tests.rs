@@ -264,7 +264,7 @@ fn container_only_pipeline_retains_native_sections_without_semantic_projection()
             .decode(
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

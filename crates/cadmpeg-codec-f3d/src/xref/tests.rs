@@ -109,7 +109,7 @@ fn malformed_redirections_are_reported_by_complete_and_container_routes() {
     for options in [
         DecodeOptions::default(),
         DecodeOptions {
-            container_only: true,
+            depth: cadmpeg_core::decode::DecodeDepth::Container,
             ..DecodeOptions::default()
         },
     ] {
@@ -155,10 +155,11 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
         let json = format!(r#"{prefix},"references":[{{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":{properties}}}]}}"#);
         assert_eq!(super::parse(&cadmpeg_test_support::service_decode_context(), json.as_bytes()).is_ok(), valid, "{label}");
         let document = f3d_with_redirections_json("assembly-design", json.as_bytes());
-        for container_only in [false, true] {
+        for depth in [cadmpeg_core::decode::DecodeDepth::Full, cadmpeg_core::decode::DecodeDepth::Container] {
+            let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
             let decoded = EditableDecodeResult::from(F3dCodec.decode(
                 &mut Cursor::new(&document),
-                &DecodeOptions { container_only, ..DecodeOptions::default() },
+                &DecodeOptions { depth, ..DecodeOptions::default() },
             ).expect("property refusal preserves the source document"));
             let losses = decoded.report().losses.iter()
                 .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())

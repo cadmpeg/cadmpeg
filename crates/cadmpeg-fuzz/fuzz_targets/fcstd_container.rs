@@ -27,7 +27,7 @@ fuzz_target!(|data: &[u8]| {
     let _ = codec.decode(
         &mut Cursor::new(data),
         &DecodeOptions {
-            container_only: true,
+            depth: cadmpeg_core::decode::DecodeDepth::Container,
             ..DecodeOptions::default()
         },
     );

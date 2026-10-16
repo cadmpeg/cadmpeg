@@ -138,7 +138,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         "{native_findings:#?}"
     );
     let options = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
     let container_only = EditableDecodeResult::from(

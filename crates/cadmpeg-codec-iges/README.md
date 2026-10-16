@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The result holds the decoded `CadIr` and a `DecodeReport`. Read
 `report.losses` before trusting geometry. Set
-`DecodeOptions::container_only` for card and Global metadata plus native
+`DecodeOptions::depth` to `DecodeDepth::Container` for card and Global metadata plus native
 retention without semantic geometry projection. `IgesCodec::inspect` returns section structure, Directory census, and
 reference findings. Compressed ASCII and Binary representations are detected
 and inspected by name and refused for semantic decode.

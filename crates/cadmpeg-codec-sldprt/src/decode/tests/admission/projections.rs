@@ -15,7 +15,7 @@ fn metadata_parameter_expression_refuses_nesting_limit() {
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="10"><Dimension Name="A">+ + + + + + + + + + + + 1</Dimension></Feature></Keywords>"#,
     ));
     let mut options = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
     options.policy.limits.max_recursion_depth = 8;

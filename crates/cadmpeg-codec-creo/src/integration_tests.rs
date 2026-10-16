@@ -254,7 +254,7 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
             .decode(
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

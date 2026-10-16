@@ -38,7 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The result holds the decoded `CadIr` and a `DecodeReport`. Read
 `report.losses` before trusting geometry. Set
-`DecodeOptions::container_only` for archive metadata without object decoding.
+`DecodeOptions::depth` to `DecodeDepth::Container` for archive metadata
+without object decoding.
 `RhinoCodec::inspect` returns chunk and table structure.
 
 ## Encode

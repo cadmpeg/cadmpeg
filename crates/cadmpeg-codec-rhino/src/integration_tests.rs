@@ -78,7 +78,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
                 .decode(
                     &mut Cursor::new(bytes),
                     &DecodeOptions {
-                        container_only: true,
+                        depth: cadmpeg_core::decode::DecodeDepth::Container,
                         ..DecodeOptions::default()
                     },
                 )
