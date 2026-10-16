@@ -8,6 +8,7 @@ use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
 use super::budget::{DecodeBudget, DepthGuard};
+use super::depth::DecodeDepth;
 use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
@@ -28,17 +29,17 @@ const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
 #[derive(Debug)]
 pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
-    container_only: bool,
+    depth: DecodeDepth,
     pub(super) budget: DecodeBudget,
     derived_spaces: Cell<usize>,
 }
 
 impl<'a> DecodeContext<'a> {
     /// Creates one session before input acquisition and detection.
-    pub fn new(arena: &'a DecodeArena, policy: &DecodePolicy, container_only: bool) -> Self {
+    pub fn new(arena: &'a DecodeArena, policy: &DecodePolicy, depth: DecodeDepth) -> Self {
         Self {
             arena,
-            container_only,
+            depth,
             budget: DecodeBudget::new(*policy, 0),
             derived_spaces: Cell::new(0),
         }
@@ -53,7 +54,7 @@ impl<'a> DecodeContext<'a> {
         policy: &DecodePolicy,
         input_bytes: u64,
     ) -> Result<Self, CodecError> {
-        let ctx = Self::new(arena, policy, false);
+        let ctx = Self::new(arena, policy, DecodeDepth::Full);
         ctx.budget
             .charge_input(input_bytes, "admit loaded input length")?;
         Ok(ctx)
@@ -66,51 +67,53 @@ impl<'a> DecodeContext<'a> {
         reader: &mut dyn ReadSeek,
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
-        container_only: bool,
+        depth: DecodeDepth,
     ) -> Result<(Self, View<'a>), CodecError> {
         if reader.seek(SeekFrom::End(0)).is_ok() {
             reader.rewind().map_err(CodecError::Io)?;
         }
-        let ctx = Self::new(arena, policy, container_only);
+        let ctx = Self::new(arena, policy, depth);
         let mut buffer = Vec::new();
         ctx.complete_input(reader, &mut buffer)?;
         let bytes = arena.alloc(buffer.into_boxed_slice());
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
 
-    /// Builds a context over caller-owned root bytes, for fuzz targets and
-    /// tests. The arena still backs any expansions produced during decode.
+    /// Builds a full-depth context over caller-owned root bytes, for fuzz
+    /// targets and tests. The arena still backs any expansions produced during
+    /// decode.
     pub fn from_root_bytes(
         bytes: &'a [u8],
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
     ) -> Result<(Self, View<'a>), CodecError> {
-        Self::from_bytes(bytes, arena, policy, false)
+        Self::from_root_bytes_at(bytes, arena, policy, DecodeDepth::Full)
     }
 
-    /// Builds a root context with a resource-only refusal channel.
+    /// Builds a context over caller-owned root bytes that requests `depth`.
+    pub fn from_root_bytes_at(
+        bytes: &'a [u8],
+        arena: &'a DecodeArena,
+        policy: &DecodePolicy,
+        depth: DecodeDepth,
+    ) -> Result<(Self, View<'a>), CodecError> {
+        Self::from_bytes_limit(bytes, arena, policy, depth).map_err(Into::into)
+    }
+
+    /// Builds a full-depth root context with a resource-only refusal channel.
     pub fn from_root_bytes_limit(
         bytes: &'a [u8],
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
     ) -> Result<(Self, View<'a>), ResourceLimit> {
-        Self::from_bytes_limit(bytes, arena, policy, false)
-    }
-
-    fn from_bytes(
-        bytes: &'a [u8],
-        arena: &'a DecodeArena,
-        policy: &DecodePolicy,
-        container_only: bool,
-    ) -> Result<(Self, View<'a>), CodecError> {
-        Self::from_bytes_limit(bytes, arena, policy, container_only).map_err(Into::into)
+        Self::from_bytes_limit(bytes, arena, policy, DecodeDepth::Full)
     }
 
     fn from_bytes_limit(
         bytes: &'a [u8],
         arena: &'a DecodeArena,
         policy: &DecodePolicy,
-        container_only: bool,
+        depth: DecodeDepth,
     ) -> Result<(Self, View<'a>), ResourceLimit> {
         let length = u64_from_index(bytes.len());
         if length > policy.limits.max_input_bytes {
@@ -122,7 +125,7 @@ impl<'a> DecodeContext<'a> {
         }
         let ctx = DecodeContext {
             arena,
-            container_only,
+            depth,
             budget: DecodeBudget::new(*policy, length),
             derived_spaces: Cell::new(0),
         };
@@ -134,9 +137,14 @@ impl<'a> DecodeContext<'a> {
         self.budget.policy()
     }
 
-    /// Returns whether the caller requested container-only decoding.
+    /// Returns the depth the caller requested.
+    pub fn depth(&self) -> DecodeDepth {
+        self.depth
+    }
+
+    /// Returns whether the caller requested only the container layer.
     pub fn container_only(&self) -> bool {
-        self.container_only
+        self.depth == DecodeDepth::Container
     }
 
     fn decompression_allowance(&self) -> u64 {
@@ -564,7 +572,7 @@ impl<'a> ExpandWriter<'_, 'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
+    use super::{ByteRange, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
@@ -595,9 +603,13 @@ mod tests {
         bytes[8192] = 0x7f;
         let mut reader = Cursor::new(bytes.clone());
         let arena = DecodeArena::new();
-        let (_, root) =
-            DecodeContext::read_root(&mut reader, &arena, &DecodePolicy::default(), false)
-                .expect("root is admitted");
+        let (_, root) = DecodeContext::read_root(
+            &mut reader,
+            &arena,
+            &DecodePolicy::default(),
+            DecodeDepth::Full,
+        )
+        .expect("root is admitted");
         assert_eq!(root.window(), bytes.as_slice());
     }
 
@@ -606,7 +618,12 @@ mod tests {
         let arena = DecodeArena::new();
         let mut reader = RewindFails(Cursor::new(b"not empty".to_vec()));
         assert!(matches!(
-            DecodeContext::read_root(&mut reader, &arena, &DecodePolicy::default(), false),
+            DecodeContext::read_root(
+                &mut reader,
+                &arena,
+                &DecodePolicy::default(),
+                DecodeDepth::Full
+            ),
             Err(crate::CodecError::Io(error)) if error.kind() == io::ErrorKind::PermissionDenied
         ));
     }

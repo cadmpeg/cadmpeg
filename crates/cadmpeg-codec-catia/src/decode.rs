@@ -46,8 +46,11 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
 ///
-/// When [`DecodeOptions::container_only`] is set, the result contains source
-/// metadata and container diagnostics without entity decoding.
+/// When [`DecodeOptions::depth`] is [`DecodeDepth::Container`], the result
+/// contains source metadata and container diagnostics without entity decoding.
+///
+/// [`DecodeOptions::depth`]: cadmpeg_ir::DecodeOptions::depth
+/// [`DecodeDepth::Container`]: cadmpeg_core::decode::DecodeDepth::Container
 ///
 /// Otherwise each route in [`crate::families::ROUTES`] whose applicability
 /// predicate accepts the scanned variant is tried in table order; the first to
@@ -79,7 +82,8 @@ fn decode_over_routes(
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
-        let report = build_container_report(&scan);
+        let mut report = build_container_report(&scan);
+        report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
     }
 

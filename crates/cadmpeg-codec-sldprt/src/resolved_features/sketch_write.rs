@@ -978,7 +978,7 @@ fn edit_stream(
         &mut std::io::Cursor::new(payload.as_slice()),
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
-        false,
+        cadmpeg_core::decode::DecodeDepth::Full,
     )?;
     let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
         .into_iter()

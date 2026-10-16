@@ -593,7 +593,7 @@ fn sat_encodings_admit_declared_and_actual_entities_once() {
 #[test]
 fn sat_container_only_stops_before_entity_decode_for_all_encodings() {
     let mut options = cadmpeg_ir::codec::DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..Default::default()
     };
     options.policy.limits.max_entities = 0;
@@ -626,14 +626,14 @@ fn sat_container_only_ignores_malformed_entity_payload() {
         1,
     );
     let mut options = cadmpeg_ir::codec::DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..Default::default()
     };
     let result = SatCodec
         .decode(&mut Cursor::new(source.as_bytes()), &options)
         .expect("container scope does not parse entities");
     assert!(result.ir().model.surfaces.is_empty());
-    options.container_only = false;
+    options.depth = cadmpeg_core::decode::DecodeDepth::Full;
     assert!(SatCodec
         .decode(&mut Cursor::new(source.as_bytes()), &options)
         .is_err());
@@ -648,9 +648,13 @@ fn sat_header_conversion_keeps_geometry_with_default_tolerance() {
             line,
             1,
         );
-        for container_only in [false, true] {
+        for depth in [
+            cadmpeg_core::decode::DecodeDepth::Full,
+            cadmpeg_core::decode::DecodeDepth::Container,
+        ] {
+            let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
             let options = cadmpeg_ir::codec::DecodeOptions {
-                container_only,
+                depth,
                 ..Default::default()
             };
             let result = SatCodec
@@ -687,9 +691,13 @@ fn sat_unusable_header_values_keep_independent_records() {
         } else {
             SatLossCode::HeaderLengthUnitUnresolved
         };
-        for container_only in [false, true] {
+        for depth in [
+            cadmpeg_core::decode::DecodeDepth::Full,
+            cadmpeg_core::decode::DecodeDepth::Container,
+        ] {
+            let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
             let options = cadmpeg_ir::codec::DecodeOptions {
-                container_only,
+                depth,
                 ..Default::default()
             };
             let recovered = SatCodec

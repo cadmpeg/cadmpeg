@@ -185,7 +185,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
             .decode(
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..Default::default()
                 },
             )
@@ -216,7 +216,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
             .decode(
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..Default::default()
                 },
             )
@@ -255,7 +255,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
         .decode(
             &mut Cursor::new(bytes.clone()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..Default::default()
             },
         )
@@ -302,7 +302,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
         .decode(
             &mut Cursor::new(bytes),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..Default::default()
             },
         )

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::document::{ArenaName, EntityRewrite, Model, SourceMeta};
+use cadmpeg_core::decode::DecodeDepth;
+
+use crate::document::{ArenaClass, ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
@@ -730,6 +732,112 @@ fn current_document_excludes_source_byte_accounting() {
 
     assert_eq!(json["ir_version"], crate::IR_VERSION);
     assert!(json.get("byte_ledger").is_none());
+}
+
+fn parameter(id: &str) -> crate::features::DesignParameter {
+    crate::features::DesignParameter {
+        id: crate::features::ParameterId::mint(id).unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "1mm".into(),
+        display: None,
+        value: None,
+        dependencies: crate::features::DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    }
+}
+
+fn with_decode_depth(ir: &CadIr, depth: &str) -> String {
+    let mut value = serde_json::to_value(ir).unwrap();
+    value["decode_depth"] = serde_json::Value::String(depth.into());
+    serde_json::to_string(&value).unwrap()
+}
+
+#[test]
+fn decode_depth_is_a_required_wire_field() {
+    let ir = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(ir.decode_depth(), DecodeDepth::Full);
+    let mut value = serde_json::to_value(&ir).unwrap();
+    assert_eq!(value["decode_depth"], "full");
+
+    value.as_object_mut().unwrap().remove("decode_depth");
+    let json = serde_json::to_string(&value).unwrap();
+    let error = CadIr::from_json(&json).unwrap_err();
+    assert!(error.to_string().contains("decode_depth"), "{error}");
+}
+
+#[test]
+fn a_geometry_document_without_design_records_round_trips() {
+    let json = with_decode_depth(&unit_cube().expect("valid unit cube fixture"), "geometry");
+    let parsed = CadIr::from_json(&json).unwrap();
+    assert_eq!(parsed.decode_depth(), DecodeDepth::Geometry);
+    let reparsed = serde_json::from_str::<CadIr>(&parsed.to_canonical_json().unwrap()).unwrap();
+    assert_eq!(reparsed, parsed);
+}
+
+#[test]
+fn a_geometry_document_with_a_design_arena_fails_to_parse() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model
+        .parameters
+        .push(parameter("synthetic:test:parameter#depth"));
+    assert_eq!(
+        ir.model.populated_design_arena().map(ArenaName::as_str),
+        Some("parameters")
+    );
+    for depth in ["container", "geometry"] {
+        let json = with_decode_depth(&ir, depth);
+        let expected =
+            format!("a {depth}-depth document holds records in design arena `parameters`");
+        let error = CadIr::from_json(&json).unwrap_err();
+        assert!(error.to_string().contains(&expected), "{error}");
+        let direct = serde_json::from_str::<CadIr>(&json).unwrap_err();
+        assert!(direct.to_string().contains(&expected), "{direct}");
+    }
+    assert!(CadIr::from_json(&with_decode_depth(&ir, "full")).is_ok());
+}
+
+#[test]
+fn serialization_refuses_design_records_below_full_depth() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model
+        .parameters
+        .push(parameter("synthetic:test:parameter#depth"));
+    ir.set_decode_depth(DecodeDepth::Geometry);
+    let error = serde_json::to_string(&ir).unwrap_err();
+    assert!(
+        error.to_string().contains("design arena `parameters`"),
+        "{error}"
+    );
+}
+
+#[test]
+fn every_design_arena_is_classified_design() {
+    let design = ArenaName::ALL
+        .iter()
+        .filter(|arena| arena.class() == ArenaClass::Design)
+        .map(|arena| arena.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        design,
+        [
+            "features",
+            "feature_input_topologies",
+            "feature_result_topologies",
+            "configurations",
+            "parameters",
+            "sketches",
+            "sketch_entities",
+            "sketch_constraints",
+            "spatial_sketches",
+            "spatial_sketch_entities",
+            "spatial_sketch_constraints",
+            "spreadsheets",
+        ]
+    );
 }
 
 /// The format identity is one tagged object, so an unclassified source states

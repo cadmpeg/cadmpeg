@@ -199,7 +199,7 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
         .decode(
             &mut Cursor::new(archive),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -267,7 +267,7 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
         .decode(
             &mut Cursor::new(archive),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -348,12 +348,15 @@ fn docstruct_metadata_distinguishes_absent_and_empty_subtype() {
             .unwrap();
         zip.write_all(properties.as_bytes()).unwrap();
         let archive = zip.finish().unwrap().into_inner();
-        for container_only in [false, true] {
+        for depth in [
+            cadmpeg_core::decode::DecodeDepth::Full,
+            cadmpeg_core::decode::DecodeDepth::Container,
+        ] {
             let decoded = F3dCodec
                 .decode(
                     &mut Cursor::new(&archive),
                     &DecodeOptions {
-                        container_only,
+                        depth,
                         ..DecodeOptions::default()
                     },
                 )

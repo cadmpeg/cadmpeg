@@ -50,9 +50,9 @@ pub(crate) fn with_service_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T)
 /// Decode a `.prt` stream into an IR document and decode body; the sealed
 /// wrapper stamps the report identity from `ir.source`.
 ///
-/// The stream is read from its beginning. When `options.container_only` is set,
-/// the returned IR contains source metadata and preserved geometry sections but
-/// no transferred entities.
+/// The stream is read from its beginning. When the context requests only the
+/// container, the returned IR contains source metadata and preserved geometry
+/// sections but no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(ctx, root.window())?;
     let classification = crate::dialect::classify(&scan)?;

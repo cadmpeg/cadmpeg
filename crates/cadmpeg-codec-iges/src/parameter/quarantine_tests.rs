@@ -343,7 +343,7 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         .decode(
             &mut Cursor::new(bytes.clone()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

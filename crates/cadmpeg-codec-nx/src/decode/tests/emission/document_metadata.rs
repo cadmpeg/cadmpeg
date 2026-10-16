@@ -111,7 +111,7 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         .decode(
             &mut Cursor::new(container_only_file),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

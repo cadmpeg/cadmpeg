@@ -241,7 +241,7 @@ fn inspects_and_closes_physical_ledger() {
         .decode(
             &mut Cursor::new(bytes),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -347,7 +347,7 @@ fn thumbnail_bytes_are_retained_with_digest() {
             .decode(
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

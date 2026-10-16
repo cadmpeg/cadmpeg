@@ -7,7 +7,7 @@
 //! megabytes decodes under both default limit profiles.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{Codec, DecodeResult};
 
 use crate::loss::F3dLossCode;
 use crate::test_support::history_stream::DesignScale;
@@ -69,11 +69,7 @@ fn decode_charged(bytes: &[u8], policy: &DecodePolicy) -> Charged {
     let (ctx, root) =
         DecodeContext::from_root_bytes(bytes, &arena, policy).expect("acquire the archive");
     let available = ctx.retained_bytes_available();
-    let options = DecodeOptions {
-        policy: *policy,
-        ..DecodeOptions::default()
-    };
-    let result = F3dCodec.decode_with_context(&ctx, root, &options);
+    let result = F3dCodec.decode_with_context(&ctx, root);
     let retained_bytes = available - ctx.retained_bytes_available();
     assert_eq!(
         ctx.resource_refusal(),
