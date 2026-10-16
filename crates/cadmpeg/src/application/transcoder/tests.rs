@@ -96,6 +96,8 @@ fn prepared(
         selection: TargetSelection::new(format, None),
         destination: ResolvedDestination::Stdout,
         loss_policy,
+        allow_errors: false,
+        allow_empty: false,
     }
 }
 
@@ -223,12 +225,15 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
             bodies: Vec::new(),
             native_ref: None,
         });
-    let conversion = prepared(
+    let mut conversion = prepared(
         ir,
         Format::Rhino,
         Box::new(cadmpeg_codec_rhino::RhinoCodec),
         LossPolicy::RejectExport,
     );
+    // The lone point is an orphan carrier, a check error the Rhino payload
+    // carries. This test covers the export-loss gate, so it permits errors.
+    conversion.allow_errors = true;
     let Err(error) = conversion.plan() else {
         panic!("the omitted product definition must refuse");
     };

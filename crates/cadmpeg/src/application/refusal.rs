@@ -280,7 +280,10 @@ pub(crate) enum CheckOperation {
     /// Report validation findings without an export.
     Check,
     /// Refuse an export after validation.
-    Export,
+    Export {
+        /// The number of error findings located in what the export writes.
+        carried: usize,
+    },
 }
 
 /// Typed refusal from the conversion workflow.
@@ -523,8 +526,12 @@ impl ConversionRefusal {
                     CheckOperation::Check => {
                         format!("check found {} error(s)", validation.error_count())
                     }
-                    CheckOperation::Export => format!(
+                    CheckOperation::Export { carried } if *carried == validation.error_count() => format!(
                         "check found {} error(s); refusing to export (use --allow-errors to override)",
+                        validation.error_count()
+                    ),
+                    CheckOperation::Export { carried } => format!(
+                        "check found {} error(s), {carried} in what the export writes; refusing to export (use --allow-errors to override)",
                         validation.error_count()
                     ),
                 }),
