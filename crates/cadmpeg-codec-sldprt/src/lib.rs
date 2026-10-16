@@ -35,7 +35,8 @@
 //! Decode reports can accompany a usable model. Untyped support carriers become
 //! opaque geometry linked to retained bytes, while their resolvable topology
 //! remains in the IR. No usable geometry yields metadata with diagnostics.
-//! Set [`DecodeOptions::container_only`] to omit geometry decoding explicitly.
+//! Set [`DecodeOptions::depth`] to [`DecodeDepth::Container`] to omit geometry
+//! decoding explicitly.
 //! Semantic Parasolid graph errors propagate as decode errors.
 //!
 //! [`Codec::inspect`] inventories the outer blocks, section directory, cache
@@ -96,7 +97,8 @@
 //!
 //! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
 //! [`CodecError::NotImplemented`]: cadmpeg_core::CodecError::NotImplemented
-//! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
+//! [`DecodeOptions::depth`]: cadmpeg_ir::DecodeOptions::depth
+//! [`DecodeDepth::Container`]: cadmpeg_core::decode::DecodeDepth::Container
 
 mod annotations;
 mod appearance;

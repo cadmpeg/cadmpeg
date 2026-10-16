@@ -32,7 +32,7 @@
 //! ```
 //!
 //! [`Codec::inspect`](cadmpeg_ir::Codec::inspect) classifies the ZIP entries and reads ASM B-rep headers
-//! without building geometry. `DecodeOptions::container_only` provides the
+//! without building geometry. `DecodeDepth::Container` provides the
 //! corresponding metadata-only `CadIr`.
 //!
 //! # Encode

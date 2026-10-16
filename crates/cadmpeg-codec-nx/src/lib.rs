@@ -40,7 +40,7 @@
 //! ```
 //!
 //! [`Codec::inspect`](cadmpeg_ir::codec::Codec::inspect) returns the SPLMSSTR directory and embedded-stream
-//! classifications without decoding entities. `DecodeOptions::container_only`
+//! classifications without decoding entities. `DecodeDepth::Container`
 //! produces metadata IR and skips entity decode.
 //!
 //! # Model and loss boundaries

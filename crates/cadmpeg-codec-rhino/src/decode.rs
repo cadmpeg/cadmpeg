@@ -6345,7 +6345,11 @@ pub(crate) fn seal_for_test(
         &TestBackend(decoded),
         &mut std::io::Cursor::new(Vec::<u8>::new()),
         &DecodeOptions {
-            container_only,
+            depth: if container_only {
+                cadmpeg_core::decode::DecodeDepth::Container
+            } else {
+                cadmpeg_core::decode::DecodeDepth::Full
+            },
             ..DecodeOptions::default()
         },
     )

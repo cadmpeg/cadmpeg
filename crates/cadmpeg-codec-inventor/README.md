@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Read [`DecodeReport::losses`][decode-report] before trusting geometry. A
 successful decode can be structurally useful while retaining an unsupported
 carrier or semantic branch. Blocking losses are rejected by strict decode
-policy. Set `DecodeOptions::container_only` when only the Inventor hierarchy,
+policy. Set `DecodeOptions::depth` to `DecodeDepth::Container` when only the Inventor hierarchy,
 metadata, and native records are required; container-only decoding does not
 inflate bulk geometry streams.
 

@@ -48,13 +48,17 @@ fn definition_fixture_families_have_valid_nested_checksums() {
         for (index, payload) in payloads.iter().enumerate() {
             let record = bytes::definition_record(archive, payload);
             let document = bytes::document_with_definitions(version, archive, &[record], &[]);
-            for container_only in [false, true] {
+            for depth in [
+                cadmpeg_core::decode::DecodeDepth::Full,
+                cadmpeg_core::decode::DecodeDepth::Container,
+            ] {
+                let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
                 let result = EditableDecodeResult::from(
                     RhinoCodec
                         .decode(
                             &mut Cursor::new(&document),
                             &DecodeOptions {
-                                container_only,
+                                depth,
                                 ..DecodeOptions::default()
                             },
                         )
@@ -147,13 +151,17 @@ fn definition_diagnostics_keep_codes_locations_and_prior_failures_in_both_decode
                 scan.definitions.definitions().len(),
                 usize::from(!malformed_tail)
             );
-            for container_only in [false, true] {
+            for depth in [
+                cadmpeg_core::decode::DecodeDepth::Full,
+                cadmpeg_core::decode::DecodeDepth::Container,
+            ] {
+                let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
                 let result = EditableDecodeResult::from(
                     RhinoCodec
                         .decode(
                             &mut Cursor::new(&document),
                             &DecodeOptions {
-                                container_only,
+                                depth,
                                 ..DecodeOptions::default()
                             },
                         )
@@ -223,13 +231,17 @@ fn each_failed_definition_keeps_its_own_diagnostic_location() {
         .map(|record| cadmpeg_core::decode::u64_from_index(record.range.start))
         .collect::<Vec<_>>();
     assert_eq!(offsets.len(), 2);
-    for container_only in [false, true] {
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
+        let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
         let result = EditableDecodeResult::from(
             RhinoCodec
                 .decode(
                     &mut Cursor::new(&document),
                     &DecodeOptions {
-                        container_only,
+                        depth,
                         ..DecodeOptions::default()
                     },
                 )
@@ -263,13 +275,16 @@ fn each_failed_definition_keeps_its_own_diagnostic_location() {
 fn container_only_keeps_recorded_definition_field_losses() {
     let record = definition_record(false, false, 0.002);
     let document = bytes::document_with_definitions("80", ArchiveVersion::V8, &[record], &[]);
-    for container_only in [false, true] {
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
         let result = EditableDecodeResult::from(
             RhinoCodec
                 .decode(
                     &mut Cursor::new(&document),
                     &DecodeOptions {
-                        container_only,
+                        depth,
                         ..DecodeOptions::default()
                     },
                 )
@@ -304,13 +319,17 @@ fn definition_field_losses_keep_each_record_location_before_later_failure() {
             .map(|record| cadmpeg_core::decode::u64_from_index(record.range.start))
             .collect::<Vec<_>>();
         assert_eq!(offsets.len(), 2);
-        for container_only in [false, true] {
+        for depth in [
+            cadmpeg_core::decode::DecodeDepth::Full,
+            cadmpeg_core::decode::DecodeDepth::Container,
+        ] {
+            let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
             let result = EditableDecodeResult::from(
                 RhinoCodec
                     .decode(
                         &mut Cursor::new(&document),
                         &DecodeOptions {
-                            container_only,
+                            depth,
                             ..DecodeOptions::default()
                         },
                     )
@@ -354,13 +373,17 @@ fn container_only_keeps_coded_container_checksum_failures() {
             bytes::table(archive, 0x1000_0013, &[]),
         ],
     );
-    for container_only in [false, true] {
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
+        let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
         let result = EditableDecodeResult::from(
             RhinoCodec
                 .decode(
                     &mut Cursor::new(&document),
                     &DecodeOptions {
-                        container_only,
+                        depth,
                         ..DecodeOptions::default()
                     },
                 )

@@ -39,7 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The result holds the decoded `CadIr` and a `DecodeReport`. Read
 `report.losses` before trusting geometry. Set
-`DecodeOptions::container_only` for archive metadata without shape decoding.
+`DecodeOptions::depth` to `DecodeDepth::Container` for archive metadata
+without shape decoding.
 `FcstdCodec::inspect` returns ZIP entry structure and document version facts.
 Semantic decode accepts `SchemaVersion=2`, `3`, and `4`. Schema 2 uses the
 `Features`/`FeatureData` object envelope. Schemas 3 and 4 use the

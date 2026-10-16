@@ -23,7 +23,7 @@ use crate::report::{
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
+    DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
 };
 use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
@@ -87,8 +87,9 @@ impl fmt::Display for Confidence {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DecodeOptions {
-    /// Stop after the container layer; do not attempt entity decode.
-    pub container_only: bool,
+    /// How much of the source to transfer.
+    #[serde(default)]
+    pub depth: DecodeDepth,
     /// Resource limits and failure-handling mode governing the decode.
     #[serde(default)]
     pub policy: DecodePolicy,
@@ -388,13 +389,13 @@ pub trait Codec: sealed::Sealed {
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure>;
 
-    /// Decodes an acquired root in the caller's detection session.
+    /// Decodes an acquired root in the caller's detection session, under the
+    /// session's policy and requested depth.
     /// The caller finishes the session after this method returns.
     fn decode_with_context(
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
-        options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure>;
 }
 
@@ -425,7 +426,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             mode: DecodeMode::Salvage,
             limits: options.limits,
         };
-        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, DecodeDepth::Full)?;
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
         let result = result?;
@@ -445,9 +446,8 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure> {
         let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::read_root(reader, &arena, &options.policy, options.container_only)?;
-        let result = self.decode_with_context(&ctx, root, options);
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy, options.depth)?;
+        let result = self.decode_with_context(&ctx, root);
         ctx.finish_session()?;
         result
     }
@@ -456,10 +456,9 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         &self,
         ctx: &DecodeContext<'_>,
         root: View<'_>,
-        options: &DecodeOptions,
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
-        let result = DecodeResult::new(decoded, C::FORMAT, options.container_only);
+        let result = DecodeResult::new(decoded, C::FORMAT, ctx.container_only());
         if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -469,17 +468,17 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             .into());
         }
         crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
-        let strict_loss_index =
-            if options.policy.mode == DecodeMode::Strict && !options.container_only {
-                result
-                    .report()
-                    .losses
-                    .iter()
-                    .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
-                    .map(RejectingLossIndex)
-            } else {
-                None
-            };
+        let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
+        {
+            result
+                .report()
+                .losses
+                .iter()
+                .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
+                .map(RejectingLossIndex)
+        } else {
+            None
+        };
         if let Some(loss_index) = strict_loss_index {
             let (_, report, _) = result.into_parts();
 
