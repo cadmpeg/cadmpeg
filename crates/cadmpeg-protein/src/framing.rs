@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Paged logical-record framing.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::layout::{continuation_page, instance_stream_header, record_start_page, terminal_page};
@@ -29,29 +29,6 @@ impl RecordFrame {
     }
 }
 
-/// Framed records of one instance stream.
-#[derive(Debug)]
-pub struct RecordFrames {
-    frames: Vec<RecordFrame>,
-}
-
-impl RecordFrames {
-    /// Borrows the framed records.
-    pub fn frames(&self) -> &[RecordFrame] {
-        &self.frames
-    }
-}
-
-/// Split an instance stream into logical records.
-pub fn record_frames_admitted(
-    _ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<RecordFrames, CodecError> {
-    Ok(RecordFrames {
-        frames: record_frames_for_edit(bytes)?,
-    })
-}
-
 /// Split a paged `InstanceProperties` stream into logical records.
 ///
 /// The stream is a [`STREAM_HEADER_LEN`]-byte header followed by fixed
@@ -60,7 +37,7 @@ pub fn record_frames_admitted(
 /// [`TERMINAL_MARKER`] closes it and carries the used byte count as a `u16` at
 /// offset 4. Every record is returned with the opening marker restored so
 /// record offsets match the on-page layout.
-pub fn record_frames_for_edit(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
+pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
     if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
         return Err(CodecError::Malformed(
             "Protein page stream is shorter than its header and one page".into(),
@@ -167,18 +144,8 @@ mod tests {
         page[4..6].copy_from_slice(&5_u16.to_le_bytes());
         let body = crate::layout::terminal_page::BODY;
         page[body..body + 5].copy_from_slice(b"frame");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root");
-        let frames = super::record_frames_admitted(&ctx, &bytes)
-            .expect("temporary frames use no retained allowance");
-        assert_eq!(
-            frames.frames()[0].bytes(),
-            [crate::RECORD_MARKER, b"frame"].concat()
-        );
+        let frames = super::record_frames(&bytes).expect("valid terminal page");
+        assert_eq!(frames[0].bytes(), [crate::RECORD_MARKER, b"frame"].concat());
     }
 
     #[test]
@@ -192,15 +159,8 @@ mod tests {
         );
         bytes[crate::STREAM_HEADER_LEN..crate::STREAM_HEADER_LEN + crate::TERMINAL_MARKER.len()]
             .copy_from_slice(crate::TERMINAL_MARKER);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("root");
-        let frames = super::record_frames_admitted(&service, &bytes).expect("valid terminal page");
-        assert_eq!(frames.frames().len(), 1);
-        assert_eq!(frames.frames()[0].bytes(), crate::RECORD_MARKER);
+        let frames = super::record_frames(&bytes).expect("valid terminal page");
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].bytes(), crate::RECORD_MARKER);
     }
 }
