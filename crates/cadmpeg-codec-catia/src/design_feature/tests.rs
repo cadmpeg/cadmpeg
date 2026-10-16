@@ -1524,11 +1524,11 @@ fn sketch_and_edge_fillet_each_transfer_one_feature() {
     let entities = HashMap::new();
     let objects = HashMap::from([(operation_object.id.as_str(), &operation_object)]);
     let object_ids = HashSet::new();
+    let owned_objects = super::native_operation_owned_objects(&objects, &object_ids);
     let sources = super::NativeOperationSources {
         object_records: &records,
         entities: &entities,
-        design_objects: &objects,
-        object_ids: &object_ids,
+        owned_objects: &owned_objects,
     };
     let mut operation_ir = CadIr::empty();
     let mut operation_transfer = DesignFeatureTransfer::default();
@@ -1614,15 +1614,90 @@ fn operation_without_owner_records_has_no_source_properties() {
     let records = HashMap::new();
     let entities = HashMap::new();
     let operation_ids = HashSet::new();
-    let admitted = super::native_operation_definition_properties(
-        &object,
-        &records,
-        &entities,
-        &objects,
-        &operation_ids,
-    )
-    .expect("compute the native operation definition properties");
+    let owned_objects = super::native_operation_owned_objects(&objects, &operation_ids);
+    let admitted =
+        super::native_operation_definition_properties(&object, &records, &entities, &owned_objects)
+            .expect("compute the native operation definition properties");
     assert!(admitted.source_properties.is_empty());
+}
+
+#[test]
+fn long_owner_chains_group_under_their_nearest_operation_once() {
+    const CHAIN: usize = 4096;
+    const OPERATIONS: usize = 1024;
+    let link = |index: usize| format!("synthetic:test:object#chain-{index}");
+    let cycle = |index: usize| format!("synthetic:test:object#cycle-{index}");
+    let operation = |index: usize| format!("synthetic:test:object#operation-{index}");
+    let mut fixtures = vec![design_object(&link(0), None)];
+    for index in 1..CHAIN {
+        fixtures.push(design_object(&link(index), Some(&link(index - 1))));
+    }
+    for index in 0..CHAIN {
+        fixtures.push(design_object(
+            &cycle(index),
+            Some(&cycle((index + 1) % CHAIN)),
+        ));
+    }
+    for index in 0..OPERATIONS {
+        fixtures.push(design_object(&operation(index), None));
+    }
+    let objects = fixtures
+        .iter()
+        .map(|object| (object.id.as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let outer = link(0);
+    let nested = link(CHAIN / 2);
+    let operation_ids = (0..OPERATIONS)
+        .map(operation)
+        .chain([outer.clone(), nested.clone()])
+        .collect::<Vec<_>>();
+    let operation_ids = operation_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+
+    let owned = super::native_operation_owned_objects(&objects, &operation_ids);
+    let members = |operation: &str| {
+        owned
+            .get(operation)
+            .into_iter()
+            .flatten()
+            .map(|object| object.id.clone())
+            .collect::<HashSet<_>>()
+    };
+    assert_eq!(members(&outer), (0..CHAIN / 2).map(link).collect());
+    assert_eq!(members(&nested), (CHAIN / 2..CHAIN).map(link).collect());
+    for index in 0..OPERATIONS {
+        assert_eq!(
+            members(&operation(index)),
+            HashSet::from([operation(index)])
+        );
+    }
+    assert_eq!(owned.len(), OPERATIONS + 2);
+}
+
+#[test]
+fn feature_parent_cycles_and_their_tails_are_cyclic() {
+    const LENGTH: usize = 4096;
+    let id = |name: &str, index: usize| {
+        FeatureId::mint(format!("synthetic:test:id#{name}-{index}")).expect("identity grammar")
+    };
+    let mut parents = HashMap::new();
+    for index in 0..LENGTH {
+        parents.insert(id("chain", index + 1), id("chain", index));
+        parents.insert(id("cycle", index), id("cycle", (index + 1) % LENGTH));
+        parents.insert(id("tail", index), id("tail", index + 1));
+    }
+    parents.insert(id("tail", LENGTH), id("cycle", 0));
+
+    let cyclic = super::cyclic_feature_parents(&parents)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let expected = (0..LENGTH)
+        .map(|index| id("cycle", index))
+        .chain((0..=LENGTH).map(|index| id("tail", index)))
+        .collect::<HashSet<_>>();
+    assert_eq!(cyclic, expected);
 }
 
 #[test]
