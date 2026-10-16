@@ -3264,9 +3264,8 @@ fn unique_history_state_in(history: &AsmHistory, state_id: i64) -> bool {
     states.next().is_some() && states.next().is_none()
 }
 
-/// Return the effective input state for a scope. Some Design scope envelopes
-/// omit the preceding state identity even though the current ASM delta state
-/// carries the direct transition predecessor.
+/// Read the scope's predecessor, else the bound transition predecessor, else
+/// the raw `next` link. Reject disagreement between the transition and link.
 pub(crate) fn effective_scope_previous_history_state_id(
     scope: &crate::records::feature::scope::DesignParameterScope,
     histories: &[AsmHistory],
@@ -3274,7 +3273,20 @@ pub(crate) fn effective_scope_previous_history_state_id(
     scope.previous_history_state_id().or_else(|| {
         let state_id = scope.history_state_id()?;
         let (history, state) = unique_history_state(histories, state_id)?;
-        linked_previous_state_id(history, state)
+        transition_or_header_previous_state_id(history, state)
+    })
+}
+
+/// Read the scope's predecessor, else its history header predecessor.
+/// History reads use only `state_id`, `node_index`, and `next_ref`, so the
+/// result does not depend on history binding.
+pub(crate) fn header_scope_previous_history_state_id(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    histories: &[AsmHistory],
+) -> Option<i64> {
+    scope.previous_history_state_id().or_else(|| {
+        let (history, state) = unique_history_state(histories, scope.history_state_id()?)?;
+        header_previous_state_id(history, state)
     })
 }
 
@@ -3283,15 +3295,45 @@ pub(crate) fn unique_history_state_pair(
     state_id: i64,
     previous_state_id: i64,
 ) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
-    let mut direct = histories
-        .iter()
-        .filter_map(|history| history_state_pair(history, state_id, previous_state_id, true));
+    unique_state_pair_by(
+        histories,
+        state_id,
+        previous_state_id,
+        transition_or_header_previous_state_id,
+    )
+}
+
+/// Resolve one state pair through history header links.
+/// Read only `state_id`, `node_index`, and `next_ref`, so the result does not
+/// depend on history binding.
+pub(crate) fn unique_header_history_state_pair(
+    histories: &[AsmHistory],
+    state_id: i64,
+    previous_state_id: i64,
+) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
+    unique_state_pair_by(
+        histories,
+        state_id,
+        previous_state_id,
+        header_previous_state_id,
+    )
+}
+
+fn unique_state_pair_by(
+    histories: &[AsmHistory],
+    state_id: i64,
+    previous_state_id: i64,
+    predecessor: fn(&AsmHistory, &AsmDeltaState) -> Option<i64>,
+) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
+    let mut direct = histories.iter().filter_map(|history| {
+        state_pair_by(history, state_id, previous_state_id, true, predecessor)
+    });
     if let Some(pair) = direct.next() {
         return direct.next().is_none().then_some(pair);
     }
-    let mut matches = histories
-        .iter()
-        .filter_map(|history| history_state_pair(history, state_id, previous_state_id, false));
+    let mut matches = histories.iter().filter_map(|history| {
+        state_pair_by(history, state_id, previous_state_id, false, predecessor)
+    });
     let pair = matches.next()?;
     matches.next().is_none().then_some(pair)
 }
@@ -3510,13 +3552,29 @@ fn history_state_pair(
     previous_state_id: i64,
     require_direct: bool,
 ) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
+    state_pair_by(
+        history,
+        state_id,
+        previous_state_id,
+        require_direct,
+        transition_or_header_previous_state_id,
+    )
+}
+
+fn state_pair_by(
+    history: &AsmHistory,
+    state_id: i64,
+    previous_state_id: i64,
+    require_direct: bool,
+    predecessor: fn(&AsmHistory, &AsmDeltaState) -> Option<i64>,
+) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
     let mut states = history
         .states()
         .iter()
         .filter(|state| state.state_id == state_id);
     let state = states.next()?;
     if states.next().is_some()
-        || (require_direct && linked_previous_state_id(history, state) != Some(previous_state_id))
+        || (require_direct && predecessor(history, state) != Some(previous_state_id))
     {
         return None;
     }
@@ -3526,7 +3584,7 @@ fn history_state_pair(
         .filter(|state| state.state_id == previous_state_id);
     let previous = previous_states.next()?;
     if previous_states.next().is_some()
-        || (!require_direct && !history_state_reaches(history, state, previous_state_id))
+        || (!require_direct && !state_reaches_by(history, state, previous_state_id, predecessor))
     {
         return None;
     }
@@ -3752,12 +3810,26 @@ fn history_state_reaches(
     state: &AsmDeltaState,
     previous_state_id: i64,
 ) -> bool {
+    state_reaches_by(
+        history,
+        state,
+        previous_state_id,
+        transition_or_header_previous_state_id,
+    )
+}
+
+fn state_reaches_by(
+    history: &AsmHistory,
+    state: &AsmDeltaState,
+    previous_state_id: i64,
+    predecessor: fn(&AsmHistory, &AsmDeltaState) -> Option<i64>,
+) -> bool {
     let mut current = state;
     for _ in 0..=history.states().len() {
         if current.state_id == previous_state_id {
             return true;
         }
-        let Some(previous_state_id) = linked_previous_state_id(history, current) else {
+        let Some(previous_state_id) = predecessor(history, current) else {
             return false;
         };
         let mut states = history
@@ -3775,19 +3847,27 @@ fn history_state_reaches(
     false
 }
 
-/// Return the state ID reached by a delta state's `next` link.
-///
-/// Reject disagreement between the derived transition predecessor and the raw
-/// `next` chain.
-fn linked_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Option<i64> {
-    let linked = state.next_ref.and_then(|node_index| {
+/// Read the unique predecessor through the history header's `next` link.
+/// Read only `state_id`, `node_index`, and `next_ref`, so the result does not
+/// depend on history binding.
+fn header_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Option<i64> {
+    state.next_ref.and_then(|node_index| {
         let mut states = history
             .states()
             .iter()
             .filter(|candidate| candidate.node_index == node_index);
         let previous = states.next()?;
         states.next().is_none().then_some(previous.state_id)
-    });
+    })
+}
+
+/// Read the bound transition predecessor, else the raw `next` link.
+/// Reject disagreement between the transition predecessor and the header link.
+fn transition_or_header_previous_state_id(
+    history: &AsmHistory,
+    state: &AsmDeltaState,
+) -> Option<i64> {
+    let linked = header_previous_state_id(history, state);
     let derived = state
         .transition
         .as_ref()
