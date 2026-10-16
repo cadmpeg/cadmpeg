@@ -1376,7 +1376,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             if parameter.kind() != DesignParameterKind::User {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("source_kind"),
-                    parameter.source_kind().to_owned(),
+                    parameter.source_kind().as_str().to_owned(),
                 );
             }
             if let (Some(owner_record_index), None) = (parameter.owner_record_index(), owner) {
@@ -1411,9 +1411,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal()),
                 name: parameter.name().to_owned(),
                 expression: parameter.expression().to_owned(),
-                display: if parameter.source_kind().contains("Diameter Dimension") {
+                display: if parameter
+                    .source_kind()
+                    .as_str()
+                    .contains("Diameter Dimension")
+                {
                     Some(DimensionDisplay::Diameter)
-                } else if parameter.source_kind().contains("Radius Dimension") {
+                } else if parameter
+                    .source_kind()
+                    .as_str()
+                    .contains("Radius Dimension")
+                {
                     Some(DimensionDisplay::Radius)
                 } else {
                     None
@@ -4622,17 +4630,37 @@ pub(super) fn design_angle_unit(unit: &str) -> bool {
 
 pub(super) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
     let unit = parameter.unit().map(|field| field.value.as_str());
-    if parameter.source_kind().starts_with("Linear Dimension")
-        || parameter.source_kind().starts_with("Radius Dimension")
-        || parameter.source_kind().starts_with("Radial Dimension")
-        || parameter.source_kind().starts_with("Diameter Dimension")
+    if parameter
+        .source_kind()
+        .as_str()
+        .starts_with("Linear Dimension")
+        || parameter
+            .source_kind()
+            .as_str()
+            .starts_with("Radius Dimension")
+        || parameter
+            .source_kind()
+            .as_str()
+            .starts_with("Radial Dimension")
+        || parameter
+            .source_kind()
+            .as_str()
+            .starts_with("Diameter Dimension")
     {
         return unit.is_some_and(design_length_unit);
     }
-    if parameter.source_kind().starts_with("Angular Dimension") {
+    if parameter
+        .source_kind()
+        .as_str()
+        .starts_with("Angular Dimension")
+    {
         return unit.is_some_and(design_angle_unit);
     }
-    if parameter.source_kind().starts_with("Tangent Dimension") {
+    if parameter
+        .source_kind()
+        .as_str()
+        .starts_with("Tangent Dimension")
+    {
         return unit.is_some_and(design_length_unit);
     }
     false
@@ -4720,7 +4748,7 @@ fn variable_fillet_law(
     let mut middle_radii = Vec::new();
     let mut middle_parameters = Vec::new();
     for (ordinal, parameter) in parameters {
-        match parameter.source_kind() {
+        match parameter.source_kind().as_str() {
             "MidRadius" => middle_radii.push((*ordinal, *parameter)),
             "MidParams" => middle_parameters.push((*ordinal, *parameter)),
             _ => {}
@@ -4731,7 +4759,7 @@ fn variable_fillet_law(
     if middle_radii.len() != middle_parameters.len()
         || parameters.iter().any(|(_, parameter)| {
             !matches!(
-                parameter.source_kind(),
+                parameter.source_kind().as_str(),
                 "StartRadius" | "EndRadius" | "MidRadius" | "MidParams" | "TangencyWeight"
             )
         })
@@ -4854,7 +4882,7 @@ fn project_chamfer(
                 let mut matches = Vec::new();
                 for parameter in parameters
                     .iter()
-                    .filter(|(_, parameter)| matches_kind(parameter.source_kind()))
+                    .filter(|(_, parameter)| matches_kind(parameter.source_kind().as_str()))
                     .copied()
                 {
                     matches.push(parameter);
@@ -4876,7 +4904,7 @@ fn project_chamfer(
         ordered_parameters(&|kind| matches!(kind, "Angle" | "Rotate Angle" | "rotateAngle"))?;
     if !parameters.iter().all(|(_, parameter)| {
         matches!(
-            parameter.source_kind(),
+            parameter.source_kind().as_str(),
             "Distance"
                 | "Distance 1"
                 | "Distance 2"
@@ -7475,7 +7503,7 @@ fn project_extrude(
     };
     if parameters
         .iter()
-        .any(|(_, parameter)| !supported_parameter(parameter.source_kind()))
+        .any(|(_, parameter)| !supported_parameter(parameter.source_kind().as_str()))
     {
         return Ok(None);
     }
@@ -8337,9 +8365,9 @@ fn project_coil(
                 ),
             };
         if parameters.len() != expected_parameter_kinds.len()
-            || parameters
-                .iter()
-                .any(|(_, parameter)| !expected_parameter_kinds.contains(&parameter.source_kind()))
+            || parameters.iter().any(|(_, parameter)| {
+                !expected_parameter_kinds.contains(&parameter.source_kind().as_str())
+            })
         {
             return None;
         }

@@ -736,7 +736,7 @@ pub(super) fn bind_coil_extent_from_parameters(
                     native_stream(&parameter.id) == Some(stream)
                         && parameter.record_index == owner.parameter_record_index()
                 })
-                .map(|parameter| (owner.local_ordinal(), parameter.source_kind()))
+                .map(|parameter| (owner.local_ordinal(), parameter.source_kind().as_str()))
         });
     let mut sorted = [(0, ""); 5];
     let mut count = 0usize;
