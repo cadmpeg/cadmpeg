@@ -225,14 +225,23 @@ impl ReportBuckets {
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
+/// Member visits, copied entities, and the points, control points, mesh
+/// vertices and triangles, and cage vertices that instance expansion copies in
+/// one document. Rejected expansions stay charged, so the copy work of the
+/// document is bounded even when every reference is rolled back.
+const MAX_INSTANCE_COPY_ELEMENTS: usize = 1 << 26;
 const ENTITY_BUDGET_EXCEEDED: &str = "document instance entity budget exceeded";
+const COPY_ELEMENT_BUDGET_EXCEEDED: &str =
+    "document instance copy element budget exceeded (MAX_INSTANCE_COPY_ELEMENTS)";
 
 #[derive(Debug, Clone, Copy)]
 struct ExpansionBudget {
     references: usize,
     members: usize,
     entities: usize,
+    copied_elements: usize,
     limits: [usize; 3],
+    copy_element_limit: usize,
 }
 
 impl ExpansionBudget {
@@ -241,11 +250,13 @@ impl ExpansionBudget {
             references: 0,
             members: 0,
             entities: 0,
+            copied_elements: 0,
             limits: [
                 MAX_INSTANCE_REFERENCES,
                 MAX_INSTANCE_MEMBERS,
                 MAX_INSTANCE_ENTITIES,
             ],
+            copy_element_limit: MAX_INSTANCE_COPY_ELEMENTS,
         }
     }
 
@@ -284,6 +295,43 @@ impl ExpansionBudget {
     /// `false` means the local entity cap rejects this item.
     fn entities(&mut self, amount: usize) -> bool {
         Self::charge(&mut self.entities, amount, self.limits[2])
+    }
+
+    /// Exhausts the copy budget at the limit, so later references fail before
+    /// they decode another member.
+    fn copy_elements(&mut self, amount: usize) -> Result<(), ReferenceFailure> {
+        if Self::charge(&mut self.copied_elements, amount, self.copy_element_limit) {
+            Ok(())
+        } else {
+            self.copied_elements = self.copy_element_limit;
+            Err(ReferenceFailure::Semantic(
+                COPY_ELEMENT_BUDGET_EXCEEDED.to_owned(),
+            ))
+        }
+    }
+
+    fn copy_entity(&mut self, payload: usize) -> Result<(), ReferenceFailure> {
+        self.copy_elements(
+            payload
+                .checked_add(1)
+                .ok_or_else(|| COPY_ELEMENT_BUDGET_EXCEEDED.to_owned())?,
+        )
+    }
+}
+
+/// Source-record links and object outcomes that one top-level instance
+/// expansion added. A rejected expansion removes exactly these, so rollback
+/// work follows the expansion, not the document.
+#[derive(Debug, Default)]
+struct ExpansionUndo {
+    links: Vec<(usize, String)>,
+    outcomes: Vec<usize>,
+}
+
+impl ExpansionUndo {
+    fn absorb(&mut self, mut inner: Self) {
+        self.links.append(&mut inner.links);
+        self.outcomes.append(&mut inner.outcomes);
     }
 }
 
@@ -352,6 +400,7 @@ pub(crate) struct DecodeContext<'a> {
     object_candidates: HashMap<crate::wire::Uuid, Vec<usize>>,
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
+    expansion_undo: Option<ExpansionUndo>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -395,6 +444,7 @@ impl<'a> DecodeContext<'a> {
             object_candidates,
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
+            expansion_undo: None,
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
@@ -404,6 +454,11 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn set_expansion_limits(&mut self, limits: [usize; 3]) {
         self.expansion_budget.limits = limits;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_copy_element_limit(&mut self, limit: usize) {
+        self.expansion_budget.copy_element_limit = limit;
     }
 
     #[cfg(test)]
@@ -475,25 +530,49 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         source_order: usize,
         link: &str,
-    ) -> Result<bool, cadmpeg_core::CodecError> {
-        let Some((id, links)) = self.session.unknown_links_mut(source_order)? else {
-            return Ok(false);
-        };
-        Ok(append_link_to_record(id, links, link))
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.append_links(source_order, &[link])
     }
 
-    fn append_links(
+    /// Merges links into an object record's sorted, duplicate-free link list.
+    /// Each new copy is retained output; an active expansion logs it for
+    /// rollback.
+    fn append_links<S: AsRef<str>>(
         &mut self,
         source_order: usize,
-        incoming: &[String],
-    ) -> Result<bool, cadmpeg_core::CodecError> {
+        incoming: &[S],
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let ctx = self.expand.ctx();
         let Some((id, links)) = self.session.unknown_links_mut(source_order)? else {
-            return Ok(false);
+            return Ok(());
         };
+        let mut added = Vec::new();
         for link in incoming {
-            append_link_to_record(id, links, link);
+            let link = link.as_ref();
+            if link != id
+                && links
+                    .binary_search_by(|existing| existing.as_str().cmp(link))
+                    .is_err()
+            {
+                added.push(link);
+            }
         }
-        Ok(true)
+        added.sort_unstable();
+        added.dedup();
+        for link in &added {
+            ctx.retain_bytes(u64_from_index(link.len()), "Rhino source record link")?;
+        }
+        links.extend(added.iter().map(|link| (*link).to_owned()));
+        // Two sorted runs: the stable sort merges them in linear time.
+        links.sort();
+        if let Some(undo) = &mut self.expansion_undo {
+            undo.links.extend(
+                added
+                    .into_iter()
+                    .map(|link| (source_order, link.to_owned())),
+            );
+        }
+        Ok(())
     }
 
     fn validate_candidate<T>(
@@ -521,6 +600,7 @@ impl<'a> DecodeContext<'a> {
         let value = apply(&mut candidate, &mut annotations).map_err(Into::into)?;
         let entity_count = candidate.model.entity_count();
         let mut budget = self.expansion_budget;
+        let expanding = self.instance_selection.is_some();
         let appended = self.session.try_admit_append(
             candidate,
             annotations,
@@ -535,7 +615,7 @@ impl<'a> DecodeContext<'a> {
                         validation,
                     ))));
                 }
-                if !budget.entities(entity_count) {
+                if expanding && !budget.entities(entity_count) {
                     return Ok(Err(CandidateError::Admission(
                         ENTITY_BUDGET_EXCEEDED.to_string(),
                     )));
@@ -648,14 +728,16 @@ impl<'a> DecodeContext<'a> {
         if !self.archive().is_chunked() {
             return Ok(());
         }
-        for source_order in 0..self.scan.objects.len() {
-            if self
-                .instance_selection
-                .as_ref()
-                .is_some_and(|selected| selected.source_order != source_order)
-            {
-                continue;
+        let objects = self.scan.objects.len();
+        // An instance member decode visits only the selected object.
+        let orders = match &self.instance_selection {
+            Some(selected) if selected.source_order < objects => {
+                selected.source_order..selected.source_order + 1
             }
+            Some(_) => 0..0,
+            None => 0..objects,
+        };
+        for source_order in orders {
             let Some(object) = self.scan.objects[source_order].framed() else {
                 continue;
             };
@@ -1919,13 +2001,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
     ) -> Result<bool, cadmpeg_core::CodecError> {
         let original_model = ModelCheckpoint::capture(&self.session.document().model);
-        let original_links = self
-            .session
-            .unknowns()
-            .iter()
-            .map(|record| record.links().to_vec())
-            .collect::<Vec<_>>();
-        let original_statuses = self.statuses.clone();
+        let outer_undo = self.expansion_undo.replace(ExpansionUndo::default());
         let original_geometry_transferred = self.geometry_transferred;
         let report_checkpoint = self.report.checkpoint();
         let original_selection = self.instance_selection.take();
@@ -1953,6 +2029,10 @@ impl<'a> DecodeContext<'a> {
                     self.append_links(source_order, &links)?;
                     self.mark_decoded(source_order);
                     self.geometry_transferred = true;
+                    let undo = std::mem::replace(&mut self.expansion_undo, outer_undo);
+                    if let (Some(outer), Some(undo)) = (&mut self.expansion_undo, undo) {
+                        outer.absorb(undo);
+                    }
                     return Ok(true);
                 }
                 let findings = match validation {
@@ -1966,21 +2046,46 @@ impl<'a> DecodeContext<'a> {
         };
 
         original_model.discard_appended(self.session.edit_appended_model(&original_model)?)?;
-        for (position, links) in original_links.into_iter().enumerate() {
-            let (_, target) = self.session.unknown_links_mut(position)?.ok_or_else(|| {
+        let undo = std::mem::replace(&mut self.expansion_undo, outer_undo);
+        self.undo_expansion(undo.unwrap_or_default())?;
+        self.geometry_transferred = original_geometry_transferred;
+        self.report.rollback(report_checkpoint);
+        self.instance_display = original_display;
+        self.expansion_budget = ExpansionBudget {
+            copied_elements: self.expansion_budget.copied_elements,
+            ..original_expansion_budget
+        };
+        self.scan_warning(source_order, format_args!("{rejection_warning}"));
+        Ok(false)
+    }
+
+    /// Removes the links and outcomes a rejected expansion added. Links were
+    /// only inserted, each once, into sorted lists, so removing them restores
+    /// every touched record exactly.
+    fn undo_expansion(&mut self, undo: ExpansionUndo) -> Result<(), cadmpeg_core::CodecError> {
+        let mut links = undo.links;
+        links.sort_unstable();
+        for group in links.chunk_by(|left, right| left.0 == right.0) {
+            let Some((record, _)) = group.first() else {
+                continue;
+            };
+            let (_, target) = self.session.unknown_links_mut(*record)?.ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(
                     "Rhino source record disappeared during instance expansion",
                 )
             })?;
-            *target = links;
+            target.retain(|link| {
+                group
+                    .binary_search_by(|(_, added)| added.as_str().cmp(link))
+                    .is_err()
+            });
         }
-        self.statuses = original_statuses;
-        self.geometry_transferred = original_geometry_transferred;
-        self.report.rollback(report_checkpoint);
-        self.instance_display = original_display;
-        self.expansion_budget = original_expansion_budget;
-        self.scan_warning(source_order, format_args!("{rejection_warning}"));
-        Ok(false)
+        for source_order in undo.outcomes {
+            if let Some(status) = self.statuses.get_mut(source_order) {
+                *status = None;
+            }
+        }
+        Ok(())
     }
 
     fn expand_reference_inner(
@@ -2077,6 +2182,7 @@ impl<'a> DecodeContext<'a> {
         let mut links = Vec::new();
         for &member_id in definition_members {
             self.expansion_budget.member()?;
+            self.expansion_budget.copy_elements(1)?;
 
             let member_order = match self.resolve_object(member_id) {
                 ObjectReference::Resolved(order) => order,
@@ -2125,22 +2231,34 @@ impl<'a> DecodeContext<'a> {
         transform: Transform,
     ) -> Result<Vec<String>, ReferenceFailure> {
         let model = self.session.edit_appended_model(before)?;
+        let budget = &mut self.expansion_budget;
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
-        for body in before
+        let bodies = before
             .added_mut::<Body>(model)
-            .ok_or_else(|| "instance decode removed existing bodies".to_string())?
-        {
+            .ok_or_else(|| "instance decode removed existing bodies".to_string())?;
+        budget.copy_elements(bodies.len())?;
+        for body in bodies {
             let id = body.id.as_str().to_string();
             links.push(id);
 
             let id = body.id.as_str().to_string();
             derived_ids.push(id);
         }
-        for point in before
-            .added_mut::<Point>(model)
-            .ok_or_else(|| "instance decode removed existing points".to_string())?
+        for pcurve in before
+            .added_mut::<Pcurve>(model)
+            .ok_or_else(|| "instance decode removed existing pcurves".to_string())?
         {
+            budget.copy_entity(match &pcurve.geometry {
+                PcurveGeometry::Nurbs { nurbs } => nurbs.pole_rows().count(),
+                _ => 0,
+            })?;
+        }
+        let points = before
+            .added_mut::<Point>(model)
+            .ok_or_else(|| "instance decode removed existing points".to_string())?;
+        budget.copy_elements(points.len())?;
+        for point in points {
             let placed = placed_finite_point(transform, point.position())?;
             point.set_position(placed);
 
@@ -2154,6 +2272,10 @@ impl<'a> DecodeContext<'a> {
             if let Some(cache) = curve.geometry.solved_cache() {
                 curve.geometry = CurveGeometry::Solved(cache.clone());
             }
+            budget.copy_entity(match &curve.geometry {
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => nurbs.pole_count(),
+                _ => 0,
+            })?;
             transform_curve(self.expand.ctx(), curve, transform)?;
 
             let id = curve.id.as_str().to_string();
@@ -2169,6 +2291,13 @@ impl<'a> DecodeContext<'a> {
             if let Some(cache) = surface.geometry.solved_cache() {
                 surface.geometry = SurfaceGeometry::Solved(cache.clone());
             }
+            budget.copy_entity(match &surface.geometry {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => nurbs
+                    .u_count()
+                    .checked_mul(nurbs.v_count())
+                    .ok_or_else(|| COPY_ELEMENT_BUDGET_EXCEEDED.to_owned())?,
+                _ => 0,
+            })?;
             transform_surface(surface, transform)?;
 
             let id = surface.id.as_str().to_string();
@@ -2181,6 +2310,11 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Tessellation>(model)
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
         {
+            budget.copy_entity(
+                mesh.vertex_count()
+                    .checked_add(mesh.triangle_count())
+                    .ok_or_else(|| COPY_ELEMENT_BUDGET_EXCEEDED.to_owned())?,
+            )?;
             mesh.edit_vertices(|vertex| {
                 *vertex = transform
                     .apply_point(*vertex)
@@ -2222,6 +2356,11 @@ impl<'a> DecodeContext<'a> {
         {
             subd.cage
                 .edit_vertices(|vertices| {
+                    budget.copy_entity(vertices.len()).map_err(|_| {
+                        cadmpeg_ir::subd::SubdError::EditRefused(
+                            COPY_ELEMENT_BUDGET_EXCEEDED.to_owned(),
+                        )
+                    })?;
                     for vertex in vertices {
                         let moved =
                             transform.apply_point(vertex.point().get()).ok_or_else(|| {
@@ -2791,15 +2930,16 @@ impl<'a> DecodeContext<'a> {
             .push(format_args!("{class}: {message}"));
     }
 
-    /// Charges entities for one object. `false` means the local entity cap
-    /// rejects the object; it is reported and skipped.
+    /// Charges entities for one object. Inside an instance expansion they also
+    /// count toward `MAX_INSTANCE_ENTITIES`; `false` means that cap rejects the
+    /// object, which is reported and skipped.
     fn charge_entities(
         &mut self,
         source_order: usize,
         amount: usize,
     ) -> Result<bool, cadmpeg_core::CodecError> {
         let mut budget = self.expansion_budget;
-        if !budget.entities(amount) {
+        if self.instance_selection.is_some() && !budget.entities(amount) {
             self.scan_warning(source_order, format_args!("{ENTITY_BUDGET_EXCEEDED}"));
             return Ok(false);
         }
@@ -3555,17 +3695,18 @@ impl<'a> DecodeContext<'a> {
                     !full_topology && !emitted_geometry && !draft.model().tessellations.is_empty();
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
-                let committed = if budget.entities(entity_count) {
-                    match self.session.validate_source_records()? {
-                        Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
-                            Ok(()) => Ok(()),
+                let committed =
+                    if self.instance_selection.is_none() || budget.entities(entity_count) {
+                        match self.session.validate_source_records()? {
+                            Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
+                                Ok(()) => Ok(()),
+                                Err(error) => Err(format!("{error}")),
+                            },
                             Err(error) => Err(format!("{error}")),
-                        },
-                        Err(error) => Err(format!("{error}")),
-                    }
-                } else {
-                    Err(ENTITY_BUDGET_EXCEEDED.to_string())
-                };
+                        }
+                    } else {
+                        Err(ENTITY_BUDGET_EXCEEDED.to_string())
+                    };
                 if let Err(error) = committed {
                     self.scan_warning(
                         source_order,
@@ -3625,6 +3766,9 @@ impl<'a> DecodeContext<'a> {
             return false;
         };
         *status = Some(next);
+        if let Some(undo) = &mut self.expansion_undo {
+            undo.outcomes.push(source_order);
+        }
         true
     }
 
@@ -3669,11 +3813,10 @@ impl<'a> DecodeContext<'a> {
                 }
             }
         }
-        let mut sorted = Vec::new();
-        for (class, outcome) in outcomes {
-            let label = format!("{class}");
-            sorted.push((label, outcome));
-        }
+        let mut sorted: Vec<_> = outcomes
+            .into_iter()
+            .map(|(class, outcome)| (format!("{class}"), outcome))
+            .collect();
         sorted.sort_unstable_by(|(first, _), (second, _)| first.cmp(second));
         Ok(sorted)
     }
@@ -3712,28 +3855,6 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
         &unknowns,
     )
     .expect("fixture unknown records");
-}
-
-fn append_link_to_record(id: &str, links: &mut Vec<String>, link: &str) -> bool {
-    if link == id {
-        return false;
-    }
-    let mut first = 0;
-    let mut end = links.len();
-    while first < end {
-        let middle = first + (end - first) / 2;
-        let existing = &links[middle];
-
-        match existing.as_str().cmp(link) {
-            std::cmp::Ordering::Equal => return true,
-            std::cmp::Ordering::Less => first = middle + 1,
-            std::cmp::Ordering::Greater => end = middle,
-        }
-    }
-
-    let copy = link.to_owned();
-    links.insert(first, copy);
-    true
 }
 
 struct ValidationFindings<'a>([Option<&'a cadmpeg_ir::report::check::Finding>; 3]);
@@ -5706,11 +5827,8 @@ fn push_group_face<K: Eq + std::hash::Hash>(
     faces.push(face);
 }
 
-fn ordered_group_faces<K: Ord>(
-    groups: HashMap<K, Vec<usize>>,
-) -> std::vec::Vec<(K, std::vec::Vec<usize>)> {
-    let mut ordered = Vec::new();
-    ordered.extend(groups);
+fn ordered_group_faces<K: Ord>(groups: HashMap<K, Vec<usize>>) -> Vec<(K, Vec<usize>)> {
+    let mut ordered: Vec<_> = groups.into_iter().collect();
     ordered.sort_unstable_by(|left, right| left.0.cmp(&right.0));
     ordered
 }
@@ -5871,9 +5989,8 @@ fn hatch_loop_ids(
 fn hatch_source_links(
     loop_ids: Vec<(crate::hatch::LoopKind, String)>,
     feature_id: &cadmpeg_ir::features::FeatureId,
-) -> std::vec::Vec<std::string::String> {
-    let mut links = Vec::new();
-    links.extend(loop_ids.into_iter().map(|(_, id)| id));
+) -> Vec<String> {
+    let mut links: Vec<String> = loop_ids.into_iter().map(|(_, id)| id).collect();
     links.push(feature_id.as_str().to_owned());
     links
 }
