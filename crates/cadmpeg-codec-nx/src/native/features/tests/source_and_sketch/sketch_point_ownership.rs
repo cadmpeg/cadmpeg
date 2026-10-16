@@ -35,6 +35,49 @@ fn sketch_point_group_route_admits_one_group() {
 }
 
 #[test]
+fn sketch_point_groups_follow_first_witness_order_over_many_names() {
+    let point =
+        |ordinal: usize, label: &str, name: String, coordinates: [f64; 2]| FeatureSketchPoint {
+            id: format!("nx:feature-history:sketch-point#{ordinal}"),
+            operation_label: label.into(),
+            named_record: "record".into(),
+            name,
+            coordinates: cadmpeg_ir::units::FiniteVector::new(coordinates).expect("finite point"),
+            scalar_fields: ["scalar-a".into(), "scalar-b".into()],
+        };
+    let mut points = (0..4096)
+        .map(|ordinal| point(ordinal, "sketch", format!("Point{ordinal}"), [1.0, 2.0]))
+        .collect::<Vec<_>>();
+    // A repeated bit-identical name joins its first witness; a repeated name
+    // whose coordinates differ in sign bit drops the whole name.
+    points.push(point(4096, "sketch", "Point7".into(), [1.0, 2.0]));
+    points.push(point(4097, "sketch", "Point9".into(), [1.0, -0.0]));
+    points[9].coordinates = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]).expect("finite");
+    points.push(point(4098, "other", "Point7".into(), [3.0, 4.0]));
+
+    let groups = sketch_point_groups(&points);
+    assert_eq!(groups.len(), 4096);
+    assert_eq!(groups[7].name, "Point7");
+    assert_eq!(groups[7].operation_label, "sketch");
+    assert_eq!(
+        groups[7].points,
+        [
+            "nx:feature-history:sketch-point#7",
+            "nx:feature-history:sketch-point#4096"
+        ]
+    );
+    assert_eq!(groups[7].id, "nx:feature-history:sketch-point-group#7");
+    assert!(groups.iter().all(|group| group.name != "Point9"));
+    assert_eq!(groups[9].name, "Point10");
+    let last = groups.last().expect("other operation group");
+    assert_eq!(
+        (last.operation_label.as_str(), last.name.as_str()),
+        ("other", "Point7")
+    );
+    assert_eq!(last.points, ["nx:feature-history:sketch-point#4098"]);
+}
+
+#[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     let payload = FeatureConstructionPayload {
         id: "payload".to_string(),
