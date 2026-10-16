@@ -1041,6 +1041,19 @@ impl CodecBackend for FcstdCodec {
             )?;
             cycle_affected_design_objects = cycle_affected;
             transfer_losses.extend(design_losses);
+            ctx.admit_entities(
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                &mut admitted_entities,
+                "admit FCStd entities",
+            )?;
+            let link_occurrences = product::link_occurrence_count(&product_nodes)?;
+            ctx.admit_entities(
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
+                    .checked_add(link_occurrences)
+                    .ok_or_else(|| CodecError::malformed("FCStd entity count overflows u64"))?,
+                &mut admitted_entities,
+                "admit FCStd link occurrences",
+            )?;
             let (product_definitions, occurrences) = product::transfer_neutral(
                 ctx,
                 &product_nodes,
