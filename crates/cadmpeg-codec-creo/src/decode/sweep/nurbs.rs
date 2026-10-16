@@ -21,6 +21,38 @@ const EPS_TABULATED_ENDPOINT_ROUNDING: f64 = 1e-4;
 const EPS_TABULATED_FRAME_EXACT: f64 = 1.0e-9;
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
 
+/// Dense matrix entries one interpolation spline curve or surface may build.
+/// Interpolating `n` samples solves an `(n + 2) x (n + 2)` system whose
+/// entries each evaluate a basis function, and the elimination is cubic in
+/// `n`, so the work is bounded before any matrix is built.
+const MAX_INTERPOLATION_MATRIX_ENTRIES: usize = 1 << 20;
+
+/// Entries of `solves` dense systems that each interpolate `sample_count`
+/// samples, or `None` when the count does not fit in `usize`.
+fn interpolation_matrix_entries(sample_count: usize, solves: usize) -> Option<usize> {
+    let control_count = sample_count.checked_add(2)?;
+    control_count
+        .checked_mul(control_count)?
+        .checked_mul(solves)
+}
+
+fn interpolation_matrix_cap_reason(entries: Option<usize>) -> impl std::fmt::Display {
+    struct Reason(Option<usize>);
+    impl std::fmt::Display for Reason {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self.0 {
+                Some(entries) => write!(f, "interpolation needs {entries} dense matrix entries")?,
+                None => f.write_str("interpolation needs more dense matrix entries than fit")?,
+            }
+            write!(
+                f,
+                ", above MAX_INTERPOLATION_MATRIX_ENTRIES ({MAX_INTERPOLATION_MATRIX_ENTRIES})"
+            )
+        }
+    }
+    Reason(entries)
+}
+
 /// Names one saved-section spline entity by its stored entity identifier and
 /// the byte offset of its entity label. A saved section states the entity
 /// identifier only for entities the solver kept, so the byte offset is the
@@ -309,6 +341,14 @@ pub(in super::super) fn saved_spline_nurbs(
     else {
         return Ok(None);
     };
+    let entries = interpolation_matrix_entries(spline.interpolation_points.len(), 1);
+    if entries.is_none_or(|entries| entries > MAX_INTERPOLATION_MATRIX_ENTRIES) {
+        refusal.note(
+            format_args!("{} NURBS record", saved_spline_record(spline)),
+            &interpolation_matrix_cap_reason(entries),
+        );
+        return Ok(None);
+    }
     let Some(InterpolationCurveData {
         knots,
         controls: control_points,
@@ -448,6 +488,22 @@ pub(in super::super) fn interpolation_spline_surface(
     let corner_mixed_derivatives = grid.mixed_derivatives();
     let u_sample_count = u_parameters.len();
     let v_sample_count = v_parameters.len();
+    let entries = v_sample_count
+        .checked_add(2)
+        .and_then(|u_solves| interpolation_matrix_entries(u_sample_count, u_solves))
+        .zip(
+            u_sample_count
+                .checked_add(2)
+                .and_then(|v_solves| interpolation_matrix_entries(v_sample_count, v_solves)),
+        )
+        .and_then(|(u_entries, v_entries)| u_entries.checked_add(v_entries));
+    if entries.is_none_or(|entries| entries > MAX_INTERPOLATION_MATRIX_ENTRIES) {
+        refusal.note(
+            format_args!("creo interpolation-spline surface record for {record}"),
+            &interpolation_matrix_cap_reason(entries),
+        );
+        return Ok(None);
+    }
     let Some(u_control_count) = u_sample_count.checked_add(2) else {
         return Ok(None);
     };
