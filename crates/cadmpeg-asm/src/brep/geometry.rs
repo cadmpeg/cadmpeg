@@ -3,6 +3,7 @@
 //! curve orientation, and recognize procedural carriers as analytic geometry.
 
 use super::records::TolerantCoedgeExtension;
+use crate::ids::{brep_id, IdFormat};
 use crate::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedScaledCompoundLoftShape,
 };
@@ -11,21 +12,20 @@ use crate::nurbs::support_chart::{cone_axis_reversed, cone_is_circular_cylinder}
 use crate::sab::{Record, Token};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::analytic::{
-    CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
-    SphereSurface, TorusSurface,
+    CircleCurve, ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, LineCurve,
+    PlaneSurface, SphereSurface, TorusSurface,
 };
 use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::EdgeId;
+use cadmpeg_ir::ids::{CurveId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
-use cadmpeg_ir::topology::{BodyKind, Sense};
+use cadmpeg_ir::topology::{BodyKind, EdgeCarrier, Sense};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use std::collections::{HashMap, HashSet};
 
-use super::AsmBrep;
-use crate::ids::IdFormat;
+use super::{id, AsmBrep};
 const EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9: f64 = 1.0e-9;
 const EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10: f64 = 1.0e-10;
@@ -1111,10 +1111,66 @@ pub(super) fn collapsed_edges(
             _ => false,
         };
         if start == end && point_carrier {
-            collapsed.insert(EdgeId::from(super::id(format, index)));
+            collapsed.insert(EdgeId::from(id(format, index)));
         }
     }
     Ok(collapsed)
+}
+
+/// Give each native point edge a degenerate carrier at its vertex. A plain
+/// `edge` record whose curve reference is null and whose two vertex
+/// references are identical collapses to that vertex
+/// ([spec §6.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#63-analytic-curve-byte-layouts)).
+pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], format: IdFormat) {
+    let point_edges = records
+        .iter()
+        .filter(|record| {
+            record.head() == "edge"
+                && matches!(record.tokens.get(8), Some(Token::Ref(curve)) if *curve < 0)
+                && record.ref_at(3).is_some()
+                && record.ref_at(3) == record.ref_at(5)
+        })
+        .filter_map(|record| {
+            let index = i64::try_from(record.index).ok()?;
+            Some((EdgeId::from(id(format, index)), index))
+        })
+        .collect::<HashMap<_, _>>();
+    if point_edges.is_empty() {
+        return;
+    }
+    let positions = out
+        .points
+        .iter()
+        .map(|point| (&point.id, point.position()))
+        .collect::<HashMap<_, _>>();
+    let vertex_positions = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| Some((&vertex.id, *positions.get(&vertex.point)?)))
+        .collect::<HashMap<_, _>>();
+    let mut curves = Vec::new();
+    for edge in &mut out.edges {
+        let Some(index) = point_edges.get(&edge.id) else {
+            continue;
+        };
+        if edge.curve().is_some() || edge.start != edge.end {
+            continue;
+        }
+        let Some(position) = vertex_positions.get(&edge.start) else {
+            continue;
+        };
+        let curve = brep_id!(format, CurveId, "point-edge-curve", *index);
+        edge.carrier = EdgeCarrier::Curve(curve.clone());
+        curves.push(Curve {
+            id: curve,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(DegenerateCurve::new(
+                *position,
+            ))),
+            parameter_range: None,
+            source_object: None,
+        });
+    }
+    out.curves.extend(curves);
 }
 
 pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>) {
