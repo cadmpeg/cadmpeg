@@ -34,7 +34,6 @@ use annotations::{AnnotationDraft, AnnotationIndex, Annotations};
 struct MeasureContext<'a> {
     length_scale: f64,
     angle_scale: f64,
-    graph_limit: usize,
     losses: &'a mut Vec<LossNote>,
 }
 
@@ -80,9 +79,7 @@ pub(super) fn decode(
     let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange, ctx)?;
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
-    let graph_limit = super::record_graph_limit(ctx);
-    let characteristic_values =
-        characteristic_values(exchange, geometry, &mut losses, graph_limit, ctx)?;
+    let characteristic_values = characteristic_values(exchange, geometry, &mut losses, ctx)?;
     for (id, record) in exchange.entities("DATUM") {
         let identification = named_parameter(record, "DATUM", 0)
             .and_then(|value| {
@@ -180,7 +177,7 @@ pub(super) fn decode(
             .find_map(ValueExt::list)
             .unwrap_or_default();
         let mut datum_records = HashSet::new();
-        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+        let mut measurements = measure_context(geometry, id, &mut losses);
         let mut datum_references = Vec::new();
         for (index, constituent) in constituents.iter().enumerate() {
             let Some(precedence) = u32::try_from(index + 1).ok().and_then(NonZeroU32::new) else {
@@ -406,7 +403,7 @@ pub(super) fn decode(
             })
             .transpose()?;
         if let (Some(index), Some(limits)) = (dimension, limits) {
-            let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+            let mut measurements = measure_context(geometry, id, &mut losses);
             let lower = limits
                 .parameters()
                 .first()
@@ -487,7 +484,7 @@ pub(super) fn decode(
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
             .map_or(record.parameters(), |partial| partial.parameters.as_slice());
         let refs = collect_pmi_references(reference_values, ctx)?;
-        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+        let mut measurements = measure_context(geometry, id, &mut losses);
         let magnitude = first_measure(
             record
                 .partials
@@ -671,7 +668,6 @@ pub(super) fn decode(
             &mut BTreeSet::new(),
             &mut text_records,
             &mut losses,
-            0,
             ctx,
         )?;
         // Placement identity is the carrier key; the transform value cannot
@@ -1345,11 +1341,10 @@ fn find_annotation_text(
     visited: &mut BTreeSet<u64>,
     used: &mut BTreeSet<u64>,
     losses: &mut Vec<LossNote>,
-    depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     let mut candidates = BTreeMap::new();
-    collect_annotation_text(id, exchange, visited, &mut candidates, losses, depth, ctx)?;
+    collect_annotation_text(id, exchange, visited, &mut candidates, losses, ctx)?;
     let Some((text_id, text)) = candidates.pop_first() else {
         return Ok(None);
     };
@@ -1371,10 +1366,9 @@ fn collect_annotation_text(
     visited: &mut BTreeSet<u64>,
     candidates: &mut BTreeMap<u64, String>,
     losses: &mut Vec<LossNote>,
-    depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if depth >= 256 || visited.contains(&id) {
+    if visited.contains(&id) {
         return Ok(());
     }
     let _depth_guard = ctx.enter_nested("step_pmi_annotation_text_walk")?;
@@ -1398,15 +1392,7 @@ fn collect_annotation_text(
     }
     for reference in record_values(record).flat_map(|value| references(value, ctx)) {
         let reference = reference?;
-        collect_annotation_text(
-            reference,
-            exchange,
-            visited,
-            candidates,
-            losses,
-            depth + 1,
-            ctx,
-        )?;
+        collect_annotation_text(reference, exchange, visited, candidates, losses, ctx)?;
     }
     Ok(())
 }
@@ -1420,12 +1406,11 @@ fn collect_placement_candidates(
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    // Retain the shortest depth so the bounded traversal is independent of
-    // aggregate member order when a graph has alternate paths.
-    if depth >= 256
-        || visited
-            .get(&id)
-            .is_some_and(|visited_depth| *visited_depth <= depth)
+    // Retain the shortest depth so the traversal is independent of aggregate
+    // member order when a graph has alternate paths.
+    if visited
+        .get(&id)
+        .is_some_and(|visited_depth| *visited_depth <= depth)
     {
         return Ok(());
     }
@@ -1802,12 +1787,11 @@ fn characteristic_values(
     exchange: &Exchange,
     geometry: &GeometryData,
     losses: &mut Vec<LossNote>,
-    graph_limit: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let mut measurements = measure_context(geometry, id, losses, graph_limit);
+        let mut measurements = measure_context(geometry, id, losses);
         let Some(characteristic) = first_matching(record_values(record), ctx, |id| {
             exchange.records().get(&id).is_some_and(|record| {
                 record
@@ -1916,8 +1900,6 @@ fn characteristic_measure_values(
             parameter,
             exchange,
             &mut BTreeSet::new(),
-            0,
-            measurements.graph_limit,
             &mut measure_ids,
             ctx,
         )
@@ -1948,14 +1930,9 @@ fn collect_measure_ids(
     value: &Value,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    depth: usize,
-    graph_limit: usize,
     measure_ids: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if depth >= graph_limit {
-        return Ok(());
-    }
     let _nested = ctx.enter_nested("step_pmi_measure_id_walk")?;
     match value {
         Value::Reference(id) => {
@@ -1969,15 +1946,7 @@ fn collect_measure_ids(
                 } else {
                     for partial in &record.partials {
                         for parameter in &partial.parameters {
-                            collect_measure_ids(
-                                parameter,
-                                exchange,
-                                active,
-                                depth + 1,
-                                graph_limit,
-                                measure_ids,
-                                ctx,
-                            )?;
+                            collect_measure_ids(parameter, exchange, active, measure_ids, ctx)?;
                         }
                     }
                 }
@@ -1986,27 +1955,11 @@ fn collect_measure_ids(
         }
         Value::List(values) => {
             for value in values {
-                collect_measure_ids(
-                    value,
-                    exchange,
-                    active,
-                    depth + 1,
-                    graph_limit,
-                    measure_ids,
-                    ctx,
-                )?;
+                collect_measure_ids(value, exchange, active, measure_ids, ctx)?;
             }
         }
         Value::Typed(_, value) => {
-            collect_measure_ids(
-                value,
-                exchange,
-                active,
-                depth + 1,
-                graph_limit,
-                measure_ids,
-                ctx,
-            )?;
+            collect_measure_ids(value, exchange, active, measure_ids, ctx)?;
         }
         _ => {}
     }
@@ -2048,12 +2001,10 @@ fn measure_context<'a>(
     geometry: &GeometryData,
     id: u64,
     losses: &'a mut Vec<LossNote>,
-    graph_limit: usize,
 ) -> MeasureContext<'a> {
     MeasureContext {
         length_scale: geometry.units.length([id]).get(),
         angle_scale: geometry.units.angle([id]).get(),
-        graph_limit,
         losses,
     }
 }
@@ -2078,20 +2029,16 @@ fn measure(
     measurements: &mut MeasureContext<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiValue>, CodecError> {
-    measure_inner(value, exchange, &mut BTreeSet::new(), 0, measurements, ctx)
+    measure_inner(value, exchange, &mut BTreeSet::new(), measurements, ctx)
 }
 
 fn measure_inner(
     value: &Value,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    depth: usize,
     measurements: &mut MeasureContext<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiValue>, CodecError> {
-    if depth >= measurements.graph_limit {
-        return Ok(None);
-    }
     let _nested = ctx.enter_nested("step_pmi_measure_eval_walk")?;
     Ok(match value {
         Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value)
@@ -2214,8 +2161,7 @@ fn measure_inner(
                 result = ValueExt::typed_number(parameter)
                     .and_then(|number| PmiValue::new(number * scale, quantity));
                 if result.is_none() {
-                    result =
-                        measure_inner(parameter, exchange, active, depth + 1, measurements, ctx)?;
+                    result = measure_inner(parameter, exchange, active, measurements, ctx)?;
                 }
                 if result.is_some() {
                     break;
@@ -2227,7 +2173,7 @@ fn measure_inner(
         Value::List(values) => {
             let mut result = None;
             for value in values {
-                result = measure_inner(value, exchange, active, depth + 1, measurements, ctx)?;
+                result = measure_inner(value, exchange, active, measurements, ctx)?;
                 if result.is_some() {
                     break;
                 }

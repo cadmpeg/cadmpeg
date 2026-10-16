@@ -9,10 +9,10 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
-use cadmpeg_ir::ids::{Identity, ProductDefinitionId};
+use cadmpeg_ir::ids::{Identity, ProductDefinitionId, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::{NativeField, NativeRecord};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
+use serde::Serialize;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -418,19 +418,19 @@ fn add_source_typed_targets(
             .collect::<Vec<_>>()
             .join("+");
 
-        native_targets.push(NativeRecord::from_identity(
-            identity,
-            [
-                ("source_id".to_owned(), NativeField::Text(format!("#{id}"))),
-                ("source_type".to_owned(), NativeField::Text(source_type)),
-            ],
-        ));
+        native_targets.push(DrawingTarget {
+            id: identity,
+            source_id: format!("#{id}"),
+            source_type,
+        });
 
         target_identities.insert(id, BTreeSet::from([copied_identity]));
     }
     if native_targets.is_empty() {
         return Ok(());
     }
+    let native_targets =
+        cadmpeg_ir::native::arena_from(ctx, native_targets.into_iter().map(Ok::<_, CodecError>))?;
     let namespace = ir.native.namespace_mut("step");
     let arenas = namespace.arenas_mut();
     let arena_key = String::from("drawing_targets");
@@ -439,6 +439,14 @@ fn add_source_typed_targets(
 
     target_arena.extend(native_targets);
     Ok(())
+}
+
+/// A source-typed record that a drawing names and no drawing record holds.
+#[derive(Serialize)]
+struct DrawingTarget {
+    id: UnknownId,
+    source_id: String,
+    source_type: String,
 }
 
 /// Each drawing entity name and the identity kind that name spells.

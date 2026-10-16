@@ -37,7 +37,6 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
-    let graph_limit = super::record_graph_limit(ctx);
     let face_indices = collect_identity_indices(ir.model.faces.iter().map(|face| face.id.as_str()));
     let body_indices =
         collect_identity_indices(ir.model.bodies.iter().map(|body| body.id.as_str()));
@@ -232,7 +231,7 @@ pub(super) fn decode(
     let mut styles = Vec::new();
     for (&id, record) in exchange.records() {
         if styled_item_parts(record).is_some() {
-            let order = style_application_order(id, exchange, graph_limit, ctx)?;
+            let order = style_application_order(id, exchange, ctx)?;
             styles.push((id, order));
         }
     }
@@ -306,7 +305,6 @@ pub(super) fn decode(
                     losses: &mut losses,
                     invalid_surface_sides: &mut invalid_surface_sides,
                 },
-                0,
                 ctx,
             )
         }))?;
@@ -323,7 +321,6 @@ pub(super) fn decode(
                         losses: &mut losses,
                         invalid_surface_sides: &mut invalid_surface_sides,
                     },
-                    0,
                     ctx,
                 )
             }))?
@@ -340,7 +337,7 @@ pub(super) fn decode(
             }
             None => {
                 let mut visited = BTreeSet::new();
-                if !contains_null_style(parts.styles, exchange, &mut visited, 0, ctx)? {
+                if !contains_null_style(parts.styles, exchange, &mut visited, ctx)? {
                     losses.push(StepLossCode::DecodeWarning.note(format!(
                         "STYLED_ITEM #{style_id} has no resolved surface color"
                     )));
@@ -382,15 +379,8 @@ pub(super) fn decode(
             appearance_ids.insert(appearance_key, id.clone());
             id
         };
-        let target_steps = expand_style_targets(
-            target_step,
-            exchange,
-            &mut typed,
-            &mut BTreeSet::new(),
-            0,
-            graph_limit,
-            ctx,
-        )?;
+        let target_steps =
+            expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new(), ctx)?;
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
             let targets = appearance_targets(target_step, exchange, topology, &entity_ids, indices);
             if targets.is_empty() {
@@ -636,11 +626,9 @@ fn expand_style_targets(
     exchange: &Exchange,
     typed: &mut HashSet<u64>,
     active: &mut BTreeSet<u64>,
-    depth: usize,
-    graph_limit: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u64>, CodecError> {
-    if depth >= graph_limit || active.contains(&id) {
+    if active.contains(&id) {
         return Ok(Vec::new());
     }
     let _nested = ctx.enter_nested("step_presentation_style_target_walk")?;
@@ -667,9 +655,7 @@ fn expand_style_targets(
         .flatten()
         .filter_map(ValueExt::reference)
     {
-        for target in
-            expand_style_targets(item, exchange, typed, active, depth + 1, graph_limit, ctx)?
-        {
+        for target in expand_style_targets(item, exchange, typed, active, ctx)? {
             targets.push(target);
         }
     }
@@ -1087,16 +1073,15 @@ pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
 
 /// The position of one styled item in override-depth order.
 ///
-/// A style whose override walk revisits a style or passes the graph limit
-/// states no depth. Absence takes a position of its own, after every stated
-/// depth; it is not read as the deepest style.
+/// A style whose override walk revisits a style states no depth. Absence
+/// takes a position of its own, after every stated depth; it is not read as
+/// the deepest style.
 fn style_application_order(
     id: u64,
     exchange: &Exchange,
-    graph_limit: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(bool, Option<u32>), CodecError> {
-    let depth = style_depth(id, exchange, &mut BTreeSet::new(), 0, graph_limit, ctx)?;
+    let depth = style_depth(id, exchange, &mut BTreeSet::new(), ctx)?;
     Ok((depth.is_none(), depth))
 }
 
@@ -1104,19 +1089,16 @@ fn style_depth(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-    depth: usize,
-    graph_limit: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
-    if depth >= graph_limit || active.contains(&id) {
+    if active.contains(&id) {
         return Ok(None);
     }
     let _nested = ctx.enter_nested("step_presentation_style_depth_walk")?;
     active.insert(id);
     let result = if let Some(style) = exchange.records().get(&id) {
         if let Some(base) = overridden_style(style) {
-            style_depth(base, exchange, active, depth + 1, graph_limit, ctx)?
-                .and_then(|depth| depth.checked_add(1))
+            style_depth(base, exchange, active, ctx)?.and_then(|depth| depth.checked_add(1))
         } else {
             Some(0)
         }
@@ -1287,7 +1269,6 @@ fn find_color(
     exchange: &Exchange,
     domain: StyleDomain,
     state: ColorSearchState<'_>,
-    depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<CachedColor, CodecError> {
     let ColorSearchState {
@@ -1296,9 +1277,6 @@ fn find_color(
         losses,
         invalid_surface_sides,
     } = state;
-    if depth >= 256 {
-        return Ok(None);
-    }
     if let Some(result) = cache.get(&(id, domain)) {
         return Ok(result.clone());
     }
@@ -1368,7 +1346,6 @@ fn find_color(
                         losses: &mut *losses,
                         invalid_surface_sides: &mut *invalid_surface_sides,
                     },
-                    depth + 1,
                     ctx,
                 )?;
             }
@@ -1479,7 +1456,6 @@ fn find_color(
                                 losses: &mut *losses,
                                 invalid_surface_sides: &mut *invalid_surface_sides,
                             },
-                            depth + 1,
                             ctx,
                         )
                     })
@@ -1751,19 +1727,15 @@ fn contains_null_style(
     value: &Value,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
-    depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if depth >= 256 {
-        return Ok(false);
-    }
     let _nested = ctx.enter_nested("step_presentation_null_style_walk")?;
     match value {
         Value::Typed(name, _) if name == "NULL_STYLE" => Ok(true),
-        Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1, ctx),
+        Value::Typed(_, value) => contains_null_style(value, exchange, visited, ctx),
         Value::List(values) => {
             for value in values {
-                if contains_null_style(value, exchange, visited, depth + 1, ctx)? {
+                if contains_null_style(value, exchange, visited, ctx)? {
                     return Ok(true);
                 }
             }
@@ -1777,7 +1749,7 @@ fn contains_null_style(
                     .iter()
                     .flat_map(|partial| partial.parameters.iter())
                 {
-                    if contains_null_style(value, exchange, visited, depth + 1, ctx)? {
+                    if contains_null_style(value, exchange, visited, ctx)? {
                         return Ok(true);
                     }
                 }

@@ -1126,8 +1126,11 @@ pub(crate) fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
 }
 
 #[test]
-fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
+fn deep_pmi_measure_branches_follow_the_session_depth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::pmi::PmiDefinition;
+    use cadmpeg_ir::DecodeFailure;
 
     let mut records = String::from(
         "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
@@ -1146,13 +1149,24 @@ fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
             .expect("write recursive measure carrier");
     }
     records.push_str("#280=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.4),#1);\n");
+    let decode = |depth: u64| {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_recursion_depth = depth;
+        crate::test_support::exchange::decode_inline_with_options(&records, &options)
+    };
 
-    let result = decode_inline(&records);
+    let result = decode(1024).expect("the session admits the measure chain");
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::Dimension(relation)
             if relation.nominal().is_some_and(|value| (value.value.get() - 0.4).abs() < EPS_PMI_NUMERIC)
     )));
+    assert!(matches!(
+        decode(256),
+        Err(DecodeFailure::Codec(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_pmi_measure_id_walk"
+    ));
 }
 
 #[test]

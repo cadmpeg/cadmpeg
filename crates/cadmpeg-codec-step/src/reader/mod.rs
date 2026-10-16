@@ -40,8 +40,6 @@ pub(crate) mod tessellation;
 pub(crate) mod topology;
 mod validation;
 
-const MAX_RECORD_GRAPH_DEPTH: usize = 256;
-
 /// Container facts available when the STEP source identity is authored.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Packaging {
@@ -86,14 +84,6 @@ impl Packaging {
             root_data_offset.to_string(),
         );
     }
-}
-
-fn record_graph_limit(ctx: &DecodeContext<'_>) -> usize {
-    usize::try_from(ctx.policy().limits.max_recursion_depth)
-        .ok()
-        .map_or(MAX_RECORD_GRAPH_DEPTH, |policy| {
-            policy.min(MAX_RECORD_GRAPH_DEPTH)
-        })
 }
 
 struct StageOutcome<T> {
@@ -218,6 +208,9 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     StepLossCode::ImplementationLevelUnverified,
                     "implementation_level",
                 ),
+                crate::parse::ParseDiagnosticKind::ExpansionBounded => {
+                    (StepLossCode::ParseExpansionBounded, "expansion")
+                }
             };
             let message = diagnostic.message.clone();
             let loss = code.note(message).with_provenance(

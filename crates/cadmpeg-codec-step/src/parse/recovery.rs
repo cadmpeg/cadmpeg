@@ -2,8 +2,8 @@
 //! Bounded exchange statement recovery and DATA dependency closure.
 
 use super::{
-    BTreeMap, BTreeSet, DecodeContext, ParseDiagnostic, ParseDiagnosticKind, ParseError, Parser,
-    Range, RawRecord, Value,
+    AnchorEntry, BTreeMap, BTreeSet, BoundedExpansions, DecodeContext, ExpansionOmissions,
+    ParseDiagnostic, ParseDiagnosticKind, ParseError, Parser, Range, RawRecord, Value,
 };
 
 impl Parser<'_, '_, '_> {
@@ -122,6 +122,50 @@ impl Parser<'_, '_, '_> {
         }
         records.insert(id, record);
         Ok(())
+    }
+
+    /// Removes each bounded anchor and instance from the interpreted graph,
+    /// keeps its exact source, and records its name in `omissions`.
+    pub(super) fn omit_bounded_expansions(
+        &mut self,
+        mut bounded: BoundedExpansions,
+        anchors: &mut Vec<AnchorEntry>,
+        anchor_spans: &mut Vec<Range<usize>>,
+        records: &mut BTreeMap<u64, RawRecord>,
+        omitted: &mut Vec<Range<usize>>,
+        omissions: &mut ExpansionOmissions,
+    ) {
+        if !bounded.anchors.is_empty() {
+            let entries = std::mem::take(anchors).into_iter();
+            for (anchor, span) in entries.zip(std::mem::take(anchor_spans)) {
+                if let Some(bound) = bounded.anchors.remove(&anchor.name) {
+                    self.diagnostic(
+                        span.start,
+                        ParseDiagnosticKind::ExpansionBounded,
+                        format_args!(
+                            "anchor <{}> omitted: {bound}; exact source retained",
+                            anchor.name
+                        ),
+                    );
+                    omitted.push(span);
+                    omissions.anchors.insert(anchor.name);
+                } else {
+                    anchors.push(anchor);
+                    anchor_spans.push(span);
+                }
+            }
+        }
+        for (id, bound) in bounded.records {
+            if let Some(record) = records.remove(&id) {
+                self.diagnostic(
+                    record.span.start,
+                    ParseDiagnosticKind::ExpansionBounded,
+                    format_args!("instance #{id} omitted: {bound}; exact source retained"),
+                );
+                omitted.push(record.span);
+                omissions.records.insert(id);
+            }
+        }
     }
 
     pub(super) fn omit_unresolved_records(

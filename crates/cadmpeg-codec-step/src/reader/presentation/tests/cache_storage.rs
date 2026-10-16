@@ -21,7 +21,6 @@ fn style_search_memoizes_every_visited_style_record() {
                 losses: &mut Vec::new(),
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
-            0,
             ctx,
         )
         .expect("style graph resolves")

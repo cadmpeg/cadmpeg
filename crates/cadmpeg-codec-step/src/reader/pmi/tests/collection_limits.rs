@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Recursion-depth refusals in the STEP PMI reader.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -81,12 +82,49 @@ fn measure_id_refusal(depth_limit: u64) -> CodecError {
         &crate::parse::Value::Reference(1),
         &exchange,
         &mut std::collections::BTreeSet::new(),
-        0,
-        64,
         &mut std::collections::BTreeSet::new(),
         &ctx,
     )
     .expect_err("measure ID walk exceeds the limit")
+}
+
+#[test]
+fn pmi_measure_id_walk_follows_the_session_depth_past_256_records() {
+    let chain = (1..300).fold(String::new(), |mut chain, id| {
+        write!(chain, "#{id}=ITEM(#{});", id + 1).expect("write chain fixture");
+        chain
+    });
+    let source = format!("{HEADER}{chain}#300=MEASURE_REPRESENTATION_ITEM();{TAIL}");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid measure chain");
+    let walk = |depth_limit: u64| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = depth_limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+        let mut measure_ids = BTreeSet::new();
+        super::super::collect_measure_ids(
+            &crate::parse::Value::Reference(1),
+            &exchange,
+            &mut BTreeSet::new(),
+            &mut measure_ids,
+            &ctx,
+        )
+        .map(|()| measure_ids)
+    };
+
+    assert_eq!(
+        walk(1024).expect("the session admits the chain"),
+        BTreeSet::from([300])
+    );
+    assert!(matches!(
+        walk(200),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_pmi_measure_id_walk"
+    ));
 }
 
 #[test]
@@ -113,7 +151,6 @@ fn measure_eval_refusal(depth_limit: u64, record: &str) -> CodecError {
     let mut measurements = super::super::MeasureContext {
         length_scale: 1.0,
         angle_scale: 1.0,
-        graph_limit: 64,
         losses: &mut losses,
     };
     super::super::measure(

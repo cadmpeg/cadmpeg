@@ -29,6 +29,16 @@ impl DecodeContext<'_> {
         CodecError::malformed(format_args!("{error}"))
     }
 
+    /// The session holds the document's depth, so the parser's own
+    /// recursion limit does not apply.
+    fn deserialize_json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, CodecError> {
+        let mut deserializer = serde_json::Deserializer::from_str(text);
+        deserializer.disable_recursion_limit();
+        T::deserialize(&mut deserializer)
+            .and_then(|value| deserializer.end().map(|()| value))
+            .map_err(Self::tree_malformed)
+    }
+
     /// Parses XML with DTD processing disabled and charges its element depth.
     pub fn parse_xml<'input>(
         &self,
@@ -57,9 +67,7 @@ impl DecodeContext<'_> {
         text: &str,
         operation: &'static str,
     ) -> Result<serde_json::Value, CodecError> {
-        self.at_depth(json_depth(text), operation, || {
-            serde_json::from_str(text).map_err(Self::tree_malformed)
-        })
+        self.at_depth(json_depth(text), operation, || Self::deserialize_json(text))
     }
 
     /// Parses a type with a derived `Deserialize` after charging the source's
@@ -69,9 +77,7 @@ impl DecodeContext<'_> {
         text: &str,
         operation: &'static str,
     ) -> Result<T, CodecError> {
-        self.at_depth(json_depth(text), operation, || {
-            serde_json::from_str(text).map_err(Self::tree_malformed)
-        })
+        self.at_depth(json_depth(text), operation, || Self::deserialize_json(text))
     }
 }
 
@@ -223,6 +229,18 @@ mod tests {
         with_depth(3, |ctx| assert!(ctx.parse_xml(nested, "XML").is_ok()));
         with_depth(2, |ctx| {
             assert!(is_depth_refusal(&ctx.parse_xml(nested, "XML")));
+        });
+    }
+
+    #[test]
+    fn json_depth_follows_the_session_past_the_parser_limit() {
+        let nested = format!("{}{}", "[".repeat(200), "]".repeat(200));
+        with_depth(256, |ctx| {
+            assert!(ctx.parse_json_value(&nested, "JSON").is_ok());
+            assert!(ctx.parse_json::<serde_json::Value>(&nested, "JSON").is_ok());
+        });
+        with_depth(199, |ctx| {
+            assert!(is_depth_refusal(&ctx.parse_json_value(&nested, "JSON")));
         });
     }
 
