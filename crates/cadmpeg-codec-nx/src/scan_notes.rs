@@ -2,7 +2,6 @@
 //! Notes shared by NX decode and inspection summaries.
 
 use cadmpeg_core::bytes::assemble_u32_be;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::decode::{self, Scan};
@@ -10,7 +9,6 @@ use crate::parasolid::StreamKind;
 
 /// Classify a scan and build its inspection and decode notes.
 pub(super) fn summarize(
-    ctx: &DecodeContext<'_>,
     scan: &Scan,
 ) -> Result<(crate::dialect::LayerClassification, Vec<String>), CodecError> {
     let c = &scan.container;
@@ -108,5 +106,5 @@ pub(super) fn summarize(
                 .to_string(),
         );
     }
-    Ok((crate::dialect::classify_layers(ctx, scan)?, notes))
+    Ok((crate::dialect::classify_layers(scan), notes))
 }

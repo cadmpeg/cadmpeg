@@ -7,9 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};
-use cadmpeg_core::CodecError;
 
 include!("registry_ids.rs");
 
@@ -200,21 +198,21 @@ fn schema_row(schema: &str) -> DialectId {
 /// declarations, independent of whether the schema has a named registry row.
 /// `verified` lists the rows whose grammar the host applied and verified; every
 /// other row, and the residual row, is admitted without verification.
+#[must_use]
 pub fn classify_layer(
-    _ctx: &DecodeContext<'_>,
     schema: OwnedSchemaToken,
     carrier: Carrier,
     instance: LayerInstance,
     verified: &[DialectId],
-) -> Result<ClassifiedLayer, CodecError> {
+) -> ClassifiedLayer {
     let id = schema_row(schema.value());
-    let mut declared = BTreeMap::new();
-    let schema_key = cadmpeg_core::text::NonBlankString::new(DECLARED_SCHEMA.to_owned())
-        .ok_or_else(|| CodecError::malformed("empty Parasolid schema declaration key"))?;
-    declared.insert(schema_key, schema.0);
-    let carrier_key = cadmpeg_core::text::NonBlankString::new(DECLARED_CARRIER.to_owned())
-        .ok_or_else(|| CodecError::malformed("empty Parasolid carrier declaration key"))?;
-    declared.insert(carrier_key, carrier.to_string());
+    let declared = BTreeMap::from([
+        (cadmpeg_core::nonblank_const!(DECLARED_SCHEMA), schema.0),
+        (
+            cadmpeg_core::nonblank_const!(DECLARED_CARRIER),
+            carrier.to_string(),
+        ),
+    ]);
     let matched = if verified.contains(&id) {
         DialectMatch::admitted(id)
     } else {
@@ -225,7 +223,7 @@ pub fn classify_layer(
         LayerInstance::Sole => matched,
         LayerInstance::Tagged => matched.with_instance(carrier.to_string()),
     };
-    Ok(ClassifiedLayer { matched, carrier })
+    ClassifiedLayer { matched, carrier }
 }
 
 /// One classified Parasolid layer and the carrier it was read from.
@@ -263,21 +261,20 @@ impl ClassifiedLayer {
 /// A lone layer needs no instance. Several layers use their carrier paths as
 /// stable instance keys, so hosts cannot disagree about when identity needs a
 /// disambiguator.
+#[must_use]
 pub fn extra_layers(
-    ctx: &DecodeContext<'_>,
     streams: Vec<(OwnedSchemaToken, Carrier)>,
     verified: &[DialectId],
-) -> Result<Vec<ClassifiedLayer>, CodecError> {
+) -> Vec<ClassifiedLayer> {
     let instance = if streams.len() > 1 {
         LayerInstance::Tagged
     } else {
         LayerInstance::Sole
     };
-    let mut layers = Vec::new();
-    for (schema, carrier) in streams {
-        layers.push(classify_layer(ctx, schema, carrier, instance, verified)?);
-    }
-    Ok(layers)
+    streams
+        .into_iter()
+        .map(|(schema, carrier)| classify_layer(schema, carrier, instance, verified))
+        .collect()
 }
 
 /// Adds classified Parasolid layers and reports every uniqueness collision.
@@ -285,11 +282,11 @@ pub fn extra_layers(
 /// Hosts own their loss-code vocabulary. This helper owns the shared layer-set
 /// operation and its explanation so NX and SLDPRT cannot describe the same
 /// Parasolid collision differently.
+#[must_use]
 pub fn push_extras(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     layers: &mut DialectLayers,
     extras: impl IntoIterator<Item = ClassifiedLayer>,
-) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+) -> Vec<String> {
     let mut collisions = Vec::new();
     for layer in extras {
         let ClassifiedLayer { matched, carrier } = layer;
@@ -304,7 +301,7 @@ pub fn push_extras(
             }
         }
     }
-    Ok(collisions)
+    collisions
 }
 
 /// Explain why a Parasolid layer was admitted without verification.
@@ -312,17 +309,15 @@ pub fn push_extras(
 /// Host codecs own their loss vocabulary. This helper owns the interpretation
 /// of the declarations produced by [`classify_layer`], so every host wraps the
 /// same kernel fact in its codec-specific loss code.
-pub fn unverified_message(
-    _ctx: &DecodeContext<'_>,
-    matched: &DialectMatch,
-) -> Result<Option<String>, CodecError> {
+#[must_use]
+pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
     if matched.format() != FORMAT
         || !matches!(
             matched.admission(),
             Admission::Unverified { .. } | Admission::Residual
         )
     {
-        return Ok(None);
+        return None;
     }
 
     let schema = matched
@@ -334,20 +329,20 @@ pub fn unverified_message(
         .get(DECLARED_CARRIER)
         .map_or("<unrecorded>", String::as_str);
     if matched.dialect() == &PARASOLID_UNKNOWN {
-        return Ok(Some(format!(
+        return Some(format!(
             "The Parasolid stream at {carrier} declares schema {schema:?}, which has no declared \
          grammar. It was admitted as the `{}` residual layer without substituting another \
          schema grammar; bounded structural recovery retains the source stream.",
             matched.dialect()
-        )));
+        ));
     }
-    Ok(Some(format!(
+    Some(format!(
         "The Parasolid stream at {carrier} declares schema {schema:?}, which maps to the named \
      `{}` row, but the host did not verify that row's schema grammar. It was admitted \
      without substituting another schema grammar; bounded structural recovery retains the \
      source stream.",
         matched.dialect()
-    )))
+    ))
 }
 
 #[cfg(test)]
@@ -411,20 +406,17 @@ mod tests {
 
     #[test]
     fn named_schemas_and_the_format_suffix_map_to_their_rows_case_insensitively() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         for (schema, expected) in [
             ("SCH_sw_33103_11000", "parasolid:sch-sw-33103"),
             ("SCH_Sw_32001_11000", "parasolid:sch-sw-32001"),
             ("SCH_3201255_32001_13006", "parasolid:format-13006"),
         ] {
             let matched = classify_layer(
-                &ctx,
                 token(schema),
                 carrier("stream@12"),
                 LayerInstance::Sole,
                 &ALL_ROWS,
-            )
-            .expect("classification fits policy");
+            );
             assert_eq!(matched.matched().dialect().as_str(), expected);
             assert_eq!(matched.matched().admission(), &Admission::Admitted);
             assert_eq!(matched.matched().declared()[DECLARED_SCHEMA], schema);
@@ -435,15 +427,12 @@ mod tests {
 
     #[test]
     fn residual_schemas_use_residual_admission_without_a_substitution() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let matched = classify_layer(
-            &ctx,
             token("SCH_TEST_1_9999"),
             carrier("block@7:body+3"),
             LayerInstance::Tagged,
             &ALL_ROWS,
-        )
-        .expect("classification fits policy");
+        );
 
         assert_eq!(matched.matched().dialect().as_str(), "parasolid:unknown");
         assert_eq!(matched.matched().admission(), &Admission::Residual);
@@ -456,62 +445,50 @@ mod tests {
             "block@7:body+3"
         );
         assert_eq!(matched.matched().instance(), Some("block@7:body+3"));
-        let message = unverified_message(&ctx, matched.matched())
-            .expect("message fits policy")
-            .expect("residual layer explains its recovery");
+        let message =
+            unverified_message(matched.matched()).expect("residual layer explains its recovery");
         assert!(message.contains("SCH_TEST_1_9999"));
         assert!(message.contains("block@7:body+3"));
     }
 
     #[test]
     fn several_layers_receive_carrier_instances() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let layers = extra_layers(
-            &ctx,
             vec![
                 (token("SCH_SW_33103_11000"), carrier("stream@12")),
                 (token("SCH_TEST_1_9999"), carrier("stream@48")),
             ],
             &ALL_ROWS,
-        )
-        .expect("classification fits policy");
+        );
         assert_eq!(layers[0].matched().instance(), Some("stream@12"));
         assert_eq!(layers[1].matched().instance(), Some("stream@48"));
 
         let one = extra_layers(
-            &ctx,
             vec![(token("SCH_SW_33103_11000"), carrier("stream@12"))],
             &ALL_ROWS,
-        )
-        .expect("classification fits policy");
+        );
         assert_eq!(one[0].matched().instance(), None);
     }
 
     #[test]
     fn push_extras_preserves_the_first_layer_and_reports_later_collisions() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let mut layers = DialectLayers::of(DialectMatch::admitted(
             DialectId::parse("nx:splmsstr").expect("valid host dialect id"),
         ));
         let first = classify_layer(
-            &ctx,
             token("SCH_SW_33103_11000"),
             carrier("stream@12"),
             LayerInstance::Tagged,
             &[],
-        )
-        .expect("classification fits policy");
+        );
         let later = classify_layer(
-            &ctx,
             token("SCH_SW_32001_11000"),
             carrier("stream@12"),
             LayerInstance::Tagged,
             &[],
-        )
-        .expect("classification fits policy");
+        );
 
-        let collisions =
-            push_extras(&ctx, &mut layers, [first.clone(), later]).expect("layers fit policy");
+        let collisions = push_extras(&mut layers, [first.clone(), later]);
 
         assert_eq!(layers.iter().skip(1).collect::<Vec<_>>(), [first.matched()]);
         assert_eq!(
@@ -525,7 +502,6 @@ mod tests {
 
     #[test]
     fn every_parasolid_registry_row_is_produced() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let ids: BTreeSet<_> = [
             "SCH_SW_33103_11000",
             "SCH_SW_32001_11000",
@@ -534,13 +510,11 @@ mod tests {
         ]
         .map(|schema| {
             classify_layer(
-                &ctx,
                 token(schema),
                 carrier("carrier"),
                 LayerInstance::Sole,
                 &ALL_ROWS,
             )
-            .expect("classification fits policy")
             .matched()
             .dialect()
             .to_string()
@@ -555,24 +529,20 @@ mod tests {
 
     #[test]
     fn a_known_row_can_be_identified_without_claiming_host_verification() {
-        let ctx = cadmpeg_test_support::service_decode_context();
         let matched = classify_layer(
-            &ctx,
             token("SCH_3501171_35102_13006"),
             carrier("stream@12"),
             LayerInstance::Sole,
             &[PARASOLID_SCH_SW_33103],
-        )
-        .expect("classification fits policy");
+        );
 
         assert_eq!(
             matched.matched().dialect().as_str(),
             "parasolid:format-13006"
         );
         assert_eq!(matched.matched().admission(), &Admission::Residual);
-        let message = unverified_message(&ctx, matched.matched())
-            .expect("message fits policy")
-            .expect("unverified row explains its admission");
+        let message =
+            unverified_message(matched.matched()).expect("unverified row explains its admission");
         assert!(message.contains("host did not verify"));
         assert!(message.contains("parasolid:format-13006"));
     }
