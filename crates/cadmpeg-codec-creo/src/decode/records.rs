@@ -3054,6 +3054,7 @@ mod curve_expression_projection_tests {
             }],
             unresolved_solve_control: false,
             prohibited_constructs: vec!["bad".into()],
+            text_work_caps: std::collections::BTreeMap::new(),
             offset: 3,
             expression_offset: 5,
         });
