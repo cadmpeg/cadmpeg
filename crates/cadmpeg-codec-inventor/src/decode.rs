@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
@@ -68,30 +68,23 @@ fn decode_container<'a>(
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty();
-    let mut admitted_entities = 0_u64;
-    let (design_parameters, unresolved_design_parameters) =
-        crate::design::project_parameters(ctx, &design_inventory, &mut admitted_entities)?;
-    ir.model.parameters = design_parameters;
-    let sketch_projection = crate::sketch::project(ctx, &sketch_inventory, &ir.model.parameters)?;
-    let unresolved_sketches = sketch_projection.unresolved_sketches;
-    let unresolved_sketch_entities = sketch_projection.unresolved_entities;
-    let unresolved_sketch_constraints = sketch_projection.unresolved_constraints;
-    ir.model.sketches = sketch_projection.sketches;
-    ir.model.sketch_entities = sketch_projection.entities;
-    ir.model.sketch_constraints = sketch_projection.constraints;
-    let feature_projection = crate::feature::project(
-        ctx,
-        &feature_inventory,
-        &design_inventory,
-        &sketch_inventory,
-        &ir.model.parameters,
-        &ir.model.sketches,
-    )?;
-    let unresolved_features = feature_projection.unresolved_features;
-    let unresolved_feature_states = feature_projection.unresolved_states;
-    ir.model.features = feature_projection.features;
-    ir.model.feature_result_topologies = feature_projection.result_topologies;
-    admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+    let delivered = if ctx.container_only() {
+        DecodeDepth::Container
+    } else {
+        DecodeDepth::Full
+    };
+    let unresolved = if delivered == DecodeDepth::Full {
+        project_design(
+            ctx,
+            &mut ir,
+            &design_inventory,
+            &sketch_inventory,
+            &feature_inventory,
+        )?
+    } else {
+        UnresolvedDesign::default()
+    };
+    let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".to_owned(),
@@ -728,27 +721,31 @@ fn decode_container<'a>(
                 feature_inventory.issues.len()
             )));
         }
-        if unresolved_features != 0 {
+        if unresolved.features != 0 {
             losses.push(InventorLossCode::FeatureOperationGraphOpen.note(format!(
-                "Retained {unresolved_features} typed Inventor feature record(s) whose operation graph is not closed."
+                "Retained {} typed Inventor feature record(s) whose operation graph is not closed.",
+                unresolved.features
             )));
         }
-        if unresolved_feature_states != 0 {
+        if unresolved.feature_states != 0 {
             losses.push(InventorLossCode::FeatureStateUnresolved.note(format!(
-                "Transferred {unresolved_feature_states} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state."
+                "Transferred {} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state.",
+                unresolved.feature_states
             )));
         }
-        if unresolved_design_parameters != 0 {
+        if unresolved.parameters != 0 {
             losses.push(InventorLossCode::ParameterGraphOpen.note(format!(
-                "Retained {unresolved_design_parameters} Inventor parameter record(s) whose unit or expression graph is not closed."
+                "Retained {} Inventor parameter record(s) whose unit or expression graph is not closed.",
+                unresolved.parameters
             )));
         }
-        if unresolved_sketches != 0
-            || unresolved_sketch_entities != 0
-            || unresolved_sketch_constraints != 0
+        if unresolved.sketches != 0
+            || unresolved.sketch_entities != 0
+            || unresolved.sketch_constraints != 0
         {
             losses.push(InventorLossCode::SketchGraphOpen.note(format!(
-                "Retained {unresolved_sketches} Inventor sketch record(s), {unresolved_sketch_entities} sketch-entity record(s), and {unresolved_sketch_constraints} sketch-constraint record(s) whose neutral graph is not closed."
+                "Retained {} Inventor sketch record(s), {} sketch-entity record(s), and {} sketch-constraint record(s) whose neutral graph is not closed.",
+                unresolved.sketches, unresolved.sketch_entities, unresolved.sketch_constraints
             )));
         }
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
@@ -1108,11 +1105,7 @@ fn decode_container<'a>(
     ];
     let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries.into_iter().collect();
     let body = DecodeBody {
-        transfer: if ctx.container_only() {
-            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
-        } else {
-            cadmpeg_ir::report::decode::DecodeTransfer::full(geometry_transferred)
-        },
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
         losses,
         notes: Vec::new(),
@@ -1128,6 +1121,53 @@ fn decode_container<'a>(
 fn record_ordinal(ordinal: usize, what: &'static str) -> Result<u32, CodecError> {
     u32::try_from(ordinal)
         .map_err(|_| CodecError::malformed(format_args!("{what} {ordinal} exceeds u32")))
+}
+
+/// Design records whose neutral projection did not close, by family.
+#[derive(Debug, Default)]
+struct UnresolvedDesign {
+    parameters: usize,
+    sketches: usize,
+    sketch_entities: usize,
+    sketch_constraints: usize,
+    features: usize,
+    feature_states: usize,
+}
+
+/// Projects the design inventories into the document's design arenas.
+fn project_design(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    design: &crate::design::DesignInventory,
+    sketch: &crate::sketch::SketchInventory,
+    feature: &crate::feature::FeatureInventory,
+) -> Result<UnresolvedDesign, CodecError> {
+    let mut admitted_entities = 0_u64;
+    let (parameters, unresolved_parameters) =
+        crate::design::project_parameters(ctx, design, &mut admitted_entities)?;
+    ir.model.parameters = parameters;
+    let sketches = crate::sketch::project(ctx, sketch, &ir.model.parameters)?;
+    ir.model.sketches = sketches.sketches;
+    ir.model.sketch_entities = sketches.entities;
+    ir.model.sketch_constraints = sketches.constraints;
+    let features = crate::feature::project(
+        ctx,
+        feature,
+        design,
+        sketch,
+        &ir.model.parameters,
+        &ir.model.sketches,
+    )?;
+    ir.model.features = features.features;
+    ir.model.feature_result_topologies = features.result_topologies;
+    Ok(UnresolvedDesign {
+        parameters: unresolved_parameters,
+        sketches: sketches.unresolved_sketches,
+        sketch_entities: sketches.unresolved_entities,
+        sketch_constraints: sketches.unresolved_constraints,
+        features: features.unresolved_features,
+        feature_states: features.unresolved_states,
+    })
 }
 
 fn project_root_product(

@@ -142,6 +142,42 @@ fn convert_reports_the_delivered_depth() {
         .stderr(predicate::str::contains("cannot be used with"));
 }
 
+/// A `FreeCAD` part converted to STEP decodes at geometry depth by default and
+/// writes the same bytes as a `--full-decode` conversion.
+#[cfg(feature = "fcstd")]
+#[test]
+fn a_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("design_history.FCStd");
+    fs::write(
+        &input,
+        include_bytes!("../../../../corpus/freecad_fcstd/fixtures/design_history.FCStd"),
+    )
+    .unwrap();
+    let mut written = Vec::new();
+    for (extra, depth) in [(None, "geometry"), (Some("--full-decode"), "full")] {
+        let output = dir.path().join(format!("{depth}.step"));
+        let mut args = vec![
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ];
+        args.extend(extra);
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(args)
+            .assert()
+            .success()
+            .stderr(predicate::str::contains(format!("depth={depth},")));
+        written.push(fs::read(&output).unwrap());
+    }
+    assert!(
+        written[0] == written[1],
+        "the geometry-depth STEP differs from the full-decode STEP"
+    );
+}
+
 /// `--to` names the schema, in both spellings the grammar admits.
 ///
 /// `step:ap242-e3` is the registry id; `ap242e3` is the catalog alias. The
