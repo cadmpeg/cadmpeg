@@ -1995,7 +1995,6 @@ fn body_revision_without_topology_change(
     Some(body)
 }
 
-#[derive(Clone, Copy)]
 pub(crate) struct FeatureFaceSelectionInputs<'a> {
     pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
     pub(crate) groups:
@@ -2005,7 +2004,7 @@ pub(crate) struct FeatureFaceSelectionInputs<'a> {
         &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     pub(crate) body_recipe_operands:
         &'a [crate::records::topology::body_recipe::DesignBodyRecipeOperand],
-    pub(crate) histories: &'a [AsmHistory],
+    pub(crate) histories: &'a mut [AsmHistory],
 }
 
 pub(crate) fn bind_feature_face_selections(
@@ -2021,8 +2020,30 @@ pub(crate) fn bind_feature_face_selections(
         body_recipe_operands,
         histories,
     } = input;
-    for feature in features {
-        let native_ref = feature.native_ref.as_deref();
+    let selection_states = features
+        .iter()
+        .map(|feature| face_selection_state(feature, scopes, histories))
+        .collect::<Vec<_>>();
+    let gates = features
+        .iter()
+        .zip(&selection_states)
+        .enumerate()
+        .filter(|(_, (feature, _))| face_selection_reads_state(feature.evaluation.definition()))
+        .filter_map(|(position, (_, state))| {
+            state.map(|state| (state.history, state.previous, position))
+        })
+        .collect::<Vec<_>>();
+    let mut available = HashSet::new();
+    visit_states_oldest_first(histories, gates, |history, previous, position| {
+        if history.topology(previous).is_some() {
+            available.insert(position);
+        }
+    });
+    let histories = &*histories;
+    for ((feature_position, feature), selection_state) in
+        features.iter_mut().enumerate().zip(selection_states)
+    {
+        let selection_state = selection_state.filter(|_| available.contains(&feature_position));
         let feature_id = &feature.id;
         let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
@@ -2035,36 +2056,24 @@ pub(crate) fn bind_feature_face_selections(
                 };
             }
             'feature_edit: {
-                let Some(native_ref) = native_ref else {
-                    break 'feature_edit;
-                };
-                let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-                let Some(scope) = matching_scopes.next() else {
-                    break 'feature_edit;
-                };
-                if matching_scopes.next().is_some() {
-                    break 'feature_edit;
-                }
-                let Some(state_id) = scope.history_state_id() else {
-                    break 'feature_edit;
-                };
-                let Some(previous_state_id) =
-                    effective_scope_previous_history_state_id(scope, histories)
+                let Some(FaceSelectionState {
+                    scope,
+                    previous_state_id,
+                    history,
+                    state,
+                    ..
+                }) = selection_state
                 else {
                     break 'feature_edit;
                 };
-                let Some((history, state, previous)) =
-                    unique_history_state_pair(histories, state_id, previous_state_id)
+                let Some(history) = histories.get(history) else {
+                    break 'feature_edit;
+                };
+                let Some(transition) = history
+                    .states()
+                    .get(state)
+                    .and_then(|state| state.transition.as_ref())
                 else {
-                    break 'feature_edit;
-                };
-                let Some(transition) = &state.transition else {
-                    break 'feature_edit;
-                };
-                if transition.previous_state_id != Some(previous_state_id) {
-                    break 'feature_edit;
-                }
-                let Some(_topology) = history.topology(previous) else {
                     break 'feature_edit;
                 };
                 match definition {
@@ -2223,6 +2232,59 @@ pub(crate) fn bind_feature_face_selections(
         edit_result?;
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct FaceSelectionState<'a> {
+    scope: &'a crate::records::feature::scope::DesignParameterScope,
+    previous_state_id: i64,
+    history: usize,
+    state: usize,
+    previous: usize,
+}
+
+fn face_selection_state<'a>(
+    feature: &cadmpeg_ir::features::Feature,
+    scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    histories: &[AsmHistory],
+) -> Option<FaceSelectionState<'a>> {
+    let native_ref = feature.native_ref.as_deref()?;
+    let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+    let scope = matching_scopes.next()?;
+    if matching_scopes.next().is_some() {
+        return None;
+    }
+    let state_id = scope.history_state_id()?;
+    let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
+    let (history, state, previous) =
+        unique_history_state_pair(histories, state_id, previous_state_id)?;
+    if state.transition.as_ref()?.previous_state_id != Some(previous_state_id) {
+        return None;
+    }
+    let (history_index, state_index) = history_state_indexes(histories, history, state)?;
+    let (_, previous_index) = history_state_indexes(histories, history, previous)?;
+    Some(FaceSelectionState {
+        scope,
+        previous_state_id,
+        history: history_index,
+        state: state_index,
+        previous: previous_index,
+    })
+}
+
+fn face_selection_reads_state(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
+    matches!(
+        definition,
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                | cadmpeg_ir::features::FeatureOperation::Pattern { .. }
+                | cadmpeg_ir::features::FeatureOperation::MoveFace { .. }
+                | cadmpeg_ir::features::FeatureOperation::Thicken { .. }
+                | cadmpeg_ir::features::FeatureOperation::KnitSurface { .. }
+                | cadmpeg_ir::features::FeatureOperation::SplitFace { .. }
+                | cadmpeg_ir::features::FeatureOperation::Hole { face: Some(_), .. }
+        )
+    )
 }
 
 struct FaceSelectionBinding<'a> {
