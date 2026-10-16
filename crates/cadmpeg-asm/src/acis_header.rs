@@ -157,7 +157,7 @@ mod tests {
         bytes.extend_from_slice(b"delta_state");
 
         let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-            .expect("service policy admits header")
+            .expect("parse the ACIS binary header")
             .expect("ACIS header");
         assert_eq!(header.width.bytes(), 4);
         assert_eq!(header.metadata.save_format_version, Some(21_800));

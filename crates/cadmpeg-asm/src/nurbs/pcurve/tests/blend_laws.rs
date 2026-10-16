@@ -55,7 +55,7 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
             for expected in [None, Some(0), Some(3)] {
                 let bytes = variable_blend_side(int_width, name, expected);
                 let mut position = 0;
-                let side = decode_rolling_ball_side(&bytes, &mut position, int_width).transpose().expect("resource allocation did not fail")
+                let side = decode_rolling_ball_side(&bytes, &mut position, int_width).transpose().expect("decode the rolling-ball side")
                     .unwrap_or_else(|| {
                         panic!(
                             "variable-blend support side {name} width {int_width} extension {expected:?}"
@@ -111,15 +111,15 @@ fn fixed_arity_law_operators_decode_at_both_integer_widths() {
         let mut cur = crate::nurbs::toks::Cur::at(&toks, 0);
         let set = crate::nurbs::proc_surface::law_expression(&resource_ctx, &mut cur, 0)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the law expression")
             .unwrap();
         let rotate = crate::nurbs::proc_surface::law_expression(&resource_ctx, &mut cur, 0)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the law expression")
             .unwrap();
         let term = crate::nurbs::proc_surface::law_expression(&resource_ctx, &mut cur, 0)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the law expression")
             .unwrap();
         assert_eq!(cur.pos(), toks.len());
         assert!(matches!(
@@ -190,7 +190,7 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
             &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation")
+        .expect("decode the law spline surface")
         .unwrap_or_else(|| panic!("law surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
         let (definition, _) = decoded.into_parts();
@@ -234,7 +234,7 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
             &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .transpose()
-        .expect("resource allocation")
+        .expect("decode the law spline surface")
         .unwrap_or_else(|| panic!("legacy law surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
         let (definition, _) = decoded.into_parts();
@@ -308,7 +308,7 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
                 &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the law spline surface")
             .unwrap_or_else(|| panic!("law tail {selector} at integer width {int_width}"));
             let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
             let (definition, _) = decoded.into_parts();
@@ -385,7 +385,7 @@ fn rolling_ball_layout_walks_both_integer_widths() {
 
         let layout = rolling_ball_patch_layout(&bytes, int_width)
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("read the rolling-ball patch layout")
             .unwrap_or_else(|| panic!("rolling-ball layout at width {int_width}"));
         let values = layout
             .radii
@@ -406,7 +406,7 @@ fn rolling_ball_layout_walks_both_integer_widths() {
         compact.push(0x10);
         let layout = rolling_ball_patch_layout(&compact, int_width)
             .transpose()
-            .expect("resource allocation did not fail")
+            .expect("read the rolling-ball patch layout")
             .unwrap_or_else(|| panic!("compact rolling-ball layout at width {int_width}"));
         let values = layout
             .radii
@@ -435,7 +435,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         push_f64(&mut straight, 3.0);
         let mut position = 0;
         assert!(
-            matches!(decode_rolling_ball_curve(&straight, &mut position, int_width).transpose().expect("resource allocation did not fail"),
+            matches!(decode_rolling_ball_curve(&straight, &mut position, int_width).transpose().expect("decode the rolling-ball support curve"),
                 Some(RollingBallSupportCurve {
                     curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                     parameter_range: [Some(-2.0), Some(3.0)],
@@ -459,7 +459,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         intcurve.extend_from_slice(&[0x0b, 0x0b]);
         let mut position = 0;
         assert!(matches!(
-            decode_rolling_ball_curve(&intcurve, &mut position, int_width).transpose().expect("resource allocation did not fail"),
+            decode_rolling_ball_curve(&intcurve, &mut position, int_width).transpose().expect("decode the rolling-ball support curve"),
             Some(RollingBallSupportCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],
@@ -488,7 +488,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let tokens = lex_test_span(&intcurve, int_width).expect("framed intcurve reference");
         let mut cur = Cur::at(&tokens, 0);
         assert!(matches!(
-            crate::nurbs::blend::rolling_ball_curve(&resource_ctx, &mut cur, Some(&table)).transpose().expect("resource allocation did not fail"),
+            crate::nurbs::blend::rolling_ball_curve(&resource_ctx, &mut cur, Some(&table)).transpose().expect("decode the rolling-ball support curve"),
             Some(RollingBallSupportCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],

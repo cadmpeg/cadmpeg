@@ -720,7 +720,10 @@ mod tests {
                 } else {
                     crate::asm_header::solved_record_limit_with_header(service, &bytes, &header)
                 };
-                assert_eq!(result.expect("service scan"), Some(boundary));
+                assert_eq!(
+                    result.expect("solve the record limit after the header"),
+                    Some(boundary)
+                );
             })
             .expect("fixture fits service profile");
         }

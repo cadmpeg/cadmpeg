@@ -4745,7 +4745,7 @@ mod sweep_law_tests {
 
         let law = sweep_law_expression(&resource_ctx, &mut cur)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the sweep law expression")
             .expect("text law");
 
         let EmbeddedLawExpression::Text(value) = law else {
@@ -4776,7 +4776,7 @@ mod sweep_law_tests {
 
         let law = law_expression(&resource_ctx, &mut cur, 0)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the law expression")
             .expect("composition law");
 
         assert!(matches!(
@@ -4820,7 +4820,7 @@ mod sweep_law_tests {
 
         let formula = law_formula_resolving(&resource_ctx, &mut cur, None)
             .transpose()
-            .expect("resource allocation")
+            .expect("decode the law formula")
             .expect("rail formula");
 
         assert_eq!(formula.name(), "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
