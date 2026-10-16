@@ -304,6 +304,7 @@ impl ResolvedDestination {
 }
 
 /// A loaded and validated conversion ready for export planning.
+/// Decode-loss refusal is complete. Check and empty-geometry refusals run after planning.
 pub(crate) struct PreparedConversion {
     /// Loaded source document.
     pub(crate) document: LoadedDocument,
@@ -313,14 +314,15 @@ pub(crate) struct PreparedConversion {
     selection: TargetSelection,
     destination: ResolvedDestination,
     loss_policy: LossPolicy,
+    allow_errors: bool,
+    allow_empty: bool,
 }
 
 /// Loads and validates a conversion without planning or writing it.
 ///
-/// Typed refusals and operational failures remain distinct. Pure with
-/// respect to presentation and destination artifact writes; an explicitly
-/// requested command `--report` may still be written by the CLI after a
-/// loss/validation/empty-geometry refusal.
+/// Applies destination admission and decode-loss refusal. Runs validation.
+/// Check, empty-geometry, plan, and export-loss refusals run in `plan`.
+/// Does not print reports or write destination artifacts.
 pub(crate) fn prepare(
     inputs: &InputCatalog,
     source: &SourceRequest<'_>,
@@ -342,29 +344,6 @@ pub(crate) fn prepare(
     }
 
     let validation = validate_loaded(inputs, &loaded, &source.options.policy)?;
-    if !validation.is_ok() && !policy.allow_errors {
-        return Err(ConversionRefusal::CheckFailed {
-            operation: super::refusal::CheckOperation::Export,
-            decode_report,
-            validation,
-        }
-        .into());
-    }
-
-    if format.transfers_geometry()
-        && decode_report
-            .as_ref()
-            .is_some_and(|report| !report.geometry_transferred())
-        && !policy.allow_empty
-    {
-        return Err(ConversionRefusal::EmptyGeometry {
-            format,
-            decode_report,
-            validation,
-        }
-        .into());
-    }
-
     Ok(PreparedConversion {
         document: loaded,
         validation,
@@ -372,11 +351,15 @@ pub(crate) fn prepare(
         selection: target.selection,
         destination,
         loss_policy: policy.losses,
+        allow_errors: policy.allow_errors,
+        allow_empty: policy.allow_empty,
     })
 }
 
 impl PreparedConversion {
-    /// Plans the export and applies the plan-time refusals.
+    /// Plans the export before applying check and empty-geometry refusals.
+    /// A failed plan counts every error as carried, then applies plan refusal.
+    /// A completed plan checks carried errors, then applies export-loss refusal.
     pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
@@ -388,6 +371,13 @@ impl PreparedConversion {
         ) {
             Ok(plan) => plan,
             Err(error) => {
+                let carried = self.validation.error_count();
+                if carried > 0 && !self.allow_errors {
+                    return Err(self.check_refusal(carried));
+                }
+                if self.refuses_empty_geometry() {
+                    return Err(self.empty_geometry_refusal());
+                }
                 return Err(plan_refusal(
                     error,
                     self.document.decode_report().cloned(),
@@ -395,6 +385,15 @@ impl PreparedConversion {
                 ));
             }
         };
+        let carried = plan
+            .carried_errors(&self.document.ir, &self.validation)
+            .len();
+        if carried > 0 && !self.allow_errors {
+            return Err(self.check_refusal(carried));
+        }
+        if self.refuses_empty_geometry() {
+            return Err(self.empty_geometry_refusal());
+        }
         if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
                 decode_report: self.document.decode_report().cloned(),
@@ -406,7 +405,40 @@ impl PreparedConversion {
         Ok(PlannedConversion {
             plan,
             prepared: self,
+            carried_errors: carried,
         })
+    }
+
+    fn check_refusal(self, carried: usize) -> ApplicationError {
+        ConversionRefusal::CheckFailed {
+            operation: super::refusal::CheckOperation::Export { carried },
+            decode_report: self.document.decode_report().cloned(),
+            validation: self.validation,
+        }
+        .into()
+    }
+
+    fn empty_geometry_refusal(self) -> ApplicationError {
+        ConversionRefusal::EmptyGeometry {
+            format: self.selection.format,
+            decode_report: self.document.decode_report().cloned(),
+            validation: self.validation,
+        }
+        .into()
+    }
+
+    fn refuses_empty_geometry(&self) -> bool {
+        self.selection.format.transfers_geometry()
+            && self
+                .document
+                .decode_report()
+                .is_some_and(|report| !report.geometry_transferred())
+            && !self.allow_empty
+    }
+
+    /// Returns the selected output format.
+    pub(crate) const fn format(&self) -> Format {
+        self.selection.format
     }
 }
 
@@ -414,9 +446,15 @@ impl PreparedConversion {
 pub(crate) struct PlannedConversion {
     plan: ExportPlan,
     prepared: PreparedConversion,
+    carried_errors: usize,
 }
 
 impl PlannedConversion {
+    /// Returns the number of error findings carried by the output.
+    pub(crate) const fn carried_errors(&self) -> usize {
+        self.carried_errors
+    }
+
     /// Returns the loaded source state retained for reporting.
     #[must_use]
     pub(crate) const fn prepared(&self) -> &PreparedConversion {

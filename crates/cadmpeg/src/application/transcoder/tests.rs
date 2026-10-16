@@ -96,6 +96,8 @@ fn prepared(
         selection: TargetSelection::new(format, None),
         destination: ResolvedDestination::Stdout,
         loss_policy,
+        allow_errors: false,
+        allow_empty: false,
     }
 }
 
@@ -223,12 +225,15 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
             bodies: Vec::new(),
             native_ref: None,
         });
-    let conversion = prepared(
+    let mut conversion = prepared(
         ir,
         Format::Rhino,
         Box::new(cadmpeg_codec_rhino::RhinoCodec),
         LossPolicy::RejectExport,
     );
+    // The lone point is an orphan carrier, a check error the Rhino payload
+    // carries. This test covers the export-loss gate, so it permits errors.
+    conversion.allow_errors = true;
     let Err(error) = conversion.plan() else {
         panic!("the omitted product definition must refuse");
     };
@@ -446,4 +451,311 @@ fn loss_policy_cli_preserves_omission_and_rejects_allow_spelling() {
         crate::Cli::try_parse_from(["cadmpeg", "convert", "input.step", "--reject-lossy=allow"])
             .unwrap_err();
     assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
+}
+
+#[cfg(feature = "fcstd")]
+fn checked_design_history() -> (LoadedDocument, cadmpeg_ir::report::check::ValidationReport) {
+    let inputs = cadmpeg_registry::InputCatalog::with_builtins();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/freecad_fcstd/fixtures/design_history.FCStd");
+    let options = cadmpeg_ir::codec::DecodeOptions::default();
+    let document = crate::loader::load_artifact(&inputs, &path, options, None)
+        .expect("load the FreeCAD design-history fixture");
+    let validation =
+        crate::application::validators::validate_loaded(&inputs, &document, &options.policy)
+            .expect("validate the FreeCAD design-history fixture");
+    assert_eq!(validation.error_count(), 0, "{validation:?}");
+    (document, validation)
+}
+
+#[cfg(all(feature = "fcstd", feature = "step"))]
+fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
+    use cadmpeg_ir::codec::write::CadirEncoder;
+    use cadmpeg_ir::codec::DecodeOptions;
+    use cadmpeg_registry::InputCatalog;
+
+    CadirEncoder
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .expect("plan the mutated CADIR document")
+        .write_to(&mut std::fs::File::create(path).expect("create CADIR input"))
+        .expect("write the mutated CADIR document");
+    super::prepare(
+        &InputCatalog::with_builtins(),
+        &super::SourceRequest {
+            path,
+            forced: None,
+            options: DecodeOptions::default(),
+        },
+        export_target(TargetSelection::new(Format::Step, None)),
+        &super::ConversionPolicy {
+            losses: LossPolicy::Allow,
+            allow_errors: false,
+            allow_empty: false,
+            destination: DestinationPolicy::Stdout {
+                allow_binary: false,
+            },
+        },
+    )
+    .expect("prepare must retain validation errors for the export plan gate")
+}
+
+#[cfg(all(feature = "fcstd", feature = "step"))]
+#[test]
+fn a_design_arena_error_does_not_block_a_step_export() {
+    use cadmpeg_ir::features::FeatureId;
+    use cadmpeg_ir::report::{check::Check, Severity};
+
+    let (mut document, _) = checked_design_history();
+    let parameter_id = document.ir.model.parameters[0].id.to_string();
+    document.ir.model.parameters[0].owner =
+        Some(FeatureId::mint("fcstd:test:feature#missing").expect("valid absent feature identity"));
+    let directory = tempfile::tempdir().expect("temporary CADIR directory");
+    let conversion = prepare_cadir_for_step(&document.ir, &directory.path().join("design.json"));
+    let planned = conversion.plan().expect("STEP drops the design arenas");
+    let report = &planned.prepared().validation;
+    assert!(
+        report.findings.iter().any(|finding| {
+            finding.severity >= Severity::Error
+                && finding.check == Check::ReferentialIntegrity
+                && finding.entity.as_deref() == Some(parameter_id.as_str())
+        }),
+        "{report:?}"
+    );
+    assert!(
+        report
+            .findings
+            .iter()
+            .filter(|finding| finding.severity >= Severity::Error)
+            .all(|finding| document
+                .ir
+                .model
+                .parameters
+                .iter()
+                .any(|parameter| { finding.entity.as_deref() == Some(parameter.id.as_str()) })),
+        "{report:?}"
+    );
+    assert_eq!(planned.carried_errors(), 0);
+}
+
+#[cfg(all(feature = "fcstd", feature = "step"))]
+#[test]
+fn a_brep_error_blocks_a_step_export() {
+    use crate::application::refusal::CheckOperation;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::report::Severity;
+
+    let (mut document, _) = checked_design_history();
+    let face_id = document.ir.model.faces[0].id.to_string();
+    document.ir.model.faces[0].surface =
+        SurfaceId::mint("fcstd:test:surface#missing").expect("valid absent surface identity");
+    let directory = tempfile::tempdir().expect("temporary CADIR directory");
+    let conversion = prepare_cadir_for_step(&document.ir, &directory.path().join("brep.json"));
+    let Err(error) = conversion.plan() else {
+        panic!("STEP must refuse an error in the B-rep it writes");
+    };
+    let Some(ConversionRefusal::CheckFailed {
+        operation: CheckOperation::Export { carried },
+        validation,
+        ..
+    }) = error.refusal()
+    else {
+        panic!("expected an export check refusal, got {error:?}");
+    };
+    assert!(*carried >= 1);
+    assert_eq!(*carried, validation.error_count());
+    assert!(
+        validation.findings.iter().any(|finding| {
+            finding.severity >= Severity::Error
+                && finding.entity.as_deref() == Some(face_id.as_str())
+        }),
+        "{validation:?}"
+    );
+    assert!(
+        validation
+            .findings
+            .iter()
+            .filter(|finding| finding.severity >= Severity::Error)
+            .all(|finding| finding.entity.as_deref().is_none_or(|id| {
+                document
+                    .ir
+                    .model
+                    .faces
+                    .iter()
+                    .any(|face| face.id.as_str() == id)
+                    || document
+                        .ir
+                        .model
+                        .surfaces
+                        .iter()
+                        .any(|surface| surface.id.as_str() == id)
+            })),
+        "{validation:?}"
+    );
+}
+
+#[cfg(all(feature = "fcstd", feature = "step"))]
+#[test]
+fn an_error_without_an_entity_blocks_a_step_export() {
+    use crate::application::refusal::CheckOperation;
+    use cadmpeg_ir::report::{
+        check::{Check, Finding},
+        Severity,
+    };
+
+    let (document, _) = checked_design_history();
+    let feature_id = document.ir.model.features[0].id.to_string();
+    for include_design_error in [false, true] {
+        let mut conversion = prepared(
+            document.ir.clone(),
+            Format::Step,
+            export_target(TargetSelection::new(Format::Step, None)).encoder,
+            LossPolicy::Allow,
+        );
+        assert_eq!(conversion.validation.error_count(), 0);
+        conversion.validation.findings.push(Finding {
+            check: Check::Counts,
+            severity: Severity::Error,
+            message: "synthetic document-wide error".into(),
+            entity: None,
+        });
+        if include_design_error {
+            conversion.validation.findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: "synthetic design error".into(),
+                entity: Some(feature_id.clone()),
+            });
+        }
+        let Err(error) = conversion.plan() else {
+            panic!("an unlocated error must refuse the export");
+        };
+        assert!(
+            matches!(
+                error.refusal(),
+                Some(ConversionRefusal::CheckFailed {
+                    operation: CheckOperation::Export { carried: 1 },
+                    ..
+                })
+            ),
+            "{error:?}"
+        );
+        if include_design_error {
+            assert!(
+                error
+                    .to_string()
+                    .contains("2 error(s), 1 in what the export writes"),
+                "{error}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "fcstd")]
+#[test]
+fn a_design_arena_error_blocks_a_freecad_round_trip() {
+    use crate::application::refusal::{CheckOperation, ConversionRefusal};
+    use cadmpeg_ir::report::{
+        check::{Check, Finding},
+        Severity,
+    };
+
+    let (document, validation) = checked_design_history();
+    let feature_id = document.ir.model.features[0].id.to_string();
+    for inject_error in [false, true] {
+        let target = super::export_target(TargetSelection::new(Format::Fcstd, None));
+        let mut conversion = PreparedConversion {
+            document: document.clone(),
+            validation: validation.clone(),
+            encoder: target.encoder,
+            selection: target.selection,
+            destination: ResolvedDestination::Stdout,
+            loss_policy: LossPolicy::Allow,
+            allow_errors: false,
+            allow_empty: false,
+        };
+        if inject_error {
+            conversion.validation.findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: "synthetic design error".into(),
+                entity: Some(feature_id.clone()),
+            });
+            let Err(error) = conversion.plan() else {
+                panic!("FreeCAD carries design errors through complete coverage");
+            };
+            assert!(
+                matches!(
+                    error.refusal(),
+                    Some(ConversionRefusal::CheckFailed {
+                        operation: CheckOperation::Export { carried: 1 },
+                        ..
+                    })
+                ),
+                "{error:?}"
+            );
+        } else {
+            let planned = conversion
+                .plan()
+                .expect("the unchanged FreeCAD fixture must plan");
+            assert_eq!(planned.carried_errors(), 0);
+        }
+    }
+}
+
+#[cfg(all(feature = "fcstd", feature = "step"))]
+#[test]
+fn allow_errors_writes_past_a_carried_error() {
+    use cadmpeg_ir::report::{
+        check::{Check, Finding},
+        Severity,
+    };
+
+    let (document, _) = checked_design_history();
+    let mut conversion = prepared(
+        document.ir,
+        Format::Step,
+        export_target(TargetSelection::new(Format::Step, None)).encoder,
+        LossPolicy::Allow,
+    );
+    assert_eq!(conversion.validation.error_count(), 0);
+    conversion.validation.findings.push(Finding {
+        check: Check::Counts,
+        severity: Severity::Error,
+        message: "synthetic document-wide error".into(),
+        entity: None,
+    });
+    conversion.allow_errors = true;
+    let planned = conversion
+        .plan()
+        .expect("allow-errors permits a carried error");
+    assert_eq!(planned.carried_errors(), 1);
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn an_f3d_native_design_record_error_does_not_block_a_step_export() {
+    use cadmpeg_ir::report::{
+        check::{Check, Finding},
+        Severity,
+    };
+
+    let mut conversion = prepared(
+        step_ir_with_unrepresentable_native_content(),
+        Format::Step,
+        export_target(TargetSelection::new(Format::Step, None)).encoder,
+        LossPolicy::Allow,
+    );
+    assert_eq!(conversion.validation.error_count(), 0);
+    let finding = Finding {
+        check: Check::Counts,
+        severity: Severity::Error,
+        message: "synthetic native design record error".into(),
+        entity: Some("f3d:test:asm-history#0".into()),
+    };
+    conversion.validation.findings.push(finding.clone());
+    let planned = conversion
+        .plan()
+        .expect("STEP drops the foreign native namespace");
+    assert_eq!(planned.carried_errors(), 0);
+    assert!(planned.prepared().validation.findings.contains(&finding));
 }

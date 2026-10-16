@@ -120,7 +120,7 @@ enum Command {
     /// With no `--to`, a same-format conversion keeps the dialect the input
     /// already is, and a cross-format conversion writes the format's default.
     ///
-    /// `--allow-errors` writes the file even if the check finds errors.
+    /// Convert refuses when the check finds an error in what the output writes. `--allow-errors` writes the file anyway.
     #[command(
         display_order = 1,
         after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.sldprt -o out.3dm --to rhino:archive-80\n  cadmpeg convert part.f3d -o out.igs --to 5.1\n  cadmpeg convert part.f3d --to step"
@@ -137,7 +137,7 @@ enum Command {
         format: Option<String>,
         #[command(flatten)]
         destinations: ConversionDestinations,
-        /// Write output even if the check finds errors. The check runs and prints findings. Skip the refusal.
+        /// Write output even if the check finds errors in what the output writes. The check runs and prints every finding.
         #[arg(long)]
         allow_errors: bool,
         /// Write output even if no geometry was decoded.
