@@ -3050,6 +3050,7 @@ mod curve_expression_projection_tests {
                 }],
                 offset: 8,
                 for_offset: 9,
+                work_cap: None,
             }],
             unresolved_solve_control: false,
             prohibited_constructs: vec!["bad".into()],

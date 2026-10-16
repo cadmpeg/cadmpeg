@@ -129,6 +129,8 @@ pub(crate) struct CurveExpressionSolveBlock {
     pub(crate) offset: usize,
     /// Byte offset of the terminating `FOR` line.
     pub(crate) for_offset: usize,
+    /// Local work cap that left this block unsolved, when one applied.
+    pub(crate) work_cap: Option<&'static str>,
 }
 
 /// One declared solve unknown and its optional solution.
@@ -1084,11 +1086,13 @@ pub(crate) fn expression_records_with_model_name(
                     assignment.value = None;
                 }
                 evaluation.solve_solutions.clear();
+                evaluation.solve_work_caps.clear();
             }
             synchronize_solve_blocks(
                 &mut solve_program.blocks,
                 &evaluation.assignments,
                 &evaluation.solve_solutions,
+                &evaluation.solve_work_caps,
             );
             records.push(CurveExpressionRecord {
                 entity_id,
@@ -1121,11 +1125,13 @@ pub(crate) fn reevaluate_expression_records(
                 assignment.value = None;
             }
             evaluation.solve_solutions.clear();
+            evaluation.solve_work_caps.clear();
         }
         synchronize_solve_blocks(
             &mut record.solve_blocks,
             &evaluation.assignments,
             &evaluation.solve_solutions,
+            &evaluation.solve_work_caps,
         );
         record.assignments = evaluation.assignments;
     }
@@ -1136,6 +1142,7 @@ fn synchronize_solve_blocks(
     blocks: &mut [CurveExpressionSolveBlock],
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
+    work_caps: &BTreeMap<usize, &'static str>,
 ) {
     for block in blocks {
         for assignment in &mut block.assignments {
@@ -1153,6 +1160,7 @@ fn synchronize_solve_blocks(
                 .and_then(|values| values.get(index))
                 .map(copy_expression_value);
         }
+        block.work_cap = work_caps.get(&block.offset).copied();
     }
 }
 
@@ -1465,6 +1473,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                     unknowns,
                     offset: block.offset,
                     for_offset: line.offset,
+                    work_cap: None,
                 });
             } else {
                 program.unresolved_control = true;
@@ -1883,6 +1892,7 @@ fn branch_activation(
 struct CurveExpressionEvaluation {
     assignments: Vec<CurveExpressionAssignment>,
     solve_solutions: BTreeMap<usize, Vec<CurveExpressionValue>>,
+    solve_work_caps: BTreeMap<usize, &'static str>,
 }
 
 fn copy_expression_value(value: &CurveExpressionValue) -> CurveExpressionValue {
@@ -1923,6 +1933,7 @@ fn evaluate_expression_program_details(
         return Ok(CurveExpressionEvaluation {
             assignments,
             solve_solutions: BTreeMap::new(),
+            solve_work_caps: BTreeMap::new(),
         });
     }
 
@@ -1962,6 +1973,7 @@ fn evaluate_expression_program_details(
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
     let mut solve_solutions = BTreeMap::new();
+    let mut solve_work_caps = BTreeMap::new();
     let mut solve_block_dimensions = BTreeMap::new();
     let mut solve_block_initial_values = BTreeMap::new();
     for (index, line) in lines.iter().enumerate() {
@@ -2026,6 +2038,7 @@ fn evaluate_expression_program_details(
                 }
                 None => None,
             };
+            let mut nonlinear_work_cap = None;
             let solution = match affine_solution {
                 Some(solution) => Some(solution),
                 None => match (
@@ -2039,10 +2052,14 @@ fn evaluate_expression_program_details(
                         dimensions,
                         initial_values,
                         context,
+                        &mut nonlinear_work_cap,
                     )?,
                     _ => None,
                 },
             };
+            if let Some(bound) = nonlinear_work_cap {
+                solve_work_caps.insert(block.offset, bound);
+            }
             if let Some(solution) = solution {
                 for (variable, value) in block
                     .unknowns
@@ -2140,6 +2157,7 @@ fn evaluate_expression_program_details(
     Ok(CurveExpressionEvaluation {
         assignments,
         solve_solutions,
+        solve_work_caps,
     })
 }
 
@@ -5911,6 +5929,7 @@ fn solve_nonlinear_expression_block(
     known_dimensions: &[Option<RelationDimension>],
     initial_values: &[Option<CurveExpressionValue>],
     context: RelationEvaluationContext<'_>,
+    work_cap: &mut Option<&'static str>,
 ) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
     if !nonlinear_equations_are_smooth(block) {
         return Ok(None);
@@ -5921,10 +5940,11 @@ fn solve_nonlinear_expression_block(
         return Ok(None);
     };
     let variable_count = block.unknowns.len();
-    if variable_count == 0
-        || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES
-        || block.equations.len() < variable_count
-    {
+    if variable_count == 0 || block.equations.len() < variable_count {
+        return Ok(None);
+    }
+    if variable_count > MAX_NONLINEAR_SOLVE_VARIABLES {
+        *work_cap = Some("MAX_NONLINEAR_SOLVE_VARIABLES");
         return Ok(None);
     }
     let Some(seeds) = nonlinear_initial_guesses(ctx, initial_values, &variable_dimensions)? else {
@@ -5941,13 +5961,21 @@ fn solve_nonlinear_expression_block(
         &variable_dimensions,
         &initial_seed,
         context,
+        work_cap,
     )?
     else {
         return Ok(None);
     };
     for seed in seeds {
-        let Some(candidate) =
-            refine_nonlinear_solution(ctx, block, values, &variable_dimensions, &seed, context)?
+        let Some(candidate) = refine_nonlinear_solution(
+            ctx,
+            block,
+            values,
+            &variable_dimensions,
+            &seed,
+            context,
+            work_cap,
+        )?
         else {
             continue;
         };
@@ -6080,6 +6108,7 @@ fn refine_nonlinear_solution(
     variable_dimensions: &[RelationDimension],
     seed: &[f64],
     context: RelationEvaluationContext<'_>,
+    work_cap: &mut Option<&'static str>,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
     let mut point = ctx.alloc_filled(seed.len(), 0.0, "creo nonlinear initial point")?;
@@ -6162,6 +6191,7 @@ fn refine_nonlinear_solution(
         }
         // A line search that finds no improving step leaves the block unsolved.
         let Some((candidate, candidate_residuals)) = accepted else {
+            *work_cap = Some("MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS");
             return Ok(None);
         };
         point = candidate;
@@ -6174,6 +6204,7 @@ fn refine_nonlinear_solution(
     }
     // A block that has not converged at the iteration ceiling stays unsolved.
     if !nonlinear_residuals_converged(&residuals) {
+        *work_cap = Some("MAX_NONLINEAR_SOLVE_ITERATIONS");
         return Ok(None);
     }
     let Some(mut rank_rows) = nonlinear_jacobian_rows(

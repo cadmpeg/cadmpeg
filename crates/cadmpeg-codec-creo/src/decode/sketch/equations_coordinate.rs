@@ -779,6 +779,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
     distances: &[(u32, u32, SectionAxis, f64)],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<BTreeMap<SectionCoordinateVariable, f64>, CodecError> {
     const MAX_SIGNED_BRANCHES: usize = 4096;
     if distances.is_empty() {
@@ -841,11 +842,18 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 component_distances.push((first, second, coordinate, magnitude));
             }
         }
-        if component_distances.is_empty()
-            || cadmpeg_core::decode::u64_from_index(component_distances.len())
-                >= u64::from(usize::BITS)
+        if component_distances.is_empty() {
+            continue;
+        }
+        if cadmpeg_core::decode::u64_from_index(component_distances.len()) >= u64::from(usize::BITS)
             || (1usize << component_distances.len()) > MAX_SIGNED_BRANCHES
         {
+            losses.push(crate::loss::CreoLossCode::SectionSignBranchesCapped.note(
+                format!(
+                    "skipped a section distance component with {} distances because MAX_SIGNED_BRANCHES ({MAX_SIGNED_BRANCHES}) bounds the sign-branch search",
+                    component_distances.len()
+                ),
+            ));
             continue;
         }
         let mut component_equations = Vec::new();

@@ -1286,11 +1286,19 @@ fn plane_support_layout(values: &[f64; 12], saw_zero_slot_prefix: bool) -> Plane
     }
 }
 
+/// Loss note when plane-support lane search stops at [`MAX_PLANE_SUPPORT_LANE_VARIANTS`].
+pub(crate) fn plane_support_variants_capped_loss() -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::CreoLossCode::PlaneSupportVariantsCapped.note(format!(
+        "plane-support lane search stopped at MAX_PLANE_SUPPORT_LANE_VARIANTS ({MAX_PLANE_SUPPORT_LANE_VARIANTS}); later variants were not considered"
+    ))
+}
+
 /// Decode a positional plane support frame and retain its storage layout.
 pub(crate) fn decode_plane_support_local_system(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
     if let Some((values, cursor)) = decode_diagonal_z_plane_support(body, cache) {
         if cursor != body.len() {
@@ -1354,7 +1362,12 @@ pub(crate) fn decode_plane_support_local_system(
             layout,
         )));
     }
-    let mut variants = decode_plane_support_lane_variants(ctx, body, cache)?;
+    let (variants, capped) = decode_plane_support_lane_variants(ctx, body, cache)?;
+    if capped {
+        losses.push(plane_support_variants_capped_loss());
+        return Ok(None);
+    }
+    let mut variants = variants.into_iter();
     Ok(match (variants.next(), variants.next()) {
         (Some(variant), None) => Some(variant),
         (None, None) => {
@@ -1374,6 +1387,14 @@ pub(crate) fn decode_plane_support_local_system(
 }
 
 const MAX_PLANE_SUPPORT_LANE_VARIANTS: usize = 64;
+
+fn admit_plane_support_lane_variant(count: usize, capacity: usize, capped: &mut bool) -> bool {
+    if count >= capacity {
+        *capped = true;
+        return false;
+    }
+    true
+}
 
 fn plane_support_values_have_valid_frame(
     values: &[f64; 12],
@@ -1442,7 +1463,7 @@ fn decode_plane_support_lane_variants(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Result<impl Iterator<Item = (FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
+) -> Result<(Vec<(FiniteVector<12>, PlaneSupportFrameLayout)>, bool), CodecError> {
     fn walk(
         ctx: &DecodeContext<'_>,
         body: &[u8],
@@ -1451,12 +1472,12 @@ fn decode_plane_support_lane_variants(
         position: (usize, usize, bool),
         results: &mut [Option<(FiniteVector<12>, PlaneSupportFrameLayout)>;
                  MAX_PLANE_SUPPORT_LANE_VARIANTS],
-        count: &mut usize,
+        progress: &mut (usize, bool),
     ) -> Result<(), CodecError> {
         let (slot, cursor, saw_zero_slot_prefix) = position;
 
         let _depth = ctx.enter_nested("creo plane support variants depth")?;
-        if *count >= results.len() {
+        if !admit_plane_support_lane_variant(progress.0, results.len(), &mut progress.1) {
             return Ok(());
         }
         if slot == values.len() {
@@ -1469,7 +1490,7 @@ fn decode_plane_support_lane_variants(
             let layout = plane_support_layout(values, saw_zero_slot_prefix);
             if matches!(layout, PlaneSupportFrameLayout::DirectNormalTriples)
                 && plane_support_values_have_valid_frame(values, layout)
-                && !results[..*count]
+                && !results[..progress.0]
                     .iter()
                     .flatten()
                     .any(|(known, known_layout)| {
@@ -1481,8 +1502,8 @@ fn decode_plane_support_lane_variants(
                                 .all(|(known, value)| known.to_bits() == value.to_bits())
                     })
             {
-                results[*count] = Some((frame, layout));
-                *count += 1;
+                results[progress.0] = Some((frame, layout));
+                progress.0 += 1;
             }
             return Ok(());
         }
@@ -1496,7 +1517,7 @@ fn decode_plane_support_lane_variants(
                 values,
                 (slot + 3, cursor + 2, saw_zero_slot_prefix),
                 results,
-                count,
+                progress,
             )?;
         }
         if body.get(cursor) == Some(&0x18)
@@ -1512,7 +1533,7 @@ fn decode_plane_support_lane_variants(
                 values,
                 (slot + 1, cursor + 1, true),
                 results,
-                count,
+                progress,
             )?;
         }
         if body.get(cursor) == Some(&0x18)
@@ -1529,7 +1550,7 @@ fn decode_plane_support_lane_variants(
                 values,
                 (slot + 1, cursor + 1, true),
                 results,
-                count,
+                progress,
             )?;
         }
         if body.get(cursor) == Some(&0x10) {
@@ -1541,7 +1562,7 @@ fn decode_plane_support_lane_variants(
                 values,
                 (slot + 1, cursor + 1, saw_zero_slot_prefix),
                 results,
-                count,
+                progress,
             )?;
         }
         if body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
@@ -1553,7 +1574,7 @@ fn decode_plane_support_lane_variants(
                 values,
                 (slot + 1, cursor + 1, true),
                 results,
-                count,
+                progress,
             )?;
         }
 
@@ -1585,7 +1606,7 @@ fn decode_plane_support_lane_variants(
                 values,
                 (slot + 1, next, saw_zero_slot_prefix),
                 results,
-                count,
+                progress,
             )?;
         }
         Ok(())
@@ -1593,7 +1614,7 @@ fn decode_plane_support_lane_variants(
 
     let mut values = [0.0; 12];
     let mut results = [None; MAX_PLANE_SUPPORT_LANE_VARIANTS];
-    let mut count = 0;
+    let mut progress = (0usize, false);
     walk(
         ctx,
         body,
@@ -1601,18 +1622,20 @@ fn decode_plane_support_lane_variants(
         &mut values,
         (0, 0, false),
         &mut results,
-        &mut count,
+        &mut progress,
     )?;
-    Ok(results.into_iter().flatten())
+    Ok((results.into_iter().flatten().collect(), progress.1))
 }
 
 /// Decode a positional plane support frame whose origin uses the named
 /// local-system sign for compact one-half coordinates.
 #[cfg(test)]
 fn decode_plane_support_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    crate::decode::with_service_context(|ctx| decode_plane_support_local_system(ctx, body, cache))
-        .expect("decode the plane support local system")
-        .map(|(values, _)| values.get())
+    crate::decode::with_service_context(|ctx| {
+        decode_plane_support_local_system(ctx, body, cache, &mut Vec::new())
+    })
+    .expect("decode the plane support local system")
+    .map(|(values, _)| values.get())
 }
 
 #[derive(Clone, Copy)]
@@ -2430,7 +2453,7 @@ mod tests {
         let bytes = [0xe4];
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             super::decode_plane_support_lane_variants(ctx, &bytes, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
+                .map(|(frames, _)| frames.len())
         };
         assert_eq!(
             with_depth_limit(&bytes, 2, decode).expect("two recursive steps admitted"),
@@ -2447,6 +2470,23 @@ mod tests {
         assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(limit.operation, "creo plane support variants depth");
         assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+    }
+
+    #[test]
+    fn plane_support_lane_variant_cap_reports_the_bound() {
+        let mut capped = false;
+        assert!(!super::admit_plane_support_lane_variant(
+            super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
+            super::MAX_PLANE_SUPPORT_LANE_VARIANTS,
+            &mut capped,
+        ));
+        assert!(capped);
+        let loss = super::plane_support_variants_capped_loss();
+        assert_eq!(
+            loss.code,
+            crate::loss::CreoLossCode::PlaneSupportVariantsCapped.kind()
+        );
+        assert!(loss.message.contains("MAX_PLANE_SUPPORT_LANE_VARIANTS"));
     }
 
     fn with_context<T>(
@@ -2812,7 +2852,8 @@ mod tests {
             crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
                 ctx,
                 &body,
-                &ScalarCache::default()
+                &ScalarCache::default(),
+                &mut Vec::new(),
             ))
             .expect("decode the plane support local system")
             .map(|(values, layout)| (values.get(), layout)),
@@ -2918,7 +2959,10 @@ mod tests {
 
         assert_eq!(
             crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
-                ctx, &body, &cache
+                ctx,
+                &body,
+                &cache,
+                &mut Vec::new(),
             ))
             .expect("decode the plane support local system")
             .map(|(_, layout)| layout),
@@ -2928,7 +2972,8 @@ mod tests {
             crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
                 ctx,
                 &[0x10; 12],
-                &ScalarCache::default()
+                &ScalarCache::default(),
+                &mut Vec::new(),
             ))
             .expect("decode the plane support local system")
             .map(|(_, layout)| layout),
@@ -3061,7 +3106,7 @@ mod tests {
         let body = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
 
         let (slots, layout) = crate::decode::with_service_context(|ctx| {
-            decode_plane_support_local_system(ctx, &body, &ScalarCache::default())
+            decode_plane_support_local_system(ctx, &body, &ScalarCache::default(), &mut Vec::new())
         })
         .expect("decode the plane support local system")
         .expect("complete diagonal support image");
@@ -3112,7 +3157,7 @@ mod tests {
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
         let (slots, layout) = crate::decode::with_service_context(|ctx| {
-            decode_plane_support_local_system(ctx, &body, &cache)
+            decode_plane_support_local_system(ctx, &body, &cache, &mut Vec::new())
         })
         .expect("decode the plane support local system")
         .expect("lane-ambiguous frame has one valid orthogonal interpretation");
@@ -3145,15 +3190,19 @@ mod tests {
 
         assert_eq!(
             crate::decode::with_service_context(|ctx| decode_plane_support_lane_variants(
-                ctx, &body, &cache
+                ctx, &body, &cache,
             ))
             .expect("decode the plane support lane variants")
-            .count(),
+            .0
+            .len(),
             1
         );
         assert!(
             crate::decode::with_service_context(|ctx| decode_plane_support_local_system(
-                ctx, &body, &cache
+                ctx,
+                &body,
+                &cache,
+                &mut Vec::new(),
             ))
             .expect("decode the plane support local system")
             .is_none()
