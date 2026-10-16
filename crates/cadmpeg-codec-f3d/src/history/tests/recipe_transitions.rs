@@ -190,7 +190,7 @@ fn split_face_case() -> Result<
             operands: &[operand],
             entity_operands: &[],
             body_recipe_operands: &[],
-            histories: &[history],
+            histories: &mut [history],
         },
     )?;
 
@@ -927,7 +927,7 @@ fn hole_face_case() -> Result<
             operands: &[],
             entity_operands: &[],
             body_recipe_operands: &[],
-            histories: &[history],
+            histories: &mut [history],
         },
     )?;
 

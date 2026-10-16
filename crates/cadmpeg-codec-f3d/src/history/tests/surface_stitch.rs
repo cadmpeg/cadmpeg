@@ -245,7 +245,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         scope,
         groups,
         operands,
-        history,
+        mut history,
         mut feature,
         mut input_topologies,
     } = surface_stitch_fixture();
@@ -273,7 +273,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             operands: &[],
             entity_operands: &operands,
             body_recipe_operands: &[],
-            histories: std::slice::from_ref(&history),
+            histories: std::slice::from_mut(&mut history),
         },
     )
     .unwrap();
@@ -314,7 +314,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             operands: &[],
             entity_operands: &ambiguous_operands,
             body_recipe_operands: &[],
-            histories: std::slice::from_ref(&history),
+            histories: std::slice::from_mut(&mut history),
         },
     )
     .unwrap();
