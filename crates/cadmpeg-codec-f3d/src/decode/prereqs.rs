@@ -19,6 +19,7 @@ use crate::records::{
     recipes::{ConstructionRecipe, DesignComponentNamingSpace},
     references::DesignMaterialAssignment,
 };
+use crate::xref::XrefTable;
 
 /// Design records that geometry and product projection read.
 #[derive(Debug)]
@@ -45,11 +46,20 @@ pub(super) struct ProductPrereqs {
     pub(super) design_body_members: Vec<DesignBodyMember>,
     /// Retained-byte allowance for ASM history binding, taken before phase 1.
     pub(super) history_retained_allowance: u64,
+    /// Container reference table. A parse failure that does not refuse the
+    /// document stays here for the product report.
+    pub(super) xref: Result<Option<XrefTable>, CodecError>,
 }
 
 impl ProductPrereqs {
-    /// Move every record into native storage.
-    pub(super) fn store(self, native: &mut F3dNative) {
+    /// Container reference table, when it was decoded.
+    pub(super) fn xref_table(&self) -> Option<&XrefTable> {
+        self.xref.as_ref().ok().and_then(Option::as_ref)
+    }
+
+    /// Move every Design record into native storage and return the container
+    /// reference outcome.
+    pub(super) fn store(self, native: &mut F3dNative) -> Result<Option<XrefTable>, CodecError> {
         let Self {
             construction_recipes,
             design_material_assignments,
@@ -65,6 +75,7 @@ impl ProductPrereqs {
             design_body_bindings,
             design_body_members,
             history_retained_allowance: _,
+            xref,
         } = self;
         native.construction_recipes = construction_recipes;
         native.design_material_assignments = design_material_assignments;
@@ -79,6 +90,7 @@ impl ProductPrereqs {
         native.design_component_naming_spaces = design_component_naming_spaces;
         native.design_body_bindings = design_body_bindings;
         native.design_body_members = design_body_members;
+        xref
     }
 }
 
@@ -148,6 +160,12 @@ pub(super) fn decode(
     let design_component_naming_spaces =
         crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
+    let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
+        Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
+            return Err(error)
+        }
+        other => other,
+    };
     Ok(ProductPrereqs {
         construction_recipes,
         design_material_assignments,
@@ -163,6 +181,7 @@ pub(super) fn decode(
         design_body_bindings,
         design_body_members,
         history_retained_allowance,
+        xref,
     })
 }
 

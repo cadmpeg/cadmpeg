@@ -470,6 +470,23 @@ pub(crate) fn project_occurrences(
     Ok(occurrences)
 }
 
+/// Return the one container reference whose occurrence role and placement
+/// match a `Component Insert` construction.
+pub(crate) fn component_insert_reference<'a>(
+    table: &'a XrefTable,
+    construction: &DesignComponentInsertConstruction,
+) -> Option<&'a XrefReference> {
+    let mut matches = table.references.iter().filter(|reference| {
+        reference.neutron_role.as_str() == construction.neutron_role
+            && reference
+                .transform
+                .map(crate::records::xref::XrefPlacementTransform::rows)
+                == Some((*construction.transform()).into())
+    });
+    let reference = matches.next()?;
+    matches.next().is_none().then_some(reference)
+}
+
 /// Resolve exact `Component Insert` history scopes to their placed occurrences.
 pub(crate) fn bind_component_insert_features(
     features: &mut [Feature],
@@ -480,19 +497,9 @@ pub(crate) fn bind_component_insert_features(
         let Some(construction) = scope.component_insert_construction() else {
             continue;
         };
-        let mut matches = table.references.iter().filter(|reference| {
-            reference.neutron_role.as_str() == construction.neutron_role
-                && reference
-                    .transform
-                    .map(crate::records::xref::XrefPlacementTransform::rows)
-                    == Some((*construction.transform()).into())
-        });
-        let Some(reference) = matches.next() else {
+        let Some(reference) = component_insert_reference(table, construction) else {
             continue;
         };
-        if matches.next().is_some() {
-            continue;
-        }
         let Some(feature) = features
             .iter_mut()
             .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))

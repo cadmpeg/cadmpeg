@@ -2265,7 +2265,6 @@ struct DecodeSessionState {
 }
 
 struct DeferredBodylessInputs {
-    xref: Result<Option<crate::xref::XrefTable>, CodecError>,
     non_root_act: usize,
     has_appearance: bool,
 }
@@ -2549,28 +2548,14 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.has_topology_assignments,
                 );
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
-                match crate::xref::decode_with_scopes(
-                    self.ctx,
-                    scan,
-                    &prereqs.design_parameter_scopes,
-                ) {
+                match &prereqs.xref {
                     Ok(Some(table)) => {
-                        report_xref_placement_failures(&mut self.report, &table);
-                        report_xref_placement_overrides(&mut self.report, &table);
-                        self.ir.model.occurrences = crate::xref::project_occurrences(&table)?;
-                        crate::xref::bind_component_insert_features(
-                            &mut self.ir.model.features,
-                            &prereqs.design_parameter_scopes,
-                            &table,
-                        );
-                        self.native.xref_designs = table.designs;
-                        self.native.xref_references = table.references;
+                        report_xref_placement_failures(&mut self.report, table);
+                        report_xref_placement_overrides(&mut self.report, table);
+                        self.ir.model.occurrences = crate::xref::project_occurrences(table)?;
                     }
                     Ok(None) => {}
-                    Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
-                        return Err(error)
-                    }
-                    Err(error) => report_xref_parse_loss(&mut self.report, &error),
+                    Err(error) => report_xref_parse_loss(&mut self.report, error),
                 }
                 FinalizePath::Geometry(index)
             }
@@ -2584,28 +2569,12 @@ impl<'a> F3dDecodeSession<'a> {
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
-                let xref_table = match crate::xref::decode_with_scopes(
-                    self.ctx,
-                    scan,
-                    &prereqs.design_parameter_scopes,
-                ) {
-                    Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
-                        return Err(error)
-                    }
-                    other => other,
-                };
-                if let Ok(Some(table)) = &xref_table {
+                if let Some(table) = prereqs.xref_table() {
                     report_xref_placement_failures(&mut self.report, table);
                     report_xref_placement_overrides(&mut self.report, table);
                     self.ir.model.occurrences = crate::xref::project_occurrences(table)?;
-                    crate::xref::bind_component_insert_features(
-                        &mut self.ir.model.features,
-                        &prereqs.design_parameter_scopes,
-                        table,
-                    );
                 }
                 FinalizePath::Bodyless(DeferredBodylessInputs {
-                    xref: xref_table,
                     non_root_act: non_root_act_component_links,
                     has_appearance: decoded_materials.has_topology_assignments,
                 })
@@ -2649,25 +2618,16 @@ impl<'a> F3dDecodeSession<'a> {
         self.ir.model.product_definitions.extend(local.definitions);
         self.ir.model.occurrences.extend(local.occurrences);
         self.report.losses.extend(local.losses);
-        crate::design::components::project_derived_instance_features(
-            &mut self.ir.model.features,
-            &prereqs.design_parameter_scopes,
-        );
         let unresolved_component_inserts =
             crate::design::components::project_unresolved_component_insert_occurrences(
-                &mut self.ir.model.features,
                 &prereqs.design_parameter_scopes,
+                prereqs.xref_table(),
                 self.ir.model.occurrences.len(),
             )?;
         self.ir
             .model
             .occurrences
             .extend(unresolved_component_inserts);
-        self.ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
-            &prereqs.design_parameter_scopes,
-            &prereqs.design_component_occurrences,
-            &self.ir.model.features,
-        )?;
         Ok(finalize_path)
     }
 
@@ -2681,7 +2641,10 @@ impl<'a> F3dDecodeSession<'a> {
         let ctx = self.ctx;
         let geometry = match path {
             FinalizePath::Geometry(index) => {
-                prereqs.store(&mut self.native);
+                if let Ok(Some(table)) = prereqs.store(&mut self.native) {
+                    self.native.xref_designs = table.designs;
+                    self.native.xref_references = table.references;
+                }
                 design.store(&mut self.native);
                 index
             }
@@ -2690,7 +2653,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &DimensionCompanionSources::new(&prereqs, &design),
                     &self.ir,
                 );
-                prereqs.store(&mut self.native);
+                let xref = prereqs.store(&mut self.native);
                 design.store(&mut self.native);
                 report_unretained_act_component_links(&mut self.report, inputs.non_root_act);
                 reconcile_appearance_loss(&mut self.report, &self.ir, inputs.has_appearance);
@@ -2727,16 +2690,13 @@ impl<'a> F3dDecodeSession<'a> {
                     );
                 }
                 report_unresolved_dimension_companions(&mut self.report, unresolved_companions);
-                match inputs.xref {
+                match xref {
                     Ok(Some(table)) => {
                         apply_assembly_classification(self.ctx, &mut self.report, scan, &table)?;
                         self.native.xref_designs = table.designs;
                         self.native.xref_references = table.references;
                     }
                     Ok(None) => {}
-                    Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
-                        return Err(error)
-                    }
                     Err(error) => report_xref_parse_loss(&mut self.report, &error),
                 }
                 self.native
