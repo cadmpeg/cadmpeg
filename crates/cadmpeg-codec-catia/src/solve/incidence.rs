@@ -4892,6 +4892,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     };
     reconstruct_incidence(
         ctx,
+        budget,
         edge_rows.to_vec(),
         vertex_points.to_vec(),
         edge_faces,
@@ -5077,6 +5078,8 @@ where
     if !valid {
         return Ok(IncidenceSolve::Rejected(IncidenceRejection::ChoicePruning));
     }
+    let fallback_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search_budget = complete_solution_budget.unwrap_or(&fallback_budget);
     let complete_valid = |points: &[[usize; 2]]| -> Result<bool, CodecError> {
         if complete_solution_budget.is_some_and(|budget| !budget.charge_by(edge_rows.len())) {
             return Ok(true);
@@ -5087,6 +5090,7 @@ where
         }
         Ok(reconstruct_incidence(
             ctx,
+            search_budget,
             edge_rows.to_vec(),
             vertex_points.to_vec(),
             edge_faces,
@@ -5102,8 +5106,6 @@ where
             visitor(points)
         }
     };
-    let fallback_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let search_budget = complete_solution_budget.unwrap_or(&fallback_budget);
     let outcome = visit_component_incidence_pair_solutions_with_coordinate_root_policy(
         ctx,
         VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs {

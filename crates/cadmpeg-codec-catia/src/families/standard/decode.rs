@@ -52,7 +52,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::cgm_source;
@@ -4322,10 +4322,19 @@ fn split_bezier_half(control: BezierSpan) -> (BezierSpan, BezierSpan) {
     (left, right)
 }
 
+/// A local search that stopped at its work bound before it settled an answer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SearchBounded;
+
+/// Bounds the best-first subdivision of one span. A span whose control polygon
+/// stays within tolerance of the point is never pruned, so its search would
+/// otherwise expand a full binary tree.
+const MAX_BEZIER_SEARCH_NODES: usize = 1 << 16;
+
 /// Collect the parameters of one quintic span within `tolerance` of `point`.
 ///
-/// Returns `false` when the subdivision search reaches its node cap; the span
-/// then states no complete parameter set.
+/// Returns [`SearchBounded`] when the subdivision search reaches
+/// [`MAX_BEZIER_SEARCH_NODES`]; the span then states no complete parameter set.
 fn collect_bezier_point_parameters(
     control: BezierSpan,
     range: [f64; 2],
@@ -4333,11 +4342,7 @@ fn collect_bezier_point_parameters(
     tolerance: f64,
     parameter_resolution: f64,
     parameters: &mut Vec<(f64, f64)>,
-) -> bool {
-    /// Bounds the best-first subdivision of one span. A span whose control
-    /// polygon stays within tolerance of the point is never pruned, so its
-    /// search would otherwise expand a full binary tree.
-    const MAX_BEZIER_SEARCH_NODES: usize = 1 << 16;
+) -> Result<(), SearchBounded> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
 
@@ -4375,7 +4380,7 @@ fn collect_bezier_point_parameters(
 
     let root_lower_bound = lower_bound(&control);
     if root_lower_bound > tolerance {
-        return true;
+        return Ok(());
     }
     let root_midpoint = midpoint(&control);
     let mut best = (range[0].midpoint(range[1]), root_midpoint.distance(point));
@@ -4401,7 +4406,7 @@ fn collect_bezier_point_parameters(
     while let Some((Reverse(lower_bits), node_index)) = queue.pop() {
         visited += 1;
         if visited > MAX_BEZIER_SEARCH_NODES {
-            return false;
+            return Err(SearchBounded);
         }
         let lower = f64::from_bits(lower_bits);
         if lower > tolerance || lower > best.1 {
@@ -4451,16 +4456,18 @@ fn collect_bezier_point_parameters(
     if best.1 <= tolerance {
         parameters.push(best);
     }
-    true
+    Ok(())
 }
 
+/// The one parameter at which a quintic limit curve passes within `tolerance`
+/// of `point`, or `None` when it passes nowhere or at separated parameters.
 fn standard_limit_curve_point_parameter(
     curve: &NurbsCurve,
     point: Point3,
     tolerance: f64,
-) -> Option<f64> {
+) -> Result<Option<f64>, SearchBounded> {
     let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = curve.pole_rows() else {
-        return None;
+        return Ok(None);
     };
     let span_count = points.len() / 6;
     if span_count == 0
@@ -4468,9 +4475,11 @@ fn standard_limit_curve_point_parameter(
         || curve.knots().len() != (span_count + 1) * 6
         || curve.degree() != 5
     {
-        return None;
+        return Ok(None);
     }
-    let domain = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?;
+    let Some(domain) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve) else {
+        return Ok(None);
+    };
     let [parameter_start, parameter_end] = domain.endpoints();
     let parameter_span = parameter_end - parameter_start;
     let control_polygon_length = points
@@ -4502,26 +4511,32 @@ fn standard_limit_curve_point_parameter(
     let mut parameters = Vec::new();
     for (span, control_points) in points.chunks_exact(6).enumerate() {
         let control: BezierSpan = std::array::from_fn(|index| control_points[index].get());
-        if !collect_bezier_point_parameters(
+        collect_bezier_point_parameters(
             control,
             [curve.knots()[span * 6], curve.knots()[(span + 1) * 6]],
             point,
             tolerance,
             parameter_resolution,
             &mut parameters,
-        ) {
-            return None;
-        }
+        )?;
     }
     parameters.sort_by(|left, right| left.1.total_cmp(&right.1));
-    let &(parameter, _) = parameters.first()?;
+    let Some(&(parameter, _)) = parameters.first() else {
+        return Ok(None);
+    };
     let ambiguous = parameters
         .iter()
         .skip(1)
         .any(|&(other, _)| (other - parameter).abs() > parameter_tolerance);
-    (!ambiguous).then_some(parameter)
+    Ok((!ambiguous).then_some(parameter))
 }
 
+/// Bind B-spline edge supports to limit curves by the model points each curve
+/// passes through.
+///
+/// A curve whose point search reaches [`MAX_BEZIER_SEARCH_NODES`] for any point
+/// binds no edge, since the points it could not settle might change which two
+/// points it passes through; `refusal` records the skipped curve.
 fn standard_limit_curve_bindings(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -4529,20 +4544,31 @@ fn standard_limit_curve_bindings(
     surface_indices: &HashMap<SurfaceId, usize>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     curves: &[NurbsCurve],
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<Vec<StandardLimitCurveBinding>>, CodecError> {
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
     let mut curve_points = Vec::new();
 
-    for curve in curves {
+    for (curve_index, curve) in curves.iter().enumerate() {
         let mut row = Vec::new();
         for (point, value) in ir.model.points.iter().enumerate() {
-            if let Some(parameter) = standard_limit_curve_point_parameter(
+            match standard_limit_curve_point_parameter(
                 curve,
                 value.position().get(),
                 VERTEX_MATCH_TOLERANCE,
             ) {
-                row.push((point, parameter));
+                Ok(Some(parameter)) => row.push((point, parameter)),
+                Ok(None) => {}
+                Err(SearchBounded) => {
+                    refusal.push_standard_search_bounded(format_args!(
+                        "The standard limit-curve point search reached its bound of \
+                         {MAX_BEZIER_SEARCH_NODES} subdivision nodes per span on limit curve \
+                         {curve_index} near model point {point}; the curve binds no edge."
+                    ));
+                    row.clear();
+                    break;
+                }
             }
         }
         curve_points.push(row);
@@ -4663,6 +4689,63 @@ fn resolve_standard_limit_curve_binding(
         binding.parameter_range.reverse();
     }
     Some(binding)
+}
+
+/// Bounds the endpoint choices the exhaustive native-port binding accepts.
+const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
+/// Bounds the edge-by-choice work the exhaustive native-port binding accepts.
+const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
+
+/// Bind every edge to one endpoint pair through its native port identities.
+///
+/// Exhaustive binding is a fallback after exact identity propagation. A choice
+/// set past [`MAX_NATIVE_PORT_CHOICES`] or [`MAX_NATIVE_PORT_WORK`] stays
+/// unresolved with a note in `refusal`, and the trim-mesh and incidence paths
+/// continue without native pairs.
+fn native_port_endpoint_pairs(
+    ctx: &DecodeContext<'_>,
+    options: &[Vec<[usize; 2]>],
+    ports: &[[u32; 2]],
+    ordered_endpoint_pairs: &[Option<[usize; 2]>],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    let seeds = options
+        .iter()
+        .map(|choices| {
+            <[[usize; 2]; 1]>::try_from(choices.as_slice())
+                .ok()
+                .map(|[pair]| pair)
+        })
+        .collect::<Vec<_>>();
+    let Some(propagated) = missing_edge::propagate_edge_port_points_with_ordered_seeds(
+        ctx,
+        ports,
+        &seeds,
+        ordered_endpoint_pairs,
+    )?
+    else {
+        return Ok(None);
+    };
+    if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
+        return Ok(Some(complete));
+    }
+    let choice_count = options.iter().map(Vec::len).sum::<usize>();
+    if choice_count <= MAX_NATIVE_PORT_CHOICES
+        && options
+            .len()
+            .checked_mul(choice_count)
+            .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK)
+    {
+        return missing_edge::bind_edge_port_candidates(ctx, ports, options);
+    }
+    refusal.push_standard_search_bounded(format_args!(
+        "The standard native-port binding reached its bound of {MAX_NATIVE_PORT_CHOICES} \
+         endpoint choices or {MAX_NATIVE_PORT_WORK} edge-by-choice operations: {} edges state \
+         {choice_count} choices; the edges keep no native endpoint pair, and the trim-mesh and \
+         incidence searches run without one.",
+        options.len()
+    ));
+    Ok(None)
 }
 
 struct AttachStandardTopologyInputs<
@@ -4812,9 +4895,16 @@ fn attach_standard_topology(
     let face_point_membership =
         standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
             .map_err(StandardTopologyError::Codec)?;
-    let limit_curve_bindings =
-        standard_limit_curve_bindings(ctx, ir, bindings, &surface_indices, &supports, limit_curves)
-            .map_err(StandardTopologyError::Codec)?;
+    let limit_curve_bindings = standard_limit_curve_bindings(
+        ctx,
+        ir,
+        bindings,
+        &surface_indices,
+        &supports,
+        limit_curves,
+        refusal,
+    )
+    .map_err(StandardTopologyError::Codec)?;
     let mut ordered_endpoint_pairs = ctx
         .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
         .map_err(StandardTopologyError::Codec)?;
@@ -5038,6 +5128,7 @@ fn attach_standard_topology(
         &surface_indices,
         &supports,
         &endpoint_candidates,
+        refusal,
     )
     .map_err(StandardTopologyError::Codec)?;
     if let Some(options) = &mut endpoint_options {
@@ -5552,53 +5643,11 @@ fn attach_standard_topology(
         .and_then(|pairs| pairs.iter().copied().collect::<Option<Vec<_>>>());
     let native_endpoint_pairs = if let Some(pairs) = graph_propagated_pairs {
         Some(pairs)
+    } else if let Some((options, ports)) = endpoint_options.as_ref().zip(native_ports.as_ref()) {
+        native_port_endpoint_pairs(ctx, options, ports, &ordered_endpoint_pairs, refusal)
+            .map_err(StandardTopologyError::Codec)?
     } else {
-        (|| -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
-            const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
-            const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
-
-            let Some(options) = endpoint_options.as_ref() else {
-                return Ok(None);
-            };
-            let Some(ports) = native_ports.as_ref() else {
-                return Ok(None);
-            };
-            let seeds = options
-                .iter()
-                .map(|choices| {
-                    <[[usize; 2]; 1]>::try_from(choices.as_slice())
-                        .ok()
-                        .map(|[pair]| pair)
-                })
-                .collect::<Vec<_>>();
-            let Some(propagated) = missing_edge::propagate_edge_port_points_with_ordered_seeds(
-                ctx,
-                ports,
-                &seeds,
-                &ordered_endpoint_pairs,
-            )?
-            else {
-                return Ok(None);
-            };
-            if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
-                return Ok(Some(complete));
-            }
-            // Exhaustive binding is a fallback after exact identity propagation.
-            // Large symmetric choice sets remain unresolved and continue through
-            // trim-mesh and incidence paths instead of making decode unbounded.
-            let choice_count = options.iter().map(Vec::len).sum::<usize>();
-            if choice_count <= MAX_NATIVE_PORT_CHOICES
-                && options
-                    .len()
-                    .checked_mul(choice_count)
-                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK)
-            {
-                missing_edge::bind_edge_port_candidates(ctx, ports, options)
-            } else {
-                Ok(None)
-            }
-        })()
-        .map_err(StandardTopologyError::Codec)?
+        None
     };
     let propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options
         .as_ref()
@@ -5824,6 +5873,7 @@ fn attach_standard_topology(
         if let Some(pairs) = native_endpoint_pairs.as_ref() {
             fbb::parse_fbb_endpoints_with_edge_classes(
                 ctx,
+                work_budget,
                 spine,
                 &edge_faces,
                 pairs,
@@ -5849,6 +5899,7 @@ fn attach_standard_topology(
         if let Some(pairs) = native_endpoint_pairs.as_ref() {
             fbb::parse_standard_endpoints_with_edge_classes(
                 ctx,
+                work_budget,
                 spine,
                 &edge_faces,
                 pairs,
@@ -5908,6 +5959,7 @@ fn attach_standard_topology(
                 return Ok(None);
             }
         }
+        let circle_selection_bounded = Cell::new(false);
         let solve_mesh_candidate =
             |selected_edge_faces: &[[usize; 2]],
              selected_supports: &[crate::families::standard::records::StandardCurveSupport],
@@ -6020,6 +6072,9 @@ fn attach_standard_topology(
                         },
                     },
                 )?;
+                if circle_constraint.selection_bounded() {
+                    circle_selection_bounded.set(true);
+                }
                 if !solve_budget.charge_by(preferred_budget.consumed()) {
                     return Ok(mesh_quotient::MeshSolve::Failed(
                         mesh_quotient::MeshCandidateFailure::Exhausted(
@@ -6126,6 +6181,9 @@ fn attach_standard_topology(
         } else {
             solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)?
         };
+        if circle_selection_bounded.get() {
+            push_circular_selection_bounded(refusal);
+        }
         Ok(match outcome {
             mesh_quotient::MeshSolve::Solved(candidate) => Some(candidate),
             mesh_quotient::MeshSolve::Failed(failure) => {
@@ -6166,7 +6224,7 @@ fn attach_standard_topology(
     } else if let Some(topology) = (if has_open_face_domains {
         Ok(None)
     } else {
-        fbb::parse_standard_motif(ctx, spine, &edge_faces, &circle_anchors)
+        fbb::parse_standard_motif(ctx, work_budget, spine, &edge_faces, &circle_anchors)
     })
     .map_err(StandardTopologyError::Codec)?
     {
@@ -6847,6 +6905,17 @@ fn standard_native_support_endpoint_pair(
     })
 }
 
+/// Bounds the endpoint-pair relations one edge row enumerates.
+const MAX_PAIR_RELATIONS_PER_EDGE: usize = 65_536;
+/// Bounds the unrefined endpoint-pair relations all edge rows of one candidate
+/// enumerate together.
+const MAX_FALLBACK_PAIR_RELATIONS: usize = 65_536;
+
+/// Enumerate the endpoint-pair candidates of every edge row.
+///
+/// An edge row whose relations exceed [`MAX_PAIR_RELATIONS_PER_EDGE`] or the
+/// remaining [`MAX_FALLBACK_PAIR_RELATIONS`] keeps no candidate; `refusal`
+/// records the rows the bounds left empty.
 fn resolve_standard_endpoint_pairs(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -6854,9 +6923,8 @@ fn resolve_standard_endpoint_pairs(
     surface_indices: &HashMap<SurfaceId, usize>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &[Vec<usize>],
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
-    const MAX_PAIR_RELATIONS_PER_EDGE: usize = 65_536;
-
     let mut resolved = Vec::new();
 
     for points in candidates {
@@ -7041,12 +7109,13 @@ fn resolve_standard_endpoint_pairs(
             }
         }
     }
-    let mut fallback_relation_budget = 65_536usize;
+    let mut fallback_relation_budget = MAX_FALLBACK_PAIR_RELATIONS;
+    let mut bounded_edges = Vec::new();
     for (edge, pairs) in resolved.iter_mut().enumerate() {
-        if !pairs.is_empty() {
+        let points = &candidates[edge];
+        if !pairs.is_empty() || points.len() < 2 {
             continue;
         }
-        let points = &candidates[edge];
         let relation_count = points
             .len()
             .checked_sub(1)
@@ -7055,6 +7124,7 @@ fn resolve_standard_endpoint_pairs(
         let Some(relation_count) = relation_count.filter(|count| {
             *count <= MAX_PAIR_RELATIONS_PER_EDGE && *count <= fallback_relation_budget
         }) else {
+            bounded_edges.push(edge);
             continue;
         };
         fallback_relation_budget -= relation_count;
@@ -7064,6 +7134,14 @@ fn resolve_standard_endpoint_pairs(
             fallback.extend(points[left + 1..].iter().map(|&end| [start, end]));
         }
         *pairs = fallback;
+    }
+    if !bounded_edges.is_empty() {
+        refusal.push_standard_search_bounded(format_args!(
+            "The standard endpoint-pair enumeration reached its bound of \
+             {MAX_PAIR_RELATIONS_PER_EDGE} relations per edge row or \
+             {MAX_FALLBACK_PAIR_RELATIONS} unrefined relations in total; edge rows \
+             {bounded_edges:?} keep no enumerated endpoint pair."
+        ));
     }
     Ok(Some(resolved))
 }
@@ -8603,8 +8681,21 @@ impl AsRef<[[f64; 2]]> for CircleRangeChoices {
     }
 }
 
+/// Record that a trim-mesh search rejected solutions whose circular-range
+/// selection check reached its bound.
+fn push_circular_selection_bounded(refusal: &mut crate::nurbs::LaneRefusals) {
+    refusal.push_standard_search_bounded(format_args!(
+        "The standard circular-range selection check reached its bound of {} states; the \
+         trim-mesh solutions it could not check were rejected under the circular-arc preference.",
+        edge_geometry::MAX_SELECTION_STATES
+    ));
+}
+
 struct StandardCirclePairConstraint {
     ranges_by_face: RefCell<HashMap<CircleFaceKey, Vec<CircleRangeChoices>>>,
+    /// Whether a solution was rejected because its selection check reached
+    /// its bound rather than ruling the selection out.
+    selection_bounded: Cell<bool>,
 }
 
 impl StandardCirclePairConstraint {
@@ -8648,7 +8739,13 @@ impl StandardCirclePairConstraint {
         }
         Self {
             ranges_by_face: RefCell::new(ranges_by_face),
+            selection_bounded: Cell::new(false),
         }
+    }
+
+    /// Whether any rejected solution only reached the selection bound.
+    fn selection_bounded(&self) -> bool {
+        self.selection_bounded.get()
     }
 
     fn solution_is_simple(
@@ -8735,8 +8832,13 @@ impl StandardCirclePairConstraint {
             }
         }
         for choices in range_choices.values() {
-            if !circular_range_choices_have_simple_selection(choices) {
-                return false;
+            match circular_range_choices_have_simple_selection(choices) {
+                Ok(true) => {}
+                Ok(false) => return false,
+                Err(SearchBounded) => {
+                    self.selection_bounded.set(true);
+                    return false;
+                }
             }
         }
         true
