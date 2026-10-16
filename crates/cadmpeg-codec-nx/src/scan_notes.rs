@@ -47,7 +47,7 @@ pub(super) fn summarize(
             scan.count(StreamKind::Preview),
         ),
     );
-    let (control_count, classified_control_count) = decode::offset_store_control_counts(c)?;
+    let (control_count, classified_control_count) = decode::offset_store_control_counts(c);
     if control_count != 0 {
         notes.push(format!(
                 "NX object model: {classified_control_count} of {control_count} bounded offset-store control block(s) have an admitted complete grammar"
@@ -73,7 +73,7 @@ pub(super) fn summarize(
             ),
         );
     }
-    let om_sections = c.indexed_om_sections()?;
+    let om_sections = c.indexed_om_sections();
     if !om_sections.is_empty() {
         let entities = om_sections
             .iter()

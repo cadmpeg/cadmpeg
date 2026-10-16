@@ -188,8 +188,8 @@ fn container_caches_owned_section_layouts() {
 fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
     let file = prt_with_indexed_om_section();
     let container = container::scan_bytes(file.as_slice()).unwrap();
-    let first = container.indexed_om_sections().unwrap();
-    let second = container.indexed_om_sections().unwrap();
+    let first = container.indexed_om_sections();
+    let second = container.indexed_om_sections();
     assert!(!first.is_empty());
     assert_eq!(first, second);
     assert!(std::sync::Arc::ptr_eq(
@@ -224,7 +224,7 @@ fn container_reuses_borrowed_offset_store_block_index() {
     let section = offset_only_indexed_om_section_with_index_values();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
     let container = container::scan_bytes(file.as_slice()).unwrap();
-    let _ = container.indexed_om_sections().unwrap();
+    let _ = container.indexed_om_sections();
     let first = container
         .cached_offset_data_block_bytes()
         .expect("borrowed indexed sections cache their offset-store blocks");

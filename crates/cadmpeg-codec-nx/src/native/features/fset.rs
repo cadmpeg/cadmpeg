@@ -202,7 +202,7 @@ pub(in crate::native) enum FeatureFsetReferenceGroup {
 pub(in crate::native) fn feature_fset_reference_graphs(
     container: &Container,
 ) -> Result<Vec<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections()?;
+    let indexed = container.indexed_om_sections();
     let mut graphs = Vec::new();
     visit_feature_history_operation_records(
         container,

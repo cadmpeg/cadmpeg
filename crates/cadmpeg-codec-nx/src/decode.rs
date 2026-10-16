@@ -94,7 +94,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
         body.losses.extend(native_losses);
-        report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly)?;
+        report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
 
@@ -112,7 +112,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
     let mut body = build_container_body(&scan, dialect_losses, notes);
     body.losses.extend(native_losses);
-    report_untransferred_streams(&scan, &mut body, TypedNative::Available)?;
+    report_untransferred_streams(&scan, &mut body, TypedNative::Available);
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
 
@@ -138,12 +138,8 @@ fn decoded(
     })
 }
 
-fn report_untransferred_streams(
-    scan: &Scan,
-    body: &mut DecodeBody,
-    typed_native: TypedNative,
-) -> Result<(), CodecError> {
-    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container)?;
+fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native: TypedNative) {
+    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
         body.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
@@ -171,7 +167,7 @@ fn report_untransferred_streams(
             entry.name
         )));
     }
-    for entry in scan.container.bounded_indexed_om_entries()? {
+    for entry in scan.container.bounded_indexed_om_entries() {
         body.losses.push(NxLossCode::SourceScanBounded.note(format!(
             "The indexed object-model section search in {} reached its work bound; \
              its remaining sections were skipped.",
@@ -187,15 +183,12 @@ fn report_untransferred_streams(
                 )));
         }
     }
-    Ok(())
 }
 
-pub(super) fn offset_store_control_counts(
-    container: &Container,
-) -> Result<(usize, usize), CodecError> {
+pub(super) fn offset_store_control_counts(container: &Container) -> (usize, usize) {
     let mut total = 0;
     let mut classified = 0;
-    for (_, section) in container.indexed_om_sections()? {
+    for (_, section) in container.indexed_om_sections() {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
@@ -209,7 +202,7 @@ pub(super) fn offset_store_control_counts(
             classified += 1;
         }
     }
-    Ok((total, classified))
+    (total, classified)
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
