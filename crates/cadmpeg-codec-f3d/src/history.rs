@@ -719,33 +719,65 @@ pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
 pub(crate) fn bind_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
-    histories: &[AsmHistory],
+    histories: &mut [AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
-    let mut body_closures = HistoricalBodyClosureCache::default();
-    for history in histories {
+    for history in histories.iter_mut() {
         let mut by_node = HashMap::new();
-        for state in history.states() {
-            by_node.insert(state.node_index, state);
+        for (index, state) in history.states().iter().enumerate() {
+            by_node.insert(state.node_index, index);
         }
         if by_node.len() != history.states().len() {
             continue;
         }
-        for state in history.states() {
-            let previous = match state.next_ref {
-                Some(node) => match by_node.get(&node) {
-                    Some(previous) => Some(*previous),
-                    None => continue,
-                },
-                None => None,
-            };
-            let Some(outputs) = affected_body_refs(history, state, previous, &mut body_closures)
-            else {
+        let order = history
+            .states_oldest_first()
+            .filter(|order| order.len() == history.states().len())
+            .unwrap_or_else(|| (0..history.states().len()).collect());
+        let mut body_closures: Option<(usize, Option<HistoricalBodyClosures>)> = None;
+        for index in order {
+            let mut next_body_closures = None;
+            let outputs = (|| {
+                let state = &history.states()[index];
+                let previous = match state.next_ref {
+                    Some(node) => Some(*by_node.get(&node)?),
+                    None => None,
+                };
+                let transition = state.transition.as_ref()?;
+                if transition.previous_state_id
+                    != previous.map(|index| history.states()[index].state_id)
+                {
+                    return None;
+                }
+                next_body_closures =
+                    Some((index, historical_body_closures(history.topology(state)?)));
+                let current = next_body_closures.as_ref()?.1.as_ref()?;
+                let previous = match previous {
+                    Some(index) => {
+                        let closures =
+                            match body_closures.take().filter(|(cached, _)| *cached == index) {
+                                Some((_, closures)) => closures,
+                                None => history
+                                    .topology(&history.states()[index])
+                                    .and_then(historical_body_closures),
+                            };
+                        Some(closures?)
+                    }
+                    None => None,
+                };
+                Some((
+                    state.state_id,
+                    affected_body_refs(transition, current, previous.as_ref()),
+                ))
+            })();
+            body_closures = next_body_closures;
+            history.retain_newest_topology();
+            let Some((state_id, outputs)) = outputs else {
                 continue;
             };
             state_outputs
-                .entry(state.state_id)
+                .entry(state_id)
                 .and_modify(|outputs| *outputs = None)
                 .or_insert_with(|| Some(outputs));
         }
@@ -6622,28 +6654,30 @@ pub(crate) fn same_axis_line(
     distance.is_finite() && distance <= EPS_HISTORY_SAME_AXIS_LINE_E8
 }
 
-fn affected_body_refs<'a>(
-    history: &'a AsmHistory,
-    current: &'a AsmDeltaState,
-    previous: Option<&'a AsmDeltaState>,
-    body_closures: &mut HistoricalBodyClosureCache<'a>,
-) -> Option<Vec<i64>> {
-    let transition = current.transition.as_ref()?;
-    if transition.previous_state_id != previous.map(|state| state.state_id) {
-        return None;
-    }
-    let current_topology = history.topology(current)?;
+fn affected_body_refs(
+    transition: &AsmHistoricalTransition,
+    current: &HistoricalBodyClosures,
+    previous: Option<&HistoricalBodyClosures>,
+) -> Vec<i64> {
     let current_changes = changed_family_refs(&transition.topology, false);
-    let mut affected = body_closures.intersecting(current_topology, &current_changes)?;
-    if let Some(previous) = previous {
-        let previous_topology = history.topology(previous)?;
-        let deleted = changed_family_refs(&transition.topology, true);
-        let previous_affected = body_closures.intersecting(previous_topology, &deleted)?;
-        for body in previous_affected {
-            affected.insert(body);
+    let mut affected = BTreeSet::new();
+    for (body, closure) in current {
+        if current_changes
+            .iter()
+            .any(|entity| closure.contains(entity))
+        {
+            affected.insert(*body);
         }
     }
-    Some(affected.into_iter().collect::<Vec<_>>())
+    if let Some(previous) = previous {
+        let deleted = changed_family_refs(&transition.topology, true);
+        for (body, closure) in previous {
+            if deleted.iter().any(|entity| closure.contains(entity)) {
+                affected.insert(*body);
+            }
+        }
+    }
+    affected.into_iter().collect()
 }
 
 fn changed_family_refs(delta: &AsmHistoricalTopologyDelta, deleted: bool) -> BTreeSet<i64> {
