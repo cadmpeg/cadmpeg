@@ -5,7 +5,10 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{assert_valid, decode};
 use crate::decode::design_intent::inject_failure;
@@ -87,6 +90,52 @@ fn strict_mode_refuses_a_contained_design_intent_failure() {
     assert_eq!(
         rejection.loss().code,
         F3dLossCode::DesignIntentUndecoded.kind()
+    );
+}
+
+fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
+    let mut edited = result.ir().clone();
+    let moved = edited.model.points[0].position().get();
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
+    edited
+}
+
+#[test]
+fn the_patch_path_refuses_a_source_whose_design_intent_was_contained() {
+    let full = decode(design_archive());
+    let mut patched = Vec::new();
+    crate::test_support::plan_inherited_write(
+        &moved_first_point(&full),
+        full.source_fidelity(),
+        &mut patched,
+    )
+    .expect("the same edit patches when design intent decodes");
+
+    inject_failure(malformed_design);
+    let contained = decode(design_archive());
+    let edited = moved_first_point(&contained);
+    inject_failure(malformed_design);
+    let refused = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(contained.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .map(|_| ());
+
+    assert!(
+        matches!(
+            &refused,
+            Err(CodecError::NotImplemented(message))
+                if message.contains("design intent was not decoded")
+        ),
+        "{refused:?}"
     );
 }
 
