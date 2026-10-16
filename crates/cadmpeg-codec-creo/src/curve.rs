@@ -2792,7 +2792,7 @@ impl SimultaneousAffineValue {
         self
     }
 
-    fn combine_admitted(mut self, right: Self, subtract: bool) -> Option<Self> {
+    fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
         if self.dimension != right.dimension {
             return None;
         }
@@ -2825,7 +2825,7 @@ impl SimultaneousAffineValue {
             .flatten()
     }
 
-    fn constant_difference_admitted(&self, right: &Self) -> Option<f64> {
+    fn constant_difference(&self, right: &Self) -> Option<f64> {
         if self.dimension != right.dimension {
             return None;
         }
@@ -2872,7 +2872,7 @@ impl ExpressionValue for SimultaneousAffineValue {
         }
         match (name, arguments) {
             (CreoMathFunction::If, [condition, when_true, when_false]) => {
-                if when_true.constant_difference_admitted(when_false) == Some(0.0) {
+                if when_true.constant_difference(when_false) == Some(0.0) {
                     return Ok(Some(when_true.clone()));
                 }
                 let Some(CurveExpressionValue::Number(condition)) = condition.as_curve_value()
@@ -2886,7 +2886,7 @@ impl ExpressionValue for SimultaneousAffineValue {
                 }));
             }
             (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
-                let Some(difference) = left.constant_difference_admitted(right) else {
+                let Some(difference) = left.constant_difference(right) else {
                     return Ok(None);
                 };
                 let Some(selects_left) = extremum_selects_left(name, difference, 0.0) else {
@@ -2904,19 +2904,19 @@ impl ExpressionValue for SimultaneousAffineValue {
                 return Ok(Some(value.clone()));
             }
             (CreoMathFunction::Bound, [value, lower, upper]) => {
-                let Some(bounds_difference) = lower.constant_difference_admitted(upper) else {
+                let Some(bounds_difference) = lower.constant_difference(upper) else {
                     return Ok(None);
                 };
                 if bounds_difference >= 0.0 {
                     return Ok(None);
                 }
-                let Some(lower_difference) = value.constant_difference_admitted(lower) else {
+                let Some(lower_difference) = value.constant_difference(lower) else {
                     return Ok(None);
                 };
                 if lower_difference < 0.0 {
                     return Ok(Some(lower.clone()));
                 }
-                let Some(upper_difference) = value.constant_difference_admitted(upper) else {
+                let Some(upper_difference) = value.constant_difference(upper) else {
                     return Ok(None);
                 };
                 return Ok(Some(if upper_difference > 0.0 {
@@ -2926,28 +2926,28 @@ impl ExpressionValue for SimultaneousAffineValue {
                 }));
             }
             (CreoMathFunction::Dead, [value, lower, upper]) => {
-                let Some(bounds_difference) = lower.constant_difference_admitted(upper) else {
+                let Some(bounds_difference) = lower.constant_difference(upper) else {
                     return Ok(None);
                 };
                 if bounds_difference > 0.0 {
                     return Ok(None);
                 }
-                let Some(lower_difference) = value.constant_difference_admitted(lower) else {
+                let Some(lower_difference) = value.constant_difference(lower) else {
                     return Ok(None);
                 };
                 if lower_difference < 0.0 {
-                    return Ok(value.clone().combine_admitted(lower.clone(), true));
+                    return Ok(value.clone().combine(lower.clone(), true));
                 }
-                let Some(upper_difference) = value.constant_difference_admitted(upper) else {
+                let Some(upper_difference) = value.constant_difference(upper) else {
                     return Ok(None);
                 };
                 if upper_difference > 0.0 {
-                    return Ok(value.clone().combine_admitted(upper.clone(), true));
+                    return Ok(value.clone().combine(upper.clone(), true));
                 }
                 return Ok(Some(Self::constant(0.0, value.dimension)));
             }
             (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
-                let Some(difference) = left.constant_difference_admitted(right) else {
+                let Some(difference) = left.constant_difference(right) else {
                     return Ok(None);
                 };
                 let Some(tolerance_value) = tolerance.as_curve_value() else {
@@ -3009,11 +3009,11 @@ impl ExpressionValue for SimultaneousAffineValue {
     }
 
     fn add_checked(self, right: Self) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        Ok(self.combine_admitted(right, false))
+        Ok(self.combine(right, false))
     }
 
     fn subtract_checked(self, right: Self) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        Ok(self.combine_admitted(right, true))
+        Ok(self.combine(right, true))
     }
 
     fn multiply_checked(self, right: Self) -> Result<Option<Self>, cadmpeg_core::CodecError> {
@@ -3072,7 +3072,7 @@ impl ExpressionValue for SimultaneousAffineValue {
         right: Self,
         operator: ComparisonOperator,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some(difference) = self.constant_difference_admitted(&right) else {
+        let Some(difference) = self.constant_difference(&right) else {
             return Ok(None);
         };
         Ok(Self::number(f64::from(operator.evaluate(difference, 0.0))))
@@ -3236,7 +3236,7 @@ struct DimensionForm {
 }
 
 impl DimensionForm {
-    fn combine_admitted(mut self, right: Self, subtract: bool) -> Option<Self> {
+    fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
         self.constant = self.constant.combine(right.constant, subtract)?;
         for (name, coefficient) in right.variables {
             if let Some(value) = self.variables.get_mut(&name) {
@@ -3252,17 +3252,6 @@ impl DimensionForm {
             }
         }
         Some(self)
-    }
-
-    fn copy_admitted(&self) -> Self {
-        let mut variables = BTreeMap::new();
-        for (name, value) in &self.variables {
-            variables.insert(name.to_owned(), *value);
-        }
-        Self {
-            constant: self.constant,
-            variables,
-        }
     }
 
     fn constant(value: i8) -> Self {
@@ -3310,18 +3299,6 @@ struct SymbolicRelationDimension {
 }
 
 impl SymbolicRelationDimension {
-    fn copy_admitted(&self) -> Self {
-        Self {
-            axes: [
-                self.axes[0].copy_admitted(),
-                self.axes[1].copy_admitted(),
-                self.axes[2].copy_admitted(),
-                self.axes[3].copy_admitted(),
-                self.axes[4].copy_admitted(),
-            ],
-        }
-    }
-
     fn from_relation_dimension(dimension: RelationDimension) -> Self {
         Self {
             axes: [
@@ -3346,14 +3323,14 @@ impl SymbolicRelationDimension {
         }
     }
 
-    fn combine_admitted(self, right: Self, subtract: bool) -> Option<Self> {
+    fn combine(self, right: Self, subtract: bool) -> Option<Self> {
         let [left_length, left_mass, left_time, left_angle, left_temperature] = self.axes;
         let [right_length, right_mass, right_time, right_angle, right_temperature] = right.axes;
-        let length = left_length.combine_admitted(right_length, subtract)?;
-        let mass = left_mass.combine_admitted(right_mass, subtract)?;
-        let time = left_time.combine_admitted(right_time, subtract)?;
-        let angle = left_angle.combine_admitted(right_angle, subtract)?;
-        let temperature = left_temperature.combine_admitted(right_temperature, subtract)?;
+        let length = left_length.combine(right_length, subtract)?;
+        let mass = left_mass.combine(right_mass, subtract)?;
+        let time = left_time.combine(right_time, subtract)?;
+        let angle = left_angle.combine(right_angle, subtract)?;
+        let temperature = left_temperature.combine(right_temperature, subtract)?;
         Some(Self {
             axes: [length, mass, time, angle, temperature],
         })
@@ -3399,15 +3376,6 @@ fn dimension_variable_key(name: &str, axis: usize) -> String {
 struct DimensionEquality {
     left: SymbolicRelationDimension,
     right: SymbolicRelationDimension,
-}
-
-impl DimensionEquality {
-    fn copy_admitted(&self) -> Self {
-        Self {
-            left: self.left.copy_admitted(),
-            right: self.right.copy_admitted(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -3490,7 +3458,7 @@ impl DimensionProbeValue {
         }
     }
 
-    fn with_constraint_admitted(
+    fn with_constraint(
         mut self,
         left: SymbolicRelationDimension,
         right: SymbolicRelationDimension,
@@ -3499,35 +3467,35 @@ impl DimensionProbeValue {
         self
     }
 
-    fn constrain_to_admitted(self, dimension: SymbolicRelationDimension) -> Self {
-        let current = self.dimension.copy_admitted();
-        self.with_constraint_admitted(current, dimension)
+    fn constrain_to(self, dimension: SymbolicRelationDimension) -> Self {
+        let current = self.dimension.clone();
+        self.with_constraint(current, dimension)
     }
 
-    fn merge_constraints_admitted(left: &Self, right: &Self) -> Vec<DimensionEquality> {
+    fn merge_constraints(left: &Self, right: &Self) -> Vec<DimensionEquality> {
         let mut constraints = Vec::new();
         for constraint in left.constraints.iter().chain(&right.constraints) {
-            constraints.push(constraint.copy_admitted());
+            constraints.push(constraint.clone());
         }
         constraints
     }
 
-    fn argument_constraints_admitted(arguments: &[Self]) -> Vec<DimensionEquality> {
+    fn argument_constraints(arguments: &[Self]) -> Vec<DimensionEquality> {
         let mut constraints = Vec::new();
         for constraint in arguments.iter().flat_map(|argument| &argument.constraints) {
-            constraints.push(constraint.copy_admitted());
+            constraints.push(constraint.clone());
         }
         constraints
     }
 
-    fn push_constraint_admitted(
+    fn push_constraint(
         constraints: &mut Vec<DimensionEquality>,
         left: &SymbolicRelationDimension,
         right: &SymbolicRelationDimension,
     ) {
         constraints.push(DimensionEquality {
-            left: left.copy_admitted(),
-            right: right.copy_admitted(),
+            left: left.clone(),
+            right: right.clone(),
         });
     }
 
@@ -3598,7 +3566,7 @@ impl DimensionProbeValue {
                 name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan),
                 [argument],
             ) => {
-                Self::push_constraint_admitted(
+                Self::push_constraint(
                     &mut constraints,
                     &argument.dimension,
                     &SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE),
@@ -3616,7 +3584,7 @@ impl DimensionProbeValue {
                 name @ (CreoMathFunction::Asin | CreoMathFunction::Acos | CreoMathFunction::Atan),
                 [argument],
             ) => {
-                Self::push_constraint_admitted(
+                Self::push_constraint(
                     &mut constraints,
                     &argument.dimension,
                     &SymbolicRelationDimension::default(),
@@ -3631,7 +3599,7 @@ impl DimensionProbeValue {
                 )))
             }
             (CreoMathFunction::Atan2, [left, right]) => {
-                Self::push_constraint_admitted(&mut constraints, &left.dimension, &right.dimension);
+                Self::push_constraint(&mut constraints, &left.dimension, &right.dimension);
                 let Some(value) = numeric(CreoMathFunction::Atan2) else {
                     return Ok(None);
                 };
@@ -3650,7 +3618,7 @@ impl DimensionProbeValue {
                 | CreoMathFunction::Exp),
                 [argument],
             ) => {
-                Self::push_constraint_admitted(
+                Self::push_constraint(
                     &mut constraints,
                     &argument.dimension,
                     &SymbolicRelationDimension::default(),
@@ -3677,13 +3645,13 @@ impl DimensionProbeValue {
                             }
                         });
                 Ok(Some(Self::numeric_result(
-                    value.dimension.copy_admitted(),
+                    value.dimension.clone(),
                     numeric_value,
                     constraints,
                 )))
             }
             (CreoMathFunction::Mod, [left, right]) => {
-                Self::push_constraint_admitted(&mut constraints, &left.dimension, &right.dimension);
+                Self::push_constraint(&mut constraints, &left.dimension, &right.dimension);
                 if right.numeric_value().is_some_and(|value| value == 0.0) {
                     return Ok(None);
                 }
@@ -3692,13 +3660,13 @@ impl DimensionProbeValue {
                     .zip(right.numeric_value())
                     .map(|(left, right)| left % right);
                 Ok(Some(Self::numeric_result(
-                    left.dimension.copy_admitted(),
+                    left.dimension.clone(),
                     value,
                     constraints,
                 )))
             }
             (CreoMathFunction::If, [condition, when_true, when_false]) => {
-                Self::push_constraint_admitted(
+                Self::push_constraint(
                     &mut constraints,
                     &condition.dimension,
                     &SymbolicRelationDimension::default(),
@@ -3718,7 +3686,7 @@ impl DimensionProbeValue {
                         Ok(Some(Self::text_result(value, constraints)))
                     }
                     (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right)) => {
-                        Self::push_constraint_admitted(
+                        Self::push_constraint(
                             &mut constraints,
                             &when_true.dimension,
                             &when_false.dimension,
@@ -3733,7 +3701,7 @@ impl DimensionProbeValue {
                             },
                         );
                         Ok(Some(Self::numeric_result(
-                            when_true.dimension.copy_admitted(),
+                            when_true.dimension.clone(),
                             value,
                             constraints,
                         )))
@@ -3742,16 +3710,8 @@ impl DimensionProbeValue {
                 }
             }
             (CreoMathFunction::Bound | CreoMathFunction::Dead, [value, lower, upper]) => {
-                Self::push_constraint_admitted(
-                    &mut constraints,
-                    &value.dimension,
-                    &lower.dimension,
-                );
-                Self::push_constraint_admitted(
-                    &mut constraints,
-                    &value.dimension,
-                    &upper.dimension,
-                );
+                Self::push_constraint(&mut constraints, &value.dimension, &lower.dimension);
+                Self::push_constraint(&mut constraints, &value.dimension, &upper.dimension);
                 let numeric = value
                     .numeric_value()
                     .zip(lower.numeric_value())
@@ -3782,18 +3742,14 @@ impl DimensionProbeValue {
                         }
                     });
                 Ok(Some(Self::numeric_result(
-                    value.dimension.copy_admitted(),
+                    value.dimension.clone(),
                     numeric,
                     constraints,
                 )))
             }
             (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
-                Self::push_constraint_admitted(&mut constraints, &left.dimension, &right.dimension);
-                Self::push_constraint_admitted(
-                    &mut constraints,
-                    &left.dimension,
-                    &tolerance.dimension,
-                );
+                Self::push_constraint(&mut constraints, &left.dimension, &right.dimension);
+                Self::push_constraint(&mut constraints, &left.dimension, &tolerance.dimension);
                 let numeric = left
                     .numeric_value()
                     .zip(right.numeric_value())
@@ -3808,7 +3764,7 @@ impl DimensionProbeValue {
                 )))
             }
             (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
-                Self::push_constraint_admitted(&mut constraints, &left.dimension, &right.dimension);
+                Self::push_constraint(&mut constraints, &left.dimension, &right.dimension);
                 let numeric =
                     left.numeric_value()
                         .zip(right.numeric_value())
@@ -3820,7 +3776,7 @@ impl DimensionProbeValue {
                             }
                         });
                 Ok(Some(Self::numeric_result(
-                    left.dimension.copy_admitted(),
+                    left.dimension.clone(),
                     numeric,
                     constraints,
                 )))
@@ -3829,7 +3785,7 @@ impl DimensionProbeValue {
                 base.clone().power_checked(exponent.clone())
             }
             (CreoMathFunction::Sqrt, [argument]) => {
-                let Some(dimension) = argument.dimension.copy_admitted().root(2) else {
+                let Some(dimension) = argument.dimension.clone().root(2) else {
                     return Ok(None);
                 };
                 Ok(Some(Self::numeric_result(
@@ -3839,7 +3795,7 @@ impl DimensionProbeValue {
                 )))
             }
             (CreoMathFunction::Abs, [argument]) => Ok(Some(Self::numeric_result(
-                argument.dimension.copy_admitted(),
+                argument.dimension.clone(),
                 argument.numeric_value().map(f64::abs),
                 constraints,
             ))),
@@ -3850,7 +3806,7 @@ impl DimensionProbeValue {
                     return Ok(None);
                 };
                 Ok(Some(Self::numeric_result(
-                    argument.dimension.copy_admitted(),
+                    argument.dimension.clone(),
                     value.into_option(),
                     constraints,
                 )))
@@ -3858,9 +3814,9 @@ impl DimensionProbeValue {
             (CreoMathFunction::Ceil | CreoMathFunction::Floor, [argument, decimal_places]) => {
                 let decimal_places = decimal_places
                     .clone()
-                    .constrain_to_admitted(SymbolicRelationDimension::default());
+                    .constrain_to(SymbolicRelationDimension::default());
                 for constraint in &decimal_places.constraints {
-                    constraints.push(constraint.copy_admitted());
+                    constraints.push(constraint.clone());
                 }
                 let Some(value) = Self::optional_round(
                     argument,
@@ -3870,7 +3826,7 @@ impl DimensionProbeValue {
                     return Ok(None);
                 };
                 Ok(Some(Self::numeric_result(
-                    argument.dimension.copy_admitted(),
+                    argument.dimension.clone(),
                     value.into_option(),
                     constraints,
                 )))
@@ -3922,7 +3878,7 @@ impl ExpressionValue for DimensionProbeValue {
     fn add_checked(self, right: Self) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         match (&self.kind, &right.kind) {
             (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
-                let constraints = Self::merge_constraints_admitted(&self, &right);
+                let constraints = Self::merge_constraints(&self, &right);
                 let value = match left.as_ref().zip(right_value.as_ref()) {
                     Some((left, right)) => {
                         let mut value = left.to_owned();
@@ -3934,10 +3890,10 @@ impl ExpressionValue for DimensionProbeValue {
                 Ok(Some(Self::text_result(value, constraints)))
             }
             (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
-                let mut constraints = Self::merge_constraints_admitted(&self, &right);
-                Self::push_constraint_admitted(&mut constraints, &self.dimension, &right.dimension);
+                let mut constraints = Self::merge_constraints(&self, &right);
+                Self::push_constraint(&mut constraints, &self.dimension, &right.dimension);
                 Ok(Some(Self::numeric_result(
-                    self.dimension.copy_admitted(),
+                    self.dimension.clone(),
                     (*left).zip(*right_value).map(|(left, right)| left + right),
                     constraints,
                 )))
@@ -3952,10 +3908,10 @@ impl ExpressionValue for DimensionProbeValue {
         else {
             return Ok(None);
         };
-        let mut constraints = Self::merge_constraints_admitted(&self, &right);
-        Self::push_constraint_admitted(&mut constraints, &self.dimension, &right.dimension);
+        let mut constraints = Self::merge_constraints(&self, &right);
+        Self::push_constraint(&mut constraints, &self.dimension, &right.dimension);
         Ok(Some(Self::numeric_result(
-            self.dimension.copy_admitted(),
+            self.dimension.clone(),
             (*left).zip(*right_value).map(|(left, right)| left - right),
             constraints,
         )))
@@ -3967,9 +3923,9 @@ impl ExpressionValue for DimensionProbeValue {
         else {
             return Ok(None);
         };
-        let constraints = Self::merge_constraints_admitted(&self, &right);
+        let constraints = Self::merge_constraints(&self, &right);
         let value = (*left).zip(*right_value).map(|(left, right)| left * right);
-        let Some(dimension) = self.dimension.combine_admitted(right.dimension, false) else {
+        let Some(dimension) = self.dimension.combine(right.dimension, false) else {
             return Ok(None);
         };
         Ok(Some(Self::numeric_result(dimension, value, constraints)))
@@ -3984,9 +3940,9 @@ impl ExpressionValue for DimensionProbeValue {
         if right_value.is_some_and(|value| value == 0.0) {
             return Ok(None);
         }
-        let constraints = Self::merge_constraints_admitted(&self, &right);
+        let constraints = Self::merge_constraints(&self, &right);
         let value = (*left).zip(*right_value).map(|(left, right)| left / right);
-        let Some(dimension) = self.dimension.combine_admitted(right.dimension, true) else {
+        let Some(dimension) = self.dimension.combine(right.dimension, true) else {
             return Ok(None);
         };
         Ok(Some(Self::numeric_result(dimension, value, constraints)))
@@ -3996,8 +3952,8 @@ impl ExpressionValue for DimensionProbeValue {
         let DimensionProbeKind::Numeric(exponent) = &right.kind else {
             return Ok(None);
         };
-        let mut constraints = Self::merge_constraints_admitted(&self, &right);
-        Self::push_constraint_admitted(
+        let mut constraints = Self::merge_constraints(&self, &right);
+        Self::push_constraint(
             &mut constraints,
             &right.dimension,
             &SymbolicRelationDimension::default(),
@@ -4059,12 +4015,12 @@ impl ExpressionValue for DimensionProbeValue {
                 Ok(Some(Self::numeric_result(
                     SymbolicRelationDimension::default(),
                     value,
-                    Self::merge_constraints_admitted(&self, &right),
+                    Self::merge_constraints(&self, &right),
                 )))
             }
             (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
-                let mut constraints = Self::merge_constraints_admitted(&self, &right);
-                Self::push_constraint_admitted(&mut constraints, &self.dimension, &right.dimension);
+                let mut constraints = Self::merge_constraints(&self, &right);
+                Self::push_constraint(&mut constraints, &self.dimension, &right.dimension);
                 Ok(Some(Self::numeric_result(
                     SymbolicRelationDimension::default(),
                     (*left)
@@ -4083,13 +4039,13 @@ impl ExpressionValue for DimensionProbeValue {
         else {
             return Ok(None);
         };
-        let mut constraints = Self::merge_constraints_admitted(&self, &right);
-        Self::push_constraint_admitted(
+        let mut constraints = Self::merge_constraints(&self, &right);
+        Self::push_constraint(
             &mut constraints,
             &self.dimension,
             &SymbolicRelationDimension::default(),
         );
-        Self::push_constraint_admitted(
+        Self::push_constraint(
             &mut constraints,
             &right.dimension,
             &SymbolicRelationDimension::default(),
@@ -4109,13 +4065,13 @@ impl ExpressionValue for DimensionProbeValue {
         else {
             return Ok(None);
         };
-        let mut constraints = Self::merge_constraints_admitted(&self, &right);
-        Self::push_constraint_admitted(
+        let mut constraints = Self::merge_constraints(&self, &right);
+        Self::push_constraint(
             &mut constraints,
             &self.dimension,
             &SymbolicRelationDimension::default(),
         );
-        Self::push_constraint_admitted(
+        Self::push_constraint(
             &mut constraints,
             &right.dimension,
             &SymbolicRelationDimension::default(),
@@ -4154,7 +4110,7 @@ impl ExpressionValue for DimensionProbeValue {
         if scope.is_some() {
             return Ok(None);
         }
-        let mut constraints = Self::argument_constraints_admitted(arguments);
+        let mut constraints = Self::argument_constraints(arguments);
         match (name, arguments) {
             (CreoMathFunction::Itos, [argument]) => {
                 let value = match argument.numeric_value().map(f64::round) {
@@ -4172,9 +4128,9 @@ impl ExpressionValue for DimensionProbeValue {
                     };
                     let control = control
                         .clone()
-                        .constrain_to_admitted(SymbolicRelationDimension::default());
+                        .constrain_to(SymbolicRelationDimension::default());
                     for constraint in &control.constraints {
-                        constraints.push(constraint.copy_admitted());
+                        constraints.push(constraint.clone());
                     }
                     let Some(value) = control.numeric_value() else {
                         return Ok(None);
@@ -4198,7 +4154,7 @@ impl ExpressionValue for DimensionProbeValue {
                     _ => return Ok(None),
                 };
                 let value = match argument.numeric_value() {
-                    Some(value) => format_relation_real_admitted(value, decimals, scientific),
+                    Some(value) => format_relation_real(value, decimals, scientific),
                     None => None,
                 };
                 Ok(Some(Self::text_result(value, constraints)))
@@ -4252,9 +4208,9 @@ impl ExpressionValue for DimensionProbeValue {
                 for control in [position, length] {
                     let control = control
                         .clone()
-                        .constrain_to_admitted(SymbolicRelationDimension::default());
+                        .constrain_to(SymbolicRelationDimension::default());
                     for constraint in &control.constraints {
-                        constraints.push(constraint.copy_admitted());
+                        constraints.push(constraint.clone());
                     }
                 }
                 let value =
@@ -4370,7 +4326,7 @@ impl ExpressionValue for DimensionProbeValue {
             (CreoMathFunction::StringPattern, [value, pattern]) => {
                 let value = match value.text_value().zip(pattern.text_value()) {
                     Some((value, pattern)) => {
-                        relation_string_pattern_admitted(value, pattern).map(f64::from)
+                        relation_string_pattern(value, pattern).map(f64::from)
                     }
                     None => None,
                 };
@@ -4568,7 +4524,7 @@ impl ExpressionValue for CurveExpressionValue {
                     }
                     _ => return Ok(None),
                 };
-                Ok(format_relation_real_admitted(value, decimals, scientific).map(String))
+                Ok(format_relation_real(value, decimals, scientific).map(String))
             }
             (CreoMathFunction::RelModelName, []) => match context.model_name {
                 Some(name) => Ok(Some(String(name.to_owned()))),
@@ -4672,7 +4628,7 @@ impl ExpressionValue for CurveExpressionValue {
                 Ok(Self::number(f64::from(value == expected)))
             }
             (CreoMathFunction::StringPattern, [String(value), String(pattern)]) => {
-                Ok(relation_string_pattern_admitted(value, pattern)
+                Ok(relation_string_pattern(value, pattern)
                     .and_then(|matched| Self::number(f64::from(matched))))
             }
             (CreoMathFunction::Pow, [base, Number(exponent)]) => {
@@ -5505,7 +5461,7 @@ fn evaluate_creo_numeric_relation_function(
 
 const RELATION_REGEX_SIZE_LIMIT: usize = 1 << 20;
 
-fn relation_string_pattern_admitted(value: &str, pattern: &str) -> Option<bool> {
+fn relation_string_pattern(value: &str, pattern: &str) -> Option<bool> {
     let expression = format!(r"\A(?:{pattern})\z");
     let compiled = regex::RegexBuilder::new(&expression)
         .size_limit(RELATION_REGEX_SIZE_LIMIT)
@@ -5527,11 +5483,7 @@ fn relation_precision(value: f64) -> Option<usize> {
     .flatten()
 }
 
-fn format_relation_real_admitted(
-    value: f64,
-    decimals: Option<usize>,
-    scientific: bool,
-) -> Option<String> {
+fn format_relation_real(value: f64, decimals: Option<usize>, scientific: bool) -> Option<String> {
     if !value.is_finite() {
         return None;
     }
@@ -5669,7 +5621,7 @@ fn infer_solve_variable_dimensions(
             return Ok(None);
         };
         for constraint in left.constraints.iter().chain(&right.constraints) {
-            constraints.push(constraint.copy_admitted());
+            constraints.push(constraint.clone());
         }
         constraints.push(DimensionEquality {
             left: left.dimension,
@@ -5687,9 +5639,9 @@ fn infer_solve_variable_dimensions(
     }
     for equality in constraints {
         for (axis, rows) in axis_rows.iter_mut().enumerate() {
-            let left = equality.left.axes[axis].copy_admitted();
-            let right = equality.right.axes[axis].copy_admitted();
-            let Some(difference) = left.combine_admitted(right, true) else {
+            let left = equality.left.axes[axis].clone();
+            let right = equality.right.axes[axis].clone();
+            let Some(difference) = left.combine(right, true) else {
                 return Ok(None);
             };
             let mut coefficients = ctx.alloc_filled(
@@ -5904,7 +5856,7 @@ fn solve_affine_expression_block(
         else {
             return Ok(None);
         };
-        let Some(difference) = left.combine_admitted(right, true) else {
+        let Some(difference) = left.combine(right, true) else {
             return Ok(None);
         };
         let mut coefficients = ctx.alloc_filled(

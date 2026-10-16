@@ -4,7 +4,7 @@
 use super::super::feature_history::dimensions::feature_skamp_table_complete;
 use super::super::sketch::radii::trim_segment_id;
 use super::super::sketch::skamp::unique_decoded_section_segment;
-use super::super::sketch_ids::sketch_entity_id_admitted;
+use super::super::sketch_ids::sketch_entity_id;
 use super::super::uniqueness::exactly_one;
 use crate::decode::sketch_transfer::identity::saved_section_entity_fallback_allowed;
 use crate::decode::sketch_transfer::loci::{
@@ -140,7 +140,7 @@ pub(in super::super) fn resolved_profile_chains(
                         crate::feature::definitions::FeatureSegmentKind::Arc(_)
                     ) && segment.arc_orientation == Some(0)
                 });
-            let Some(entity) = sketch_entity_id_admitted(sketch, external_id) else {
+            let Some(entity) = sketch_entity_id(sketch, external_id) else {
                 continue;
             };
             profile.push(SketchEntityUse {
@@ -264,7 +264,7 @@ fn resolved_segment_profile_chains(
                 segment.kind,
                 crate::feature::definitions::FeatureSegmentKind::Arc(_)
             ) && segment.arc_orientation == Some(0);
-            let Some(entity) = sketch_entity_id_admitted(sketch, segment.external_id) else {
+            let Some(entity) = sketch_entity_id(sketch, segment.external_id) else {
                 continue;
             };
             profile.push(SketchEntityUse {

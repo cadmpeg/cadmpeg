@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SKAMP solver constraint emission and locus compatibility.
 
-use super::super::sketch_ids::{
-    sketch_constraint_id_admitted, sketch_entity_id_admitted, sketch_native_ref_admitted,
-};
+use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use crate::decode::sketch::coordinates::resolved_section_points;
 use crate::decode::sketch_transfer::identity::section_entity_external_ids;
 use crate::decode::sketch_transfer::loci::{
@@ -56,9 +54,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             .flat_map(|skamp| &skamp.items)
             .map(|item| item.entity_id)
         {
-            if sketch_entity_id_admitted(sketch, entity_id)
-                .is_some_and(|id| geometry.contains_key(&id))
-            {
+            if sketch_entity_id(sketch, entity_id).is_some_and(|id| geometry.contains_key(&id)) {
                 ids.insert(entity_id);
             }
         }
@@ -88,14 +84,14 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             };
             let active = section_skamp_active(skamp.status);
             let native_constraint = || {
-                let native_ref = sketch_native_ref_admitted(sketch);
+                let native_ref = sketch_native_ref(sketch);
                 let mut entities = Vec::new();
                 for item in skamp
                     .items
                     .iter()
                     .filter(|item| available_entities.contains(&item.entity_id))
                 {
-                    let Some(id) = sketch_entity_id_admitted(sketch, item.entity_id) else {
+                    let Some(id) = sketch_entity_id(sketch, item.entity_id) else {
                         continue;
                     };
                     entities.push(id);
@@ -140,7 +136,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 }
             };
             let item_geometry = |item: &crate::feature::definitions::FeatureSkampItem| {
-                let entity = sketch_entity_id_admitted(sketch, item.entity_id)?;
+                let entity = sketch_entity_id(sketch, item.entity_id)?;
                 geometry?.get(&entity)
             };
             let inactive_curve_entity = |item: &crate::feature::definitions::FeatureSkampItem| {
@@ -163,7 +159,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 )
                         )
                     }))
-                .then(|| sketch_entity_id_admitted(sketch, item.entity_id))
+                .then(|| sketch_entity_id(sketch, item.entity_id))
                 .flatten()
             };
             let inactive_incidence_locus =
@@ -184,8 +180,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                     )
                                 }))
                             .then(|| {
-                                sketch_entity_id_admitted(sketch, item.entity_id)
-                                    .map(SketchLocus::Center)
+                                sketch_entity_id(sketch, item.entity_id).map(SketchLocus::Center)
                             })
                             .flatten()
                         },
@@ -194,7 +189,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             let point_entity = |item: &crate::feature::definitions::FeatureSkampItem| {
                 (item.sense == 0).then_some(())?;
                 if section_skamp_is_point(definition, item) {
-                    return sketch_entity_id_admitted(sketch, item.entity_id);
+                    return sketch_entity_id(sketch, item.entity_id);
                 }
                 (!active && item_geometry(item).is_some_and(|geometry| {
                     matches!(
@@ -205,7 +200,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         SketchGeometryDefinition::Native { native_kind } if native_kind == "point"
                     )
                 }))
-                .then(|| sketch_entity_id_admitted(sketch, item.entity_id))
+                .then(|| sketch_entity_id(sketch, item.entity_id))
                 .flatten()
             };
             let inactive_point_locus = |item: &crate::feature::definitions::FeatureSkampItem| {
@@ -366,14 +361,14 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         };
                         SketchConstraintDefinitionInput::PointOnObject {
                             point: section_skamp_locus(definition, sketch, point)?,
-                            entity: sketch_entity_id_admitted(sketch, line.entity_id)?,
+                            entity: sketch_entity_id(sketch, line.entity_id)?,
                         }
                     }
                     (kind @ (10 | 11), [item])
                         if item.sense == 0 && section_skamp_is_arc(definition, item) =>
                     {
                         SketchConstraintDefinitionInput::ArcAngle {
-                            entity: sketch_entity_id_admitted(sketch, item.entity_id)?,
+                            entity: sketch_entity_id(sketch, item.entity_id)?,
                             angle: if kind == 10 {
                                 PositiveAngle::QUARTER_TURN
                             } else {
@@ -384,7 +379,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     (kind @ (12 | 13), [item])
                         if item.sense == 0 && section_skamp_is_arc(definition, item) =>
                     {
-                        let entity = sketch_entity_id_admitted(sketch, item.entity_id)?;
+                        let entity = sketch_entity_id(sketch, item.entity_id)?;
                         let first = SketchLocus::Start(entity.clone());
                         let second = SketchLocus::End(entity);
                         let axis = if kind == 12 {
@@ -413,8 +408,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .flat_map(|table| &table.rows)
                                 .any(|row| row.external_id == result.entity_id) =>
                     {
-                        let source = sketch_entity_id_admitted(sketch, source.entity_id)?;
-                        let result = sketch_entity_id_admitted(sketch, result.entity_id)?;
+                        let source = sketch_entity_id(sketch, source.entity_id)?;
+                        let result = sketch_entity_id(sketch, result.entity_id)?;
                         let geometry_agrees = geometry.is_none_or(|geometry| {
                             geometry
                                 .get(&source)
@@ -434,7 +429,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .is_some() =>
                     {
                         SketchConstraintDefinitionInput::Fixed {
-                            entity: sketch_entity_id_admitted(sketch, item.entity_id)?,
+                            entity: sketch_entity_id(sketch, item.entity_id)?,
                         }
                     }
                     (14, [axis, first, second])
@@ -446,7 +441,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         SketchConstraintDefinitionInput::Symmetric {
                             first: section_skamp_point_locus(definition, sketch, first)?,
                             second: section_skamp_point_locus(definition, sketch, second)?,
-                            axis: sketch_entity_id_admitted(sketch, axis.entity_id)?,
+                            axis: sketch_entity_id(sketch, axis.entity_id)?,
                         }
                     }
                     (14, [center, first, second])
@@ -530,12 +525,9 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             Some((
                 SketchConstraint {
                     id: if unique_skamp_id {
-                        sketch_constraint_id_admitted(sketch, format_args!("skamp:{}", skamp.id))?
+                        sketch_constraint_id(sketch, format_args!("skamp:{}", skamp.id))?
                     } else {
-                        sketch_constraint_id_admitted(
-                            sketch,
-                            format_args!("skamp:offset:{}", skamp.offset),
-                        )?
+                        sketch_constraint_id(sketch, format_args!("skamp:offset:{}", skamp.offset))?
                     },
                     sketch: sketch.clone(),
                     definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
@@ -551,7 +543,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     label_distance: None,
                     label_position: None,
                     metadata: None,
-                    native_ref: Some(sketch_native_ref_admitted(sketch)),
+                    native_ref: Some(sketch_native_ref(sketch)),
                 },
                 skamp.offset,
             ))
@@ -837,8 +829,8 @@ mod tests {
     fn native_skamp_constraints_emit_one_per_row() {
         let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1")
             .expect("valid sketch identity");
-        let entity = crate::decode::sketch_ids::sketch_entity_id_admitted(&sketch, 7)
-            .expect("valid entity identity");
+        let entity =
+            crate::decode::sketch_ids::sketch_entity_id(&sketch, 7).expect("valid entity identity");
         let geometry = BTreeMap::from([(
             entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -908,8 +900,8 @@ mod tests {
         };
         let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1")
             .expect("valid sketch identity");
-        let entity = crate::decode::sketch_ids::sketch_entity_id_admitted(&sketch, 7)
-            .expect("valid entity identity");
+        let entity =
+            crate::decode::sketch_ids::sketch_entity_id(&sketch, 7).expect("valid entity identity");
         let mut geometry = BTreeMap::from([(
             entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -944,8 +936,8 @@ mod tests {
                 entity_id: 8,
                 sense: 0,
             });
-        let second_entity = crate::decode::sketch_ids::sketch_entity_id_admitted(&sketch, 8)
-            .expect("valid entity identity");
+        let second_entity =
+            crate::decode::sketch_ids::sketch_entity_id(&sketch, 8).expect("valid entity identity");
         geometry.insert(
             second_entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -1020,8 +1012,7 @@ mod tests {
         };
         let geometry = BTreeMap::from([7, 8].map(|external_id| {
             (
-                crate::decode::sketch_ids::sketch_entity_id_admitted(&sketch, external_id)
-                    .expect("entity"),
+                crate::decode::sketch_ids::sketch_entity_id(&sketch, external_id).expect("entity"),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(f64::from(external_id), 0.0),
                 })

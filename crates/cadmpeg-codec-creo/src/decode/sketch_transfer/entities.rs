@@ -7,8 +7,8 @@ use super::super::feature_history::link::{
 use super::super::native::annotate;
 use super::super::sketch::geometry::{saved_profile_chains, saved_section_entity_geometry};
 use super::super::sketch_ids::{
-    sketch_entity_id_admitted, sketch_identity_scope, sketch_native_ref_admitted,
-    sketch_point_ref_admitted, typed_sketch_section_curve_id_admitted,
+    sketch_entity_id, sketch_identity_scope, sketch_native_ref, sketch_point_ref,
+    typed_sketch_section_curve_id,
 };
 use super::super::sweep::nurbs::saved_spline_sketch_geometry;
 use super::super::sweep::surfaces::{placed_section_geometry_curve, placed_sketch_curve_ref};
@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 fn admitted_endpoint_refs(sketch: &SketchId, points: impl IntoIterator<Item = u32>) -> Vec<String> {
     let mut references = Vec::new();
     for point in points {
-        let reference = sketch_point_ref_admitted(sketch, point);
+        let reference = sketch_point_ref(sketch, point);
         references.push(reference);
     }
     references
@@ -172,7 +172,7 @@ pub(super) fn transfer_section_entities(
             continue;
         };
         let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-        let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         annotate(
@@ -229,7 +229,7 @@ pub(super) fn transfer_section_entities(
         let endpoint_refs = admitted_endpoint_refs(sketch_id, endpoints.iter().copied());
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         push_section_entity(
             ctx,
             &mut entities,
@@ -248,7 +248,7 @@ pub(super) fn transfer_section_entities(
                 .is_none()
     }) {
         let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-        let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         annotate(
@@ -273,7 +273,7 @@ pub(super) fn transfer_section_entities(
             crate::feature::definitions::FeatureSegmentKind::Point(_) => "point",
         })?;
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         push_section_entity(
             ctx,
             &mut entities,
@@ -300,7 +300,7 @@ pub(super) fn transfer_section_entities(
             "circle",
             segment.offset,
         );
-        let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         let geometry = copied_or_native_geometry(circle_geometries, segment.offset, "circle")?;
@@ -327,7 +327,7 @@ pub(super) fn transfer_section_entities(
         let construction = !unique_external_id || !profile_entities.contains(&id);
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         push_section_entity(
             ctx,
             &mut entities,
@@ -354,7 +354,7 @@ pub(super) fn transfer_section_entities(
             "point",
             segment.offset,
         );
-        let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         let geometry = copied_or_native_geometry(point_geometries, segment.offset, "point")?;
@@ -380,7 +380,7 @@ pub(super) fn transfer_section_entities(
         )?;
         let construction = !unique_external_id || !profile_entities.contains(&id);
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         let endpoint_refs = admitted_endpoint_refs(sketch_id, [segment.point_id]);
         push_section_entity(
             ctx,
@@ -408,7 +408,7 @@ pub(super) fn transfer_section_entities(
             "centered_line",
             segment.offset,
         );
-        let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         let geometry = copied_or_native_geometry(centered_line_geometries, segment.offset, "line")?;
@@ -433,7 +433,7 @@ pub(super) fn transfer_section_entities(
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
         let endpoint_refs = admitted_endpoint_refs(sketch_id, [0, 1]);
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         push_section_entity(
             ctx,
             &mut entities,
@@ -461,7 +461,7 @@ pub(super) fn transfer_section_entities(
             "reference_line",
             segment.offset,
         );
-        let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         let geometry =
@@ -490,7 +490,7 @@ pub(super) fn transfer_section_entities(
         let endpoint_refs =
             admitted_endpoint_refs(sketch_id, segment.point_ids.into_iter().flatten());
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         push_section_entity(
             ctx,
             &mut entities,
@@ -518,7 +518,7 @@ pub(super) fn transfer_section_entities(
             "bounded_curve",
             segment.offset,
         );
-        let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         let construction = !unique_external_id || !profile_entities.contains(&id);
@@ -532,7 +532,7 @@ pub(super) fn transfer_section_entities(
         )?;
         let endpoint_refs = admitted_endpoint_refs(sketch_id, segment.point_ids);
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         let geometry = native_section_geometry("bounded_curve")?;
         push_section_entity(
             ctx,
@@ -560,7 +560,7 @@ pub(super) fn transfer_section_entities(
             "conic",
             segment.offset,
         );
-        let Some(id) = sketch_entity_id_admitted(sketch_id, suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, suffix) else {
             continue;
         };
         annotate(
@@ -572,7 +572,7 @@ pub(super) fn transfer_section_entities(
             Exactness::ByteExact,
         )?;
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         let geometry = native_section_geometry("conic")?;
         push_section_entity(
             ctx,
@@ -594,7 +594,7 @@ pub(super) fn transfer_section_entities(
             continue;
         }
         let suffix = opaque_section_segment_identity_suffix(unique_segment_ids, segment);
-        let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         let kind = unique_external_id
@@ -628,7 +628,7 @@ pub(super) fn transfer_section_entities(
         )?;
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, &suffix, &geometry);
         let sketch_copy = sketch_id.clone();
-        let native_ref = sketch_native_ref_admitted(sketch_id);
+        let native_ref = sketch_native_ref(sketch_id);
         push_section_entity(
             ctx,
             &mut entities,
@@ -666,7 +666,7 @@ pub(super) fn transfer_section_entities(
         } else {
             format!("saved:offset:{offset}")
         };
-        let Some(entity_id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
+        let Some(entity_id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
         if entities.iter().any(|entity| entity.id() == &entity_id) {
@@ -684,7 +684,7 @@ pub(super) fn transfer_section_entities(
                 )
             })
         });
-        let Some(curve_id) = typed_sketch_section_curve_id_admitted(sketch_id, &suffix) else {
+        let Some(curve_id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
             continue;
         };
         annotate(
@@ -701,7 +701,7 @@ pub(super) fn transfer_section_entities(
         }
         let native_ref = format!(
             "{}:saved_entity#{internal_id}",
-            sketch_native_ref_admitted(sketch_id)
+            sketch_native_ref(sketch_id)
         );
         let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
             .with_construction(!generated)
@@ -760,7 +760,7 @@ pub(super) fn transfer_section_entities(
             )
         });
         let entity_id = if let Some(external_id) = external_id {
-            sketch_entity_id_admitted(sketch_id, external_id)
+            sketch_entity_id(sketch_id, external_id)
         } else {
             let namespace = &crate::identity::FEATDEFS_SAVED_SPLINE;
             let text = format!(
@@ -797,10 +797,7 @@ pub(super) fn transfer_section_entities(
             "saved_interpolation_spline",
             Exactness::Derived,
         )?;
-        let native_ref = format!(
-            "{}:saved_spline#{suffix}",
-            sketch_native_ref_admitted(sketch_id)
-        );
+        let native_ref = format!("{}:saved_spline#{suffix}", sketch_native_ref(sketch_id));
         let geometry_ref = transform.map(|_| curve_id.as_str().to_owned());
         let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
             .with_construction(!generated)
@@ -860,7 +857,7 @@ pub(super) fn transfer_section_entities(
                 continue;
             };
             let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-            let Some(id) = typed_sketch_section_curve_id_admitted(sketch_id, &suffix) else {
+            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
                 continue;
             };
             if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -906,7 +903,7 @@ pub(super) fn transfer_section_entities(
                 "circle",
                 segment.offset,
             );
-            let Some(id) = typed_sketch_section_curve_id_admitted(sketch_id, &suffix) else {
+            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
                 continue;
             };
             if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -952,7 +949,7 @@ pub(super) fn transfer_section_entities(
                 "centered_line",
                 segment.offset,
             );
-            let Some(id) = typed_sketch_section_curve_id_admitted(sketch_id, &suffix) else {
+            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
                 continue;
             };
             if ir.model.curves.iter().any(|existing| existing.id == id) {

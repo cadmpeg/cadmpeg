@@ -2,8 +2,7 @@
 
 use super::{
     feature_sketch_record_id_in_scan, model_sketch_id, owning_feature_definition_ref,
-    section_owner_feature_id, sketch_constraint_id_admitted, sketch_native_ref_admitted,
-    sketch_table_headers,
+    section_owner_feature_id, sketch_constraint_id, sketch_native_ref, sketch_table_headers,
 };
 
 use crate::decode::native_records::CreoSketchTableKind;
@@ -38,15 +37,12 @@ fn definition() -> FeatureDefinition {
 fn sketch_constraint_identity_and_native_ref_name_the_sketch() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     assert_eq!(
-        sketch_constraint_id_admitted(&sketch, "equation:offset:28")
+        sketch_constraint_id(&sketch, "equation:offset:28")
             .expect("service constraint ID")
             .as_str(),
         "creo:featdefs:sketch_constraint#40:equation:offset:28"
     );
-    assert_eq!(
-        sketch_native_ref_admitted(&sketch),
-        "creo:featdefs:sketch#40"
-    );
+    assert_eq!(sketch_native_ref(&sketch), "creo:featdefs:sketch#40");
 }
 
 #[test]
