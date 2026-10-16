@@ -84,13 +84,11 @@ fn fixed_and_counted_fem_boundaries_stop_before_pointer_groups() {
 
     for (case_index, (_entry, record, expected_end)) in cases.into_iter().enumerate() {
         assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
-        let groups = {
-            analyze_trailing_pointer_groups_for_global_table(
-                &record,
-                &directory,
-                crate::global::GlobalTable::V5Later,
-            )
-        }
+        let groups = analyze_trailing_pointer_groups_for_global_table(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+        )
         .groups()
         .unwrap_or_else(|| panic!("FEM trailing pointer groups case {case_index}"));
         assert_eq!(groups.token_start, expected_end);

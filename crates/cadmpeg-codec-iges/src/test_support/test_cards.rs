@@ -49,7 +49,7 @@ pub(crate) fn fixed_ascii_with_global_cards(cards: &[&[u8]]) -> Vec<u8> {
 }
 
 pub(crate) fn global_card_count(global: &[u8]) -> usize {
-    { crate::global::layout_global_cards(global) }.map_or_else(
+    crate::global::layout_global_cards(global).map_or_else(
         |_| global.len().div_ceil(CARD_DATA_COLUMNS),
         |cards| cards.len(),
     )
