@@ -42,15 +42,13 @@ pub fn spline_surfaces(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
 }
 
 /// Exercise topology record scanning.
-pub fn topology(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+pub fn topology(data: &[u8]) {
     drop(crate::brep::topology::scan(data));
-    Ok(())
 }
 
 /// Exercise entity record scanning.
-pub fn entity(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+pub fn entity(data: &[u8]) {
     drop(crate::brep::entity::scan_metadata(data, false));
-    Ok(())
 }
 
 /// Exercise `PMISemanticDataDB` `MessagePack` parse/patch/reparse.
