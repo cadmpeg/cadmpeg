@@ -166,36 +166,41 @@ fn convert_rejects_empty_native_geometry_unless_allowed() {
         .stdout(predicate::str::starts_with("ISO-10303-21"));
 }
 
+/// A container-only document is shallower than a geometry encoder plans from,
+/// so the refusal names the depth and `--allow-empty` does not override it.
 #[test]
-fn convert_rejects_container_only_geometry_unless_allowed() {
+fn convert_refuses_container_only_geometry_at_its_depth() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args([
+    for allow_empty in [false, true] {
+        let report = dir.path().join(format!("depth-{allow_empty}.json"));
+        let mut args = vec![
             "convert",
             input.to_str().unwrap(),
             "-f",
             "step",
             "--container-only",
-        ])
-        .assert()
-        .code(1)
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("--allow-empty"));
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args([
-            "convert",
-            input.to_str().unwrap(),
-            "-f",
-            "step",
-            "--container-only",
-            "--allow-empty",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::starts_with("ISO-10303-21"));
+            "--report",
+            report.to_str().unwrap(),
+        ];
+        if allow_empty {
+            args.push("--allow-empty");
+        }
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(args)
+            .assert()
+            .code(1)
+            .stdout(predicate::str::is_empty())
+            .stderr(predicate::str::contains(
+                "the step encoder needs a geometry-depth decode, but the document records container depth",
+            ));
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        assert_eq!(value["refusal"]["stage"], "plan");
+        assert_eq!(value["refusal"]["code"], "insufficient_depth");
+        assert_eq!(value["refusal"]["depth"]["needed"], "geometry");
+        assert_eq!(value["refusal"]["depth"]["recorded"], "container");
+    }
 }
 
 /// The format half of `--to` is checked before the input is opened.

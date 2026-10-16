@@ -258,6 +258,8 @@ struct NotImplementedEncoder;
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("not-implemented-test");
+    const NEEDS: cadmpeg_ir::codec::write::DepthNeed =
+        cadmpeg_ir::codec::write::DepthNeed::AtLeast(cadmpeg_core::decode::DecodeDepth::Full);
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
 
