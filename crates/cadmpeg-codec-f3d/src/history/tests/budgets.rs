@@ -4,7 +4,9 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::{bind_historical_entity_versions, TableBindingCost};
+use crate::history::{
+    admit_history_binding, HistoryBindingAdmission, HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT,
+};
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistoryRecord,
     AsmHistoryRecordFraming,
@@ -68,64 +70,164 @@ fn insert_only_chain() -> Vec<AsmDeltaState> {
     ]
 }
 
-fn state_records(states: &[AsmDeltaState]) -> u64 {
-    let active_count = crate::history::insert_only_active_record_count(states).unwrap();
-    let mut count = 0;
-    assert!(crate::history::walk_entity_versions(
-        states,
-        i64::try_from(active_count).unwrap(),
-        &[],
-        |_, versions| {
-            count += u64_from_index(versions.len());
-        }
-    ));
-    count
-}
-
 #[test]
-fn history_binding_skips_a_chain_past_its_state_record_allowance() {
-    let mut unbounded = insert_only_chain();
+fn history_binding_skips_a_chain_past_its_retained_byte_allowance() {
+    let unbounded = insert_only_chain();
     assert_eq!(
-        bind_historical_entity_versions(&mut unbounded, &mut { u64::MAX }).unwrap(),
-        TableBindingCost::Admitted
+        admit_history_binding(&unbounded, &mut { u64::MAX }).unwrap(),
+        HistoryBindingAdmission::Admitted
     );
-    let entries = state_records(&unbounded);
-    assert!(entries > 0);
+    // Three bulletin-board changes and two slots in the tail state.
+    let bytes = 5 * HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT;
 
-    let mut allowance = entries;
-    let mut at_bound = insert_only_chain();
+    let mut allowance = bytes;
+    let at_bound = insert_only_chain();
     assert_eq!(
-        bind_historical_entity_versions(&mut at_bound, &mut allowance).unwrap(),
-        TableBindingCost::Admitted
+        admit_history_binding(&at_bound, &mut allowance).unwrap(),
+        HistoryBindingAdmission::Admitted
     );
     assert_eq!(at_bound, unbounded);
     assert_eq!(allowance, 0);
 
-    let mut allowance = entries - 1;
-    let mut past_bound = insert_only_chain();
+    let mut allowance = bytes - 1;
+    let past_bound = insert_only_chain();
     assert_eq!(
-        bind_historical_entity_versions(&mut past_bound, &mut allowance).unwrap(),
-        TableBindingCost::Exceeded
+        admit_history_binding(&past_bound, &mut allowance).unwrap(),
+        HistoryBindingAdmission::Skipped
     );
     assert!(past_bound.iter().all(|state| state.transition.is_none()));
-    assert_eq!(allowance, entries - 1);
+    assert_eq!(allowance, bytes - 1);
 }
 
 #[test]
-fn history_streams_of_one_decode_share_the_binding_allowance() {
-    let mut first = insert_only_chain();
-    let mut second = insert_only_chain();
-    let mut probe = insert_only_chain();
-    bind_historical_entity_versions(&mut probe, &mut { u64::MAX }).unwrap();
-    let mut allowance = 2 * state_records(&probe) - 1;
+fn history_streams_of_one_decode_share_the_remaining_retained_bytes() {
+    let first = insert_only_chain();
+    let second = insert_only_chain();
+    let bytes = 5 * HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT;
+    let mut allowance = 2 * bytes - 1;
 
     assert_eq!(
-        bind_historical_entity_versions(&mut first, &mut allowance).unwrap(),
-        TableBindingCost::Admitted
+        admit_history_binding(&first, &mut allowance).unwrap(),
+        HistoryBindingAdmission::Admitted
     );
+    assert_eq!(allowance, bytes - 1);
     assert_eq!(
-        bind_historical_entity_versions(&mut second, &mut allowance).unwrap(),
-        TableBindingCost::Exceeded
+        admit_history_binding(&second, &mut allowance).unwrap(),
+        HistoryBindingAdmission::Skipped
     );
+    assert_eq!(allowance, bytes - 1);
     assert!(second.iter().all(|state| state.transition.is_none()));
+}
+
+fn geometry_history(split: bool) -> Vec<u8> {
+    use crate::test_support::tokens_test::{t_end, t_ident, t_long, t_ref};
+    let mut bytes = crate::test_support::smbh_geometry_test::synthetic_geometry_smbh();
+    // The fixture ends with the first delta_state name, after 19 active records.
+    for node in 0..=i64::from(split) {
+        if node != 0 {
+            t_ident(&mut bytes, "delta_state");
+        }
+        for value in [2 - node, 1, 0] {
+            t_long(&mut bytes, value);
+        }
+        for reference in [
+            if node == 0 { -1 } else { 0 },
+            if split && node == 0 { 1 } else { -1 },
+            node,
+            -1,
+            0,
+        ] {
+            t_ref(&mut bytes, reference);
+        }
+        bytes.push(0x0b);
+        if node == 0 {
+            t_long(&mut bytes, 1);
+            t_ref(&mut bytes, 0);
+            t_long(&mut bytes, 2);
+            for slot in 1..19 {
+                t_long(&mut bytes, 1);
+                t_ref(&mut bytes, -1);
+                t_ref(&mut bytes, slot);
+            }
+            t_long(&mut bytes, 0);
+        }
+        t_long(&mut bytes, 0);
+        t_end(&mut bytes);
+        t_ident(&mut bytes, "End-of-ASM-History-Section");
+        t_end(&mut bytes);
+    }
+    bytes
+}
+
+#[test]
+fn skipped_history_does_not_charge_retained_bytes() {
+    use cadmpeg_asm::kernel_header::RefWidth;
+    use cadmpeg_core::decode::DecodePolicy;
+    let mut policy = DecodePolicy::desktop();
+    // One state retains 19 tail slots plus 18 changes.
+    policy.limits.max_retained_bytes = 37 * HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        // Use the session remainder, including native text already retained.
+        ctx.retain_bytes(1, "earlier native text").unwrap();
+        let mut remaining = ctx.retained_bytes_available();
+        let available = remaining;
+        let large = super::super::decode(
+            ctx,
+            &geometry_history(false),
+            "large",
+            RefWidth::Eight,
+            &mut remaining,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(large.binding_budget_exceeded);
+        assert!(large
+            .states()
+            .iter()
+            .all(|state| state.transition.is_none()));
+        assert_eq!(remaining, available);
+        assert_eq!(ctx.retained_bytes_available(), available);
+    });
+}
+
+#[test]
+fn skipped_history_leaves_room_for_the_next_smaller_stream() {
+    use cadmpeg_asm::kernel_header::RefWidth;
+    use cadmpeg_core::decode::DecodePolicy;
+    let mut policy = DecodePolicy::desktop();
+    // Moving the 18 changes to a newer state leaves one slot in the tail.
+    policy.limits.max_retained_bytes = 19 * HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT + 1;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        ctx.retain_bytes(1, "earlier native text").unwrap();
+        let mut remaining = ctx.retained_bytes_available();
+        let large = super::super::decode(
+            ctx,
+            &geometry_history(false),
+            "large",
+            RefWidth::Eight,
+            &mut remaining,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(large.binding_budget_exceeded);
+        let small = super::super::decode(
+            ctx,
+            &geometry_history(true),
+            "small",
+            RefWidth::Eight,
+            &mut remaining,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!small.binding_budget_exceeded);
+        assert!(small
+            .states()
+            .iter()
+            .all(|state| state.transition.is_some()));
+        assert_eq!(remaining, 0);
+        assert_eq!(
+            ctx.retained_bytes_available(),
+            policy.limits.max_retained_bytes - 1
+        );
+    });
 }

@@ -115,12 +115,47 @@ fn compare(history: &AsmHistory, snapshots: &[Snapshot], is_retained: bool) {
     }
 }
 
-fn transition_bytes(histories: &[AsmHistory]) -> usize {
-    let transitions: Vec<_> = histories
+fn native_delta_bytes(history: &AsmHistory, bytes: &[u8]) -> u64 {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::desktop();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let before = ctx.retained_bytes_available();
+    let mut native = cadmpeg_ir::NativeNamespace::default();
+    native
+        .set_arena_from(
+            &ctx,
+            "asm_delta_states",
+            history
+                .states()
+                .iter()
+                .map(crate::native::FlatAsmDeltaState::from),
+        )
+        .unwrap();
+    before - ctx.retained_bytes_available()
+}
+
+fn changed_slots(history: &AsmHistory, snapshots: &[Snapshot]) -> u64 {
+    let tail = history
+        .states()
         .iter()
-        .flat_map(|h| h.states().iter().map(|s| &s.transition))
-        .collect();
-    serde_json::to_vec(&transitions).unwrap().len()
+        .position(|state| state.next_ref.is_none())
+        .unwrap();
+    let tail_slots = snapshots
+        .iter()
+        .find(|(ordinal, _, _)| *ordinal == tail)
+        .unwrap()
+        .2
+        .len();
+    u64::try_from(
+        tail_slots
+            + history
+                .states()
+                .iter()
+                .flat_map(|state| &state.bulletin_boards)
+                .map(|board| board.changes.len())
+                .sum::<usize>(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -133,7 +168,7 @@ fn history_deltas_match_snapshots() {
         let policy = DecodePolicy::desktop();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = crate::container::scan(&ctx, root).unwrap();
-        let mut allowance = crate::history::history_binding_allowance(&policy);
+        let mut allowance = u64::MAX;
         let mut histories = Vec::new();
         let mut snapshots = Vec::new();
         for brep in crate::container::history_breps(&scan) {
@@ -179,12 +214,29 @@ fn history_deltas_match_snapshots() {
             .flatten()
             .map(|(_, _, versions)| versions.len())
             .sum();
-        let before = transition_bytes(&histories);
+        let before: Vec<_> = histories
+            .iter()
+            .map(|history| native_delta_bytes(history, &bytes))
+            .collect();
+        let changed: Vec<_> = histories
+            .iter()
+            .zip(&snapshots)
+            .map(|(history, snapshots)| changed_slots(history, snapshots))
+            .collect();
         crate::history::discard_projection_caches(&mut histories);
         for (history, snapshots) in histories.iter().zip(&snapshots) {
             compare(history, snapshots, true);
         }
-        let after = transition_bytes(&histories);
-        println!("{path}\thistories={}\tstates={states}\tstate_records={state_records}\tcomplete_transitions_bytes={before}\tretained_transitions_bytes={after}", histories.len());
+        let after: Vec<_> = histories
+            .iter()
+            .map(|history| native_delta_bytes(history, &bytes))
+            .collect();
+        for (index, history) in histories.iter().enumerate() {
+            println!("{path} history={} changed_slots={} estimate={} complete_native_bytes={} retained_native_bytes={}",
+                history.id, changed[index], changed[index] * crate::history::HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT, before[index], after[index]);
+        }
+        let before: u64 = before.iter().sum();
+        let after: u64 = after.iter().sum();
+        println!("{path}\thistories={}\tstates={states}\tstate_records={state_records}\tcomplete_native_bytes={before}\tretained_native_bytes={after}", histories.len());
     }
 }

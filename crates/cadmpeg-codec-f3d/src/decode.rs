@@ -1771,11 +1771,11 @@ fn report_design_projection_gaps(
     let history_budget_skips = native
         .asm_histories
         .iter()
-        .filter(|history| history.record_table_binding_budget_exceeded)
+        .filter(|history| history.binding_budget_exceeded)
         .count();
     if history_budget_skips != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
-            "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
+            "{history_budget_skips} ASM history stream(s) retain no historical topology because their estimated retained size exceeded the decode session's remaining retained-byte allowance."
         ),);
     }
     let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(
@@ -2386,10 +2386,10 @@ impl<'a> F3dDecodeSession<'a> {
     fn decode_design_graph(&mut self, path: &SessionPath) -> Result<(), CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
-        let mut binding_allowance = crate::history::history_binding_allowance(ctx.policy());
+        let mut remaining_retained_bytes = ctx.retained_bytes_available();
         for history_brep in container::history_breps(scan) {
             if let Some(history) =
-                decode_asm_history(ctx, scan, history_brep, &mut binding_allowance)?
+                decode_asm_history(ctx, scan, history_brep, &mut remaining_retained_bytes)?
             {
                 self.native.asm_histories.push(history);
             }
@@ -4449,7 +4449,7 @@ fn decode_asm_history(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     history_brep: &BrepFacts,
-    binding_allowance: &mut u64,
+    remaining_retained_bytes: &mut u64,
 ) -> Result<Option<crate::history_records::AsmHistory>, CodecError> {
     let width = history_brep
         .kernel
@@ -4459,7 +4459,13 @@ fn decode_asm_history(
             header.width
         });
     let bytes = scan.entry_bytes(&history_brep.name)?;
-    crate::history::decode(ctx, bytes, &history_brep.name, width, binding_allowance)
+    crate::history::decode(
+        ctx,
+        bytes,
+        &history_brep.name,
+        width,
+        remaining_retained_bytes,
+    )
 }
 
 fn collect_related_indices<'a>(
