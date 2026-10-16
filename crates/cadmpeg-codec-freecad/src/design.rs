@@ -4,7 +4,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, VecDeque};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -49,6 +49,10 @@ use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 mod sketch_cache;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
+/// Endpoint-index candidates that profile chaining may examine across all
+/// sketches of one document. A sketch whose chaining passes it keeps no
+/// profiles and reports `sketch.profile-matching-bounded`.
+const MAX_PROFILE_ENDPOINT_CANDIDATES: usize = 1 << 24;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
 const EXTERNAL_GEOMETRY_MISSING_FLAG: u64 = 1 << 3;
 const DEFAULT_HELICAL_SWEEP_TOLERANCE: f64 = 0.1;
@@ -127,6 +131,7 @@ pub(crate) fn transfer(
         ordinal_by_feature.insert(feature_id(object)?, feature_ordinals[object.id().as_str()]);
     }
 
+    let profile_work = WorkBudget::new(MAX_PROFILE_ENDPOINT_CANDIDATES);
     for object in objects {
         if !is_design_object(&object.type_name) {
             continue;
@@ -155,7 +160,7 @@ pub(crate) fn transfer(
             datum_definition(&object.type_name, &owned)
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sketch(&object.type_name) {
-            let decoded = parse_sketch(ctx, object, &owned, &mut losses)?;
+            let decoded = parse_sketch(ctx, object, &owned, &profile_work, &mut losses)?;
             let sketch = decoded.sketch;
             let sketch_id = sketch.id.clone();
             sketch_ids.insert(object.id().as_str(), sketch_id.clone());
@@ -1428,6 +1433,7 @@ fn parse_sketch(
     ctx: &DecodeContext<'_>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
+    profile_work: &WorkBudget,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<SketchTransfer, CodecError> {
     let id = SketchId::mint(design_identity_text("sketch", object, format_args!("")))
@@ -1618,7 +1624,17 @@ fn parse_sketch(
         );
     }
     let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
-    let profiles = build_profiles(&entities, &constraints);
+    let profiles = build_profiles(&entities, &constraints, profile_work).unwrap_or_else(|| {
+        losses.push(
+            crate::loss::FreecadLossCode::SketchProfileMatchingBounded.note(format!(
+                "sketch {} profiles are not chained: endpoint matching reached \
+                 MAX_PROFILE_ENDPOINT_CANDIDATES ({MAX_PROFILE_ENDPOINT_CANDIDATES} candidates \
+                 per document); sketch entities and constraints are retained",
+                object.name()
+            )),
+        );
+        Vec::new()
+    });
     let (origin, normal, u_axis) = sketch_frame(properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
@@ -3406,10 +3422,14 @@ fn sketch_geometry(
     }
 }
 
+/// Chain the sketch's profile entities by their shared endpoints.
+///
+/// `None` means endpoint matching exhausted `work`; no profile is chained then.
 fn build_profiles(
     entities: &[SketchEntity],
     constraints: &[SketchConstraint],
-) -> std::vec::Vec<std::vec::Vec<cadmpeg_ir::SketchEntityUse>> {
+    work: &WorkBudget,
+) -> Option<std::vec::Vec<std::vec::Vec<cadmpeg_ir::SketchEntityUse>>> {
     // Internal entities arrive in GeometryList order; appended external and built-in reference
     // entities are construction entries. Indices therefore preserve the persisted ordinal for
     // every eligible profile entity.
@@ -3431,7 +3451,8 @@ fn build_profiles(
                 &explicit_relations,
                 entities,
                 &index,
-            );
+                work,
+            )?;
             if matches.len() > 1 {
                 ambiguous.insert(entity);
                 for candidate in matches {
@@ -3466,7 +3487,7 @@ fn build_profiles(
         };
         loop {
             let mut candidates =
-                endpoint_candidates(tail, &unused, &explicit_relations, entities, &index);
+                endpoint_candidates(tail, &unused, &explicit_relations, entities, &index, work)?;
             candidates.retain(|candidate| !ambiguous.contains(&candidate.entity));
             let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
                 break;
@@ -3497,7 +3518,7 @@ fn build_profiles(
         }
         loop {
             let mut candidates =
-                endpoint_candidates(head, &unused, &explicit_relations, entities, &index);
+                endpoint_candidates(head, &unused, &explicit_relations, entities, &index, work)?;
             candidates.retain(|candidate| !ambiguous.contains(&candidate.entity));
             let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
                 break;
@@ -3528,7 +3549,7 @@ fn build_profiles(
         }
         profiles.push(chain.into());
     }
-    profiles
+    Some(profiles)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -3542,35 +3563,40 @@ struct IndexedEndpoint {
     point: Point2,
 }
 
+/// Profile endpoints by scale bucket.
 struct EndpointIndex {
-    by_scale: BTreeMap<u64, Vec<IndexedEndpoint>>,
+    by_scale: BTreeMap<u64, EndpointBucket>,
+}
+
+/// The endpoints of one scale bucket, by grid cell.
+#[derive(Default)]
+struct EndpointBucket {
+    cells: HashMap<(i64, i64), Vec<IndexedEndpoint>>,
+    /// Endpoints with no finite cell. Every query of the bucket examines them.
+    unplaced: Vec<IndexedEndpoint>,
 }
 
 impl EndpointIndex {
     fn new(profile_entities: &BTreeSet<usize>, entities: &[SketchEntity]) -> Self {
-        let mut by_scale = BTreeMap::<u64, Vec<IndexedEndpoint>>::new();
+        let mut by_scale = BTreeMap::<u64, EndpointBucket>::new();
         for &index in profile_entities {
             if let Some((start, end)) = endpoints(&entities[index]) {
                 for (at_start, point) in [(true, start), (false, end)] {
                     let scale = endpoint_scale_bucket(point);
-                    let bucket = match by_scale.entry(scale) {
-                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                        std::collections::btree_map::Entry::Vacant(entry) => {
-                            entry.insert(Vec::new())
-                        }
-                    };
-                    bucket.push(IndexedEndpoint {
+                    let bucket = by_scale.entry(scale).or_default();
+                    let endpoint = IndexedEndpoint {
                         locus: EndpointLocus {
                             entity: index,
                             start: at_start,
                         },
                         point,
-                    });
+                    };
+                    match endpoint_cell(scale, point) {
+                        Some(cell) => bucket.cells.entry(cell).or_default().push(endpoint),
+                        None => bucket.unplaced.push(endpoint),
+                    }
                 }
             }
-        }
-        for bucket in by_scale.values_mut() {
-            bucket.sort_by(|left, right| left.point.u.total_cmp(&right.point.u));
         }
         Self { by_scale }
     }
@@ -3580,13 +3606,29 @@ fn endpoint_scale_bucket(point: Point2) -> u64 {
     point.u.abs().max(point.v.abs()).max(1.0).to_bits() >> 52
 }
 
+/// Grid cell of `point` in scale bucket `bucket`.
+///
+/// The cell side is `2^(bucket - 1066)`, twice the widest tolerance that any
+/// query from a neighbouring bucket applies to this bucket. An endpoint that
+/// can match a query therefore lies in one of the nine cells around the query.
+fn endpoint_cell(bucket: u64, point: Point2) -> Option<(i64, i64)> {
+    let side = f64::from_bits(bucket.checked_sub(43)? << 52);
+    let coordinate =
+        |value: f64| cadmpeg_core::convert::truncate_f64_to_i64((value / side).floor());
+    Some((coordinate(point.u)?, coordinate(point.v)?))
+}
+
+/// Coordinate and explicit endpoint matches of `endpoint` among `available`.
+///
+/// Every index candidate examined charges `work`; `None` means it is exhausted.
 fn endpoint_candidates(
     endpoint: EndpointLocus,
     available: &BTreeSet<usize>,
     explicit_relations: &BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>,
     entities: &[SketchEntity],
     index: &EndpointIndex,
-) -> Vec<EndpointLocus> {
+    work: &WorkBudget,
+) -> Option<Vec<EndpointLocus>> {
     // Active explicit coincident loci override coordinates. Coordinate matching below is the
     // decoder-owned CADIR boundary, not a producer tolerance.
     if let Some(explicit) = explicit_relations.get(&endpoint) {
@@ -3597,10 +3639,10 @@ fn endpoint_candidates(
                 .copied()
                 .filter(|candidate| available.contains(&candidate.entity)),
         );
-        return matches;
+        return Some(matches);
     }
     let Some(point) = endpoint_point(endpoint, entities) else {
-        return Vec::new();
+        return Some(Vec::new());
     };
     let mut matches = Vec::new();
     let scale = endpoint_scale_bucket(point);
@@ -3610,22 +3652,48 @@ fn endpoint_candidates(
         };
         let bucket_scale = f64::from_bits((bucket_number.max(scale) + 1) << 52).min(f64::MAX);
         let tolerance = SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * bucket_scale;
-        let first = bucket.partition_point(|candidate| candidate.point.u < point.u - tolerance);
-        for candidate in bucket[first..]
-            .iter()
-            .take_while(|candidate| candidate.point.u <= point.u + tolerance)
-        {
-            if candidate.locus.entity != endpoint.entity
-                && available.contains(&candidate.locus.entity)
-                && !explicit_relations.contains_key(&candidate.locus)
-                && endpoints_match_by_roundoff(point, candidate.point)
-            {
-                matches.push(candidate.locus);
+        let mut examine = |candidates: &[IndexedEndpoint]| {
+            for candidate in candidates {
+                if !work.charge() {
+                    return false;
+                }
+                if candidate.point.u >= point.u - tolerance
+                    && candidate.point.u <= point.u + tolerance
+                    && candidate.locus.entity != endpoint.entity
+                    && available.contains(&candidate.locus.entity)
+                    && !explicit_relations.contains_key(&candidate.locus)
+                    && endpoints_match_by_roundoff(point, candidate.point)
+                {
+                    matches.push(candidate.locus);
+                }
             }
+            true
+        };
+        if let Some((cell_u, cell_v)) = endpoint_cell(bucket_number, point) {
+            for offset_u in [-1, 0, 1] {
+                for offset_v in [-1, 0, 1] {
+                    let cell = cell_u
+                        .checked_add(offset_u)
+                        .zip(cell_v.checked_add(offset_v))
+                        .and_then(|cell| bucket.cells.get(&cell));
+                    if !cell.is_none_or(|cell| examine(cell.as_slice())) {
+                        return None;
+                    }
+                }
+            }
+        } else {
+            for cell in bucket.cells.values() {
+                if !examine(cell.as_slice()) {
+                    return None;
+                }
+            }
+        }
+        if !examine(bucket.unplaced.as_slice()) {
+            return None;
         }
     }
     matches.sort_unstable_by(Ord::cmp);
-    matches
+    Some(matches)
 }
 
 fn explicit_endpoint_relations(
@@ -7982,6 +8050,9 @@ pub(crate) fn census(
 
 #[cfg(test)]
 mod profile_tests {
+    use std::collections::BTreeSet;
+
+    use cadmpeg_core::decode::WorkBudget;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{
@@ -7999,7 +8070,12 @@ mod profile_tests {
         entities: &[SketchEntity],
         constraints: &[SketchConstraint],
     ) -> Vec<Vec<SketchEntityUse>> {
-        super::build_profiles(entities, constraints)
+        super::build_profiles(
+            entities,
+            constraints,
+            &WorkBudget::new(super::MAX_PROFILE_ENDPOINT_CANDIDATES),
+        )
+        .expect("profile matching within the document limit")
     }
 
     #[test]
@@ -8381,6 +8457,190 @@ mod profile_tests {
 
         assert_eq!(profiles.len(), 3);
         assert!(profiles.iter().all(|profile| profile.len() == 1));
+    }
+
+    fn line(id: &str, start: Point2, end: Point2) -> SketchEntity {
+        entity(
+            id,
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
+        )
+    }
+
+    /// Arc whose start overflows to `(f64::MAX, inf)`, which has no grid cell.
+    fn overflowing_arc(id: &str) -> SketchEntity {
+        entity(
+            id,
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: Point2::new(f64::MAX, f64::MAX),
+                radius: Length::new(2_f64.powi(1000)).unwrap(),
+                start_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI).unwrap(),
+            })
+            .unwrap(),
+        )
+    }
+
+    /// Coordinate matches of `endpoint` found by testing every profile
+    /// endpoint in the neighbouring scale buckets.
+    fn scanned_candidates(
+        endpoint: super::EndpointLocus,
+        available: &BTreeSet<usize>,
+        entities: &[SketchEntity],
+    ) -> Vec<(usize, bool)> {
+        let Some(point) = super::endpoint_point(endpoint, entities) else {
+            return Vec::new();
+        };
+        let scale = super::endpoint_scale_bucket(point);
+        let mut matches = Vec::new();
+        for (index, candidate) in entities.iter().enumerate() {
+            let Some((start, end)) = super::endpoints(candidate) else {
+                continue;
+            };
+            for (at_start, candidate_point) in [(true, start), (false, end)] {
+                let bucket = super::endpoint_scale_bucket(candidate_point);
+                if bucket + 1 < scale || bucket > scale + 1 {
+                    continue;
+                }
+                let bucket_scale = f64::from_bits((bucket.max(scale) + 1) << 52).min(f64::MAX);
+                let tolerance = super::SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * bucket_scale;
+                if !candidate.construction
+                    && candidate_point.u >= point.u - tolerance
+                    && candidate_point.u <= point.u + tolerance
+                    && index != endpoint.entity
+                    && available.contains(&index)
+                    && endpoints_match_by_roundoff(point, candidate_point)
+                {
+                    matches.push((index, at_start));
+                }
+            }
+        }
+        matches.sort_unstable();
+        matches
+    }
+
+    #[test]
+    fn endpoint_grid_finds_what_a_scan_of_every_endpoint_finds() {
+        // Anchors sit on cell and scale-bucket boundaries; jitter of up to 128
+        // ulps straddles both and the 64-ulp round-off boundary.
+        const ANCHORS: [f64; 7] = [0.0, 1.0, -2.0, 4.0, 1024.0, 1_099_511_627_776.0, 8.0e307];
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut random = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut coordinate = || {
+            let bits = random();
+            let anchor = ANCHORS[usize::try_from(bits % 7).unwrap()];
+            let steps = f64::from(u32::try_from((bits >> 8) % 257).unwrap()) - 128.0;
+            anchor + steps * f64::EPSILON * anchor.abs().max(1.0)
+        };
+        let mut matched = 0;
+        for case in 0..6 {
+            let mut entities = (0..300)
+                .map(|ordinal| {
+                    line(
+                        &format!("test:test:entity#{case}-{ordinal}"),
+                        Point2::new(coordinate(), coordinate()),
+                        Point2::new(coordinate(), coordinate()),
+                    )
+                })
+                .collect::<Vec<_>>();
+            entities.push(overflowing_arc("test:test:entity#arc"));
+            entities.push(line(
+                "test:test:entity#to-arc",
+                Point2::new(f64::MAX, 0.0),
+                Point2::new(0.0, 0.0),
+            ));
+            let profile_entities = (0..entities.len()).collect::<BTreeSet<_>>();
+            let available = profile_entities
+                .iter()
+                .copied()
+                .filter(|&index| index % 5 != case)
+                .collect::<BTreeSet<_>>();
+            let index = super::EndpointIndex::new(&profile_entities, &entities);
+            let work = WorkBudget::new(super::MAX_PROFILE_ENDPOINT_CANDIDATES);
+            for entity in 0..entities.len() {
+                for start in [true, false] {
+                    let endpoint = super::EndpointLocus { entity, start };
+                    let found = super::endpoint_candidates(
+                        endpoint,
+                        &available,
+                        &std::collections::BTreeMap::new(),
+                        &entities,
+                        &index,
+                        &work,
+                    )
+                    .expect("within the work limit")
+                    .into_iter()
+                    .map(|locus| (locus.entity, locus.start))
+                    .collect::<Vec<_>>();
+                    let expected = scanned_candidates(endpoint, &available, &entities);
+                    assert_eq!(
+                        found, expected,
+                        "case {case}, entity {entity}, start {start}"
+                    );
+                    matched += found.len();
+                }
+            }
+        }
+        assert!(matched > 1000, "only {matched} matches exercised");
+    }
+
+    #[test]
+    fn endpoints_without_a_grid_cell_still_chain() {
+        let entities = [
+            line(
+                "test:test:entity#to-arc",
+                Point2::new(0.0, 0.0),
+                Point2::new(f64::MAX, 0.0),
+            ),
+            overflowing_arc("test:test:entity#arc"),
+        ];
+        let profiles = build_profiles(&entities, &[]);
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 2);
+    }
+
+    #[test]
+    fn profile_chaining_is_linear_when_endpoints_share_a_coordinate() {
+        // Every endpoint has u = 0, so a window over u holds the whole sketch
+        // and pairwise matching would examine about 2^32 candidates.
+        const LINES: u32 = 1 << 15;
+        let base = f64::from(1_u32 << 20);
+        let entities = (0..LINES)
+            .map(|ordinal| {
+                line(
+                    &format!("test:test:entity#{ordinal}"),
+                    Point2::new(0.0, base + f64::from(ordinal)),
+                    Point2::new(0.0, base + f64::from(ordinal) + 1.0),
+                )
+            })
+            .collect::<Vec<_>>();
+        let work = WorkBudget::new(1 << 20);
+        let profiles = super::build_profiles(&entities, &[], &work).expect("linear work");
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), entities.len());
+        assert!(profiles[0]
+            .iter()
+            .zip(&entities)
+            .all(|(entity_use, entity)| entity_use.entity == *entity.id() && !entity_use.reversed));
+    }
+
+    #[test]
+    fn profile_chaining_stops_when_the_work_limit_is_spent() {
+        let entities = (0..4)
+            .map(|ordinal| {
+                line(
+                    &format!("test:test:entity#{ordinal}"),
+                    Point2::new(f64::from(ordinal), 0.0),
+                    Point2::new(f64::from(ordinal) + 1.0, 0.0),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(super::build_profiles(&entities, &[], &WorkBudget::new(2)).is_none());
+        assert_eq!(build_profiles(&entities, &[]).len(), 1);
     }
 }
 

@@ -45,6 +45,8 @@ pub(crate) enum FreecadLossCode {
     SketchExternalCacheUnresolved,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
+    /// Sketch profiles are not chained because endpoint matching reached its work cap.
+    SketchProfileMatchingBounded,
     /// Topology color values were retained because their count did not match mapped topology.
     AppearanceTopologyColorCountMismatch,
     /// A primitive style size could not enter the neutral appearance.
@@ -85,6 +87,7 @@ impl FreecadLossCode {
         Self::SketchNativeConstraint,
         Self::SketchExternalReferenceUnresolved,
         Self::SketchExternalCacheUnresolved,
+        Self::SketchProfileMatchingBounded,
         Self::AppearanceTopologyColorCountMismatch,
         Self::AppearancePrimitiveSizeNotTransferred,
         Self::SourceDialectUnverified,
@@ -113,6 +116,7 @@ impl FreecadLossCode {
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
             Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
+            Self::SketchProfileMatchingBounded => "sketch.profile-matching-bounded",
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
@@ -142,6 +146,7 @@ impl FreecadLossCode {
             | Self::SketchNativeConstraint => Severity::Blocking,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
+            | Self::SketchProfileMatchingBounded
             | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
@@ -173,6 +178,7 @@ impl FreecadLossCode {
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
+            | Self::SketchProfileMatchingBounded
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
@@ -234,6 +240,7 @@ mod tests {
                 "sketch.native-constraint",
                 "sketch.external-reference-unresolved",
                 "sketch.external-cache-unresolved",
+                "sketch.profile-matching-bounded",
                 "appearance.topology-color-count-mismatch",
                 "appearance.primitive-size-not-transferred",
                 "source.dialect-unverified",
