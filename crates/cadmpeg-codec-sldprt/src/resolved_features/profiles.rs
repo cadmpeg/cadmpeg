@@ -100,14 +100,11 @@ pub(crate) fn bind_sketch_profiles(
     let declared_carriers = declared_entity_handle_circular_carriers(features, parameters, lanes);
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(histories);
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
         let names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(u64, usize, &crate::records::Feature)>::new();
-        for feature in native_features.values() {
+        for feature in native_features.iter() {
             if metadata_ids.contains(feature.id.as_str()) {
                 continue;
             }
@@ -3354,6 +3351,101 @@ mod detached_legacy_sketch_tests {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
             }) if id == &sketch.id));
+    }
+
+    #[test]
+    fn tied_object_names_bind_the_sketch_to_the_later_history_feature() {
+        let natives = ["feature-a", "feature-b"].map(|id| Feature {
+            id: id.into(),
+            ..feature()
+        });
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: natives.to_vec(),
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: vec![0; 32].into(),
+            classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                object_id: ObjectId::from_value(30),
+                value: "profile".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let neutral = natives
+            .each_ref()
+            .map(|native| cadmpeg_ir::features::Feature {
+                id: cadmpeg_ir::features::FeatureId::mint(format!(
+                    "synthetic:test:id#{}",
+                    native.id
+                ))
+                .unwrap(),
+                ordinal: 0,
+                name: None,
+                suppressed: None,
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
+                native_ref: Some(native.id.clone()),
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+                    }),
+                ),
+            });
+        let sketch = sketch();
+        let mut builder = cadmpeg_ir::AnnotationBuilder::new();
+        let stream =
+            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
+        builder.note(sketch.id.as_str(), &stream, 1, Some("profile"));
+        let annotations = builder.build();
+        for _ in 0..32 {
+            let mut admitted = neutral.clone();
+            super::bind_sketch_profiles(
+                &mut admitted,
+                super::SketchArenas {
+                    sketches: &mut vec![sketch.clone()],
+                    sketch_entities: &mut Vec::new(),
+                    sketch_constraints: &mut Vec::new(),
+                    annotations: &mut annotations.clone(),
+                },
+                &[],
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
+            );
+            assert!(matches!(
+                admitted[0].evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+                })
+            ));
+            assert!(matches!(
+                admitted[1].evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
+                }) if id == &sketch.id
+            ));
+        }
     }
 
     pub(super) fn compact_profile_projection_fixture() -> (

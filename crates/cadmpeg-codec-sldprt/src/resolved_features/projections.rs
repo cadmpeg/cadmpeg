@@ -234,10 +234,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
         };
         neutral_owners.insert(&feature.id, native_ref);
     }
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
         let mut length_scalars = HashSet::new();
         let mut angle_scalars = HashSet::new();
@@ -269,7 +266,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
         }
         let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(Option<u64>, &crate::records::Feature)>::new();
-        for feature in native_features.values() {
+        for feature in native_features.iter() {
             let start = object_names.of(feature).map(|name| name.offset);
             starts.push((start, feature));
         }

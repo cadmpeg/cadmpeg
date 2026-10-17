@@ -123,6 +123,42 @@ fn parameter_scalar_binding_preserves_native_reference_and_value() {
     );
 }
 
+#[test]
+fn tied_object_names_bind_unowned_scalars_to_the_later_history_feature() {
+    let (parameters, features, mut histories, mut lanes) = parameter_scalar_binding_fixture();
+    let native = histories[0].features[0].clone();
+    histories[0].features = ["native-a", "native-b"]
+        .map(|id| crate::records::Feature {
+            id: id.into(),
+            ..native.clone()
+        })
+        .to_vec();
+    lanes[0].scalars[0].feature_ref = None;
+    let features = ["native-a", "native-b"].map(|native| cadmpeg_ir::features::Feature {
+        id: FeatureId::mint(format!("synthetic:test:id#{native}")).expect("identity grammar"),
+        native_ref: Some(native.into()),
+        ..features[0].clone()
+    });
+    let parameters = features
+        .each_ref()
+        .map(|feature| cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId::mint(format!("{}-parameter", feature.id))
+                .expect("identity grammar"),
+            owner: Some(feature.id.clone()),
+            ..parameters[0].clone()
+        });
+    for _ in 0..32 {
+        let mut bound = parameters.clone();
+        bind_parameter_scalars(&mut bound, &features, &histories, &lanes).expect("scalar binding");
+        assert_eq!(
+            bound
+                .each_ref()
+                .map(|parameter| parameter.native_ref.as_deref()),
+            [None, Some("native-scalar")]
+        );
+    }
+}
+
 fn display_relation_synthesis_fixture() -> (
     Vec<cadmpeg_ir::features::DesignParameter>,
     Vec<cadmpeg_ir::features::Feature>,

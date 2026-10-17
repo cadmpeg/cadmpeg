@@ -3025,10 +3025,7 @@ pub(crate) fn project_hole_axes(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     let surfaces = topology.surfaces;
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut model_sketches = HashMap::new();
     for feature in model_features.iter() {
         let FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3045,7 +3042,7 @@ pub(crate) fn project_hole_axes(
         model_sketches.insert(native, sketch);
     }
     let mut hole_positions = HashMap::new();
-    for hole in native_features.values() {
+    for hole in native_features.iter() {
         if classify(hole) != Some(FeatureClass::Hole) {
             continue;
         }
@@ -3081,7 +3078,7 @@ pub(crate) fn project_hole_axes(
         };
         let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
-        for feature in native_features.values() {
+        for feature in native_features.iter() {
             if !position_features.contains(feature.id.as_str()) {
                 continue;
             }
@@ -3141,7 +3138,7 @@ pub(crate) fn project_hole_axes(
         let Some(native_feature) = feature
             .native_ref
             .as_deref()
-            .and_then(|native| native_features.get(native).copied())
+            .and_then(|native| native_features.get(native))
         else {
             continue;
         };
