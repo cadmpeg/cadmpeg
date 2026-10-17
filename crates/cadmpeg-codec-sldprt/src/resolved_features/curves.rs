@@ -1264,15 +1264,28 @@ pub(super) fn fitted_marker_circle(points: &[Point2], tolerance: f64) -> Option<
     None
 }
 
+/// The first neutral feature of each native reference.
+fn features_by_native_ref(
+    features: &[cadmpeg_ir::features::Feature],
+) -> HashMap<&str, &cadmpeg_ir::features::Feature> {
+    let mut by_native = HashMap::new();
+    for feature in features {
+        if let Some(native) = feature.native_ref.as_deref() {
+            by_native.entry(native).or_insert(feature);
+        }
+    }
+    by_native
+}
+
 pub(super) fn sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
 ) -> HashMap<u32, SketchPlaneFrame> {
+    let neutral_features = features_by_native_ref(features);
     let mut source_by_feature = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        let Some((neutral_id, source)) = features
-            .iter()
-            .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))
+        let Some((neutral_id, source)) = neutral_features
+            .get(feature.id.as_str())
             .and_then(|neutral| Some((neutral.id.as_str(), feature.source_value()?)))
         else {
             continue;
@@ -1361,6 +1374,7 @@ pub(super) fn lane_sketch_plane_frames(
     lane: &FeatureInputLane,
 ) -> HashMap<u32, SketchPlaneFrame> {
     let mut frames = sketch_plane_frames(features, histories);
+    let neutral_features = features_by_native_ref(features);
     let mut lane_candidates = HashMap::<u32, Vec<SketchPlaneFrame>>::new();
     let names = FeatureObjectNames::new(&lane.names);
     for native in histories.iter().flat_map(|history| &history.features) {
@@ -1370,10 +1384,7 @@ pub(super) fn lane_sketch_plane_frames(
         else {
             continue;
         };
-        let Some(feature) = features
-            .iter()
-            .find(|feature| feature.native_ref.as_deref() == Some(native.id.as_str()))
-        else {
+        let Some(&feature) = neutral_features.get(native.id.as_str()) else {
             continue;
         };
         let frame = match feature.evaluation.definition() {
