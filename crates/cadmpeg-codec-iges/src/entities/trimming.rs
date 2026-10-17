@@ -1454,6 +1454,10 @@ enum PcurveBounds {
     Unchecked,
 }
 
+/// A boundary pcurve resolved on its support, or the text of the
+/// non-resource refusal.
+type SharedPcurveGeometry = Result<Option<(PcurveGeometry, [f64; 2])>, String>;
+
 /// Boundary pcurve results keyed by (pcurve sequence, support surface
 /// sequence).
 ///
@@ -1462,8 +1466,7 @@ enum PcurveBounds {
 /// and its [`MAX_BEZIER_BLENDS`] work is not repeated per reference.
 #[derive(Default)]
 struct SharedPcurves {
-    /// The resolved geometry, or the text of the non-resource refusal.
-    geometry: BTreeMap<(u32, u32), Result<Option<(PcurveGeometry, [f64; 2])>, String>>,
+    geometry: BTreeMap<(u32, u32), SharedPcurveGeometry>,
     /// The support-bounds verdict after the source control-polygon fallback.
     bounds: BTreeMap<(u32, u32), PcurveBounds>,
 }
