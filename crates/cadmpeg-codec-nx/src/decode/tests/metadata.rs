@@ -101,4 +101,7 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
         .collect::<Vec<_>>();
     assert_eq!(bounded.len(), 1);
     assert!(bounded[0].message.contains("/Root/UG_PART/UG_PART"));
+    assert!(bounded[0]
+        .message
+        .contains(&crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK.to_string()));
 }

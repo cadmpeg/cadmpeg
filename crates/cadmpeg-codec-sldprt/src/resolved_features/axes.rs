@@ -1036,10 +1036,7 @@ pub(crate) fn bind_profile_revolution_axes(
     sketches: &[Sketch],
     surfaces: &[Surface],
 ) {
-    let mut native_by_id = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_by_id.insert(feature.id.as_str(), feature);
-    }
+    let native_by_id = crate::records::HistoryFeatures::new(histories);
     let mut model_by_id = HashMap::new();
     for (index, feature) in model_features.iter().enumerate() {
         model_by_id.insert(&feature.id, index);
@@ -1111,7 +1108,7 @@ pub(crate) fn bind_profile_revolution_axes(
         };
         if !native_by_id
             .get(profile_native)
-            .is_some_and(|feature| is_profile_feature_object(feature))
+            .is_some_and(is_profile_feature_object)
         {
             continue;
         }

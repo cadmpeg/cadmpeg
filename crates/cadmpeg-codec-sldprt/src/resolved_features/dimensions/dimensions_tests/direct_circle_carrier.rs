@@ -1,4 +1,4 @@
-use super::super::reconcile_direct_circle_dimension_carriers;
+use super::super::{reconcile_direct_circle_dimension_carriers, MarkerCircleInputs};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -191,10 +191,10 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
 
     reconcile_direct_circle_dimension_carriers(
         &mut entities,
-        &mut sketches,
+        sketches.first_mut(),
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
-        std::slice::from_ref(&lane),
+        &MarkerCircleInputs::new(&[], std::slice::from_ref(&lane)),
     );
 
     assert!(!entities.iter().any(|entity| entity.id().clone()
@@ -224,14 +224,14 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
         "synthetic:test:id#native-circle",
         marker_ref,
     )];
-    let mut sketches = vec![sketch(&sketch_id, Vec::new())];
+    let mut sketches = [sketch(&sketch_id, Vec::new())];
 
     reconcile_direct_circle_dimension_carriers(
         &mut entities,
-        &mut sketches,
+        sketches.first_mut(),
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
-        std::slice::from_ref(&lane),
+        &MarkerCircleInputs::new(&[], std::slice::from_ref(&lane)),
     );
 
     assert_eq!(entities.len(), 1);
@@ -239,6 +239,57 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
         *entities[0].geometry.definition(),
         SketchGeometryDefinition::Native { .. }
     ));
+}
+
+#[test]
+fn repeated_direct_circle_carriers_keep_the_native_carrier() {
+    let native_id = SketchEntityId::mint("synthetic:test:id#native-circle").unwrap();
+    let reconcile = |change: &dyn Fn(&mut DirectCircleFixture)| {
+        let mut fixture = direct_circle_fixture();
+        change(&mut fixture);
+        let feature = fixture
+            .feature
+            .native_ref
+            .clone()
+            .expect("feature reference");
+        reconcile_direct_circle_dimension_carriers(
+            &mut fixture.entities,
+            fixture.sketches.first_mut(),
+            &fixture.sketch_id,
+            &feature,
+            &MarkerCircleInputs::new(&[], std::slice::from_ref(&fixture.lane)),
+        );
+        fixture
+            .entities
+            .iter()
+            .any(|entity| entity.id() == &native_id)
+    };
+    let typed_copy = |fixture: &DirectCircleFixture, id: &str, sketch: &SketchId| {
+        let typed = fixture.entities[0].clone();
+        SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            sketch.clone(),
+            typed.geometry.clone(),
+        )
+        .with_native_ref(typed.native_ref.clone())
+        .with_geometry_ref(typed.geometry_ref.clone())
+    };
+
+    assert!(!reconcile(&|_| {}));
+    assert!(reconcile(&|fixture| {
+        let marker = fixture.lane.sketch_entities[0].clone();
+        fixture.lane.sketch_entities.push(marker);
+    }));
+    assert!(reconcile(&|fixture| {
+        let sketch_id = fixture.sketch_id.clone();
+        let copy = typed_copy(fixture, "synthetic:test:id#typed-copy", &sketch_id);
+        fixture.entities.push(copy);
+    }));
+    assert!(!reconcile(&|fixture| {
+        let other = SketchId::mint("synthetic:test:id#other-sketch").unwrap();
+        let copy = typed_copy(fixture, "synthetic:test:id#other-typed", &other);
+        fixture.entities.push(copy);
+    }));
 }
 
 #[test]

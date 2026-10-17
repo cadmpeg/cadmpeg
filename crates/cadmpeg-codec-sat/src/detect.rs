@@ -26,20 +26,17 @@ pub(crate) enum StreamKind {
     Text,
 }
 
-pub(crate) fn classify(
-    ctx: &DecodeContext<'_>,
-    prefix: &[u8],
-) -> Result<Option<StreamKind>, CodecError> {
-    if let Some(header) = asm_header::parse(ctx, prefix)? {
-        return Ok(Some(StreamKind::AsmBinary(header)));
+pub(crate) fn classify(prefix: &[u8]) -> Option<StreamKind> {
+    if let Some(header) = asm_header::parse(prefix) {
+        return Some(StreamKind::AsmBinary(header));
     }
-    if let Some(header) = acis_header::parse(ctx, prefix)? {
-        return Ok(Some(StreamKind::AcisBinary(header)));
+    if let Some(header) = acis_header::parse(prefix) {
+        return Some(StreamKind::AcisBinary(header));
     }
     if looks_like_text_stream(prefix) {
-        return Ok(Some(StreamKind::Text));
+        return Some(StreamKind::Text);
     }
-    Ok(None)
+    None
 }
 
 /// Whether the prefix opens like a text stream: a first line of four ASCII
@@ -120,7 +117,7 @@ pub(crate) fn inspect(
     let mut attributes = BTreeMap::new();
     let mut notes = Vec::new();
     let mut losses = Vec::new();
-    let Some(kind) = classify(ctx, bytes)? else {
+    let Some(kind) = classify(bytes) else {
         return Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
         ));
@@ -168,7 +165,7 @@ pub(crate) fn inspect(
             // The kernel header is bound here so the evidence can borrow it
             // past the arm that built it.
             let parsed = match sat::parse(ctx, bytes) {
-                Ok(stream) => Ok((stream.header.as_kernel_header(ctx)?, stream)),
+                Ok(stream) => Ok((stream.header.as_kernel_header(), stream)),
                 Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
                     return Err(error.into());
                 }

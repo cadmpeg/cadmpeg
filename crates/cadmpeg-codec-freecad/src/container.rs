@@ -173,7 +173,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         };
         data.insert(name, view);
     }
-    let physical_ledger = archive.physical_ledger(ctx)?;
+    let physical_ledger = archive.physical_ledger()?;
     let mut ledger = Vec::new();
     for (index, span) in physical_ledger.into_iter().enumerate() {
         ledger.push(ArchiveSpan {
@@ -185,7 +185,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     }
     Ok(Scan {
         losses,
-        entries: archive.container_entries(ctx, classify)?,
+        entries: archive.container_entries(classify),
         document,
         schema_version,
         document_xml,

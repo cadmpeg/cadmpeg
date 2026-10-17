@@ -94,7 +94,7 @@ fn display_jt_document_entity_refuses_before_identity_allocation() {
 }
 
 #[test]
-fn display_jt_document_service_profile_keeps_toc_entry() {
+fn display_jt_document_keeps_toc_entry() {
     let container = one_document();
 
     crate::test_support::with_decode_context(|index_ctx| {

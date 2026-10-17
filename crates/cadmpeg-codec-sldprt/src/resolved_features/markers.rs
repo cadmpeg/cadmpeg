@@ -57,10 +57,7 @@ pub(crate) fn spatial_sketches(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> (Vec<SpatialSketch>, Vec<SpatialSketchEntity>) {
-    let mut records = HashMap::new();
-    for record in histories.iter().flat_map(|history| &history.features) {
-        records.insert(record.id.as_str(), record);
-    }
+    let records = crate::records::HistoryFeatures::new(histories);
     let lane_objects = lanes
         .iter()
         .map(|lane| {
@@ -87,7 +84,7 @@ pub(crate) fn spatial_sketches(
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(record) = records.get(native_ref).copied() else {
+        let Some(record) = records.get(native_ref) else {
             continue;
         };
         let mut point_candidates = Vec::new();

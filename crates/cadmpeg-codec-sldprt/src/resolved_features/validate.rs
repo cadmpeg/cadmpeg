@@ -145,7 +145,6 @@ pub(crate) fn validate_native(
         .feature_input_lanes
         .iter()
         .filter(|lane| !is_supplemental_config_lane(lane))
-        .cloned()
         .collect::<Vec<_>>();
     crate::resolved_features::classes::bind_history_classes(
         &mut expected_histories,

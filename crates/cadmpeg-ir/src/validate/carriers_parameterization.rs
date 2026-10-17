@@ -52,14 +52,13 @@ pub(super) fn check_carrier_reachability(
     // The links are collected first: a product record parses them from its
     // text, and the identity sets below borrow them.
     let mut unknown_links = Vec::new();
-    view.visit::<cadmpeg_core::CodecError>(|_, arena, records| {
+    view.for_each(|_, arena, records| {
         if arena == "unknowns" {
             for record in records.records() {
                 unknown_links.extend(record.links());
             }
         }
-        Ok(())
-    })?;
+    });
     let mut surfaces = BorrowedIdentities::new();
     let mut curves = BorrowedIdentities::new();
     let mut pcurves = BorrowedIdentities::new();
@@ -118,19 +117,17 @@ pub(super) fn check_carrier_reachability(
     let surface_owners = BorrowedIdentities::build(|add| {
         for surface in &ir.model.surfaces {
             if let Some(procedural) = surface.geometry.procedural_construction() {
-                add(procedural.as_str(), &surface.id)?;
+                add(procedural.as_str(), &surface.id);
             }
         }
-        Ok(())
-    })?;
+    });
     let curve_owners = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             if let Some(procedural) = curve.geometry.procedural_construction() {
-                add(procedural.as_str(), &curve.id)?;
+                add(procedural.as_str(), &curve.id);
             }
         }
-        Ok(())
-    })?;
+    });
     for binding in &ir.model.appearance_bindings {
         match &binding.target {
             crate::appearance::AppearanceTarget::Surface(id) => {
@@ -837,11 +834,10 @@ pub(super) fn check_carrier_reachability(
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
             {
-                add(curve.id.as_str(), segments)?;
+                add(curve.id.as_str(), segments);
             }
         }
-        Ok(())
-    })?;
+    });
     let mut reachable_curves = Vec::new();
     for curve in curves.identities() {
         reachable_curves.push(curve);
@@ -889,10 +885,9 @@ pub(super) fn check_parameter_domains(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let curves = crate::index::identities::BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
-            add(curve.id.as_str(), &curve.geometry)?;
+            add(curve.id.as_str(), &curve.geometry);
         }
-        Ok(())
-    })?;
+    });
     for edge in &ir.model.edges {
         let Some([start, end]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
@@ -969,10 +964,9 @@ pub(super) fn check_parameter_domains(
     }
     let pcurves = crate::index::identities::BorrowedIdentities::build(|add| {
         for pcurve in &ir.model.pcurves {
-            add(pcurve.id.as_str(), &pcurve.geometry)?;
+            add(pcurve.id.as_str(), &pcurve.geometry);
         }
-        Ok(())
-    })?;
+    });
     for coedge in &ir.model.coedges {
         if let Some(use_curve) = &coedge.use_curve {
             let [start, end] = use_curve.parameter_range.endpoints();

@@ -81,7 +81,12 @@ directly.
 
 `begin_expand` checks a declared expansion size against the per-expansion
 allowance and the remaining total allowance, and `ExpandWriter::write`
-charges each chunk. Processing of an input that is already loaded starts
+charges each chunk. `open_zstd` checks each frame's window before it
+allocates a decoder: a window above the per-expansion allowance is a
+per-input bound, so the stream is `NotImplemented`, the session is not
+fused, and the caller skips that member and reports a loss. The bytes a
+member actually expands still go through `begin_expand` and `write`.
+Processing of an input that is already loaded starts
 with `DecodeContext::for_loaded_input`, which takes the measured input
 length; a format-declared count is not an input length. A codec limit that
 takes `min` with a session dimension takes it with the allowance, not with
@@ -103,7 +108,11 @@ Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
 storage are not retained bytes; per-input bounds, entity charges, and local
 work caps bound them. A new copy of bytes that the decoded document keeps
-must call `retain_bytes` before the copy.
+must call `retain_bytes` before the copy. A native record's text may be
+counted twice toward retained bytes, once by the codec before attach and
+once by the IR at attach (Rhino link bytes and `from_typed_for_decode`
+JSON copies), so the retained ceiling is conservative by at most that
+text.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
 parse it, charge its depth to the session, and bound the tree's storage by
@@ -147,14 +156,16 @@ functions, and test files. Four constants are excluded for that reason:
 CATIA `MAX_PAIR_SOLUTIONS` (`solve/incidence.rs`) and `MAX_ORIENTED_OPTIONS`
 (`solve/mesh_quotient.rs`) are in test functions, F3D `MAX_INDEX_FLOAT`
 (`writer/generate/native_geometry.rs`) is in a test module, and
-`MAX_MUTATION_BYTES` is in a fuzz target outside `src`. Where a constant is
+`MAX_MUTATION_BYTES` is in a fuzz target outside `src`.
+`python3 scripts/check-resource-caps.py` checks the table, the totals, and
+the production constants against each other. Where a constant is
 ambiguous, the kind follows the code at exhaustion and the note says so.
 "No loss at this site" means the code that detects exhaustion does not
 report a loss; a caller may report a general failure for the same item.
 
 | Crate                    | File                                               | Constant                                  | Value                                                   | Kind | Enforcement                                                                                                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first refuses a frame whose buffered output (its window, or its declared content size when that is smaller) is above the per-expansion allowance through `DecompressedBytes`. A declared window above this constant is `NotImplemented` and does not set the fuse. |
+| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first checks each frame's buffered output (its window, or its declared content size when that is smaller) against the per-expansion allowance as a per-input bound: excess is `NotImplemented` for that stream, names the allowance, and does not set the fuse. A declared window above this constant is also `NotImplemented` and does not set the fuse. |
 | `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess is `NotImplemented` for that text and does not set the fuse.                                                                  |
 | `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess is `NotImplemented` and does not set the fuse.                                  |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |

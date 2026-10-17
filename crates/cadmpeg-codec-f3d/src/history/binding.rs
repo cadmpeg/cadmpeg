@@ -48,7 +48,7 @@ pub(crate) fn bind(
     else {
         return Ok(stats);
     };
-    let saved_limit = cadmpeg_asm::asm_header::parse(ctx, bytes)?
+    let saved_limit = cadmpeg_asm::asm_header::parse(bytes)
         .and_then(|header| header.metadata.entity_count)
         .and_then(|count| i64::try_from(count).ok());
     let mut binder = Binder::new(&archive, saved_limit);
@@ -1375,8 +1375,8 @@ impl<'a> Binder<'a> {
                 .iter()
                 .map(|definition| (definition.tokens.clone(), definition.position))
                 .collect();
-            let version = cadmpeg_asm::asm_header::parse(ctx, bytes)?
-                .and_then(|h| h.metadata.save_format_version);
+            let version =
+                cadmpeg_asm::asm_header::parse(bytes).and_then(|h| h.metadata.save_format_version);
             self.subtype_table = Some(
                 cadmpeg_asm::nurbs::toks::SubtypeTable::from_definitions(definitions)
                     .with_save_format_version(version),

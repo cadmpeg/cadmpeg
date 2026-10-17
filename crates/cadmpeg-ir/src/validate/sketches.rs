@@ -2,7 +2,6 @@
 //! Focused validation checks for sketches.
 
 use super::record_finding;
-use super::scans::{all, find_map};
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
 use crate::report::check::{Check, Finding};
@@ -12,7 +11,6 @@ use crate::sketches::{
     SpatialSketchConstraintDefinitionInput as SpatialConstraint, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
-use cadmpeg_core::CodecError;
 
 const EPS_SKETCH_VALIDATION_GEOMETRY: f64 = 1.0e-9;
 const EPS_SKETCH_VALIDATION_EXACT_GEOMETRY: f64 = 1.0e-12;
@@ -478,10 +476,9 @@ pub(super) fn check_sketches(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = BorrowedIdentities::build(|add| {
         for entity in &ir.model.sketch_entities {
-            add(entity.id().as_str(), &entity.geometry)?;
+            add(entity.id().as_str(), &entity.geometry);
         }
-        Ok(())
-    })?;
+    });
     for sketch in &ir.model.sketches {
         if sketch.resolved_placement().is_none() {
             continue;
@@ -515,16 +512,14 @@ pub(super) fn check_sketches(
 
     let spatial_sketches = BorrowedIdentities::build(|add| {
         for sketch in &ir.model.spatial_sketches {
-            add(sketch.id.as_str(), ())?;
+            add(sketch.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let spatial_geometry = BorrowedIdentities::build(|add| {
         for entity in &ir.model.spatial_sketch_entities {
-            add(entity.id().as_str(), (&entity.sketch, &entity.geometry))?;
+            add(entity.id().as_str(), (&entity.sketch, &entity.geometry));
         }
-        Ok(())
-    })?;
+    });
     for sketch in &ir.model.spatial_sketches {
         for profile in &sketch.profiles {
             for use_ in profile.boundary() {
@@ -633,10 +628,9 @@ pub(super) fn check_sketches(
 
     let parameter_values = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
-            add(parameter.id.as_str(), &parameter.value)?;
+            add(parameter.id.as_str(), &parameter.value);
         }
-        Ok(())
-    })?;
+    });
     for constraint in &ir.model.spatial_sketch_constraints {
         if !spatial_sketches.contains(constraint.sketch.as_str()) {
             record_finding(
@@ -881,7 +875,7 @@ pub(super) fn check_sketches(
                 }
             }
             SpatialConstraint::RepeatedParallelLineDistance { pairs, parameter } => {
-                let matches = all(pairs, |pair| {
+                let matches = pairs.iter().all(|pair| {
                     let measured = match spatial_geometry
                         .get(pair.first.as_str())
                         .map(|(_, geometry)| geometry)
@@ -892,12 +886,8 @@ pub(super) fn check_sketches(
                             .and_then(|second| spatial_parallel_line_distance(first, second)),
                         None => None,
                     };
-                    Ok(spatial_length_parameter_matches(
-                        measured,
-                        parameter,
-                        &parameter_values,
-                    ))
-                })?;
+                    spatial_length_parameter_matches(measured, parameter, &parameter_values)
+                });
                 if !matches {
                     record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "repeated spatial distance requires disjoint parallel-line pairs matching one length parameter"));
                 }
@@ -1018,13 +1008,13 @@ pub(super) fn check_sketches(
                     measured.push(length);
                 }
                 let matches = complete
-                    && all(measured.iter(), |measured| {
-                        Ok(spatial_length_parameter_matches(
+                    && measured.iter().all(|measured| {
+                        spatial_length_parameter_matches(
                             Some(*measured),
                             parameter,
                             &parameter_values,
-                        ))
-                    })?;
+                        )
+                    });
                 if !matches {
                     record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "repeated spatial line length requires distinct lines matching one length parameter"));
                 }
@@ -1036,46 +1026,42 @@ pub(super) fn check_sketches(
             } => {
                 let first_geometry = first
                     .iter()
-                    .map(|entity| {
-                        Ok(spatial_geometry
+                    .filter_map(|entity| {
+                        spatial_geometry
                             .get(entity.as_str())
                             .map(|(_, geometry)| geometry)
-                            .copied())
+                            .copied()
                     })
-                    .filter_map(Result::transpose)
-                    .collect::<Result<Vec<_>, CodecError>>()?;
+                    .collect::<Vec<_>>();
                 let second_geometry = second
                     .iter()
-                    .map(|entity| {
-                        Ok(spatial_geometry
+                    .filter_map(|entity| {
+                        spatial_geometry
                             .get(entity.as_str())
                             .map(|(_, geometry)| geometry)
-                            .copied())
+                            .copied()
                     })
-                    .filter_map(Result::transpose)
-                    .collect::<Result<Vec<_>, CodecError>>()?;
+                    .collect::<Vec<_>>();
                 let tolerance = ir.tolerances.linear.get();
                 let first_collinear = match first_geometry.first() {
-                    Some(reference) => all(first_geometry.iter(), |candidate| {
-                        Ok(spatial_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance <= tolerance))
-                    })?,
+                    Some(reference) => first_geometry.iter().all(|candidate| {
+                        spatial_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance)
+                    }),
                     None => false,
                 };
                 let second_collinear = match second_geometry.first() {
-                    Some(reference) => all(second_geometry.iter(), |candidate| {
-                        Ok(spatial_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance <= tolerance))
-                    })?,
+                    Some(reference) => second_geometry.iter().all(|candidate| {
+                        spatial_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance)
+                    }),
                     None => false,
                 };
-                let measured = find_map(first_geometry.iter(), |first| {
-                    find_map(second_geometry.iter(), |second| {
-                        Ok(spatial_parallel_line_span_distance(
-                            first, second, tolerance,
-                        ))
+                let measured = first_geometry.iter().find_map(|first| {
+                    second_geometry.iter().find_map(|second| {
+                        spatial_parallel_line_span_distance(first, second, tolerance)
                     })
-                })?;
+                });
                 let matches = first_geometry.len() == first.len()
                     && second_geometry.len() == second.len()
                     && first_collinear
@@ -1092,8 +1078,8 @@ pub(super) fn check_sketches(
                 parameter,
                 ..
             } => {
-                let curves_match = all(sources.iter().chain(results), |entity| {
-                    Ok(spatial_geometry
+                let curves_match = sources.iter().chain(results).all(|entity| {
+                    spatial_geometry
                         .get(entity.as_str())
                         .map(|(_, geometry)| geometry)
                         .is_some_and(|geometry| {
@@ -1104,8 +1090,8 @@ pub(super) fn check_sketches(
                                     | SpatialSketchGeometryDefinition::Arc { .. }
                                     | SpatialSketchGeometryDefinition::Nurbs { .. }
                             )
-                        }))
-                })?;
+                        })
+                });
                 let parameter_matches = match parameter {
                     None => true,
                     Some(parameter) => match parameter_values.get(parameter.id.as_str()) {
@@ -1200,11 +1186,11 @@ pub(super) fn check_sketches(
                         .get(text.as_str())
                         .map(|geometry| geometry.definition()),
                     Some(SketchGeometryDefinition::Text { .. })
-                ) && all(frame, |entity| {
-                    Ok(geometry.get(entity.as_str()).is_some_and(|geometry| {
+                ) && frame.iter().all(|entity| {
+                    geometry.get(entity.as_str()).is_some_and(|geometry| {
                         !matches!(geometry.definition(), SketchGeometryDefinition::Text { .. })
-                    }))
-                })?
+                    })
+                })
             }
             Constraint::TextPath { text, path, .. } => {
                 matches!(
@@ -1221,18 +1207,13 @@ pub(super) fn check_sketches(
                 })
             }
             Constraint::EqualDistance { first, second } => {
-                let measured_distance =
-                    |pair: &SketchDistancePair| -> Result<Option<f64>, CodecError> {
-                        let Some(first) = sketch_locus_point(&pair.first, &geometry)? else {
-                            return Ok(None);
-                        };
-                        let Some(second) = sketch_locus_point(&pair.second, &geometry)? else {
-                            return Ok(None);
-                        };
-                        Ok(Some(distance2(first, second)))
-                    };
-                measured_distance(first)?
-                    .zip(measured_distance(second)?)
+                let measured_distance = |pair: &SketchDistancePair| {
+                    let first = sketch_locus_point(&pair.first, &geometry)?;
+                    let second = sketch_locus_point(&pair.second, &geometry)?;
+                    Some(distance2(first, second))
+                };
+                measured_distance(first)
+                    .zip(measured_distance(second))
                     .is_none_or(|(first, second)| {
                         (first - second).abs()
                             <= ir
@@ -1248,8 +1229,8 @@ pub(super) fn check_sketches(
                 distance,
                 parameter,
             } => {
-                let measured_points = sketch_locus_point(first, &geometry)?
-                    .zip(sketch_locus_point(second, &geometry)?);
+                let measured_points =
+                    sketch_locus_point(first, &geometry).zip(sketch_locus_point(second, &geometry));
                 let distance_matches =
                     measured_points.as_ref().is_none_or(|(first, second)| {
                         let measured = distance2(*first, *second);
@@ -1275,7 +1256,7 @@ pub(super) fn check_sketches(
                 distance_matches && parameter_matches
             }
             Constraint::PointCoordinateValues { point, values } => {
-                sketch_locus_point(point, &geometry)?.is_none_or(|point| {
+                sketch_locus_point(point, &geometry).is_none_or(|point| {
                     [point.u, point.v]
                         .into_iter()
                         .zip(values)
@@ -1293,8 +1274,8 @@ pub(super) fn check_sketches(
                 second,
                 axis,
                 value,
-            } => sketch_locus_point(first, &geometry)?
-                .zip(sketch_locus_point(second, &geometry)?)
+            } => sketch_locus_point(first, &geometry)
+                .zip(sketch_locus_point(second, &geometry))
                 .is_none_or(|(first, second)| {
                     let measured = match axis {
                         crate::sketches::SketchCoordinateAxis::U => {
@@ -1316,8 +1297,8 @@ pub(super) fn check_sketches(
                 angle,
                 distance_parameter,
             } => {
-                let measured_points = sketch_locus_point(first, &geometry)?
-                    .zip(sketch_locus_point(second, &geometry)?);
+                let measured_points =
+                    sketch_locus_point(first, &geometry).zip(sketch_locus_point(second, &geometry));
                 let distance_matches = measured_points.as_ref().is_none_or(|(first, second)| {
                     let measured = distance2(*first, *second);
                     (measured - distance.get()).abs()
@@ -1354,29 +1335,26 @@ pub(super) fn check_sketches(
             Constraint::RepeatedLength { entities, .. } => {
                 let lengths = entities
                     .iter()
-                    .map(|entity| {
-                        Ok(
-                            match geometry
-                                .get(entity.as_str())
-                                .map(|geometry| geometry.definition())
-                            {
-                                Some(SketchGeometryDefinition::Line { start, end }) => {
-                                    Some((end.u - start.u).hypot(end.v - start.v))
-                                }
-                                _ => None,
-                            },
-                        )
+                    .filter_map(|entity| {
+                        match geometry
+                            .get(entity.as_str())
+                            .map(|geometry| geometry.definition())
+                        {
+                            Some(SketchGeometryDefinition::Line { start, end }) => {
+                                Some((end.u - start.u).hypot(end.v - start.v))
+                            }
+                            _ => None,
+                        }
                     })
-                    .filter_map(Result::transpose)
-                    .collect::<Result<Vec<_>, CodecError>>()?;
+                    .collect::<Vec<_>>();
                 lengths.len() == entities.len()
-                    && all(lengths[1..].iter(), |length| {
-                        Ok((length - lengths[0]).abs()
+                    && lengths[1..].iter().all(|length| {
+                        (length - lengths[0]).abs()
                             <= ir.tolerances.linear.get().max(
                                 EPS_SKETCHES_CHECK_SKETCHES_E9
                                     * (1.0 + length.abs().max(lengths[0].abs())),
-                            ))
-                    })?
+                            )
+                    })
             }
             Constraint::ParallelLineSetDistance {
                 first,
@@ -1385,35 +1363,33 @@ pub(super) fn check_sketches(
             } => {
                 let first_geometry = first
                     .iter()
-                    .map(|entity| Ok(geometry.get(entity.as_str()).copied()))
-                    .filter_map(Result::transpose)
-                    .collect::<Result<Vec<_>, CodecError>>()?;
+                    .filter_map(|entity| geometry.get(entity.as_str()).copied())
+                    .collect::<Vec<_>>();
                 let second_geometry = second
                     .iter()
-                    .map(|entity| Ok(geometry.get(entity.as_str()).copied()))
-                    .filter_map(Result::transpose)
-                    .collect::<Result<Vec<_>, CodecError>>()?;
+                    .filter_map(|entity| geometry.get(entity.as_str()).copied())
+                    .collect::<Vec<_>>();
                 let tolerance = ir.tolerances.linear.get();
                 let first_collinear = match first_geometry.first() {
-                    Some(reference) => all(first_geometry.iter(), |candidate| {
-                        Ok(planar_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance.get() <= tolerance))
-                    })?,
+                    Some(reference) => first_geometry.iter().all(|candidate| {
+                        planar_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance.get() <= tolerance)
+                    }),
                     None => false,
                 };
                 let second_collinear = match second_geometry.first() {
-                    Some(reference) => all(second_geometry.iter(), |candidate| {
-                        Ok(planar_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance.get() <= tolerance))
-                    })?,
+                    Some(reference) => second_geometry.iter().all(|candidate| {
+                        planar_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance.get() <= tolerance)
+                    }),
                     None => false,
                 };
-                let measured = find_map(first_geometry.iter(), |first| {
-                    find_map(second_geometry.iter(), |second| {
-                        Ok(planar_parallel_line_span_distance(first, second, tolerance)
-                            .map(crate::scalar::FiniteReal::get))
+                let measured = first_geometry.iter().find_map(|first| {
+                    second_geometry.iter().find_map(|second| {
+                        planar_parallel_line_span_distance(first, second, tolerance)
+                            .map(crate::scalar::FiniteReal::get)
                     })
-                })?;
+                });
                 let expected = match parameter_values.get(parameter.as_str()) {
                     Some(Some(crate::features::ParameterValue::Length(length))) => {
                         Some(length.get().abs())
@@ -1438,30 +1414,27 @@ pub(super) fn check_sketches(
             | Constraint::RepeatedDiameter { entities, .. } => {
                 let radii = entities
                     .iter()
-                    .map(|entity| {
-                        Ok(
-                            match geometry
-                                .get(entity.as_str())
-                                .map(|geometry| geometry.definition())
-                            {
-                                Some(
-                                    SketchGeometryDefinition::Circle { radius, .. }
-                                    | SketchGeometryDefinition::Arc { radius, .. },
-                                ) => Some(radius.get()),
-                                _ => None,
-                            },
-                        )
+                    .filter_map(|entity| {
+                        match geometry
+                            .get(entity.as_str())
+                            .map(|geometry| geometry.definition())
+                        {
+                            Some(
+                                SketchGeometryDefinition::Circle { radius, .. }
+                                | SketchGeometryDefinition::Arc { radius, .. },
+                            ) => Some(radius.get()),
+                            _ => None,
+                        }
                     })
-                    .filter_map(Result::transpose)
-                    .collect::<Result<Vec<_>, CodecError>>()?;
+                    .collect::<Vec<_>>();
                 radii.len() == entities.len()
-                    && all(radii[1..].iter(), |radius| {
-                        Ok((radius - radii[0]).abs()
+                    && radii[1..].iter().all(|radius| {
+                        (radius - radii[0]).abs()
                             <= ir.tolerances.linear.get().max(
                                 EPS_SKETCHES_CHECK_SKETCHES_E9
                                     * (1.0 + radius.abs().max(radii[0].abs())),
-                            ))
-                    })?
+                            )
+                    })
             }
             Constraint::Disabled {}
             | Constraint::Coincident { .. }
@@ -1863,19 +1836,15 @@ pub(super) fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntit
 fn sketch_locus_point(
     locus: &SketchLocus,
     geometry: &BorrowedIdentities<'_, &SketchGeometry>,
-) -> Result<Option<crate::math::Point2>, CodecError> {
-    let Some(entity_geometry) = geometry.get(locus_entity(locus).as_str()) else {
-        return Ok(None);
-    };
-    Ok(match locus {
+) -> Option<crate::math::Point2> {
+    let entity_geometry = geometry.get(locus_entity(locus).as_str())?;
+    match locus {
         SketchLocus::Entity(_) => match entity_geometry.definition() {
             SketchGeometryDefinition::Point { position } => Some(position.get()),
             _ => None,
         },
         SketchLocus::Start(_) | SketchLocus::End(_) => {
-            let Some((start, end)) = oriented_endpoints(entity_geometry, false) else {
-                return Ok(None);
-            };
+            let (start, end) = oriented_endpoints(entity_geometry, false)?;
             Some(if matches!(locus, SketchLocus::Start(_)) {
                 start
             } else {
@@ -1890,7 +1859,7 @@ fn sketch_locus_point(
             SketchGeometryDefinition::Parabola { vertex, .. } => Some(vertex.get()),
             _ => None,
         },
-    })
+    }
 }
 
 fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {

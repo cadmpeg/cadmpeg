@@ -89,9 +89,7 @@ pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
         })
 }
 
-type SupportUvBudget<'a> = WorkBudget;
-
-pub(super) fn support_uv_budget_exhausted(budget: &SupportUvBudget<'_>) -> bool {
+pub(super) fn support_uv_budget_exhausted(budget: &WorkBudget) -> bool {
     budget.exhausted() || budget.remaining() == 0
 }
 
@@ -108,7 +106,7 @@ fn support_uv_lane_geometry_work_limit(sample_count: usize, remaining: usize) ->
 }
 
 #[cfg(test)]
-fn new_support_uv_budget() -> SupportUvBudget<'static> {
+fn new_support_uv_budget() -> WorkBudget {
     WorkBudget::new(MAX_SUPPORT_UV_SAMPLES)
 }
 
@@ -301,7 +299,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
         lanes,
         &geometry_budget,
     )
-    .expect("evaluator allocation succeeds")
+    .expect("evaluation stays within session limits")
 }
 
 fn assign_ext11_support_uv_to_surfaces_with_index(
@@ -797,9 +795,9 @@ pub(super) fn complete_support_uv(
 pub(super) fn complete_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-    support_budget: &SupportUvBudget<'_>,
+    support_budget: &WorkBudget,
     geometry_budget: &GeometryWorkBudget<'_>,
-    coupled_support_budget: &SupportUvBudget<'_>,
+    coupled_support_budget: &WorkBudget,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut endpoint_witnesses = BTreeMap::new();
@@ -815,8 +813,8 @@ pub(super) fn complete_support_uv_with_budget(
 pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-    direct_budgets: (&SupportUvBudget<'_>, &GeometryWorkBudget<'_>),
-    coupled_budgets: (&SupportUvBudget<'_>, &GeometryWorkBudget<'_>),
+    direct_budgets: (&WorkBudget, &GeometryWorkBudget<'_>),
+    coupled_budgets: (&WorkBudget, &GeometryWorkBudget<'_>),
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let (support_budget, geometry_budget) = direct_budgets;
@@ -875,7 +873,7 @@ pub(super) fn invalidate_inconsistent_support_uv(
         &geometry_budget,
         false,
     )
-    .expect("evaluator allocation succeeds");
+    .expect("evaluation stays within session limits");
 }
 
 /// Invalidate support lanes that disagree with their surface and retain
@@ -890,7 +888,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
-    support_budget: &SupportUvBudget<'_>,
+    support_budget: &WorkBudget,
     geometry_budget: &GeometryWorkBudget<'_>,
     isolate_lanes: bool,
 ) -> Result<SupportUvValidationResult, cadmpeg_core::CodecError> {
@@ -1103,9 +1101,9 @@ struct SupportUvAttempts<'inputs> {
 fn complete_support_uv_wave(
     ir: &mut CadIr,
     support_uv_attempts: SupportUvAttempts<'_>,
-    support_budget: &SupportUvBudget<'_>,
+    support_budget: &WorkBudget,
     geometry_budget: &GeometryWorkBudget<'_>,
-    coupled_support_budget: &SupportUvBudget<'_>,
+    coupled_support_budget: &WorkBudget,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let SupportUvAttempts {
@@ -1753,7 +1751,7 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
 fn complete_coupled_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-    coupled_support_budget: &SupportUvBudget<'_>,
+    coupled_support_budget: &WorkBudget,
     geometry_budget: &GeometryWorkBudget<'_>,
     failed_attempts: &mut BTreeMap<
         ProceduralCurveId,
@@ -2771,7 +2769,7 @@ mod tests {
                 Some(&values),
                 &geometry_budget,
             )
-            .expect("evaluator allocation succeeds"));
+            .expect("evaluation stays within session limits"));
             assert_eq!(geometry_budget.remaining(), 1);
         });
     }
@@ -2890,7 +2888,7 @@ mod tests {
                     return;
                 }
                 let parameters = parameters
-                    .expect("evaluator allocation succeeds")
+                    .expect("evaluation stays within session limits")
                     .expect("coarse grid contains the exact chart point");
                 assert_eq!(parameters, Point2::new(0.5, 0.5));
 
@@ -2904,7 +2902,7 @@ mod tests {
                     FIT_TOLERANCE,
                     &miss_budget,
                 )
-                .expect("evaluator allocation succeeds")
+                .expect("evaluation stays within session limits")
                 .is_none());
             });
         }

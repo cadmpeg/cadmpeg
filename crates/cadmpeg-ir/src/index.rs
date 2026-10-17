@@ -284,12 +284,11 @@ macro_rules! define_model_index {
                 let mut identities = BorrowedIdentityIndex::new();
                 $(for entity in &self.ir.model.$field { identities.entry(entity.identity(), || ()); })*
                 if self.include_native {
-                    public_result(self.native_view().visit(|_, _, records| {
+                    self.native_view().for_each(|_, _, records| {
                         for record in records.records() {
                             identities.entry(record.id(), || ());
                         }
-                        Ok(())
-                    }));
+                    });
                     for identity in &self.additional_native_identities { identities.entry(identity, || ()); }
                 }
                 identities

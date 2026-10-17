@@ -339,6 +339,64 @@ fn cache_only_materializes_requested_members_and_resets() {
 }
 
 #[test]
+fn advancing_moves_the_nearest_older_materialization_forward() {
+    let mut history = chain();
+    let index = |history: &AsmHistory, state_id| {
+        history
+            .states()
+            .iter()
+            .position(|state| state.state_id == state_id)
+            .unwrap()
+    };
+    let expected =
+        |history: &AsmHistory, state_id| expected_topology(state_id, history.topology_scope);
+    history.advance_topology(index(&history, 1));
+    assert_eq!(history.materialized_state_count(), 0);
+    assert!(history
+        .topology(&history.states()[index(&history, 0)])
+        .is_some());
+    for state_id in 1..4 {
+        history.advance_topology(index(&history, state_id));
+        assert_eq!(history.materialized_state_count(), 1, "state {state_id}");
+        assert_eq!(
+            history.topology(&history.states()[index(&history, state_id)]),
+            expected(&history, state_id).as_ref(),
+            "state {state_id}"
+        );
+    }
+    history.advance_topology(index(&history, 1));
+    assert_eq!(history.materialized_state_count(), 1);
+
+    history.release_topologies();
+    assert!(history
+        .topology(&history.states()[index(&history, 0)])
+        .is_some());
+    history.advance_topology(index(&history, 3));
+    assert_eq!(history.materialized_state_count(), 1);
+    assert_eq!(
+        history.topology(&history.states()[index(&history, 3)]),
+        expected(&history, 3).as_ref()
+    );
+
+    let mut broken = chain();
+    transition_mut(&mut broken, 2)
+        .rows
+        .face_surfaces
+        .removed
+        .push(99);
+    assert!(broken
+        .topology(&broken.states()[index(&broken, 1)])
+        .is_some());
+    broken.advance_topology(index(&broken, 2));
+    assert!(broken
+        .topology(&broken.states()[index(&broken, 2)])
+        .is_none());
+    assert!(broken
+        .topology(&broken.states()[index(&broken, 3)])
+        .is_none());
+}
+
+#[test]
 fn transition_and_history_serde_preserve_data_and_clear_cache() {
     let history = chain();
     for state in history.states() {
@@ -797,6 +855,157 @@ fn linear_merges_reconstruct_all_small_membership_and_row_changes() {
                     })
                     .collect::<Vec<_>>()
             );
+        }
+    }
+}
+
+#[test]
+fn key_run_replacement_matches_a_keyed_model() {
+    let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+    let mut next = |bound: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % bound
+    };
+    for case in 0..500 {
+        let mut model = BTreeMap::<i64, Vec<(i64, u64)>>::new();
+        for key in 0..64 {
+            if next(3) == 0 {
+                model.insert(key, (0..=next(3)).map(|ordinal| (key, ordinal)).collect());
+            }
+        }
+        let mut family = model.values().flatten().copied().collect::<Vec<_>>();
+        family.shrink_to_fit();
+        let capacity = family.capacity();
+        let mut set = Vec::new();
+        let mut removed = Vec::new();
+        for key in 0..64 {
+            let present = model.contains_key(&key);
+            let choice = next(6);
+            if present && choice < 2 {
+                removed.push(key);
+                model.remove(&key);
+            }
+            if choice == 1 || choice == 2 {
+                let rows = (0..=next(3))
+                    .map(|ordinal| (key, 100 * case + ordinal))
+                    .collect::<Vec<_>>();
+                model.insert(key, rows.clone());
+                set.push((key, rows));
+            }
+        }
+        replace_key_runs(
+            &mut family,
+            |row| row.0,
+            set.iter().map(|(key, rows)| (*key, rows.as_slice())),
+            &removed,
+        )
+        .unwrap();
+        assert_eq!(
+            family,
+            model.values().flatten().copied().collect::<Vec<_>>(),
+            "case {case}"
+        );
+        assert!(
+            family.capacity() <= capacity.max(family.len()),
+            "case {case} grew past its rows"
+        );
+    }
+}
+
+#[test]
+fn row_deltas_reject_unsorted_families_and_absent_removals() {
+    let edge = |edge| AsmHistoricalEdge {
+        edge,
+        start_vertex: 0,
+        end_vertex: 0,
+    };
+    let delta = AsmHistoricalRowDelta {
+        set: vec![edge(2)],
+        removed: Vec::new(),
+    };
+    assert_eq!(
+        delta.apply(&mut vec![edge(3), edge(1)]),
+        Err(AsmTransitionError::UnsortedFamily)
+    );
+    let delta = AsmHistoricalRowDelta {
+        set: vec![edge(2)],
+        removed: vec![4],
+    };
+    assert_eq!(
+        delta.apply(&mut vec![edge(1), edge(3)]),
+        Err(AsmTransitionError::RemovedRowAbsent)
+    );
+    let delta = AsmHistoricalRowDelta {
+        set: vec![edge(2)],
+        removed: vec![2],
+    };
+    assert_eq!(
+        delta.apply(&mut vec![edge(1), edge(3)]),
+        Err(AsmTransitionError::RemovedRowAbsent)
+    );
+}
+
+#[test]
+fn membership_changes_match_a_key_order_merge() {
+    fn merged(
+        family: &[i64],
+        inserted: &[i64],
+        deleted: &[i64],
+    ) -> Result<Vec<i64>, AsmTransitionError> {
+        let mut result = Vec::new();
+        let mut old = family.iter().copied().peekable();
+        let mut inserted = inserted.iter().copied().peekable();
+        let mut deleted = deleted.iter().copied().peekable();
+        while old.peek().is_some() || inserted.peek().is_some() {
+            let key = match (old.peek(), inserted.peek()) {
+                (Some(a), Some(b)) if a == b => return Err(AsmTransitionError::InsertedPresent),
+                (Some(&a), Some(&b)) => a.min(b),
+                (Some(&key), None) | (None, Some(&key)) => key,
+                (None, None) => break,
+            };
+            if deleted.peek().is_some_and(|&removed| removed < key) {
+                return Err(AsmTransitionError::DeletedAbsent);
+            }
+            if inserted.peek() == Some(&key) {
+                inserted.next();
+                result.push(key);
+            } else {
+                old.next();
+                if deleted.peek() == Some(&key) {
+                    deleted.next();
+                } else {
+                    result.push(key);
+                }
+            }
+        }
+        if deleted.next().is_some() {
+            return Err(AsmTransitionError::DeletedAbsent);
+        }
+        Ok(result)
+    }
+    let slots = |mask: u32| {
+        (1..=5)
+            .filter(|slot| mask & (1 << (slot - 1)) != 0)
+            .collect::<Vec<i64>>()
+    };
+    for family_mask in 0..32 {
+        for inserted_mask in 0..32 {
+            for deleted_mask in (0..32).filter(|mask| mask & inserted_mask == 0) {
+                let delta = AsmHistoricalEntityDelta {
+                    inserted: slots(inserted_mask),
+                    deleted: slots(deleted_mask),
+                    updated: Vec::new(),
+                };
+                let mut family = slots(family_mask);
+                let expected = merged(&family, &delta.inserted, &delta.deleted);
+                let actual = apply_membership(&delta, &mut family, &[]).map(|()| family);
+                assert_eq!(
+                    actual, expected,
+                    "{family_mask:05b} {inserted_mask:05b} {deleted_mask:05b}"
+                );
+            }
         }
     }
 }

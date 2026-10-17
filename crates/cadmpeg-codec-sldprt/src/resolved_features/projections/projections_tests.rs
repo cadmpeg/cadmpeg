@@ -4,7 +4,7 @@ use super::{
     full_round_fillet_selection_triple, project_compact_surface_selections,
     project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
     unique_cylindrical_face, unique_planar_face, unique_topological_cylindrical_face,
-    variable_fillet_radius_groups,
+    variable_fillet_radius_groups, VariableFilletObjects,
 };
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -1469,8 +1469,10 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
 
     let groups = variable_fillet_radius_groups(
         "variable",
-        std::slice::from_ref(&history),
-        std::slice::from_ref(&lane),
+        &mut VariableFilletObjects::new(
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        ),
         &[&selection],
     )
     .expect("vertex join");
@@ -1658,8 +1660,12 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups = variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection])
-        .expect("legacy edge-control join");
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        &mut VariableFilletObjects::new(&[history], &[lane]),
+        &[&selection],
+    )
+    .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
         [super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
@@ -1728,8 +1734,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let groups = variable_fillet_radius_groups(
         "variable",
-        std::slice::from_ref(&history),
-        &[],
+        &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
         &[&selection],
     )
     .expect("endpoint-less two-control roster");
@@ -1747,7 +1752,12 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
-    assert!((variable_fillet_radius_groups("variable", &[history], &[], &[&collision])).is_none());
+    assert!(variable_fillet_radius_groups(
+        "variable",
+        &mut VariableFilletObjects::new(&[history], &[]),
+        &[&collision]
+    )
+    .is_none());
 }
 
 #[test]
@@ -1866,3 +1876,4 @@ fn resumed_reference_name_search_matches_the_linear_search() {
 }
 
 mod unresolved_fillet_groups;
+mod variable_fillet_objects;

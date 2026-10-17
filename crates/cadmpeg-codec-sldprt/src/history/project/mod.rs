@@ -19,8 +19,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write};
 
 use crate::history::classify::{
-    feature_tree_node_role, is_custom_property, is_history_metadata_record, is_offset_plane,
-    is_semantic_note, principal_plane_in_history,
+    feature_tree_node_role, is_custom_property, is_offset_plane, is_semantic_note,
+    principal_plane_in_history, HistoryMetadata,
 };
 use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame};
 use crate::records::FeatureSource;
@@ -184,8 +184,9 @@ pub(crate) fn project_feature_model(
             }
             let mut by_native = HashMap::new();
             let mut features_by_source = HashMap::new();
+            let metadata = HistoryMetadata::new(&history.features);
             for feature in &history.features {
-                if !is_history_metadata_record(feature, &history.features) {
+                if !metadata.contains(feature) {
                     by_native.insert(feature.id.as_str(), neutral_feature_id(&feature.id)?);
                 }
                 if let Some(source) = feature.source_id {
@@ -201,7 +202,7 @@ pub(crate) fn project_feature_model(
             for feature in history
                 .features
                 .iter()
-                .filter(|feature| !is_history_metadata_record(feature, &history.features))
+                .filter(|feature| !metadata.contains(feature))
             {
                 let parent = if let Some(parent) = feature
                     .tree_parent_record_id()
@@ -964,8 +965,9 @@ fn unique_source_bindings(
     history: &FeatureHistory,
 ) -> Result<HashMap<FeatureSource, Option<SourceBinding<'_>>>, CodecError> {
     let mut bindings = HashMap::new();
+    let metadata = HistoryMetadata::new(&history.features);
     for feature in &history.features {
-        if is_history_metadata_record(feature, &history.features) {
+        if metadata.contains(feature) {
             continue;
         }
         let Some(source) = feature.source_id else {

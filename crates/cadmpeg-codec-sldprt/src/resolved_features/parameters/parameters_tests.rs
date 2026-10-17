@@ -2,13 +2,14 @@
 
 use super::{
     enrich_history_parameters, native_scalar_matches_discrete_parameter,
-    scalar_unit_from_feature_parameter, sync_changed_feature_scalars, ScalarUnit,
+    scalar_unit_from_feature_parameter, sync_changed_feature_scalars, DeclaredParameters,
+    ScalarOwners, ScalarUnit,
 };
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{
-    FeatureContent, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureInputScalar,
-    FeatureInputScalarRole,
+    FeatureContent, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
+    FeatureInputScalar, FeatureInputScalarRole,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -284,4 +285,104 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
+}
+
+#[test]
+fn parameter_indexes_match_the_class_name_and_scalar_scans() {
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new().into(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let features = ["feature-0", "feature-1", "feature-2"];
+    for _ in 0..256 {
+        lane.classes = (0..next(6))
+            .map(|ordinal| FeatureInputClass {
+                id: format!("class-{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset: next(40),
+                name: "moLengthParameter_c".into(),
+            })
+            .collect();
+        lane.names = (0..next(8))
+            .map(|ordinal| FeatureInputName {
+                id: format!("name-{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset: next(40),
+                object_id: None,
+                value: "D1".into(),
+            })
+            .collect();
+        lane.scalars = (0..next(10))
+            .map(|ordinal| FeatureInputScalar {
+                id: format!("scalar-{ordinal}"),
+                parent: "lane".into(),
+                feature_ref: (next(3) == 0)
+                    .then(|| features[usize::try_from(next(3)).unwrap()].to_owned()),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset: next(40),
+                object_id: 0,
+                name: "name".into(),
+                value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+                role: FeatureInputScalarRole::Native,
+                operands: Vec::new(),
+            })
+            .collect();
+
+        let declared = DeclaredParameters::new(&lane);
+        for name in &lane.names {
+            let expected = lane
+                .classes
+                .iter()
+                .filter(|class| class.offset < name.offset)
+                .max_by_key(|class| class.offset)
+                .filter(|class| {
+                    !lane.names.iter().any(|intervening| {
+                        intervening.offset > class.offset && intervening.offset < name.offset
+                    })
+                });
+            assert_eq!(
+                declared.class_of(name).map(std::ptr::from_ref),
+                expected.map(std::ptr::from_ref)
+            );
+        }
+        let owners = ScalarOwners::new(&lane.scalars);
+        for feature in features {
+            let start = next(40);
+            let end = (next(4) != 0).then(|| start + next(20));
+            let expected = lane
+                .scalars
+                .iter()
+                .enumerate()
+                .filter(|(_, scalar)| {
+                    scalar.feature_ref.as_deref() == Some(feature)
+                        || (scalar.feature_ref.is_none()
+                            && scalar.offset > start
+                            && end.is_none_or(|end| scalar.offset < end))
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            assert_eq!(owners.owned(feature, start, end), expected);
+        }
+    }
 }

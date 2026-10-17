@@ -2,7 +2,6 @@
 //! Arena populations under standard or live-context allocation.
 
 use std::collections::BTreeMap;
-use std::convert::Infallible;
 
 use super::{ArenaName, CensusKey};
 use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -20,11 +19,10 @@ macro_rules! define_census {
             let unknown_surfaces = view.ir.model.surfaces.iter().filter(|surface| matches!(surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }))).count();
             counts.insert(CensusKey::surfaces_unknown_geometry(), unknown_surfaces);
-            let Ok(()) = view.visit::<Infallible>(|format, arena, records| {
+            view.for_each(|format, arena, records| {
                 if records.len() != 0 {
                     counts.insert(CensusKey::native(format, arena), records.len());
                 }
-                Ok(())
             });
             counts
         }
