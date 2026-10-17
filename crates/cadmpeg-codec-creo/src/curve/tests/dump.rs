@@ -548,6 +548,61 @@ FOR x1,x2,x3,x4,x5,x6,x7,x8,x9\0"
         && loss.message.contains("MAX_NONLINEAR_SOLVE_VARIABLES")));
 }
 
+fn solve_unresolved_losses(payload: Vec<u8>) -> Vec<String> {
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("a local solver cap is not a decode failure");
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::CreoLossCode::CurveExpressionSolveUnresolved.kind()
+        })
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+#[test]
+fn decode_names_no_cap_for_a_solve_block_another_seed_solved() {
+    // A stalled seed spends the line-search cap on the first block, which the
+    // declared value still solves. The second block's seeds reach both roots.
+    let losses = solve_unresolved_losses(
+        b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x08x=-2\0SOLVE\0x*x*x-3*x+3=0\0FOR x\0\
+        y=2\0SOLVE\0y*y-4=0\0FOR y\0"
+            .to_vec(),
+    );
+    assert_eq!(
+        losses,
+        [
+            "1 active curve-equation simultaneous-solve block(s) retain their ordered equations \
+          and unknowns without solved values or derived curves."
+        ]
+    );
+}
+
+#[test]
+fn decode_names_every_cap_that_left_a_solve_block_unsolved() {
+    let losses = solve_unresolved_losses(
+        b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x18x=0.0000001\0SOLVE\0x*x+1=0\0FOR x\0\
+x1=1\0x2=1\0x3=1\0x4=1\0x5=1\0x6=1\0x7=1\0x8=1\0x9=1\0\
+SOLVE\0x1*x1=1\0x2*x2=1\0x3*x3=1\0x4*x4=1\0x5*x5=1\0x6*x6=1\0x7*x7=1\0x8*x8=1\0x9*x9=1\0\
+FOR x1,x2,x3,x4,x5,x6,x7,x8,x9\0"
+            .to_vec(),
+    );
+    assert_eq!(
+        losses,
+        [
+            "2 active curve-equation simultaneous-solve block(s) retain their ordered equations \
+          and unknowns without solved values or derived curves \
+          (MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS, MAX_NONLINEAR_SOLVE_VARIABLES)."
+        ]
+    );
+}
+
 #[test]
 fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
