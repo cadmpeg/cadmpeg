@@ -1626,4 +1626,6 @@ mod cone_supports;
 
 mod planar_trim;
 
+mod pole_box;
+
 mod arc_trims;

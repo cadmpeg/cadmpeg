@@ -30,6 +30,7 @@ const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
 const EPS_DISPLAY_QUANTIZATION: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
+const EPS_POLE_BOX_ROUNDING: f64 = 1.0e-9;
 const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
 const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
@@ -3334,6 +3335,53 @@ struct SurfaceMeasure {
     normal: Option<Vector3>,
 }
 
+/// Whether `point` lies more than `tolerance` outside the box of `nurbs`'s
+/// poles on some axis, so that no point of the surface fits it.
+///
+/// Over its knot domain a surface whose weights are all positive lies in the
+/// convex hull of its poles. An evaluated point leaves that hull by rounding
+/// only, far less than [`EPS_POLE_BOX_ROUNDING`] of the coordinate scale. A
+/// weight of zero or less gives no such bound, so the answer is then `false`.
+fn outside_pole_box(
+    nurbs: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    point: Point3,
+    tolerance: f64,
+) -> bool {
+    let mut low = [f64::INFINITY; 3];
+    let mut high = [f64::NEG_INFINITY; 3];
+    let mut include = |pole: &FinitePoint3| {
+        for (axis, value) in [pole.x, pole.y, pole.z].into_iter().enumerate() {
+            low[axis] = low[axis].min(value);
+            high[axis] = high[axis].max(value);
+        }
+    };
+    match nurbs.pole_grid() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => {
+            rows.iter().flatten().for_each(&mut include);
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } => {
+            for pole in rows.iter().flatten() {
+                if pole.weight.get() <= 0.0 {
+                    return false;
+                }
+                include(&pole.point);
+            }
+        }
+    }
+    let coordinates = [point.x, point.y, point.z];
+    let scale = low
+        .iter()
+        .chain(&high)
+        .chain(&coordinates)
+        .filter(|value| value.is_finite())
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    let margin = tolerance + EPS_POLE_BOX_ROUNDING * scale;
+    coordinates
+        .into_iter()
+        .zip(low.into_iter().zip(high))
+        .any(|(value, (low, high))| value < low - margin || value > high + margin)
+}
+
 fn surface_measure(
     ctx: &DecodeContext<'_>,
     surface: &SolvedSurfaceGeometry,
@@ -3344,6 +3392,9 @@ fn surface_measure(
         let Some(tolerance) = fit_tolerance else {
             return Ok(None);
         };
+        if outside_pole_box(nurbs, point, tolerance) {
+            return Ok(None);
+        }
         let Some(parameters) =
             crate::brep::evaluation::nurbs_surface_parameter_near_point(ctx, nurbs, point, None)?
         else {
