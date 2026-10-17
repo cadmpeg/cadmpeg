@@ -217,6 +217,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/settings.rs`                                  | `MAX_STRING_BYTES`                        | `1 << 20`                                               | 2    | UTF-16 settings string count, checked with the remaining bytes (the UTF-8 reader that also uses it is test-only).                                                                                                                                                            |
 | `cadmpeg-codec-rhino`    | `src/settings.rs`                                  | `MAX_ARRAY_ITEMS`                         | `1 << 16`                                               | 2    | Settings, plug-in, material, mapping, channel and segment counts, through `checked_count_bytes`.                                                                                                                                                                             |
 | `cadmpeg-codec-rhino`    | `src/curves.rs`                                    | `MAX_CURVE_DEPTH`                         | `32`                                                    | 2    | Nested curve and curve-on-surface payload depth; the tree entries also charge `enter_nested`. Excess fails that curve as `Malformed` without fusing the session.                                                                                                             |
+| `cadmpeg-codec-rhino`    | `src/curves.rs`                                    | `MAX_JOIN_DEGREE`                         | `64`                                                    | 2    | Degree a polycurve join raises its segments to; Bezier elevation costs the square of the degree per span. Excess fails that polycurve.                                                                                                                                       |
+| `cadmpeg-codec-rhino`    | `src/curves.rs`                                    | `MAX_JOIN_ELEVATED_POLES`                 | `1 << 20`                                               | 4    | Elevated Bezier poles one polycurve join produces, checked before each segment is elevated. Excess fails that polycurve.                                                                                                                                                     |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_DIMENSION`                           | `10_000`                                                | 2    | NURBS cage dimension. Excess is `Malformed`.                                                                                                                                                                                                                                 |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_CONTROL_POINTS`                      | `1 << 20`                                               | 2    | Cage control-point product. Excess is `Malformed`.                                                                                                                                                                                                                           |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_SCALARS`                             | `1 << 24`                                               | 2    | Cage scalar count, also checked against `remaining / 8` and `View::counted`.                                                                                                                                                                                                 |
@@ -224,6 +226,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_MEMBERS`                    | `1 << 20`                                               | 4    | `ExpansionBudget` member counter. Same skip and warning.                                                                                                                                                                                                                     |
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_ENTITIES`                   | `1 << 20`                                               | 4    | `ExpansionBudget` count of entities emitted by expansion. At the limit the object is skipped with `document instance entity budget exceeded`.                                                                                                                                |
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_DEPTH`                      | `64`                                                    | 4    | Instance nesting; each level also charges `enter_nested`. At the limit the reference is retained unexpanded with a warning.                                                                                                                                                  |
+| `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_COPY_ELEMENTS`              | `1 << 26`                                               | 4    | `ExpansionBudget` count of member visits, copied entities, points, control points, mesh vertices and triangles, and cage vertices across the document. Rejected expansions stay charged; at the limit the expansion is rolled back with a warning naming the constant, which becomes a loss. |
 | `cadmpeg-codec-rhino`    | `src/chunks.rs`                                    | `MAX_HEADER_SEARCH`                       | `33_554_432 + MAGIC.len()`                              | 1    | Window in which the 3DM file header must start.                                                                                                                                                                                                                              |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                                      | `MAX_LEVELS`                              | `64`                                                    | 2    | SubD level count (`capped_u32`). Excess is `Malformed`.                                                                                                                                                                                                                      |
 | `cadmpeg-codec-rhino`    | `src/subd.rs`                                      | `MAX_COMPONENTS_PER_LEVEL`                | `4_000_000`                                             | 2    | Vertex, edge and face count per level and per archive-ID partition. Excess is `Malformed`.                                                                                                                                                                                   |
@@ -396,16 +399,16 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 210.
+Production `MAX_*` constants: 213.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
-| 2    | Per-input bound            | 67    |
+| 2    | Per-input bound            | 68    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 96    |
+| 4    | Local work cap             | 98    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 210   |
+|      | Total                      | 213   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -413,7 +416,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 7,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 16,
+`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 16,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
 and `cadmpeg-codec-catia` 49.
 
