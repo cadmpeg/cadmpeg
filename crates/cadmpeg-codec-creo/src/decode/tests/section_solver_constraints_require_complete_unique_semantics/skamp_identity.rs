@@ -5,9 +5,10 @@ use super::fixtures::base_definition;
 use crate::decode::sketch::coordinates::resolved_section_points;
 use crate::feature::definitions::test_support::append_points;
 use crate::feature::definitions::{ScalarLane, VariableType};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntityId, SketchId, SketchLocus,
-    SketchNativeOperand,
+    NativeOperandField, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntityId,
+    SketchId, SketchLocus, SketchNativeOperand,
 };
 
 #[test]
@@ -133,8 +134,7 @@ fn section_solver_skamp_identity_and_native_state_preserve_source_semantics() {
     assert_eq!(
         *(constraints[2].0.definition).kind(),
         SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("creo:skamp:7")
-                .expect("nonempty native kind"),
+            native_kind: NonBlankString::new("creo:skamp:7").expect("nonempty native kind"),
             native_state: Some(1),
             native_flags: Some(0),
             native_properties: std::collections::BTreeMap::new(),
@@ -144,10 +144,10 @@ fn section_solver_skamp_identity_and_native_state_preserve_source_semantics() {
             ],
             parameter: None,
             operands: vec![SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::new("skamp_ptr")
+                native_kind: NonBlankString::new("skamp_ptr")
                     .expect("source operand kind is nonempty"),
-                field: Some(cadmpeg_ir::sketches::NativeOperandField {
-                    name: cadmpeg_core::text::NonBlankString::new("items.entity_id")
+                field: Some(NativeOperandField {
+                    name: NonBlankString::new("items.entity_id")
                         .expect("source field name is nonempty"),
                     role: Some(4)
                 }),
@@ -179,8 +179,8 @@ fn section_solver_skamp_identity_and_native_state_preserve_source_semantics() {
             ..
         } if entities.is_empty()
             && operands == &[SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::new("skamp_ptr").expect("source operand kind is nonempty"),
-                field: Some(cadmpeg_ir::sketches::NativeOperandField { name: cadmpeg_core::text::NonBlankString::new("items.entity_id").expect("source field name is nonempty"), role: Some(4) }),
+                native_kind: NonBlankString::new("skamp_ptr").expect("source operand kind is nonempty"),
+                field: Some(NativeOperandField { name: NonBlankString::new("items.entity_id").expect("source field name is nonempty"), role: Some(4) }),
                 object_index: Some(999),
                 native_ref: Some("creo:featdefs:sketch#917".to_string()),
             }]

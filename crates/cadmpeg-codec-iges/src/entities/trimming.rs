@@ -2512,9 +2512,18 @@ pub(super) fn project(
                         valid = false;
                         break;
                     }
-                    super::push_attributed_loss(&mut losses, entry,
+                    super::push_attributed_loss(
+                        &mut losses,
+                        entry,
                         IgesLossCode::BoundaryPcurveOutsideSupportDomain,
-                        format_args!("IGES entity type {} form {}: alternate boundary parameter curve leaves the declared support parameter bounds; model-space curve retained", entry.entity_type, entry.form),
+                        format_args!(
+                            concat!(
+                                "IGES entity type {} form {}: alternate boundary parameter curve ",
+                                "leaves the declared support parameter bounds; model-space curve retained",
+                            ),
+                            entry.entity_type,
+                            entry.form,
+                        ),
                     );
                     pcurves.clear();
                 }
