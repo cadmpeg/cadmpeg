@@ -76,7 +76,7 @@ mod tests {
     fn drawings_report_the_second_duplicate_order() {
         let ir = fixture();
         let ids = crate::index::identities::BorrowedIdentities::build(|add| {
-            add("test:source:unknown#record", ())
+            add("test:source:unknown#record", ());
         });
         let mut findings = Vec::new();
         check_drawings(&ir, &ids, &mut findings);
