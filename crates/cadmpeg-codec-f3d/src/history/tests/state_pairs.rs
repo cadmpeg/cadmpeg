@@ -37,6 +37,7 @@ use crate::history::selection::historical_pattern_identity_axes_for_selection;
 use crate::history::selection::incident_loop_counts_satisfy_sides;
 use crate::history::selection::recipe_selector_candidates;
 use crate::history::selection::snapshot_edge_identity_revision;
+use crate::history::selection::EdgeContextIndex;
 use crate::history::selection::HistoricalIdentityIndex;
 use crate::history::terminal_edge_recipe_faces;
 use crate::history::terminal_edge_recipe_reference_faces;
@@ -46,7 +47,9 @@ use crate::history::unique_history_state_pair;
 use crate::history::EdgeBoundaryContext;
 use crate::history::FaceBoundaryArena;
 use crate::history_records::AsmDeltaState;
+use crate::history_records::AsmHistoricalCoedge;
 use crate::history_records::AsmHistoricalEdge;
+use crate::history_records::AsmHistoricalRelation;
 use crate::history_records::AsmHistoricalTopology;
 use crate::history_records::AsmHistoricalTransition;
 use crate::history_records::AsmHistoryRecord;
@@ -1683,6 +1686,50 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(ordered_vertices(&[7, 8], &disconnected), None);
+}
+
+#[test]
+fn indexed_edge_context_reads_the_first_matching_rows() {
+    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+        owner_ref,
+        member_refs,
+    };
+    let coedge = |coedge, owner_loop, edge| AsmHistoricalCoedge {
+        coedge,
+        owner_loop,
+        edge,
+        next: coedge,
+        previous: coedge,
+        radial_next: coedge,
+    };
+    let topology = AsmHistoricalTopology {
+        face_loops: vec![relation(10, vec![100, 101]), relation(11, vec![100])],
+        loop_coedges: vec![
+            relation(100, vec![1, 2, 3]),
+            relation(100, vec![3, 2, 1]),
+            relation(101, vec![4]),
+        ],
+        coedge_topology: vec![
+            coedge(1, 100, 7),
+            coedge(2, 100, 8),
+            coedge(3, 100, 9),
+            coedge(4, 101, 7),
+            coedge(2, 101, 9),
+            coedge(5, 102, 7),
+        ],
+        ..AsmHistoricalTopology::default()
+    };
+    let index = EdgeContextIndex::new(&topology);
+    assert_eq!(
+        historical_edge_context(7, &topology).incident_loops.len(),
+        2
+    );
+    for edge in [7, 8, 9, 99] {
+        assert_eq!(
+            index.context(edge),
+            historical_edge_context(edge, &topology)
+        );
+    }
 }
 
 mod identity;
