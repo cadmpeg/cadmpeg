@@ -7,6 +7,7 @@
 //! rational geometry.
 
 use cadmpeg_ir::geometry::{
+    analytic::ConeSurface,
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::PcurveGeometry,
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -434,6 +435,14 @@ pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry
     basis
 }
 
+/// The major and minor semi-axes of a zero half-angle cone's section, or
+/// `None` when either is not positive.
+pub(crate) fn zero_angle_cone_semi_axes(cone: &ConeSurface) -> Option<(f64, f64)> {
+    let major = cone.radius().get();
+    let minor = major * cone.ratio().get();
+    (major > 0.0 && minor > 0.0).then_some((major, minor))
+}
+
 /// Emit an analytic or NURBS surface carrier.
 pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     let (placements, basis) = placed_surface(g);
@@ -467,6 +476,33 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
                 "CYLINDRICAL_SURFACE",
                 &format!("'',{pl},{}", e.real(radius)),
             )
+        }
+        // A zero half-angle cone is the cylinder over its section, which
+        // `conical_surface` cannot hold. Sweeping the section along the unit
+        // axis keeps the cone's `(u, v)` chart.
+        SolvedSurfaceGeometry::Cone(cone_surface) if cone_surface.half_angle().get() == 0.0 => {
+            let (major, minor) = zero_angle_cone_semi_axes(cone_surface)?;
+            let axis = *cone_surface.frame().axis();
+            let pl = placement(
+                e,
+                cone_surface.origin().get(),
+                axis,
+                *cone_surface.frame().reference(),
+            );
+            if cone_surface.ratio().get() == 1.0 {
+                e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", e.real(major)))
+            } else {
+                let section = e.emit(
+                    "ELLIPSE",
+                    &format!("'',{pl},{},{}", e.real(major), e.real(minor)),
+                );
+                let direction = direction(e, axis.into());
+                let sweep = e.emit("VECTOR", &format!("'',{direction},{}", e.real(1.0)));
+                e.emit(
+                    "SURFACE_OF_LINEAR_EXTRUSION",
+                    &format!("'',{section},{sweep}"),
+                )
+            }
         }
         // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
         // Reversing the axis and angle maps a negative-angle cone exactly under

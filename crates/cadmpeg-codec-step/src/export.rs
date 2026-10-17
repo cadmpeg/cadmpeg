@@ -104,13 +104,9 @@ pub(crate) fn write_step_outcome(
         )));
     }
     for surface in &ir.model.surfaces {
-        if let Some(half_angle) = surface
-            .geometry
-            .solved()
-            .and_then(out_of_domain_cone_half_angle)
-        {
+        if let Some(reason) = surface.geometry.solved().and_then(unwritable_cone) {
             return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "STEP conical_surface cannot represent surface '{}' with semi-angle {half_angle} outside (0, pi/2)",
+                "STEP cannot represent cone surface '{}' with {reason}",
                 surface.id
             )));
         }
@@ -130,13 +126,16 @@ pub(crate) fn write_step_outcome(
     Ok(outcome)
 }
 
-fn out_of_domain_cone_half_angle(mut geometry: &SolvedSurfaceGeometry) -> Option<f64> {
+fn unwritable_cone(mut geometry: &SolvedSurfaceGeometry) -> Option<String> {
     loop {
         match geometry {
             SolvedSurfaceGeometry::Cone(cone) => {
                 let angle = cone.half_angle().get();
-                return (angle == 0.0 || angle.abs() >= std::f64::consts::FRAC_PI_2)
-                    .then_some(angle);
+                if angle.abs() >= std::f64::consts::FRAC_PI_2 {
+                    return Some(format!("semi-angle {angle} outside (0, pi/2)"));
+                }
+                return (angle == 0.0 && geometry::zero_angle_cone_semi_axes(cone).is_none())
+                    .then(|| "semi-angle 0 and a zero section semi-axis".to_owned());
             }
             SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
             _ => return None,
@@ -4227,7 +4226,7 @@ impl<'a> Builder<'a> {
                 matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let ratio = cone_surface.ratio().get();
-                    ratio != 1.0
+                    ratio != 1.0 && cone_surface.half_angle().get() != 0.0
                 })
             })
             .count();

@@ -174,3 +174,84 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
             && loss.message.contains(ir.model.pcurves[0].id.as_str())
     }));
 }
+
+/// Writes a document whose single surface is a zero half-angle cone and
+/// returns the report with the STEP text.
+fn zero_angle_cone_report(
+    radius: f64,
+    ratio: f64,
+) -> Result<(cadmpeg_ir::report::export::ExportReport, String), std::io::Error> {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+            ratio,
+            0.0,
+        )
+        .unwrap(),
+    ));
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )?;
+    Ok((
+        report,
+        String::from_utf8(buf).expect("STEP output is UTF-8"),
+    ))
+}
+
+#[test]
+fn zero_cone_semi_angle_is_written_as_a_cylinder() {
+    let (_, text) = zero_angle_cone_report(2.0, 1.0).expect("a zero-angle cone is a cylinder");
+    assert!(text.contains("CYLINDRICAL_SURFACE('',#"));
+    assert!(!text.contains("CONICAL_SURFACE"));
+}
+
+#[test]
+fn zero_angle_elliptical_cone_is_written_as_an_exact_extrusion() {
+    let (report, text) =
+        zero_angle_cone_report(2.0, 0.4).expect("a zero-angle elliptical cone is writable");
+    let record = |id: &str| {
+        text.lines()
+            .find(|line| line.starts_with(&format!("{id} = ")))
+            .unwrap_or_else(|| panic!("record {id}"))
+    };
+    let arguments = |line: &str, keyword: &str| -> Vec<String> {
+        line.split_once(&format!(" = {keyword}('',"))
+            .unwrap_or_else(|| panic!("{keyword} in {line}"))
+            .1
+            .trim_end_matches(");")
+            .split(',')
+            .map(str::to_owned)
+            .collect()
+    };
+    let extrusion = text
+        .lines()
+        .find(|line| line.contains(" = SURFACE_OF_LINEAR_EXTRUSION("))
+        .expect("extrusion record");
+    let [section, sweep] =
+        <[String; 2]>::try_from(arguments(extrusion, "SURFACE_OF_LINEAR_EXTRUSION")).unwrap();
+    assert!(record(&section).contains(" = ELLIPSE("));
+    assert!(record(&section).ends_with(",2.,0.8);"));
+    let [direction, magnitude] =
+        <[String; 2]>::try_from(arguments(record(&sweep), "VECTOR")).unwrap();
+    assert_eq!(magnitude, "1.");
+    assert!(record(&direction).ends_with("DIRECTION('',(0.,0.,1.));"));
+    assert!(!text.contains("CONICAL_SURFACE"));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::EllipticalConeReduced.kind()));
+}
+
+#[test]
+fn zero_angle_cone_with_a_collapsed_section_is_refused() {
+    let error = zero_angle_cone_report(0.0, 1.0).expect_err("a zero-radius cylinder is a line");
+    assert!(error.to_string().contains("zero section semi-axis"));
+}
