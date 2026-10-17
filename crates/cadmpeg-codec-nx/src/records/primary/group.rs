@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{base, positive, BaseVersion, PrimaryRecords};
+use super::PrimaryRecords;
 use crate::records::group::GroupSelector;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 pub(crate) struct PrimaryGroup {
@@ -21,41 +21,20 @@ impl PrimaryRecords<'_> {
                 if record.definition.kind != 90 {
                     return None;
                 }
-                let expected = base::fields(BaseVersion::V13006, 90)?;
-                if record.definition.fields.len() != expected.len()
-                    || !record
-                        .definition
-                        .fields
-                        .iter()
-                        .zip(expected)
-                        .all(|(actual, base)| {
-                            actual.name.as_str() == base.name
-                                && actual.data_type == base.data_type
-                                && actual.pointer_class == base.pointer_class
-                                && actual.n_elements == base.n_elements
-                                && actual.transmit == base.transmit
-                        })
-                {
+                if !self.matches_base(record) {
                     return None;
                 }
-                let field = |index: usize| {
-                    Some(View::over_retained(
-                        self.source.get(record.fields.get(index)?.clone())?,
-                    ))
-                };
-                let pointer =
-                    |index| positive(&mut field(index)?).and_then(|value| value.checked_add(1));
                 Some(PrimaryGroup {
                     xmt: u32::from(record.xmt),
-                    node_id: field(0)?.u32_be()?,
+                    node_id: self.field(record, 0)?.u32_be()?,
                     references: [
-                        pointer(1)?,
-                        pointer(2)?,
-                        pointer(3)?,
-                        pointer(4)?,
-                        pointer(6)?,
+                        self.pointer(record, 1)?,
+                        self.pointer(record, 2)?,
+                        self.pointer(record, 3)?,
+                        self.pointer(record, 4)?,
+                        self.pointer(record, 6)?,
                     ],
-                    selector: GroupSelector::try_from(field(5)?.u8()?).ok()?,
+                    selector: GroupSelector::try_from(self.field(record, 5)?.u8()?).ok()?,
                     offset: record.range.start,
                     end: record.range.end,
                 })

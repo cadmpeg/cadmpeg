@@ -3,6 +3,8 @@
 use super::{PrimaryEnd, PrimaryRecords, StopReason};
 use crate::test_support::with_decode_context;
 
+mod membership;
+
 fn header(version: u16, embedded: bool) -> Vec<u8> {
     let description = b": TRANSMIT FILE (partition) primary contract";
     let schema = if embedded {

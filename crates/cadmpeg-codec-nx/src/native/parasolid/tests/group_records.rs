@@ -49,8 +49,13 @@ fn group_record_limit_error(
             configure(policy);
         },
         |ctx| {
-            crate::native::parasolid::parasolid_group_records(ctx, &streams, &BTreeMap::new(), &[])
-                .expect_err("GROUP record limit refusal")
+            crate::native::parasolid::parasolid_groups(
+                ctx,
+                &streams,
+                &BTreeMap::new(),
+                &crate::native::parasolid::parasolid_deltas_events(&streams),
+            )
+            .expect_err("GROUP record limit refusal")
         },
     )
 }
@@ -68,7 +73,7 @@ fn group_member_route_limit_error(
             let root = cadmpeg_core::decode::View::over_retained(&bytes);
 
             let scan = crate::decode::scan(ctx, root).unwrap();
-            let parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
+            let deltas = crate::native::parasolid::parasolid_deltas_events(&scan.streams);
 
             crate::test_support::with_decode_context_over(
                 &bytes,
@@ -76,11 +81,11 @@ fn group_member_route_limit_error(
                     configure(policy);
                 },
                 |limited_ctx| {
-                    crate::native::parasolid::parasolid_group_members(
+                    crate::native::parasolid::parasolid_groups(
                         limited_ctx,
                         &scan.streams,
                         &BTreeMap::new(),
-                        &parsed,
+                        &deltas,
                     )
                     .expect_err("GROUP member route limit refusal")
                 },

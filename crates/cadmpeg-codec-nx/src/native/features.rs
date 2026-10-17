@@ -4621,7 +4621,7 @@ pub(super) fn feature_operation_body_partition_uses(
         }
         let mut parasolid_group_members = Vec::new();
         for member in group_members.iter().filter(|member| {
-            member.partition_stream_ordinal == partition_stream_ordinal
+            member.primary_stream_ordinal == partition_stream_ordinal
                 && member.group_node_id == write.frame.group_node().value()
         }) {
             ctx.reserve_vec(
@@ -4692,7 +4692,10 @@ pub(super) fn feature_body_write_group_partition_uses(
         let group_node = write.frame.group_node().value();
         let mut partition = None;
         let mut valid = true;
-        for group in groups.iter().filter(|group| group.node_id == group_node) {
+        for group in groups.iter().filter(|group| {
+            group.node_id == group_node
+                && group.origin.stream_kind() != crate::parasolid::StreamKind::Plain
+        }) {
             match (partition, group.origin.partition_stream_ordinal()) {
                 (None, Some(ordinal)) => partition = Some(ordinal),
                 (Some(expected), Some(actual)) if expected == actual => {}
@@ -4709,7 +4712,10 @@ pub(super) fn feature_body_write_group_partition_uses(
             continue;
         }
         let mut parasolid_group_records = Vec::new();
-        for group in groups.iter().filter(|group| group.node_id == group_node) {
+        for group in groups.iter().filter(|group| {
+            group.node_id == group_node
+                && group.origin.stream_kind() != crate::parasolid::StreamKind::Plain
+        }) {
             ctx.reserve_vec(
                 &mut parasolid_group_records,
                 1,
@@ -4720,7 +4726,7 @@ pub(super) fn feature_body_write_group_partition_uses(
         }
         let mut parasolid_group_members = Vec::new();
         for member in group_members.iter().filter(|member| {
-            member.partition_stream_ordinal == partition_stream_ordinal
+            member.primary_stream_ordinal == partition_stream_ordinal
                 && member.group_node_id == group_node
         }) {
             ctx.reserve_vec(

@@ -43,6 +43,7 @@ pub(crate) struct PrimaryRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PrimaryRecords<'a> {
     source: &'a [u8],
+    version: BaseVersion,
     records: Vec<PrimaryRecord>,
     end: PrimaryEnd,
 }
@@ -88,6 +89,35 @@ fn header(view: &mut View<'_>) -> Option<Header> {
 }
 
 impl<'a> PrimaryRecords<'a> {
+    fn matches_base(&self, record: &PrimaryRecord) -> bool {
+        let Some(expected) = base::fields(self.version, record.definition.kind) else {
+            return false;
+        };
+        record.definition.fields.len() == expected.len()
+            && record
+                .definition
+                .fields
+                .iter()
+                .zip(expected)
+                .all(|(actual, base)| {
+                    actual.name.as_str() == base.name
+                        && actual.data_type == base.data_type
+                        && actual.pointer_class == base.pointer_class
+                        && actual.n_elements == base.n_elements
+                        && actual.transmit == base.transmit
+                })
+    }
+
+    fn field(&self, record: &PrimaryRecord, index: usize) -> Option<View<'_>> {
+        Some(View::over_retained(
+            self.source.get(record.fields.get(index)?.clone())?,
+        ))
+    }
+
+    fn pointer(&self, record: &PrimaryRecord, index: usize) -> Option<u32> {
+        positive(&mut self.field(record, index)?).and_then(|value| value.checked_add(1))
+    }
+
     pub(crate) fn records(&self) -> &[PrimaryRecord] {
         &self.records
     }
@@ -231,6 +261,7 @@ impl<'a> PrimaryRecords<'a> {
         };
         Ok(Some(Self {
             source: stream,
+            version: header.version,
             records,
             end,
         }))
@@ -288,3 +319,4 @@ fn consume_field(
 mod tests;
 
 mod group;
+mod membership;

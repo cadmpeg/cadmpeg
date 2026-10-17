@@ -1036,6 +1036,17 @@ The GROUP `type` names its allowed member family:
 | 9 | Mixed |
 | 10 | REGION |
 
+The concrete member kinds are INSTANCE (11), FACE (14), LOOP (15), EDGE (16),
+VERTEX (18), REGION (19), and POINT (29). CURVE comprises LINE (30), CIRCLE
+(31), ELLIPSE (32), INTERSECTION (38), PE_CURVE (130), TRIMMED_CURVE (133),
+B_CURVE (134), and SP_CURVE (137). SURFACE comprises PLANE (50), CYLINDER
+(51), CONE (52), SPHERE (53), TORUS (54), BLEND_SURF (56), BLEND_BOUND (59),
+OFFSET_SURF (60), SWEPT_SURF (67), SPUN_SURF (68), PE_SURF (120), and
+B_SURFACE (124). Schemas 11004 and 13006 name kind 56 `BLENDED_EDGE`.
+Every listed primary kind starts with a transmitted `node_id:u32 BE` field.
+Kind 100 is TRANSFORM, not INSTANCE. BODY, SHELL, FIN, ASSEMBLY, and TRANSFORM
+are outside the member union.
+
 A repeated type-101 `WORLD` record is `0065 [ff]` followed by the instance
 fields selected by the preceding WORLD schema. The fifteen-, eighteen-, and
 nineteen-field lists are defined below. The optional envelope precedes the
@@ -2169,8 +2180,10 @@ retained GROUP update keeps the scoped node relation without importing a
 record from another partition.
 
 A labeled or unlabeled body-write GROUP also establishes a direct partition
-scope when at least one retained GROUP record has that node ID and every such
-record belongs to one partition namespace. Zero records, an unpaired record,
+scope when at least one retained Partition or Deltas GROUP record has that node
+ID and every such record belongs to one partition namespace. Plain GROUP
+records use their own primary-stream namespace and do not participate in this
+partition relation. Zero records, an unpaired Deltas record,
 or matches in multiple partition namespaces reject the relation. The relation
 binds the frame's persistent body identity to that partition. Every labeled
 write carrying the same body identity writes the unique body in that partition
@@ -2195,13 +2208,17 @@ to the GROUP's member-family selector. A mixed GROUP permits those families
 in one chain. A cycle, duplicate identity, missing row, cross-GROUP row, or
 broken reciprocal link does not form a complete membership chain.
 
-Each topological GROUP member carries a kernel node identity. The member
-XMT is first checked as an exact identity in the delta-merged partition graph;
-the graph record must have the same topology family and kernel node identity.
+Each GROUP member carries its serialized source node label. The GROUP and its
+members share the owning Plain or Partition primary-stream namespace. A
+duplicate primary XMT does not identify a unique source record. Duplicate GROUP
+node labels do not select a chain.
+For a represented graph family, the member XMT is first checked as an exact
+identity in that primary stream's current graph;
+the graph record must have the same entity family and serialized node label.
 When that exact identity is absent or carries a different node identity, a
 current member XMT may instead be selected only when exactly one record of the
-same topology family in the graph carries the serialized node identity. Node
-identities are not compared across families. A missing node identity, an
+same entity family in the graph carries the serialized node label. Node
+labels are not compared across families. A missing node label, an
 invalid exact identity, zero same-family matches, or multiple same-family
 matches leaves the historical member XMT retained without a current-member
 identity.

@@ -140,39 +140,41 @@ fn native_value_records_refuse_collection_at_caller_limit() {
     });
 }
 
-fn record(
+fn membership_record(
     kind: u16,
     xmt: u32,
     node_id: Option<u32>,
     references: Vec<u32>,
-) -> crate::deltas::Record {
-    use crate::deltas::record_family::RecordFamily;
-    let family = match kind {
-        14 => RecordFamily::Face {
-            references: [1; 11],
-            node_id: node_id.expect("face node"),
+) -> crate::records::group::MembershipRecord {
+    use crate::records::group::{MembershipKind, MembershipRecord};
+    let kind = match kind {
+        14 | 16 => MembershipKind::Node {
+            kind,
+            node_id: node_id.expect("member node"),
         },
-        16 => RecordFamily::Edge {
-            references: [1; 8],
-            node_id: node_id.expect("edge node"),
-        },
-        90 => RecordFamily::Group {
-            references: references.try_into().unwrap(),
-            node_id: node_id.expect("group node"),
-            selector: GroupSelector::Edge,
-            linked_reference_status: GroupReferenceStatus::Form0,
-        },
-        91 => RecordFamily::Type91 {
-            references: references.try_into().unwrap(),
-        },
-        other => panic!("unexpected test kind {other}"),
+        90 => {
+            let [_, _, _, _, first_member]: [u32; 5] = references.try_into().unwrap();
+            MembershipKind::Group {
+                node_id: node_id.expect("group node"),
+                selector: GroupSelector::Mixed,
+                first_member,
+            }
+        }
+        91 => {
+            let [owning_group, owner, _, _, next_member, previous_member]: [u32; 6] =
+                references.try_into().unwrap();
+            MembershipKind::Member {
+                owning_group,
+                owner,
+                next_member,
+                previous_member,
+            }
+        }
+        other => panic!("unexpected membership test kind {other}"),
     };
-    crate::deltas::Record {
-        family,
-        xmt,
-        canonical_bytes: if kind == 90 { vec![0, 90] } else { Vec::new() },
-        offset: 0,
-        end: 1,
+    MembershipRecord {
+        xmt: xmt.try_into().unwrap(),
+        kind,
     }
 }
 
@@ -185,12 +187,12 @@ use super::topology_attribute_kind::TopologyAttributeKind;
 use super::{
     parasolid_attribute_field_names, parasolid_attribute_field_uses,
     parasolid_entity_51_structured_uses,
-    parasolid_topology_attribute_fields_have_untransferred_values, GroupReferenceStatus,
-    ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
-    ParasolidAttributeFieldValueKind, ParasolidEntity51NumericKind, ParasolidEntity51NumericUse,
-    ParasolidEntity51Record, ParasolidEntity51StringUse, ParasolidEntity51StructuredUse,
-    ParasolidEntity54StringRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
-    ParasolidEntityVectorRecord, ParasolidFieldNamesRecord, ParasolidTopologyAttributeClassUse,
+    parasolid_topology_attribute_fields_have_untransferred_values, ParasolidAttributeClassUse,
+    ParasolidAttributeDefinition, ParasolidAttributeFieldUse, ParasolidAttributeFieldValueKind,
+    ParasolidEntity51NumericKind, ParasolidEntity51NumericUse, ParasolidEntity51Record,
+    ParasolidEntity51StringUse, ParasolidEntity51StructuredUse, ParasolidEntity54StringRecord,
+    ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+    ParasolidFieldNamesRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
 };
 use crate::framing::xmt_reference::NonNullXmt;

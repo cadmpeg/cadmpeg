@@ -451,13 +451,13 @@ fn group_member(
 ) -> crate::native::parasolid::ParasolidGroupMember {
     crate::native::parasolid::ParasolidGroupMember {
         id: id.into(),
-        partition_stream_ordinal: 4,
+        primary_stream_ordinal: 4,
         group_xmt: 10,
         group_node_id: 7,
         ordinal: 0,
         list_record_xmt: 20,
         member_xmt: 30,
-        target: GroupMemberTarget::Node {
+        target: GroupMemberTarget {
             family,
             node_id: 50,
             current_xmt: current_member_xmt,
@@ -495,13 +495,13 @@ fn direct_group_use(
 #[test]
 fn result_topology_uses_only_unique_current_group_members() {
     crate::test_support::with_decode_context(|ctx| {
-        let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
+        let use_ = group_use(&["face", "edge", "vertex", "historical", "region"]);
         let members = [
             group_member("face", GroupNodeFamily::Face, Some(40)),
             group_member("edge", GroupNodeFamily::Edge, Some(41)),
             group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
             group_member("historical", GroupNodeFamily::Face, None),
-            group_member("shell", GroupNodeFamily::Shell, Some(43)),
+            group_member("region", GroupNodeFamily::Region, Some(43)),
         ];
         let result = feature_result_group_members(
             ctx,

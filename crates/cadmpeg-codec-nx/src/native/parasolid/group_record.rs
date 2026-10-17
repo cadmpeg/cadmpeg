@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::native) enum GroupOrigin {
+    Plain {
+        stream_ordinal: u32,
+    },
     Partition {
         stream_ordinal: u32,
     },
@@ -21,19 +24,21 @@ pub(in crate::native) enum GroupOrigin {
 impl GroupOrigin {
     pub(in crate::native) fn stream_ordinal(self) -> u32 {
         match self {
-            Self::Partition { stream_ordinal } | Self::Deltas { stream_ordinal, .. } => {
-                stream_ordinal
-            }
+            Self::Plain { stream_ordinal }
+            | Self::Partition { stream_ordinal }
+            | Self::Deltas { stream_ordinal, .. } => stream_ordinal,
         }
     }
-    pub(super) fn stream_kind(self) -> StreamKind {
+    pub(in crate::native) fn stream_kind(self) -> StreamKind {
         match self {
+            Self::Plain { .. } => StreamKind::Plain,
             Self::Partition { .. } => StreamKind::Partition,
             Self::Deltas { .. } => StreamKind::Deltas,
         }
     }
     pub(in crate::native) fn partition_stream_ordinal(self) -> Option<u32> {
         match self {
+            Self::Plain { .. } => None,
             Self::Partition { stream_ordinal } => Some(stream_ordinal),
             Self::Deltas {
                 partition_stream_ordinal,
@@ -43,7 +48,7 @@ impl GroupOrigin {
     }
     fn linked_reference_status(self) -> Option<GroupReferenceStatus> {
         match self {
-            Self::Partition { .. } => None,
+            Self::Plain { .. } | Self::Partition { .. } => None,
             Self::Deltas {
                 linked_reference_status,
                 ..
@@ -135,6 +140,17 @@ impl TryFrom<GroupWire> for ParasolidGroupRecord {
     type Error = &'static str;
     fn try_from(wire: GroupWire) -> Result<Self, Self::Error> {
         let origin = match wire.stream_kind {
+            StreamKind::Plain => {
+                if wire.partition_stream_ordinal.is_some() {
+                    return Err("partition_stream_ordinal: absent for a plain primary stream");
+                }
+                if wire.linked_reference_status.is_some() {
+                    return Err("linked_reference_status: absent in primary GROUP records");
+                }
+                GroupOrigin::Plain {
+                    stream_ordinal: wire.stream_ordinal,
+                }
+            }
             StreamKind::Partition if wire.partition_stream_ordinal == Some(wire.stream_ordinal) => {
                 if wire.linked_reference_status.is_some() {
                     return Err("linked_reference_status: absent in primary GROUP records");
@@ -153,8 +169,8 @@ impl TryFrom<GroupWire> for ParasolidGroupRecord {
             StreamKind::Partition => {
                 return Err("partition_stream_ordinal: a partition owns its stream namespace")
             }
-            StreamKind::Plain | StreamKind::Preview => {
-                return Err("stream_kind: GROUP requires partition or deltas")
+            StreamKind::Preview => {
+                return Err("stream_kind: GROUP requires a primary or deltas stream")
             }
         };
         let references = wire
@@ -182,6 +198,7 @@ mod tests {
     #[test]
     fn group_wire_preserves_scopes_and_rejects_invalid_controls() {
         for scope in [
+            r#""stream_ordinal":3,"stream_kind":"plain""#,
             r#""stream_ordinal":4,"stream_kind":"partition","partition_stream_ordinal":4"#,
             r#""stream_ordinal":5,"stream_kind":"deltas","partition_stream_ordinal":4"#,
             r#""stream_ordinal":5,"stream_kind":"deltas""#,
@@ -226,7 +243,7 @@ mod tests {
             for (field, invalid) in [
                 ("selector", serde_json::json!(11)),
                 ("linked_reference_status", serde_json::json!(2)),
-                ("stream_kind", serde_json::json!("plain")),
+                ("stream_kind", serde_json::json!("preview")),
                 ("references", serde_json::json!([1, 2])),
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -234,7 +251,7 @@ mod tests {
                 let error = serde_json::from_value::<ParasolidGroupRecord>(wire).unwrap_err();
                 assert!(error.to_string().contains(field), "{error}");
             }
-            if scope.contains("partition\"") {
+            if !scope.contains("\"deltas\"") {
                 let mut with_status: serde_json::Value = serde_json::from_str(&json).unwrap();
                 with_status["linked_reference_status"] = serde_json::json!(0);
                 assert!(serde_json::from_value::<ParasolidGroupRecord>(with_status)
@@ -242,7 +259,7 @@ mod tests {
                     .to_string()
                     .contains("linked_reference_status"));
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-                wire["partition_stream_ordinal"] = serde_json::json!(3);
+                wire["partition_stream_ordinal"] = serde_json::json!(9);
                 assert!(serde_json::from_value::<ParasolidGroupRecord>(wire)
                     .unwrap_err()
                     .to_string()

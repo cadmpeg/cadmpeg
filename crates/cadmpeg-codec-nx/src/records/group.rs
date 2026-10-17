@@ -1,6 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::framing::xmt_reference::NonNullXmt;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MembershipRecord {
+    pub(crate) xmt: NonNullXmt,
+    pub(crate) kind: MembershipKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MembershipKind {
+    Group {
+        node_id: u32,
+        selector: GroupSelector,
+        first_member: u32,
+    },
+    Member {
+        owning_group: u32,
+        owner: u32,
+        next_member: u32,
+        previous_member: u32,
+    },
+    Node {
+        kind: u16,
+        node_id: u32,
+    },
+    Other,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]

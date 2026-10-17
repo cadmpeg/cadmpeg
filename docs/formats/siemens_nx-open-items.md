@@ -86,7 +86,9 @@ relation to the owning pmark edge before assigning body change-state roles.
 
 **Known.** `siemens_nx.md` §4.2 defines the GROUP's five pointer roles, member-family enum 1 through 10, and separate primary and supported Deltas field framing. A primary GROUP ends after `first_member` without a status byte. Its source boundary follows the effective schema cursor.
 
-**Need.** Establish each Deltas instance's enclosing sequence and reference-status semantics before treating every field-shaped candidate as a group event. Resolve membership through separately owned MEMBER_OF_GROUP records and their distinct group and entity chains.
+**Need.** Establish each Deltas instance's enclosing sequence and reference-status semantics before treating every field-shaped candidate as a group event. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the Deltas MEMBER_OF_GROUP label and status roles independently of the primary grammar.
+
+**Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. Topology snapshot replay uses typed keys and BODY revision scopes; that rule does not by itself assign the same semantics to GROUP updates.
 
 ### PS-16. Deltas type 141
 

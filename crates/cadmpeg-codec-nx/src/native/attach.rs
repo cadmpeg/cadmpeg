@@ -5938,10 +5938,10 @@ fn feature_result_group_members(
         if matches.next().is_some() {
             continue;
         }
-        if member.partition_stream_ordinal != partition_stream_ordinal {
+        if member.primary_stream_ordinal != partition_stream_ordinal {
             continue;
         }
-        let GroupMemberTarget::Node {
+        let GroupMemberTarget {
             family,
             current_xmt: Some(xmt),
             ..

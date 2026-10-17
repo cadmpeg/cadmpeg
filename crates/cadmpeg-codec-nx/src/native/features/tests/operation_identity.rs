@@ -1575,6 +1575,37 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     assert_eq!(uses[0].partition_stream_ordinal, 2);
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
+    let mut plain = group("plain", 8);
+    plain.origin = crate::native::parasolid::group_record::GroupOrigin::Plain { stream_ordinal: 8 };
+    let with_plain = body_group_partition_uses_for_test(
+        &[],
+        std::slice::from_ref(&unlabeled),
+        &[group("owned", 2), plain.clone()],
+        &[],
+    );
+    assert_eq!(with_plain.len(), 1);
+    assert_eq!(with_plain[0].parasolid_group_records, ["owned"]);
+    assert!(body_group_partition_uses_for_test(
+        &[],
+        std::slice::from_ref(&unlabeled),
+        &[plain],
+        &[]
+    )
+    .is_empty());
+    let mut unpaired = group("unpaired", 2);
+    unpaired.origin = crate::native::parasolid::group_record::GroupOrigin::Deltas {
+        stream_ordinal: 3,
+        partition_stream_ordinal: None,
+        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+    };
+    assert!(body_group_partition_uses_for_test(
+        &[],
+        std::slice::from_ref(&unlabeled),
+        &[group("owned", 2), unpaired],
+        &[],
+    )
+    .is_empty());
+
     assert!(body_group_partition_uses_for_test(
         &[],
         &[unlabeled],

@@ -54,6 +54,7 @@ use crate::records::instance::SchemaNode;
 use body_revision_wire::RevisionLengths;
 use transmit_header_wire::TransmitHeaderWire;
 pub(super) mod group_member;
+mod group_state;
 use group_member::GroupMemberTarget;
 pub(super) mod group_record;
 use crate::deltas::group::GroupReferenceStatus;
@@ -64,18 +65,18 @@ use super::substrate::{ParsedStreams, StreamView};
 
 use std::collections::{BTreeMap, BTreeSet};
 
-/// One complete Parasolid GROUP record with its source and owning-partition scope.
+/// One complete Parasolid GROUP record with its primary or Deltas source scope.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "group_record::GroupWire")]
 pub(super) struct ParasolidGroupRecord {
     /// Globally unique source-record identity.
     pub(super) id: String,
-    /// Exact source stream and its partition namespace.
+    /// Exact source stream and any paired partition namespace.
     pub(super) origin: GroupOrigin,
     /// Stream-local XMT identity.
     pub(super) xmt: u32,
-    /// Partition-local kernel node identity.
+    /// Source-local serialized node label.
     pub(super) node_id: u32,
     /// Ordered GROUP references without their framing status bytes.
     pub(super) references: [u32; 5],
@@ -109,15 +110,15 @@ impl Clone for ParasolidGroupRecord {
     }
 }
 
-/// One topology member in a fully closed current Parasolid GROUP chain.
+/// One entity member in a fully closed current Parasolid GROUP chain.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "group_member::MemberWire")]
 pub(super) struct ParasolidGroupMember {
     /// Globally unique membership identity.
     pub(super) id: String,
-    /// Partition whose local XMT and node namespaces own the chain.
-    pub(super) partition_stream_ordinal: u32,
+    /// Primary stream whose local XMT and node namespaces own the chain.
+    pub(super) primary_stream_ordinal: u32,
     /// Current GROUP record XMT identity.
     pub(super) group_xmt: u32,
     /// Current GROUP kernel node identity.
@@ -143,7 +144,7 @@ impl Clone for ParasolidGroupMember {
         GROUP_MEMBER_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: self.id.clone(),
-            partition_stream_ordinal: self.partition_stream_ordinal,
+            primary_stream_ordinal: self.primary_stream_ordinal,
             group_xmt: self.group_xmt,
             group_node_id: self.group_node_id,
             ordinal: self.ordinal,
@@ -154,17 +155,17 @@ impl Clone for ParasolidGroupMember {
     }
 }
 
-/// Retain GROUP records from partition streams and raw deltas overlays.
+/// Retain primary GROUP records and closed membership from one source cursor.
 ///
 /// Deltas records use the partition pairing already selected for topology
 /// reconstruction. A record in an unpaired deltas stream remains exact native
 /// evidence but has no partition-local namespace assignment.
-pub(super) fn parasolid_group_records(
+pub(super) fn parasolid_groups(
     ctx: &DecodeContext<'_>,
     streams: &[Stream],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
-    deltas_records: &[ParasolidDeltasRecord],
-) -> Result<Vec<ParasolidGroupRecord>, CodecError> {
+    deltas: &ParasolidDeltasEvents,
+) -> Result<(Vec<ParasolidGroupRecord>, Vec<ParasolidGroupMember>), CodecError> {
     let mut paired_partition = BTreeMap::new();
     let mut pair_guard = ctx.reserve_scoped(0, "NX GROUP delta pair index")?;
     for (&partition, deltas) in delta_pairs {
@@ -182,8 +183,9 @@ pub(super) fn parasolid_group_records(
         }
     }
     let mut groups = Vec::new();
+    let mut members = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if stream.kind() != crate::parasolid::StreamKind::Partition {
+        if !matches!(stream.kind(), StreamKind::Partition | StreamKind::Plain) {
             continue;
         }
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
@@ -206,8 +208,14 @@ pub(super) fn parasolid_group_records(
                         record.offset,
                         Some(record.xmt),
                     )?,
-                    origin: GroupOrigin::Partition {
-                        stream_ordinal: stream_ordinal_u32,
+                    origin: if stream.kind() == StreamKind::Plain {
+                        GroupOrigin::Plain {
+                            stream_ordinal: stream_ordinal_u32,
+                        }
+                    } else {
+                        GroupOrigin::Partition {
+                            stream_ordinal: stream_ordinal_u32,
+                        }
                     },
                     xmt: record.xmt,
                     node_id: record.node_id,
@@ -219,8 +227,25 @@ pub(super) fn parasolid_group_records(
                 "NX GROUP records",
             )?;
         }
+        let records = primary_storage.with_storage(|| primary.membership_records(ctx))?;
+        let mut current = group_state::GroupState::from_records(ctx, &records)?;
+        let mut complete = true;
+        for delta in delta_pairs.get(&stream_ordinal).into_iter().flatten() {
+            let Ok(delta_ordinal) = u32::try_from(*delta) else {
+                complete = false;
+                break;
+            };
+            if streams.get(*delta).is_none() {
+                complete = false;
+                break;
+            }
+            current.apply_deltas(ctx, delta_ordinal, &deltas.records, &deltas.tombstones)?;
+        }
+        if complete {
+            current.append_members(ctx, stream_ordinal_u32, &mut members)?;
+        }
     }
-    for record in deltas_records {
+    for record in &deltas.records {
         let crate::deltas::record_family::RecordFamily::Group {
             node_id,
             selector,
@@ -260,7 +285,7 @@ pub(super) fn parasolid_group_records(
         |_| 0,
         "sort NX GROUP records",
     )?;
-    Ok(groups)
+    Ok((groups, members))
 }
 
 fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecError> {
@@ -281,143 +306,9 @@ fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, 
     Ok(output)
 }
 
-fn group_members_from_records(
-    ctx: &DecodeContext<'_>,
-    partition_stream_ordinal: u32,
-    records: &[crate::deltas::Record],
-    members: &mut Vec<ParasolidGroupMember>,
-) -> Result<(), CodecError> {
-    let mut records_by_xmt = BTreeMap::<u32, Option<&crate::deltas::Record>>::new();
-    let mut record_guard = ctx.reserve_scoped(0, "NX GROUP record index")?;
-    for record in records {
-        if let Some(unique) = records_by_xmt.get_mut(&record.xmt) {
-            *unique = None;
-        } else {
-            record_guard.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(u32, Option<&crate::deltas::Record>)>() * 4,
-            ))?;
-            ctx.insert_btree_map(
-                &mut records_by_xmt,
-                record.xmt,
-                Some(record),
-                "NX GROUP record index",
-            )?;
-        }
-    }
-    let unique_record = |xmt| records_by_xmt.get(&xmt).copied().flatten();
-    let mut groups_by_node = BTreeMap::<u32, Option<(u32, u32)>>::new();
-    let mut group_guard = ctx.reserve_scoped(0, "NX GROUP node index")?;
-    for record in records {
-        if let crate::deltas::record_family::RecordFamily::Group {
-            node_id,
-            references,
-            ..
-        } = &record.family
-        {
-            if let Some(unique) = groups_by_node.get_mut(node_id) {
-                *unique = None;
-            } else {
-                group_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(u32, Option<(u32, u32)>)>() * 4,
-                ))?;
-                ctx.insert_btree_map(
-                    &mut groups_by_node,
-                    *node_id,
-                    Some((record.xmt, references[4])),
-                    "NX GROUP node index",
-                )?;
-            }
-        }
-    }
-    for (&group_node_id, unique) in &groups_by_node {
-        let Some((group_xmt, tail)) = *unique else {
-            continue;
-        };
-        let mut reverse_chain = Vec::new();
-        let mut chain_guard = ctx.reserve_scoped(0, "NX GROUP member chain")?;
-        let mut seen = BTreeSet::new();
-        let mut seen_guard = ctx.reserve_scoped(0, "NX GROUP member seen index")?;
-        let mut current = tail;
-        let mut expected_next = 1;
-        let mut complete = true;
-        while current != 1 {
-            ctx.charge_work(1, "NX GROUP member chain")?;
-            if seen.contains(&current) {
-                complete = false;
-                break;
-            }
-            seen_guard.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>() * 4,
-            ))?;
-            ctx.insert_btree_set(&mut seen, current, "NX GROUP member seen index")?;
-            let Some(list_record) = unique_record(current) else {
-                complete = false;
-                break;
-            };
-            let crate::deltas::record_family::RecordFamily::Type91 { references } =
-                &list_record.family
-            else {
-                complete = false;
-                break;
-            };
-            if references[0] != group_xmt || references[5] != expected_next {
-                complete = false;
-                break;
-            }
-            let member_xmt = references[1];
-            let Some(member_record) = unique_record(member_xmt) else {
-                complete = false;
-                break;
-            };
-            let Some(target) = GroupMemberTarget::from_record(&member_record.family) else {
-                complete = false;
-                break;
-            };
-            ctx.reserve_scoped_vec(
-                &mut chain_guard,
-                &mut reverse_chain,
-                1,
-                "NX GROUP member chain",
-            )?;
-            reverse_chain.push((current, member_xmt, target));
-            expected_next = current;
-            current = references[4];
-        }
-        if !complete || reverse_chain.is_empty() {
-            continue;
-        }
-        reverse_chain.reverse();
-        for (ordinal, (list_record_xmt, member_xmt, target)) in
-            reverse_chain.into_iter().enumerate()
-        {
-            let Ok(ordinal_u32) = u32::try_from(ordinal) else {
-                continue;
-            };
-            ctx.reserve_vec(members, 1, "NX GROUP members")?;
-            members.push(ParasolidGroupMember {
-                id: group_member_id(
-                    ctx,
-                    partition_stream_ordinal,
-                    group_node_id,
-                    group_xmt,
-                    ordinal,
-                )?,
-                partition_stream_ordinal,
-                group_xmt,
-                group_node_id,
-                ordinal: ordinal_u32,
-                list_record_xmt,
-                member_xmt,
-                target,
-            });
-        }
-    }
-    Ok(())
-}
-
 fn group_member_id(
     ctx: &DecodeContext<'_>,
-    partition_stream_ordinal: u32,
+    primary_stream_ordinal: u32,
     group_node_id: u32,
     group_xmt: u32,
     ordinal: usize,
@@ -429,7 +320,7 @@ fn group_member_id(
     };
     let length = "nx:s"
         .len()
-        .checked_add(digits(u64::from(partition_stream_ordinal)))
+        .checked_add(digits(u64::from(primary_stream_ordinal)))
         .and_then(|length| length.checked_add(":parasolid-group-member#".len()))
         .and_then(|length| length.checked_add(digits(u64::from(group_node_id))))
         .and_then(|length| length.checked_add(1 + digits(u64::from(group_xmt))))
@@ -438,115 +329,25 @@ fn group_member_id(
         })
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP member identity", 0, 1))?;
     let mut id = ctx.retained_string(length, "NX GROUP member identity")?;
-    write!(&mut id, "nx:s{partition_stream_ordinal}:parasolid-group-member#{group_node_id}-{group_xmt}-{ordinal}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX GROUP member identity", 0, 1))?;
+    write!(
+        &mut id,
+        "nx:s{primary_stream_ordinal}:parasolid-group-member#{group_node_id}-{group_xmt}-{ordinal}"
+    )
+    .map_err(|_| ctx.refuse_codec_limit("write NX GROUP member identity", 0, 1))?;
     Ok(id)
 }
 
-fn apply_group_state_events(
-    ctx: &DecodeContext<'_>,
-    records: &mut BTreeMap<u32, crate::deltas::Record>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    bytes: &[u8],
-) -> Result<(), CodecError> {
-    enum Event {
-        Record(crate::deltas::Record),
-        Tombstone(u32),
-    }
-    let census = crate::deltas::census::walk(ctx, bytes)?.into_events();
-    let count = census
-        .records
-        .len()
-        .checked_add(census.tombstones.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
-    let bytes = count
-        .checked_mul(std::mem::size_of::<(usize, Event)>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
-    let _events_guard = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX GROUP state events",
-    )?;
-    let mut events = ctx.collection_vec(count, "NX GROUP state events")?;
-    for record in census.records {
-        events.push((record.offset, Event::Record(record)));
-    }
-    for tombstone in census.tombstones {
-        events.push((tombstone.offset, Event::Tombstone(tombstone.xmt)));
-    }
-    ctx.stable_sort_by(
-        &mut events,
-        |(first, _), (second, _)| first.cmp(second),
-        |_| 0,
-        "sort NX GROUP state events",
-    )?;
-    for (_, event) in events {
-        match event {
-            Event::Record(record) => {
-                if !records.contains_key(&record.xmt) {
-                    ctx.charge_collection_items(1, "NX GROUP current record index")?;
-                    reservation.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<(u32, crate::deltas::Record)>() * 4,
-                    ))?;
-                }
-                records.insert(record.xmt, record);
-            }
-            Event::Tombstone(xmt) => {
-                records.remove(&xmt);
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Resolve current GROUP membership from partition and ordered deltas events.
-pub(super) fn parasolid_group_members(
-    ctx: &DecodeContext<'_>,
-    streams: &[Stream],
-    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+pub(super) fn resolve_group_members(
+    members: &mut [ParasolidGroupMember],
     parsed: &ParsedStreams<'_>,
-) -> Result<Vec<ParasolidGroupMember>, CodecError> {
-    let mut members = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if stream.kind() != crate::parasolid::StreamKind::Partition {
-            continue;
-        }
-        let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
+) {
+    for member in members {
+        let Ok(primary) = usize::try_from(member.primary_stream_ordinal) else {
             continue;
         };
-        let mut current = BTreeMap::new();
-        let mut current_guard = ctx.reserve_scoped(0, "NX GROUP current record index")?;
-        apply_group_state_events(ctx, &mut current, &mut current_guard, &stream.inflated)?;
-        let mut complete = true;
-        for delta in delta_pairs.get(&stream_ordinal).into_iter().flatten() {
-            let Some(stream) = streams.get(*delta) else {
-                complete = false;
-                break;
-            };
-            apply_group_state_events(ctx, &mut current, &mut current_guard, &stream.inflated)?;
-        }
-        if !complete {
-            continue;
-        }
-        let count = current.len();
-        let bytes = count
-            .checked_mul(std::mem::size_of::<crate::deltas::Record>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP current records", 0, 1))?;
-        let _records_guard = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX GROUP current records",
-        )?;
-        let mut records = ctx.collection_vec(count, "NX GROUP current records")?;
-        records.extend(current.into_values());
-        group_members_from_records(ctx, stream_ordinal_u32, &records, &mut members)?;
-    }
-    for member in &mut members {
-        let Ok(partition) = usize::try_from(member.partition_stream_ordinal) else {
-            continue;
-        };
-        let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
+        let graph = parsed.stream(primary).view_for_geometry().graph.as_ref();
         member.target = member.target.resolve(graph, member.member_xmt);
     }
-    Ok(members)
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
