@@ -5,7 +5,7 @@ use super::component_paths::{
 };
 use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
-use super::scalars::{feature_object_name, FeatureObjectNames};
+use super::scalars::FeatureObjectNames;
 use super::selections::{
     compact_general_curve_ref_at, compact_heterogeneous_component_path,
     compact_mixed_component_path, compact_profile_general_curve_ref_at,
@@ -789,7 +789,7 @@ fn history_object_offsets(
     let names = FeatureObjectNames::new(&lane.names);
     let mut objects = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        let Some(name) = names.get(feature.source_value(), &feature.name) else {
+        let Some(name) = names.of(feature) else {
             continue;
         };
         let id = feature.id.clone();
@@ -855,9 +855,10 @@ pub(crate) fn project_surface_sweep_profiles(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
+        let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in &history_features {
-            if let Some(name) = feature_object_name(feature, lane) {
+            if let Some(name) = names.of(feature) {
                 objects.push((name.offset, *feature));
             }
         }

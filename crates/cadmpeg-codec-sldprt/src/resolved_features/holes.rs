@@ -6,7 +6,7 @@ use super::grid::{quantize, GridCoordinate};
 use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
-use super::scalars::{feature_object_name, FeatureObjectNames};
+use super::scalars::{feature_object_name, FeatureObjectNames, FeatureObjectStarts};
 use super::transforms::sketch_frame_marker_transform;
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
@@ -55,6 +55,7 @@ pub(crate) fn project_helix_axes(
     for feature in histories.iter().flat_map(|history| &history.features) {
         records.insert(feature.id.as_str(), feature);
     }
+    let mut lane_objects = None;
     for model_feature in model_features {
         let FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
             axial_rise,
@@ -72,21 +73,23 @@ pub(crate) fn project_helix_axes(
         let Some(record) = records.get(native_ref).copied() else {
             continue;
         };
+        let lane_objects = lane_objects.get_or_insert_with(|| {
+            lanes
+                .iter()
+                .map(|lane| {
+                    let names = FeatureObjectNames::new(&lane.names);
+                    let starts = FeatureObjectStarts::new(histories, &names);
+                    (names, starts)
+                })
+                .collect::<Vec<_>>()
+        });
         let mut meshes = Vec::new();
-        for lane in lanes {
-            let Some(name) = feature_object_name(record, lane) else {
+        for (lane, (names, starts)) in lanes.iter().zip(lane_objects.iter()) {
+            let Some(name) = names.of(record) else {
                 continue;
             };
             let start = usize::try_from(name.offset).ok();
-            let end = histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .filter_map(|feature| feature_object_name(feature, lane))
-                .filter(|candidate| candidate.offset > name.offset)
-                .map(|candidate| candidate.offset)
-                .min()
-                .and_then(|offset| usize::try_from(offset).ok())
-                .unwrap_or(lane.native_payload.len());
+            let end = starts.end(name.offset, lane.native_payload.len());
             let Some(object) = start.and_then(|start| lane.native_payload.get(start..end)) else {
                 continue;
             };
@@ -384,20 +387,14 @@ fn hole_profile_from_position_source<'a>(
                     continue;
                 }
                 let names = FeatureObjectNames::new(&lane.names);
-                let Some(position_offset) = names
-                    .get(position.source_value(), &position.name)
-                    .map(|name| name.offset)
-                else {
+                let Some(position_offset) = names.of(position).map(|name| name.offset) else {
                     return Ok(None);
                 };
                 let mut minimum = None;
                 let mut successor = None;
                 let mut ambiguous = false;
                 for candidate in &history.features {
-                    let Some(offset) = names
-                        .get(candidate.source_value(), &candidate.name)
-                        .map(|name| name.offset)
-                    else {
+                    let Some(offset) = names.of(candidate).map(|name| name.offset) else {
                         continue;
                     };
                     if offset <= position_offset {
@@ -1741,17 +1738,22 @@ fn hole_position_feature<'a>(
         source = Some(candidate);
     }
     let source = source?;
+    let lane_names = lanes
+        .iter()
+        .map(|lane| FeatureObjectNames::new(&lane.names))
+        .collect::<Vec<_>>();
     let mut position = None;
     for candidate in histories.iter().flat_map(|history| &history.features) {
         if classify(candidate) != Some(FeatureClass::Sketch) {
             continue;
         }
         let mut matches = false;
-        for lane in lanes {
+        for names in &lane_names {
             let candidate_source = if let Some(source) = candidate.source_value() {
                 Some(source)
             } else {
-                feature_object_name(candidate, lane)
+                names
+                    .of(candidate)
                     .and_then(|name| name.object_id.and_then(ObjectId::value))
             };
             if candidate_source == Some(source) {
@@ -4142,13 +4144,14 @@ pub(super) fn feature_object_byte_ranges<'a>(
     histories: &'a [crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> HashMap<&'a str, (usize, usize, usize)> {
+    let names = FeatureObjectNames::new(&lane.names);
     let mut objects = Vec::new();
     for (input_index, feature) in histories
         .iter()
         .flat_map(|history| &history.features)
         .enumerate()
     {
-        let Some(name) = feature_object_name(feature, lane) else {
+        let Some(name) = names.of(feature) else {
             continue;
         };
         objects.push((name.offset, input_index, feature));

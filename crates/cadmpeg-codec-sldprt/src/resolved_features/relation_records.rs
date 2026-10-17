@@ -1,6 +1,6 @@
 //! Relation instance records and scalar roles.
 
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::SKETCH_POINT_TOLERANCE;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::classify::is_history_metadata_record;
@@ -23,13 +23,14 @@ pub(super) fn feature_intervals(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Vec<(u64, Option<u64>, String)> {
+    let names = FeatureObjectNames::new(&lane.names);
     let mut starts = Vec::new();
     for history in histories {
         for feature in &history.features {
             if is_history_metadata_record(feature, &history.features) {
                 continue;
             }
-            if let Some(name) = feature_object_name(feature, lane) {
+            if let Some(name) = names.of(feature) {
                 starts.push((name.offset, feature.id.clone()));
             }
         }

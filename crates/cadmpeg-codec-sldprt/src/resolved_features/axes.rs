@@ -9,7 +9,7 @@ use super::endpoints::{
     wide_indexed_curve_endpoint_indices,
 };
 use super::grid::quantize;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::transforms::{sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
@@ -870,6 +870,10 @@ pub(crate) fn enrich_history_revolution_inputs(
     for feature in histories.iter().flat_map(|history| &history.features) {
         *name_counts.entry(feature.name.clone()).or_default() += 1;
     }
+    let lane_names = lanes
+        .iter()
+        .map(|lane| FeatureObjectNames::new(&lane.names))
+        .collect::<Vec<_>>();
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -879,10 +883,8 @@ pub(crate) fn enrich_history_revolution_inputs(
             continue;
         }
         let mut object_ids = Vec::new();
-        for lane in lanes {
-            if let Some(id) =
-                feature_object_name(feature, lane).and_then(|name| name.object_id?.value())
-            {
+        for names in &lane_names {
+            if let Some(id) = names.of(feature).and_then(|name| name.object_id?.value()) {
                 object_ids.push(id);
             }
         }
@@ -902,9 +904,9 @@ pub(crate) fn enrich_history_revolution_inputs(
             .filter(|feature| is_profile_feature_object(feature))
         {
             for source in feature.source_value().into_iter().chain(
-                lanes
+                lane_names
                     .iter()
-                    .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value()),
+                    .filter_map(|names| names.of(feature)?.object_id?.value()),
             ) {
                 sources.insert(source);
             }
@@ -917,11 +919,11 @@ pub(crate) fn enrich_history_revolution_inputs(
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
     let mut inputs =
         HashMap::<String, Vec<Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)>>>::new();
-    for lane in lanes {
+    for (lane, names) in lanes.iter().zip(&lane_names) {
         for history in histories.iter() {
             let mut objects = Vec::new();
             for feature in &history.features {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(feature) {
                     objects.push((name.offset, feature));
                 }
             }
@@ -938,7 +940,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .and_then(|index| objects.get(index))
                     .map(|(_, feature)| *feature)
                     .filter(|feature| is_profile_feature_object(feature))
-                    .and_then(|feature| feature_object_name(feature, lane)?.object_id?.value());
+                    .and_then(|feature| names.of(feature)?.object_id?.value());
                 let Some(known_profiles) = profile_source_owner
                     .get(feature.id.as_str())
                     .and_then(|owner| profile_sources.get(*owner))
