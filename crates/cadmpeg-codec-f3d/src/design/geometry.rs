@@ -36,8 +36,8 @@ macro_rules! geometric {
 /// of one decode. An exhausted cap skips the arrangement.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
 
-/// Local cap on the certified tubes of one arc or NURBS span. A span that
-/// needs more skips the certification that uses it.
+/// Local cap on the certified tubes of one NURBS span. A span that needs
+/// more skips the certification that uses it.
 const MAX_SUBDIVISIONS: f64 = 100_000.0;
 
 /// Local work caps of the sketch-profile geometry that binds extrude profile
@@ -363,16 +363,16 @@ fn sketch_arrangement_faces(
     if edges.len() < 3 {
         return Ok(None);
     }
-    let mut edge_tubes = Vec::new();
+    let mut edge_pieces = Vec::new();
     for edge in &edges {
-        let Some(tubes) = arrangement_edge_tubes(edge, entities, tolerance, work, ctx)? else {
+        let Some(pieces) = arrangement_edge_pieces(edge, entities, tolerance, work, ctx)? else {
             return Ok(None);
         };
-        edge_tubes.push(tubes);
+        edge_pieces.push(pieces);
     }
     let mut edge_bounds = Vec::new();
-    for tubes in &edge_tubes {
-        let bounds = geometric!(certified_tube_bounds(tubes));
+    for pieces in &edge_pieces {
+        let bounds = geometric!(certified_pieces_bounds(pieces));
         edge_bounds.push(bounds);
     }
     for left_index in 0..edges.len() {
@@ -409,13 +409,7 @@ fn sketch_arrangement_faces(
             {
                 continue;
             }
-            if !arrangement_edges_proven_disjoint(
-                left,
-                right,
-                entities,
-                &edge_tubes[left_index],
-                &edge_tubes[right_index],
-            ) {
+            if !certified_pieces_separated(&edge_pieces[left_index], &edge_pieces[right_index]) {
                 return Ok(None);
             }
         }
@@ -1192,92 +1186,51 @@ fn arrangement_edges_coincident(
     )
 }
 
-fn arrangement_edges_proven_disjoint(
-    left: &SketchArrangementEdge,
-    right: &SketchArrangementEdge,
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
-    left_tubes: &[CertifiedCurveTube],
-    right_tubes: &[CertifiedCurveTube],
-) -> bool {
-    match (
-        arrangement_analytic_segment(left, entities),
-        arrangement_analytic_segment(right, entities),
-    ) {
-        (Some(left), Some(right)) => !boundary_segments_intersect(&left, &right),
-        _ => left_tubes.iter().all(|left| {
-            right_tubes.iter().all(|right| {
-                segment_distance((left.start, left.end), (right.start, right.end))
-                    > left.error + right.error
-            })
-        }),
-    }
-}
-
-fn certified_tube_bounds(tubes: &[CertifiedCurveTube]) -> Option<[Point2; 2]> {
-    let first = tubes.first()?;
-    Some(tubes.iter().fold(
+fn certified_pieces_bounds(pieces: &[CertifiedPiece]) -> Option<[Point2; 2]> {
+    let mut bounds = pieces.iter().map(CertifiedPiece::bounds);
+    let first = bounds.next()?;
+    Some(bounds.fold(first, |[low, high], [piece_low, piece_high]| {
         [
-            Point2::new(
-                first.start.u.min(first.end.u) - first.error,
-                first.start.v.min(first.end.v) - first.error,
-            ),
-            Point2::new(
-                first.start.u.max(first.end.u) + first.error,
-                first.start.v.max(first.end.v) + first.error,
-            ),
-        ],
-        |mut bounds, tube| {
-            bounds[0].u = bounds[0].u.min(tube.start.u.min(tube.end.u) - tube.error);
-            bounds[0].v = bounds[0].v.min(tube.start.v.min(tube.end.v) - tube.error);
-            bounds[1].u = bounds[1].u.max(tube.start.u.max(tube.end.u) + tube.error);
-            bounds[1].v = bounds[1].v.max(tube.start.v.max(tube.end.v) + tube.error);
-            bounds
-        },
-    ))
+            Point2::new(low.u.min(piece_low.u), low.v.min(piece_low.v)),
+            Point2::new(high.u.max(piece_high.u), high.v.max(piece_high.v)),
+        ]
+    }))
 }
 
-fn arrangement_edge_tubes(
+/// Certify one arrangement edge: a line or arc exactly, or a whole
+/// non-periodic NURBS as chord tubes.
+fn arrangement_edge_pieces(
     edge: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
+) -> Result<Option<Vec<CertifiedPiece>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
+    if let Some(segment) = arrangement_analytic_segment(edge, entities) {
+        return Ok(Some(vec![CertifiedPiece::Exact(segment)]));
+    }
     let entity = geometric!(entities
         .iter()
         .find(|entity| entity.id() == &edge.boundary.entity));
+    let SketchGeometryDefinition::Nurbs { curve } = entity.geometry.definition() else {
+        return Ok(None);
+    };
+    if curve.periodic()
+        || sketch_geometry_parameter_range(&entity.geometry)
+            != Some(edge.boundary.parameter_range.endpoints())
+    {
+        return Ok(None);
+    }
     let scale = edge
         .polyline
         .iter()
         .flat_map(|point| [point.u.abs(), point.v.abs()])
         .fold(1.0_f64, f64::max);
     let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
-    Ok(match entity.geometry.definition() {
-        SketchGeometryDefinition::Line { .. } => Some(vec![CertifiedCurveTube {
-            start: edge.polyline[0],
-            end: *geometric!(edge.polyline.last()),
-            error: 0.0,
-        }]),
-        SketchGeometryDefinition::Circle { center, radius }
-        | SketchGeometryDefinition::Arc { center, radius, .. } => certified_arc_tubes(
-            center.get(),
-            *radius,
-            edge.boundary.parameter_range.endpoints()[0],
-            edge.boundary.parameter_range.endpoints()[1],
-            target_error,
-            work,
-        ),
-        SketchGeometryDefinition::Nurbs { curve }
-            if !curve.periodic()
-                && sketch_geometry_parameter_range(&entity.geometry)
-                    == Some(edge.boundary.parameter_range.endpoints()) =>
-        {
-            return certified_nurbs_tubes(curve, target_error, work, ctx);
-        }
-        _ => None,
-    })
+    let tubes = geometric!(certified_nurbs_tubes(curve, target_error, work, ctx)?);
+    Ok(Some(tubes.into_iter().map(CertifiedPiece::Tube).collect()))
 }
 
 fn arrangement_analytic_segment(
@@ -1893,6 +1846,28 @@ impl CertifiedPiece {
         boundary_segment_endpoints(&self.segment()).1
     }
 
+    /// A box around the piece: an arc's whole circle, or a tube's chord
+    /// widened by its error.
+    fn bounds(&self) -> [Point2; 2] {
+        let (first, second, margin) = match *self {
+            Self::Exact(ProfileBoundarySegment::Line { start, end }) => (start, end, 0.0),
+            Self::Exact(ProfileBoundarySegment::Arc { center, radius, .. }) => {
+                (center, center, radius.get())
+            }
+            Self::Tube(tube) => (tube.start, tube.end, tube.error),
+        };
+        [
+            Point2::new(
+                first.u.min(second.u) - margin,
+                first.v.min(second.v) - margin,
+            ),
+            Point2::new(
+                first.u.max(second.u) + margin,
+                first.v.max(second.v) + margin,
+            ),
+        ]
+    }
+
     /// Whether `point` is off the piece, or outside the tube of a NURBS span.
     fn clears_point(&self, point: Point2) -> bool {
         match self {
@@ -2010,42 +1985,6 @@ fn certified_profile_loop(
         return Ok(None);
     }
     Ok(CertifiedProfileLoop::new(pieces))
-}
-
-fn certified_arc_tubes(
-    center: Point2,
-    radius: PositiveLength,
-    start: f64,
-    end: f64,
-    target_error: f64,
-    work: &ProfileGeometryWork,
-) -> Option<Vec<CertifiedCurveTube>> {
-    let sweep = end - start;
-    if !sweep.is_finite() || sweep == 0.0 {
-        return None;
-    }
-    let radius = radius.get();
-    let count = subdivision_count(radius * sweep.abs(), target_error, work)?;
-    let count_float = f64_from_index(count)?;
-    let error = radius * sweep.abs() / count_float;
-    let mut tubes = Vec::new();
-    for index in 0..count {
-        let parameter = |ordinal: usize| {
-            f64_from_index(ordinal).map(|ordinal| start + sweep * ordinal / count_float)
-        };
-        let point = |angle: f64| {
-            Point2::new(
-                center.u + radius * angle.cos(),
-                center.v + radius * angle.sin(),
-            )
-        };
-        tubes.push(CertifiedCurveTube {
-            start: point(parameter(index)?),
-            end: point(parameter(index + 1)?),
-            error,
-        });
-    }
-    Some(tubes)
 }
 
 fn certified_nurbs_tubes(

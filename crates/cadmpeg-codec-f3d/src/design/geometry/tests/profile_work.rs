@@ -42,32 +42,6 @@ fn subdivision_count_skips_a_span_past_max_subdivisions() {
     assert_one_densification_loss(&work);
 }
 
-#[test]
-fn certified_arc_tubes_skip_an_arc_past_max_subdivisions() {
-    let work = super::local_profile_work();
-    let radius = positive_radius(1.0);
-    let within = super::super::certified_arc_tubes(
-        Point2::new(0.0, 0.0),
-        radius,
-        0.0,
-        MAX_SUBDIVISIONS,
-        1.0,
-        &work,
-    );
-    assert_eq!(within.map(|tubes| tubes.len()), Some(100_000));
-    let past = super::super::certified_arc_tubes(
-        Point2::new(0.0, 0.0),
-        radius,
-        0.0,
-        MAX_SUBDIVISIONS + 1.0,
-        1.0,
-        &work,
-    );
-    assert!(past.is_none());
-    work.finish_selection();
-    assert_one_densification_loss(&work);
-}
-
 /// A triangle bounded by a NURBS with optional `weights` and a line, so its
 /// boundary is a certified loop, and optionally a circle inside it.
 fn spline_triangle_sketch(
