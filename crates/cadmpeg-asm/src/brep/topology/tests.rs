@@ -151,11 +151,83 @@ fn a_face_chain_lists_only_the_faces_its_shell_owns() {
     let by_index = index_records(&records);
     let kept = HashSet::from([2, 3]);
     let format = crate::asm_format!("f3d");
+    let subshells = std::collections::HashMap::new();
     assert_eq!(
-        super::shell_faces(&records[0], &by_index, &kept, format).len(),
+        super::shell_faces(&records[0], &by_index, &subshells, &kept, format).len(),
         2
     );
-    assert!(super::shell_faces(&records[1], &by_index, &kept, format).is_empty());
+    assert!(super::shell_faces(&records[1], &by_index, &subshells, &kept, format).is_empty());
+}
+
+#[test]
+fn shells_sharing_one_subshell_face_chain_list_it_once_in_linear_time() {
+    // Walking the shared tree once per shell would list 2^24 faces.
+    const SHELLS: usize = 1 << 12;
+    const SUBSHELLS: usize = 1 << 12;
+    const FACES: usize = 1 << 12;
+    let first_subshell = SHELLS;
+    let first_face = first_subshell + SUBSHELLS;
+    let mut records = (0..SHELLS)
+        .map(|shell| ref_record(shell, "shell", &[-1, -1, -1, -1, as_ref(first_subshell)]))
+        .collect::<Vec<_>>();
+    // Every subshell is a child of shell 0 and points at the same face chain.
+    records.extend((0..SUBSHELLS).map(|offset| {
+        let subshell = first_subshell + offset;
+        let next = if offset + 1 < SUBSHELLS {
+            as_ref(subshell + 1)
+        } else {
+            -1
+        };
+        ref_record(
+            subshell,
+            "subshell",
+            &[-1, -1, -1, 0, next, -1, as_ref(first_face)],
+        )
+    }));
+    records.extend((0..FACES).map(|offset| {
+        let face = first_face + offset;
+        let next = if offset + 1 < FACES {
+            as_ref(face + 1)
+        } else {
+            -1
+        };
+        ref_record(face, "face", &[-1, -1, -1, next, -1, 0])
+    }));
+    let by_index = index_records(&records);
+    let subshells = super::subshell_ancestor_shells(&records, &by_index).unwrap();
+    let kept = (first_face..first_face + FACES).map(as_ref).collect();
+    let format = crate::asm_format!("f3d");
+    let listed = records[..SHELLS]
+        .iter()
+        .map(|shell| super::shell_faces(shell, &by_index, &subshells, &kept, format).len())
+        .collect::<Vec<_>>();
+    assert_eq!(listed[0], FACES);
+    assert!(listed[1..].iter().all(|&faces| faces == 0));
+}
+
+#[test]
+fn nested_subshells_list_every_face_once() {
+    let records = [
+        ref_record(0, "shell", &[-1, -1, -1, -1, 1, 5]),
+        ref_record(1, "subshell", &[-1, -1, -1, 0, 2, 3, 6]),
+        ref_record(2, "subshell", &[-1, -1, -1, 0, -1, -1, 7]),
+        ref_record(3, "subshell", &[-1, -1, -1, 1, 4, -1, 8]),
+        ref_record(4, "subshell", &[-1, -1, -1, 1, -1, -1, 10]),
+        ref_record(5, "face", &[-1, -1, -1, -1, -1, 0]),
+        ref_record(6, "face", &[-1, -1, -1, -1, -1, 0, 1]),
+        ref_record(7, "face", &[-1, -1, -1, -1, -1, 2, 2]),
+        ref_record(8, "face", &[-1, -1, -1, 9, -1, 0, 3]),
+        ref_record(9, "face", &[-1, -1, -1, -1, -1, 3, 3]),
+        ref_record(10, "face", &[-1, -1, -1, -1, -1, 4, 4]),
+    ];
+    let by_index = index_records(&records);
+    let subshells = super::subshell_ancestor_shells(&records, &by_index).unwrap();
+    let kept = (5..=10).collect();
+    let format = crate::asm_format!("f3d");
+    assert_eq!(
+        super::shell_faces(&records[0], &by_index, &subshells, &kept, format),
+        [5, 6, 8, 9, 10, 7].map(|face| super::FaceId::from(crate::brep::id(format, face)))
+    );
 }
 
 #[test]

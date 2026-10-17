@@ -4973,6 +4973,7 @@ pub fn emit_containers(
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| retained_attribute_name(ctx, entity, by_index);
     let mut emitted_shells = HashSet::new();
+    let subshell_shells = subshell_ancestor_shells(records, by_index)?;
 
     for r in records.iter().filter(|record| record.head() == "shell") {
         let i = i64::try_from(r.index).map_err(|_| {
@@ -4982,7 +4983,7 @@ pub fn emit_containers(
             retain_record(ctx, out, r, bytes, format)?;
             continue;
         };
-        let faces = shell_faces(r, by_index, kept_faces, format);
+        let faces = shell_faces(r, by_index, &subshell_shells, kept_faces, format);
         let wire_edges = wire_edges_by_shell
             .get(&i)
             .into_iter()
