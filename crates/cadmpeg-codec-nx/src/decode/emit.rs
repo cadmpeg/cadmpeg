@@ -1955,7 +1955,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_stream_metadata_preserves_identity_and_digest_under_service_profile() {
+    fn unknown_stream_metadata_preserves_identity_and_digest() {
         let stream = preview_stream(vec![7]);
 
         let unknown = unknown_stream_metadata(0, &stream).unwrap();
