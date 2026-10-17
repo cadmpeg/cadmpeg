@@ -5263,6 +5263,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             };
             let states = history_state_index(history);
             let mut body_closures = HistoricalBodyClosureCache::default();
+            let mut complete_bodies = None;
             for (position, state_index) in group {
                 let (Some(operand), Some(state)) = (
                     operands.get_mut(position),
@@ -5279,6 +5280,16 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     source,
                     &mut body_closures,
                 );
+                let Some(body_slot) = operand.resolved_body_slot else {
+                    continue;
+                };
+                if let Some(faces) = complete_bodies
+                    .get_or_insert_with(|| CompleteBodyIndex::new(topology))
+                    .faces(body_slot)
+                {
+                    operand.resolved_body_state_id = Some(previous.state_id);
+                    operand.resolved_body_face_slots = faces;
+                }
             }
         },
     );
@@ -5325,11 +5336,12 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
     }
     let mut jobs = Vec::new();
     for (position, operand) in operands.iter_mut().enumerate() {
-        if operand.resolved_body_slot.is_none() {
-            operand.resolved_body_slot = identity(operand)?
-                .and_then(|identity| resolved_by_identity.get(&identity).copied())
-                .flatten();
+        if operand.resolved_body_slot.is_some() {
+            continue;
         }
+        operand.resolved_body_slot = identity(operand)?
+            .and_then(|identity| resolved_by_identity.get(&identity).copied())
+            .flatten();
         let Some(body_slot) = operand.resolved_body_slot else {
             continue;
         };
