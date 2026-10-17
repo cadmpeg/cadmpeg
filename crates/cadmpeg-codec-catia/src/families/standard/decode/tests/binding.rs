@@ -31,6 +31,7 @@ use crate::families::standard::decode::standard_face_boundary_witnesses;
 use crate::families::standard::decode::standard_face_point_membership;
 use crate::families::standard::decode::standard_freeform_e5_carrier_ids;
 use crate::families::standard::decode::standard_id;
+use crate::families::standard::decode::standard_point_faces;
 use crate::families::standard::decode::standard_serialized_endpoint_pairs;
 use crate::families::standard::decode::standard_successor_endpoint_points;
 use crate::families::standard::decode::unique_native_identity_points;
@@ -999,6 +1000,30 @@ fn cached_face_point_membership_matches_the_source_predicate() {
             )
             .expect("surface evaluator accepts the fixture")
     }));
+}
+
+#[test]
+fn point_faces_list_each_point_member_face_in_ascending_order() {
+    let points = (0..3)
+        .map(|point| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#point-{point}")).expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(point), 0.0, 0.0))
+                    .expect("a finite position is a point"),
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+    let membership = [
+        vec![true, false, true],
+        Vec::new(),
+        vec![false, false, true],
+        vec![true, true, true],
+    ];
+    assert_eq!(
+        standard_point_faces(&membership, &points),
+        [vec![0, 3], vec![3], vec![0, 2, 3]]
+    );
 }
 
 #[test]
