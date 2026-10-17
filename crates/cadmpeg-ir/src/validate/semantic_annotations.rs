@@ -2,7 +2,7 @@
 //! Semantic annotation graph and numeric validation.
 
 use super::record_finding;
-use crate::index::identities::BorrowedIdentities;
+use crate::index::identities::IdentitySet;
 
 use crate::document::CadIr;
 use crate::report::{
@@ -12,7 +12,7 @@ use crate::report::{
 
 pub(super) fn check_semantic_annotations(
     ir: &CadIr,
-    all_ids: &BorrowedIdentities<'_>,
+    all_ids: &dyn IdentitySet,
     findings: &mut Vec<Finding>,
 ) {
     let mut orders = std::collections::BTreeSet::new();
@@ -77,7 +77,9 @@ mod tests {
     #[test]
     fn semantic_annotations_report_the_second_duplicate_order() {
         let ir = fixture();
-        let ids = super::BorrowedIdentities::build(|add| add("test:source:unknown#record", ()));
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
         let mut findings = Vec::new();
         check_semantic_annotations(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);
