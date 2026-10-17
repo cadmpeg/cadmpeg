@@ -103,7 +103,11 @@ Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
 storage are not retained bytes; per-input bounds, entity charges, and local
 work caps bound them. A new copy of bytes that the decoded document keeps
-must call `retain_bytes` before the copy.
+must call `retain_bytes` before the copy. A native record's text may be
+counted twice toward retained bytes, once by the codec before attach and
+once by the IR at attach (Rhino link bytes and `from_typed_for_decode`
+JSON copies), so the retained ceiling is conservative by at most that
+text.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
 parse it, charge its depth to the session, and bound the tree's storage by
