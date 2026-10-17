@@ -7373,17 +7373,42 @@ fn changed_family_refs(delta: &AsmHistoricalTopologyDelta, deleted: bool) -> BTr
 
 /// The bodies whose topological closure contains each entity of one historical
 /// snapshot.
+#[derive(Default)]
 struct HistoricalBodyIncidence {
-    bodies_by_entity: HashMap<i64, Vec<i64>>,
+    /// The first body whose closure reaches each entity.
+    first_body: HashMap<i64, i64>,
+    /// Later bodies, in closure order, for entities that several bodies reach.
+    later_bodies: HashMap<i64, Vec<i64>>,
 }
 
 impl HistoricalBodyIncidence {
+    /// Record that `body`'s closure reaches `entity`. One body's entities are
+    /// added before the next body's.
+    fn add(&mut self, body: i64, entity: i64) {
+        match self.first_body.entry(entity) {
+            std::collections::hash_map::Entry::Vacant(first) => {
+                first.insert(body);
+            }
+            std::collections::hash_map::Entry::Occupied(first) => {
+                if *first.get() != body {
+                    let later = self.later_bodies.entry(entity).or_default();
+                    if later.last() != Some(&body) {
+                        later.push(body);
+                    }
+                }
+            }
+        }
+    }
+
     /// Insert into `affected` every body whose closure contains one of
     /// `entities`.
     fn insert_bodies_touching(&self, entities: &BTreeSet<i64>, affected: &mut BTreeSet<i64>) {
         for entity in entities {
-            if let Some(bodies) = self.bodies_by_entity.get(entity) {
-                affected.extend(bodies.iter().copied());
+            if let Some(&body) = self.first_body.get(entity) {
+                affected.insert(body);
+                if let Some(later) = self.later_bodies.get(entity) {
+                    affected.extend(later.iter().copied());
+                }
             }
         }
     }
@@ -7465,55 +7490,51 @@ fn historical_body_incidence(topology: &AsmHistoricalTopology) -> Option<Histori
     let edge_curves = optional_carrier(&topology.edge_curves);
     let coedge_pcurves = optional_carrier(&topology.coedge_pcurves);
     let vertex_points = carrier(&topology.vertex_points);
-    let mut bodies_by_entity = HashMap::<i64, Vec<i64>>::new();
+    let mut incidence = HistoricalBodyIncidence::default();
     for &body in &topology.bodies {
-        let mut closure = HashSet::new();
-        closure.insert(body);
+        incidence.add(body, body);
         for &region in *history_some!(body_regions.get(&body)) {
-            closure.insert(region);
+            incidence.add(body, region);
             for &shell in *history_some!(region_shells.get(&region)) {
-                closure.insert(shell);
+                incidence.add(body, shell);
                 let wire_edges = *history_some!(shell_wire_edges.get(&shell));
                 let free_vertices = *history_some!(shell_free_vertices.get(&shell));
                 let mut shell_edges = wire_edges.iter().copied().collect::<HashSet<_>>();
                 let mut shell_vertices = free_vertices.iter().copied().collect::<HashSet<_>>();
                 for &face in *history_some!(shell_faces.get(&shell)) {
-                    closure.insert(face);
-                    closure.insert(*history_some!(face_surfaces.get(&face)));
+                    incidence.add(body, face);
+                    incidence.add(body, *history_some!(face_surfaces.get(&face)));
                     for &loop_ in *history_some!(face_loops.get(&face)) {
-                        closure.insert(loop_);
+                        incidence.add(body, loop_);
                         for &coedge in *history_some!(loop_coedges.get(&loop_)) {
-                            closure.insert(coedge);
+                            incidence.add(body, coedge);
                             let coedge_topology = history_some!(coedges.get(&coedge));
 
                             shell_edges.insert(coedge_topology.edge);
                             if let Some(pcurve) = coedge_pcurves.get(&coedge).copied().flatten() {
-                                closure.insert(pcurve);
+                                incidence.add(body, pcurve);
                             }
                         }
                     }
                 }
                 for edge in shell_edges {
-                    closure.insert(edge);
+                    incidence.add(body, edge);
                     let edge_topology = history_some!(edges.get(&edge));
                     for vertex in [edge_topology.start_vertex, edge_topology.end_vertex] {
                         shell_vertices.insert(vertex);
                     }
                     if let Some(curve) = edge_curves.get(&edge).copied().flatten() {
-                        closure.insert(curve);
+                        incidence.add(body, curve);
                     }
                 }
                 for vertex in shell_vertices {
-                    closure.insert(vertex);
-                    closure.insert(*history_some!(vertex_points.get(&vertex)));
+                    incidence.add(body, vertex);
+                    incidence.add(body, *history_some!(vertex_points.get(&vertex)));
                 }
             }
         }
-        for entity in closure {
-            bodies_by_entity.entry(entity).or_default().push(body);
-        }
     }
-    Some(HistoricalBodyIncidence { bodies_by_entity })
+    Some(incidence)
 }
 
 fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {

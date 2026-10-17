@@ -168,6 +168,27 @@ fn body_queries_over_many_bodies_find_every_owner_of_each_entity() {
 }
 
 #[test]
+fn an_entity_one_body_reaches_twice_after_another_body_lists_each_body_once() {
+    use std::collections::BTreeSet;
+
+    let mut topology = wire_row_topology(3);
+    // Body 200's end vertex sits on the point of its start vertex, which body
+    // 100's end vertex also reaches.
+    let end = topology
+        .vertex_points
+        .iter_mut()
+        .find(|binding| binding.entity == 304)
+        .unwrap();
+    end.carrier = 205;
+    let incidence = super::super::historical_body_incidence(&topology).unwrap();
+    assert_eq!(incidence.first_body.get(&205), Some(&100));
+    assert_eq!(incidence.later_bodies.get(&205), Some(&vec![200]));
+    let mut affected = BTreeSet::new();
+    incidence.insert_bodies_touching(&BTreeSet::from([205, 304]), &mut affected);
+    assert_eq!(affected, BTreeSet::from([100, 200]));
+}
+
+#[test]
 fn repeated_body_queries_reuse_incidence_and_validate_each_snapshot() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use std::collections::BTreeSet;
