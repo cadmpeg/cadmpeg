@@ -25,8 +25,20 @@ fn geometric_checks_reuse_the_prepared_index_without_copying_native_identities()
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut findings = Vec::new();
-    super::super::check_pcurve_surface_consistency(&ctx, &index, &mut findings).unwrap();
-    super::super::check_procedural_support_consistency(&ctx, &index, &mut findings).unwrap();
+    super::super::check_pcurve_surface_consistency(
+        &ctx,
+        &index,
+        &crate::eval::admission::ModelEvaluationPass::new(),
+        &mut findings,
+    )
+    .unwrap();
+    super::super::check_procedural_support_consistency(
+        &ctx,
+        &index,
+        &crate::eval::admission::ModelEvaluationPass::new(),
+        &mut findings,
+    )
+    .unwrap();
     assert!(findings.is_empty());
     ctx.finish_session().unwrap();
 }

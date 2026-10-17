@@ -12,19 +12,19 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde_value::Value;
 
-enum AnnotatedEntity<'ctx, 'ir> {
-    Projected(crate::schema::structural::Projection<'ctx>),
+enum AnnotatedEntity<'ir> {
+    Projected(crate::schema::structural::Projection),
     Product(&'ir crate::native::NativeRecord),
     Source(&'ir crate::unknown::UnknownRecord),
 }
 
 macro_rules! define_model_entity_projection {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
-        fn model_entity_projection<'ctx, 'ir>(
-            ctx: &'ctx DecodeContext<'_>,
+        fn model_entity_projection<'ir>(
+            ctx: &DecodeContext<'_>,
             ir: &'ir CadIr,
             wanted: &BorrowedIdentities<'_, bool>,
-            add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ctx, 'ir>) -> Result<(), CodecError>,
+            add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ir>) -> Result<(), CodecError>,
         ) -> Result<(), CodecError> {
             $(for entity in &ir.model.$field {
                 let id = crate::schema::EntitySchema::identity(entity);
@@ -125,12 +125,16 @@ pub(super) fn check_annotations(
             continue;
         };
         let entity = &values[*position];
+        let product_fields = match entity {
+            AnnotatedEntity::Product(product) => Some(product.fields()),
+            AnnotatedEntity::Projected(_) | AnnotatedEntity::Source(_) => None,
+        };
         for path in note.fields().keys() {
             let resolves = match entity {
                 AnnotatedEntity::Projected(value) => field_path_resolves(value, path.as_str()),
-                AnnotatedEntity::Product(product) => {
-                    native_field_path_resolves(product, path.as_str())
-                }
+                AnnotatedEntity::Product(_) => product_fields
+                    .as_ref()
+                    .is_some_and(|fields| native_field_path_resolves(fields, path.as_str())),
                 AnnotatedEntity::Source(source) => {
                     source_field_path_resolves(source, path.as_str())
                 }
@@ -149,7 +153,12 @@ pub(super) fn check_annotations(
     Ok(())
 }
 
-fn native_field_path_resolves(record: &crate::native::NativeRecord, path: &str) -> bool {
+/// Whether `path` names a member of a native record, given the record's
+/// codec-owned fields.
+fn native_field_path_resolves(
+    fields: &serde_json::Map<String, serde_json::Value>,
+    path: &str,
+) -> bool {
     let mut components = path.split('.');
     let Some(first) = components.next() else {
         return false;
@@ -158,10 +167,9 @@ fn native_field_path_resolves(record: &crate::native::NativeRecord, path: &str) 
         return components.next().is_none();
     }
 
-    let Some(field) = record.field(first) else {
+    let Some(mut value) = fields.get(first) else {
         return false;
     };
-    let mut value = &field;
     for component in components {
         value = match value {
             serde_json::Value::Object(object) => {

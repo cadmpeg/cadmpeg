@@ -39,18 +39,6 @@ pub(super) fn any<T>(
     Ok(false)
 }
 
-pub(super) fn find<T>(
-    values: impl IntoIterator<Item = T>,
-    mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
-) -> Result<Option<T>, CodecError> {
-    for value in values {
-        if predicate(&value)? {
-            return Ok(Some(value));
-        }
-    }
-    Ok(None)
-}
-
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::CodecError;
@@ -78,11 +66,6 @@ mod tests {
         );
         assert_eq!(visits.replace(0), 1);
         assert!(super::any([1, 2], |_| Ok(counted(&visits, true))).unwrap());
-        assert_eq!(visits.replace(0), 1);
-        assert_eq!(
-            super::find([1, 2], |value| Ok(counted(&visits, *value == 1))).unwrap(),
-            Some(1)
-        );
         assert_eq!(visits.get(), 1);
     }
 
@@ -94,6 +77,5 @@ mod tests {
             refusal()
         ))));
         assert!(refused(super::any([1], |_| Err(refusal()))));
-        assert!(refused(super::find([1], |_| Err(refusal()))));
     }
 }

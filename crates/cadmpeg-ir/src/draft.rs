@@ -288,7 +288,7 @@ impl ModelDraft {
         }
     }
 
-    /// Validate and append one decoded draft through the charged session owner.
+    /// Validate and append one decoded draft under the decode session.
     pub fn commit_model(
         self,
         base: &mut CadIr,
@@ -505,7 +505,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         })
     }
 
-    /// Read the committed document while its cache reservation remains live.
+    /// Read the committed document.
     pub fn document(&self) -> &CadIr {
         self.state.base.borrow()
     }
@@ -758,11 +758,10 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         let annotations = changes.base();
         let reuse =
             allowed == crate::validate::admit::RHINO_DRAFT_CHECKS && candidate.native.0.is_empty();
-        let mut state = self
-            .state
-            .admission
-            .take()
-            .filter(|state| reuse && state.annotations_admitted);
+        let (mut state, unused) = match self.state.admission.take() {
+            Some(state) if reuse && state.annotations_admitted => (Some(state), None),
+            other => (None, other),
+        };
         if let Some(admitted) = &mut state {
             let mut suffix_annotations = annotations.sparse_transaction();
             macro_rules! select_suffix_annotations {
@@ -820,7 +819,9 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                     allowed,
                 )?,
             };
-            if reuse
+            let accepted = accept(report.as_ref(), changes)?;
+            if accepted.is_ok()
+                && reuse
                 && report
                     .as_ref()
                     .is_ok_and(crate::report::check::ValidationReport::is_ok)
@@ -830,10 +831,13 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                     _ => state = Some(AdmittedState::build(combined, format, unknowns)?),
                 }
             }
-            accept(report.as_ref(), changes)
+            Ok(accepted)
         });
-        if result.as_ref().is_ok_and(Result::is_ok) {
-            self.state.admission = state;
+        // A rejected candidate rolls back to the model these facts describe.
+        match &result {
+            Ok(Ok(_)) => self.state.admission = state,
+            Ok(Err(_)) => self.state.admission = state.or(unused),
+            Err(_) => {}
         }
         result
     }
