@@ -5104,7 +5104,7 @@ fn resolve_bounded_face_recipe_target<'a>(
         .into_iter()
         .flat_map(effective_faces)
         .filter_map(|face| stable_ref(face.as_str()))
-        .filter(|face| topology_faces.contains(face))
+        .filter(|face| topology_faces.contains(*face))
     {
         target_candidates.insert(face);
     }
@@ -5113,7 +5113,7 @@ fn resolve_bounded_face_recipe_target<'a>(
         for face in effective_faces(reference)
             .iter()
             .filter_map(|face| stable_ref(face.as_str()))
-            .filter(|face| topology_faces.contains(face))
+            .filter(|face| topology_faces.contains(*face))
         {
             candidates.insert(face);
         }
@@ -5648,7 +5648,7 @@ fn resolve_direct_face_recipe_clauses(
             for face in candidates
                 .iter()
                 .filter_map(|face| stable_ref(face.as_str()))
-                .filter(|face| topology_faces.contains(face) && changed_faces.contains(face))
+                .filter(|face| topology_faces.contains(*face) && changed_faces.contains(face))
             {
                 eligible.insert(face);
             }
@@ -5819,7 +5819,7 @@ fn profile_face_group_cardinality_candidates(
     for face in changed_faces
         .iter()
         .copied()
-        .filter(|face| preceding_faces.contains(face))
+        .filter(|face| preceding_faces.contains(*face))
     {
         let mut bindings = topology
             .face_surfaces
@@ -6659,21 +6659,21 @@ fn bind_historical_edge_operand<'a>(
         .faces
         .iter()
         .copied()
-        .filter(|face| !preceding_faces.contains(face))
+        .filter(|face| !preceding_faces.contains(*face))
         .collect::<Vec<_>>();
     let result_edges = selection::FamilySlots::new(&result_topology.edges);
     let deleted_edges = topology
         .edges
         .iter()
         .copied()
-        .filter(|edge| !result_edges.contains(edge) && chain_deleted_edges.contains(edge))
+        .filter(|edge| !result_edges.contains(*edge) && chain_deleted_edges.contains(edge))
         .collect::<Vec<_>>();
     let updated_edges = topology
         .edges
         .iter()
         .copied()
         .filter(|edge| {
-            result_edges.contains(edge)
+            result_edges.contains(*edge)
                 && (chain_deleted_edges.contains(edge) || chain_updated_edges.contains(edge))
         })
         .collect::<Vec<_>>();

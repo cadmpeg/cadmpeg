@@ -456,10 +456,10 @@ impl<'a> FamilySlots<'a> {
         }
     }
 
-    pub(super) fn contains(&self, slot: &i64) -> bool {
+    pub(super) fn contains(&self, slot: i64) -> bool {
         match self {
-            Self::Sorted(family) => family.binary_search(slot).is_ok(),
-            Self::Hashed(family) => family.contains(slot),
+            Self::Sorted(family) => family.binary_search(&slot).is_ok(),
+            Self::Hashed(family) => family.contains(&slot),
         }
     }
 }
@@ -471,7 +471,7 @@ pub(super) fn faces_in_topology<'a>(
     let faces = FamilySlots::new(&topology.faces);
     candidates
         .into_iter()
-        .filter(|face| stable_ref(face.as_str()).is_some_and(|slot| faces.contains(&slot)))
+        .filter(|face| stable_ref(face.as_str()).is_some_and(|slot| faces.contains(slot)))
         .cloned()
         .collect()
 }
