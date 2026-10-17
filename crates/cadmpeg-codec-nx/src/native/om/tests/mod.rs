@@ -723,7 +723,7 @@ fn nx_part_attributes_require_typed_atomic_xml() {
     let attributes = crate::test_support::with_decode_context(|ctx| {
         super::parse_part_attributes(ctx, xml, 7, "/Root/part/attrs", 100)
     })
-    .expect("typed attribute budget")
+    .expect("typed part attributes stay within session limits")
     .expect("typed attributes");
     assert_eq!(attributes.len(), 1);
     assert_eq!(attributes[0].id, "nx:part-attributes-7:attribute#0");
@@ -739,7 +739,7 @@ fn nx_part_attributes_require_typed_atomic_xml() {
         crate::test_support::with_decode_context(|ctx| {
             super::parse_part_attributes(ctx, &terminated, 7, "/Root/part/attrs", 100)
         })
-        .expect("terminated attribute budget")
+        .expect("terminated part attributes stay within session limits")
         .expect("terminated typed attributes"),
         attributes
     );
@@ -747,7 +747,7 @@ fn nx_part_attributes_require_typed_atomic_xml() {
     assert!(crate::test_support::with_decode_context(|ctx| {
         super::parse_part_attributes(ctx, &terminated, 7, "/Root/part/attrs", 100)
     })
-    .expect("malformed attribute budget")
+    .expect("malformed part attributes stay within session limits")
     .is_none());
 
     let malformed = xml
@@ -763,7 +763,7 @@ fn nx_part_attributes_require_typed_atomic_xml() {
     assert!(crate::test_support::with_decode_context(|ctx| {
         super::parse_part_attributes(ctx, &malformed, 7, "/Root/part/attrs", 100)
     })
-    .expect("invalid attribute budget")
+    .expect("invalid part attributes stay within session limits")
     .is_none());
 }
 

@@ -622,7 +622,7 @@ fn native_retains_rmfastload_table_and_member_words() {
 }
 
 #[test]
-fn service_profile_admits_fastload_native_members() {
+fn fastload_native_members_are_admitted() {
     let (table, object_ids) = native_fastload_result(|_| {})
         .expect("service FastLoad admission")
         .expect("FastLoad table");

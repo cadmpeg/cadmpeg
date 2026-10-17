@@ -293,7 +293,7 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
             Point2::new(0.25, 0.),
             0.9 * d,
         )
-        .expect("evaluator allocation succeeds")
+        .expect("evaluation stays within session limits")
         .unwrap();
         assert!(
             (cadmpeg_ir::eval::decode::pcurve_uv(
@@ -353,7 +353,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
                 &p,
                 Point2::new(0.3, 0.),
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .unwrap();
             assert!(
                 (cadmpeg_ir::eval::decode::pcurve_uv(
@@ -404,7 +404,7 @@ fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
         let budget = GeometryWorkBudget::from_context(geometry_ctx, 1024);
         for point in [
             decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget)
-                .expect("evaluator allocation succeeds"),
+                .expect("evaluation stays within session limits"),
             decoded_surface_point_with_geometry_and_budget(
                 &index,
                 &surface_id,
@@ -414,7 +414,7 @@ fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
                 0,
                 &budget,
             )
-            .expect("evaluator allocation succeeds"),
+            .expect("evaluation stays within session limits"),
         ] {
             assert!(
                 point.is_some_and(|point| point.x.is_nan() && point.y == 3.0 && point.z == 0.0),
@@ -460,7 +460,7 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
         let budget = GeometryWorkBudget::from_context(geometry_ctx, 1024);
         for point in [
             decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget)
-                .expect("evaluator allocation succeeds"),
+                .expect("evaluation stays within session limits"),
             decoded_surface_point_with_geometry_and_budget(
                 &index,
                 &surface_id,
@@ -470,7 +470,7 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
                 0,
                 &budget,
             )
-            .expect("evaluator allocation succeeds"),
+            .expect("evaluation stays within session limits"),
         ] {
             assert_eq!(point, Some(Point3::new(f64::INFINITY, 3.0, 0.0)));
         }

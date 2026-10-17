@@ -170,7 +170,7 @@ pub(super) fn certified_offset_cache_fit(
         tolerance,
         &geometry_budget,
     )
-    .expect("evaluator allocation succeeds")
+    .expect("evaluation stays within session limits")
 }
 
 fn certified_offset_cache_fit_with_budget(
@@ -1040,7 +1040,7 @@ fn offset_surface_parameters_with_tolerance_with_index(
         fit_tolerance,
         &geometry_budget,
     )
-    .expect("evaluator allocation succeeds")
+    .expect("evaluation stays within session limits")
 }
 
 pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
@@ -1798,7 +1798,7 @@ fn continue_surface_intersection_parameters_with_seeds(
         seeds,
         &geometry_budget,
     )
-    .expect("evaluator allocation succeeds")
+    .expect("evaluation stays within session limits")
 }
 
 #[cfg(test)]
@@ -2837,7 +2837,7 @@ mod tests {
                 [[-f64::MAX, f64::MAX], [0.0, 1.0]],
                 &geometry_budget,
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .expect("finite grid candidate");
             assert!(parameters.is_finite());
             assert_eq!(parameters.u, 0.0);
@@ -2960,7 +2960,7 @@ mod tests {
                 NonNegativeLength::new(0.01).expect("nonnegative tolerance"),
                 &budget,
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .is_none());
             assert!(budget.consumed() > 0);
             assert!(!budget.exhausted());
@@ -3126,7 +3126,7 @@ mod tests {
                 fit_tolerance,
                 &geometry_budget,
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .expect("linear support extension refinement");
             assert!((refined.u - 3.0).abs() <= fit_tolerance);
             assert!((refined.v - 0.25).abs() <= fit_tolerance);
@@ -3150,7 +3150,7 @@ mod tests {
                 [[0., 1.], [0., 1.]],
                 &geometry_budget,
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .is_some());
 
             // Move the support to Z=-1 so its unit offset lies at Z=0. A small
@@ -3193,7 +3193,7 @@ mod tests {
                 1e-210,
                 &geometry_budget,
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .is_none());
         });
     }
@@ -3388,7 +3388,7 @@ mod tests {
                 1.0e295,
                 &geometry_budget,
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
         })
     }
 

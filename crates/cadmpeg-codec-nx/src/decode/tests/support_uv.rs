@@ -140,7 +140,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         &geometry_budget,
         false,
     ))
-    .expect("evaluator allocation succeeds");
+    .expect("evaluation stays within session limits");
 
         let pcurve_present = |procedural_id: &ProceduralCurveId| {
             let procedural = result
@@ -314,7 +314,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
             &geometry_budget,
             false,
         ))
-        .expect("evaluator allocation succeeds")
+        .expect("evaluation stays within session limits")
         .endpoint_witnesses;
 
         let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
