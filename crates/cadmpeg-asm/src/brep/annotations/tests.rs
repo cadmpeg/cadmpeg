@@ -5,6 +5,83 @@ use crate::brep::{AsmBrep, Carriers};
 use crate::sab::Record;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 
+fn emit(
+    out: &mut AsmBrep,
+    records: &[Record],
+    by_index: &std::collections::HashMap<i64, &Record>,
+    carriers: &Carriers,
+    format: crate::ids::IdFormat,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    emit_annotation_records(&ctx, out, records, by_index, carriers, "source", format)
+}
+
+#[test]
+fn every_annotation_copy_of_the_stream_name_is_charged() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const SOURCES: usize = 1 << 6;
+    const STREAM: usize = 1 << 12;
+    let records = [Record {
+        index: 37,
+        name: "spline".into(),
+        tokens: Vec::new().into(),
+        offset: 0,
+        len: 0,
+    }];
+    let by_index = records
+        .iter()
+        .map(|record| (i64::try_from(record.index).unwrap(), record))
+        .collect();
+    let carriers = Carriers {
+        procedural_support_sources: (0..SOURCES)
+            .map(|source| {
+                (
+                    37,
+                    SurfaceId::mint(format!("f3d:child:support#{source}")).unwrap(),
+                )
+            })
+            .collect(),
+        ..Carriers::default()
+    };
+    let stream = "s".repeat(STREAM);
+    let annotate = |policy: &DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+        let mut out = AsmBrep::default();
+        emit_annotation_records(
+            &ctx,
+            &mut out,
+            &records,
+            &by_index,
+            &carriers,
+            &stream,
+            crate::asm_format!("f3d"),
+        )
+        .map(|()| out)
+    };
+    let out = annotate(&DecodePolicy::service()).unwrap();
+    assert_eq!(out.annotation_records.len(), SOURCES);
+    assert!(out
+        .annotation_records
+        .iter()
+        .all(|annotation| annotation.stream == stream));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(SOURCES * STREAM / 2);
+    let Err(CodecError::ResourceLimit(limit)) = annotate(&policy) else {
+        panic!("expected a retained-bytes refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
 #[test]
 fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     let records = [Record {
@@ -29,12 +106,11 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
         procedural_curve_child_sources: vec![(37, CurveId::mint("f3d:child:curve#named").unwrap())],
         ..Carriers::default()
     };
-    emit_annotation_records(
+    emit(
         &mut out,
         &records,
         &by_index,
         &carriers,
-        "source",
         crate::asm_format!("f3d"),
     )
     .unwrap();
@@ -117,12 +193,11 @@ fn ellipse_edge_annotation_names_only_a_stored_carrier_range() {
             }],
             ..AsmBrep::default()
         };
-        emit_annotation_records(
+        emit(
             &mut out,
             &records,
             &by_index,
             &Carriers::default(),
-            "source",
             crate::asm_format!("sat"),
         )
         .unwrap();
@@ -174,12 +249,11 @@ fn unresolved_analytic_carriers_have_no_derived_geometry_fields() {
         }],
         ..AsmBrep::default()
     };
-    emit_annotation_records(
+    emit(
         &mut out,
         &records,
         &std::collections::HashMap::new(),
         &Carriers::default(),
-        "source",
         crate::asm_format!("sat"),
     )
     .unwrap();

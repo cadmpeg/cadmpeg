@@ -58,6 +58,137 @@ fn chains_list_only_children_that_are_emitted() {
     };
 }
 
+fn index_records(records: &[Record]) -> std::collections::HashMap<i64, &Record> {
+    records
+        .iter()
+        .map(|record| {
+            (
+                i64::try_from(record.index).expect("test value fits"),
+                record,
+            )
+        })
+        .collect()
+}
+
+fn as_ref(index: usize) -> i64 {
+    i64::try_from(index).expect("test value fits")
+}
+
+#[test]
+fn faces_sharing_one_loop_walk_and_list_its_ring_once() {
+    // Walking the ring once per face would take 2^24 steps.
+    const FACES: usize = 1 << 12;
+    const COEDGES: usize = 1 << 12;
+    let shared = FACES;
+    let first_coedge = FACES + 1;
+    let mut records = (0..FACES)
+        .map(|face| ref_record(face, "face", &[-1, -1, -1, -1, as_ref(shared), 7]))
+        .collect::<Vec<_>>();
+    records.push(ref_record(
+        shared,
+        "loop",
+        &[-1, -1, -1, -1, as_ref(first_coedge), 0],
+    ));
+    records.extend((0..COEDGES).map(|coedge| {
+        let next = first_coedge + (coedge + 1) % COEDGES;
+        let fields = [-1, -1, -1, as_ref(next), -1, -1, -1, -1, as_ref(shared)];
+        ref_record(first_coedge + coedge, "coedge", &fields)
+    }));
+    let by_index = index_records(&records);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    let table = nurbs::toks::SubtypeTable::from_records(&records);
+    let mut reach = Reachable {
+        faces: (0..FACES).map(as_ref).collect(),
+        ..Reachable::default()
+    };
+    let format = crate::asm_format!("f3d");
+    walk_reachable_topology(
+        TopologyContext {
+            ctx: &ctx,
+            by_index: &by_index,
+            token_table: &table,
+            purpose: DecodePurpose::Model,
+            format,
+        },
+        &mut AsmBrep::default(),
+        &mut Carriers::default(),
+        &mut reach,
+    )
+    .expect("shared loop is within resource limits");
+    assert_eq!(reach.loops, HashSet::from([as_ref(shared)]));
+    assert_eq!(reach.coedges.len(), COEDGES);
+
+    let owner = super::loop_chain(&records[0], &by_index, &reach.loops, format);
+    assert_eq!(owner.len(), 1);
+    let listed = (1..FACES)
+        .map(|face| super::loop_chain(&records[face], &by_index, &reach.loops, format).len())
+        .sum::<usize>();
+    assert_eq!(listed, 0, "a loop owned by another face ends the chain");
+    let ring = super::ring_coedges(&records[shared], &by_index, &reach.coedges, format);
+    assert_eq!(ring.len(), COEDGES);
+    let borrowed = ref_record(
+        FACES + COEDGES + 1,
+        "loop",
+        &[-1, -1, -1, -1, as_ref(first_coedge), 1],
+    );
+    assert!(super::ring_coedges(&borrowed, &by_index, &reach.coedges, format).is_empty());
+}
+
+#[test]
+fn a_face_chain_lists_only_the_faces_its_shell_owns() {
+    let records = [
+        ref_record(0, "shell", &[-1, -1, -1, -1, -1, 2]),
+        ref_record(1, "shell", &[-1, -1, -1, -1, -1, 2]),
+        ref_record(2, "face", &[-1, -1, -1, 3, -1, 0]),
+        ref_record(3, "face", &[-1, -1, -1, -1, -1, 0]),
+    ];
+    let by_index = index_records(&records);
+    let kept = HashSet::from([2, 3]);
+    let format = crate::asm_format!("f3d");
+    assert_eq!(
+        super::shell_faces(&records[0], &by_index, &kept, format).len(),
+        2
+    );
+    assert!(super::shell_faces(&records[1], &by_index, &kept, format).is_empty());
+}
+
+#[test]
+fn deep_subshell_chains_resolve_their_shell_in_linear_time() {
+    // Walking upward once per subshell would take 2^31 steps.
+    const DEPTH: usize = 1 << 16;
+    let mut records = vec![ref_record(0, "shell", &[-1; 8])];
+    records.extend(
+        (1..=DEPTH)
+            .map(|subshell| ref_record(subshell, "subshell", &[-1, -1, -1, as_ref(subshell - 1)])),
+    );
+    let cycle = DEPTH + 1;
+    records.push(ref_record(
+        cycle,
+        "subshell",
+        &[-1, -1, -1, as_ref(cycle + 1)],
+    ));
+    records.push(ref_record(
+        cycle + 1,
+        "subshell",
+        &[-1, -1, -1, as_ref(cycle)],
+    ));
+    records.push(ref_record(
+        cycle + 2,
+        "subshell",
+        &[-1, -1, -1, as_ref(cycle)],
+    ));
+    let by_index = index_records(&records);
+    let shells = super::subshell_ancestor_shells(&records, &by_index).unwrap();
+    assert_eq!(shells.len(), DEPTH);
+    assert!((1..=DEPTH).all(|subshell| shells.get(&as_ref(subshell)) == Some(&0)));
+}
+
 fn ident(bytes: &mut Vec<u8>, name: &str) {
     bytes.extend_from_slice(&[0x0d, u8::try_from(name.len()).unwrap()]);
     bytes.extend_from_slice(name.as_bytes());

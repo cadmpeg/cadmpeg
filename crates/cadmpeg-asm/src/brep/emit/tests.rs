@@ -122,7 +122,15 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
             ..Reachable::default()
         };
         let mut out = AsmBrep::default();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .unwrap();
         emit_faces(
+            &ctx,
             &mut out,
             &records,
             &by_index,
@@ -1088,6 +1096,74 @@ fn legacy_tolerant_edge_tolerance_does_not_require_a_revision_field() {
             assert!(out.tolerant_edge_tails.is_empty());
         }
     }
+}
+
+#[test]
+fn faces_sharing_one_name_record_charge_each_name_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const FACES: usize = 1 << 7;
+    const NAME: usize = 1 << 10;
+    let name = FACES;
+    let name_ref = i64::try_from(name).unwrap();
+    let mut records = (0..FACES)
+        .map(|index| Record {
+            index,
+            name: "face".into(),
+            tokens: [name_ref, -1, -1, -1, -1, 1_000_000, -1, 1_000_001]
+                .map(Token::Ref)
+                .to_vec()
+                .into(),
+            offset: 0,
+            len: 0,
+        })
+        .collect::<Vec<_>>();
+    records.push(Record {
+        index: name,
+        name: "string_attrib-name_attrib-gen-attrib".into(),
+        tokens: vec![Token::Str("name".into()), Token::Str("n".repeat(NAME))].into(),
+        offset: 0,
+        len: 0,
+    });
+    let by_index = records
+        .iter()
+        .map(|record| (i64::try_from(record.index).unwrap(), record))
+        .collect();
+    let reach = Reachable {
+        faces: (0..FACES)
+            .map(|face| i64::try_from(face).unwrap())
+            .collect(),
+        ..Reachable::default()
+    };
+    let emit = |policy: &DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+        let mut out = AsmBrep::default();
+        let result = emit_faces(
+            &ctx,
+            &mut out,
+            &records,
+            &by_index,
+            &reach,
+            &HashSet::new(),
+            crate::asm_format!("f3d"),
+        );
+        result.map(|()| out)
+    };
+    let out = emit(&DecodePolicy::service()).unwrap();
+    assert_eq!(out.faces.len(), FACES);
+    assert!(out
+        .faces
+        .iter()
+        .all(|face| face.name.as_deref().is_some_and(|name| name.len() == NAME)));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(FACES * NAME / 2);
+    let Err(CodecError::ResourceLimit(limit)) = emit(&policy) else {
+        panic!("expected a retained-bytes refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
 }
 
 #[test]

@@ -542,17 +542,30 @@ fn directory_admission(
 ) -> Result<Admission<DirectoryPreflight>, CodecError> {
     let mut first_error = None;
     let mut admitted = None;
-    for (end, signature) in bytes.windows(4).enumerate().rev() {
-        if signature != b"PK\x05\x06" {
-            continue;
-        }
-        let Some(comment) = View::u16_le_at(bytes, end + 20) else {
-            continue;
-        };
-        if end.checked_add(22 + usize::from(comment)) != Some(bytes.len()) {
-            continue;
-        }
-        match central_directory_inventory(ctx, bytes, end) {
+    let candidates = bytes
+        .windows(4)
+        .enumerate()
+        .rev()
+        .filter(|(end, signature)| {
+            *signature == b"PK\x05\x06"
+                && View::u16_le_at(bytes, end + 20).is_some_and(|comment| {
+                    end.checked_add(22 + usize::from(comment)) == Some(bytes.len())
+                })
+        })
+        .map(|(end, _)| end)
+        .collect::<Vec<_>>();
+    let mut search = DirectorySearch {
+        zip64_records: probe::Zip64Records::new(
+            candidates
+                .iter()
+                .filter_map(|&end| zip64_locator_at(bytes, end))
+                .map(cadmpeg_core::decode::u64_from_index)
+                .collect(),
+        ),
+        central_headers: None,
+    };
+    for end in candidates {
+        match central_directory_inventory(ctx, bytes, end, &mut search) {
             Ok(()) => {
                 if admitted.is_some() {
                     return Err(CodecError::malformed(
@@ -577,10 +590,47 @@ fn directory_admission(
     })
 }
 
+/// Lookups shared by the candidate end records of one archive, so each
+/// candidate searches the input in logarithmic or amortized constant time.
+struct DirectorySearch {
+    zip64_records: probe::Zip64Records,
+    /// Every central-header signature offset, in order, once a candidate's
+    /// directory is not at its canonical start.
+    central_headers: Option<Vec<usize>>,
+}
+
+impl DirectorySearch {
+    /// The first central-header signature that starts at or after `start`
+    /// and ends by `end`.
+    fn central_header(&mut self, bytes: &[u8], start: usize, end: usize) -> Option<usize> {
+        if end > bytes.len() {
+            return None;
+        }
+        let headers = self.central_headers.get_or_insert_with(|| {
+            bytes
+                .windows(4)
+                .enumerate()
+                .filter(|(_, window)| *window == b"PK\x01\x02")
+                .map(|(offset, _)| offset)
+                .collect()
+        });
+        headers
+            .get(headers.partition_point(|&offset| offset < start))
+            .copied()
+            .filter(|&offset| offset + 4 <= end)
+    }
+}
+
+fn zip64_locator_at(bytes: &[u8], end: usize) -> Option<usize> {
+    end.checked_sub(20)
+        .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()))
+}
+
 fn central_directory_inventory(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     end: usize,
+    search: &mut DirectorySearch,
 ) -> Result<(), CodecError> {
     let comment_len = View::u16_le_at(bytes, end + 20)
         .ok_or_else(|| CodecError::Malformed("ZIP end record is truncated".into()))?;
@@ -592,23 +642,22 @@ fn central_directory_inventory(
     }
     let count = View::u16_le_at(bytes, end + 10)
         .ok_or_else(|| CodecError::Malformed("ZIP end record is truncated".into()))?;
-    let locator_start = end
-        .checked_sub(20)
-        .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()));
+    let locator_start = zip64_locator_at(bytes, end);
     let (count, directory_size, directory_start_hint, directory_end) = if let Some(locator_start) =
         locator_start
     {
         let hint = View::u64_le_at(bytes, locator_start + 8)
             .ok_or_else(|| CodecError::malformed("ZIP64 end locator is truncated"))?;
-        let record_start = probe::find_zip64(
-            ctx,
-            &mut std::io::Cursor::new(bytes),
-            0,
-            locator_start,
-            hint,
-        )?
-        .and_then(|offset| usize::try_from(offset).ok())
-        .ok_or_else(|| CodecError::Malformed("ZIP64 end record is absent".into()))?;
+        let record_start = search
+            .zip64_records
+            .find(
+                ctx,
+                &mut std::io::Cursor::new(bytes),
+                cadmpeg_core::decode::u64_from_index(locator_start),
+                hint,
+            )?
+            .and_then(|offset| usize::try_from(offset).ok())
+            .ok_or_else(|| CodecError::Malformed("ZIP64 end record is absent".into()))?;
         let count = View::u64_le_at(bytes, record_start + 32)
             .ok_or_else(|| CodecError::Malformed("ZIP64 entry count is truncated".into()))?;
         let size = View::u64_le_at(bytes, record_start + 40)
@@ -638,10 +687,8 @@ fn central_directory_inventory(
         search_end
             .checked_sub(search_start)
             .ok_or_else(|| CodecError::Malformed("ZIP directory search range is invalid".into()))?;
-        let start = bytes
-            .get(search_start..search_end)
-            .and_then(|range| range.windows(4).position(|window| window == b"PK\x01\x02"))
-            .and_then(|relative| search_start.checked_add(relative))
+        let start = search
+            .central_header(bytes, search_start, search_end)
             .ok_or_else(|| CodecError::Malformed("ZIP central header is absent".into()))?;
         cadmpeg_core::decode::u64_from_index(start)
     };

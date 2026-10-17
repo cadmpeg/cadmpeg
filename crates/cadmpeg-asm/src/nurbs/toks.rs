@@ -661,36 +661,138 @@ impl SubtypeTable {
 }
 
 /// Admit every subtype-reference walk before semantic candidates read the
-/// table. The stack holds policy depth guards for the active reference path.
+/// table. A walk from a record holds one policy depth guard per definition on
+/// its path, so the deepest walk any record can take must fit the policy.
 pub(crate) fn admit_subtype_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[crate::sab::Record],
     table: &SubtypeTable,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut reach = ReferenceReach::new(table);
+    let mut guards = Vec::new();
     for record in records {
-        let mut visited = std::collections::HashSet::new();
-        let mut pending = Vec::new();
-        let root = (subtype_refs(&record.tokens), None);
-        pending.push(root);
-        while let Some((references, _guard)) = pending.last_mut() {
-            let Some(index) = references.next() else {
-                pending.pop();
-                continue;
-            };
-
-            if !visited.insert(index) {
-                continue;
+        for index in subtype_refs(&record.tokens) {
+            let depth = reach.of(index);
+            while guards.len() < depth {
+                guards.push(ctx.enter_nested("follow ASM subtype reference")?);
             }
-
-            let Some(target) = table.span(index) else {
-                continue;
-            };
-            let guard = ctx.enter_nested("follow ASM subtype reference")?;
-            let frame = (subtype_refs(target.tokens()), Some(guard));
-            pending.push(frame);
         }
     }
     Ok(())
+}
+
+/// The longest reference walk from each definition: the definitions on the
+/// longest chain it reaches, where a reference cycle counts each of its
+/// definitions once, since a walk enters a definition at most once.
+///
+/// Definitions are explored once, on first reference, in strongly connected
+/// components (iterative Tarjan); a component's reach is its followed
+/// definitions plus the largest reach below it.
+struct ReferenceReach<'t> {
+    table: &'t SubtypeTable,
+    order: Vec<Option<usize>>,
+    low: Vec<usize>,
+    on_stack: Vec<bool>,
+    component: Vec<Option<usize>>,
+    edges: Vec<Vec<usize>>,
+    followed: Vec<bool>,
+    reach: Vec<usize>,
+    next_order: usize,
+}
+
+impl<'t> ReferenceReach<'t> {
+    fn new(table: &'t SubtypeTable) -> Self {
+        Self {
+            table,
+            order: vec![None; table.defs.len()],
+            low: vec![0; table.defs.len()],
+            on_stack: vec![false; table.defs.len()],
+            component: vec![None; table.defs.len()],
+            edges: vec![Vec::new(); table.defs.len()],
+            followed: vec![false; table.defs.len()],
+            reach: Vec::new(),
+            next_order: 0,
+        }
+    }
+
+    /// The reach of definition `index`; zero for an index the table does not
+    /// hold as a balanced scope, which no walk follows.
+    fn of(&mut self, index: usize) -> usize {
+        if index >= self.order.len() {
+            return 0;
+        }
+        if self.order[index].is_none() {
+            self.explore(index);
+        }
+        self.component[index].map_or(0, |component| self.reach[component])
+    }
+
+    fn visit(&mut self, index: usize, stack: &mut Vec<usize>) {
+        self.order[index] = Some(self.next_order);
+        self.low[index] = self.next_order;
+        self.next_order += 1;
+        stack.push(index);
+        self.on_stack[index] = true;
+        if let Some(scope) = self.table.span(index) {
+            self.followed[index] = true;
+            self.edges[index] = subtype_refs(scope.tokens())
+                .filter(|&target| target < self.order.len())
+                .collect();
+        }
+    }
+
+    fn explore(&mut self, root: usize) {
+        let mut stack = Vec::new();
+        self.visit(root, &mut stack);
+        let mut frames = vec![(root, 0usize)];
+        while let Some(&mut (index, ref mut position)) = frames.last_mut() {
+            if let Some(&target) = self.edges[index].get(*position) {
+                *position += 1;
+                match self.order[target] {
+                    None => {
+                        self.visit(target, &mut stack);
+                        frames.push((target, 0));
+                    }
+                    Some(order) if self.on_stack[target] => {
+                        self.low[index] = self.low[index].min(order);
+                    }
+                    Some(_) => {}
+                }
+                continue;
+            }
+            frames.pop();
+            if let Some(&(parent, _)) = frames.last() {
+                self.low[parent] = self.low[parent].min(self.low[index]);
+            }
+            if Some(self.low[index]) == self.order[index] {
+                self.close_component(index, &mut stack);
+            }
+        }
+    }
+
+    fn close_component(&mut self, root: usize, stack: &mut Vec<usize>) {
+        let component = self.reach.len();
+        let mut members = Vec::new();
+        while let Some(member) = stack.pop() {
+            self.on_stack[member] = false;
+            self.component[member] = Some(component);
+            members.push(member);
+            if member == root {
+                break;
+            }
+        }
+        let mut below = 0;
+        let mut followed = 0;
+        for &member in &members {
+            followed += usize::from(self.followed[member]);
+            for &target in &self.edges[member] {
+                if let Some(other) = self.component[target].filter(|&other| other != component) {
+                    below = below.max(self.reach[other]);
+                }
+            }
+        }
+        self.reach.push(followed + below);
+    }
 }
 
 /// Lex a bare byte span (a subtype scope or block without a record name or
@@ -792,6 +894,73 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
         super::admit_subtype_references(&ctx, &records, &table)
             .expect("admit the finite subtype reference chain");
+    }
+
+    fn reference_record(index: usize, tokens: Vec<Token>) -> crate::sab::Record {
+        crate::sab::Record {
+            index,
+            name: "node".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }
+    }
+
+    fn reference(index: i64) -> [Token; 4] {
+        [
+            Token::SubtypeOpen,
+            Token::Ident("ref".into()),
+            Token::Long(index),
+            Token::SubtypeClose,
+        ]
+    }
+
+    #[test]
+    fn many_records_sharing_one_large_definition_admit_in_linear_time() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        // Walking the definition again per record would read 2^33 tokens.
+        const RECORDS: usize = 1 << 16;
+        const TOKENS: i64 = 1 << 16;
+        let mut definition = vec![Token::SubtypeOpen, Token::Ident("large".into())];
+        definition.extend((0..TOKENS).map(Token::Long));
+        definition.push(Token::SubtypeClose);
+        let mut records = vec![reference_record(0, definition)];
+        records.extend((1..=RECORDS).map(|index| reference_record(index, reference(0).to_vec())));
+        let table = super::SubtypeTable::from_records(&records);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+        super::admit_subtype_references(&ctx, &records, &table).unwrap();
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
+    fn a_reference_cycle_holds_each_of_its_definitions_once() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        // Definitions 0 and 1 reference each other; a record enters at 1.
+        let node = |target| {
+            let mut tokens = vec![Token::SubtypeOpen, Token::Ident("node".into())];
+            tokens.extend(reference(target));
+            tokens.push(Token::SubtypeClose);
+            tokens
+        };
+        let records = vec![
+            reference_record(0, node(1)),
+            reference_record(1, node(0)),
+            reference_record(2, reference(1).to_vec()),
+        ];
+        let table = super::SubtypeTable::from_records(&records);
+        for (depth, admitted) in [(1, false), (2, true)] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_recursion_depth = depth;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+            assert_eq!(
+                super::admit_subtype_references(&ctx, &records, &table).is_ok(),
+                admitted
+            );
+        }
     }
 
     #[test]

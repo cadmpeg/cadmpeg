@@ -156,6 +156,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_PATCHES`                             | `1_000_000`                                             | 4    | Patch-queue cap in NURBS surface start search, checked with the caller's `WorkBudget`. Exhaustion returns `None`; the caller owns the loss.                                                                                                                                  |
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_ITERATIONS`                          | `24`                                                    | 4    | Newton iterations in `nurbs_surface_parameter_near_point`. Exhaustion returns the current candidate or `None`; the caller owns the residual check and any loss.                                                                                                              |
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_LINE_SEARCH_STEPS`                   | `12`                                                    | 4    | Line-search steps inside the same Newton loop. Exhaustion ends the iteration.                                                                                                                                                                                                |
+| `cadmpeg-ir`             | `src/eval/admission.rs`                            | `MAX_MODEL_EVALUATION_WORK`               | `1 << 24`                                               | 4    | One model evaluation under `Decode` or `Standard` admission, and each evaluation of a validation pass. Exhaustion is `EvaluationFailure::WorkExhausted`; the session continues. Codec callers own the skip; validation reports a warning naming this constant.               |
+| `cadmpeg-ir`             | `src/eval/admission.rs`                            | `MAX_MODEL_PASS_EVALUATION_WORK`          | `1 << 30`                                               | 4    | All model evaluations of one validation pass (`ModelEvaluationPass`), drawn as slices of `MAX_MODEL_EVALUATION_WORK`. An evaluation that finds it empty skips its check, and validation reports a warning naming this constant.                                              |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_BIASED_SIGNIFICAND_EXPONENT`         | `0x7fe - 1`                                             | N    | `f64` exponent-field limit for exact summation.                                                                                                                                                                                                                              |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SIGNIFICAND_BITS`                    | `53`                                                    | N    | `f64` significand width.                                                                                                                                                                                                                                                     |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SCALED_EXPONENT`                     | `EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS_I32 * 64 + 1` | N    | Accumulator exponent range.                                                                                                                                                                                                                                                  |
@@ -386,26 +388,25 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 | `cadmpeg-codec-catia`  | `src/solve/mesh_quotient/coordinate_assignment.rs` (three sites) | `budget.remaining()`                   | parent remainder                             | Hand-built child slices; the work is charged back to the parent with `charge_by`.                                                            |
 | `cadmpeg-codec-catia`  | `src/solve/mesh_quotient/coordinate_assignment.rs`               | `component_limit`                      | derived from `MAX_COORDINATE_CLOSURE_STATES` | Per-component closure budget: support and traversal work times the state limit.                                                              |
 | `cadmpeg-ir`           | `src/eval.rs` (two sites)                                        | `DEFAULT_NURBS_SURFACE_INVERSION_WORK` | `1_000_000`                                  | Surface inversion entry points without a caller budget. The callers own skip and loss.                                                       |
-| `cadmpeg-ir`           | `src/eval/admission.rs`                                          | `usize::MAX`                           | unbounded                                    | `EvaluationAdmission::Decode` without a slice. Work is not bounded; depth and session ceilings still apply.                                  |
 | `cadmpeg-ir`           | `src/eval/admission.rs`                                          | `parent.remaining()`                   | parent remainder                             | `within_work_slice` child; `consume_child` charges the parent and an exhausted child exhausts the parent.                                    |
 
 ## Totals
 
-Production `MAX_*` constants: 210.
+Production `MAX_*` constants: 212.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 67    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 96    |
+| 4    | Local work cap             | 98    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 210   |
+|      | Total                      | 212   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 8, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 7,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 16,

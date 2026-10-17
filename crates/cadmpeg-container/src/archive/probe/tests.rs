@@ -23,7 +23,9 @@ fn a_zip64_record_must_fit_its_fixed_fields_before_the_locator() {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-        let found = super::find_zip64(&ctx, &mut Cursor::new(bytes), 0, size + 12, 0)
+        let end = cadmpeg_core::decode::u64_from_index(size + 12);
+        let found = super::Zip64Records::new(std::collections::HashSet::from([end]))
+            .find(&ctx, &mut Cursor::new(bytes), end, 0)
             .expect("boundary probe");
         assert_eq!(found, (size == 44).then_some(0));
         ctx.finish_session().expect("session");
@@ -310,5 +312,72 @@ fn conflicting_terminal_namespaces_are_a_required_declaration_failure() {
     assert!(
         matches!(ArchiveSnapshot::new(&ctx, root), Err(cadmpeg_core::CodecError::Malformed(message)) if message.contains("ambiguous terminal"))
     );
+    ctx.finish_session().expect("session");
+}
+
+/// A 1 MiB prefix followed by `count` nested end records, each `stride`
+/// bytes after the previous and each with a comment reaching end of file.
+/// `write` fills the bytes before and including each end record.
+fn nested_end_records(count: usize, stride: usize, write: impl Fn(&mut [u8], usize)) -> Vec<u8> {
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
+    let prefix = 1 << 20;
+    let mut bytes = vec![0; prefix + count * stride];
+    for index in 0..count {
+        let end = prefix + index * stride + stride - end_record::LEN;
+        put_u32(&mut bytes, end, 0x0605_4b50);
+        put_u16(&mut bytes, end + end_record::ENTRIES, 1);
+        let comment = bytes.len() - end - end_record::LEN;
+        put_u16(
+            &mut bytes,
+            end + end_record::COMMENT_LENGTH,
+            u16::try_from(comment).expect("comment length"),
+        );
+        write(&mut bytes, end);
+    }
+    bytes
+}
+
+fn admission_error(bytes: &[u8]) -> String {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("context");
+    let Err(cadmpeg_core::CodecError::Malformed(message)) =
+        super::super::preflight_central_directory(&ctx, bytes)
+    else {
+        panic!("expected a malformed archive");
+    };
+    ctx.finish_session().expect("session");
+    message
+}
+
+#[test]
+fn nested_end_records_search_for_central_headers_once() {
+    use cadmpeg_test_support::bytes::put_u32;
+    // Searching the input once per end record would read 2^31 bytes.
+    let bytes = nested_end_records(1 << 11, end_record::LEN, |bytes, end| {
+        put_u32(
+            bytes,
+            end + end_record::DIRECTORY_SIZE,
+            u32::try_from(end).expect("directory size"),
+        );
+    });
+    assert_eq!(admission_error(&bytes), "ZIP central header is absent");
+}
+
+#[test]
+fn nested_zip64_locators_search_for_end_records_once() {
+    use cadmpeg_test_support::bytes::put_u32;
+    // Searching the input once per locator would read 2^30 bytes.
+    let stride = zip64_locator::LEN + end_record::LEN;
+    let bytes = nested_end_records(1 << 10, stride, |bytes, end| {
+        put_u32(bytes, end - zip64_locator::LEN, 0x0706_4b50);
+    });
+    assert_eq!(admission_error(&bytes), "ZIP64 end record is absent");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
+    assert!(read(&ctx, &mut Cursor::new(bytes))
+        .expect("probe")
+        .is_none());
     ctx.finish_session().expect("session");
 }

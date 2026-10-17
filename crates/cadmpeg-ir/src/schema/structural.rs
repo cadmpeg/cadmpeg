@@ -10,40 +10,35 @@ use serde::ser::{
 use serde::{Serialize, Serializer};
 use serde_value::Value;
 use std::collections::BTreeMap;
-use std::marker::PhantomData;
 
 /// A projected value.
 #[derive(Debug)]
-pub struct Projection<'ctx> {
+pub struct Projection {
     value: Value,
-    _ctx: PhantomData<&'ctx ()>,
 }
 
-impl std::ops::Deref for Projection<'_> {
+impl std::ops::Deref for Projection {
     type Target = Value;
     fn deref(&self) -> &Value {
         &self.value
     }
 }
-impl std::ops::DerefMut for Projection<'_> {
+impl std::ops::DerefMut for Projection {
     fn deref_mut(&mut self) -> &mut Value {
         &mut self.value
     }
 }
 
 /// Project each node directly, preserving the source floating-point values.
-pub fn project<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+pub fn project(
+    ctx: &DecodeContext<'_>,
     value: &(impl Serialize + ?Sized),
     operation: &'static str,
-) -> Result<Projection<'ctx>, CodecError> {
+) -> Result<Projection, CodecError> {
     let value = value
         .serialize(Projector { ctx, operation })
         .map_err(Error::into_codec)?;
-    Ok(Projection {
-        value,
-        _ctx: PhantomData,
-    })
+    Ok(Projection { value })
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -29,7 +29,7 @@ pub trait RewriteIdentities: Sized {
     }
 
     /// Visit borrowed typed references without projecting a value tree.
-    /// Scalar owners admit one visit and expose no references.
+    /// Scalar owners expose no references.
     fn visit_identity_references(
         &self,
         ctx: &DecodeContext<'_>,

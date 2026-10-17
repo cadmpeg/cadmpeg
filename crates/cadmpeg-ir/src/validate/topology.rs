@@ -2765,7 +2765,7 @@ fn check_feature_references(
         }
         Ok(())
     })?;
-    let mut reported_plane_cycles = Vec::new();
+    let mut reported_plane_cycles = std::collections::HashSet::new();
     for feature in &ir.model.features {
         let mut path: Vec<(&str, cadmpeg_core::decode::DepthGuard<'_>)> = Vec::new();
         let mut positions = BorrowedIdentities::new();
@@ -2775,14 +2775,7 @@ fn check_feature_references(
                 let mut cycle: Vec<&str> = path[cycle_start..].iter().map(|(id, _)| *id).collect();
                 cycle.sort_unstable_by(Ord::cmp);
                 let cycle = &cycle;
-                if !super::scans::any(reported_plane_cycles.iter(), |previous: &Vec<&str>| {
-                    if previous.len() != cycle.len() {
-                        return Ok(false);
-                    }
-                    super::scans::all(previous.iter().zip(cycle.iter()), |(left, right)| {
-                        Ok(left == right)
-                    })
-                })? {
+                if !reported_plane_cycles.contains(cycle) {
                     let finding = Finding {
                         related: cycle
                             .iter()
@@ -2799,7 +2792,7 @@ fn check_feature_references(
                         entity: Some(feature.id.as_str().to_owned()),
                     };
                     findings.push(finding);
-                    reported_plane_cycles.push(cycle.clone());
+                    reported_plane_cycles.insert(cycle.clone());
                 }
                 break;
             }
@@ -2884,6 +2877,42 @@ fn check_feature_references(
         }
         Ok(())
     })?;
+    let mut occurrence_ids = BorrowedIdentities::new();
+    occurrence_ids.extend_unique(
+        ir.model
+            .occurrences
+            .iter()
+            .map(|occurrence| occurrence.id.as_str()),
+    );
+    let mut assembly_joint_ids = BorrowedIdentities::new();
+    assembly_joint_ids.extend_unique(
+        ir.model
+            .assembly_joints
+            .iter()
+            .map(|joint| joint.id.as_str()),
+    );
+    let mut sketch_ids = BorrowedIdentities::new();
+    sketch_ids.extend_unique(ir.model.sketches.iter().map(|sketch| sketch.id.as_str()));
+    let mut spatial_sketch_ids = BorrowedIdentities::new();
+    spatial_sketch_ids.extend_unique(
+        ir.model
+            .spatial_sketches
+            .iter()
+            .map(|sketch| sketch.id.as_str()),
+    );
+    let mut block_definition_ids = BorrowedIdentities::new();
+    block_definition_ids.extend_unique(
+        ir.model
+            .features
+            .iter()
+            .filter(|candidate| {
+                matches!(
+                    candidate.evaluation.definition().operation(),
+                    FeatureOperation::SketchBlockDefinition { .. }
+                )
+            })
+            .map(|candidate| candidate.id.as_str()),
+    );
     let mut feature_ordinals = std::collections::BTreeSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
@@ -3046,9 +3075,7 @@ fn check_feature_references(
             }
             FeatureOperation::InsertBodies { .. } => {}
             FeatureOperation::InsertComponent { occurrence } => {
-                if !super::scans::any(ir.model.occurrences.iter(), |candidate| {
-                    Ok::<_, CodecError>(candidate.id.as_str() == occurrence.as_str())
-                })? {
+                if !occurrence_ids.contains(occurrence.as_str()) {
                     ref_error(
                         findings,
                         feature.id.as_str(),
@@ -3058,9 +3085,7 @@ fn check_feature_references(
                 }
             }
             FeatureOperation::AssemblyJoint { joint } => {
-                if !super::scans::any(ir.model.assembly_joints.iter(), |candidate| {
-                    Ok::<_, CodecError>(candidate.id.as_str() == joint.as_str())
-                })? {
+                if !assembly_joint_ids.contains(joint.as_str()) {
                     ref_error(
                         findings,
                         feature.id.as_str(),
@@ -3381,11 +3406,7 @@ fn check_feature_references(
                         PatternSeed::Bodies(selection) => body_selections.push(selection),
                         PatternSeed::Occurrences(occurrences) => {
                             for occurrence in occurrences {
-                                if !super::scans::any(ir.model.occurrences.iter(), |candidate| {
-                                    Ok::<_, CodecError>(
-                                        candidate.id.as_str() == occurrence.as_str(),
-                                    )
-                                })? {
+                                if !occurrence_ids.contains(occurrence.as_str()) {
                                     ref_error(
                                         findings,
                                         feature.id.as_str(),
@@ -3400,9 +3421,7 @@ fn check_feature_references(
             }
             FeatureOperation::Sketch { sketch, .. } => {
                 if let Some(sketch) = sketch.id() {
-                    if !super::scans::any(ir.model.sketches.iter(), |value| {
-                        Ok::<_, CodecError>(value.id.as_str() == sketch.as_str())
-                    })? {
+                    if !sketch_ids.contains(sketch.as_str()) {
                         ref_error(
                             findings,
                             feature.id.as_str(),
@@ -3414,9 +3433,7 @@ fn check_feature_references(
             }
             FeatureOperation::SpatialSketch { sketch } => {
                 if let Some(sketch) = sketch {
-                    if !super::scans::any(ir.model.spatial_sketches.iter(), |value| {
-                        Ok::<_, CodecError>(value.id.as_str() == sketch.as_str())
-                    })? {
+                    if !spatial_sketch_ids.contains(sketch.as_str()) {
                         ref_error(
                             findings,
                             feature.id.as_str(),
@@ -3519,9 +3536,7 @@ fn check_feature_references(
             }
             FeatureOperation::TreeNode { children, .. } => {
                 for child in children {
-                    if !super::scans::any(ir.model.features.iter(), |candidate| {
-                        Ok::<_, CodecError>(candidate.id.as_str() == child.as_str())
-                    })? {
+                    if !features.contains(child.as_str()) {
                         ref_error(findings, feature.id.as_str(), "tree child", child.as_str());
                     }
                 }
@@ -3634,17 +3649,7 @@ fn check_feature_references(
                             feature.id.as_str(),
                             "sketch block does not precede its instance",
                         ),
-                        Some(_)
-                            if !super::scans::any(ir.model.features.iter(), |candidate| {
-                                Ok::<_, CodecError>(
-                                    (candidate.id.as_str() == block.as_str())
-                                        && matches!(
-                                            candidate.evaluation.definition().operation(),
-                                            FeatureOperation::SketchBlockDefinition { .. }
-                                        ),
-                                )
-                            })? =>
-                        {
+                        Some(_) if !block_definition_ids.contains(block.as_str()) => {
                             geometry_error(
                                 findings,
                                 feature.id.as_str(),
@@ -4641,6 +4646,47 @@ fn check_feature_sketch_references(
         }
         Ok(())
     })?;
+    // Every (entity, sketch) pair, so a repeated entity id matches any of
+    // its owners.
+    let sketch_entity_memberships: std::collections::HashSet<(&str, &str)> = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
+        .collect();
+    let sketch_points: std::collections::HashSet<(&str, &str)> = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                entity.geometry.definition(),
+                crate::sketches::SketchGeometryDefinition::Point { .. }
+            )
+        })
+        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
+        .collect();
+    let spatial_sketch_points: std::collections::HashSet<(&str, &str)> = ir
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                entity.geometry.definition(),
+                crate::sketches::SpatialSketchGeometryDefinition::Point { .. }
+            )
+        })
+        .map(|entity| (entity.id().as_str(), entity.sketch.as_str()))
+        .collect();
+    // The first sketch with an identity states its profile count.
+    let mut sketch_profile_counts = BorrowedIdentities::new();
+    for sketch in &ir.model.sketches {
+        sketch_profile_counts.insert_unique(sketch.id.as_str(), sketch.profiles.len());
+    }
+    let mut spatial_sketch_profile_counts = BorrowedIdentities::new();
+    for sketch in &ir.model.spatial_sketches {
+        spatial_sketch_profile_counts.insert_unique(sketch.id.as_str(), sketch.profiles.len());
+    }
     let mut owners = BorrowedIdentities::new();
     for feature in &ir.model.features {
         let sketch = match feature.evaluation.definition() {
@@ -4693,16 +4739,7 @@ fn check_feature_sketch_references(
                         .map_or(Ok::<_, CodecError>(false), |owner| {
                             Ok::<_, CodecError>(*owner == sketch.as_str())
                         })?
-                    && super::scans::any(ir.model.sketch_entities.iter(), |entity| {
-                        Ok::<_, CodecError>(
-                            (entity.id().as_str() == point.as_str())
-                                && (entity.sketch.as_str() == sketch.as_str())
-                                && matches!(
-                                    entity.geometry.definition(),
-                                    crate::sketches::SketchGeometryDefinition::Point { .. }
-                                ),
-                        )
-                    })?
+                    && sketch_points.contains(&(point.as_str(), sketch.as_str()))
             }
             SketchPointSelection::Spatial {
                 sketch,
@@ -4716,16 +4753,7 @@ fn check_feature_sketch_references(
                         .map_or(Ok::<_, CodecError>(false), |owner| {
                             Ok::<_, CodecError>(*owner == sketch.as_str())
                         })?
-                    && super::scans::any(ir.model.spatial_sketch_entities.iter(), |entity| {
-                        Ok::<_, CodecError>(
-                            (entity.id().as_str() == point.as_str())
-                                && (entity.sketch.as_str() == sketch.as_str())
-                                && matches!(
-                                    entity.geometry.definition(),
-                                    crate::sketches::SpatialSketchGeometryDefinition::Point { .. }
-                                ),
-                        )
-                    })?
+                    && spatial_sketch_points.contains(&(point.as_str(), sketch.as_str()))
             }
             SketchPointSelection::Native(native) => non_blank_native_reference(native),
             SketchPointSelection::Unresolved => true,
@@ -4854,11 +4882,10 @@ fn check_feature_sketch_references(
             }
             match profile {
                 ProfileReference::SpatialSketchProfiles { sketch, profiles } => {
-                    let profile_count =
-                        super::scans::find(ir.model.spatial_sketches.iter(), |candidate| {
-                            Ok::<_, CodecError>(candidate.id.as_str() == sketch.as_str())
-                        })?
-                        .map_or(0, |sketch| sketch.profiles.len());
+                    let profile_count = spatial_sketch_profile_counts
+                        .get(sketch.as_str())
+                        .copied()
+                        .unwrap_or(0);
                     if super::scans::any(profiles.iter(), |index| {
                         Ok::<_, CodecError>(
                             cadmpeg_core::decode::index_from_u32(*index) >= profile_count,
@@ -4872,11 +4899,10 @@ fn check_feature_sketch_references(
                     }
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
-                    let sketch_profile_count =
-                        super::scans::find(ir.model.sketches.iter(), |candidate| {
-                            Ok::<_, CodecError>(candidate.id.as_str() == sketch.as_str())
-                        })?
-                        .map_or(0, |sketch| sketch.profiles.len());
+                    let sketch_profile_count = sketch_profile_counts
+                        .get(sketch.as_str())
+                        .copied()
+                        .unwrap_or(0);
                     if super::scans::any(profiles.iter(), |index| {
                         Ok::<_, CodecError>(
                             cadmpeg_core::decode::index_from_u32(*index) >= sketch_profile_count,
@@ -4890,12 +4916,10 @@ fn check_feature_sketch_references(
                     }
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchRegions { sketch, regions }) => {
-                    let selected_sketch =
-                        super::scans::find(ir.model.sketches.iter(), |candidate| {
-                            Ok::<_, CodecError>(candidate.id.as_str() == sketch.as_str())
-                        })?;
-                    let sketch_profile_count =
-                        selected_sketch.map_or(0, |sketch| sketch.profiles.len());
+                    let sketch_profile_count = sketch_profile_counts
+                        .get(sketch.as_str())
+                        .copied()
+                        .unwrap_or(0);
                     let invalid = super::scans::any(regions.iter(), |region| {
                         Ok::<_, CodecError>(match region {
                             crate::features::SketchProfileRegion::Loops { loops } => {
@@ -4914,7 +4938,7 @@ fn check_feature_sketch_references(
                             } => {
                                 let valid_ring =
                                 |ring: &[crate::features::SketchProfileBoundaryUse]| -> Result<bool, CodecError> {
-                                    super::scans::all(ring.iter(), |use_| super::scans::any(ir.model.sketch_entities.iter(), |entity| Ok::<_, CodecError>((entity.id().as_str() == use_.entity.as_str()) && (entity.sketch.as_str() == sketch.as_str()))))
+                                    super::scans::all(ring.iter(), |use_| Ok::<_, CodecError>(sketch_entity_memberships.contains(&(use_.entity.as_str(), sketch.as_str()))))
                                 };
                                 !valid_ring(outer_boundary)?
                                     || super::scans::any(hole_boundaries.iter(), |ring| {
