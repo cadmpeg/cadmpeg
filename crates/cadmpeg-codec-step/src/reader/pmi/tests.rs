@@ -18,7 +18,7 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
-mod collection_limits;
+mod depth_limits;
 mod shared_walks;
 
 #[test]
