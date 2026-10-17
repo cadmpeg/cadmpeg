@@ -141,23 +141,19 @@ fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
         cache: None,
     };
     ir.model.surfaces.push(carrier);
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let index = super::CycleIndex::build(&ir).unwrap();
+    let index = super::CycleIndex::build(&ir);
     let general = crate::index::ModelIndex::new_model_only(&ir);
+    assert_eq!(index.curve(curve.as_str()), general.curve(curve.as_str()));
     assert_eq!(
-        index.curve(&ctx, curve.as_str()).unwrap(),
-        general.curve(&ctx, curve.as_str()).unwrap()
+        index.surface(surface.as_str()),
+        general.surface(surface.as_str())
     );
     assert_eq!(
-        index.surface(&ctx, surface.as_str()).unwrap(),
-        general.surface(&ctx, surface.as_str()).unwrap()
-    );
-    assert_eq!(
-        index.curve(&ctx, curve.as_str()).unwrap(),
+        index.curve(curve.as_str()),
         Some(&ir.model.procedural_curves[0])
     );
     assert_eq!(
-        index.surface(&ctx, surface.as_str()).unwrap(),
+        index.surface(surface.as_str()),
         Some(&ir.model.procedural_surfaces[1])
     );
 }

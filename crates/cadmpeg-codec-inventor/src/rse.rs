@@ -519,7 +519,7 @@ impl<'a> RseInventory<'a> {
             .cloned()
             .collect();
         let document_kind = document_kind_for_segments(&segments);
-        let active_carrier = select_active_carrier(ctx, &segments, &document_kind)?;
+        let active_carrier = select_active_carrier(&segments, &document_kind)?;
         Ok(Self {
             databases: database_descriptors,
             registry,

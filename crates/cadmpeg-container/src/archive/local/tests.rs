@@ -37,9 +37,9 @@ fn with_snapshot(bytes: &[u8], run: impl FnOnce(&DecodeContext<'_>, &ArchiveSnap
     run(&ctx, &archive);
 }
 
-fn assert_partition(archive: &ArchiveSnapshot<'_>, ctx: &DecodeContext<'_>, len: usize) {
+fn assert_partition(archive: &ArchiveSnapshot<'_>, len: usize) {
     let ledger = archive
-        .physical_ledger(ctx)
+        .physical_ledger()
         .expect("physical partition is bounded");
     let mut next = 0;
     for span in ledger {
@@ -76,9 +76,8 @@ fn missing_directory_recovers_complete_local_members() {
                 .window(),
             b"second"
         );
-        let summaries = archive
-            .container_entries(ctx, |_| cadmpeg_core::container::ContainerRole::Other)
-            .expect("container summary is bounded");
+        let summaries =
+            archive.container_entries(|_| cadmpeg_core::container::ContainerRole::Other);
         assert!(summaries[0].attributes.contains_key("archive_recovery"));
         assert!(!summaries[0]
             .attributes
@@ -87,7 +86,7 @@ fn missing_directory_recovers_complete_local_members() {
             archive.entries()[0].declaration_range(),
             ByteRange { start: 0, end: 33 }
         );
-        assert_partition(archive, ctx, bytes.len());
+        assert_partition(archive, bytes.len());
     });
 }
 
@@ -119,7 +118,7 @@ fn truncated_final_member_retains_frame_and_keeps_previous_payload() {
                 end: u64::try_from(bytes.len()).expect("fixture offset fits 64")
             }
         );
-        assert_partition(archive, ctx, bytes.len());
+        assert_partition(archive, bytes.len());
     });
 }
 
@@ -134,7 +133,7 @@ fn unreadable_header_retains_unframed_tail_without_searching_for_signatures() {
     ] {
         let mut bytes = first.clone();
         bytes.extend_from_slice(tail);
-        with_snapshot(&bytes, |ctx, archive| {
+        with_snapshot(&bytes, |_, archive| {
             assert_eq!(archive.entries().len(), 1);
             assert_eq!(
                 archive.recovery_tail(),
@@ -143,7 +142,7 @@ fn unreadable_header_retains_unframed_tail_without_searching_for_signatures() {
                     end: u64::try_from(bytes.len()).expect("fixture offset fits 64")
                 })
             );
-            assert_partition(archive, ctx, bytes.len());
+            assert_partition(archive, bytes.len());
         });
     }
 }
@@ -171,7 +170,7 @@ fn descriptor_without_sizes_ends_walk_at_unreadable_member() {
                 .start,
             u64::try_from(start).expect("fixture offset fits 64")
         );
-        assert_partition(archive, ctx, bytes.len());
+        assert_partition(archive, bytes.len());
     });
 }
 
@@ -191,7 +190,7 @@ fn descriptors_with_declared_sizes_must_match_before_walking_on() {
             with_snapshot(&bytes, |ctx, archive| {
                 assert_eq!(archive.entries().len(), if valid { 2 } else { 1 });
                 assert_eq!(archive.open(ctx, "one").is_ok(), valid);
-                assert_partition(archive, ctx, bytes.len());
+                assert_partition(archive, bytes.len());
             });
         }
     }
@@ -221,12 +220,12 @@ fn zip64_local_sizes_bound_payload_and_reject_missing_extra() {
                 .window(),
             b"first"
         );
-        assert_partition(archive, ctx, bytes.len());
+        assert_partition(archive, bytes.len());
     });
     put_u16(&mut bytes, 28, 0);
     with_snapshot(&bytes, |ctx, archive| {
         assert!(archive.open(ctx, "one").is_err());
-        assert_partition(archive, ctx, bytes.len());
+        assert_partition(archive, bytes.len());
     });
 }
 
@@ -253,7 +252,7 @@ fn payload_integrity_and_admission_survive_recovery() {
                     .window(),
                 b"second"
             );
-            assert_partition(archive, ctx, bytes.len());
+            assert_partition(archive, bytes.len());
         });
     }
 }
@@ -280,7 +279,7 @@ fn inconsistent_stored_sizes_stop_the_walk_and_retain_the_remaining_source() {
                     end: u64::try_from(bytes.len()).expect("fixture offset fits 64"),
                 }
             );
-            assert_partition(archive, ctx, bytes.len());
+            assert_partition(archive, bytes.len());
         });
     }
 }
@@ -323,7 +322,7 @@ fn zip64_local_fields_include_both_sizes_and_match_ordinary_sizes() {
                     .window(),
                 payload
             );
-            assert_partition(archive, ctx, bytes.len());
+            assert_partition(archive, bytes.len());
         });
         if stored32 != u32::MAX {
             put_u32(&mut bytes, 18, stored32 - 1);
@@ -331,7 +330,7 @@ fn zip64_local_fields_include_both_sizes_and_match_ordinary_sizes() {
                 assert!(
                     matches!(archive.open(ctx, "one"), Err(CodecError::Malformed(message)) if message.contains("ZIP64 local sizes disagree"))
                 );
-                assert_partition(archive, ctx, bytes.len());
+                assert_partition(archive, bytes.len());
             });
         }
     }
@@ -402,7 +401,7 @@ fn damaged_directory_recovers_supported_compression_without_changing_open_checks
                     b"geometry"
                 );
             }
-            assert_partition(archive, ctx, truncated.len());
+            assert_partition(archive, truncated.len());
         });
     }
     let mut damaged = bytes.clone();
@@ -416,7 +415,7 @@ fn damaged_directory_recovers_supported_compression_without_changing_open_checks
                 .window(),
             b"geometry"
         );
-        assert_partition(archive, ctx, damaged.len());
+        assert_partition(archive, damaged.len());
     });
     let mut damaged_extra = bytes.clone();
     put_u32(&mut damaged_extra, central + 20, u32::MAX);
@@ -429,7 +428,7 @@ fn damaged_directory_recovers_supported_compression_without_changing_open_checks
                 .window(),
             b"geometry"
         );
-        assert_partition(archive, ctx, damaged_extra.len());
+        assert_partition(archive, damaged_extra.len());
     });
 }
 
@@ -490,5 +489,5 @@ fn recovery_preserves_nested_root_offsets() {
             .window(),
         b"first"
     );
-    assert_partition(&archive, &ctx, local.len());
+    assert_partition(&archive, local.len());
 }

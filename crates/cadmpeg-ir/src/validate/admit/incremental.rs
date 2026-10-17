@@ -47,40 +47,33 @@ pub(crate) struct AdmittedState {
 }
 
 impl AdmittedState {
-    pub(crate) fn build(
-        ir: &CadIr,
-        format: &str,
-        unknowns: &[UnknownRecord],
-    ) -> Result<Self, CodecError> {
+    pub(crate) fn build(ir: &CadIr, format: &str, unknowns: &[UnknownRecord]) -> Self {
         let mut state = Self {
             identities: BTreeMap::new(),
             lengths: lengths(&ir.model),
             annotations_admitted: true,
             dirty_unknowns: BTreeSet::new(),
         };
-        {
-            macro_rules! add_neutral {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                    for entity in &ir.model.$field { insert(&mut state.identities, entity.identity(), false); }
-                )*};
-            }
-            crate::document::arena_registry!(add_neutral);
-            for (namespace, arenas) in &ir.native.0 {
-                for (arena, records) in arenas.arenas() {
-                    if namespace == format && arena == "unknowns" {
-                        continue;
-                    }
-                    for record in records {
-                        insert(&mut state.identities, record.id(), true);
-                    }
+        macro_rules! add_neutral {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                for entity in &ir.model.$field { insert(&mut state.identities, entity.identity(), false); }
+            )*};
+        }
+        crate::document::arena_registry!(add_neutral);
+        for (namespace, arenas) in &ir.native.0 {
+            for (arena, records) in arenas.arenas() {
+                if namespace == format && arena == "unknowns" {
+                    continue;
+                }
+                for record in records {
+                    insert(&mut state.identities, record.id(), true);
                 }
             }
-            for record in unknowns {
-                insert(&mut state.identities, record.id().as_str(), true);
-            }
-            Ok::<_, CodecError>(())
-        }?;
-        Ok(state)
+        }
+        for record in unknowns {
+            insert(&mut state.identities, record.id().as_str(), true);
+        }
+        state
     }
 
     pub(crate) fn dirty_unknown(&mut self, position: usize) {

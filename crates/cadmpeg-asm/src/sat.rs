@@ -24,7 +24,6 @@ use crate::kernel_header::KernelHeader;
 use crate::sab::{Record, Token};
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 
 /// The stream branch, from the terminator line ([`asm.md` §7]).
@@ -155,8 +154,8 @@ impl TextHeader {
     /// `scale` is reported as `10.0`: [`parse`] converts length-bearing values
     /// into the centimetre convention, including `resabs`, so the decoders see
     /// the same unit a binary stream carries.
-    pub fn as_kernel_header(&self, _ctx: &DecodeContext<'_>) -> Result<KernelHeader, CodecError> {
-        Ok(KernelHeader {
+    pub fn as_kernel_header(&self) -> KernelHeader {
+        KernelHeader {
             save_format_version: Some(self.save_format_version),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),
@@ -166,7 +165,7 @@ impl TextHeader {
             scale: Some(10.0),
             linear: self.resabs_cm().map(NonNegativeReal::get),
             angular: self.resnor.map(NonNegativeReal::get),
-        })
+        }
     }
 }
 
@@ -656,10 +655,7 @@ fn record_error_reason(name: &str, description: &'static str) -> String {
 }
 
 /// Read the header and final branch marker without framing entity records.
-pub fn parse_container(
-    _ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<(TextHeader, Terminator), StreamFailure> {
+pub fn parse_container(bytes: &[u8]) -> Result<(TextHeader, Terminator), StreamFailure> {
     let mut position = 0;
     let header = parse_header(bytes, &mut position)?;
     let tail = bytes.trim_ascii_end();
@@ -2270,13 +2266,7 @@ mod tests {
     use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 
     fn kernel_header(header: &super::TextHeader) -> crate::kernel_header::KernelHeader {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        header
-            .as_kernel_header(&ctx)
-            .expect("copy the text header into a kernel header")
+        header.as_kernel_header()
     }
 
     #[test]

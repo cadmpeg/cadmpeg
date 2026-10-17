@@ -26,6 +26,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::units::FinitePoint2;
+use std::collections::HashMap;
 
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
@@ -105,11 +106,35 @@ pub(crate) fn prepare_sketches_for_write(
     patch_line_profiles(ir, retained)
 }
 
+/// Each marker id's first offset in every lane holding it, in lane order.
+fn first_marker_offsets_by_id<'a>(
+    lanes: impl IntoIterator<Item = &'a [crate::records::SketchInputEntity]>,
+) -> HashMap<String, Vec<(usize, u64)>> {
+    let mut by_id = HashMap::<String, Vec<(usize, u64)>>::new();
+    for (lane_index, markers) in lanes.into_iter().enumerate() {
+        for marker in markers {
+            let position = (lane_index, marker.offset());
+            match by_id.get_mut(marker.id()) {
+                Some(positions) => {
+                    if positions.last().is_none_or(|&(last, _)| last != lane_index) {
+                        positions.push(position);
+                    }
+                }
+                None => {
+                    by_id.insert(marker.id().to_owned(), vec![position]);
+                }
+            }
+        }
+    }
+    by_id
+}
+
 fn patch_spatial_sketches(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut lane_object_starts = None;
+    let mut marker_offsets = None;
     for sketch in &ir.model.spatial_sketches {
         let owners = ir
             .model
@@ -177,16 +202,21 @@ fn patch_spatial_sketches(
                     entity.id()
                 ))
             })?;
-            let candidates = native
-                .feature_input_lanes
-                .iter()
-                .enumerate()
-                .filter_map(|(lane_index, lane)| {
-                    let marker = lane
-                        .sketch_entities
+            let marker_offsets = marker_offsets.get_or_insert_with(|| {
+                first_marker_offsets_by_id(
+                    native
+                        .feature_input_lanes
                         .iter()
-                        .find(|marker| marker.id() == native_ref)?;
-                    let offset = usize::try_from(marker.offset()).ok()?;
+                        .map(|lane| lane.sketch_entities.as_slice()),
+                )
+            });
+            let candidates = marker_offsets
+                .get(native_ref)
+                .into_iter()
+                .flatten()
+                .filter_map(|&(lane_index, offset)| {
+                    let lane = native.feature_input_lanes.get(lane_index)?;
+                    let offset = usize::try_from(offset).ok()?;
                     let coordinate_offset =
                         marker_spatial_coordinate_offset(&lane.native_payload, offset);
                     if coordinate_offset.is_none()

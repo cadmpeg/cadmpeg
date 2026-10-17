@@ -151,7 +151,7 @@ fn an_end_signature_inside_an_opaque_comment_does_not_select_payload_bytes() {
         2 * 1024 * 1024
     );
     let spans = snapshot
-        .physical_ledger(&ctx)
+        .physical_ledger()
         .expect("original source partition");
     assert_eq!(
         spans.last().expect("end record").end,

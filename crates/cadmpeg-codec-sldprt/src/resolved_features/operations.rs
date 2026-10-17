@@ -147,11 +147,7 @@ pub(crate) fn bind_revolution_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let history_features = crate::records::HistoryFeatures::new(histories);
     let lane_names = lanes
         .iter()
         .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
@@ -166,8 +162,7 @@ pub(crate) fn bind_revolution_operations(
             if *op != BooleanOp::Unresolved {
                 break 'feature_edit;
             }
-            let Some(history) = native_ref.and_then(|native| history_features.get(native).copied())
-            else {
+            let Some(history) = native_ref.and_then(|native| history_features.get(native)) else {
                 break 'feature_edit;
             };
             let mut operations = lane_names.iter().filter_map(|(lane, names)| {
@@ -199,11 +194,7 @@ pub(crate) fn bind_sweep_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let history_features = crate::records::HistoryFeatures::new(histories);
     let lane_names = lanes
         .iter()
         .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
@@ -222,8 +213,7 @@ pub(crate) fn bind_sweep_operations(
                 ) {
                     break 'sweep_mode;
                 }
-                let Some(history) =
-                    native_ref.and_then(|native| history_features.get(native).copied())
+                let Some(history) = native_ref.and_then(|native| history_features.get(native))
                 else {
                     break 'sweep_mode;
                 };
@@ -353,11 +343,7 @@ pub(crate) fn bind_extrusion_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    let history_by_id = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let history_by_id = crate::records::HistoryFeatures::new(histories);
     let lane_names = lanes
         .iter()
         .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
@@ -372,8 +358,7 @@ pub(crate) fn bind_extrusion_operations(
             if *op != BooleanOp::Unresolved {
                 break 'feature_edit;
             }
-            let Some(history) = native_ref.and_then(|native| history_by_id.get(native).copied())
-            else {
+            let Some(history) = native_ref.and_then(|native| history_by_id.get(native)) else {
                 break 'feature_edit;
             };
             let mut operations = lane_names.iter().filter_map(|(lane, names)| {
@@ -416,11 +401,7 @@ pub(crate) fn inherit_configuration_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    let history_by_id = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let history_by_id = crate::records::HistoryFeatures::new(histories);
     let base_definitions = base_features
         .iter()
         .map(|feature| (&feature.id, feature.evaluation.definition()))
@@ -432,8 +413,7 @@ pub(crate) fn inherit_configuration_operations(
             let Some(base_definition) = base_definitions.get(feature_id) else {
                 break 'feature_edit;
             };
-            let Some(history) = native_ref.and_then(|native| history_by_id.get(native).copied())
-            else {
+            let Some(history) = native_ref.and_then(|native| history_by_id.get(native)) else {
                 break 'feature_edit;
             };
             let operation_kind = match (&*definition, *base_definition) {

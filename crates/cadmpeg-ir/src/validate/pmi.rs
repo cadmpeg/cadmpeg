@@ -7,24 +7,19 @@ use crate::index::identities::BorrowedIdentities;
 use crate::pmi::{PmiDefinition, PmiTarget};
 use crate::report::check::{Check, Finding};
 
-pub(super) fn check_pmi(
-    ir: &CadIr,
-    findings: &mut Vec<Finding>,
-) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
     let definitions = BorrowedIdentities::build(|add| {
         for annotation in &ir.model.pmi {
-            add(annotation.id.as_str(), &annotation.definition)?;
+            add(annotation.id.as_str(), &annotation.definition);
         }
-        Ok(())
-    })?;
+    });
     macro_rules! typed_identities {
         ($arena:ident) => {
             BorrowedIdentities::build(|add| {
                 for item in &ir.model.$arena {
-                    add(item.id.as_str(), ())?;
+                    add(item.id.as_str(), ());
                 }
-                Ok(())
-            })?
+            })
         };
     }
     let bodies = typed_identities!(bodies);
@@ -110,5 +105,4 @@ pub(super) fn check_pmi(
             PmiDefinition::DatumTarget { .. } => {}
         }
     }
-    Ok(())
 }

@@ -7,8 +7,7 @@
 //! record stream begins immediately after the doubles.
 
 use crate::kernel_header::RefWidth;
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 use crate::kernel_header::{
     read_string_region, scan_string_region, BinaryHeader, HeaderRegion, KernelHeader,
@@ -25,9 +24,9 @@ pub fn has_acis_magic(bytes: &[u8]) -> bool {
 }
 
 /// Parse the shared kernel metadata from a 32-bit ACIS binary header.
-pub fn parse(_ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
+pub fn parse(bytes: &[u8]) -> Option<BinaryHeader> {
     if !has_acis_magic(bytes) {
-        return Ok(None);
+        return None;
     }
     let mut header = KernelHeader {
         save_format_version: View::u32_le_at(bytes, acis_bf4::SAVE_FORMAT_VERSION),
@@ -50,10 +49,10 @@ pub fn parse(_ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHead
     header.scale = scale;
     header.linear = linear;
     header.angular = angular;
-    Ok(Some(BinaryHeader {
+    Some(BinaryHeader {
         width: RefWidth::Four,
         metadata: header,
-    }))
+    })
 }
 
 /// Byte offset immediately after the three strings and three doubles.
@@ -92,23 +91,12 @@ pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
 }
 
 /// Exact solved-record boundary, using an already-parsed ACIS header.
-pub fn solved_record_limit_with_header(
-    _ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    header: &BinaryHeader,
-) -> Result<Option<usize>, CodecError> {
+pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
     if !header.metadata.has_history_partition() {
-        return Ok(None);
+        return None;
     }
-    let Some(start) = record_stream_start_with_header(bytes, header) else {
-        return Ok(None);
-    };
-    Ok(crate::sab::scan_history_boundary(
-        bytes,
-        start,
-        header.width,
-        None,
-    ))
+    let start = record_stream_start_with_header(bytes, header)?;
+    crate::sab::scan_history_boundary(bytes, start, header.width, None)
 }
 
 #[cfg(test)]
@@ -121,14 +109,8 @@ mod tests {
         bytes.resize(crate::layout::acisheader_binaryfile4::LEN, 0);
         bytes.extend_from_slice(&[7, 4]);
         bytes.extend_from_slice(b"ACIS");
-        let service = cadmpeg_test_support::service_decode_context();
         assert_eq!(
-            parse(&service, &bytes)
-                .unwrap()
-                .unwrap()
-                .metadata
-                .product_family
-                .as_deref(),
+            parse(&bytes).unwrap().metadata.product_family.as_deref(),
             Some("ACIS")
         );
     }
@@ -156,9 +138,7 @@ mod tests {
         bytes.extend_from_slice(&[0x0d, 11]);
         bytes.extend_from_slice(b"delta_state");
 
-        let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-            .expect("parse the ACIS binary header")
-            .expect("ACIS header");
+        let header = parse(&bytes).expect("ACIS header");
         assert_eq!(header.width.bytes(), 4);
         assert_eq!(header.metadata.save_format_version, Some(21_800));
         assert_eq!(header.metadata.entity_count, Some(2));

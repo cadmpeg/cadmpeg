@@ -1435,3 +1435,54 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
         .iter()
         .all(|entity| entity.kind() == SketchInputKind::from_handle_code(0)));
 }
+
+#[test]
+fn native_reference_index_matches_the_first_feature_scan() {
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation, SketchFeatureBinding,
+    };
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    for _ in 0..200 {
+        let features = (0..next(12))
+            .map(|position| {
+                let native = next(6);
+                Feature {
+                    id: FeatureId::mint(format!("synthetic:test:id#feature-{position}"))
+                        .expect("identity grammar"),
+                    ordinal: 0,
+                    name: None,
+                    suppressed: None,
+                    dependencies: DistinctMembers::default(),
+                    source_properties: std::collections::BTreeMap::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: FeatureContent::default(),
+                    evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                        FeatureOperation::Sketch {
+                            sketch: SketchFeatureBinding::Planar(None),
+                        },
+                    )),
+                    native_ref: (native > 0).then(|| format!("native-{native}")),
+                }
+            })
+            .collect::<Vec<_>>();
+        let indexed = super::features_by_native_ref(&features);
+        for native in (0..7).map(|native| format!("native-{native}")) {
+            let scanned = features
+                .iter()
+                .find(|feature| feature.native_ref.as_deref() == Some(native.as_str()));
+            assert_eq!(
+                indexed.get(native.as_str()).map(|feature| &feature.id),
+                scanned.map(|feature| &feature.id)
+            );
+        }
+    }
+}

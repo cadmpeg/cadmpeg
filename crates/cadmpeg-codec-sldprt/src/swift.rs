@@ -4,7 +4,7 @@
 
 use std::cell::Cell;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, WorkBudget};
@@ -553,6 +553,8 @@ pub(crate) fn annotations(
     )?;
     losses.extend(projection.walk_caps.losses());
     let projected = projection.annotations;
+    let positions_by_prefix =
+        positions_by_id_prefix(projected.iter().map(|annotation| annotation.id.as_str()));
     for (reference, entity) in root
         .annotations
         .references
@@ -562,14 +564,12 @@ pub(crate) fn annotations(
         let Some(prefix) = pmi_id(&reference.id).map(PmiId::into_string) else {
             continue;
         };
-        for annotation in projected.iter().filter(|annotation| {
-            annotation.id.as_str() == prefix
-                || annotation
-                    .id
-                    .as_str()
-                    .strip_prefix(&prefix)
-                    .is_some_and(|suffix| suffix.starts_with(':'))
-        }) {
+        for annotation in positions_by_prefix
+            .get(prefix.as_str())
+            .into_iter()
+            .flatten()
+            .filter_map(|&position| projected.get(position))
+        {
             crate::annotations::note(
                 annotations,
                 annotation.id.as_str(),
@@ -583,6 +583,21 @@ pub(crate) fn annotations(
     Ok(projected)
 }
 
+/// Positions of the ids that equal each key or continue it with `:`, in id
+/// order.
+fn positions_by_id_prefix<'a>(ids: impl Iterator<Item = &'a str>) -> HashMap<&'a str, Vec<usize>> {
+    let mut positions = HashMap::<_, Vec<_>>::new();
+    for (position, id) in ids.enumerate() {
+        positions.entry(id).or_default().push(position);
+        for (end, _) in id.match_indices(':') {
+            if let Some(prefix) = id.get(..end) {
+                positions.entry(prefix).or_default().push(position);
+            }
+        }
+    }
+    positions
+}
+
 /// Build the native-history join used when a SWIFT hole-pattern graph omits all
 /// applied members and CAD identifiers. The map is keyed by the SWIFT object
 /// name (`Hole PatternN`) and is populated only by one unambiguous native
@@ -590,6 +605,34 @@ pub(crate) fn annotations(
 pub(crate) fn pattern_hole_nominal_context(
     features: &[cadmpeg_ir::features::Feature],
 ) -> BTreeMap<String, PositiveReal> {
+    let mut first_ordinals = HashMap::<&cadmpeg_ir::features::FeatureId, u64>::new();
+    let mut native_holes = HashMap::<_, Vec<_>>::new();
+    for feature in features {
+        first_ordinals
+            .entry(&feature.id)
+            .and_modify(|ordinal| *ordinal = (*ordinal).min(feature.ordinal))
+            .or_insert(feature.ordinal);
+        if !feature
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
+        {
+            continue;
+        }
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let diameter = shape.diameter().map(PositiveReal::from_assigned_length);
+        for dependency in &feature.dependencies {
+            native_holes
+                .entry(dependency)
+                .or_default()
+                .push((feature.ordinal, diameter));
+        }
+    }
     let mut candidates = BTreeMap::<String, Option<PositiveReal>>::new();
     for pattern in features {
         let Some(name) = pattern.name.as_deref() else {
@@ -616,47 +659,18 @@ pub(crate) fn pattern_hole_nominal_context(
         let [cadmpeg_ir::features::patterns::PatternSeed::Feature(seed)] = seeds.as_slice() else {
             continue;
         };
-        let mut preceding_seed = false;
-        for candidate in features {
-            if candidate.id == *seed && candidate.ordinal < pattern.ordinal {
-                preceding_seed = true;
-                break;
-            }
-        }
-        if !preceding_seed {
+        if first_ordinals
+            .get(seed)
+            .is_none_or(|&ordinal| ordinal >= pattern.ordinal)
+        {
             continue;
         }
-        let mut hole_count = 0u8;
-        let mut diameter = None;
-        for candidate in features {
-            if candidate.ordinal <= pattern.ordinal {
-                continue;
-            }
-            if !candidate
-                .dependencies
-                .iter()
-                .any(|dependency| dependency == seed)
-                || !candidate
-                    .native_ref
-                    .as_deref()
-                    .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-            {
-                continue;
-            }
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
-            ) = candidate.evaluation.definition()
-            else {
-                continue;
-            };
-            if hole_count == 1 {
-                hole_count = 2;
-                break;
-            }
-            hole_count = 1;
-            diameter = shape.diameter().map(PositiveReal::from_assigned_length);
-        }
-        let (1, Some(diameter)) = (hole_count, diameter) else {
+        let mut later_holes = native_holes
+            .get(seed)
+            .into_iter()
+            .flatten()
+            .filter(|(ordinal, _)| *ordinal > pattern.ordinal);
+        let (Some(&(_, Some(diameter))), None) = (later_holes.next(), later_holes.next()) else {
             continue;
         };
         let semantic_name = format!("Hole Pattern{suffix}");

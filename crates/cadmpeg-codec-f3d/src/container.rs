@@ -438,17 +438,12 @@ pub(crate) fn scan<'a>(
         let buf = view.map_or(&[][..], |view| view.window());
         if is_brep {
             let kernel = if asm_header::has_asm_magic(buf) {
-                match asm_header::parse(ctx, buf)? {
-                    Some(header) => Some(KernelFraming::Asm {
-                        solved_record_limit: asm_header::solved_record_limit_with_header(
-                            ctx, buf, &header,
-                        )?,
-                        header,
-                    }),
-                    None => None,
-                }
+                asm_header::parse(buf).map(|header| KernelFraming::Asm {
+                    solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
+                    header,
+                })
             } else {
-                acis_header::parse(ctx, buf)?.map(KernelFraming::Acis)
+                acis_header::parse(buf).map(KernelFraming::Acis)
             };
             let solved_record_limit = kernel.as_ref().and_then(KernelFraming::solved_record_limit);
             let sha = cadmpeg_ir::hash::digest::Sha256Digest::digest(buf);

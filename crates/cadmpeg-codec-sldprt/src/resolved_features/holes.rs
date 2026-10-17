@@ -51,10 +51,7 @@ pub(crate) fn project_helix_axes(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut records = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        records.insert(feature.id.as_str(), feature);
-    }
+    let records = crate::records::HistoryFeatures::new(histories);
     let mut lane_objects = None;
     for model_feature in model_features {
         let FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
@@ -70,7 +67,7 @@ pub(crate) fn project_helix_axes(
         let Some(native_ref) = model_feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(record) = records.get(native_ref).copied() else {
+        let Some(record) = records.get(native_ref) else {
             continue;
         };
         let lane_objects = lane_objects.get_or_insert_with(|| {
@@ -554,7 +551,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
         let mut features_by_id = HashMap::new();
         let mut features_by_source = HashMap::new();
         for feature in &history.features {
-            features_by_id.insert(feature.id.as_str(), feature);
+            features_by_id.entry(feature.id.as_str()).or_insert(feature);
             if let Some(source) = feature.source_id {
                 features_by_source.insert(source, feature);
             }
@@ -645,7 +642,9 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
         let Some(diameter) = feature.parameters.get("D2") else {
             continue;
         };
-        fallback_parameters.insert(feature.id.as_str(), diameter);
+        fallback_parameters
+            .entry(feature.id.as_str())
+            .or_insert(diameter);
     }
     for feature in histories
         .iter_mut()
@@ -1245,9 +1244,12 @@ pub(crate) fn project_profiled_hole_constructions(
     let mut native_histories = HashMap::new();
     for (history_index, history) in histories.iter().enumerate() {
         for feature in &history.features {
-            native_histories.insert(feature.id.as_str(), history_index);
+            native_histories
+                .entry(feature.id.as_str())
+                .or_insert((history_index, feature));
         }
     }
+    let position_sketches = HolePositionSketches::new(histories, lanes);
     let mut unowned_incomplete_holes = ctx.alloc_filled(
         histories.len(),
         Vec::<(&str, u32)>::new(),
@@ -1265,14 +1267,7 @@ pub(crate) fn project_profiled_hole_constructions(
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(&history_index) = native_histories.get(native) else {
-            continue;
-        };
-        let Some(native_feature) = histories[history_index]
-            .features
-            .iter()
-            .find(|candidate| candidate.id == native)
-        else {
+        let Some(&(history_index, native_feature)) = native_histories.get(native) else {
             continue;
         };
         if !native_feature
@@ -1348,19 +1343,13 @@ pub(crate) fn project_profiled_hole_constructions(
         let Some(native_id) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(&history_index) = native_histories.get(native_id) else {
+        let Some(&(history_index, native)) = native_histories.get(native_id) else {
             continue;
         };
         let history = &histories[history_index];
-        let Some(native) = history
-            .features
-            .iter()
-            .find(|candidate| candidate.id == native_id)
-        else {
-            continue;
-        };
-        let position =
-            hole_position_feature(native, histories, lanes).map(|feature| feature.id.as_str());
+        let position = position_sketches
+            .of(native)
+            .map(|feature| feature.id.as_str());
         let mut direct = None;
         if let Some(children) = native.properties.get("DissectableChildren") {
             for source in children.split(',') {
@@ -1459,10 +1448,8 @@ pub(crate) fn project_hole_position_sketches(
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
+    let position_sketches = HolePositionSketches::new(histories, lanes);
     let mut model_sketch_features = HashMap::new();
     for feature in features.iter() {
         let FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -1496,11 +1483,11 @@ pub(crate) fn project_hole_position_sketches(
             let Some(native) = feature
                 .native_ref
                 .as_deref()
-                .and_then(|native| native_features.get(native).copied())
+                .and_then(|native| native_features.get(native))
             else {
                 break 'feature_edit;
             };
-            let position_feature = match hole_position_feature(native, histories, lanes) {
+            let position_feature = match position_sketches.of(native) {
                 Some(position) => Some(position),
                 None => direct_hole_position_feature(
                     native,
@@ -1722,53 +1709,77 @@ fn paired_object_locus_markers<'a>(
         })
 }
 
-fn hole_position_feature<'a>(
-    hole: &crate::records::Feature,
-    histories: &'a [crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
-) -> Option<&'a crate::records::Feature> {
-    let mut source = None;
-    for lane in lanes {
-        let Some(candidate) = hole_position_sketch_source(hole, lane) else {
-            continue;
-        };
-        if source.is_some_and(|source| source != candidate) {
-            return None;
-        }
-        source = Some(candidate);
-    }
-    let source = source?;
-    let lane_names = lanes
-        .iter()
-        .map(|lane| FeatureObjectNames::new(&lane.names))
-        .collect::<Vec<_>>();
-    let mut position = None;
-    for candidate in histories.iter().flat_map(|history| &history.features) {
-        if classify(candidate) != Some(FeatureClass::Sketch) {
-            continue;
-        }
-        let mut matches = false;
-        for names in &lane_names {
-            let candidate_source = if let Some(source) = candidate.source_value() {
-                Some(source)
+/// The sketch each hole position source names, indexed once for every hole a
+/// pass places.
+///
+/// A sketch names the source it records, or else the object id of its name in
+/// each lane. A source is ambiguous when two sketches name it.
+pub(super) struct HolePositionSketches<'a> {
+    lanes: &'a [FeatureInputLane],
+    by_source: HashMap<u32, Option<&'a crate::records::Feature>>,
+}
+
+impl<'a> HolePositionSketches<'a> {
+    pub(super) fn new(
+        histories: &'a [crate::records::FeatureHistory],
+        lanes: &'a [FeatureInputLane],
+    ) -> Self {
+        let lane_names = lanes
+            .iter()
+            .map(|lane| FeatureObjectNames::new(&lane.names))
+            .collect::<Vec<_>>();
+        let mut by_source = HashMap::new();
+        let mut sources = Vec::new();
+        for candidate in histories.iter().flat_map(|history| &history.features) {
+            if classify(candidate) != Some(FeatureClass::Sketch) {
+                continue;
+            }
+            sources.clear();
+            if let Some(source) = candidate.source_value() {
+                sources.push(source);
             } else {
-                names
-                    .of(candidate)
-                    .and_then(|name| name.object_id.and_then(ObjectId::value))
-            };
-            if candidate_source == Some(source) {
-                matches = true;
-                break;
+                for names in &lane_names {
+                    let Some(source) = names
+                        .of(candidate)
+                        .and_then(|name| name.object_id.and_then(ObjectId::value))
+                    else {
+                        continue;
+                    };
+                    if !sources.contains(&source) {
+                        sources.push(source);
+                    }
+                }
+            }
+            for &source in &sources {
+                by_source
+                    .entry(source)
+                    .and_modify(|sketch| *sketch = None)
+                    .or_insert(Some(candidate));
             }
         }
-        if matches {
-            if position.is_some() {
+        Self { lanes, by_source }
+    }
+
+    /// The one sketch named by the position source every lane agrees on for
+    /// `hole`.
+    pub(super) fn of(&self, hole: &crate::records::Feature) -> Option<&'a crate::records::Feature> {
+        let mut source = None;
+        for lane in self.lanes {
+            let Some(candidate) = hole_position_sketch_source(hole, lane) else {
+                continue;
+            };
+            if source.is_some_and(|source| source != candidate) {
                 return None;
             }
-            position = Some(candidate);
+            source = Some(candidate);
         }
+        self.named(source?)
     }
-    position
+
+    /// The one sketch that names `source`.
+    pub(super) fn named(&self, source: u32) -> Option<&'a crate::records::Feature> {
+        self.by_source.get(&source).copied().flatten()
+    }
 }
 
 /// Whether a hole has a configuration-local position source in the supplied
@@ -1777,17 +1788,13 @@ fn hole_position_feature<'a>(
 /// cannot establish its authored loci.
 pub(crate) fn hole_position_carrier_present(
     feature: &cadmpeg_ir::features::Feature,
-    histories: &[crate::records::FeatureHistory],
+    native_features: &crate::records::HistoryFeatures<'_>,
     lanes: &[FeatureInputLane],
 ) -> bool {
     let Some(native_ref) = feature.native_ref.as_deref() else {
         return false;
     };
-    let Some(native) = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .find(|candidate| candidate.id == native_ref)
-    else {
+    let Some(native) = native_features.get(native_ref) else {
         return false;
     };
     lanes
@@ -1803,11 +1810,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        let key = feature.id.as_str();
-        native_features.insert(key, feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
+    let position_sketches = HolePositionSketches::new(histories, lanes);
     for index in 0..features.len() {
         let feature = &features[index];
         if feature.suppressed == Some(true) {
@@ -1829,11 +1833,11 @@ pub(crate) fn project_spatial_hole_position_sketches(
         let Some(native) = feature
             .native_ref
             .as_deref()
-            .and_then(|native| native_features.get(native).copied())
+            .and_then(|native| native_features.get(native))
         else {
             continue;
         };
-        let Some(position_feature) = hole_position_feature(native, histories, lanes) else {
+        let Some(position_feature) = position_sketches.of(native) else {
             continue;
         };
         let Some(sketch_id) = features
@@ -2076,11 +2080,7 @@ pub(crate) fn project_generated_hole_axes(
 ) {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        let key = feature.id.as_str();
-        native_features.insert(key, feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut faces_by_id = HashMap::new();
     for face in faces {
         let key = face.id.as_str();
@@ -3025,10 +3025,7 @@ pub(crate) fn project_hole_axes(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     let surfaces = topology.surfaces;
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut model_sketches = HashMap::new();
     for feature in model_features.iter() {
         let FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3044,12 +3041,13 @@ pub(crate) fn project_hole_axes(
         let sketch = sketch.clone();
         model_sketches.insert(native, sketch);
     }
+    let position_sketches = HolePositionSketches::new(histories, lanes);
     let mut hole_positions = HashMap::new();
-    for hole in native_features.values() {
+    for hole in native_features.iter() {
         if classify(hole) != Some(FeatureClass::Hole) {
             continue;
         }
-        let position = match hole_position_feature(hole, histories, lanes) {
+        let position = match position_sketches.of(hole) {
             Some(position) => Some(position),
             None => direct_hole_position_feature(
                 hole,
@@ -3081,7 +3079,7 @@ pub(crate) fn project_hole_axes(
         };
         let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
-        for feature in native_features.values() {
+        for feature in native_features.iter() {
             if !position_features.contains(feature.id.as_str()) {
                 continue;
             }
@@ -3141,7 +3139,7 @@ pub(crate) fn project_hole_axes(
         let Some(native_feature) = feature
             .native_ref
             .as_deref()
-            .and_then(|native| native_features.get(native).copied())
+            .and_then(|native| native_features.get(native))
         else {
             continue;
         };
@@ -3606,10 +3604,8 @@ pub(crate) fn project_bore_backed_position_sketches(
         sketch: Sketch,
         entities: Vec<SketchEntity>,
     }
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
+    let position_sketches = HolePositionSketches::new(histories, lanes);
     let mut model_features = HashMap::new();
     for feature in features.iter() {
         let Some(native) = feature.native_ref.as_deref() else {
@@ -3639,11 +3635,11 @@ pub(crate) fn project_bore_backed_position_sketches(
         let Some(native_hole) = hole
             .native_ref
             .as_deref()
-            .and_then(|native| native_features.get(native).copied())
+            .and_then(|native| native_features.get(native))
         else {
             continue;
         };
-        let Some(position) = hole_position_feature(native_hole, histories, lanes) else {
+        let Some(position) = position_sketches.of(native_hole) else {
             continue;
         };
         let Some(position_feature) = model_features.get(position.id.as_str()) else {

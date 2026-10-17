@@ -5,6 +5,7 @@ use super::reference;
 use super::simple_hole_definition;
 use crate::swift::enrich_implicit_nominals;
 use crate::swift::pattern_hole_nominal_context;
+use crate::swift::positions_by_id_prefix;
 use crate::swift::project;
 use crate::swift::project_with_topology;
 use crate::swift::Entity;
@@ -22,6 +23,52 @@ use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiTarget;
 use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::BTreeMap;
+
+#[test]
+fn id_prefix_positions_match_the_prefix_filter() {
+    fn text(next: &mut impl FnMut(u64) -> usize, length: u64) -> String {
+        (0..next(length))
+            .filter_map(|_| ['a', 'b', ':'].get(next(3)).copied())
+            .collect()
+    }
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from((state >> 33) % bound).unwrap()
+    };
+    for _ in 0..256 {
+        let ids = (0..next(12))
+            .map(|_| text(&mut next, 6))
+            .collect::<Vec<_>>();
+        let index = positions_by_id_prefix(ids.iter().map(String::as_str));
+        let prefixes = (0..8)
+            .map(|_| text(&mut next, 4))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .chain(ids.iter().cloned());
+        for prefix in prefixes {
+            let expected = ids
+                .iter()
+                .enumerate()
+                .filter(|(_, id)| {
+                    **id == prefix
+                        || id
+                            .strip_prefix(&prefix)
+                            .is_some_and(|suffix| suffix.starts_with(':'))
+                })
+                .map(|(position, _)| position)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                index.get(prefix.as_str()).cloned().unwrap_or_default(),
+                expected,
+                "{ids:?} {prefix:?}"
+            );
+        }
+    }
+}
 
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {
@@ -95,6 +142,152 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
     });
     unresolved.push(unresolved_hole);
     assert!(pattern_hole_nominal_context(&unresolved).is_empty());
+}
+
+#[test]
+fn pattern_hole_index_matches_the_feature_scans() {
+    fn linear(features: &[Feature]) -> BTreeMap<String, PositiveReal> {
+        let native = |feature: &Feature| {
+            feature
+                .native_ref
+                .as_deref()
+                .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
+        };
+        let mut candidates = BTreeMap::<String, Option<PositiveReal>>::new();
+        for pattern in features {
+            let Some(suffix) = pattern
+                .name
+                .as_deref()
+                .and_then(|name| name.strip_prefix("LPattern"))
+                .filter(|suffix| {
+                    !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
+                })
+            else {
+                continue;
+            };
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+                pattern.evaluation.definition()
+            else {
+                continue;
+            };
+            let ([PatternSeed::Feature(seed)], true) = (seeds.as_slice(), native(pattern)) else {
+                continue;
+            };
+            if !features
+                .iter()
+                .any(|candidate| candidate.id == *seed && candidate.ordinal < pattern.ordinal)
+            {
+                continue;
+            }
+            let holes = features
+                .iter()
+                .filter(|candidate| {
+                    candidate.ordinal > pattern.ordinal
+                        && candidate
+                            .dependencies
+                            .iter()
+                            .any(|dependency| dependency == seed)
+                        && native(candidate)
+                })
+                .filter_map(|candidate| match candidate.evaluation.definition() {
+                    FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) => {
+                        Some(shape.diameter().map(PositiveReal::from_assigned_length))
+                    }
+                    _ => None,
+                })
+                .take(2)
+                .collect::<Vec<_>>();
+            let [Some(diameter)] = holes.as_slice() else {
+                continue;
+            };
+            candidates
+                .entry(format!("Hole Pattern{suffix}"))
+                .and_modify(|value| *value = None)
+                .or_insert(Some(*diameter));
+        }
+        candidates
+            .into_iter()
+            .filter_map(|(name, value)| Some((name, value?)))
+            .collect()
+    }
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let sketch = || {
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "Sketch".into(),
+            parameters: BTreeMap::new(),
+        })
+    };
+    let seeds = (0..3)
+        .map(|seed| FeatureId::mint(format!("sldprt:model:feature#seed{seed}")).unwrap())
+        .collect::<Vec<_>>();
+    let missing = FeatureId::mint("sldprt:model:feature#missing").unwrap();
+    let mut found = 0;
+    for _ in 0..256 {
+        let mut features = Vec::new();
+        for seed in 0..3 {
+            features.push(neutral_feature(
+                &format!("seed{seed}"),
+                "Sketch",
+                next(12),
+                Vec::new(),
+                sketch(),
+            ));
+        }
+        for pattern in 0..next(4) {
+            let seed = seeds
+                .get(usize::try_from(next(4)).unwrap())
+                .unwrap_or(&missing);
+            let prefix = if next(6) == 0 { "Pattern" } else { "LPattern" };
+            let name = format!("{prefix}{}", next(3));
+            let definition = FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: vec![PatternSeed::Feature(seed.clone())],
+                pattern: PatternKind::UNRESOLVED,
+            });
+            let ordinal = next(12);
+            features.push(neutral_feature(
+                &format!("pattern{pattern}"),
+                &name,
+                ordinal,
+                Vec::new(),
+                definition,
+            ));
+        }
+        for hole in 0..next(6) {
+            let dependencies = seeds
+                .iter()
+                .filter(|_| next(2) == 0)
+                .cloned()
+                .collect::<Vec<_>>();
+            let definition = match next(5) {
+                0 => sketch(),
+                1 | 2 => simple_hole_definition(5.0),
+                _ => simple_hole_definition(6.0),
+            };
+            let ordinal = next(12);
+            let mut feature = neutral_feature(
+                &format!("hole{hole}"),
+                "Hole",
+                ordinal,
+                dependencies,
+                definition,
+            );
+            if next(6) == 0 {
+                feature.native_ref = None;
+            }
+            features.push(feature);
+        }
+        let expected = linear(&features);
+        found += expected.len();
+        assert_eq!(pattern_hole_nominal_context(&features), expected);
+    }
+    assert!(found > 0);
 }
 
 fn pattern_hole_features() -> Vec<Feature> {
