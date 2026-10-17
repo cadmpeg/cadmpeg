@@ -4,7 +4,7 @@
 //! and their native incidence graph, and resolves edge-block side carriers
 //! against typed analytic and NURBS charts.
 
-use crate::math::distance;
+use crate::math::{distance_at_most, distance_below};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
@@ -1667,7 +1667,7 @@ fn point_sequences_agree(first: &[Point3], second: &[Point3]) -> bool {
         && first
             .iter()
             .zip(second)
-            .all(|(&left, &right)| distance(left, right) <= 2e-3)
+            .all(|(&left, &right)| distance_at_most(left, right, 2e-3))
 }
 
 fn resolved_support_loci(
@@ -1949,7 +1949,7 @@ fn pcurve_endpoints_match(
         let matches = evaluate(uv)?.is_some_and(|point| {
             vertices
                 .iter()
-                .any(|vertex| distance(point, vertex.get()) < 2e-3)
+                .any(|vertex| distance_below(point, vertex.get(), 2e-3))
         });
         if !matches {
             return Ok(false);
