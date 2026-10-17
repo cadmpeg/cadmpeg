@@ -4665,7 +4665,7 @@ fn procedural_resolving_refs(
         .or_else(|| cyl_spl_sur(toks, Some(table)).map(Ok))
         .or_else(|| {
             var_blend_spl_sur(ctx, toks, Some(table))
-                .map(|result| result.map(|parsed| parsed.surface))
+                .and_then(|result| result.map(|parsed| parsed.surface).transpose())
         })
         .or_else(|| vertex_blend_spl_sur(ctx, toks, Some(table)))
         .or_else(|| full_rb_blend_spl_sur(ctx, toks, table))

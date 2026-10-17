@@ -1173,6 +1173,119 @@ mod tests {
     }
 
     #[test]
+    fn bounded_second_interval_keeps_the_variable_blend_cache() {
+        use crate::sab::{Record, Token};
+        for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {
+            let mut owner = variable_blend_tokens(name, 1);
+            let upper = owner
+                .iter()
+                .position(|token| matches!(token, Token::False))
+                .unwrap();
+            owner.splice(upper..=upper, [Token::True, Token::Double(1.0)]);
+            let records = [Record {
+                index: 0,
+                name: "spline".into(),
+                tokens: owner.clone().into(),
+                offset: 0,
+                len: 0,
+            }];
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+            let table = SubtypeTable::from_records(&records);
+            assert!(
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(&ctx, &owner, &table)
+                    .is_none(),
+                "{name}"
+            );
+            let surface = super::surface_cache_resolving_refs(&ctx, &owner, &table)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                surface.poles()[0].get(),
+                cadmpeg_ir::math::Point3::new(70., 0., 0.),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn uncached_spline_support_keeps_the_variable_blend_cache() {
+        use crate::sab::{Record, Token};
+        let mut support = vec![
+            Token::Ident("spline".into()),
+            Token::True,
+            Token::SubtypeOpen,
+            Token::Ident("cyl_spl_sur".into()),
+            Token::Long(1),
+            Token::Ident("intcurve".into()),
+            Token::True,
+            Token::SubtypeOpen,
+            Token::Ident("ref".into()),
+            Token::Long(0),
+            Token::SubtypeClose,
+            Token::True,
+            Token::Double(-1.0),
+            Token::True,
+            Token::Double(1.0),
+            Token::Vector3([0.0, 1.0, 0.0]),
+            Token::Position([0.0; 3]),
+            Token::Enum(2),
+        ];
+        for bound in [-1.0, 1.0, 0.0, 0.1] {
+            support.extend([Token::True, Token::Double(bound)]);
+        }
+        support.extend([
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+        ]);
+        support.extend([Token::Long(0), Token::Long(1), Token::Double(0.5)]);
+        support.extend([
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+            Token::Long(0),
+        ]);
+        support.extend([Token::False, Token::SubtypeClose]);
+        support.extend([Token::False, Token::False, Token::False, Token::False]);
+        for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {
+            for side in [3, 9] {
+                let mut owner = variable_blend_tokens(name, 1);
+                owner[side] = Token::Str("blend_support_surface".into());
+                owner.splice(side + 1..side + 2, support.clone());
+                let records = [Record {
+                    index: 0,
+                    name: "spline".into(),
+                    tokens: owner.clone().into(),
+                    offset: 0,
+                    len: 0,
+                }];
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+                let table = SubtypeTable::from_records(&records);
+                assert!(
+                    crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                        &ctx, &owner, &table
+                    )
+                    .is_none(),
+                    "{name}, side token {side}"
+                );
+                let surface = super::surface_cache_resolving_refs(&ctx, &owner, &table)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    surface.poles()[0].get(),
+                    cadmpeg_ir::math::Point3::new(70., 0., 0.),
+                    "{name}, side token {side}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn untyped_variable_blend_cache_is_rejected_for_owner_and_alias() {
         use crate::sab::{Record, Token};
         for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {
