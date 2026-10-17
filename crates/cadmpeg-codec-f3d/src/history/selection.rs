@@ -440,14 +440,35 @@ pub(super) fn bind_body_recipe_face_selection(
     }
 }
 
+/// Membership in one topology family. Replayed families are in slot order and
+/// are searched in place; any other family is hashed.
+pub(super) enum FamilySlots<'a> {
+    Sorted(&'a [i64]),
+    Hashed(HashSet<i64>),
+}
+
+impl<'a> FamilySlots<'a> {
+    pub(super) fn new(family: &'a [i64]) -> Self {
+        if family.is_sorted() {
+            Self::Sorted(family)
+        } else {
+            Self::Hashed(family.iter().copied().collect())
+        }
+    }
+
+    pub(super) fn contains(&self, slot: &i64) -> bool {
+        match self {
+            Self::Sorted(family) => family.binary_search(slot).is_ok(),
+            Self::Hashed(family) => family.contains(slot),
+        }
+    }
+}
+
 pub(super) fn faces_in_topology<'a>(
     candidates: impl IntoIterator<Item = &'a cadmpeg_ir::ids::FaceId>,
     topology: &AsmHistoricalTopology,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
-    let mut faces = HashSet::new();
-    for face in &topology.faces {
-        faces.insert(*face);
-    }
+    let faces = FamilySlots::new(&topology.faces);
     candidates
         .into_iter()
         .filter(|face| stable_ref(face.as_str()).is_some_and(|slot| faces.contains(&slot)))

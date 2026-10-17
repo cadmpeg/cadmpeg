@@ -5097,10 +5097,7 @@ fn resolve_bounded_face_recipe_target<'a>(
         })
         .count();
     let first_clause = &operand.recipe_references[..first_clause_len];
-    let mut topology_faces = HashSet::new();
-    for face in &preceding.faces {
-        topology_faces.insert(*face);
-    }
+    let topology_faces = selection::FamilySlots::new(&preceding.faces);
     let mut target_candidates = BTreeSet::new();
     for face in first_clause
         .first()
@@ -5637,10 +5634,7 @@ fn resolve_direct_face_recipe_clauses(
             clauses.push((key.0, key.1, grouped));
         }
     }
-    let mut topology_faces = HashSet::new();
-    for face in &topology.faces {
-        topology_faces.insert(*face);
-    }
+    let topology_faces = selection::FamilySlots::new(&topology.faces);
     let mut resolved = Vec::new();
     for (_, _, references) in clauses {
         let mut intersection = None::<HashSet<i64>>;
@@ -5820,10 +5814,7 @@ fn profile_face_group_cardinality_candidates(
     changed_faces: &HashSet<i64>,
     member_count: usize,
 ) -> Option<Vec<i64>> {
-    let mut preceding_faces = HashSet::new();
-    for face in &topology.faces {
-        preceding_faces.insert(*face);
-    }
+    let preceding_faces = selection::FamilySlots::new(&topology.faces);
     let mut faces_by_carrier = HashMap::<i64, Vec<i64>>::new();
     for face in changed_faces
         .iter()
@@ -6663,20 +6654,14 @@ fn bind_historical_edge_operand<'a>(
     else {
         return Ok(());
     };
-    let mut preceding_faces = HashSet::new();
-    for face in &topology.faces {
-        preceding_faces.insert(*face);
-    }
+    let preceding_faces = selection::FamilySlots::new(&topology.faces);
     let inserted_faces = result_topology
         .faces
         .iter()
         .copied()
         .filter(|face| !preceding_faces.contains(face))
         .collect::<Vec<_>>();
-    let mut result_edges = HashSet::new();
-    for edge in &result_topology.edges {
-        result_edges.insert(*edge);
-    }
+    let result_edges = selection::FamilySlots::new(&result_topology.edges);
     let deleted_edges = topology
         .edges
         .iter()
