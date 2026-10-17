@@ -22,6 +22,40 @@ use crate::IgesCodec;
 use super::presentation_use_flag_valid;
 
 #[test]
+fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
+    let ring = |count| OwnedTestEntity {
+        entity_type: 106,
+        form: 63,
+        label: "RING".into(),
+        status: "00000000",
+        parameters: crate::test_support::test_curves_and_surfaces::closed_ring_copious_parameters(
+            count,
+        ),
+    };
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[ring(32_770), ring(5)])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let curve_ids: Vec<_> = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .map(|curve| curve.id.as_str())
+        .collect();
+    assert!(!curve_ids.contains(&"iges:model:curve#D1"), "{curve_ids:?}");
+    assert!(curve_ids.contains(&"iges:model:curve#D3"), "{curve_ids:?}");
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
+            && loss.message.contains("32770 points")
+            && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
+    }));
+}
+
+#[test]
 fn presentation_copious_forms_require_the_annotation_use_flag() {
     for form in [20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40] {
         assert!(

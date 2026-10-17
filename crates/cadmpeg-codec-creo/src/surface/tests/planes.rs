@@ -985,7 +985,14 @@ fn plane_local_system_close_validates_past_an_e0_numeric_byte() {
     assert_eq!(first_compound_close(&payload, 0, payload.len()), None);
     assert_eq!(
         crate::decode::with_service_context(|ctx| {
-            plane_local_system_compound_close(ctx, &payload, 0, payload.len(), &cache)
+            plane_local_system_compound_close(
+                ctx,
+                &payload,
+                0,
+                payload.len(),
+                &cache,
+                &mut Vec::new(),
+            )
         })
         .expect("local-system close fits service limits"),
         Some(close)

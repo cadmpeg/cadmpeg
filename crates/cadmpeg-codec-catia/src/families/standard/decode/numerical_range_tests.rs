@@ -17,7 +17,7 @@ fn numerical_0922_quintic_keeps_both_branches() {
         let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
         let result = standard_limit_curve_point_parameter(&n, Point3::new(0., 0., 0.), 2e-3);
         println!("CATIA folded quintic locus d{d:e}: {result:?}");
-        assert_eq!(result, None);
+        assert_eq!(result, Ok(None));
     }
 }
 #[test]
@@ -31,7 +31,7 @@ fn numerical_0922_finite_bezier_midpoint() {
         let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
         let result = standard_limit_curve_point_parameter(&n, Point3::new(x, 0.5, 0.), 2e-3);
         println!("CATIA straight quintic at x{x:e} midpoint: {result:?}");
-        assert_eq!(result, Some(0.5));
+        assert_eq!(result, Ok(Some(0.5)));
     }
 }
 
@@ -44,9 +44,9 @@ fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
     knots.extend(vec![f64::MAX; 6]);
     let curve =
         NurbsCurve::from_lanes(5, knots, poles, None, false).expect("wide finite quintic domain");
-    let parameter =
-        { standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.2, 0.0), 2e-3) }
-            .expect("interior point parameter");
+    let parameter = standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
+        .expect("the point search stays within its bound")
+        .expect("interior point parameter");
     assert!((parameter / f64::MAX + 0.6).abs() <= 0.01);
 }
 
@@ -95,6 +95,21 @@ fn numerical_0922b_surface_membership_large_plane() {
 fn degenerate_bezier_at_the_target_point_yields_parameters() {
     let point = Point3::new(0.0, 0.0, 0.0);
     let mut parameters = Vec::new();
-    collect_bezier_point_parameters([point; 6], [0.0, 1.0], point, 0.01, 1.0, &mut parameters);
+    assert_eq!(
+        collect_bezier_point_parameters([point; 6], [0.0, 1.0], point, 0.01, 1.0, &mut parameters),
+        Ok(())
+    );
     assert!(!parameters.is_empty());
+}
+
+#[test]
+fn degenerate_bezier_search_stops_at_its_node_bound() {
+    // A span collapsed onto the point is never pruned, so a fine resolution
+    // expands a binary tree of 2^30 nodes.
+    let point = Point3::new(0.0, 0.0, 0.0);
+    let mut parameters = Vec::new();
+    assert_eq!(
+        collect_bezier_point_parameters([point; 6], [0.0, 1.0], point, 0.01, 1e-9, &mut parameters),
+        Err(SearchBounded)
+    );
 }

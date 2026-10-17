@@ -4,7 +4,9 @@ use std::collections::HashMap;
 fn duplicate_face_slot_fixture(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
-    use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
+    use super::{
+        complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow, StandardIncidenceSearch,
+    };
 
     let rows = (0..3)
         .map(|handle| {
@@ -25,8 +27,11 @@ fn duplicate_face_slot_fixture(
         &[[0, 1], [0, 1], [0, 0]],
         &[[0, 1], [1, 2], [2, 0]],
         2,
-        None,
-        None,
+        StandardIncidenceSearch {
+            budget: &crate::test_support::topology_budget(),
+            edge_classes: None,
+            mesh_bytes: None,
+        },
     )
 }
 
@@ -139,7 +144,9 @@ fn ambiguous_duplicate_face_fixture(
     edge_classes: Option<&[usize]>,
     mesh_bytes: Option<&[u8]>,
 ) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
-    use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
+    use super::{
+        complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow, StandardIncidenceSearch,
+    };
 
     let rows = (0..4)
         .map(|handle| {
@@ -157,8 +164,11 @@ fn ambiguous_duplicate_face_fixture(
         &[[0, 1], [0, 1], [2, 2], [2, 2]],
         &[[0, 1], [1, 2], [2, 0], [0, 2]],
         3,
-        edge_classes,
-        mesh_bytes,
+        StandardIncidenceSearch {
+            budget: &crate::test_support::topology_budget(),
+            edge_classes,
+            mesh_bytes,
+        },
     )
 }
 
@@ -279,7 +289,9 @@ fn duplicate_face_assignments_with_different_slots_are_not_equivalent() {
 
 #[test]
 fn duplicate_face_slots_keep_an_already_complete_assignment() {
-    use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
+    use super::{
+        complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow, StandardIncidenceSearch,
+    };
 
     let rows = [{
         assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
@@ -287,7 +299,18 @@ fn duplicate_face_slots_keep_an_already_complete_assignment() {
             .expect("admitted edge row")
     }];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        complete_duplicate_face_slots(ctx, &rows, &[[0, 1]], &[[0, 1]], 2, None, None)
+        complete_duplicate_face_slots(
+            ctx,
+            &rows,
+            &[[0, 1]],
+            &[[0, 1]],
+            2,
+            StandardIncidenceSearch {
+                budget: &crate::test_support::topology_budget(),
+                edge_classes: None,
+                mesh_bytes: None,
+            },
+        )
     };
     assert_eq!(
         crate::test_support::with_service_context(run).expect("complete the duplicate face slots"),
@@ -307,7 +330,15 @@ fn incidence_reconstructs_a_closed_edge_shared_by_two_faces() {
         }]
     };
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        reconstruct_incidence(ctx, rows(), vec![[1.0, 0.0, 0.0]], &[[0, 1]], &[[0, 0]], 2)
+        reconstruct_incidence(
+            ctx,
+            &crate::test_support::topology_budget(),
+            rows(),
+            vec![[1.0, 0.0, 0.0]],
+            &[[0, 1]],
+            &[[0, 0]],
+            2,
+        )
     };
     assert!(crate::test_support::with_service_context(run)
         .expect("reconstruct incidence")

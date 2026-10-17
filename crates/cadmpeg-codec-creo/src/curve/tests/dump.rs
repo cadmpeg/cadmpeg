@@ -504,6 +504,34 @@ fn decode_leaves_a_nonconverging_nonlinear_solve_block_unsolved() {
 }
 
 #[test]
+fn decode_reports_a_doubling_relation_string_at_the_text_cap() {
+    let mut payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x0bs=\"aaaaaaaa\"\0"
+        .to_vec();
+    for _ in 0..10 {
+        payload.extend_from_slice(b"s=s+s\0");
+    }
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("the relation text cap is not a decode failure");
+    let capped = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::CreoLossCode::CurveExpressionTextCapped.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        capped,
+        [
+            "1 curve-equation relation condition(s) or assignment(s) have no value: their \
+             string text exceeded MAX_RELATION_EXPRESSION_TEXT_BYTES."
+        ]
+    );
+}
+
+#[test]
 fn decode_leaves_a_nonlinear_solve_block_unsolved_at_the_variable_cap() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x14\

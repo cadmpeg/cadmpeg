@@ -316,8 +316,14 @@ fn transfer_closed_wire_loops(
 
             for (index, member) in members.iter().enumerate() {
                 let start = member.endpoints[0];
-                let point_id = PointId::mint(format!("catia:zero-entity:wire-point#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}")).map_err(cadmpeg_core::CodecError::malformed)?;
-                let vertex_id = VertexId::mint(format!("catia:zero-entity:wire-vertex#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}")).map_err(cadmpeg_core::CodecError::malformed)?;
+                let point_id = PointId::mint(format!(
+                    "catia:zero-entity:wire-point#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"
+                ))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+                let vertex_id = VertexId::mint(format!(
+                    "catia:zero-entity:wire-vertex#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"
+                ))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
                 annotate(
                     annotations,
                     &point_id,
@@ -361,7 +367,10 @@ fn transfer_closed_wire_loops(
                     parameter_range,
                     ..
                 } = member;
-                let edge_id = EdgeId::mint(format!("catia:zero-entity:wire-edge#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}")).map_err(cadmpeg_core::CodecError::malformed)?;
+                let edge_id = EdgeId::mint(format!(
+                    "catia:zero-entity:wire-edge#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"
+                ))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
                 let (curve_id, param_range) = if let Some(parameters) = *parameter_range {
                     let oriented_range = if *forward {
                         parameters
@@ -533,8 +542,10 @@ fn transfer_closed_wire_loops(
                                     (curve.clone(), None)
                                 }
                             } else {
-                                let oriented_curve_id = CurveId::mint(format!("catia:zero-entity:wire-curve#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"))
-                                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                                let oriented_curve_id = CurveId::mint(format!(
+                                    "catia:zero-entity:wire-curve#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}-{index}"
+                                ))
+                                .map_err(cadmpeg_core::CodecError::malformed)?;
                                 append_oriented_wire_curve(
                                     admission,
                                     ir,
@@ -864,7 +875,11 @@ pub(in crate::families) fn try_decode_zero_entity(
         };
         let surface = surface.clone();
         for support in &run.supports {
-            let curve_id = admitted!(crate::resource::compose_u32_id(&cadmpeg_ir::identity_namespace!("catia", "zero-entity", "support-curve"), support.record_ordinal, CurveId::mint));
+            let curve_id = admitted!(crate::resource::compose_u32_id(
+                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "support-curve"),
+                support.record_ordinal,
+                CurveId::mint
+            ));
             if let Some(geometry) = support.model_curve.clone() {
                 admitted!(annotate(&mut annotations, &curve_id, "zero_entity_a9_03", u64_from_index(support.pos), "support_model_curve", Exactness::Derived));
                 admitted!(annotations.derived(&curve_id, "geometry").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
@@ -1052,19 +1067,36 @@ pub(in crate::families) fn try_decode_zero_entity(
     }
     let coverage = zero_entity_coverage(transferred_support_curves, transferred_parametric_surface_curves, wire_counts, topology_counts);
     let topology_message = if topology_counts.is_some() && ownership_root.is_some() {
-        "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral faces, loops, coedges, edges, vertices, p-curves, and a body/region/shell hierarchy bound to the complete native ownership root; source allocation identities and native physical-edge identity remain retained as native records."
+        "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral \
+         faces, loops, coedges, edges, vertices, p-curves, and a body/region/shell hierarchy bound \
+         to the complete native ownership root; source allocation identities and native \
+         physical-edge identity remain retained as native records."
     } else if topology_counts.is_some() {
-        "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral faces, loops, coedges, edges, vertices, and p-curves under a deterministic derived body/region/shell hierarchy; native ownership allocation and physical-edge identities remain retained as native records."
+        "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral \
+         faces, loops, coedges, edges, vertices, and p-curves under a deterministic derived \
+         body/region/shell hierarchy; native ownership allocation and physical-edge identities \
+         remain retained as native records."
     } else if wire_counts.loops == 0 {
         if ownership_root.is_some() {
-            "Zero-entity loop members bind their face-local support occurrences and the terminal ownership root binds the complete face roster through one shell and body, but support-to-oriented-use, oriented-use-to-incidence, and physical endpoint bindings remain unresolved; no neutral topology was transferred."
+            "Zero-entity loop members bind their face-local support occurrences and the terminal \
+             ownership root binds the complete face roster through one shell and body, but \
+             support-to-oriented-use, oriented-use-to-incidence, and physical endpoint bindings \
+             remain unresolved; no neutral topology was transferred."
         } else {
-            "Zero-entity loop members bind their face-local support occurrences, but support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell bindings remain unresolved; no neutral topology was transferred."
+            "Zero-entity loop members bind their face-local support occurrences, but \
+             support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell \
+             bindings remain unresolved; no neutral topology was transferred."
         }
     } else if wire_counts.owned_bodies != 0 {
-        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted under one derived wire container bound to the complete source shell and body roster; support-to-oriented-use, oriented-use-to-incidence, physical edge identity, and face topology remain unresolved."
+        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes \
+         were emitted under one derived wire container bound to the complete source shell and body \
+         roster; support-to-oriented-use, oriented-use-to-incidence, physical edge identity, and \
+         face topology remain unresolved."
     } else {
-        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted as independent wire bodies; support-to-oriented-use, oriented-use-to-incidence, physical edge identity, and source body/shell bindings remain unresolved."
+        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes \
+         were emitted as independent wire bodies; support-to-oriented-use, \
+         oriented-use-to-incidence, physical edge identity, and source body/shell bindings remain \
+         unresolved."
     };
     let topology_loss = if topology_counts.is_some() {
         CatiaLossCode::TopologyZeroEntityGaugeSubstituted

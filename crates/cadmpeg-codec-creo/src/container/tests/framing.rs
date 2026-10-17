@@ -856,9 +856,12 @@ fn direct_inspect_and_decode_reject_missing_creo_signature() {
             ),
             Err(cadmpeg_core::CodecError::WrongFormat(_))
         ));
-        for container_only in [false, true] {
+        for depth in [
+            cadmpeg_core::decode::DecodeDepth::Full,
+            cadmpeg_core::decode::DecodeDepth::Container,
+        ] {
             let options = DecodeOptions {
-                container_only,
+                depth,
                 ..DecodeOptions::default()
             };
             assert!(matches!(

@@ -270,11 +270,14 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     if unresolved_curves.is_empty() && unresolved_surfaces.is_empty() {
         return;
     }
-    let statement = format!("The transferred model retains {} unresolved curve carriers and {} unresolved surface carriers without exact procedural constructions.{}{}",
-    unresolved_curves.len(),
-    unresolved_surfaces.len(),
-    carrier_clause("Curve", &unresolved_curves),
-    carrier_clause("Surface", &unresolved_surfaces));
+    let statement = format!(
+        "The transferred model retains {} unresolved curve carriers and {} unresolved surface \
+         carriers without exact procedural constructions.{}{}",
+        unresolved_curves.len(),
+        unresolved_surfaces.len(),
+        carrier_clause("Curve", &unresolved_curves),
+        carrier_clause("Surface", &unresolved_surfaces)
+    );
     let note = CatiaLossCode::GeometryUnresolvedCarriers.note(statement);
 
     losses.insert(0, note);
@@ -585,9 +588,11 @@ pub(crate) fn build_geometry_report(
             .min(report_counts.admitted_standard_face_rows);
     if topology_failure.is_none() && scan.census.fbb_runs > 1 && withheld_face_rows > 0 {
         losses.push(CatiaLossCode::TopologyFbbRowsWithheld.note(format!(
-            "{withheld_face_rows} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have a source-closed edge, vertex, trim, and topology binding, and cross-group ownership remains unresolved.",
-            scan.census.fbb_runs,
-            report_counts.admitted_standard_face_rows,
+            "{withheld_face_rows} candidate FBB face row(s) in {} marker group(s) were not \
+             admitted to the standard topology population; only {} row(s) have a source-closed \
+             edge, vertex, trim, and topology binding, and cross-group ownership remains \
+             unresolved.",
+            scan.census.fbb_runs, report_counts.admitted_standard_face_rows,
         )));
     }
 

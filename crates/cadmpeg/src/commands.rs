@@ -17,7 +17,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{anyhow, Context};
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{DecodeDepth, InspectOptions};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
@@ -64,6 +64,8 @@ pub(crate) struct ConversionArgs {
     pub(crate) allow_errors: bool,
     /// Permit a geometry export when decode transferred no geometry.
     pub(crate) allow_empty: bool,
+    /// Decode at full depth whatever depth the output format needs.
+    pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
     pub(crate) destination: DestinationPolicy,
     /// Optional path for the JSON command report.
@@ -477,10 +479,15 @@ pub(crate) fn convert(
             }
         }
 
+        let depth = if conversion.full_decode {
+            DecodeDepth::Full
+        } else {
+            target.needs().request()
+        };
         let source = SourceRequest {
             path,
             forced: conversion.forced_input,
-            options: args.options(),
+            options: args.options_at(depth),
         };
         let prepared = transcoder::prepare(inputs, &source, target, &policy)?;
         let planned = prepared.plan()?;

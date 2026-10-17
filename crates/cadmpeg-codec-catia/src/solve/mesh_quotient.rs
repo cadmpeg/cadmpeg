@@ -257,21 +257,20 @@ impl<T> From<SearchOutcome<T>> for MeshSolve<T, MeshCandidateFailure<(), (), ()>
 }
 
 fn enforce_edge_arc_consistency(
-    ctx: &DecodeContext<'_>,
     domains: &mut [Vec<usize>],
     edges: &[[usize; 2]],
     edge_ids: &[usize],
     root_edges: &[Vec<usize>],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: Option<&WorkBudget>,
-) -> Result<bool, CodecError> {
+) -> bool {
     let Some(support_work) = edge_ids.iter().try_fold(0usize, |work, edge| {
         work.checked_add(edge_candidates[*edge].len().checked_mul(2)?)
     }) else {
-        return Ok(false);
+        return false;
     };
     if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
-        return Ok(false);
+        return false;
     }
     let mut supports = Vec::new();
     for &edge in edge_ids {
@@ -283,7 +282,7 @@ fn enforce_edge_arc_consistency(
         }
         supports.push(edge_supports);
     }
-    let mut queued = ctx.alloc_filled(edges.len(), [true; 2], "catia_arc_queued")?;
+    let mut queued = vec![[true; 2]; edges.len()];
     let mut queue = VecDeque::new();
     for edge in 0..edges.len() {
         for side in 0..2 {
@@ -312,7 +311,7 @@ fn enforce_edge_arc_consistency(
             supported.iter().any(|point| other_domain.contains(point))
         });
         if budget.is_some_and(WorkBudget::exhausted) || domains[root].is_empty() {
-            return Ok(false);
+            return false;
         }
         if domains[root].len() == before {
             continue;
@@ -326,19 +325,18 @@ fn enforce_edge_arc_consistency(
             }
         }
     }
-    Ok(true)
+    true
 }
 
 fn enforce_edge_arc_consistency_from(
-    ctx: &DecodeContext<'_>,
     domains: &mut [Vec<usize>],
     edges: &[[usize; 2]],
     root_edges: &[Vec<usize>],
     edge_candidates: &[Vec<[usize; 2]>],
     initial_edges: &[usize],
     budget: Option<&WorkBudget>,
-) -> Result<bool, CodecError> {
-    let mut queued = ctx.alloc_filled(edges.len(), [true; 2], "catia_arc_from_queued")?;
+) -> bool {
+    let mut queued = vec![[true; 2]; edges.len()];
     let mut queue = VecDeque::new();
     for &edge in initial_edges {
         for side in 0..2 {
@@ -372,7 +370,7 @@ fn enforce_edge_arc_consistency_from(
             })
         });
         if budget.is_some_and(WorkBudget::exhausted) || domains[root].is_empty() {
-            return Ok(false);
+            return false;
         }
         if domains[root].len() == before {
             continue;
@@ -386,7 +384,7 @@ fn enforce_edge_arc_consistency_from(
             }
         }
     }
-    Ok(true)
+    true
 }
 
 fn enforce_sparse_endpoint_membership(
@@ -796,14 +794,13 @@ impl MeshCoordinateRootDomains {
                 domain_lengths.push(domain.len());
             }
             if !enforce_edge_arc_consistency_from(
-                ctx,
                 &mut domains,
                 &self.edges,
                 &self.root_edges,
                 edge_candidates,
                 &affected_edges,
                 budget,
-            )? {
+            ) {
                 return Ok(None);
             }
             let mut roots_by_point =
@@ -850,8 +847,7 @@ impl MeshCoordinateRootDomains {
                         coverage_matching,
                     }));
                 }
-                let mut reached_roots =
-                    ctx.alloc_filled(domains.len(), false, "catia_quotient_reached_roots")?;
+                let mut reached_roots = vec![false; domains.len()];
                 let mut reached_points =
                     ctx.alloc_filled(self.point_count, false, "catia_quotient_reached_points")?;
                 let mut root_queue = VecDeque::new();
@@ -1409,8 +1405,7 @@ impl MeshQuotient {
         for edge in 0..edges.len() {
             edge_ids.push(edge);
         }
-        let mut root_edges =
-            ctx.alloc_filled(roots.len(), Vec::new(), "catia_quotient_root_edges")?;
+        let mut root_edges = vec![Vec::new(); roots.len()];
         for (edge, [left, right]) in edges.iter().copied().enumerate() {
             root_edges[left].push(edge);
             if right != left {
@@ -1427,14 +1422,13 @@ impl MeshQuotient {
             return Ok(None);
         }
         if !enforce_edge_arc_consistency(
-            ctx,
             &mut domains,
             &edges,
             &edge_ids,
             &root_edges,
             edge_candidates,
             budget,
-        )? {
+        ) {
             return Ok(None);
         }
         let mut supported_candidates = edge_candidates.to_vec();
@@ -1467,14 +1461,13 @@ impl MeshQuotient {
                 break;
             }
             if !enforce_edge_arc_consistency_from(
-                ctx,
                 &mut domains,
                 &edges,
                 &root_edges,
                 &supported_candidates,
                 &changed,
                 budget,
-            )? {
+            ) {
                 return Ok(None);
             }
         }
@@ -2902,8 +2895,7 @@ impl MeshQuotient {
             };
             edge_roots.push([*left, *right]);
         }
-        let mut root_edges =
-            ctx.alloc_filled(roots.len(), Vec::new(), "catia point assignment root edges")?;
+        let mut root_edges = vec![Vec::new(); roots.len()];
         for (edge_index, edge) in edge_roots.iter().enumerate() {
             root_edges[edge[0]].push(edge_index);
             if edge[1] != edge[0] {
@@ -2923,7 +2915,7 @@ impl MeshQuotient {
         }
 
         let mut solutions = Vec::new();
-        let mut assigned = ctx.alloc_filled(domains.len(), None, "catia point assignment slots")?;
+        let mut assigned = vec![None; domains.len()];
         let mut used = HashSet::new();
         walk(
             ctx,
@@ -3466,7 +3458,6 @@ fn propagate_common_deferred_quotients(
 }
 
 fn common_supported_corner_equations(
-    ctx: &DecodeContext<'_>,
     quotient: &mut MeshQuotient,
     assignments: &[MeshFaceBoundaryAssignment],
     budget: &WorkBudget,
@@ -3495,36 +3486,19 @@ fn common_supported_corner_equations(
                         None => vec![false, true],
                     })
                     .collect::<Vec<_>>();
-                let mut supported = match (|| -> Result<Vec<Vec<Vec<bool>>>, CodecError> {
-                    let mut supported = Vec::new();
-                    for index in 0..boundary.len() {
-                        let width = directions[(index + 1) % boundary.len()].len();
-                        let height = directions[index].len();
-                        let mut grid = Vec::new();
-                        for _ in 0..height {
-                            let row = ctx.alloc_filled(width, false, "catia_boundary_dir_row")?;
-                            grid.push(row);
-                        }
-                        supported.push(grid);
-                    }
-                    Ok(supported)
-                })() {
-                    Ok(supported) => supported,
-                    Err(error) => return Some(Err(error)),
-                };
+                let mut supported = directions
+                    .iter()
+                    .enumerate()
+                    .map(|(index, states)| {
+                        let next = &directions[(index + 1) % directions.len()];
+                        vec![vec![false; next.len()]; states.len()]
+                    })
+                    .collect::<Vec<_>>();
                 for first in 0..directions[0].len() {
-                    let mut forward = match (|| -> Result<Vec<Vec<bool>>, CodecError> {
-                        let mut forward = Vec::new();
-                        for states in &directions {
-                            let row =
-                                ctx.alloc_filled(states.len(), false, "catia_boundary_forward")?;
-                            forward.push(row);
-                        }
-                        Ok(forward)
-                    })() {
-                        Ok(forward) => forward,
-                        Err(error) => return Some(Err(error)),
-                    };
+                    let mut forward = directions
+                        .iter()
+                        .map(|states| vec![false; states.len()])
+                        .collect::<Vec<_>>();
                     forward[0][first] = true;
                     for index in 0..boundary.len() - 1 {
                         for left in 0..directions[index].len() {
@@ -3546,18 +3520,10 @@ fn common_supported_corner_equations(
                         }
                     }
                     let last = boundary.len() - 1;
-                    let mut backward = match (|| -> Result<Vec<Vec<bool>>, CodecError> {
-                        let mut backward = Vec::new();
-                        for states in &directions {
-                            let row =
-                                ctx.alloc_filled(states.len(), false, "catia_boundary_backward")?;
-                            backward.push(row);
-                        }
-                        Ok(backward)
-                    })() {
-                        Ok(backward) => backward,
-                        Err(error) => return Some(Err(error)),
-                    };
+                    let mut backward = directions
+                        .iter()
+                        .map(|states| vec![false; states.len()])
+                        .collect::<Vec<_>>();
                     for state in 0..directions[last].len() {
                         let left_node = port(boundary[last], directions[last][state], true)?;
                         let right_node = port(boundary[0], directions[0][first], false)?;
@@ -3745,11 +3711,7 @@ pub(super) fn propagate_common_ordered_face_quotients(
         const MAX_FACE_OPTIONS: usize = 4_096;
         const MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS: usize = 64;
         const MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS: usize = 512;
-        let mut face_order =
-            match ctx.alloc_filled(domains.len(), 0usize, "catia_ordered_face_order") {
-                Ok(order) => order,
-                Err(error) => return Some(Err(error)),
-            };
+        let mut face_order = vec![0usize; domains.len()];
         for (face, slot) in face_order.iter_mut().enumerate() {
             *slot = face;
         }
@@ -3853,15 +3815,11 @@ pub(super) fn propagate_common_ordered_face_quotients(
                 let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
                     continue;
                 };
-                let equations = match common_supported_corner_equations(
-                    ctx,
-                    quotient,
-                    assignments,
-                    &face_budget,
-                ) {
-                    Ok(equations) => equations,
-                    Err(error) => return Some(Err(error)),
-                };
+                let equations =
+                    match common_supported_corner_equations(quotient, assignments, &face_budget) {
+                        Ok(equations) => equations,
+                        Err(error) => return Some(Err(error)),
+                    };
                 if let Some(equations) = equations {
                     let mut merged_nodes = Vec::new();
                     for [left, right] in equations {
@@ -4499,32 +4457,21 @@ struct EdgeClassSearchConstraint {
 }
 
 fn edge_class_search_constraint(
-    ctx: &DecodeContext<'_>,
     edge_classes: &[usize],
     choices: &[Vec<[usize; 2]>],
-) -> Result<Option<EdgeClassSearchConstraint>, CodecError> {
+) -> Option<EdgeClassSearchConstraint> {
     if edge_classes.len() != choices.len() {
-        return Ok(None);
+        return None;
     }
-    let mut normalized = ctx.alloc_filled(
-        choices.len(),
-        Vec::new(),
-        "catia_edge_class_normalized_rows",
-    )?;
-    for (row, pairs) in normalized.iter_mut().zip(choices) {
-        *row = ctx.alloc_filled(
-            pairs.len(),
-            [0usize; 2],
-            "catia_edge_class_normalized_pairs",
-        )?;
-        for (normalized_pair, pair) in row.iter_mut().zip(pairs) {
-            *normalized_pair = *pair;
-            normalized_pair.sort_unstable_by(Ord::cmp);
+    let mut normalized = choices.to_vec();
+    for row in &mut normalized {
+        for pair in row.iter_mut() {
+            pair.sort_unstable_by(Ord::cmp);
         }
         row.sort_unstable_by(Ord::cmp);
         row.dedup();
     }
-    let mut active = ctx.alloc_filled(choices.len(), false, "catia_edge_class_active")?;
+    let mut active = vec![false; choices.len()];
     let mut ordered = Vec::new();
     for left in 0..choices.len() {
         for right in left + 1..choices.len() {
@@ -4539,7 +4486,7 @@ fn edge_class_search_constraint(
             ordered.push((left, right));
         }
     }
-    Ok(Some(EdgeClassSearchConstraint { active, ordered }))
+    Some(EdgeClassSearchConstraint { active, ordered })
 }
 
 fn changed_quotient_edges(
@@ -5004,8 +4951,7 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
             .iter()
             .map(|&point| (point, BTreeSet::from([point])))
             .collect::<EndpointRelation>();
-        let mut prefixes = Vec::new();
-        prefixes.push(identity.clone());
+        let mut prefixes = vec![identity.clone()];
         for (index, (_, _, relation)) in layers.iter().enumerate() {
             let composed = compose_relations(&prefixes[index], relation, budget)?;
             prefixes.push(composed);
@@ -5715,12 +5661,8 @@ fn build_endpoint_relation_constraints(
         shared_rows.push((pair, edges));
     }
     shared_rows.sort_unstable_by_key(|(left, _)| *left);
-    let mut arcs = ctx.alloc_filled(domains.len(), Vec::new(), "catia_endpoint_relation_arcs")?;
-    let mut incoming = ctx.alloc_filled(
-        domains.len(),
-        Vec::new(),
-        "catia_endpoint_relation_incoming",
-    )?;
+    let mut arcs = vec![Vec::new(); domains.len()];
+    let mut incoming = vec![Vec::new(); domains.len()];
     let mut choice_counts = Vec::new();
     for domain in domains {
         choice_counts.push(domain.len());
@@ -6415,11 +6357,7 @@ fn resolve_endpoint_configuration_relation_streaming(
         return Ok(None);
     }
     let mut domains = Vec::new();
-    let mut covered = ctx.alloc_filled(
-        edge_candidates.len(),
-        false,
-        "catia_endpoint_relation_covered",
-    )?;
+    let mut covered = vec![false; edge_candidates.len()];
     for (face_assignments, face_configurations) in assignments.iter().zip(endpoint_configurations) {
         if face_assignments.len() != face_configurations.len() {
             return Ok(None);
@@ -6598,11 +6536,7 @@ fn resolve_endpoint_configuration_relation_streaming(
         WalkEndpointRelationDomainsInputs {
             domains,
             face_assignments: assignments,
-            assigned: ctx.alloc_filled(
-                edge_candidates.len(),
-                None,
-                "catia_endpoint_relation_assigned",
-            )?,
+            assigned: vec![None; edge_candidates.len()],
             constraints: &constraints,
             point_count: vertex_points.len(),
             budget,
@@ -7074,18 +7008,9 @@ fn resolve_fixed_mesh_endpoint_pairs(
     }
     let use_fixed_direction_search = !direction_overflow;
     if direction_overflow {
-        let directions = ctx.alloc_filled(
-            assignment_domains.len(),
-            None,
-            "catia_general_mesh_fixed_face_directions",
-        )?;
-        fixed_face_directions = directions;
+        fixed_face_directions = vec![None; assignment_domains.len()];
     }
-    let mut edge_has_fixed_direction = ctx.alloc_filled(
-        edge_candidates.len(),
-        false,
-        "catia_fixed_mesh_edge_directions",
-    )?;
+    let mut edge_has_fixed_direction = vec![false; edge_candidates.len()];
     for use_ in selected
         .iter()
         .flat_map(|assignment| &assignment.boundaries)
@@ -7185,11 +7110,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
             return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
         }
     }
-    let face_work = ctx.alloc_filled(
-        assignment_domains.len(),
-        Some(1usize),
-        "catia_fixed_face_work",
-    )?;
+    let face_work = vec![Some(1usize); assignment_domains.len()];
     let fixed_edge_orientations = if use_fixed_direction_search {
         edge_has_fixed_direction
             .iter()
@@ -7217,7 +7138,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         } else {
             Vec::new()
         },
-        selected: ctx.alloc_filled(assignment_domains.len(), None, "catia_fixed_mesh_selection")?,
+        selected: vec![None; assignment_domains.len()],
         visited_states: HashSet::new(),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
@@ -7384,12 +7305,10 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
 }
 
 pub(super) fn prune_mesh_endpoint_pair_support(
-    ctx: &DecodeContext<'_>,
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
-) -> Result<bool, CodecError> {
+) -> bool {
     prune_mesh_endpoint_pair_support_with_limit(
-        ctx,
         assignments,
         edge_candidates,
         MAX_MESH_CONSTRAINT_OPERATIONS,
@@ -7397,11 +7316,10 @@ pub(super) fn prune_mesh_endpoint_pair_support(
 }
 
 pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
-    ctx: &DecodeContext<'_>,
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
     limit: usize,
-) -> Result<bool, CodecError> {
+) -> bool {
     let budget = WorkBudget::new(limit);
     'fixpoint: loop {
         let mut changed = false;
@@ -7420,18 +7338,14 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                 // Pair-support pruning is optional. Every removal made before
                 // exhaustion was proved locally; the independently bounded
                 // quotient search can continue from that sound partial result.
-                return Ok(true);
+                return true;
             }
             if face.is_empty() {
-                return Ok(false);
+                return false;
             }
             changed |= face.len() != before;
         }
-        let mut incident_faces = ctx.alloc_filled(
-            edge_candidates.len(),
-            Vec::new(),
-            "catia_prune_incident_rows",
-        )?;
+        let mut incident_faces = vec![Vec::new(); edge_candidates.len()];
         for (face, choices) in assignments.iter().enumerate() {
             for use_ in choices
                 .iter()
@@ -7450,12 +7364,13 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                 continue;
             }
             let incident_faces = &incident_faces[edge];
-            let before = edge_candidates[edge].len();
-            let mut decisions = ctx.alloc_filled(before, false, "catia_prune_pair_decisions")?;
+            let row = &edge_candidates[edge];
+            let before = row.len();
+            let mut decisions = vec![false; row.len()];
 
             // Read the unchanged candidate table, then apply this row's decisions.
             // A complete table copy per row repeats all unrelated storage.
-            for (pair, decision) in edge_candidates[edge].iter().zip(&mut decisions) {
+            for (pair, decision) in row.iter().zip(&mut decisions) {
                 *decision = incident_faces.iter().all(|face| {
                     assignments[*face].iter().any(|assignment| {
                         assignment
@@ -7481,17 +7396,17 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
             });
             if budget.exhausted() {
                 // Do not turn incomplete propagation into a contradiction.
-                return Ok(true);
+                return true;
             }
             if edge_candidates[edge].is_empty() {
-                return Ok(false);
+                return false;
             }
             if edge_candidates[edge].len() != before {
                 continue 'fixpoint;
             }
         }
         if !changed {
-            return Ok(true);
+            return true;
         }
     }
 }
@@ -7722,9 +7637,8 @@ fn resolve_standard_mesh_endpoint_candidates(
         priority_edges,
     } = inputs;
 
-    let face_count = assignments.len();
     let mut edge_candidates = edge_candidates.to_vec();
-    if !prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut edge_candidates)? {
+    if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     }
     let quotient = if let Some(prepared) = prepared_quotient {
@@ -7803,11 +7717,7 @@ fn resolve_standard_mesh_endpoint_candidates(
     ) {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
     }
-    let unselected = ctx.alloc_filled(
-        edge_candidates.len(),
-        None,
-        "catia_endpoint_unselected_edges",
-    )?;
+    let unselected = vec![None; edge_candidates.len()];
     let configuration_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut endpoint_configurations = Vec::new();
     for face in &assignments {
@@ -7868,14 +7778,10 @@ fn resolve_standard_mesh_endpoint_candidates(
         vertex_points,
         candidate_gauge,
         port_identities: Some(port_identities),
-        fixed_face_directions: ctx.alloc_filled(
-            face_count,
-            None,
-            "catia_mesh_fixed_face_directions",
-        )?,
+        fixed_face_directions: vec![None; assignments.len()],
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
-        selected: ctx.alloc_filled(face_count, None, "catia_mesh_selected_faces")?,
+        selected: vec![None; assignments.len()],
         visited_states: HashSet::new(),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
@@ -8130,7 +8036,7 @@ where
         )));
     }
     let Some(class_constraint) =
-        edge_class_search_constraint(ctx, edge_classes, &completed_edge_candidates)?
+        edge_class_search_constraint(edge_classes, &completed_edge_candidates)
     else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::EdgeClassConstraint,
@@ -8145,11 +8051,7 @@ where
             .zip(&class_constraint.active)
             .map(|((partial, preferred), class)| *partial || *preferred || *class),
     );
-    let mut assignment_predecessors = ctx.alloc_filled(
-        completed_edge_candidates.len(),
-        None,
-        "catia_mesh_assignment_predecessors",
-    )?;
+    let mut assignment_predecessors = vec![None; completed_edge_candidates.len()];
     for &(left, right) in &class_constraint.ordered {
         assignment_predecessors[right] = Some(
             assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),
@@ -9891,12 +9793,10 @@ mod pair_support_tests {
             })
             .collect::<Vec<_>>();
         let mut candidates = vec![vec![[0, 0]]; EDGES];
-        crate::test_support::with_service_context(|ctx| {
-            assert!(
-                prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut candidates)
-                    .expect("independent one-edge faces require linear candidate storage")
-            );
-        });
+        assert!(prune_mesh_endpoint_pair_support(
+            &mut assignments,
+            &mut candidates
+        ));
         assert!(assignments.iter().all(|choices| choices.len() == 1));
         assert!(candidates.iter().all(|pairs| pairs == &[[0, 0]]));
     }
@@ -9904,36 +9804,28 @@ mod pair_support_tests {
 
 #[test]
 fn arc_consistency_rejects_a_root_without_supporting_pairs() {
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut domains = vec![vec![2, 3], vec![1, 2]];
-        enforce_edge_arc_consistency(
-            ctx,
-            &mut domains,
-            &[[0, 1]],
-            &[0],
-            &[vec![0], vec![0]],
-            &[vec![[0, 1]]],
-            None,
-        )
-    };
-    assert!(!crate::test_support::with_service_context(run).expect("enforce edge arc consistency"));
+    let mut domains = vec![vec![2, 3], vec![1, 2]];
+    assert!(!enforce_edge_arc_consistency(
+        &mut domains,
+        &[[0, 1]],
+        &[0],
+        &[vec![0], vec![0]],
+        &[vec![[0, 1]]],
+        None,
+    ));
 }
 
 #[test]
 fn arc_consistency_from_initial_edges_rejects_unsupported_roots() {
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut domains = vec![vec![2, 3], vec![1, 2]];
-        enforce_edge_arc_consistency_from(
-            ctx,
-            &mut domains,
-            &[[0, 1]],
-            &[vec![0], vec![0]],
-            &[vec![[0, 1]]],
-            &[0],
-            None,
-        )
-    };
-    assert!(!crate::test_support::with_service_context(run).expect("enforce edge arc consistency"));
+    let mut domains = vec![vec![2, 3], vec![1, 2]];
+    assert!(!enforce_edge_arc_consistency_from(
+        &mut domains,
+        &[[0, 1]],
+        &[vec![0], vec![0]],
+        &[vec![[0, 1]]],
+        &[0],
+        None,
+    ));
 }
 
 #[test]
@@ -9972,14 +9864,9 @@ fn initial_quotient_merges_ports_with_a_shared_identity() {
 fn same_class_edges_with_equal_choices_are_ordered_as_one_pair() {
     let choices = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| edge_class_search_constraint(
-            ctx,
-            &[0, 0],
-            &choices
-        ))
-        .expect("compute the edge class search constraint")
-        .expect("matching edge classes")
-        .ordered,
+        edge_class_search_constraint(&[0, 0], &choices)
+            .expect("matching edge classes")
+            .ordered,
         vec![(0, 1)]
     );
 }

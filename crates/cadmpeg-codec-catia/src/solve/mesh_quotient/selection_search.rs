@@ -357,7 +357,6 @@ impl MeshSelectionSearch<'_, '_> {
                     cached
                 } else {
                     let Some(common) = common_supported_corner_equations(
-                        self.ctx,
                         quotient,
                         &self.assignments[face],
                         budget,
@@ -412,10 +411,7 @@ impl MeshSelectionSearch<'_, '_> {
         Ok(true)
     }
 
-    pub(super) fn selection_orientable(
-        &self,
-        selection: &[MeshFaceSelection],
-    ) -> Result<bool, CodecError> {
+    pub(super) fn selection_orientable(&self, selection: &[MeshFaceSelection]) -> bool {
         let mut constraints = Vec::<Vec<(usize, bool)>>::new();
         let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
         for (face, selected) in selection.iter().enumerate() {
@@ -423,26 +419,26 @@ impl MeshSelectionSearch<'_, '_> {
                 continue;
             };
             let Some(assignment) = self.assignments[face].get(*assignment_index) else {
-                return Ok(false);
+                return false;
             };
             if assignment.boundaries.len() != directions.len() {
-                return Ok(false);
+                return false;
             }
             for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
                 if boundary.len() != directions.len() {
-                    return Ok(false);
+                    return false;
                 }
                 let node = constraints.len();
                 constraints.push(Vec::new());
                 for (use_, &direction) in boundary.iter().zip(directions) {
                     let reversed = use_.reversed.unwrap_or(direction);
                     if use_.reversed.is_some() && reversed != direction {
-                        return Ok(false);
+                        return false;
                     }
 
                     let uses = edge_uses.entry(use_.edge).or_default();
                     if uses.len() == 2 {
-                        return Ok(false);
+                        return false;
                     }
                     uses.push((node, reversed));
                 }
@@ -455,16 +451,14 @@ impl MeshSelectionSearch<'_, '_> {
             let parity = left_reversed == right_reversed;
             if left_node == right_node {
                 if parity {
-                    return Ok(false);
+                    return false;
                 }
             } else {
                 constraints[*left_node].push((*right_node, parity));
                 constraints[*right_node].push((*left_node, parity));
             }
         }
-        let mut flips = self
-            .ctx
-            .alloc_filled(constraints.len(), None, "catia_selection_flips")?;
+        let mut flips = vec![None; constraints.len()];
         for root in 0..constraints.len() {
             if flips[root].is_some() {
                 continue;
@@ -474,12 +468,12 @@ impl MeshSelectionSearch<'_, '_> {
             stack.push(root);
             while let Some(node) = stack.pop() {
                 let Some(flip) = flips[node] else {
-                    return Ok(false);
+                    return false;
                 };
                 for &(neighbor, parity) in &constraints[node] {
                     let required = flip ^ parity;
                     match flips[neighbor] {
-                        Some(existing) if existing != required => return Ok(false),
+                        Some(existing) if existing != required => return false,
                         Some(_) => {}
                         None => {
                             flips[neighbor] = Some(required);
@@ -489,14 +483,14 @@ impl MeshSelectionSearch<'_, '_> {
                 }
             }
         }
-        Ok(true)
+        true
     }
 
-    pub(super) fn selected_orientable(&self) -> Result<bool, CodecError> {
+    pub(super) fn selected_orientable(&self) -> bool {
         self.selection_orientable(&self.selected)
     }
 
-    pub(super) fn fixed_remaining_faces_are_orientable(&self) -> Result<bool, CodecError> {
+    pub(super) fn fixed_remaining_faces_are_orientable(&self) -> bool {
         let mut completion = Vec::new();
 
         for selected in &self.selected {
@@ -575,7 +569,7 @@ impl MeshSelectionSearch<'_, '_> {
         let orientable = if self.has_exact_singleton_endpoint_domains() {
             true
         } else {
-            self.fixed_remaining_faces_are_orientable()?
+            self.fixed_remaining_faces_are_orientable()
         };
         Ok(orientable.then_some(measured))
     }
@@ -941,7 +935,7 @@ impl MeshSelectionSearch<'_, '_> {
                 return Ok(());
             }
             if !self.has_exact_singleton_endpoint_domains()
-                && !self.fixed_remaining_faces_are_orientable()?
+                && !self.fixed_remaining_faces_are_orientable()
             {
                 return Ok(());
             }
@@ -1126,11 +1120,7 @@ impl MeshSelectionSearch<'_, '_> {
                 else {
                     break 'candidate None;
                 };
-                let mut use_counts = self.ctx.alloc_filled(
-                    topology.edge_rows.len(),
-                    0usize,
-                    "catia_search_edge_uses",
-                )?;
+                let mut use_counts = vec![0usize; topology.edge_rows.len()];
                 for coedge in topology
                     .faces
                     .iter()
@@ -1277,7 +1267,7 @@ impl MeshSelectionSearch<'_, '_> {
         if let [(assignment_index, directions, next_quotient)] = options.as_slice() {
             let changed_edges = changed_quotient_edges(&measured, next_quotient)?;
             self.selected[face] = Some((*assignment_index, directions.clone()));
-            if self.selected_orientable()? {
+            if self.selected_orientable() {
                 if let Some(next_quotient) =
                     self.prepare_selected_branch(next_quotient, &changed_edges, propagation_budget)?
                 {
@@ -1313,7 +1303,7 @@ impl MeshSelectionSearch<'_, '_> {
         for (_, assignment_index, directions, next_quotient) in ranked_options {
             let changed_edges = changed_quotient_edges(&measured, &next_quotient)?;
             self.selected[face] = Some((assignment_index, directions));
-            if self.selected_orientable()? {
+            if self.selected_orientable() {
                 if let Some(next_quotient) = self.prepare_selected_branch(
                     &next_quotient,
                     &changed_edges,
@@ -1755,7 +1745,7 @@ fn reduced_distinct_matching(
     budget: &WorkBudget,
     excluded: Option<(usize, usize)>,
 ) -> Result<Option<DistinctAssignment>, CodecError> {
-    let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_reduced_matching")?;
+    let mut assignment = vec![None; domains.len()];
     let mut used = ctx.alloc_filled(point_count, false, "catia_reduced_matching_used")?;
     let mut remaining = Vec::new();
     for (root, domain) in domains.iter().enumerate() {
@@ -1946,8 +1936,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             .exhausted()
             .then_some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))));
     };
-    let mut edge_use_counts =
-        ctx.alloc_filled(edge_rows.len(), 0usize, "catia_mesh_edge_use_counts")?;
+    let mut edge_use_counts = vec![0usize; edge_rows.len()];
     for use_ in selected
         .iter()
         .flat_map(|assignment| &assignment.boundaries)

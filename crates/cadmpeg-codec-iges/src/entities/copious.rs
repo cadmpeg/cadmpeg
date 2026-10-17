@@ -196,6 +196,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
     let mut free_vertices = Vec::new();
+    let planar_pairs = super::geometry::PlanarPairBudget::new();
 
     for entry in directory
         .iter()
@@ -448,6 +449,17 @@ pub(super) fn project(
                 "simple closed path has coincident non-endpoint points"
             };
             push_copious_loss(&mut losses, entry, format_args!("{reason}"));
+            continue;
+        }
+        if entry.form == 63 && !planar_pairs.admit(definition_points.len()) {
+            push_copious_loss(
+                &mut losses,
+                entry,
+                format_args!(
+                    "the self-intersection check of {} points does not fit the pass's remaining MAX_PLANAR_POINT_PAIRS allowance",
+                    definition_points.len()
+                ),
+            );
             continue;
         }
         if entry.form == 63 && has_form_63_self_intersection(&definition_points) {

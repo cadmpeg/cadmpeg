@@ -68,7 +68,6 @@
 
 use crate::container::{ContainerScan, Section};
 use crate::loss::SldprtLossCode;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
@@ -129,18 +128,11 @@ impl LayerClassification {
         &self.layers
     }
 
-    pub(crate) fn append_losses(
-        &self,
-        ctx: &DecodeContext<'_>,
-        losses: &mut Vec<LossNote>,
-    ) -> Result<(), CodecError> {
-        for loss in dialect_losses(ctx, &self.layers)? {
-            losses.push(loss);
-        }
+    pub(crate) fn append_losses(&self, losses: &mut Vec<LossNote>) {
+        losses.extend(dialect_losses(&self.layers));
         for loss in &self.losses {
             losses.push(SldprtLossCode::DialectLayerCollision.note(loss.message.clone()));
         }
-        Ok(())
     }
 }
 
@@ -153,10 +145,7 @@ const VERIFIED_KERNELS: [DialectId; 3] = [
 ];
 
 /// Classify the host document and every framed Parasolid stream it carries.
-pub(crate) fn classify_layers(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-) -> Result<LayerClassification, CodecError> {
+pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> Result<LayerClassification, CodecError> {
     let mut kernels = Vec::new();
     for section in scan.sections() {
         let (site_prefix, site_ordinal) = match section {
@@ -180,9 +169,9 @@ pub(crate) fn classify_layers(
     let declaration = crate::container::declared_sw_version(scan);
     let host = SldprtDialect::from_declaration(declaration);
     let mut layers = DialectLayers::of(host.matched(declaration));
-    let extra = cadmpeg_parasolid::extra_layers(ctx, kernels, &VERIFIED_KERNELS)?;
+    let extra = cadmpeg_parasolid::extra_layers(kernels, &VERIFIED_KERNELS);
     let mut losses = Vec::new();
-    for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
+    for message in cadmpeg_parasolid::push_extras(&mut layers, extra) {
         losses.push(SldprtLossCode::DialectLayerCollision.note(message));
     }
     Ok(LayerClassification {
@@ -279,18 +268,15 @@ impl SldprtDialect {
 /// this reads that field rather than reclassifying. The biconditional the
 /// decode policy requires is therefore structural: the note charged and the
 /// admission reported come from one value, not from two authors agreeing.
-fn dialect_loss(
-    ctx: &DecodeContext<'_>,
-    matched: &DialectMatch,
-) -> Result<Option<LossNote>, CodecError> {
+fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
-        Admission::Admitted | Admission::Refused => Ok(None),
+        Admission::Admitted | Admission::Refused => None,
         Admission::Unverified { .. } | Admission::Residual => {
-            if let Some(message) = cadmpeg_parasolid::unverified_message(ctx, matched)? {
-                return Ok(Some(SldprtLossCode::KernelDialectUnverified.note(message)));
+            if let Some(message) = cadmpeg_parasolid::unverified_message(matched) {
+                return Some(SldprtLossCode::KernelDialectUnverified.note(message));
             }
             if matched.format() != FORMAT {
-                return Ok(None);
+                return None;
             }
             let message = match matched.declared().get(DECLARED_SW_VERSION) {
                 Some(value) => format!("the swSolidWorks swVersion declaration {value:?} does not read as a version \
@@ -307,23 +293,14 @@ fn dialect_loss(
                  Agreement is consistency, not a declaration.",
                 matched.dialect()),
             };
-            Ok(Some(SldprtLossCode::SourceDialectUnverified.note(message)))
+            Some(SldprtLossCode::SourceDialectUnverified.note(message))
         }
     }
 }
 
 /// Losses charged by every unverified layer in a classified document.
-fn dialect_losses(
-    ctx: &DecodeContext<'_>,
-    layers: &DialectLayers,
-) -> Result<Vec<LossNote>, CodecError> {
-    let mut losses = Vec::new();
-    for layer in layers.iter() {
-        if let Some(loss) = dialect_loss(ctx, layer)? {
-            losses.push(loss);
-        }
-    }
-    Ok(losses)
+fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
+    layers.iter().filter_map(dialect_loss).collect()
 }
 
 #[cfg(test)]

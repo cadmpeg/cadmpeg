@@ -5,8 +5,8 @@ use cadmpeg_test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
-    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, DepthNeed,
+    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
@@ -18,6 +18,7 @@ use crate::schema::{EntityKind, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -58,6 +59,7 @@ struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NEEDS: DepthNeed = DepthNeed::Recorded;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -116,6 +118,7 @@ struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
     const FORMAT: FormatId = FormatId::new("test");
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
 
@@ -152,6 +155,80 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
         Some(&cadmpeg_core::dialect_id!("test:new"))
     );
     assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
+}
+
+fn recorded_at(depth: DecodeDepth) -> CadIr {
+    let mut ir = CadIr::empty();
+    ir.set_decode_depth(depth);
+    ir
+}
+
+#[test]
+fn a_full_need_encoder_refuses_a_geometry_document() {
+    let ir = recorded_at(DecodeDepth::Geometry);
+    let error = F3dCoverageEncoder(ArenaCoverage::Complete)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            CodecError::InsufficientDepth {
+                format: "f3d",
+                needed: DecodeDepth::Full,
+                recorded: DecodeDepth::Geometry,
+            }
+        ),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_geometry_need_encoder_admits_geometry_and_refuses_container() {
+    let geometry = recorded_at(DecodeDepth::Geometry);
+    CatalogEncoder
+        .plan(
+            EncodeInput::new(&geometry, None),
+            TargetRequest::Explicit("new"),
+        )
+        .unwrap();
+    let container = recorded_at(DecodeDepth::Container);
+    let error = CatalogEncoder
+        .plan(
+            EncodeInput::new(&container, None),
+            TargetRequest::Explicit("new"),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            CodecError::InsufficientDepth {
+                format: "test",
+                needed: DecodeDepth::Geometry,
+                recorded: DecodeDepth::Container,
+            }
+        ),
+        "{error}"
+    );
+}
+
+#[test]
+fn the_cadir_encoder_writes_the_depth_a_document_records() {
+    assert_eq!(CadirEncoder.needs(), DepthNeed::Recorded);
+    assert_eq!(CadirEncoder.needs().request(), DecodeDepth::Full);
+    for depth in [
+        DecodeDepth::Container,
+        DecodeDepth::Geometry,
+        DecodeDepth::Full,
+    ] {
+        let ir = recorded_at(depth);
+        let plan = CadirEncoder
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut encoded = Vec::new();
+        plan.write_to(&mut encoded).unwrap();
+        let written: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(written["decode_depth"], depth.as_str());
+    }
 }
 
 #[test]
@@ -243,6 +320,7 @@ struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NEEDS: DepthNeed = DepthNeed::Recorded;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -322,6 +400,7 @@ struct F3dCoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for F3dCoverageEncoder {
     const FORMAT: FormatId = FormatId::new("f3d");
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 

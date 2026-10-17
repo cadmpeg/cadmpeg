@@ -156,13 +156,17 @@ fn duplicate_definitions_retain_every_record_and_locate_every_ambiguity() {
             .definitions
             .ambiguous_ids
             .contains(&Uuid::from_wire(duplicate)));
-        for container_only in [false, true] {
+        for depth in [
+            cadmpeg_core::decode::DecodeDepth::Full,
+            cadmpeg_core::decode::DecodeDepth::Container,
+        ] {
+            let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
             let decoded = EditableDecodeResult::from(
                 crate::RhinoCodec
                     .decode(
                         &mut Cursor::new(&source),
                         &DecodeOptions {
-                            container_only,
+                            depth,
                             ..DecodeOptions::default()
                         },
                     )
@@ -328,13 +332,17 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
                 .range
                 .start,
         );
-        for container_only in [false, true] {
+        for depth in [
+            cadmpeg_core::decode::DecodeDepth::Full,
+            cadmpeg_core::decode::DecodeDepth::Container,
+        ] {
+            let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
             let decoded = EditableDecodeResult::from(
                 crate::RhinoCodec
                     .decode(
                         &mut Cursor::new(&source),
                         &DecodeOptions {
-                            container_only,
+                            depth,
                             ..DecodeOptions::default()
                         },
                     )

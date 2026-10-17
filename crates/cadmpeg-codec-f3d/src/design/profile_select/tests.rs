@@ -11,7 +11,7 @@ use super::{
     resolved_spatial_sketch_profile_regions, spatial_profile_containing_entity,
     EntitySelectionPathResolution, ExtrudeProfileResolution, SketchProfileResolution,
 };
-use crate::design::geometry::{region_containing_points, MAX_ARRANGEMENT_WALK_WORK};
+use crate::design::geometry::{region_containing_points, ProfileGeometryWork};
 use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
     neutral_spatial_sketch_id,
@@ -31,7 +31,6 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
-use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::features::{PathRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -319,7 +318,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             },
         )
         .unwrap();
-        let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+        let profile_work = ProfileGeometryWork::new();
         let scope_histories = HashMap::new();
         let resolution = ExtrudeProfileResolution {
             entities: &[],
@@ -329,7 +328,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             scope_histories: &scope_histories,
             linear_tolerance: 1.0e-6,
             angular_tolerance: 1.0e-9,
-            arrangement_budget: &arrangement_budget,
+            profile_work: &profile_work,
             ctx: decode_ctx,
         };
         let scoped_resolution = resolution.scoped(&[]);
@@ -1065,13 +1064,14 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         .unwrap(),
     );
     let point = Point3::new(11.0, 20.0, 9.0);
-    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+    let profile_work = ProfileGeometryWork::new();
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
             &sketch,
             std::slice::from_ref(&entity),
             &[point],
             1.0e-6,
+            &profile_work,
             decode_ctx
         ))
         .unwrap(),
@@ -1084,7 +1084,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
                 std::slice::from_ref(&entity),
                 &[point],
                 1.0e-6,
-                &arrangement_budget,
+                &profile_work,
                 decode_ctx,
             )
         })
@@ -1134,7 +1134,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
                 &branched_entities,
                 &endpoints,
                 1.0e-6,
-                &arrangement_budget,
+                &profile_work,
                 decode_ctx,
             )
         })
@@ -1152,6 +1152,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             std::slice::from_ref(&entity),
             &[point],
             1.0e-6,
+            &profile_work,
             decode_ctx
         ))
         .unwrap(),
@@ -1164,7 +1165,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
                 std::slice::from_ref(&entity),
                 &[point],
                 1.0e-6,
-                &arrangement_budget,
+                &profile_work,
                 decode_ctx,
             )
         })

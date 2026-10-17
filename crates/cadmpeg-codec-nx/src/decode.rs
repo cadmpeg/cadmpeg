@@ -86,13 +86,14 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
 /// resides in external child parts.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = scan(ctx, root)?;
-    let (classification, notes) = crate::scan_notes::summarize(ctx, &scan)?;
+    let (classification, notes) = crate::scan_notes::summarize(&scan)?;
     let (dialects, dialect_losses) = classification.into_report_parts();
 
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
         let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
+        body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         body.losses.extend(native_losses);
         report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);

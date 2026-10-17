@@ -1763,7 +1763,7 @@ mod tests {
     use std::io::{self, Read};
 
     use cadmpeg_core::container::ContainerRole;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_core::CodecError;
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
@@ -1992,7 +1992,7 @@ mod tests {
         let file = large_regular_fixture();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        let ctx = DecodeContext::new(&arena, &policy, false);
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
         let mut source = std::io::Cursor::new(&file);
         let prefix = read_detection_prefix(&ctx, &mut source, 128 * 1024)
             .expect("one acquisition pass reaches the distant directory");
@@ -2015,7 +2015,7 @@ mod tests {
         for prefix_len in [8, 16, 31, 32] {
             let arena = DecodeArena::new();
             let policy = DecodePolicy::service();
-            let ctx = DecodeContext::new(&arena, &policy, false);
+            let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
             let mut source = std::io::Cursor::new(&file);
             let prefix = read_detection_prefix(&ctx, &mut source, prefix_len)
                 .expect("a short compound header is acquired through EOF");
@@ -2054,7 +2054,7 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_input_bytes = 128 * 1024;
-            let ctx = DecodeContext::new(&arena, &policy, false);
+            let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
             let source_bytes = if exact_eof {
                 &file[..128 * 1024]
             } else {
@@ -2087,7 +2087,7 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_input_bytes = 16;
-        let ctx = DecodeContext::new(&arena, &policy, false);
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
         let prefix = read_detection_prefix(&ctx, &mut source, 128 * 1024)
             .expect("a capped non-CFB prefix is not a size refusal");
 

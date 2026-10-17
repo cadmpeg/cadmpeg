@@ -62,6 +62,7 @@ fn dimension_conversion_result(
             &values,
             &[None],
             RelationEvaluationContext::default(),
+            &mut None,
         )
     })
 }

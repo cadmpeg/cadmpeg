@@ -2853,6 +2853,15 @@ fn back_pointer(line: &PhysicalLine) -> Option<u32> {
     (value > 0).then_some(value)
 }
 
+/// Whether a card of the non-decreasing `card_boundaries` ends after `start`
+/// and no later than `end`.
+fn card_boundary_within(card_boundaries: &[usize], start: usize, end: usize) -> bool {
+    let next = card_boundaries.partition_point(|boundary| *boundary <= start);
+    card_boundaries
+        .get(next)
+        .is_some_and(|boundary| *boundary <= end)
+}
+
 fn hollerith(
     bytes: &[u8],
     card_boundaries: &[usize],
@@ -2866,10 +2875,7 @@ fn hollerith(
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
-    if card_boundaries
-        .iter()
-        .any(|boundary| start < *boundary && *boundary < cursor + 1)
-    {
+    if card_boundary_within(card_boundaries, start, cursor) {
         return Err(TokenizeFailure::Defect(
             ParameterDefect::HollerithHeaderCrossesCard,
             start,
@@ -3401,11 +3407,7 @@ fn tokenize_with_limits(
                     .iter()
                     .position(|byte| !byte.is_ascii_whitespace())
                     .unwrap_or(span.len());
-            if first_value < end
-                && card_boundaries
-                    .iter()
-                    .any(|boundary| first_value < *boundary && *boundary <= end)
-            {
+            if first_value < end && card_boundary_within(card_boundaries, first_value, end) {
                 return Err(TokenizeFailure::Defect(
                     ParameterDefect::NumericCrossesCard,
                     first_value,

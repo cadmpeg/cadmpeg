@@ -198,7 +198,7 @@ fn container_only_stops_before_geometry() {
     let f = standard_catpart();
     let mut cur = Cursor::new(f);
     let opts = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
     let result = EditableDecodeResult::from(CatiaCodec.decode(&mut cur, &opts).unwrap());

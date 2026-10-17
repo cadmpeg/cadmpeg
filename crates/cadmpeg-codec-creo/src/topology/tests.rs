@@ -712,7 +712,7 @@ fn closed_ring_constructor_rejects_empty_repeated_disconnected_and_mixed_faces()
         mixed[1].face_id = std::num::NonZeroU32::new(11);
         assert!(super::Loop::new(face, vec![a, b], &mixed).is_none());
         let mut duplicate = graph.to_vec();
-        duplicate.push(graph[0].clone());
+        duplicate.insert(0, graph[0].clone());
         assert!(super::Loop::new(face, vec![a, b], &duplicate).is_none());
     };
 }
@@ -759,6 +759,155 @@ fn topology_build_keeps_an_open_successor_chain_out_of_loops() {
     let (edges, loops) = build(&[row(1, 2), row(2, 3), row(3, 99)]);
     assert_eq!(edges.len(), 6);
     assert!(loops.is_empty());
+}
+
+#[test]
+fn long_successor_ring_validates_as_one_loop_per_face() {
+    const COUNT: u32 = 200_000;
+    let rows: Vec<_> = (1..=COUNT)
+        .map(|id| row(id, if id == COUNT { 1 } else { id + 1 }))
+        .collect();
+    let (edges, loops) = build(&rows);
+    assert_eq!(loops.len(), 2);
+    let ring_len = usize::try_from(COUNT).unwrap();
+    assert!(loops.iter().all(|ring| ring.half_edges().len() == ring_len));
+    let ring = loops[0].half_edges().to_vec();
+    assert!(super::Loop::new(loops[0].face_id(), ring, &edges).is_some());
+}
+
+#[test]
+fn many_tails_into_one_cycle_form_one_loop_per_face() {
+    const TAILS: u32 = 50_000;
+    const CYCLE: u32 = 50_000;
+    let first = TAILS + 1;
+    let last = TAILS + CYCLE;
+    let mut rows: Vec<_> = (1..=TAILS).map(|id| row(id, first)).collect();
+    rows.extend((first..=last).map(|id| row(id, if id == last { first } else { id + 1 })));
+    let (_, loops) = build(&rows);
+    assert_eq!(loops.len(), 2);
+    let ring_len = usize::try_from(CYCLE).unwrap();
+    assert!(loops.iter().all(|ring| ring.half_edges().len() == ring_len));
+    assert!(loops
+        .iter()
+        .all(|ring| ring.half_edges()[0].curve_id == first));
+}
+
+/// The linear successor scan and unmemoised walk that `build` replaced.
+fn linear_scan_build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<super::Loop>) {
+    use super::Side;
+    use std::collections::BTreeMap;
+
+    let rows = crate::identity::uniquely_identified_rows(rows, |row| row.id);
+    let mut face_sides: BTreeMap<Option<std::num::NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
+    for row in &rows {
+        for side in [Side::Zero, Side::One] {
+            face_sides
+                .entry(row.faces[side.index()])
+                .or_default()
+                .push(HalfEdgeId {
+                    curve_id: row.id,
+                    side,
+                });
+        }
+    }
+    let mut edges = Vec::new();
+    for row in rows {
+        for side in [Side::Zero, Side::One] {
+            let face_id = row.faces[side.index()];
+            let mut candidates = face_sides
+                .get(&face_id)
+                .into_iter()
+                .flatten()
+                .filter(|id| id.curve_id == row.next_edges[side.index()])
+                .copied();
+            let next = match (candidates.next(), candidates.next()) {
+                (Some(candidate), None) => Some(candidate),
+                _ => None,
+            };
+            edges.push(HalfEdge {
+                id: HalfEdgeId {
+                    curve_id: row.id,
+                    side,
+                },
+                face_id,
+                next,
+            });
+        }
+    }
+    edges.sort_by_key(|edge| edge.id);
+    let by_id = |id: HalfEdgeId| edges.iter().find(|edge| edge.id == id);
+    let mut consumed = BTreeSet::new();
+    let mut open = BTreeSet::new();
+    let mut loops = Vec::new();
+    for edge in &edges {
+        if consumed.contains(&edge.id) || open.contains(&edge.id) {
+            continue;
+        }
+        let mut ring = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut current = edge.id;
+        let mut open_ended = false;
+        loop {
+            if open.contains(&current) {
+                open_ended = true;
+                break;
+            }
+            if seen.contains(&current) {
+                if current == edge.id {
+                    consumed.extend(ring.iter().copied());
+                    loops.push(super::Loop {
+                        face_id: edge.face_id,
+                        half_edges: std::mem::take(&mut ring),
+                    });
+                }
+                break;
+            }
+            seen.insert(current);
+            ring.push(current);
+            let Some(next) = by_id(current).and_then(|entry| entry.next) else {
+                open_ended = true;
+                break;
+            };
+            if by_id(next).is_none_or(|entry| entry.face_id != edge.face_id) {
+                open_ended = true;
+                break;
+            }
+            current = next;
+        }
+        if open_ended {
+            open.extend(ring);
+        }
+    }
+    (edges, loops)
+}
+
+#[test]
+fn build_matches_the_linear_scan_walk_on_random_successor_graphs() {
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut draw = |bound: u32| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        u32::try_from(state % u64::from(bound)).unwrap()
+    };
+    for _ in 0..4_000 {
+        let count = 1 + draw(40);
+        let rows: Vec<_> = (0..count)
+            .map(|_| {
+                let id = 1 + draw(48);
+                CurveTopologyRow {
+                    faces: [
+                        std::num::NonZeroU32::new(draw(3)),
+                        std::num::NonZeroU32::new(draw(3)),
+                    ],
+                    next_edges: [draw(50), draw(50)],
+                    ..row(id, 0)
+                }
+            })
+            .collect();
+        let expected = linear_scan_build(&rows);
+        assert_eq!(build(&rows), expected, "{rows:?}");
+    }
 }
 
 mod work_admission;

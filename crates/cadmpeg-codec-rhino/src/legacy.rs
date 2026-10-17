@@ -789,7 +789,7 @@ fn legacy_curve_segments(
             "V1 curve segment count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut segments = { Vec::new() };
+    let mut segments = Vec::new();
     for _ in 0..count {
         let spline = chunk_at(
             data,
@@ -1589,8 +1589,8 @@ fn append_legacy_brep(
             suffix_key.clone(),
         ))
     }?;
-    let mut trim_paths = { Vec::new() };
-    let mut face_trim_indices = { Vec::new() };
+    let mut trim_paths = Vec::new();
+    let mut face_trim_indices = Vec::new();
     for _ in 0..brep.faces.len() {
         face_trim_indices.push(Vec::new());
     }
@@ -1606,7 +1606,7 @@ fn append_legacy_brep(
     if trim_paths.is_empty() {
         return Err(CodecError::Malformed("V1 Brep has no trims".to_string()));
     }
-    let mut parents = { Vec::new() };
+    let mut parents = Vec::new();
     parents.extend(0..trim_paths.len());
     let has_edge = |index: usize| {
         let (face, loop_index, trim) = trim_paths[index];
@@ -1620,7 +1620,7 @@ fn append_legacy_brep(
         }
     };
     for (face_index, face) in brep.faces.iter().enumerate() {
-        let mut seams = { Vec::new() };
+        let mut seams = Vec::new();
         for index in face_trim_indices[face_index].iter().copied() {
             let (_, loop_index, trim_index) = trim_paths[index];
             if face.loops[loop_index].trims[trim_index].mate == Mate::Seam {
@@ -1635,7 +1635,7 @@ fn append_legacy_brep(
             }
         }
     }
-    let mut mates = { Vec::new() };
+    let mut mates = Vec::new();
     for (index, (face, loop_index, trim)) in trim_paths.iter().enumerate() {
         let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
         if record.mate == Mate::Mated {
@@ -1649,13 +1649,12 @@ fn append_legacy_brep(
             }
         }
     }
-    let mut roots = { Vec::new() };
+    let mut roots = Vec::new();
     for index in 0..trim_paths.len() {
         roots.push(find_root(&mut parents, index));
     }
-    let mut group_roots = { Vec::new() };
-    group_roots.extend_from_slice(&roots);
-    group_roots.sort_unstable_by(Ord::cmp);
+    let mut group_roots = roots.clone();
+    group_roots.sort_unstable();
     group_roots.dedup();
 
     let mut group_curve = BTreeMap::<usize, NurbsCurve>::new();
@@ -1693,7 +1692,7 @@ fn append_legacy_brep(
                 .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
 
-            let mut globals = { Vec::new() };
+            let mut globals = Vec::new();
             globals.extend(start..start + loop_record.trims.len());
             for (position, global) in globals.iter().copied().enumerate() {
                 let root = roots[global];
@@ -1730,7 +1729,7 @@ fn append_legacy_brep(
     let endpoint_count = trim_paths.len().checked_mul(2).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 Brep endpoint count exceeds address space".to_string())
     })?;
-    let mut endpoint_parents = { Vec::new() };
+    let mut endpoint_parents = Vec::new();
     endpoint_parents.extend(0..endpoint_count);
     for (face_index, face) in brep.faces.iter().enumerate() {
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
@@ -1743,7 +1742,7 @@ fn append_legacy_brep(
                 .map(|position| face_trim_indices[face_index][position])
                 .ok_or_else(|| CodecError::Malformed("V1 loop has no indexed trim".to_string()))?;
 
-            let mut globals = { Vec::new() };
+            let mut globals = Vec::new();
             globals.extend((0..loop_record.trims.len()).map(|offset| start + offset));
             for (position, global) in globals.iter().copied().enumerate() {
                 let next = globals[(position + 1) % globals.len()];
@@ -2221,7 +2220,7 @@ fn legacy_loop(
             "V1 boundary trim count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut trims = { Vec::new() };
+    let mut trims = Vec::new();
     for _ in 0..count {
         let trim = nested_chunk(data, &mut reader, TCODE_LEGACY_TRM)?;
         trims.push(legacy_trim(ctx, data, trim.body(), scale)?);
@@ -2264,7 +2263,7 @@ fn legacy_face(
             "V1 face seam count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut seam_glue = { Vec::new() };
+    let mut seam_glue = Vec::new();
     for _ in 0..glue_count {
         seam_glue.push(usize::from(
             reader.u16().map_err(|error| malformed(&error))?,
@@ -2277,7 +2276,7 @@ fn legacy_face(
             "V1 face boundary count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut loops = { Vec::new() };
+    let mut loops = Vec::new();
     for _ in 0..boundary_count {
         let loop_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_BND)?;
         loops.push(legacy_loop(ctx, data, loop_chunk.body(), scale)?);
@@ -2298,11 +2297,9 @@ fn legacy_brep(
 ) -> Result<LegacyBrep, CodecError> {
     if chunk.typecode == TCODE_LEGACY_FAC {
         let face = legacy_face(ctx, data, chunk.body().clone(), scale)?;
-        let mut faces = { Vec::new() };
-        faces.push(face);
         return Ok(LegacyBrep {
             shell_glue: Vec::new(),
-            faces,
+            faces: vec![face],
         });
     }
     let stuff = child_with_type(data, chunk.body().clone(), TCODE_LEGACY_SHLSTUFF)?
@@ -2322,7 +2319,7 @@ fn legacy_brep(
             "V1 shell glue count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut shell_glue = { Vec::new() };
+    let mut shell_glue = Vec::new();
     for _ in 0..glue_count {
         shell_glue.push(usize::from(
             reader.u16().map_err(|error| malformed(&error))?,
@@ -2333,7 +2330,7 @@ fn legacy_brep(
             "V1 shell face count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut faces = { Vec::new() };
+    let mut faces = Vec::new();
     for _ in 0..face_count {
         let face = nested_chunk(data, &mut reader, TCODE_LEGACY_FAC)?;
         faces.push(legacy_face(ctx, data, face.body(), scale)?);

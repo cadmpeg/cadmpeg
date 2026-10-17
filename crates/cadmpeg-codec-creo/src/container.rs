@@ -379,7 +379,8 @@ pub(crate) struct FramingScan<'a> {
     pub(crate) expanded_sections: Vec<ExpandedSection>,
     /// Bounded compressed sections whose payload could not be expanded.
     pub(crate) expansion_losses: Vec<SectionExpansionLoss>,
-    /// Local work-cap skips recorded while scanning plane support frames.
+    /// Local work-cap skips recorded while framing and decoding plane support
+    /// frames.
     pub(crate) local_work_cap_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Identified layout family.
     pub(crate) layout: Layout,
@@ -1547,10 +1548,11 @@ fn surface_prototype_records(
 fn surface_parameters(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     collect_section_records_result(
         sections.iter(),
-        |bytes| surface::parameter_records(ctx, bytes),
+        |bytes| surface::parameter_records_with_losses(ctx, bytes, losses),
         |record, base| {
             record.offset += base;
             record.body_offset += base;
@@ -1562,10 +1564,11 @@ fn surface_parameters(
 fn cross_section_surface_parameters(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     collect_section_records_result(
         cross_sections(sections),
-        |bytes| surface::cross_section_parameter_records(ctx, bytes),
+        |bytes| surface::cross_section_parameter_records(ctx, bytes, losses),
         |record, base| {
             record.offset += base;
             record.body_offset += base;
@@ -1577,10 +1580,11 @@ fn cross_section_surface_parameters(
 fn surface_contours(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     collect_section_records_result(
         sections.iter(),
-        |bytes| surface::contour_records(ctx, bytes),
+        |bytes| surface::contour_records_with_losses(ctx, bytes, losses),
         |record, base| {
             record.offset += base;
             record.envelope_offset += base;
@@ -1593,10 +1597,11 @@ fn surface_contours(
 fn cross_section_surface_contours(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     collect_section_records_result(
         cross_sections(sections),
-        |bytes| surface::cross_section_contour_records(ctx, bytes),
+        |bytes| surface::cross_section_contour_records(ctx, bytes, losses),
         |record, base| {
             record.offset += base;
             record.envelope_offset += base;
@@ -1679,10 +1684,11 @@ fn cross_section_plane_local_systems(
 fn plane_envelopes(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     collect_section_records_result(
         sections.iter(),
-        |bytes| surface::plane_envelopes(ctx, bytes),
+        |bytes| surface::plane_envelopes_with_losses(ctx, bytes, losses),
         |record, base| {
             record.offset += base;
             record.row_offset += base;
@@ -1694,10 +1700,11 @@ fn plane_envelopes(
 fn cross_section_plane_envelopes(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     collect_section_records_result(
         cross_sections(sections),
-        |bytes| surface::cross_section_plane_envelopes(ctx, bytes),
+        |bytes| surface::cross_section_plane_envelopes(ctx, bytes, losses),
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -1860,12 +1867,13 @@ fn datum_planes(sections: &[ScannedSection<'_>]) -> Result<Vec<DatumPlaneRecord>
 fn datum_cylinders(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DatumCylinder>, CodecError> {
     collect_section_records_result(
         sections
             .iter()
             .filter(|section| section.section.name() == "ActDatums"),
-        |bytes| datum::cylinders(ctx, bytes),
+        |bytes| datum::cylinders(ctx, bytes, losses),
         |cylinder, base| cylinder.offset_in_payload += base,
         |cylinder| cylinder.offset_in_payload,
     )
@@ -2686,21 +2694,35 @@ pub(crate) fn scan_bytes<'a>(
     surface_rows.extend(legacy_geometry.rows);
     surface_rows.as_mut_slice().sort_by_key(|left| left.offset);
     let cross_section_surface_rows = cross_section_surface_rows(sections)?;
-    let nonvisible_surface_parameters = surface_parameters(ctx, &nonvisible_geometry_sections)?;
-    let surface_parameters = surface_parameters(ctx, &model_geometry_sections)?;
-    let cross_section_surface_parameters = cross_section_surface_parameters(ctx, sections)?;
-    let nonvisible_surface_contours = surface_contours(ctx, &nonvisible_geometry_sections)?;
-    let surface_contours = surface_contours(ctx, &model_geometry_sections)?;
-    let cross_section_surface_contours = cross_section_surface_contours(ctx, sections)?;
+    let mut local_work_cap_losses = Vec::new();
+    let nonvisible_surface_parameters = surface_parameters(
+        ctx,
+        &nonvisible_geometry_sections,
+        &mut local_work_cap_losses,
+    )?;
+    let surface_parameters =
+        surface_parameters(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
+    let cross_section_surface_parameters =
+        cross_section_surface_parameters(ctx, sections, &mut local_work_cap_losses)?;
+    let nonvisible_surface_contours = surface_contours(
+        ctx,
+        &nonvisible_geometry_sections,
+        &mut local_work_cap_losses,
+    )?;
+    let surface_contours =
+        surface_contours(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
+    let cross_section_surface_contours =
+        cross_section_surface_contours(ctx, sections, &mut local_work_cap_losses)?;
     let tabulated_cylinder_curve_replays =
         tabulated_cylinder_curve_replays(&model_geometry_sections)?;
-    let mut local_work_cap_losses = Vec::new();
     let plane_local_systems =
         plane_local_systems(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
     let cross_section_plane_local_systems =
         cross_section_plane_local_systems(ctx, sections, &mut local_work_cap_losses)?;
-    let plane_envelopes = plane_envelopes(ctx, &model_geometry_sections)?;
-    let cross_section_plane_envelopes = cross_section_plane_envelopes(ctx, sections)?;
+    let plane_envelopes =
+        plane_envelopes(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
+    let cross_section_plane_envelopes =
+        cross_section_plane_envelopes(ctx, sections, &mut local_work_cap_losses)?;
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
     let positional_frame_planes =
         surface::positional_frame_planes(&surface_parameters, &surface_rows);
@@ -2776,7 +2798,7 @@ pub(crate) fn scan_bytes<'a>(
     let vertex_orbits = topology::vertex_orbits(&half_edges)?;
     let face_components = topology::face_components(&curve_topology_rows)?;
     let datum_planes = datum_planes(sections)?;
-    let datum_cylinders = datum_cylinders(ctx, sections)?;
+    let datum_cylinders = datum_cylinders(ctx, sections, &mut local_work_cap_losses)?;
     let feature_operation_states = feature_operation_states(sections)?;
     let feature_operations = feature_operations(sections)?;
     let feature_reference_names = feature_reference_names(sections);

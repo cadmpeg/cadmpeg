@@ -109,7 +109,7 @@ fn feature_output_binding_preserves_base_feature_selection() {
     super::super::bind_feature_outputs(
         std::slice::from_mut(&mut feature),
         &[scope],
-        &[history],
+        &mut [history],
         std::slice::from_ref(&body),
     )
     .unwrap();

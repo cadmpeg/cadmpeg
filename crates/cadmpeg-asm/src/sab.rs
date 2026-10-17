@@ -332,6 +332,35 @@ pub fn payload_token(
     None
 }
 
+/// Lex payload tokens from `start` up to a record terminator, the end of
+/// `bytes`, or the first byte that does not lex, as [`frame`] types them.
+/// Returns the tokens and the byte offset of each token, followed by the
+/// offset just past the last token.
+pub(crate) fn lex_payload(
+    bytes: &[u8],
+    start: usize,
+    ref_width: RefWidth,
+) -> (Vec<Token>, Vec<usize>) {
+    let mut tokens = Vec::new();
+    let mut offsets = vec![start];
+    let mut position = start;
+    while position < bytes.len() {
+        let Ok((lexed, next)) = lex(bytes, position, ref_width) else {
+            break;
+        };
+        tokens.push(match lexed {
+            Lexed::Value(token) => token,
+            Lexed::Ident(name) => Token::Ident(name.to_owned()),
+            Lexed::SubIdent(name) => Token::SubIdent(name.to_owned()),
+            Lexed::Str(value) => Token::Str(value.to_owned()),
+            Lexed::Terminator => break,
+        });
+        offsets.push(next);
+        position = next;
+    }
+    (tokens, offsets)
+}
+
 /// Read one token starting at `pos`. Returns the token (or a control marker) and
 /// the offset just past it. Control tags (`0x0d`/`0x0e` name tokens, `0x11`
 /// terminator) are returned via [`Lexed`] so the framer can act on them.

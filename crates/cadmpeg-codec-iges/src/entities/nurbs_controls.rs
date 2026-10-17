@@ -5,11 +5,305 @@ use cadmpeg_core::{
     CodecError,
 };
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan;
 use cadmpeg_ir::geometry::nurbs::{
     NurbsCurve, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
+
+/// Control-point blends that one Bézier extraction, split, or degree
+/// elevation of a curve may perform.
+///
+/// Splitting or elevating a span of degree `d` blends about `(d + 1)²`
+/// controls, so [`bezier_blends`] bounds the work of a curve by its span
+/// count. A curve over this limit is not processed, and its caller reports
+/// a loss naming this limit.
+pub(crate) const MAX_BEZIER_BLENDS: usize = 1 << 26;
+
+/// The blends that processing `spans` Bézier spans of `degree` costs, or
+/// `None` when the count does not fit `usize`.
+pub(crate) fn bezier_blends(spans: usize, degree: usize) -> Option<usize> {
+    let width = degree.checked_add(1)?;
+    spans.checked_mul(width)?.checked_mul(width)
+}
+
+/// The nonempty spans of the non-decreasing `knots` inside `domain`: one
+/// more than the distinct knots strictly between its ends.
+pub(crate) fn bezier_span_count(knots: &[f64], domain: [f64; 2]) -> usize {
+    let mut previous = None;
+    let mut interior = 0_usize;
+    for &knot in knots {
+        if domain[0] < knot && knot < domain[1] && previous != Some(knot) {
+            interior += 1;
+        }
+        previous = Some(knot);
+    }
+    interior + 1
+}
+
+/// How [`RefiningNet::insert`] admits each blended control.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlendCheck {
+    /// Any blend whose knot denominator is finite and positive.
+    Denominator,
+    /// Also only an alpha in `[0, 1]` and a finite, positive-weight control.
+    PositiveWeight,
+    /// The rule of [`homogeneous_spans`]: alpha is the knot
+    /// [`parameter_fraction`], and a knot may reach multiplicity
+    /// `degree + 1`.
+    ///
+    /// [`homogeneous_spans`]: cadmpeg_ir::geometry::nurbs::bezier::homogeneous_spans
+    /// [`parameter_fraction`]: cadmpeg_ir::math::parameter_fraction
+    Extraction,
+}
+
+/// A vector split at a cursor: `head` holds a prefix in order and `tail`
+/// holds the rest reversed, so moving the cursor by one is one push and pop.
+struct SplitVec<T> {
+    head: Vec<T>,
+    tail: Vec<T>,
+}
+
+impl<T: Copy> SplitVec<T> {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        items: &[T],
+        growth: usize,
+        fill: T,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let capacity = items.len().checked_add(growth).ok_or_else(|| {
+            CodecError::NotImplemented(format!("{operation} does not fit the platform"))
+        })?;
+        let mut head = ctx.alloc_filled(capacity, fill, operation)?;
+        head.clear();
+        let mut tail = ctx.alloc_filled(items.len(), fill, operation)?;
+        tail.clear();
+        tail.extend(items.iter().rev().copied());
+        Ok(Self { head, tail })
+    }
+
+    fn len(&self) -> usize {
+        self.head.len() + self.tail.len()
+    }
+
+    fn get(&self, index: usize) -> Option<T> {
+        match index.checked_sub(self.head.len()) {
+            None => self.head.get(index).copied(),
+            Some(offset) => self
+                .tail
+                .len()
+                .checked_sub(offset.checked_add(1)?)
+                .map(|position| self.tail[position]),
+        }
+    }
+
+    /// Moves the cursor so the head holds the first `len` items.
+    fn seek(&mut self, len: usize) -> Option<()> {
+        if len > self.len() {
+            return None;
+        }
+        while self.head.len() < len {
+            self.head.push(self.tail.pop()?);
+        }
+        while self.head.len() > len {
+            self.tail.push(self.head.pop()?);
+        }
+        Some(())
+    }
+
+    /// The first index whose item fails `predicate`, which holds on a prefix.
+    fn partition_point(&self, predicate: impl Fn(T) -> bool) -> Option<usize> {
+        let (mut low, mut high) = (0, self.len());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if predicate(self.get(middle)?) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        Some(low)
+    }
+
+    fn into_vec(mut self) -> Vec<T> {
+        self.head.extend(self.tail.drain(..).rev());
+        self.head
+    }
+}
+
+/// A homogeneous control net and its knots under ascending knot insertion.
+///
+/// Each insertion blends the same controls with the same arithmetic as
+/// Boehm insertion into contiguous vectors. Only the controls around the
+/// insertion span sit at the cursors, so ascending insertions cost
+/// `O(degree)` each instead of shifting the whole tail.
+pub(crate) struct RefiningNet {
+    knots: SplitVec<f64>,
+    controls: SplitVec<[f64; 4]>,
+}
+
+impl RefiningNet {
+    /// Stages `controls` and `knots` for `insertions` ascending insertions.
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        knots: &[f64],
+        controls: &[[f64; 4]],
+        insertions: usize,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            knots: SplitVec::new(ctx, knots, insertions, 0.0, "iges refined knots")?,
+            controls: SplitVec::new(
+                ctx,
+                controls,
+                insertions,
+                [0.0; 4],
+                "iges refined control points",
+            )?,
+        })
+    }
+
+    /// Inserts `value` once, below the multiplicity `check` admits.
+    ///
+    /// Insertions in ascending order move the cursors `O(degree)` each.
+    pub(crate) fn insert(&mut self, value: f64, degree: usize, check: BlendCheck) -> Option<()> {
+        let last_control = self.controls.len().checked_sub(1)?;
+        let upper = self.knots.partition_point(|knot| knot <= value)?;
+        if upper == self.knots.len() {
+            return None;
+        }
+        let span = upper.checked_sub(1)?;
+        let multiplicity = upper - self.knots.partition_point(|knot| knot < value)?;
+        let left_end = span.checked_sub(degree)?;
+        let tail_start = span.checked_sub(multiplicity)?;
+        let ceiling = if check == BlendCheck::Extraction {
+            degree.checked_add(1)?
+        } else {
+            degree
+        };
+        if multiplicity >= ceiling || last_control < degree || tail_start > last_control {
+            return None;
+        }
+        let first_interior = left_end.checked_add(1)?;
+        if check != BlendCheck::Extraction {
+            for index in first_interior..=tail_start {
+                let denominator = self.knots.get(index + degree)? - self.knots.get(index)?;
+                if !denominator.is_finite() || denominator <= 0.0 {
+                    return None;
+                }
+            }
+        }
+        self.controls.seek(tail_start + 1)?;
+        let last = *self.controls.head.last()?;
+        self.controls.head.push(last);
+        for index in (first_interior..=tail_start).rev() {
+            let low = self.knots.get(index)?;
+            let high = self.knots.get(index + degree)?;
+            let alpha = if check == BlendCheck::Extraction {
+                cadmpeg_ir::math::parameter_fraction(value, low, high)?.get()
+            } else {
+                (value - low) / (high - low)
+            };
+            if check == BlendCheck::PositiveWeight
+                && (!alpha.is_finite() || !(0.0..=1.0).contains(&alpha))
+            {
+                return None;
+            }
+            let previous = self.controls.head[index - 1];
+            let current = self.controls.head[index];
+            let point: [f64; 4] =
+                std::array::from_fn(|axis| alpha * current[axis] + (1.0 - alpha) * previous[axis]);
+            if check == BlendCheck::PositiveWeight && !homogeneous_point_is_valid(&point) {
+                return None;
+            }
+            self.controls.head[index] = point;
+        }
+        self.knots.seek(upper)?;
+        self.knots.head.push(value);
+        Some(())
+    }
+
+    /// The refined knots and controls.
+    pub(crate) fn into_parts(self) -> (Vec<f64>, Vec<[f64; 4]>) {
+        (self.knots.into_vec(), self.controls.into_vec())
+    }
+}
+
+/// The spans [`homogeneous_spans`] extracts, computed with its arithmetic in
+/// time linear in the knots and the insertions.
+///
+/// [`homogeneous_spans`]: cadmpeg_ir::geometry::nurbs::bezier::homogeneous_spans
+pub(crate) fn homogeneous_bezier_extraction(
+    ctx: &DecodeContext<'_>,
+    degree: usize,
+    knots: &[f64],
+    controls: &[[f64; 4]],
+) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
+    let count = controls.len();
+    let Some(expected_knots) = count
+        .checked_add(degree)
+        .and_then(|value| value.checked_add(1))
+    else {
+        return Ok(None);
+    };
+    if degree >= count
+        || knots.len() != expected_knots
+        || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || controls.iter().flatten().any(|value| !value.is_finite())
+    {
+        return Ok(None);
+    }
+    let domain = [knots[degree], knots[count]];
+    if domain[0] >= domain[1] {
+        return Ok(None);
+    }
+    let multiplicity = |value: f64| {
+        knots.partition_point(|knot| *knot <= value) - knots.partition_point(|knot| *knot < value)
+    };
+    // The endpoints come first and the internal knots ascend, as in
+    // `homogeneous_spans`, so each insertion sees the same net.
+    let mut targets = Vec::new();
+    targets.extend(domain.map(|end| (end, degree + 1)));
+    for &knot in knots {
+        if domain[0] < knot
+            && knot < domain[1]
+            && targets.last().is_none_or(|(value, _)| *value != knot)
+        {
+            targets.push((knot, degree));
+        }
+    }
+    let insertions = targets
+        .iter()
+        .map(|(value, target)| (*target, multiplicity(*value)))
+        .filter(|(target, multiplicity)| multiplicity < target)
+        .map(|(target, multiplicity)| target - multiplicity)
+        .sum();
+    let mut net = RefiningNet::new(ctx, knots, controls, insertions)?;
+    for (value, target) in targets {
+        for _ in multiplicity(value)..target {
+            if net.insert(value, degree, BlendCheck::Extraction).is_none() {
+                return Ok(None);
+            }
+        }
+    }
+    let (knots, controls) = net.into_parts();
+    let mut spans = Vec::new();
+    for span in degree..controls.len() {
+        let interval = [knots[span], knots[span + 1]];
+        if interval[0] < interval[1] && interval[0] >= domain[0] && interval[1] <= domain[1] {
+            let mut span_controls = Vec::new();
+            span_controls.extend_from_slice(&controls[span - degree..=span]);
+            spans.push(HomogeneousBezierSpan {
+                domain: interval,
+                controls: span_controls,
+            });
+        }
+    }
+    Ok((!spans.is_empty()).then_some(spans))
+}
+
 pub(crate) fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
     point.iter().all(|value| value.is_finite()) && point[0] > 0.0
 }

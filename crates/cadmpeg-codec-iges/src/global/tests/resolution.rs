@@ -282,7 +282,10 @@ fn an_absent_maximum_line_width_decodes_in_salvage_and_strict_modes() {
     );
 
     let strict = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap();
     assert_eq!(
         report_code_count(strict.report(), IgesLossCode::LineWeightScaleUnavailable),
@@ -316,7 +319,10 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
         );
 
         let error = IgesCodec
-            .decode(&mut Cursor::new(bytes), &strict_options(false))
+            .decode(
+                &mut Cursor::new(bytes),
+                &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+            )
             .unwrap_err();
         match error {
             cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
@@ -368,7 +374,10 @@ fn a_malformed_generation_date_decodes_in_salvage_and_strict_modes() {
     );
 
     let strict = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap();
     assert_eq!(
         report_code_count(strict.report(), IgesLossCode::GlobalMetadataFieldUnusable),

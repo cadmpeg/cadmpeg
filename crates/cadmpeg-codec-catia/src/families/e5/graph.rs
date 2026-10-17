@@ -428,12 +428,8 @@ pub(crate) fn parse_topology(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<E5Topology>, CodecError> {
-    let mut admitted_records = Vec::new();
-    for record in records(bytes) {
-        admitted_records.push(record);
-    }
+    let records: Vec<_> = records(bytes).collect();
     (|| -> Option<Result<E5Topology, CodecError>> {
-        let records = admitted_records;
         let mut by_id = HashMap::new();
         for record in &records {
             by_id.insert(record.id, record);

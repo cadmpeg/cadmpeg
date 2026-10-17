@@ -7,6 +7,10 @@ use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from
 use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::patterns::DesignCircularPatternConstruction;
+use crate::records::feature::patterns::RectangularPatternSearchCap;
+use crate::records::feature::patterns::{
+    MAX_RECTANGULAR_PATTERN_INSTANCES, MAX_RECTANGULAR_PATTERN_RECORD_BYTES,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
@@ -39,7 +43,7 @@ fn tested_rectangular_pattern_instances(
 ) -> Option<crate::records::feature::patterns::DesignRectangularPatternInstances> {
     match super::exact_rectangular_pattern_instances(bytes, records, scope, construction) {
         super::InstanceSearch::Resolved(instances) => Some(*instances),
-        super::InstanceSearch::Unresolved | super::InstanceSearch::Capped => None,
+        super::InstanceSearch::Unresolved | super::InstanceSearch::Capped(_) => None,
     }
 }
 
@@ -1277,7 +1281,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
                 owner_record_indices: [50, 51, 52, 53],
                 value_offsets: [501, 502, 503, 504],
                 instances: None,
-                instance_search_capped: false,
+                instance_search_cap: None,
             },
         )
         .unwrap();
@@ -1419,7 +1423,7 @@ fn rectangular_instance_fixture() -> (
                 owner_record_indices: [50, 51, 52, 53],
                 value_offsets: [501, 502, 503, 504],
                 instances: None,
-                instance_search_capped: false,
+                instance_search_cap: None,
             },
         )
         .unwrap();
@@ -1433,21 +1437,24 @@ fn rectangular_pattern_local_search_ceilings_cap_the_search() {
         crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(
             construction,
         );
-    wire.u_count = 4097;
+    wire.u_count = u32::try_from(MAX_RECTANGULAR_PATTERN_INSTANCES + 1).unwrap();
     let construction =
         crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(wire)
             .unwrap();
     assert_eq!(
         super::exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction),
-        super::InstanceSearch::Capped,
+        super::InstanceSearch::Capped(RectangularPatternSearchCap::Instances),
         "instances past the local count ceiling stay unresolved"
     );
     let (mut bytes, _, scope, construction) = rectangular_instance_fixture();
-    bytes.splice(139..139, std::iter::repeat_n(0, 1_048_576));
+    bytes.splice(
+        139..139,
+        std::iter::repeat_n(0, MAX_RECTANGULAR_PATTERN_RECORD_BYTES),
+    );
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert_eq!(
         super::exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction),
-        super::InstanceSearch::Capped,
+        super::InstanceSearch::Capped(RectangularPatternSearchCap::RecordBytes),
         "instances past the local record-span ceiling stay unresolved"
     );
 }
@@ -1510,7 +1517,7 @@ fn rectangular_pattern_run_search_stops_at_its_work_cap() {
     );
     assert_eq!(
         decoyed_instances(1024),
-        super::InstanceSearch::Capped,
+        super::InstanceSearch::Capped(RectangularPatternSearchCap::RunWork),
         "endpoint pairs past the local work cap leave the instances unresolved"
     );
 }
@@ -1518,7 +1525,7 @@ fn rectangular_pattern_run_search_stops_at_its_work_cap() {
 #[test]
 fn rectangular_pattern_aggregate_search_span_caps_the_search() {
     const INSTANCE_COUNT: u32 = 17;
-    const RECORD_SPAN: usize = 1_048_576;
+    const RECORD_SPAN: usize = MAX_RECTANGULAR_PATTERN_RECORD_BYTES;
     let (_, _, mut scope, construction) = rectangular_instance_fixture();
     let mut references = vec![100, 50, 51, 52, 53, 110];
     references.extend(1000..1000 + INSTANCE_COUNT - 1);
@@ -1556,7 +1563,7 @@ fn rectangular_pattern_aggregate_search_span_caps_the_search() {
             .unwrap();
     assert_eq!(
         super::exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction),
-        super::InstanceSearch::Capped,
+        super::InstanceSearch::Capped(RectangularPatternSearchCap::ScannedBytes),
         "instances past the aggregate span ceiling stay unresolved"
     );
 }

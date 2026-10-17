@@ -426,7 +426,8 @@ pub(crate) const STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT: CoverageKey
     CoverageKey::new("standard_topology_failure_ambiguous_solution_count");
 pub(crate) const STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT: CoverageKey =
     CoverageKey::new("standard_topology_failure_search_exhausted_count");
-pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT: CoverageKey = CoverageKey::new("standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count");
+pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT: CoverageKey =
+    CoverageKey::new("standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count");
 pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT: CoverageKey =
     CoverageKey::new("standard_topology_mesh_rejection_endpoint_incidence_count");
 pub(crate) const STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT:

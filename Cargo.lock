@@ -230,6 +230,7 @@ name = "cadmpeg-codec-f3d"
 version = "0.6.1"
 dependencies = [
  "cadmpeg-asm",
+ "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",

@@ -131,7 +131,10 @@ fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
         );
 
         let error = IgesCodec
-            .decode(&mut Cursor::new(bytes), &strict_options(false))
+            .decode(
+                &mut Cursor::new(bytes),
+                &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+            )
             .unwrap_err();
         match error {
             cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
@@ -162,7 +165,7 @@ fn a_verified_declared_version_charges_no_dialect_loss() {
 fn a_container_only_decode_preserves_verified_v4_and_strict_admits_it() {
     let bytes = point_file_with_version_flag("6");
     let options = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
 
@@ -172,7 +175,10 @@ fn a_container_only_decode_preserves_verified_v4_and_strict_admits_it() {
     assert_eq!(dialect_losses(result.report()), 0);
 
     let strict = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(true))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Container),
+        )
         .unwrap();
     assert_eq!(dialect_losses(strict.report()), 0);
 }
@@ -201,7 +207,10 @@ fn a_verified_v4_version_with_no_maximum_line_width_names_the_line_weight_loss()
     );
 
     let strict = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap();
     assert_eq!(dialect_losses(strict.report()), 0);
     assert_eq!(
@@ -227,7 +236,10 @@ fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss()
     assert!(result.report().losses[0].message.contains("field 23"));
 
     let error = IgesCodec
-        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(

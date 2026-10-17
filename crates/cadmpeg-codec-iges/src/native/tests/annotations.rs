@@ -377,12 +377,16 @@ fn decode_general_note_surplus_tokens_read_the_declared_strings_and_refuse_the_s
 fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_loss() {
     let bytes = note_file(213, new_general_note_parameters(2, &["TOL!"], 0));
 
-    for container_only in [false, true] {
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
+        let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(bytes.clone()),
                 &DecodeOptions {
-                    container_only,
+                    depth,
                     ..DecodeOptions::default()
                 },
             )

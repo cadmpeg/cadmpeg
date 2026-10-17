@@ -1140,8 +1140,7 @@ fn arena_projection_lists_catalogs_and_their_entries() {
             value: "schema".to_string(),
         }],
     });
-    let service = super::super::CatiaArenaProjection::from_owned(native.clone())
-        .expect("construct the catia arena projection");
+    let service = super::super::CatiaArenaProjection::from_owned(native.clone());
     assert_eq!(service.catalogs.len(), 1);
     assert_eq!(service.catalog_entries.len(), 1);
 }

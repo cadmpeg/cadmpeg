@@ -12,7 +12,7 @@
 //! codec wrapper stamps the identity the IR source authored onto the report.
 //! Untyped surface and curve carriers become opaque geometry linked to the
 //! retained Parasolid source record. If no body stream yields geometry, decoding returns a
-//! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
+//! metadata-only IR and blocking loss notes. `DecodeDepth::Container`
 //! requests the metadata-only path.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -85,7 +85,7 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// through the decode body when a partial result can be represented.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let mut scan = container::scan(ctx, root)?;
-    let classification = crate::dialect::classify_layers(ctx, &scan)?;
+    let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
     // are admitted here before B-rep and IR construction.
@@ -103,6 +103,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         )?;
         let mut report =
             build_container_report(ctx, &scan, &classification, container::notes(&scan))?;
+        report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         report.losses.append(&mut pmi_losses);
         return decode_result(ctx, ir, report, annotations, unknowns);
     }
@@ -3362,7 +3363,7 @@ fn build_geometry_report(
         );
     }
     append_swift_pmi_losses(ctx, scan, &mut losses)?;
-    classification.append_losses(ctx, &mut losses)?;
+    classification.append_losses(&mut losses);
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
@@ -4918,7 +4919,7 @@ fn build_container_report(
         );
     }
     append_swift_pmi_losses(ctx, scan, &mut losses)?;
-    classification.append_losses(ctx, &mut losses)?;
+    classification.append_losses(&mut losses);
 
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),

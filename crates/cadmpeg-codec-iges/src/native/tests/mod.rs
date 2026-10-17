@@ -106,12 +106,16 @@ fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
 /// a strict decode refuses the document on the count.
 fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     let overdeclared = IgesLossCode::ParameterCountOverdeclared.kind();
-    for container_only in [false, true] {
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
+        let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(bytes.to_vec()),
                 &DecodeOptions {
-                    container_only,
+                    depth,
                     ..DecodeOptions::default()
                 },
             )

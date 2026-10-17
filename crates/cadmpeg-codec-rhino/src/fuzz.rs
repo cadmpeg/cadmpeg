@@ -190,8 +190,9 @@ pub fn subd(data: &[u8]) {
 
 /// Desktop salvage ceilings for fuzz wrappers.
 ///
-/// `DecodePolicy::service()` tightens collection and entity limits 8–16× and
-/// would silently shrink coverage. Wrappers must not copy that profile.
+/// `DecodePolicy::service()` sets the byte and entity ceilings 8–16× lower and
+/// halves recursion depth, which would silently shrink coverage. Wrappers must
+/// not copy that profile.
 fn fuzz_policy() -> cadmpeg_core::decode::DecodePolicy {
     cadmpeg_core::decode::DecodePolicy::default()
 }

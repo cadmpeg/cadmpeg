@@ -444,7 +444,14 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         }
         .unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0).unwrap(),
+            homogeneous_curve_boundary_matches(
+                &first,
+                &scaled,
+                [0.0, 1.0],
+                0.0,
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .unwrap(),
             Some(true)
         );
         scaled
@@ -461,7 +468,14 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
             })
             .unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0).unwrap(),
+            homogeneous_curve_boundary_matches(
+                &first,
+                &scaled,
+                [0.0, 1.0],
+                0.0,
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .unwrap(),
             Some(false)
         );
     });
@@ -583,7 +597,14 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
         let a = NurbsCurve::from_lanes(2, knots.clone(), first, None, false).unwrap();
         let b = NurbsCurve::from_lanes(2, knots, second, None, false).unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(&a, &b, [0., 2.], 0.).unwrap(),
+            homogeneous_curve_boundary_matches(
+                &a,
+                &b,
+                [0., 2.],
+                0.,
+                &cadmpeg_test_support::service_decode_context()
+            )
+            .unwrap(),
             Some(false)
         );
         for weight in [1., 1e-200, 1e200] {
@@ -604,11 +625,25 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
             )
             .unwrap();
             assert_eq!(
-                homogeneous_curve_boundary_matches(&a, &b, [0., 1.], 0.001).unwrap(),
+                homogeneous_curve_boundary_matches(
+                    &a,
+                    &b,
+                    [0., 1.],
+                    0.001,
+                    &cadmpeg_test_support::service_decode_context()
+                )
+                .unwrap(),
                 Some(false)
             );
             assert_eq!(
-                homogeneous_curve_boundary_matches(&a, &a, [0., 1.], 0.).unwrap(),
+                homogeneous_curve_boundary_matches(
+                    &a,
+                    &a,
+                    [0., 1.],
+                    0.,
+                    &cadmpeg_test_support::service_decode_context()
+                )
+                .unwrap(),
                 Some(true)
             );
         }
@@ -643,7 +678,8 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
             false,
         )
         .unwrap();
-        let pairs = super::super::aligned_homogeneous_spans(&first, &second)
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let pairs = super::super::aligned_homogeneous_spans(&first, &second, &ctx)
             .unwrap()
             .unwrap();
         assert_eq!(pairs.len(), 2);

@@ -161,6 +161,7 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
             &indices,
             &[support],
             &[(0..138).collect()],
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
     .expect("resolve standard endpoint pairs")
@@ -168,6 +169,50 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     assert_eq!(choices[0].len(), 9_453);
     assert_eq!(choices[0].first(), Some(&[0, 1]));
     assert_eq!(choices[0].last(), Some(&[136, 137]));
+}
+
+#[test]
+fn endpoint_pair_relation_bounds_leave_rows_empty_with_a_loss() {
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    // 400 points state 79,800 relations, past the per-row bound. Two rows of
+    // 300 points state 44,850 each, and the second exceeds the shared remainder.
+    let candidates = [400, 300, 300].map(|count| (0..count).collect::<Vec<_>>());
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let choices = crate::test_support::with_service_context(|ctx| {
+        resolve_standard_endpoint_pairs(
+            ctx,
+            &CadIr::empty(),
+            &[],
+            &std::collections::HashMap::new(),
+            &[support; 3],
+            &candidates,
+            &mut refusal,
+        )
+    })
+    .expect("a bounded enumeration is not a decode error")
+    .expect("endpoint option pass");
+
+    assert_eq!(
+        choices.iter().map(Vec::len).collect::<Vec<_>>(),
+        [0, 44_850, 0]
+    );
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one note for the bounded rows");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::TopologyStandardSearchBounded.kind()
+    );
+    assert!(note
+        .message
+        .contains("bound of 65536 relations per edge row"));
+    assert!(note.message.contains("edge rows [0, 2] keep no"));
 }
 
 #[test]
@@ -245,6 +290,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
             &indices,
             &[support],
             &[vec![0, 1, 2, 3]],
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
     .expect("resolve standard endpoint pairs")
@@ -313,7 +359,15 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
     };
 
     let choices = crate::test_support::with_service_context(|ctx| {
-        resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, &[support], &[vec![0, 1]])
+        resolve_standard_endpoint_pairs(
+            ctx,
+            &ir,
+            &bindings,
+            &indices,
+            &[support],
+            &[vec![0, 1]],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
@@ -394,6 +448,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
             &indices,
             &supports,
             &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
     .expect("resolve standard endpoint pairs")

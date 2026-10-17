@@ -273,7 +273,7 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
                 "<Document SchemaVersion=\"4\" FileVersion=\"1\"><Objects Count=\"0\"/></Document>",
             )),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )
@@ -496,7 +496,7 @@ fn dialect_pipeline_reports_identity_admission_and_the_unverified_loss() {
         .decode(
             &mut Cursor::new(bytes.clone()),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

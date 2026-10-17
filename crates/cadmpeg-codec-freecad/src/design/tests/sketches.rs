@@ -337,6 +337,57 @@ fn rejects_declared_geometry_with_the_wrong_carrier_tag() {
 }
 
 #[test]
+fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="0" EndY="0"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let xml = crate::container::admit_document(&ctx, document.as_bytes()).expect("document XML");
+    let graph = crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
+        .expect("persistence graph");
+    let sketch = &graph.objects[0];
+    let owned = graph
+        .properties
+        .iter()
+        .filter(|property| property.owner == sketch.id().as_str())
+        .collect::<Vec<_>>();
+    let decode = |limit| {
+        let mut losses = Vec::new();
+        let decoded = super::super::parse_sketch(
+            &ctx,
+            sketch,
+            &owned,
+            &cadmpeg_core::decode::WorkBudget::new(limit),
+            &mut losses,
+        )
+        .expect("sketch");
+        (decoded, losses)
+    };
+
+    let (chained, losses) = decode(super::super::MAX_PROFILE_ENDPOINT_CANDIDATES);
+    assert_eq!(chained.sketch.profiles.as_slice().len(), 1);
+    assert!(losses.is_empty());
+
+    let (bounded, losses) = decode(4);
+    assert!(bounded.sketch.profiles.is_empty());
+    assert_eq!(bounded.entities.len(), 3);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "sketch.profile-matching-bounded"
+    );
+    assert!(losses[0]
+        .message
+        .contains("MAX_PROFILE_ENDPOINT_CANDIDATES"));
+}
+
+#[test]
 fn transfers_geom_point_carrier() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>

@@ -29,6 +29,31 @@ fn numeric_parameter_and_delimiter_must_share_a_card() {
 }
 
 #[test]
+fn card_crossing_checks_search_the_card_boundaries_of_a_long_record() {
+    let fields_per_card = 16;
+    let cards = 1 << 14;
+    let mut bytes = b"1.0,".repeat(fields_per_card * cards);
+    let boundaries: Vec<_> = (1..=cards).map(|card| card * 64).collect();
+    let last = bytes.len() - 1;
+    bytes[last] = b';';
+
+    let (tokens, consumed) = tokenize(&bytes, &boundaries, b',', b';', GlobalTable::V5Later)
+        .unwrap_or_else(|_| panic!("no field crosses a card"));
+    assert_eq!(consumed, bytes.len());
+    assert_eq!(tokens.len(), fields_per_card * cards);
+    let one = TokenValue::real(1.0);
+    assert!(tokens.iter().all(|token| token.value == one));
+
+    let crossing = last - 64;
+    bytes[crossing] = b'0';
+    assert!(matches!(
+        tokenize(&bytes, &boundaries, b',', b';', GlobalTable::V5Later),
+        Err(TokenizeFailure::Defect(ParameterDefect::NumericCrossesCard, start))
+            if start == crossing - 3
+    ));
+}
+
+#[test]
 fn a_zero_hollerith_count_is_not_a_null_string() {
     assert!(matches!(
         tokenize(b"116,0H,2,3,0;", &[64], b',', b';', GlobalTable::V5Later),

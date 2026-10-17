@@ -899,6 +899,30 @@ impl AsmHistory {
             .get_or_init(|| self.walk_memberships(order, |_, _| {}))
     }
 
+    /// State indexes of the bound chain, oldest first.
+    pub(crate) fn states_oldest_first(&self) -> Option<Vec<usize>> {
+        let order = self
+            .materialized
+            .order
+            .get_or_init(|| self.bound_chain())
+            .as_ref()
+            .ok()?
+            .as_ref()?;
+        Some(order.iter().rev().copied().collect())
+    }
+
+    /// Drop cached materializations except the state at `index`.
+    pub(crate) fn retain_topology(&mut self, index: usize) {
+        let Some(cache) = self.materialized.states.get_mut() else {
+            return;
+        };
+        for (ordinal, state) in cache.iter_mut().enumerate() {
+            if ordinal != index {
+                *state = OnceLock::new();
+            }
+        }
+    }
+
     /// Rebuild this member state's topology and cache only that state.
     pub(crate) fn topology(&self, state: &AsmDeltaState) -> Option<&AsmHistoricalTopology> {
         let index = self

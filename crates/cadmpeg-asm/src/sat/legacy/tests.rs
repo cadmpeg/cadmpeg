@@ -384,6 +384,117 @@ spline-surface $-1 forward { exactsur full nurbs 1 1 both open open none none 2 
     .unwrap();
 }
 
+/// A quarter band of the cone with base radius 2 about `+z`, sine 0.6 and
+/// cosine 0.8, between generator coordinates 0 and 1 and azimuths 0 and π/2.
+/// Saves before 400 store no U scale; save 400 stores the radius.
+fn legacy_cone_band_stream(version: u32) -> String {
+    use std::fmt::Write as _;
+    let header = if version < 200 {
+        ""
+    } else {
+        "1 T 4 ACIS 1 D\n2 0.01 0.001\n"
+    };
+    let shell_wire = if version < 107 { "" } else { "$-1 " };
+    let u_scale = if version < 400 { "" } else { " 2" };
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let mut source = format!(
+        "{version} 0 1 0\n{header}\
+body $-1 $1 $-1 $-1 #\n\
+lump $-1 $-1 $2 $0 #\n\
+shell $-1 $-1 $-1 $3 {shell_wire}$1 #\n\
+face $-1 $-1 $4 $2 $-1 $5 forward single #\n\
+loop $-1 $-1 $6 $3 #\n\
+cone-surface $-1 0 0 0 0 0 1 2 0 0 1 I I 0.6 0.8{u_scale} forward I I I I #\n\
+coedge $-1 $7 $9 $-1 $10 forward $4 $18 #\n\
+coedge $-1 $8 $6 $-1 $11 forward $4 $19 #\n\
+coedge $-1 $9 $7 $-1 $12 forward $4 $20 #\n\
+coedge $-1 $6 $8 $-1 $13 reversed $4 $21 #\n\
+edge $-1 $14 $15 $6 $22 forward #\n\
+edge $-1 $15 $16 $7 $23 forward #\n\
+edge $-1 $16 $17 $8 $24 forward #\n\
+edge $-1 $14 $17 $9 $25 forward #\n\
+vertex $-1 $10 $26 #\n\
+vertex $-1 $11 $27 #\n\
+vertex $-1 $12 $28 #\n\
+vertex $-1 $13 $29 #\n"
+    );
+    for [u0, v0, u1, v1] in [
+        [0.0, 0.0, 1.0, 0.0],
+        [1.0, 0.0, 1.0, quarter],
+        [1.0, quarter, 0.0, quarter],
+        [0.0, quarter, 0.0, 0.0],
+    ] {
+        writeln!(
+            source,
+            "pcurve $-1 0 forward {{ exp_par_cur nubs 1 open 2 0 1 1 1 {u0} {v0} {u1} {v1} 0 \
+             spline forward {{ ref 5 }} I I I I }} 0 1 #"
+        )
+        .unwrap();
+    }
+    source.push_str(
+        "straight-curve $-1 2 0 0 0.6 0 0.8 I I #\n\
+ellipse-curve $-1 0 0 1.6 0 0 1 3.2 0 0 1 I I #\n\
+straight-curve $-1 0 3.2 1.6 0 -0.6 -0.8 I I #\n\
+ellipse-curve $-1 0 0 0 0 0 1 2 0 0 1 I I #\n\
+point $-1 2 0 0 #\npoint $-1 3.2 0 1.6 #\npoint $-1 0 3.2 1.6 #\npoint $-1 0 2 0 #\n\
+End-of-ACIS-data\n",
+    );
+    source
+}
+
+#[test]
+fn legacy_cone_pcurves_use_the_major_radius_as_u_scale() {
+    let eval_ctx = cadmpeg_test_support::service_decode_context();
+    for version in [106, 300, 400] {
+        let source = legacy_cone_band_stream(version);
+        crate::test_support::with_service_context(source.as_bytes(), |ctx| {
+            let parsed = crate::sat::parse(ctx, source.as_bytes()).unwrap();
+            let header = parsed.header.as_kernel_header(ctx).unwrap();
+            let brep = decode_with_header(
+                ctx,
+                &parsed.records,
+                source.as_bytes(),
+                Some(&header),
+                "stream",
+                crate::asm_format!("sat"),
+                DecodePurpose::Model,
+            )
+            .unwrap();
+            assert_eq!(brep.pcurves.len(), 4, "save format {version}");
+            let cone = brep.surfaces[0].geometry.solved().unwrap();
+            let vertices: Vec<_> = brep
+                .points
+                .iter()
+                .map(|point| point.position().get())
+                .collect();
+            assert_eq!(vertices.len(), 4);
+            for pcurve in &brep.pcurves {
+                let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
+                    &pcurve.geometry
+                else {
+                    panic!("NURBS pcurve expected");
+                };
+                for uv in nurbs.control_points() {
+                    let uv = uv.get();
+                    let point =
+                        cadmpeg_ir::eval::decode::surface_point_solved(&eval_ctx, cone, uv.u, uv.v)
+                            .unwrap()
+                            .get();
+                    let miss = vertices
+                        .iter()
+                        .map(|vertex| point.distance(*vertex))
+                        .fold(f64::INFINITY, f64::min);
+                    assert!(
+                        miss <= 1.0e-9,
+                        "save format {version}: {point:?} misses every vertex by {miss}"
+                    );
+                }
+            }
+        })
+        .unwrap();
+    }
+}
+
 #[test]
 fn legacy_tolerant_edges_normalize_base_fields_and_length_tolerance() {
     for version in [400, 500, 600] {

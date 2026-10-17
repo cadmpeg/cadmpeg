@@ -49,9 +49,7 @@
 
 use crate::container::Container;
 use crate::loss::NxLossCode;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
 use std::collections::BTreeMap;
@@ -96,10 +94,7 @@ impl LayerClassification {
 }
 
 /// Classify the host container and every schema-bearing Parasolid stream.
-pub(crate) fn classify_layers(
-    ctx: &DecodeContext<'_>,
-    scan: &crate::decode::Scan<'_>,
-) -> Result<LayerClassification, CodecError> {
+pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassification {
     let mut carriers = Vec::new();
     for stream in &scan.streams {
         if let Some(schema) = stream.schema_token() {
@@ -110,28 +105,27 @@ pub(crate) fn classify_layers(
         }
     }
     let extra = cadmpeg_parasolid::extra_layers(
-        ctx,
         carriers,
         // NX verifies no Parasolid schema itself; every kernel layer is residual.
         &[],
-    )?;
+    );
     let host = NxDialect::of_container(&scan.container);
     let mut layers = DialectLayers::of(host.matched(scan.container.layout.version()));
     let mut losses = Vec::new();
-    for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
+    for message in cadmpeg_parasolid::push_extras(&mut layers, extra) {
         losses.push(NxLossCode::DialectLayerCollision.note(message));
     }
 
     for layer in layers.iter() {
-        if let Some(message) = cadmpeg_parasolid::unverified_message(ctx, layer)? {
+        if let Some(message) = cadmpeg_parasolid::unverified_message(layer) {
             losses.push(NxLossCode::KernelDialectUnverified.note(message));
         }
     }
-    Ok(LayerClassification {
+    LayerClassification {
         host,
         layers,
         losses,
-    })
+    }
 }
 
 impl NxDialect {

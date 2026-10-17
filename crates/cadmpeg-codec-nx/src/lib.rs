@@ -40,7 +40,7 @@
 //! ```
 //!
 //! [`Codec::inspect`](cadmpeg_ir::codec::Codec::inspect) returns the SPLMSSTR directory and embedded-stream
-//! classifications without decoding entities. `DecodeOptions::container_only`
+//! classifications without decoding entities. `DecodeDepth::Container`
 //! produces metadata IR and skips entity decode.
 //!
 //! # Model and loss boundaries
@@ -184,7 +184,7 @@ impl CodecBackend for NxCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = decode::scan(ctx, root)?;
-        inspect::summarize(ctx, &scan)
+        inspect::summarize(&scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
