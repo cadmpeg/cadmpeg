@@ -3,7 +3,7 @@
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 mod native_admission;
@@ -16,7 +16,8 @@ use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
 use crate::property_set::PropertyValue;
 use crate::test_support::test_fixtures::{
     acis_kernel_stream, acis_sphere_kernel_stream, fixture, primary_envelope_fixture,
-    primary_envelope_fixture_with_kernel, EnvelopeDeclarations,
+    primary_envelope_fixture_with_design, primary_envelope_fixture_with_kernel,
+    EnvelopeDeclarations,
 };
 use crate::InventorCodec;
 
@@ -176,6 +177,82 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .source_fidelity()
         .retained_records()
         .is_empty());
+}
+
+#[test]
+fn design_records_project_only_at_full_depth() {
+    let source = primary_envelope_fixture_with_design(
+        &acis_sphere_kernel_stream(21_800),
+        &crate::design::ratio_parameter_records(),
+    );
+    let decode = |depth| {
+        InventorCodec
+            .decode(
+                &mut std::io::Cursor::new(&source),
+                &DecodeOptions {
+                    depth,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("synthetic design envelope decodes")
+    };
+    let full = decode(DecodeDepth::Full);
+    let geometry = decode(DecodeDepth::Geometry);
+    let container = decode(DecodeDepth::Container);
+
+    assert_eq!(full.report().depth(), DecodeDepth::Full);
+    let [parameter] = full.ir().model.parameters.as_slice() else {
+        panic!("one projected parameter: {:#?}", full.ir().model.parameters)
+    };
+    assert_eq!(parameter.name, "ratio");
+    assert_eq!(full.ir().model.faces.len(), 1);
+
+    // Inventor has no geometry cut: a geometry request delivers the full document.
+    assert_eq!(geometry.report().depth(), DecodeDepth::Full);
+    assert_eq!(geometry.ir().decode_depth(), DecodeDepth::Full);
+    assert_eq!(geometry.ir().model, full.ir().model);
+
+    assert_eq!(container.report().depth(), DecodeDepth::Container);
+    assert_eq!(container.ir().decode_depth(), DecodeDepth::Container);
+    assert_eq!(container.ir().model.populated_design_arena(), None);
+    let native = container
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace");
+    assert_eq!(
+        native
+            .arena_as::<crate::design::PmDcParameter>("pm_dc_parameters")
+            .expect("native parameter arena")
+            .len(),
+        1,
+        "the native record survives the container decode"
+    );
+    assert_eq!(
+        outside_design(container.ir()),
+        outside_design(full.ir()),
+        "the container decode keeps every non-design arena"
+    );
+
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+        &InventorCodec,
+        &[("design", source.clone())],
+    );
+    assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+/// The model as JSON without its design arenas.
+fn outside_design(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
+    let mut model = serde_json::to_value(&ir.model).expect("serialize model");
+    let serde_json::Value::Object(arenas) = &mut model else {
+        panic!("a model serializes as a JSON object");
+    };
+    for arena in cadmpeg_ir::ArenaName::ALL {
+        if arena.class() == cadmpeg_ir::ArenaClass::Design {
+            arenas.remove(arena.as_str());
+        }
+    }
+    model
 }
 
 #[test]

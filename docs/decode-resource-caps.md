@@ -103,7 +103,11 @@ Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
 storage are not retained bytes; per-input bounds, entity charges, and local
 work caps bound them. A new copy of bytes that the decoded document keeps
-must call `retain_bytes` before the copy.
+must call `retain_bytes` before the copy. A native record's text may be
+counted twice toward retained bytes, once by the codec before attach and
+once by the IR at attach (Rhino link bytes and `from_typed_for_decode`
+JSON copies), so the retained ceiling is conservative by at most that
+text.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
 parse it, charge its depth to the session, and bound the tree's storage by
@@ -147,7 +151,9 @@ functions, and test files. Four constants are excluded for that reason:
 CATIA `MAX_PAIR_SOLUTIONS` (`solve/incidence.rs`) and `MAX_ORIENTED_OPTIONS`
 (`solve/mesh_quotient.rs`) are in test functions, F3D `MAX_INDEX_FLOAT`
 (`writer/generate/native_geometry.rs`) is in a test module, and
-`MAX_MUTATION_BYTES` is in a fuzz target outside `src`. Where a constant is
+`MAX_MUTATION_BYTES` is in a fuzz target outside `src`.
+`python3 scripts/check-resource-caps.py` checks the table, the totals, and
+the production constants against each other. Where a constant is
 ambiguous, the kind follows the code at exhaustion and the note says so.
 "No loss at this site" means the code that detects exhaustion does not
 report a loss; a caller may report a general failure for the same item.
