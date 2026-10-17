@@ -181,6 +181,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_DISCARDED_EXPANDED_NODES`            | `16 * MAX_EXPANDED_NODES`                               | 4    | Value nodes that anchor expansions omitted at `MAX_EXPANDED_NODES` may copy before they stop. Once it is spent, an instance whose outcome is not already recorded is omitted without expansion and reported with `parse.expansion-bounded`, naming this bound.            |
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_MATERIALIZED_NODES`                  | `1_000_000`                                             | 4    | REFERENCE expansion node count across the exchange (`ReferenceResolver`). An anchor or instance that passes the count, or that names an omitted anchor, is omitted with its exact source and `parse.expansion-bounded`. Each top-level reference records its node use or the count at which it failed, as for anchors. |
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_DISCARDED_MATERIALIZED_NODES`        | `16 * MAX_MATERIALIZED_NODES`                           | 4    | Value nodes that REFERENCE expansions omitted at `MAX_MATERIALIZED_NODES` may copy before they stop. Once it is spent, an instance whose outcome is not already recorded is omitted without expansion and reported with `parse.expansion-bounded`, naming this bound.     |
+| `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`     | `16`, plus `EXPANDED_PAYLOAD_BASE` (16 MiB)             | 4    | String, binary and name octets that the anchor pass, and separately the REFERENCE pass, may copy out of anchors, per input byte. Copies that an omitted item discards stay charged. An item whose copy does not fit is omitted with its exact source and `parse.expansion-bounded`, naming this constant. Recorded anchor and reference outcomes carry their octets, so a later item that cannot fit is decided before anything is copied. Working storage, not `retain_bytes`. |
 | `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCES`                 | `100_000`                                               | 4    | Occurrence expansion output (`OccurrenceExpansion::expand`). At the limit expansion stops and `reader.rs` reports `occurrence.expansion-output-truncated`.                                                                                                                   |
@@ -399,22 +400,22 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 213.
+Production `MAX_*` constants: 214.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 68    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 98    |
+| 4    | Local work cap             | 99    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 213   |
+|      | Total                      | 214   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
-`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 7,
+`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 16,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
@@ -447,9 +448,11 @@ Current codec routes:
   a visited set or a result per record, so one walk visits each shared
   record once. The tessellation association walk follows a record
   once per distinct inherited placement, up to `MAX_ITEM_PLACEMENTS` per
-  item. The anchor and REFERENCE node counts omit the anchor or instance
-  that passes them and report `parse.expansion-bounded`; recorded outcomes
-  and the `MAX_DISCARDED_*` allowances bound the work of repeated misses.
+  item. The anchor and REFERENCE node counts, and the payload octets
+  allowed by `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`, omit the anchor or
+  instance that passes them and report `parse.expansion-bounded`; recorded
+  outcomes and the `MAX_DISCARDED_*` allowances bound the work of repeated
+  misses.
   Assembly occurrence expansion stops at `MAX_OCCURRENCES` or at a path of
   `max_recursion_depth` usages and reports a loss. Occurrence paths are
   parent links, so their storage is linear in the occurrences.

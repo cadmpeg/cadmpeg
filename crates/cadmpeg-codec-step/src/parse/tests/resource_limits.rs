@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 
 use crate::parse::{
     AnchorResolver, ParseDiagnosticKind, ReferenceEntry, ReferenceName, ReferenceResolver,
-    ResolveError, Value,
+    ResolveError, Value, EXPANDED_PAYLOAD_BASE,
 };
 use crate::test_support::{with_policy_context, with_service_context};
 
@@ -117,7 +117,7 @@ fn anchor_reference_depth_follows_the_session_depth() {
         }
         let root = Value::Resource("#a299".into());
         with_policy_context(b"", &depth_policy(4096), |_, ctx| {
-            let mut resolver = AnchorResolver::new(&anchors, ctx);
+            let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
             let mut value = resolver.resolve_root(&root).expect("the session admits");
             let mut levels = 0;
             while let Value::List(mut values) = value {
@@ -127,7 +127,7 @@ fn anchor_reference_depth_follows_the_session_depth() {
             assert_eq!(levels, 299);
         });
         with_policy_context(b"", &depth_policy(64), |_, ctx| {
-            let error = AnchorResolver::new(&anchors, ctx)
+            let error = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx)
                 .resolve_root(&root)
                 .expect_err("the session refuses");
             assert_depth_refusal(&error);
@@ -156,9 +156,10 @@ fn reference_expansion_depth_follows_the_session_depth() {
         let omitted = BTreeSet::new();
         let root = Value::ExternalReference(300);
         with_policy_context(b"", &depth_policy(4096), |_, ctx| {
-            let mut value = ReferenceResolver::new(&references, &anchors, &omitted, ctx)
-                .resolve_value(&root)
-                .expect("the session admits");
+            let mut value =
+                ReferenceResolver::new(&references, &anchors, &omitted, EXPANDED_PAYLOAD_BASE, ctx)
+                    .resolve_value(&root)
+                    .expect("the session admits");
             let mut levels = 0;
             while let Value::List(mut values) = value {
                 value = values.pop().expect("one nested value");
@@ -167,9 +168,10 @@ fn reference_expansion_depth_follows_the_session_depth() {
             assert_eq!(levels, 300);
         });
         with_policy_context(b"", &depth_policy(64), |_, ctx| {
-            let error = ReferenceResolver::new(&references, &anchors, &omitted, ctx)
-                .resolve_value(&root)
-                .expect_err("the session refuses");
+            let error =
+                ReferenceResolver::new(&references, &anchors, &omitted, EXPANDED_PAYLOAD_BASE, ctx)
+                    .resolve_value(&root)
+                    .expect_err("the session refuses");
             assert_depth_refusal(&error);
         });
     });
@@ -182,7 +184,7 @@ fn anchor_memo_output_node_slice_is_bounded() {
             "a".into(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         let value = Value::Resource("#a".into());
         resolver
             .resolve_root(&value)
@@ -204,7 +206,7 @@ fn anchor_first_expansion_output_node_slice_is_bounded() {
             "a".into(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 2;
         assert_bounded(
             &resolver
@@ -222,7 +224,7 @@ fn bounded_anchor_item_gives_back_its_nodes() {
             "a".into(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 4;
         let mut item = [Value::Resource("#a".into()), Value::Resource("#a".into())];
         assert_eq!(
@@ -267,7 +269,7 @@ fn doubling_anchor_values(last: usize) -> BTreeMap<String, Value> {
 fn repeated_bounded_anchor_items_stop_before_copying() {
     with_service_context(b"", |_, ctx| {
         let anchors = doubling_anchor_values(12);
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 10_000;
         let mut first = [Value::Resource("#a12".into())];
         assert_eq!(
@@ -322,7 +324,7 @@ fn omitted_anchor_items_past_the_discard_allowance_are_skipped() {
                 ]),
             );
         }
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 100;
         resolver.discard_allowance = Some(1);
         let mut resolve = |value: Value| {
@@ -367,7 +369,8 @@ fn repeated_bounded_reference_items_stop_before_copying() {
             uri: "#a".into(),
         }];
         let omitted = BTreeSet::new();
-        let mut resolver = ReferenceResolver::new(&references, &anchors, &omitted, ctx);
+        let mut resolver =
+            ReferenceResolver::new(&references, &anchors, &omitted, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 10;
         let allowance = resolver.discard_allowance;
         let mut first = [Value::ExternalReference(2), Value::ExternalReference(2)];
@@ -419,7 +422,8 @@ fn omitted_reference_items_past_the_discard_allowance_are_skipped() {
             },
         ];
         let omitted = BTreeSet::new();
-        let mut resolver = ReferenceResolver::new(&references, &anchors, &omitted, ctx);
+        let mut resolver =
+            ReferenceResolver::new(&references, &anchors, &omitted, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 10;
         resolver.discard_allowance = Some(1);
         let mut resolve = |value: Value| {
@@ -460,7 +464,8 @@ fn reference_output_node_slice_bounds_before_leaf_copy() {
             uri: "#a".into(),
         }];
         let omitted = BTreeSet::new();
-        let mut resolver = ReferenceResolver::new(&references, &anchors, &omitted, ctx);
+        let mut resolver =
+            ReferenceResolver::new(&references, &anchors, &omitted, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 1;
         assert_eq!(
             resolver
@@ -489,7 +494,8 @@ fn reference_output_node_slice_bounds_before_list_storage() {
             uri: "#a".into(),
         }];
         let omitted = BTreeSet::new();
-        let mut resolver = ReferenceResolver::new(&references, &anchors, &omitted, ctx);
+        let mut resolver =
+            ReferenceResolver::new(&references, &anchors, &omitted, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 2;
         assert_bounded(
             &resolver
@@ -509,7 +515,8 @@ fn bounded_reference_item_gives_back_its_nodes() {
             uri: "#a".into(),
         }];
         let omitted = BTreeSet::new();
-        let mut resolver = ReferenceResolver::new(&references, &anchors, &omitted, ctx);
+        let mut resolver =
+            ReferenceResolver::new(&references, &anchors, &omitted, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 1;
         let mut item = [Value::ExternalReference(2), Value::ExternalReference(2)];
         assert_eq!(
@@ -623,6 +630,87 @@ fn anchor_naming_a_bounded_instance_is_omitted_not_refused() {
         .any(|span| &source[span.clone()] == "<b>=#1;"));
     assert!(exchange.anchors().iter().all(|anchor| anchor.name != "b"));
     assert!(exchange.records().contains_key(&2));
+}
+
+const LARGE_STRING_OCTETS: usize = 32_000;
+const LARGE_STRING_RECORDS: usize = 4_000;
+
+/// Anchor `big` holds one large string that every DATA record copies through
+/// `occurrence`. Returns the source and the payload allowance it receives.
+fn large_string_exchange(references: &str, occurrence: &str) -> (String, usize) {
+    let records = (1..=LARGE_STRING_RECORDS).fold(String::new(), |mut records, id| {
+        write!(records, "#{id}=ITEM({occurrence});").expect("write record fixture");
+        records
+    });
+    let anchors = format!("<big>='{}';", "A".repeat(LARGE_STRING_OCTETS));
+    let source = exchange_source(&anchors, references, &records);
+    let allowance = 16 * source.len() + 16 * 1024 * 1024;
+    assert!(
+        LARGE_STRING_RECORDS * LARGE_STRING_OCTETS > 6 * allowance,
+        "unbounded copies must pass the allowance several times over"
+    );
+    (source, allowance)
+}
+
+fn assert_payload_bounded(source: &str, allowance: usize, expansion: &str, occurrence: &str) {
+    let (exchange, diagnostics) = parse_with_service(source);
+    let kept = allowance / LARGE_STRING_OCTETS;
+    assert_eq!(
+        exchange.records().keys().copied().collect::<Vec<_>>(),
+        (1..=u64::try_from(kept).expect("small count")).collect::<Vec<_>>()
+    );
+    let bound = format!(
+        "{expansion} expansion exceeds {allowance} payload bytes (MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE)"
+    );
+    for id in kept + 1..=LARGE_STRING_RECORDS {
+        assert!(
+            has_diagnostic(
+                &diagnostics,
+                ParseDiagnosticKind::ExpansionBounded,
+                &format!("instance #{id} omitted: {bound}; exact source retained"),
+            ),
+            "#{id}"
+        );
+    }
+    let last = format!("#{LARGE_STRING_RECORDS}=ITEM({occurrence});");
+    assert!(exchange
+        .omitted_spans()
+        .iter()
+        .any(|span| source[span.clone()] == last));
+}
+
+#[test]
+fn payload_copied_by_an_omitted_item_stays_charged() {
+    with_service_context(b"", |_, ctx| {
+        let mut anchors = doubling_anchor_values(4);
+        anchors.insert("s".into(), Value::String(b"ABCD".to_vec()));
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
+        let allowance = resolver.payload.remaining;
+        resolver.remaining_nodes = 10;
+        let mut item = [Value::Resource("#s".into()), Value::Resource("#a4".into())];
+
+        assert_eq!(
+            resolver
+                .resolve_item(item.iter_mut())
+                .expect("a node limit is not an error")
+                .as_deref(),
+            Some(ANCHOR_BOUND)
+        );
+        assert_eq!(resolver.remaining_nodes, 10);
+        assert_eq!(resolver.payload.remaining, allowance - 4);
+    });
+}
+
+#[test]
+fn repeated_large_anchor_string_stops_at_the_payload_allowance() {
+    let (source, allowance) = large_string_exchange("", "<#big>");
+    assert_payload_bounded(&source, allowance, "anchor", "<#big>");
+}
+
+#[test]
+fn repeated_large_reference_string_stops_at_the_payload_allowance() {
+    let (source, allowance) = large_string_exchange("@9000=<#big>;", "@9000");
+    assert_payload_bounded(&source, allowance, "external reference", "@9000");
 }
 
 #[test]
