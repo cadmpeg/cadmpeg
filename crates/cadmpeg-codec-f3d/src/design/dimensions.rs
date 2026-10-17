@@ -5585,8 +5585,6 @@ pub(super) fn point_lies_on_sketch_geometry(
         let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
             * (1.0 + point.u.abs().max(point.v.abs()));
         let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
-        // This standalone evaluator uses no decode context or depth entry,
-        // so it cannot produce a resource refusal.
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             curve.degree(),
             curve.knots(),
@@ -5594,8 +5592,7 @@ pub(super) fn point_lies_on_sketch_geometry(
             lanes.weights(),
             point,
             tolerance,
-        )
-        .is_ok_and(|contained| contained == Some(true));
+        ) == Some(true);
     }
 
     let close = |left: f64, right: f64| {

@@ -17,22 +17,19 @@ pub(super) fn check_products(
 ) -> Result<(), CodecError> {
     let definitions = BorrowedIdentities::build(|add| {
         for definition in &ir.model.product_definitions {
-            add(definition.id.as_str(), ())?;
+            add(definition.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let occurrences = BorrowedIdentities::build(|add| {
         for occurrence in &ir.model.occurrences {
-            add(occurrence.id.as_str(), ())?;
+            add(occurrence.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let bodies = BorrowedIdentities::build(|add| {
         for body in &ir.model.bodies {
-            add(body.id.as_str(), ())?;
+            add(body.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     for definition in &ir.model.product_definitions {
         for body in &definition.bodies {
             if !bodies.contains(body.as_str()) {

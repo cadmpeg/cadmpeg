@@ -2191,7 +2191,7 @@ fn try_decode_text_model(
         // Facts for the report and source attributes. The header carries the
         // stream's own unit; the decoded token values are already in the
         // centimetre convention.
-        let mut header = stream.header.as_kernel_header(ctx)?;
+        let mut header = stream.header.as_kernel_header();
         header.scale = match stream.header.units() {
             cadmpeg_asm::sat::TextUnits::Declared(scale) => Some(scale.get()),
             cadmpeg_asm::sat::TextUnits::Unspecified => None,
@@ -3861,7 +3861,6 @@ fn decode_result(
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let mut source = crate::report::classify_document(
-        ctx,
         scan,
         report_scope,
         retained.source_attributes,

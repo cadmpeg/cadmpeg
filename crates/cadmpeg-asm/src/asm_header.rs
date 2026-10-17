@@ -26,8 +26,7 @@ use crate::kernel_header::{
 };
 use crate::layout::asmheader_binaryfile4 as bf4;
 use crate::layout::asmheader_binaryfile8 as bf8;
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 /// The ASM magic prefix common to both widths.
 const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
@@ -61,10 +60,8 @@ pub fn record_count(bytes: &[u8]) -> Option<u32> {
 /// Parse the header of a decompressed ASM stream. Returns `None` if the magic
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
-pub fn parse(_ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
-    let Some(width) = declared_width(bytes) else {
-        return Ok(None);
-    };
+pub fn parse(bytes: &[u8]) -> Option<BinaryHeader> {
+    let width = declared_width(bytes)?;
     let mut header = KernelHeader {
         save_format_version: None,
         entity_count: None,
@@ -108,10 +105,10 @@ pub fn parse(_ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHead
     header.linear = linear;
     header.angular = angular;
 
-    Ok(Some(BinaryHeader {
+    Some(BinaryHeader {
         width,
         metadata: header,
-    }))
+    })
 }
 
 /// Byte offset at which the SAB record stream begins, i.e. the first byte after
@@ -170,23 +167,17 @@ pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
 }
 
 /// Exact solved-record boundary, using an already-parsed ASM header.
-pub fn solved_record_limit_with_header(
-    _ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    header: &BinaryHeader,
-) -> Result<Option<usize>, CodecError> {
+pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> Option<usize> {
     if !header.metadata.has_history_partition() {
-        return Ok(None);
+        return None;
     }
-    let Some(start) = record_stream_start_with_header(bytes, header) else {
-        return Ok(None);
-    };
-    Ok(crate::sab::scan_history_boundary(
+    let start = record_stream_start_with_header(bytes, header)?;
+    crate::sab::scan_history_boundary(
         bytes,
         start,
         header.width,
         Some(&["Begin", "of", "ASM", "History", "Data"]),
-    ))
+    )
 }
 
 #[cfg(test)]
@@ -197,10 +188,8 @@ mod tests {
         bytes.resize(crate::layout::asmheader_binaryfile4::LEN, 0);
         bytes.extend_from_slice(&[7, 3]);
         bytes.extend_from_slice(b"ASM");
-        let service = cadmpeg_test_support::service_decode_context();
         assert_eq!(
-            super::parse(&service, &bytes)
-                .unwrap()
+            super::parse(&bytes)
                 .unwrap()
                 .metadata
                 .product_family

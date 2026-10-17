@@ -735,26 +735,19 @@ mod tests {
                 bytes.extend_from_slice(&value.to_le_bytes());
             }
             bytes.extend_from_slice(b"\x0d\x01x\x0b\x11\x0d\x0bdelta_state");
-            crate::test_support::with_service_context(&bytes, |service| {
-                let header = if acis {
-                    crate::acis_header::parse(service, &bytes)
-                } else {
-                    crate::asm_header::parse(service, &bytes)
-                }
-                .expect("header admitted")
-                .expect("binary header");
-                let boundary = bytes.len() - 13;
-                let result = if acis {
-                    crate::acis_header::solved_record_limit_with_header(service, &bytes, &header)
-                } else {
-                    crate::asm_header::solved_record_limit_with_header(service, &bytes, &header)
-                };
-                assert_eq!(
-                    result.expect("solve the record limit after the header"),
-                    Some(boundary)
-                );
-            })
-            .expect("fixture fits service profile");
+            let header = if acis {
+                crate::acis_header::parse(&bytes)
+            } else {
+                crate::asm_header::parse(&bytes)
+            }
+            .expect("binary header");
+            let boundary = bytes.len() - 13;
+            let result = if acis {
+                crate::acis_header::solved_record_limit_with_header(&bytes, &header)
+            } else {
+                crate::asm_header::solved_record_limit_with_header(&bytes, &header)
+            };
+            assert_eq!(result, Some(boundary));
         }
     }
 

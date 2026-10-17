@@ -957,7 +957,7 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
     )
     .unwrap();
     let stream = cadmpeg_asm::sat::parse(&ctx, &bytes).unwrap();
-    let header: KernelHeader = stream.header.as_kernel_header(&ctx).unwrap();
+    let header: KernelHeader = stream.header.as_kernel_header();
     let evidence = super::StreamEvidence::Text(Some(super::TextEvidence {
         branch: stream.terminator,
         header: &header,

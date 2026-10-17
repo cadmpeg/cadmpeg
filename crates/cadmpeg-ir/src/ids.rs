@@ -31,36 +31,22 @@ use std::fmt::{self, Display};
 /// The key is non-empty, contains no `#`, and the whole id has no whitespace.
 #[must_use]
 pub fn is_valid_identity(id: &str) -> bool {
-    match check_identity(id, |_| Ok::<(), std::convert::Infallible>(())) {
-        Ok(valid) => valid,
-        Err(error) => match error {},
-    }
-}
-
-/// One grammar scan with an explicit admission callback before each scalar.
-fn check_identity<E>(id: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> Result<bool, E> {
-    visit(0)?;
-    let mut characters = id.chars();
     let mut separators = 0_u8;
     let mut key = false;
     let mut nonempty = false;
-    while !characters.as_str().is_empty() {
-        visit(1)?;
-        let Some(character) = characters.next() else {
-            break;
-        };
+    for character in id.chars() {
         if character.is_whitespace() {
-            return Ok(false);
+            return false;
         }
         match character {
-            '#' if key || !nonempty || separators != 2 => return Ok(false),
+            '#' if key || !nonempty || separators != 2 => return false,
             '#' => {
                 key = true;
                 nonempty = false;
             }
             ':' if !key => {
                 if !nonempty || separators == 2 {
-                    return Ok(false);
+                    return false;
                 }
                 separators += 1;
                 nonempty = false;
@@ -68,7 +54,7 @@ fn check_identity<E>(id: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> R
             _ => nonempty = true,
         }
     }
-    Ok(key && nonempty)
+    key && nonempty
 }
 
 /// An entity identity with validated namespace and key grammar.
@@ -105,23 +91,16 @@ impl schemars::JsonSchema for Identity {
 impl Identity {
     /// Admit a string matching the entity identity grammar.
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
-        match Self::admit_text(value.into(), |_| Ok::<(), std::convert::Infallible>(())) {
-            Ok(result) => result.map_err(|value| IdentityError::InvalidId { value }),
-            Err(error) => match error {},
-        }
+        Self::admit_text(value.into()).map_err(|value| IdentityError::InvalidId { value })
     }
 
-    /// Admit owned text with the same grammar used by standard reconstruction.
-    /// Invalid grammar returns the owned input; admission failure stays outside it.
-    pub(crate) fn admit_text<E>(
-        value: String,
-        visit: impl FnMut(u64) -> Result<(), E>,
-    ) -> Result<Result<Self, String>, E> {
-        Ok(if check_identity(&value, visit)? {
+    /// Admit owned text, returning it unchanged when the grammar does not match.
+    pub(crate) fn admit_text(value: String) -> Result<Self, String> {
+        if is_valid_identity(&value) {
             Ok(Self(value))
         } else {
             Err(value)
-        })
+        }
     }
 
     /// Borrow the identity string.

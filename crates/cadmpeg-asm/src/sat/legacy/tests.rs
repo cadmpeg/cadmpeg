@@ -18,7 +18,7 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 0#\nEnd-of-ACIS-data\n";
         assert_eq!(parsed.records.len(), 6);
         assert_eq!(parsed.records[3].head(), "shell");
         assert_eq!(parsed.records[4].ref_at(5), Some(3));
-        let header = parsed.header.as_kernel_header(ctx).unwrap();
+        let header = parsed.header.as_kernel_header();
         let brep = decode_with_header(
             ctx,
             &parsed.records,
@@ -94,7 +94,7 @@ point $-1 0 0 0#\npoint $-1 5 0 0#\nEnd-of-ACIS-data\n";
         assert_eq!(parsed.records[3].ref_at(4), Some(4));
         assert_eq!(parsed.records[3].ref_at(5), Some(2));
         assert_eq!(parsed.records[3].chunk(7), Some(&Token::False));
-        let header = parsed.header.as_kernel_header(ctx).unwrap();
+        let header = parsed.header.as_kernel_header();
         let brep = decode_with_header(
             ctx,
             &parsed.records,
@@ -152,7 +152,7 @@ fn legacy_topology_and_analytic_carriers_use_their_declared_grammar() {
         let source = format!("{version} 0 1 0\n{header}body {n} {} {n} {n} #\nlump {n} {n} {} {} #\nshell {n} {n} {n} {} {shell_tail}{} #\nface {n} {n} {n} {} {n} {} {face_tail} #\nplane-surface {n} 30 40 50 0 0 1{plane_tail}{bounds} #\nEnd-of-ACIS-data\n", r(1), r(2), r(0), r(3), r(1), r(2), r(4));
         crate::test_support::with_service_context(source.as_bytes(), |ctx| {
             let parsed = crate::sat::parse(ctx, source.as_bytes()).unwrap();
-            let header = parsed.header.as_kernel_header(ctx).unwrap();
+            let header = parsed.header.as_kernel_header();
             let brep = decode_with_header(
                 ctx,
                 &parsed.records,
@@ -304,7 +304,7 @@ intcurve-curve $-1 {sense} {{ exactcur nubs 1 open 2 0 1 1 1 0 0 0 10 0 0 0 null
 End-of-ACIS-data\n", if version < 107 { "" } else { "$-1 " });
         crate::test_support::with_service_context(source.as_bytes(), |ctx| {
             let parsed = crate::sat::parse(ctx, source.as_bytes()).unwrap();
-            let header = parsed.header.as_kernel_header(ctx).unwrap();
+            let header = parsed.header.as_kernel_header();
             let brep = decode_with_header(
                 ctx,
                 &parsed.records,
@@ -344,7 +344,7 @@ spline-surface $-1 forward { exactsur full nurbs 1 1 both open open none none 2 
 0 0 0 0 0 0 0 F 1 F 0 F 1 F 0 } I I I I #\nEnd-of-ACIS-data\n";
     crate::test_support::with_service_context(source, |ctx| {
         let parsed = crate::sat::parse(ctx, source).unwrap();
-        let header = parsed.header.as_kernel_header(ctx).unwrap();
+        let header = parsed.header.as_kernel_header();
         let brep = decode_with_header(
             ctx,
             &parsed.records,
@@ -449,7 +449,7 @@ fn legacy_cone_pcurves_use_the_major_radius_as_u_scale() {
         let source = legacy_cone_band_stream(version);
         crate::test_support::with_service_context(source.as_bytes(), |ctx| {
             let parsed = crate::sat::parse(ctx, source.as_bytes()).unwrap();
-            let header = parsed.header.as_kernel_header(ctx).unwrap();
+            let header = parsed.header.as_kernel_header();
             let brep = decode_with_header(
                 ctx,
                 &parsed.records,

@@ -95,18 +95,17 @@ pub(super) fn check_identity_and_order(
         macro_rules! collect_model_identities {
             ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
                 $(for entity in &view.ir.model.$field {
-                    add(crate::schema::EntitySchema::identity(entity), false)?;
+                    add(crate::schema::EntitySchema::identity(entity), false);
                 })*
             };
         }
         crate::document::arena_registry!(collect_model_identities);
-        view.visit::<cadmpeg_core::CodecError>(|_, _, records| {
+        view.for_each(|_, _, records| {
             for record in records.records() {
-                add(record.id(), false)?;
+                add(record.id(), false);
             }
-            Ok(())
-        })
-    })?;
+        });
+    });
     check_model_identity_and_order(view.ir, &mut seen, findings)?;
     let mut by_arena: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     view.visit::<cadmpeg_core::CodecError>(|format, arena, records| {

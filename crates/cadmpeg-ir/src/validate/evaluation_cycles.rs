@@ -137,34 +137,17 @@ struct Node<'ir> {
 
 /// Only carrier-to-construction associations are needed by the cycle graph.
 trait CarrierConstructions<'ir> {
-    fn curve(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralCurve>, CodecError>;
-    fn surface(
-        &self,
-        ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralSurface>, CodecError>;
+    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve>;
+    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface>;
 }
 
 impl<'ir> CarrierConstructions<'ir> for ModelIndex<'ir> {
-    fn curve(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralCurve>, CodecError> {
-        Ok(self
-            .procedural_curves_for_curve(id, crate::index::StandardIndex)
-            .and_then(|rows| rows.first().copied()))
+    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve> {
+        self.procedural_curves_for_curve(id, crate::index::StandardIndex)
+            .and_then(|rows| rows.first().copied())
     }
-    fn surface(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralSurface>, CodecError> {
-        Ok(self.procedural_surface_for_surface(id, crate::index::StandardIndex))
+    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface> {
+        self.procedural_surface_for_surface(id, crate::index::StandardIndex)
     }
 }
 
@@ -174,60 +157,48 @@ struct CycleIndex<'ir> {
 }
 
 impl<'ir> CycleIndex<'ir> {
-    fn build(ir: &'ir CadIr) -> Result<Self, CodecError> {
+    fn build(ir: &'ir CadIr) -> Self {
         // The general index selects the first construction with an exact ID.
         // BorrowedIdentities selects the last insertion, so reverse these rows.
         let curves_by_id = BorrowedIdentities::build(|add| {
             for row in ir.model.procedural_curves.iter().rev() {
-                add(row.id.as_str(), row)?;
+                add(row.id.as_str(), row);
             }
-            Ok(())
-        })?;
+        });
         let curves = BorrowedIdentities::<&ProceduralCurve>::build(|add| {
             for carrier in ir.model.curves.iter().rev() {
                 if let Some(construction) = carrier.geometry.procedural_construction() {
                     if let Some(row) = curves_by_id.get(construction.as_str()) {
-                        add(carrier.id.as_str(), row)?;
+                        add(carrier.id.as_str(), row);
                     }
                 }
             }
-            Ok(())
-        })?;
+        });
         drop(curves_by_id);
         let surfaces_by_id = BorrowedIdentities::build(|add| {
             for row in ir.model.procedural_surfaces.iter().rev() {
-                add(row.id.as_str(), row)?;
+                add(row.id.as_str(), row);
             }
-            Ok(())
-        })?;
+        });
         let surfaces = BorrowedIdentities::<&ProceduralSurface>::build(|add| {
             for carrier in &ir.model.surfaces {
                 if let Some(construction) = carrier.geometry.procedural_construction() {
                     if let Some(row) = surfaces_by_id.get(construction.as_str()) {
-                        add(carrier.id.as_str(), row)?;
+                        add(carrier.id.as_str(), row);
                     }
                 }
             }
-            Ok(())
-        })?;
-        Ok(Self { curves, surfaces })
+        });
+        Self { curves, surfaces }
     }
 }
 
 impl<'ir> CarrierConstructions<'ir> for CycleIndex<'ir> {
-    fn curve(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralCurve>, CodecError> {
-        Ok(self.curves.get(id).copied())
+    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve> {
+        self.curves.get(id).copied()
     }
-    fn surface(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        id: &str,
-    ) -> Result<Option<&'ir ProceduralSurface>, CodecError> {
-        Ok(self.surfaces.get(id).copied())
+    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface> {
+        self.surfaces.get(id).copied()
     }
 }
 
@@ -240,7 +211,7 @@ fn walk_cycles<'ir>(
 ) -> Result<(), CodecError> {
     let mut graph = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
-            if let Some(procedural) = index.curve(ctx, curve.id.as_str())? {
+            if let Some(procedural) = index.curve(curve.id.as_str()) {
                 let dependencies = curve_dependencies(procedural.definition());
                 if !dependencies.is_empty() {
                     add(
@@ -249,12 +220,12 @@ fn walk_cycles<'ir>(
                             dependencies,
                             visit: Visit::Unseen,
                         },
-                    )?;
+                    );
                 }
             }
         }
         for surface in &ir.model.surfaces {
-            if let Some(procedural) = index.surface(ctx, surface.id.as_str())? {
+            if let Some(procedural) = index.surface(surface.id.as_str()) {
                 let dependencies = surface_dependencies(procedural.definition());
                 if !dependencies.is_empty() {
                     add(
@@ -263,12 +234,11 @@ fn walk_cycles<'ir>(
                             dependencies,
                             visit: Visit::Unseen,
                         },
-                    )?;
+                    );
                 }
             }
         }
-        Ok(())
-    })?;
+    });
     let mut starts = graph.identities().collect::<Vec<_>>();
     starts.sort_by(Ord::cmp);
     let mut stack = Vec::new();
@@ -364,7 +334,7 @@ pub(crate) fn admit_evaluation_cycles(
     if ir.model.procedural_curves.is_empty() && ir.model.procedural_surfaces.is_empty() {
         return Ok(());
     }
-    let index = CycleIndex::build(ir)?;
+    let index = CycleIndex::build(ir);
     walk_cycles(ctx, ir, &index, |finding| {
         Err(CodecError::Malformed(finding.message))
     })

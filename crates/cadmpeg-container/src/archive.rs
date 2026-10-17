@@ -454,9 +454,8 @@ impl<'a> ArchiveSnapshot<'a> {
     /// Builds generic entry summaries using a codec-owned role classifier.
     pub fn container_entries(
         &self,
-        _ctx: &DecodeContext<'_>,
         classify: impl Fn(&str) -> cadmpeg_core::container::ContainerRole,
-    ) -> Result<Vec<ContainerEntry>, CodecError> {
+    ) -> Vec<ContainerEntry> {
         let mut output = Vec::new();
         for entry in &self.entries {
             let mut attributes = BTreeMap::new();
@@ -509,14 +508,11 @@ impl<'a> ArchiveSnapshot<'a> {
                 attributes,
             });
         }
-        Ok(output)
+        output
     }
 
     /// Partitions every physical archive byte by ZIP structural role.
-    pub fn physical_ledger(
-        &self,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<PhysicalSpan>, CodecError> {
+    pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
         physical_ledger(self.root.window(), &self.entries, self.central_start)
     }
 }
@@ -1295,7 +1291,7 @@ mod tests {
             );
             assert!(snapshot.open(&ctx, "optional").is_err(), "{kind}");
             assert!(!snapshot
-                .physical_ledger(&ctx)
+                .physical_ledger()
                 .expect("physical framing")
                 .is_empty());
         }
@@ -1314,7 +1310,7 @@ mod tests {
         assert!(snapshot.entries().is_empty());
         assert_eq!(
             snapshot
-                .physical_ledger(&ctx)
+                .physical_ledger()
                 .expect("empty ZIP has a complete physical ledger"),
             vec![PhysicalSpan {
                 start: 0,
@@ -1614,9 +1610,7 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("archive fits root policy");
         let snapshot = ArchiveSnapshot::new(&ctx, root).expect("archive snapshots");
-        let entries = snapshot
-            .container_entries(&ctx, |_| ContainerRole::Stream)
-            .expect("container summary fits policy");
+        let entries = snapshot.container_entries(|_| ContainerRole::Stream);
         let stored = entries
             .iter()
             .find(|entry| entry.name == "stored.bin")

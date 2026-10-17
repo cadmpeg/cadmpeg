@@ -82,7 +82,7 @@ fn vertex_loop_model(faces: &[(&str, &[&str])], shells: &[&[&str]]) -> crate::Ca
 
 fn disconnected_shells(ir: &crate::CadIr) -> Vec<String> {
     let mut findings = Vec::new();
-    super::check_shell_connectivity(ir, &mut findings).unwrap();
+    super::check_shell_connectivity(ir, &mut findings);
     findings
         .into_iter()
         .map(|finding| {
