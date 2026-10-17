@@ -519,9 +519,7 @@ fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
     partition.stats.surface_solver_capped.push("coedge#3");
     super::super::merge_brep(&mut decoded, partition).unwrap();
 
-    let classification =
-        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
-            .unwrap();
+    let classification = crate::dialect::classify_layers(&scan).unwrap();
     let report = super::super::build_geometry_report(
         &cadmpeg_test_support::service_decode_context(),
         &scan,
