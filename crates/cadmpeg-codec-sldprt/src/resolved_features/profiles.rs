@@ -82,6 +82,40 @@ pub(crate) struct SketchArenas<'a> {
     pub(crate) annotations: &'a mut Annotations,
 }
 
+/// Neutral feature positions by native reference, in feature order.
+struct FeaturePositions(HashMap<String, Vec<usize>>);
+
+impl FeaturePositions {
+    fn new(features: &[cadmpeg_ir::features::Feature]) -> Self {
+        let mut positions = HashMap::<_, Vec<_>>::new();
+        for (position, feature) in features.iter().enumerate() {
+            if let Some(native) = &feature.native_ref {
+                positions.entry(native.clone()).or_default().push(position);
+            }
+        }
+        Self(positions)
+    }
+
+    fn of(&self, native: &str) -> &[usize] {
+        self.0.get(native).map_or(&[], Vec::as_slice)
+    }
+
+    fn first(&self, native: &str) -> Option<usize> {
+        self.of(native).first().copied()
+    }
+}
+
+/// The only position of `offsets`, sorted by offset, strictly inside the span.
+fn only_enclosed(offsets: &[(u64, usize)], start: u64, end: Option<u64>) -> Option<usize> {
+    let first = offsets.partition_point(|&(offset, _)| offset <= start);
+    let last = end.map_or(offsets.len(), |end| {
+        offsets.partition_point(|&(offset, _)| offset < end)
+    });
+    match offsets.get(first..last)? {
+        [(_, position)] => Some(*position),
+        _ => None,
+    }
+}
 /// Reconcile profile streams with uniquely enclosing sketch feature records.
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -101,8 +135,19 @@ pub(crate) fn bind_sketch_profiles(
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(histories);
     let native_features = crate::records::HistoryFeatures::new(histories);
+    let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
         let names = FeatureObjectNames::new(&lane.names);
+        let mut lane_sketches = Vec::new();
+        for (position, sketch) in sketches.iter().enumerate() {
+            if sketch.native_ref.as_deref() != Some(lane.id.as_str()) {
+                continue;
+            }
+            if let Some(source) = annotations.provenance.get(sketch.id.as_str()) {
+                lane_sketches.push((source.offset, position));
+            }
+        }
+        lane_sketches.sort_unstable();
         let mut starts = Vec::<(u64, usize, &crate::records::Feature)>::new();
         for feature in native_features.iter() {
             if metadata_ids.contains(feature.id.as_str()) {
@@ -116,28 +161,18 @@ pub(crate) fn bind_sketch_profiles(
         }
         starts.sort_unstable_by_key(|left| (left.0, left.1));
         for (index, &(start, _, native_feature)) in starts.iter().enumerate() {
-            let Some(feature) = features
-                .iter_mut()
-                .find(|feature| feature.native_ref.as_deref() == Some(native_feature.id.as_str()))
+            let Some(feature) = feature_positions
+                .first(native_feature.id.as_str())
+                .and_then(|position| features.get_mut(position))
             else {
                 continue;
             };
             let end = starts.get(index + 1).map(|next| next.0);
-            let mut enclosed = sketches.iter_mut().filter(|sketch| {
-                sketch.native_ref.as_deref() == Some(lane.id.as_str())
-                    && annotations
-                        .provenance
-                        .get(sketch.id.as_str())
-                        .is_some_and(|source| {
-                            source.offset > start && end.is_none_or(|end| source.offset < end)
-                        })
-            });
-            let Some(sketch) = enclosed.next() else {
+            let Some(sketch) = only_enclosed(&lane_sketches, start, end)
+                .and_then(|position| sketches.get_mut(position))
+            else {
                 continue;
             };
-            if enclosed.next().is_some() {
-                continue;
-            }
             if declared_carriers
                 .get(native_feature.id.as_str())
                 .is_some_and(|carriers| {
@@ -334,6 +369,7 @@ pub(crate) fn project_compact_sketch_profiles(
     let metadata_ids = history_metadata_ids(histories);
 
     let native_features = crate::records::HistoryFeatures::new(histories);
+    let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
@@ -360,10 +396,13 @@ pub(crate) fn project_compact_sketch_profiles(
             },
         );
         for (object_index, &(start, _, native_feature)) in objects.iter().enumerate() {
-            let Some(feature_index) = features.iter().position(|feature| {
-                feature.native_ref.as_deref() == Some(native_feature.id.as_str())
-                    && matches!(
-                        feature.evaluation.definition(),
+            let Some(feature_index) = feature_positions
+                .of(native_feature.id.as_str())
+                .iter()
+                .copied()
+                .find(|&position| {
+                    matches!(
+                        features[position].evaluation.definition(),
                         cadmpeg_ir::features::FeatureDefinition::Operation(
                             cadmpeg_ir::features::FeatureOperation::Sketch {
                                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
@@ -372,7 +411,8 @@ pub(crate) fn project_compact_sketch_profiles(
                             }
                         )
                     )
-            }) else {
+                })
+            else {
                 continue;
             };
             let end = objects.get(object_index + 1).map_or(
@@ -930,6 +970,7 @@ pub(crate) fn project_marker_backed_sketches(
         lanes,
         &feature_frames,
     );
+    let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
@@ -959,22 +1000,17 @@ pub(crate) fn project_marker_backed_sketches(
         }
         objects.sort_by_key(|left| left.0);
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
-            let Some((feature_index, bound_sketch, block_definition)) =
-                features.iter().enumerate().find_map(|(index, feature)| {
-                    if feature.native_ref.as_deref() != Some(native_feature.id.as_str()) {
-                        return None;
-                    }
-                    match feature.evaluation.definition() {
-                        cadmpeg_ir::features::FeatureDefinition::Operation(
-                            cadmpeg_ir::features::FeatureOperation::Sketch { sketch, .. },
-                        ) => Some((index, sketch.id(), false)),
-                        cadmpeg_ir::features::FeatureDefinition::Operation(
-                            cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition {
-                                sketch,
-                            },
-                        ) => Some((index, sketch.as_ref(), true)),
-                        _ => None,
-                    }
+            let Some((feature_index, bound_sketch, block_definition)) = feature_positions
+                .of(native_feature.id.as_str())
+                .iter()
+                .find_map(|&index| match features[index].evaluation.definition() {
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Sketch { sketch, .. },
+                    ) => Some((index, sketch.id(), false)),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition { sketch },
+                    ) => Some((index, sketch.as_ref(), true)),
+                    _ => None,
                 })
             else {
                 continue;
@@ -2112,6 +2148,7 @@ pub(crate) fn project_sketch_block_profiles(
         .iter()
         .map(|history| crate::history::classify::HistoryMetadata::new(&history.features))
         .collect::<Vec<_>>();
+    let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
         let names = FeatureObjectNames::new(&lane.names);
         for (history, metadata) in histories.iter().zip(&metadata) {
@@ -2170,9 +2207,8 @@ pub(crate) fn project_sketch_block_profiles(
                 let Some(children) = explicit_children.flatten().or(inferred_children) else {
                     continue;
                 };
-                let Some(profile_index) = features.iter().position(|feature| {
-                    feature.native_ref.as_deref() == Some(native_profile.id.as_str())
-                }) else {
+                let Some(profile_index) = feature_positions.first(native_profile.id.as_str())
+                else {
                     continue;
                 };
                 if !matches!(
@@ -2200,9 +2236,9 @@ pub(crate) fn project_sketch_block_profiles(
                         definitions_complete = false;
                         break;
                     };
-                    let Some(definition_index) = features.iter().position(|feature| {
-                        feature.native_ref.as_deref() == Some(native_definition.id.as_str())
-                    }) else {
+                    let Some(definition_index) =
+                        feature_positions.first(native_definition.id.as_str())
+                    else {
                         definitions_complete = false;
                         break;
                     };
@@ -2236,9 +2272,8 @@ pub(crate) fn project_sketch_block_profiles(
                     native_object_class(feature.input_class.as_deref().unwrap_or_default())
                         == NativeClassKind::SketchBlockInstance
                 }) {
-                    let Some(instance_index) = features.iter().position(|feature| {
-                        feature.native_ref.as_deref() == Some(native_instance.id.as_str())
-                    }) else {
+                    let Some(instance_index) = feature_positions.first(native_instance.id.as_str())
+                    else {
                         instances_complete = false;
                         break;
                     };
@@ -4462,3 +4497,6 @@ mod detached_legacy_sketch_tests {
 
 #[cfg(test)]
 mod compact_cycle_tests;
+
+#[cfg(test)]
+mod index_tests;
