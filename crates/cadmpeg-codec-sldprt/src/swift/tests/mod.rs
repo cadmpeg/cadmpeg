@@ -193,3 +193,4 @@ fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinit
 }
 
 mod depth;
+mod walks;

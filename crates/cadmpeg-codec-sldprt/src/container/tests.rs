@@ -103,6 +103,7 @@ fn site_keys_use_outer_container_identity() {
         family: container::PayloadFamily::Parasolid,
         payload: Vec::new(),
         ps_streams: Vec::new(),
+        ps_probe_capped: false,
     };
     let second = Block {
         offset: 200,
@@ -121,6 +122,7 @@ fn site_keys_use_outer_container_identity() {
         payload: Vec::new(),
         decoded_payload: None,
         ps_streams: Vec::new(),
+        ps_probe_capped: false,
     };
     assert_eq!(Section::Compound(&compound).site_key(), "compound@300");
 }

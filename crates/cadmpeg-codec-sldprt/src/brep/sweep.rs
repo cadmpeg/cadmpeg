@@ -26,6 +26,15 @@ use cadmpeg_ir::units::SumSquaresUnitVector3;
 
 use super::LEN_TO_MM;
 
+/// Poles per profile pole across the ruling of [`swept_nurbs`].
+pub(super) const SWEPT_RULING_POLES: usize = 2;
+/// Knots of the linear ruling axis of [`swept_nurbs`].
+pub(super) const SWEPT_RULING_KNOTS: usize = 4;
+/// Poles per profile pole in the full-revolution ring of [`spun_nurbs`].
+pub(super) const SPUN_RING_POLES: usize = 9;
+/// Knots of the quadratic angular axis of [`spun_nurbs`].
+pub(super) const SPUN_RING_KNOTS: usize = 12;
+
 /// A parsed swept- or spun-surface carrier.
 #[derive(Debug, Clone)]
 pub(super) struct SweepCarrier {
@@ -242,8 +251,16 @@ pub(super) fn swept_nurbs(
             }
         }
     }
-    let control_rows = control.chunks(2).map(<[_]>::to_vec).collect();
-    let weight_rows = weights.map(|values| values.chunks(2).map(<[_]>::to_vec).collect());
+    let control_rows = control
+        .chunks(SWEPT_RULING_POLES)
+        .map(<[_]>::to_vec)
+        .collect();
+    let weight_rows = weights.map(|values| {
+        values
+            .chunks(SWEPT_RULING_POLES)
+            .map(<[_]>::to_vec)
+            .collect()
+    });
     let knots = profile.knots().as_slice().to_vec();
     match NurbsSurface::from_checked_lanes(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
@@ -359,8 +376,8 @@ pub(super) fn spun_nurbs(
         2.0 * PI,
     ];
     let knots = profile.knots().as_slice().to_vec();
-    let control_rows = control.chunks(9).map(<[_]>::to_vec).collect();
-    let weight_rows = weights.chunks(9).map(<[_]>::to_vec).collect();
+    let control_rows = control.chunks(SPUN_RING_POLES).map(<[_]>::to_vec).collect();
+    let weight_rows = weights.chunks(SPUN_RING_POLES).map(<[_]>::to_vec).collect();
     match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             profile.degree(),

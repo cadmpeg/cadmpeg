@@ -77,6 +77,7 @@ macro_rules! planar_contains_mesh {
             $mesh,
             cadmpeg_ir::transform::Transform::identity(),
             $tolerance,
+            &cadmpeg_core::decode::WorkBudget::new(usize::MAX),
         )
     }};
 }
@@ -1291,6 +1292,7 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
                 Point2::new(-2.0, 2.0),
             ],
             EPS_DISPLAY_QUANTIZATION,
+            &cadmpeg_core::decode::WorkBudget::new(usize::MAX),
         )
         .unwrap()],
         boundary_tolerance: 0.0,
@@ -1570,7 +1572,6 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
             tolerance: EPS_DISPLAY_QUANTIZATION,
             sampling_tolerance: SAMPLE_TOLERANCE,
         },
-        &mut Vec::new(),
     )
     .unwrap();
 
@@ -1611,7 +1612,6 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
             tolerance: EPS_DISPLAY_QUANTIZATION,
             sampling_tolerance: SAMPLE_TOLERANCE,
         },
-        &mut Vec::new(),
     )
     .unwrap();
 

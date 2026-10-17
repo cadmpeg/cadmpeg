@@ -478,6 +478,8 @@ pub(crate) struct Stats {
     pub(crate) ambiguous_pcurve_parameters: usize,
     /// NURBS edge carriers whose vertex range is off their bound surface.
     pub(crate) off_surface_nurbs_pcurves: usize,
+    /// Coedges whose derived pcurve stopped at `SURFACE_SOLVER_LOCAL_WORK`.
+    pub(crate) surface_solver_capped: crate::loss::NamedCount,
     /// No explicit body record was available, so one body hierarchy was derived.
     pub(crate) synthetic_body_grouping: bool,
 }
@@ -647,27 +649,49 @@ struct SweepSurfaceResolution {
 }
 
 fn resolve_sweep_surface(
+    ctx: &DecodeContext<'_>,
     carriers: &CarrierIndex,
     tables: &topology::Tables,
     face: &WalkedFace,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<SweepSurfaceResolution> {
-    let construction = carriers.sweep(face.surface_attr)?;
-    let profile = carriers.curve(construction.profile_attr)?;
+) -> Result<Option<SweepSurfaceResolution>, cadmpeg_core::CodecError> {
+    let Some(construction) = carriers.sweep(face.surface_attr) else {
+        return Ok(None);
+    };
+    let Some(profile) = carriers.curve(construction.profile_attr) else {
+        return Ok(None);
+    };
     let record = format!(
         "sldprt sweep construction at byte {} for surface attr {}",
         construction.offset, face.surface_attr
     );
-    let curve = sweep::profile_nurbs(&profile.carrier().geometry, &record, refusal)?;
+    let Some(curve) = sweep::profile_nurbs(&profile.carrier().geometry, &record, refusal) else {
+        return Ok(None);
+    };
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
+    let profile_knots = curve.knots().as_slice().len();
     match &construction.kind {
-        SweepKind::Spun { base, axis } => sweep::spun_nurbs(&curve, *base, *axis, &record, refusal)
-            .map(|surface| SweepSurfaceResolution {
-                geometry: SolvedSurfaceGeometry::Nurbs(surface),
-                offset: construction.offset,
-                tag: "00_44",
-                exactness: profile_derived.then_some(Exactness::Derived),
-            }),
+        SweepKind::Spun { base, axis } => {
+            retain_surface_bytes(
+                ctx,
+                nurbs_surface_bytes(
+                    curve.pole_count(),
+                    sweep::SPUN_RING_POLES,
+                    profile_knots + sweep::SPUN_RING_KNOTS,
+                ),
+                "retain Parasolid spun surface",
+            )?;
+            Ok(
+                sweep::spun_nurbs(&curve, *base, *axis, &record, refusal).map(|surface| {
+                    SweepSurfaceResolution {
+                        geometry: SolvedSurfaceGeometry::Nurbs(surface),
+                        offset: construction.offset,
+                        tag: "00_44",
+                        exactness: profile_derived.then_some(Exactness::Derived),
+                    }
+                }),
+            )
+        }
         SweepKind::Swept { direction } => {
             let unit_direction = *direction;
             let direction = direction.as_raw();
@@ -700,7 +724,7 @@ fn resolve_sweep_surface(
                 }
             }
             if point_lo > point_hi {
-                return None;
+                return Ok(None);
             }
             let mut pole_lo = f64::INFINITY;
             let mut pole_hi = f64::NEG_INFINITY;
@@ -727,7 +751,16 @@ fn resolve_sweep_surface(
                 EPS_SWEEP_EXTENT_ABSOLUTE_MM,
                 (v_end - v_start) * EPS_SWEEP_EXTENT_RELATIVE,
             );
-            sweep::swept_nurbs(
+            retain_surface_bytes(
+                ctx,
+                nurbs_surface_bytes(
+                    curve.pole_count(),
+                    sweep::SWEPT_RULING_POLES,
+                    profile_knots + sweep::SWEPT_RULING_KNOTS,
+                ),
+                "retain Parasolid swept surface",
+            )?;
+            Ok(sweep::swept_nurbs(
                 &curve,
                 unit_direction,
                 v_start - pad,
@@ -740,7 +773,7 @@ fn resolve_sweep_surface(
                 offset: construction.offset,
                 tag: "00_43",
                 exactness: Some(Exactness::Derived),
-            })
+            }))
         }
     }
 }
@@ -859,7 +892,7 @@ fn ensure_surface_support(
             if !sink.out.surfaces.iter().any(|surface| surface.id == id)
                 && !emitted_face_surface_by_carrier.contains_key(&attr)
             {
-                let geometry = carrier.geometry.clone();
+                let geometry = retain_surface_geometry(sink.ctx, &carrier.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
                     match annotate_surface_frame(annotations, id.as_str(), solved) {
                         Ok(()) => {}
@@ -1264,6 +1297,73 @@ fn decode_body(
 fn admit_brep_entity(ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_entities(1, "admit SLDPRT B-rep entity")?;
     Ok(())
+}
+
+/// Bytes one NURBS surface keeps for `rows` × `columns` poles and `knots`
+/// knot values, or `None` past `u64`. Rational poles are the larger form, so
+/// the count bounds either form.
+fn nurbs_surface_bytes(rows: usize, columns: usize, knots: usize) -> Option<u64> {
+    type Pole = cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>;
+    let poles = rows
+        .checked_mul(columns)
+        .and_then(|count| count.checked_mul(std::mem::size_of::<Pole>()));
+    let headers = rows.checked_mul(std::mem::size_of::<Vec<Pole>>());
+    let knots = knots.checked_mul(std::mem::size_of::<f64>());
+    poles
+        .zip(headers)
+        .and_then(|(poles, headers)| poles.checked_add(headers))
+        .zip(knots)
+        .and_then(|(bytes, knots)| bytes.checked_add(knots))
+        .map(u64_from_index)
+}
+
+/// Heap bytes a copy of solved surface geometry allocates, or `None` past
+/// `u64`.
+fn solved_surface_bytes(geometry: &SolvedSurfaceGeometry) -> Option<u64> {
+    match geometry {
+        SolvedSurfaceGeometry::Nurbs(surface) => nurbs_surface_bytes(
+            surface.u_count(),
+            surface.v_count(),
+            surface.u_knots().as_slice().len() + surface.v_knots().as_slice().len(),
+        ),
+        SolvedSurfaceGeometry::Polygonal(surface) => {
+            u64_from_index(std::mem::size_of_val(surface.vertices()))
+                .checked_add(u64_from_index(std::mem::size_of_val(surface.triangles())))
+        }
+        SolvedSurfaceGeometry::Transformed(placed) => solved_surface_bytes(placed.basis())?
+            .checked_add(u64_from_index(std::mem::size_of::<SolvedSurfaceGeometry>())),
+        SolvedSurfaceGeometry::Plane(_)
+        | SolvedSurfaceGeometry::Cylinder(_)
+        | SolvedSurfaceGeometry::Cone(_)
+        | SolvedSurfaceGeometry::Sphere(_)
+        | SolvedSurfaceGeometry::Torus(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => Some(0),
+    }
+}
+
+/// Charges surface bytes to the retained ceiling. A size past `u64` exceeds
+/// every ceiling, so it is charged as `u64::MAX` and one more byte.
+fn retain_surface_bytes(
+    ctx: &DecodeContext<'_>,
+    bytes: Option<u64>,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let Some(bytes) = bytes else {
+        ctx.retain_bytes(u64::MAX, operation)?;
+        return ctx.retain_bytes(1, operation);
+    };
+    ctx.retain_bytes(bytes, operation)
+}
+
+/// Copy carrier geometry into the decoded B-rep after charging the copy to
+/// the retained-byte ceiling.
+fn retain_surface_geometry(
+    ctx: &DecodeContext<'_>,
+    geometry: &SurfaceGeometry,
+) -> Result<SurfaceGeometry, cadmpeg_core::CodecError> {
+    let bytes = geometry.solved().map_or(Some(0), solved_surface_bytes);
+    retain_surface_bytes(ctx, bytes, "retain Parasolid surface geometry copy")?;
+    Ok(geometry.clone())
 }
 
 fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::BodyModifier> {
@@ -1862,20 +1962,25 @@ fn decode_graph(
                         else {
                             return Ok(None);
                         };
-                        let Some((geometry, parameter_range, source)) =
-                            intersection_support_pcurve(
-                                ctx,
-                                support_data,
-                                curve,
-                                f.surface_attr,
-                                surface,
-                                *endpoint_positions,
-                                &mut IntersectionPcurveSinks {
-                                    refusal: pcurve_refusal,
-                                    losses: &mut out.losses,
-                                },
-                            )?
-                        else {
+                        let mut solver_capped = false;
+                        let derived = intersection_support_pcurve(
+                            ctx,
+                            support_data,
+                            curve,
+                            f.surface_attr,
+                            surface,
+                            *endpoint_positions,
+                            &mut IntersectionPcurveSinks {
+                                refusal: pcurve_refusal,
+                                solver_capped: &mut solver_capped,
+                            },
+                        )?;
+                        if solver_capped {
+                            out.stats
+                                .surface_solver_capped
+                                .push(id_coedge(ce_attr).as_str());
+                        }
+                        let Some((geometry, parameter_range, source)) = derived else {
                             return Ok(None);
                         };
                         let Some(finite_range) =
@@ -2083,7 +2188,7 @@ fn decode_graph(
                     u64_from_index(c.offset),
                     Some("compact_surface"),
                 );
-                let geometry = c.geometry.clone();
+                let geometry = retain_surface_geometry(ctx, &c.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
                     annotate_surface_frame(
                         &mut annotations,
@@ -2271,7 +2376,7 @@ fn decode_graph(
                     exactness,
                 }) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
-                    let resolved = resolve_sweep_surface(carriers, t, f, &mut sweep_refusal);
+                    let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
                     for record in sweep_refusal.take_records() {
                         let note = crate::loss::spline_lane_refusal(format_args!(
                             "swept surface for face attr {}: {record}",
@@ -4377,7 +4482,8 @@ fn analytic_pcurve_chord_bound(
 
 struct IntersectionPcurveSinks<'a> {
     refusal: &'a mut crate::lane_refusal::LaneRefusals,
-    losses: &'a mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Set when a NURBS surface solve stops at its local work cap.
+    solver_capped: &'a mut bool,
 }
 
 fn intersection_support_pcurve(
@@ -4468,7 +4574,7 @@ fn intersection_support_pcurve(
                             point.get(),
                             control_points.last().copied(),
                             support_data.fit_tolerance_mm,
-                            sinks.losses,
+                            sinks.solver_capped,
                         ) {
                             Ok(Some(parameters)) => parameters,
                             Ok(None) => return Ok(None),
@@ -4541,7 +4647,7 @@ fn intersection_support_pcurve(
                     target,
                     Some(control_points[index]),
                     tolerance,
-                    sinks.losses,
+                    sinks.solver_capped,
                 ) {
                     Ok(Some(parameters)) => parameters.get(),
                     Ok(None) => return Ok(None),
@@ -4623,7 +4729,7 @@ fn intersection_support_pcurve(
                         surface,
                         [parameters[0], parameters[1]],
                         [chord[0].get(), chord[1].get()],
-                        sinks.losses,
+                        sinks.solver_capped,
                     )?;
                     error.is_none_or(|error| error > support_data.fit_tolerance_mm)
                 }
@@ -6630,6 +6736,59 @@ mod tests {
         }
     }
 
+    #[test]
+    fn sweep_precharge_bounds_the_retained_surface() {
+        use super::sweep::{
+            spun_nurbs, swept_nurbs, SPUN_RING_KNOTS, SPUN_RING_POLES, SWEPT_RULING_KNOTS,
+            SWEPT_RULING_POLES,
+        };
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::units::SumSquaresUnitVector3;
+
+        let profile = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(3.0, 0.0, 1.0),
+                Point3::new(2.0, 0.0, 2.0),
+                Point3::new(4.0, 0.0, 3.0),
+            ],
+            Some(vec![1.0, 0.5, 1.0, 1.0]),
+            false,
+        )
+        .unwrap();
+        let knots = profile.knots().as_slice().len();
+        let axis = SumSquaresUnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        let spun = spun_nurbs(
+            &profile,
+            Point3::new(0.0, 0.0, 0.0),
+            axis,
+            &"spin",
+            &mut refusal,
+        )
+        .unwrap();
+        let swept = swept_nurbs(&profile, axis, 0.0, 1.0, &"sweep", &mut refusal).unwrap();
+        assert_eq!(
+            super::nurbs_surface_bytes(
+                profile.pole_count(),
+                SPUN_RING_POLES,
+                knots + SPUN_RING_KNOTS
+            ),
+            super::solved_surface_bytes(&SolvedSurfaceGeometry::Nurbs(spun))
+        );
+        assert_eq!(
+            super::nurbs_surface_bytes(
+                profile.pole_count(),
+                SWEPT_RULING_POLES,
+                knots + SWEPT_RULING_KNOTS
+            ),
+            super::solved_surface_bytes(&SolvedSurfaceGeometry::Nurbs(swept))
+        );
+        assert_eq!(super::nurbs_surface_bytes(usize::MAX, 2, 0), None);
+    }
+
     use super::sphere_latitude;
     use super::unique_face_colors;
     use crate::brep::entity;
@@ -6678,7 +6837,7 @@ mod tests {
             edge_endpoints,
             &mut super::IntersectionPcurveSinks {
                 refusal,
-                losses: &mut Vec::new(),
+                solver_capped: &mut false,
             },
         )
     }

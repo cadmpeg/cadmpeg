@@ -185,7 +185,7 @@ fn sync_configuration_design_state(
     let design_arena = DecodeArena::new();
     let (design_ctx, _) =
         DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
-    project_configuration_design_states(
+    let unprojected = project_configuration_design_states(
         &design_ctx,
         &mut current_projection,
         &native.feature_histories,
@@ -193,6 +193,11 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
         form_padding,
     )?;
+    if unprojected > 0 {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration design states exceed the local projection work cap".into(),
+        ));
+    }
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
     let projection_bytes = native
@@ -281,7 +286,7 @@ fn sync_configuration_design_state(
     let design_arena = DecodeArena::new();
     let (design_ctx, _) =
         DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
-    project_configuration_design_states(
+    let unprojected = project_configuration_design_states(
         &design_ctx,
         &mut projected,
         &native.feature_histories,
@@ -289,6 +294,11 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
         form_padding,
     )?;
+    if unprojected > 0 {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration design states exceed the local projection work cap".into(),
+        ));
+    }
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
     let projection_bytes = native
