@@ -1875,7 +1875,10 @@ fn project_with_type_130_policy(
         if !entry.line_font.is_none_or(|font| {
             composite_line_font_valid(font, entry.status.hierarchy(), global.global_table())
         }) {
-            losses.push(crate::loss::IgesLossCode::DirectoryMetadataNoncanonical.note(format!("Directory D{} Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01; geometry retained", entry.sequence)));
+            losses.push(IgesLossCode::DirectoryMetadataNoncanonical.note(format!(
+                "Directory D{} Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01; geometry retained",
+                entry.sequence,
+            )));
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(

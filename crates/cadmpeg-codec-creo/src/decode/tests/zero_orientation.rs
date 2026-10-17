@@ -42,9 +42,9 @@ use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
 use cadmpeg_ir::features::{AngularTermination, BooleanOp, RevolutionAxis, RevolveExtent};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::CurveGeometry::Solved;
+use cadmpeg_ir::geometry::SolvedCurveGeometry::Circle;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -1763,7 +1763,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
                 [upper_radius, 0.0, upper_parameter],
                 [0.0, upper_radius, upper_parameter],
             ],
-        ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle"))
+        ), Some((Solved(Circle(circle_curve)), "coaxial_cone_torus_circle"))
                 if {
                     let center = circle_curve.center().get();
     let radius = circle_curve.radius().get();
@@ -1792,7 +1792,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
     });
     let tangent_candidates = coaxial_cone_torus_circle_candidates(cone, tangent_torus);
     assert!(
-        matches!(tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle")]
+        matches!(tangent_candidates.as_slice(), [(Solved(Circle(circle_curve)), "coaxial_cone_torus_circle")]
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -1800,7 +1800,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
                 })
     );
     assert!(
-        matches!(resolve_curve_candidates(tangent_candidates, None), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle"))
+        matches!(resolve_curve_candidates(tangent_candidates, None), Some((Solved(Circle(circle_curve)), "coaxial_cone_torus_circle"))
                 if {
                     let center = circle_curve.center().get();
         let radius = circle_curve.radius().get();
@@ -1840,7 +1840,7 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
     assert!(resolve_curve_candidates(candidates.clone(), None).is_none());
     assert!(
         matches!(select_unique_curve_candidate(candidates, [[4.0, 0.0, 0.0], [3.0, 0.0, 1.0]]), Some((
-                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
+                    Solved(Circle(circle_curve)),
                     "axis_containing_plane_torus_meridian_circle",
                 )) if {
                     let center = circle_curve.center().get();
