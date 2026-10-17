@@ -1689,11 +1689,13 @@ pub(in super::super) fn transfer_native_brep(
             }
         }
     }
+    let model_surfaces =
+        crate::decode::analytic::pcurves::ModelSurfaceIndex::new(&ir.model.surfaces);
     for pcurve in &scan.curves.two_chart_pcurves {
         let Some(endpoint_sets) = crate::decode::analytic::pcurves::mapped_two_chart_endpoint_sets(
             ctx,
             scan,
-            ir,
+            &model_surfaces,
             pcurve,
             source_carriers,
         )?
