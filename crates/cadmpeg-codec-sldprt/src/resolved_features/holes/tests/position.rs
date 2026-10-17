@@ -24,7 +24,6 @@ use crate::resolved_features::holes::compact_position_loci;
 use crate::resolved_features::holes::coplanar_spatial_position_placements;
 use crate::resolved_features::holes::enrich_history_hole_constructions;
 use crate::resolved_features::holes::hole_position_carrier_present;
-use crate::resolved_features::holes::hole_position_feature;
 use crate::resolved_features::holes::hole_position_sketch_source;
 use crate::resolved_features::holes::hole_temporary_axis;
 use crate::resolved_features::holes::marker_pattern_bore_axes;
@@ -32,22 +31,24 @@ use crate::resolved_features::holes::paired_object_locus_markers;
 use crate::resolved_features::holes::project_hole_axes;
 use crate::resolved_features::holes::project_hole_position_sketches;
 use crate::resolved_features::holes::project_spatial_hole_position_sketches;
+use crate::resolved_features::holes::HolePositionSketches;
 use crate::resolved_features::holes::HoleTopology;
 use crate::resolved_features::parameters::enrich_history_parameters;
 
 #[test]
 fn hole_position_carrier_presence_requires_a_serialized_position_source() {
-    let history = native_history();
+    let histories = [native_history()];
+    let native_features = crate::records::HistoryFeatures::new(&histories);
     let hole = model_hole();
 
     assert!(!hole_position_carrier_present(
         &hole,
-        std::slice::from_ref(&history),
+        &native_features,
         &[lane()]
     ));
     assert!(hole_position_carrier_present(
         &hole,
-        &[history],
+        &native_features,
         &[lane_with_position_reference(12)],
     ));
 }
@@ -614,15 +615,116 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
     lane.native_payload[hole_trailer + 16..hole_trailer + 28].fill(0);
     lane.native_payload[hole_trailer + 16..hole_trailer + 28]
         .copy_from_slice(&[0, 0xc0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let lanes = [lane];
     assert_eq!(
-        hole_position_feature(
-            &legacy_history.features[0],
-            std::slice::from_ref(&legacy_history),
-            &[lane],
-        )
-        .map(|feature| feature.id.as_str()),
+        HolePositionSketches::new(std::slice::from_ref(&legacy_history), &lanes)
+            .of(&legacy_history.features[0])
+            .map(|feature| feature.id.as_str()),
         Some("native-position")
     );
+}
+
+#[test]
+fn position_sketch_index_matches_the_candidate_scan() {
+    use crate::classification::{classify, FeatureClass};
+    use crate::records::{FeatureHistory, FeatureInputLane};
+    use crate::resolved_features::scalars::FeatureObjectNames;
+
+    fn linear<'a>(
+        source: u32,
+        histories: &'a [FeatureHistory],
+        lanes: &[FeatureInputLane],
+    ) -> Option<&'a crate::records::Feature> {
+        let lane_names = lanes
+            .iter()
+            .map(|lane| FeatureObjectNames::new(&lane.names))
+            .collect::<Vec<_>>();
+        let mut position = None;
+        for candidate in histories.iter().flat_map(|history| &history.features) {
+            if classify(candidate) != Some(FeatureClass::Sketch) {
+                continue;
+            }
+            let matches = lane_names.iter().any(|names| {
+                candidate.source_value().or_else(|| {
+                    names
+                        .of(candidate)
+                        .and_then(|name| name.object_id.and_then(ObjectId::value))
+                }) == Some(source)
+            });
+            if matches {
+                if position.is_some() {
+                    return None;
+                }
+                position = Some(candidate);
+            }
+        }
+        position
+    }
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        u32::try_from((state >> 33) % bound).unwrap()
+    };
+    let hole = native_history().features[0].clone();
+    let (mut found, mut ambiguous) = (0, 0);
+    for _ in 0..64 {
+        let history = FeatureHistory {
+            features: (0..24)
+                .map(|ordinal| {
+                    let mut feature = crate::records::Feature {
+                        id: format!("native-{ordinal}"),
+                        xml_tag: "Sketch".into(),
+                        source_id: None,
+                        ordinal,
+                        name: format!("Sketch{}", next(8)),
+                        kind: "Sketch".into(),
+                        input_class: Some("moProfileFeature_c".into()),
+                        ..hole.clone()
+                    };
+                    match next(6) {
+                        0 => feature = crate::records::Feature { ..hole.clone() },
+                        1 | 2 => feature.source_id = FeatureSource::from_value(1 + next(6)),
+                        _ => {}
+                    }
+                    feature
+                })
+                .collect(),
+            ..native_history()
+        };
+        let lanes = (0..=next(3))
+            .map(|lane_index| FeatureInputLane {
+                id: format!("lane-{lane_index}"),
+                names: (0..next(12))
+                    .map(|ordinal| FeatureInputName {
+                        id: format!("name-{lane_index}-{ordinal}"),
+                        parent: format!("lane-{lane_index}"),
+                        ordinal,
+                        offset: u64::from(ordinal) * 8,
+                        object_id: ObjectId::from_value(1 + next(6)),
+                        value: format!("Sketch{}", next(8)),
+                    })
+                    .collect(),
+                ..lane()
+            })
+            .collect::<Vec<_>>();
+        let histories = std::slice::from_ref(&history);
+        let index = HolePositionSketches::new(histories, &lanes);
+        for source in 0..8 {
+            assert!(
+                match (index.named(source), linear(source, histories, &lanes)) {
+                    (Some(indexed), Some(scanned)) => std::ptr::eq(indexed, scanned),
+                    (indexed, scanned) => indexed.is_none() && scanned.is_none(),
+                },
+                "source {source}"
+            );
+            found += usize::from(index.named(source).is_some());
+            ambiguous += usize::from(index.by_source.get(&source) == Some(&None));
+        }
+    }
+    assert!(found > 0 && ambiguous > 0);
 }
 
 #[test]

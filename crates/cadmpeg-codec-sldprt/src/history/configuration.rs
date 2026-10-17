@@ -397,6 +397,7 @@ fn project_configuration_design_states_within(
             scoped_lanes,
         );
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
+        let native_features = crate::records::HistoryFeatures::new(histories);
         let mut feature_states = BTreeMap::new();
         for mut feature in features {
             if let Some(base_definition) = base_definitions.get(&feature.id).copied() {
@@ -410,7 +411,7 @@ fn project_configuration_design_states_within(
                     let inherit_placements =
                         !crate::resolved_features::holes::hole_position_carrier_present(
                             &feature,
-                            histories,
+                            &native_features,
                             scoped_lanes,
                         );
                     let mut result = Ok(());
