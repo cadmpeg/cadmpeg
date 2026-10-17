@@ -54,9 +54,10 @@ fn releasing_visits_walk_each_history_oldest_first_and_keep_one_state() {
         |histories, history_index, state_index, group| {
             let history = &histories[history_index];
             assert!(history.topology(&history.states()[state_index]).is_some());
-            assert!(
-                history.materialized_state_count() <= 2,
-                "the previous visit's state and this one"
+            assert_eq!(
+                history.materialized_state_count(),
+                1,
+                "the previous visit's state advanced to this one"
             );
             assert_eq!(group, vec![(history_index, state_index); 2]);
             visited.push((history_index, state_index));
