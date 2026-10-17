@@ -7,6 +7,7 @@ mod codec;
 mod completeness;
 mod container;
 mod curves;
+mod depth;
 mod header_recovery;
 mod pcurves;
 mod procedural;
