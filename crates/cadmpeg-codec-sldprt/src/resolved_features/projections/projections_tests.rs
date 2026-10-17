@@ -426,7 +426,12 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "7".into(),
+                )
+                .unwrap()]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
     assert_eq!(
@@ -771,7 +776,12 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     assert!(matches!(
         group.center_faces(),
         FaceSelection::Generated { faces, .. }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "2".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "2".into(),
+                )
+                .unwrap()]
     ));
     assert!(matches!(
         group.side_one_faces(),
@@ -1138,7 +1148,12 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "7".into(),
+                )
+                .unwrap()]
                 && native == "sldprt:feature-input:surface-component-ids:7"
     ));
 
