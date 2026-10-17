@@ -190,7 +190,9 @@ macro_rules! define_model_index {
             procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_surfaces_by_id: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
-            identities: BorrowedIdentityIndex<'a, ()>,
+            /// Every identity, mapped to whether a native record owns it.
+            identities: BorrowedIdentityIndex<'a, bool>,
+            entity_identities_distinct: bool,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
             native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>,
@@ -268,30 +270,50 @@ macro_rules! define_model_index {
                     procedural_surfaces_by_id,
                     procedural_curves_by_curve,
                     identities: BorrowedIdentityIndex { slots: HashMap::new() },
+                    entity_identities_distinct: false,
                     include_native,
                     additional_native_identities,
                     native_unknowns,
                 };
-                index.identities = index.build_identity_set();
+                (index.identities, index.entity_identities_distinct) = index.build_identity_set();
                 index
             }
 
-            fn identity_set(&self) -> &BorrowedIdentityIndex<'a, ()> {
+            fn identity_set(&self) -> &BorrowedIdentityIndex<'a, bool> {
                 &self.identities
             }
 
-            fn build_identity_set(&self) -> BorrowedIdentityIndex<'a, ()> {
+            fn build_identity_set(&self) -> (BorrowedIdentityIndex<'a, bool>, bool) {
                 let mut identities = BorrowedIdentityIndex::new();
-                $(for entity in &self.ir.model.$field { identities.entry(entity.identity(), || ()); })*
-                if self.include_native {
-                    self.native_view().for_each(|_, _, records| {
-                        for record in records.records() {
-                            identities.entry(record.id(), || ());
-                        }
-                    });
-                    for identity in &self.additional_native_identities { identities.entry(identity, || ()); }
+                let mut entities = 0_usize;
+                $(
+                    entities += self.ir.model.$field.len();
+                    for entity in &self.ir.model.$field { identities.entry(entity.identity(), || false); }
+                )*
+                if !self.include_native {
+                    return (identities, false);
                 }
-                identities
+                self.native_view().for_each(|_, _, records| {
+                    entities += records.len();
+                    for record in records.records() {
+                        *identities.entry(record.id(), || true) = true;
+                    }
+                });
+                let distinct = entities == identities.slots.len();
+                for identity in &self.additional_native_identities { identities.entry(identity, || false); }
+                (identities, distinct)
+            }
+
+            /// Returns whether a native record owns `identity`. Staged identities are not
+            /// native records, and a model-only index holds no native record.
+            pub(crate) fn native_record_owns(&self, identity: &str) -> bool {
+                self.identities.slots.get(identity).copied().unwrap_or(false)
+            }
+
+            /// Returns whether every model entity and native record has its own identity.
+            /// A model-only index does not know and returns false.
+            pub(crate) fn entity_identities_distinct(&self) -> bool {
+                self.entity_identities_distinct
             }
 
             /// Returns the indexed document.
@@ -474,6 +496,51 @@ mod tests {
         assert!(!model_only
             .identities(crate::index::StandardIndex)
             .any(|identity| identity == native_id));
+    }
+
+    #[test]
+    fn identity_universe_tracks_native_owners_and_entity_distinctness() {
+        let native_record = |id: &str| {
+            NativeRecord::new(
+                crate::ids::Identity::new(id).expect("valid identity"),
+                Map::new(),
+            )
+            .expect("valid native identity")
+        };
+        let model_id = "test:fixture:point#0";
+        let native_id = "test:fixture:native#0";
+        let staged_id = "test:fixture:staged#0";
+        let mut ir = CadIr::empty();
+        ir.model.points.push(crate::topology::Point::new(
+            crate::ids::PointId::mint(model_id).unwrap(),
+            crate::features::FinitePoint3::ZERO,
+            None,
+        ));
+        let mut namespace = NativeNamespace::default();
+        namespace
+            .arenas_mut()
+            .insert("records".into(), vec![native_record(native_id)]);
+        ir.native.0.insert("test".into(), namespace);
+
+        let index = ModelIndex::with_additional_native_identities(&ir, [staged_id, native_id]);
+        assert!(index.entity_identities_distinct());
+        assert!(index.native_record_owns(native_id));
+        assert!(!index.native_record_owns(model_id));
+        assert!(!index.native_record_owns(staged_id));
+        assert!(index.contains(staged_id, crate::index::StandardIndex));
+        let model_only = ModelIndex::new_model_only(&ir);
+        assert!(!model_only.entity_identities_distinct());
+        assert!(!model_only.native_record_owns(native_id));
+
+        ir.native
+            .namespace_mut("test")
+            .arenas_mut()
+            .get_mut("records")
+            .unwrap()
+            .push(native_record(model_id));
+        let index = ModelIndex::build(&ir);
+        assert!(!index.entity_identities_distinct());
+        assert!(index.native_record_owns(model_id));
     }
 
     #[test]
