@@ -960,3 +960,117 @@ fn configuration_sketch_projection_parameter_overlay_runs_under_service_policy()
 }
 
 mod feature_copies;
+
+#[test]
+fn configuration_slots_match_the_linear_lookup() {
+    let mut configurations = Vec::new();
+    for (index, (ordinal, id)) in [
+        (0, None),
+        (1, None),
+        (1, None),
+        (2, Some("2")),
+        (3, Some("5")),
+        (4, Some("5")),
+        (5, Some("x")),
+        (6, Some("3")),
+        (3, None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut configuration = design_configuration(&format!("c{index}"), ordinal, None, None);
+        if let Some(id) = id {
+            configuration
+                .properties
+                .insert(cadmpeg_core::nonblank_literal!("id"), id.into());
+        }
+        configurations.push(configuration);
+    }
+    let slots = super::ConfigurationSlots::new(&configurations);
+    for slot in 0..8 {
+        assert_eq!(
+            slots.index_for_slot(slot),
+            super::configuration_index_for_slot(&configurations, slot),
+            "slot {slot}"
+        );
+    }
+}
+
+#[test]
+fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<(), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
+    let mut feature = crate::history::tests::feature("feature", None, 0);
+    feature
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Length"), "12mm".into());
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: std::collections::BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    }];
+    let lanes = [
+        feature_input_lane("lane", Some("0")),
+        feature_input_lane("lane-1", Some("1")),
+    ];
+    let mut base = cadmpeg_ir::CadIr::empty();
+    base.model
+        .configurations
+        .push(design_configuration("first", 0, Some(0), None));
+    base.model
+        .configurations
+        .push(design_configuration("second", 1, Some(1), None));
+    let sources = super::ConfigurationSources {
+        histories: &histories,
+        lanes: &lanes,
+        pmi_dimensions: &[],
+    };
+
+    let mut uncapped = base.clone();
+    let unprojected = super::project_configuration_design_states_within(
+        &ctx,
+        &mut uncapped,
+        sources,
+        None,
+        super::CONFIGURATION_PROJECTION_WORK,
+    )?;
+    assert_eq!(unprojected, 0);
+    assert!(uncapped
+        .model
+        .configurations
+        .iter()
+        .all(|configuration| configuration.feature_states.len() == 1
+            && configuration.parameter_values.len() == 1));
+
+    let one_pass = super::configuration_history_units(&histories).unwrap();
+    let mut capped = base.clone();
+    let unprojected = super::project_configuration_design_states_within(
+        &ctx,
+        &mut capped,
+        sources,
+        None,
+        one_pass,
+    )?;
+    assert_eq!(unprojected, 1);
+    assert_eq!(
+        capped.model.configurations[0],
+        uncapped.model.configurations[0]
+    );
+    assert!(capped.model.configurations[1].feature_states.is_empty());
+    assert!(capped.model.configurations[1].parameter_values.is_empty());
+    let loss = super::configuration_projection_capped_loss(unprojected);
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::ConfigProjectionWorkCapped.kind()
+    );
+    assert_eq!(
+        loss.message,
+        "1 configuration(s) were left without projected parameter values and feature states \
+         because the configuration pass exceeded the local work cap \
+         CONFIGURATION_PROJECTION_WORK (67108864)."
+    );
+    Ok(())
+}

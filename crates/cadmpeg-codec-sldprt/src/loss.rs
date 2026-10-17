@@ -40,6 +40,9 @@ pub(crate) enum SldprtLossCode {
     ConfigIncoherentBodyRefs,
     /// Configuration lacks a complete evaluated feature/parameter snapshot.
     ConfigIncompleteSnapshot,
+    /// The configuration pass reached its work cap; later configurations
+    /// keep empty projected states.
+    ConfigProjectionWorkCapped,
     /// Parameter lacks an evaluated scalar or a regenerable finite value.
     ParameterUnevaluated,
     /// Parameter records have empty, duplicate, or colliding names/ordinals.
@@ -170,6 +173,7 @@ impl SldprtLossCode {
         Self::ConfigAmbiguousNaming,
         Self::ConfigIncoherentBodyRefs,
         Self::ConfigIncompleteSnapshot,
+        Self::ConfigProjectionWorkCapped,
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
@@ -236,6 +240,7 @@ impl SldprtLossCode {
             Self::ConfigAmbiguousNaming => "config.ambiguous-naming",
             Self::ConfigIncoherentBodyRefs => "config.incoherent-body-refs",
             Self::ConfigIncompleteSnapshot => "config.incomplete-snapshot",
+            Self::ConfigProjectionWorkCapped => "config.projection-work-capped",
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
@@ -314,6 +319,7 @@ impl SldprtLossCode {
             | Self::ConfigAmbiguousNaming
             | Self::ConfigIncoherentBodyRefs
             | Self::ConfigIncompleteSnapshot
+            | Self::ConfigProjectionWorkCapped
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -404,6 +410,7 @@ impl SldprtLossCode {
             | Self::ConfigAmbiguousNaming
             | Self::ConfigIncoherentBodyRefs
             | Self::ConfigIncompleteSnapshot
+            | Self::ConfigProjectionWorkCapped
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -571,6 +578,7 @@ mod tests {
                 "config.ambiguous-naming",
                 "config.incoherent-body-refs",
                 "config.incomplete-snapshot",
+                "config.projection-work-capped",
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
