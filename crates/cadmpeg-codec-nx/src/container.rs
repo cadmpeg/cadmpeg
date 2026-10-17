@@ -26,7 +26,7 @@ use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
@@ -562,18 +562,6 @@ impl<'a> Container<'a> {
             .collect()
     }
 
-    /// Name the external-reference entries whose string-table search reached
-    /// its work bound, so their strings and indexed records were skipped.
-    pub(crate) fn bounded_external_reference_entries(&self) -> Vec<&DirEntry> {
-        self.external_reference_payloads()
-            .into_iter()
-            .filter(|(_, payload)| {
-                locate_extref_string_table(payload) == ExtrefStringTableSearch::Bounded
-            })
-            .map(|(entry, _)| entry)
-            .collect()
-    }
-
     /// Extract child-part strings with their owning entry and payload offset.
     pub(crate) fn external_reference_strings(&self) -> Vec<(&DirEntry, usize, String)> {
         let mut out = Vec::new();
@@ -706,91 +694,95 @@ pub(crate) struct ExtrefIndexedRecord {
     pub(crate) byte_len: usize,
 }
 
-/// Bytes the external-reference string-table search may validate in one
-/// payload, counting the length prefix and text of every candidate entry.
-/// Candidates overlap, so an unbounded search is quadratic in the payload. A
-/// table written by NX ends at the payload end and is validated once.
-const MAX_EXTREF_STRING_TABLE_SEARCH_WORK: usize = 1 << 24;
+/// Furthest an external-reference string entry reaches past its offset: a
+/// 2-byte length prefix and up to `u16::MAX` string bytes.
+const EXTREF_ENTRY_REACH: usize = 2 + 65_535;
 
-/// Outcome of the backward search for the external-reference string table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExtrefStringTableSearch {
-    /// Marker offset, entry count and first entry offset of the table.
-    Found(usize, usize, usize),
-    /// No candidate marker frames a complete table.
-    Absent,
-    /// The search spent [`MAX_EXTREF_STRING_TABLE_SEARCH_WORK`] first.
-    Bounded,
+/// What the string-table search knows about one payload offset.
+#[derive(Debug, Clone, Copy)]
+struct ExtrefReach {
+    /// End of the run of whole UTF-8 scalars without control characters that
+    /// starts at the offset.
+    text_end: usize,
+    /// Valid entries that lead from the offset exactly to the payload end.
+    entries_to_end: Option<usize>,
 }
 
-impl ExtrefStringTableSearch {
-    fn found(self) -> Option<(usize, usize, usize)> {
-        match self {
-            Self::Found(marker, count, start) => Some((marker, count, start)),
-            Self::Absent | Self::Bounded => None,
-        }
-    }
-}
-
-fn locate_extref_string_table(payload: &[u8]) -> ExtrefStringTableSearch {
-    let budget = WorkBudget::new(MAX_EXTREF_STRING_TABLE_SEARCH_WORK);
-    let Some(last_marker) = payload.len().checked_sub(4) else {
-        return ExtrefStringTableSearch::Absent;
+/// Width of the UTF-8 scalar at `at` when it is not a control character.
+fn extref_text_scalar_width(payload: &[u8], at: usize) -> Option<usize> {
+    let width = match *payload.get(at)? {
+        0x00..=0x7f => 1,
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf4 => 4,
+        _ => return None,
     };
-    for marker in (0..last_marker).rev() {
-        if payload[marker] != 1 {
+    let scalar = std::str::from_utf8(payload.get(at..at.checked_add(width)?)?).ok()?;
+    (!scalar.chars().any(char::is_control)).then_some(width)
+}
+
+/// Find the external-reference string table: the last `1` marker whose u32
+/// count is followed by exactly that many length-prefixed, nonempty UTF-8
+/// strings without control characters that end at the payload end. Returns
+/// the marker offset, entry count and first entry offset.
+///
+/// Each entry fixes where the next one starts, so one backward pass counts
+/// the entries that lead from every offset to the payload end. A count is
+/// read at most [`EXTREF_ENTRY_REACH`] bytes after it is written, so only
+/// that window of offsets is kept.
+fn locate_extref_string_table(payload: &[u8]) -> Option<(usize, usize, usize)> {
+    let len = payload.len();
+    let window = len.min(EXTREF_ENTRY_REACH) + 1;
+    let slot = |offset: usize| offset % window;
+    let mut reach = Vec::new();
+    reach.resize(
+        window,
+        ExtrefReach {
+            text_end: len,
+            entries_to_end: Some(0),
+        },
+    );
+    for at in (0..len).rev() {
+        let text_end = extref_text_scalar_width(payload, at)
+            .map_or(at, |width| reach[slot(at + width)].text_end);
+        let entries_to_end = (|| {
+            let length = usize::from(View::u16_le_at(payload, at)?);
+            let text = at + 2;
+            let end = text.checked_add(length)?;
+            let run_end = reach[slot(text)].text_end;
+            // Bytes inside a scalar are continuation bytes, so a scalar start
+            // inside the run is a boundary of the run's scalars.
+            let whole_scalars = end == run_end
+                || (end < run_end && extref_text_scalar_width(payload, end).is_some());
+            if length == 0 || !whole_scalars {
+                return None;
+            }
+            reach[slot(end)].entries_to_end?.checked_add(1)
+        })();
+        reach[slot(at)] = ExtrefReach {
+            text_end,
+            entries_to_end,
+        };
+        if payload[at] != 1 {
             continue;
         }
-        let Some(count) = View::u32_le_at(payload, marker + 1) else {
+        let Some(count) = View::u32_le_at(payload, at + 1) else {
             continue;
         };
-        let Some(start) = marker.checked_add(5) else {
-            continue;
-        };
-        // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
-        let Some(remaining) = payload.len().checked_sub(start) else {
-            continue;
-        };
-        let Some(count) = bounded_len(u64::from(count), 3, remaining) else {
-            continue;
-        };
-        let mut pos = start;
-        let mut valid = true;
-        for _ in 0..count {
-            let entry = (|| {
-                let length = View::u16_le_at(payload, pos).map(usize::from)?;
-                let string_offset = pos.checked_add(2)?;
-                let end = string_offset.checked_add(length)?;
-                Some((end, payload.get(string_offset..end)?))
-            })();
-            let Some((end, raw)) = entry else {
-                valid = false;
-                break;
-            };
-            if !budget.charge_by(end - pos) {
-                return ExtrefStringTableSearch::Bounded;
+        let start = at + 5;
+        if let Some(entries) = reach[slot(start)].entries_to_end {
+            if u64::try_from(entries) == Ok(u64::from(count)) {
+                return Some((at, entries, start));
             }
-            let Ok(value) = std::str::from_utf8(raw) else {
-                valid = false;
-                break;
-            };
-            if value.is_empty() || value.chars().any(char::is_control) {
-                valid = false;
-                break;
-            }
-            pos = end;
-        }
-        if valid && pos == payload.len() {
-            return ExtrefStringTableSearch::Found(marker, count, start);
         }
     }
-    ExtrefStringTableSearch::Absent
+    None
 }
 
 type ExtrefStringTable = (usize, Vec<(usize, String)>);
 
 fn parse_extref_string_table(payload: &[u8]) -> Option<ExtrefStringTable> {
-    let (marker, count, start) = locate_extref_string_table(payload).found()?;
+    let (marker, count, start) = locate_extref_string_table(payload)?;
     let mut out = Vec::new();
     let mut pos = start;
     for _ in 0..count {
@@ -870,7 +862,7 @@ fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefIndexedRecord>>
     if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
         return None;
     }
-    let (string_table, _, _) = locate_extref_string_table(payload).found()?;
+    let (string_table, _, _) = locate_extref_string_table(payload)?;
     let mut directory = Vec::new();
     let mut record_ids = std::collections::BTreeSet::new();
     let mut at = 25usize;

@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
+use crate::grouping::group_pairs;
 use cadmpeg_core::CodecError;
 
 pub(super) mod construction_records;
@@ -4141,58 +4142,64 @@ pub(super) fn feature_operation_body_identity_segment_uses(
 
 const BODY_HISTORY_TERMINAL_STREAM_ROLE: u32 = 16;
 
-fn body_history_partition_stream(
-    binding: &SegmentBodyBinding,
+/// The partition stream closing each plain stream's body-history unit, keyed
+/// by stream ordinal.
+///
+/// A unit is a maximal run of plain streams followed directly by a partition
+/// stream. Each stream of the run has exactly one plain binding, and only the
+/// last binding has the terminal role.
+fn body_history_partition_streams(
     bindings: &[SegmentBodyBinding],
     streams: &[crate::parasolid::Stream],
+) -> BTreeMap<usize, u32> {
+    let plain_bindings = sole_by_key(
+        bindings
+            .iter()
+            .filter(|binding| binding.stream_kind == crate::parasolid::StreamKind::Plain),
+        |binding| binding.stream_ordinal,
+    );
+    let complete_run = |run: std::ops::Range<usize>| {
+        !run.is_empty()
+            && run.clone().all(|ordinal| {
+                u32::try_from(ordinal)
+                    .ok()
+                    .and_then(|key| plain_bindings.get(&key).copied().flatten())
+                    .is_some_and(|binding| {
+                        (binding.stream_role == BODY_HISTORY_TERMINAL_STREAM_ROLE)
+                            == (ordinal + 1 == run.end)
+                    })
+            })
+    };
+    let mut partitions = BTreeMap::new();
+    let mut run_start = 0;
+    for (ordinal, stream) in streams.iter().enumerate() {
+        if stream.kind() == crate::parasolid::StreamKind::Plain {
+            continue;
+        }
+        if stream.kind() == crate::parasolid::StreamKind::Partition
+            && complete_run(run_start..ordinal)
+        {
+            if let Ok(partition) = u32::try_from(ordinal) {
+                for plain in run_start..ordinal {
+                    partitions.insert(plain, partition);
+                }
+            }
+        }
+        run_start = ordinal + 1;
+    }
+    partitions
+}
+
+fn body_history_partition_stream(
+    binding: &SegmentBodyBinding,
+    partitions: &BTreeMap<usize, u32>,
 ) -> Option<u32> {
     if binding.stream_kind != crate::parasolid::StreamKind::Plain {
         return None;
     }
-    let Ok(stream_ordinal) = usize::try_from(binding.stream_ordinal) else {
-        return None;
-    };
-    if streams
-        .get(stream_ordinal)
-        .is_none_or(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
-    {
-        return None;
-    }
-    let partition_ordinal = streams
-        .iter()
-        .enumerate()
-        .skip(stream_ordinal + 1)
-        .find_map(|(ordinal, stream)| {
-            (stream.kind() == crate::parasolid::StreamKind::Partition).then_some(ordinal)
-        })?;
-    let run_start = streams[..stream_ordinal]
-        .iter()
-        .rposition(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
-        .map_or(0, |ordinal| ordinal + 1);
-    let run_streams = streams.get(run_start..partition_ordinal)?;
-    if !run_streams
-        .iter()
-        .all(|stream| stream.kind() == crate::parasolid::StreamKind::Plain)
-    {
-        return None;
-    }
-
-    let mut terminal_role = None;
-    for ordinal in run_start..partition_ordinal {
-        let mut matches = bindings.iter().filter(|candidate| {
-            candidate.stream_kind == crate::parasolid::StreamKind::Plain
-                && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
-        });
-        let candidate = matches.next()?;
-        if matches.next().is_some() || terminal_role == Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
-            return None;
-        }
-        terminal_role = Some(candidate.stream_role);
-    }
-    if terminal_role != Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
-        return None;
-    }
-    u32::try_from(partition_ordinal).ok()
+    partitions
+        .get(&usize::try_from(binding.stream_ordinal).ok()?)
+        .copied()
 }
 
 /// Resolve body-write GROUP nodes only inside their complete body-history unit.
@@ -4210,45 +4217,52 @@ pub(super) fn feature_operation_body_partition_uses(
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
     group_members: &[crate::native::parasolid::ParasolidGroupMember],
 ) -> Vec<FeatureOperationBodyPartitionUse> {
+    let sole_writes = sole_by_key(writes, |write| write.id.as_str());
+    let sole_bindings = sole_by_key(bindings, |binding| binding.id.as_str());
+    let partitions = body_history_partition_streams(bindings, streams);
+    let groups_by_partition_node = group_pairs(groups.iter().filter_map(|group| {
+        Some((
+            (group.origin.partition_stream_ordinal()?, group.node_id),
+            group.id.as_str(),
+        ))
+    }));
+    let members_by_partition_node = group_pairs(group_members.iter().map(|member| {
+        (
+            (member.partition_stream_ordinal, member.group_node_id),
+            member.id.as_str(),
+        )
+    }));
     let mut output = Vec::new();
     for image_use in image_uses {
-        let mut matching_writes = writes
-            .iter()
-            .filter(|write| write.id == image_use.operation_body_write);
-        let Some(write) = matching_writes.next() else {
-            continue;
-        };
-        if matching_writes.next().is_some() {
-            continue;
-        }
-        let mut matching_bindings = bindings
-            .iter()
-            .filter(|binding| binding.id == image_use.segment_body_binding);
-        let Some(binding) = matching_bindings.next() else {
-            continue;
-        };
-        if matching_bindings.next().is_some() {
-            continue;
-        }
-        let Some(partition_stream_ordinal) =
-            body_history_partition_stream(binding, bindings, streams)
+        let Some(Some(write)) = sole_writes
+            .get(image_use.operation_body_write.as_str())
+            .copied()
         else {
             continue;
         };
-        let mut parasolid_group_records = Vec::new();
-        for group in groups.iter().filter(|group| {
-            group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
-                && group.node_id == write.frame.group_node().value()
-        }) {
-            parasolid_group_records.push(group.id.clone());
-        }
-        let mut parasolid_group_members = Vec::new();
-        for member in group_members.iter().filter(|member| {
-            member.partition_stream_ordinal == partition_stream_ordinal
-                && member.group_node_id == write.frame.group_node().value()
-        }) {
-            parasolid_group_members.push(member.id.clone());
-        }
+        let Some(Some(binding)) = sole_bindings
+            .get(image_use.segment_body_binding.as_str())
+            .copied()
+        else {
+            continue;
+        };
+        let Some(partition_stream_ordinal) = body_history_partition_stream(binding, &partitions)
+        else {
+            continue;
+        };
+        let key = (partition_stream_ordinal, write.frame.group_node().value());
+        let parasolid_group_records = groups_by_partition_node
+            .get(&key)
+            .into_iter()
+            .flatten()
+            .map(|id| (*id).to_owned())
+            .collect();
+        let parasolid_group_members = members_by_partition_node
+            .get(&key)
+            .into_iter()
+            .flatten()
+            .map(|id| (*id).to_owned())
+            .collect();
         let item = FeatureOperationBodyPartitionUse {
             id: write
                 .id
@@ -5081,15 +5095,49 @@ pub(super) fn feature_input_block_identity_groups(
     output
 }
 
-fn visit_column_slots<'a>(
+/// One column-row slot and the sole column table that lists its row.
+struct ColumnSlot<'a> {
+    row: &'a str,
+    row_kind: ColumnIndexRowKind,
+    slot: ColumnRowSlot,
+    source_offset: u64,
+    table: Option<&'a str>,
+}
+
+/// Column-row slots grouped by the block they address, in index, linked and
+/// target row order.
+fn column_slots_by_block<'a>(
     index_rows: &'a [DataBlockIndexRow],
     linked_rows: &'a [DataBlockLinkedIndexRow],
     target_rows: &'a [DataBlockTargetIndexRow],
-    mut visit: impl FnMut(&'a str, &'a str, ColumnIndexRowKind, ColumnRowSlot, u64),
-) {
+    tables: &'a [DataBlockColumnIndexTable],
+) -> BTreeMap<&'a str, Vec<ColumnSlot<'a>>> {
+    // A row listed twice, in one table or in two, has no sole table.
+    let mut row_tables = BTreeMap::new();
+    for table in tables {
+        for row in std::iter::once(table.opening_linked_row.as_str())
+            .chain(table.rows.target_rows().iter().map(String::as_str))
+            .chain(table.rows.linked_rows().iter().map(String::as_str))
+        {
+            row_tables
+                .entry(row)
+                .and_modify(|table| *table = None)
+                .or_insert(Some(table.id.as_str()));
+        }
+    }
+    let mut slots = BTreeMap::<&str, Vec<_>>::new();
+    let mut push = |data_block, row: &'a str, row_kind, slot, source_offset| {
+        slots.entry(data_block).or_default().push(ColumnSlot {
+            row,
+            row_kind,
+            slot,
+            source_offset,
+            table: row_tables.get(row).copied().flatten(),
+        });
+    };
     for row in index_rows {
         for (slot, token) in ColumnRowSlot::ALL.into_iter().zip(row.frame.indices()) {
-            visit(
+            push(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::Index,
@@ -5103,7 +5151,7 @@ fn visit_column_slots<'a>(
             .into_iter()
             .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
         {
-            visit(
+            push(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::LinkedIndex,
@@ -5117,7 +5165,7 @@ fn visit_column_slots<'a>(
             .into_iter()
             .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
         {
-            visit(
+            push(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::TargetIndex,
@@ -5126,25 +5174,7 @@ fn visit_column_slots<'a>(
             );
         }
     }
-}
-
-fn unique_column_table<'a>(row: &str, tables: &'a [DataBlockColumnIndexTable]) -> Option<&'a str> {
-    let mut unique = None;
-    for table in tables {
-        for candidate in std::iter::once(table.opening_linked_row.as_str())
-            .chain(table.rows.target_rows().iter().map(String::as_str))
-            .chain(table.rows.linked_rows().iter().map(String::as_str))
-        {
-            if candidate != row {
-                continue;
-            }
-            if unique.is_some() {
-                return None;
-            }
-            unique = Some(table.id.as_str());
-        }
-    }
-    unique
+    slots
 }
 
 fn format_column_relation_id(
@@ -5169,40 +5199,34 @@ pub(super) fn feature_input_column_row_uses(
     target_rows: &[DataBlockTargetIndexRow],
     tables: &[DataBlockColumnIndexTable],
 ) -> Vec<FeatureInputColumnRowUse> {
+    let slots_by_block = column_slots_by_block(index_rows, linked_rows, target_rows, tables);
     let mut output = Vec::new();
     for input in inputs {
-        let mut ordinal = 0usize;
-        visit_column_slots(
-            index_rows,
-            linked_rows,
-            target_rows,
-            |data_block, row, row_kind, slot, source_offset| {
-                if data_block != input.data_block {
-                    return;
-                }
-                let table = unique_column_table(row, tables);
-
-                output.push(FeatureInputColumnRowUse {
-                    id: format_column_relation_id(
-                        "nx:feature-history:input-column-row-use#",
-                        input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
-                        None,
-                        row_kind,
-                        ordinal,
-                    ),
-                    input_block: input.id.clone(),
-                    operation_label: input.operation_label.clone(),
-                    input_slot: input.input_slot,
-                    row_kind,
-                    column_row: row.to_owned(),
-                    column_table: table.map(ToOwned::to_owned),
-                    row_slot: slot,
-                    data_block: input.data_block.clone(),
-                    source_offset,
-                });
-                ordinal += 1;
-            },
-        );
+        for (ordinal, slot) in slots_by_block
+            .get(input.data_block.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            output.push(FeatureInputColumnRowUse {
+                id: format_column_relation_id(
+                    "nx:feature-history:input-column-row-use#",
+                    input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
+                    None,
+                    slot.row_kind,
+                    ordinal,
+                ),
+                input_block: input.id.clone(),
+                operation_label: input.operation_label.clone(),
+                input_slot: input.input_slot,
+                row_kind: slot.row_kind,
+                column_row: slot.row.to_owned(),
+                column_table: slot.table.map(ToOwned::to_owned),
+                row_slot: slot.slot,
+                data_block: input.data_block.clone(),
+                source_offset: slot.source_offset,
+            });
+        }
     }
     output
 }
@@ -5216,48 +5240,42 @@ pub(super) fn feature_datum_csys_column_row_uses(
     target_rows: &[DataBlockTargetIndexRow],
     tables: &[DataBlockColumnIndexTable],
 ) -> Vec<FeatureDatumCsysColumnRowUse> {
+    let slots_by_block = column_slots_by_block(index_rows, linked_rows, target_rows, tables);
     let mut output = Vec::new();
     for construction in constructions {
         for (construction_slot, (_, data_block, source_offset)) in DatumCsysSlot::ALL
             .into_iter()
             .zip(construction.frame.references())
         {
-            let mut ordinal = 0usize;
-            visit_column_slots(
-                index_rows,
-                linked_rows,
-                target_rows,
-                |target, row, row_kind, row_slot, row_source_offset| {
-                    if target != data_block {
-                        return;
-                    }
-                    let table = unique_column_table(row, tables);
-
-                    output.push(FeatureDatumCsysColumnRowUse {
-                        id: format_column_relation_id(
-                            "nx:feature-history:datum-csys-column-row-use#",
-                            construction
-                                .id
-                                .rsplit_once('#')
-                                .map_or("unknown", |(_, key)| key),
-                            Some(construction_slot),
-                            row_kind,
-                            ordinal,
-                        ),
-                        construction: construction.id.clone(),
-                        operation_label: construction.operation_label.clone(),
-                        construction_slot,
-                        row_kind,
-                        column_row: row.to_owned(),
-                        column_table: table.map(ToOwned::to_owned),
-                        row_slot,
-                        data_block: data_block.to_owned(),
-                        construction_source_offset: source_offset,
-                        row_source_offset,
-                    });
-                    ordinal += 1;
-                },
-            );
+            for (ordinal, slot) in slots_by_block
+                .get(data_block.as_str())
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                output.push(FeatureDatumCsysColumnRowUse {
+                    id: format_column_relation_id(
+                        "nx:feature-history:datum-csys-column-row-use#",
+                        construction
+                            .id
+                            .rsplit_once('#')
+                            .map_or("unknown", |(_, key)| key),
+                        Some(construction_slot),
+                        slot.row_kind,
+                        ordinal,
+                    ),
+                    construction: construction.id.clone(),
+                    operation_label: construction.operation_label.clone(),
+                    construction_slot,
+                    row_kind: slot.row_kind,
+                    column_row: slot.row.to_owned(),
+                    column_table: slot.table.map(ToOwned::to_owned),
+                    row_slot: slot.slot,
+                    data_block: data_block.to_owned(),
+                    construction_source_offset: source_offset,
+                    row_source_offset: slot.source_offset,
+                });
+            }
         }
     }
     output

@@ -31,6 +31,7 @@ use super::support_uv::{
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
+use crate::grouping::group_pairs;
 use crate::loss::NxLossCode;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
@@ -1541,56 +1542,57 @@ pub(super) fn topology_body_node_ids(
             body_xmts.insert(body_xmt);
         }
     }
+    let shells_by_body = group_pairs(
+        graph
+            .of_kind(NodeKind::Shell)
+            .filter_map(|shell| Some((u32::from(shell.shell_fields()?.body?), shell.xmt()))),
+    );
+    let faces_by_shell = group_pairs(
+        graph
+            .of_kind(NodeKind::Face)
+            .filter_map(|face| Some((u32::from(face.face_fields()?.shell?), face))),
+    );
+    let loops_by_face = group_pairs(
+        graph
+            .of_kind(NodeKind::Loop)
+            .filter_map(|loop_| Some((u32::from(loop_.loop_fields()?.face?), loop_.xmt()))),
+    );
+    let fins_by_loop = group_pairs(graph.of_kind(NodeKind::Fin).filter_map(|fin| {
+        let fields = fin.fin_fields()?;
+        Some((u32::from(fields.loop_xmt?), (fields.edge, fields.vertex)))
+    }));
+    let edges_by_xmt = group_pairs(graph.of_kind(NodeKind::Edge).map(|edge| (edge.xmt(), edge)));
+    let vertices_by_xmt = group_pairs(
+        graph
+            .of_kind(NodeKind::Vertex)
+            .map(|vertex| (vertex.xmt(), vertex)),
+    );
+    let children = |groups: &BTreeMap<u32, Vec<u32>>, parent: &u32| {
+        groups
+            .get(parent)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>()
+    };
     let mut bodies = BTreeMap::new();
     'body: for body_xmt in body_xmts {
-        let mut shells = BTreeSet::new();
-        for shell in graph.of_kind(NodeKind::Shell) {
-            if shell
-                .shell_fields()
-                .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
-            {
-                shells.insert(shell.xmt());
-            }
-        }
-        let mut faces = Vec::new();
-        let mut face_xmts = BTreeSet::new();
-        for face in graph.of_kind(NodeKind::Face) {
-            if face.face_fields().is_some_and(|fields| {
-                fields
-                    .shell
-                    .is_some_and(|target| shells.contains(&u32::from(target)))
-            }) {
-                faces.push(face);
-                face_xmts.insert(face.xmt());
-            }
-        }
-        let mut loops = BTreeSet::new();
-        for loop_ in graph.of_kind(NodeKind::Loop) {
-            if loop_.loop_fields().is_some_and(|fields| {
-                fields
-                    .face
-                    .is_some_and(|target| face_xmts.contains(&u32::from(target)))
-            }) {
-                loops.insert(loop_.xmt());
-            }
-        }
-        let mut fins = Vec::new();
-        for fin in graph.of_kind(NodeKind::Fin) {
-            if fin.fin_fields().is_some_and(|fields| {
-                fields
-                    .loop_xmt
-                    .is_some_and(|target| loops.contains(&u32::from(target)))
-            }) {
-                fins.push(fin);
-            }
-        }
+        let shells = children(&shells_by_body, &body_xmt);
+        let faces = shells
+            .iter()
+            .flat_map(|shell| faces_by_shell.get(shell).into_iter().flatten().copied())
+            .collect::<Vec<_>>();
+        let loops = faces
+            .iter()
+            .flat_map(|face| children(&loops_by_face, &face.xmt()))
+            .collect::<Vec<_>>();
         let mut edge_xmts = BTreeSet::new();
         let mut vertex_xmts = BTreeSet::new();
-        for fin in fins {
-            let Some(fields) = fin.fin_fields() else {
-                continue;
-            };
-            let (Some(edge), Some(vertex)) = (fields.edge, fields.vertex) else {
+        for &(edge, vertex) in loops
+            .iter()
+            .flat_map(|loop_xmt| fins_by_loop.get(loop_xmt).into_iter().flatten())
+        {
+            let (Some(edge), Some(vertex)) = (edge, vertex) else {
                 continue 'body;
             };
             edge_xmts.insert(u32::from(edge));
@@ -1603,31 +1605,21 @@ pub(super) fn topology_body_node_ids(
             };
             ids.insert(id);
         }
-        let mut edge_count = 0;
-        for edge in graph.of_kind(NodeKind::Edge) {
-            if edge_xmts.contains(&edge.xmt()) {
-                edge_count += 1;
-                let Some(id) = edge.u32_at(4) else {
+        for (nodes_by_xmt, xmts) in [(&edges_by_xmt, edge_xmts), (&vertices_by_xmt, vertex_xmts)] {
+            let mut count = 0;
+            for node in xmts
+                .iter()
+                .flat_map(|xmt| nodes_by_xmt.get(xmt).into_iter().flatten())
+            {
+                count += 1;
+                let Some(id) = node.u32_at(4) else {
                     continue 'body;
                 };
                 ids.insert(id);
             }
-        }
-        if edge_count != edge_xmts.len() {
-            continue;
-        }
-        let mut vertex_count = 0;
-        for vertex in graph.of_kind(NodeKind::Vertex) {
-            if vertex_xmts.contains(&vertex.xmt()) {
-                vertex_count += 1;
-                let Some(id) = vertex.u32_at(4) else {
-                    continue 'body;
-                };
-                ids.insert(id);
+            if count != xmts.len() {
+                continue 'body;
             }
-        }
-        if vertex_count != vertex_xmts.len() {
-            continue;
         }
         bodies.insert(
             scope.id_from_display::<BodyId>(&cadmpeg_ir::identity_component!("body"), body_xmt)?,
