@@ -106,12 +106,17 @@ work caps bound them. A new copy of bytes that the decoded document keeps
 must call `retain_bytes` before the copy.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
-parse it and bound the tree's storage by the per-expansion allowance. XML
-attributes, namespaces and text copies are estimated from the scan, and the
-rest of the allowance becomes roxmltree's node limit. A JSON tree is
-estimated from its delimiter counts as a `serde_json::Value` tree, also for
-typed parses. A tree that could exceed the allowance is `NotImplemented` and
-does not set the fuse.
+parse it, charge its depth to the session, and bound the tree's storage by
+the per-expansion allowance. For XML, the scan counts what roxmltree 0.21.1
+allocates: the node and attribute slots that it reserves for every `<` and
+`=` in the text, the texts and attribute values that it copies (those with
+references, carriage returns, CDATA, tabs or line breaks), the merged text
+pieces, the per-level parser state, and the namespaces. The rest of the
+allowance becomes roxmltree's node limit. The depth is charged before
+roxmltree parses, because roxmltree recurses once per element level. A JSON
+tree is estimated from its delimiter counts as a `serde_json::Value` tree,
+also for typed parses. A tree that could exceed the allowance is
+`NotImplemented` and does not set the fuse.
 
 ## Retained-byte availability
 
