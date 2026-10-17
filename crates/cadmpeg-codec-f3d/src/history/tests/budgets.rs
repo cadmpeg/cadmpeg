@@ -181,10 +181,9 @@ fn skipped_history_does_not_charge_retained_bytes() {
         .unwrap()
         .unwrap();
         assert!(large.binding_budget_exceeded);
-        assert!(large
-            .states()
-            .iter()
-            .all(|state| state.transition.is_none()));
+        assert!(large.states().iter().all(|state| state.transition.is_none()
+            && state.bulletin_boards.is_empty()
+            && state.records.is_empty()));
         assert_eq!(remaining, available);
         assert_eq!(ctx.retained_bytes_available(), available);
     });

@@ -1821,7 +1821,7 @@ fn report_design_projection_gaps(
         .count();
     if history_budget_skips != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
-            "{history_budget_skips} ASM history stream(s) retain no historical topology because their estimated retained size exceeded the decode session's remaining retained-byte allowance."
+            "{history_budget_skips} ASM history stream(s) retain only their state headers, with no bulletin boards, history records or historical topology, because their estimated retained size exceeded the decode session's remaining retained-byte allowance."
         ),);
     }
     let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(

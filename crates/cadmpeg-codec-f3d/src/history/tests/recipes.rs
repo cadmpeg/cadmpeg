@@ -14,7 +14,7 @@
 use crate::history_records::AsmHistory;
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::bind_body_recipe_operand_history_candidates;
+use crate::history::{bind_body_recipe_operand_history_candidates, BindingHistories};
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
 };
@@ -826,7 +826,7 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         &mut operands,
         &[],
         std::slice::from_ref(&scope),
-        std::slice::from_ref(&history),
+        BindingHistories::Shared(std::slice::from_ref(&history)),
     )
     .unwrap();
 

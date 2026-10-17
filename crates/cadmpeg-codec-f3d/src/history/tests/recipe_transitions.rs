@@ -3,7 +3,8 @@
 
 use crate::history::{
     bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    historical_brep_source, select_legacy_extrude_face_candidate, LegacyFaceResolution,
+    historical_brep_source, select_legacy_extrude_face_candidate, BindingHistories,
+    LegacyFaceResolution,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -426,7 +427,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             std::slice::from_ref(&scope),
             std::slice::from_ref(&group),
             &[],
-            std::slice::from_ref(&history),
+            BindingHistories::Shared(std::slice::from_ref(&history)),
             &HashMap::new(),
         )
     })
@@ -504,7 +505,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             std::slice::from_ref(&cylinder_scope),
             std::slice::from_ref(&group),
             &[],
-            std::slice::from_ref(&cylinder_history),
+            BindingHistories::Shared(std::slice::from_ref(&cylinder_history)),
             &HashMap::new(),
         )
     })
@@ -523,7 +524,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             std::slice::from_ref(&cylinder_scope),
             std::slice::from_ref(&group),
             &[],
-            std::slice::from_ref(&cylinder_history),
+            BindingHistories::Shared(std::slice::from_ref(&cylinder_history)),
             &HashMap::new(),
         )
     })
@@ -549,7 +550,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             &[cylinder_scope],
             std::slice::from_ref(&group),
             &[],
-            &[ambiguous_geometry_history],
+            BindingHistories::Shared(&[ambiguous_geometry_history]),
             &HashMap::new(),
         )
     })
@@ -571,7 +572,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             &[scope],
             &[unrelated_group],
             &[],
-            &[history],
+            BindingHistories::Shared(&[history]),
             &HashMap::new(),
         )
     })
