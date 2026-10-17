@@ -166,6 +166,40 @@ fn an_f3d_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
     );
 }
 
+/// A loss policy judges the whole source, so every `--reject-lossy` scope
+/// decodes at full depth. A geometry-depth decode of this part holds none of
+/// its design history, so STEP export would report none of it lost.
+#[cfg(feature = "fcstd")]
+#[test]
+fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("design_history.FCStd");
+    fs::write(
+        &input,
+        include_bytes!("../../../../corpus/freecad_fcstd/fixtures/design_history.FCStd"),
+    )
+    .unwrap();
+    let report = dir.path().join("report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--reject-lossy=export",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "parametric/design record(s) were not represented in STEP",
+        ));
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(report["decode_report"]["transfer"]["transfer"], "full");
+}
+
 #[cfg(any(feature = "fcstd", feature = "f3d"))]
 fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[u8]) {
     let dir = tempdir().unwrap();
