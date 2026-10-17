@@ -1599,17 +1599,23 @@ pub(super) fn symbolic_thread_feature_definition() -> FeatureDefinition {
     })
 }
 
+/// The last expression of each identity.
+pub(super) fn expressions_by_id(
+    expressions: &[crate::native::om::ParameterFormula],
+) -> BTreeMap<&str, &crate::native::om::ParameterFormula> {
+    expressions
+        .iter()
+        .map(|expression| (expression.id.as_str(), expression))
+        .collect()
+}
+
 pub(super) fn native_feature_parameters(
     uses: &[&crate::native::features::FeatureParameterUse],
-    expressions: &[crate::native::om::ParameterFormula],
+    expressions_by_id: &BTreeMap<&str, &crate::native::om::ParameterFormula>,
 ) -> BTreeMap<String, String> {
     let mut parameters = BTreeMap::new();
     for parameter_use in uses {
-        let Some(expression) = expressions
-            .iter()
-            .rev()
-            .find(|expression| expression.id == parameter_use.expression)
-        else {
+        let Some(expression) = expressions_by_id.get(parameter_use.expression.as_str()) else {
             return BTreeMap::new();
         };
         if parameters.contains_key(expression.name.as_str()) {
