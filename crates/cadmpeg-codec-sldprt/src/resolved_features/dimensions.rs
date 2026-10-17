@@ -1332,12 +1332,14 @@ fn radial_dimension_radius(parameter: &cadmpeg_ir::features::DesignParameter) ->
 /// native.
 fn reconcile_direct_circle_dimension_carriers(
     entities: &mut Vec<SketchEntity>,
-    sketches: &mut [Sketch],
+    sketch: Option<&mut Sketch>,
     sketch_id: &cadmpeg_ir::sketches::SketchId,
     feature: &str,
     inputs: &MarkerCircleInputs<'_>,
 ) {
     let mut replacements = HashMap::<&str, &SketchEntityId>::new();
+    let mut markers_by_id = None;
+    let mut typed_circles = None;
     for relation in inputs.circle_diameters(feature) {
         let ([operand] | [_, operand]) = relation.operands.as_slice() else {
             continue;
@@ -1345,51 +1347,42 @@ fn reconcile_direct_circle_dimension_carriers(
         let Some(marker_id) = operand.entity_ref.as_deref() else {
             continue;
         };
-        let mut candidate = None;
-        let mut ambiguous = false;
-        for marker in inputs
-            .markers(feature)
-            .iter()
-            .flat_map(|group| group.markers.iter().copied())
-        {
-            if marker.id() != marker_id {
-                continue;
-            }
-            if candidate.is_some() {
-                ambiguous = true;
-                break;
-            }
-            candidate = Some(marker);
-        }
-        let Some(marker) = candidate.filter(|_| !ambiguous) else {
+        let markers_by_id = markers_by_id.get_or_insert_with(|| {
+            unique_by_key(
+                inputs
+                    .markers(feature)
+                    .iter()
+                    .flat_map(|group| group.markers.iter().copied())
+                    .map(|marker| (marker.id(), marker)),
+            )
+        });
+        let Some(Some(marker)) = markers_by_id.get(marker_id).copied() else {
             continue;
         };
         if marker.kind() != SketchInputKind::LineOrCircle || marker.coordinates_m.is_none() {
             continue;
         }
-        let mut typed_candidate = None;
-        let mut ambiguous = false;
-        for entity in &*entities {
-            if entity.sketch != *sketch_id
-                || entity.native_ref.as_deref() != Some(marker.id())
-                || entity.geometry_ref.as_deref() != Some(relation.id.as_str())
-                || !matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Circle { .. }
-                )
-            {
-                continue;
-            }
-            if typed_candidate.is_some() {
-                ambiguous = true;
-                break;
-            }
-            typed_candidate = Some(entity);
-        }
-        let Some(typed_entity) = typed_candidate.filter(|_| !ambiguous) else {
+        let typed_circles = typed_circles.get_or_insert_with(|| {
+            unique_by_key(entities.iter().filter_map(|entity| {
+                let carrier = (
+                    entity.native_ref.as_deref()?,
+                    entity.geometry_ref.as_deref()?,
+                );
+                (entity.sketch == *sketch_id
+                    && matches!(
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Circle { .. }
+                    ))
+                .then(|| (carrier, entity.id()))
+            }))
+        });
+        let Some(Some(typed_entity)) = typed_circles
+            .get(&(marker.id(), relation.id.as_str()))
+            .copied()
+        else {
             continue;
         };
-        replacements.insert(marker.id(), typed_entity.id());
+        replacements.insert(marker.id(), typed_entity);
     }
     if replacements.is_empty() {
         return;
@@ -1419,7 +1412,7 @@ fn reconcile_direct_circle_dimension_carriers(
     if removed.is_empty() {
         return;
     }
-    if let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) {
+    if let Some(sketch) = sketch {
         let mut profiles = Vec::new();
         for profile in &sketch.profiles {
             let mut present = HashSet::<&SketchEntityId>::new();
@@ -1455,6 +1448,20 @@ fn reconcile_direct_circle_dimension_carriers(
         sketch.profiles = profiles;
     }
     entities.retain(|entity| !removed.contains_key(entity.id()));
+}
+
+/// Map each key to its only item, or to `None` when the key repeats.
+fn unique_by_key<K: Eq + std::hash::Hash, T>(
+    items: impl Iterator<Item = (K, T)>,
+) -> HashMap<K, Option<T>> {
+    let mut unique = HashMap::new();
+    for (key, item) in items {
+        unique
+            .entry(key)
+            .and_modify(|only| *only = None)
+            .or_insert(Some(item));
+    }
+    unique
 }
 
 fn marker_circle_carrier_reference(lane_key: &str, offset: usize) -> String {
@@ -1664,6 +1671,15 @@ impl<'a> MarkerCircleInputs<'a> {
     }
 }
 
+/// The first sketch with this id.
+fn sketch_at<'s>(
+    sketches: &'s mut [Sketch],
+    positions: &HashMap<cadmpeg_ir::sketches::SketchId, usize>,
+    id: &cadmpeg_ir::sketches::SketchId,
+) -> Option<&'s mut Sketch> {
+    sketches.get_mut(*positions.get(id)?)
+}
+
 /// Materialize marker-only circles whose radial witnesses have exact radial
 /// dimensions, including repeated circles constrained to the same radius.
 pub(crate) fn project_marker_dimensioned_circles(
@@ -1678,6 +1694,12 @@ pub(crate) fn project_marker_dimensioned_circles(
 
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
     let inputs = MarkerCircleInputs::new(parameters, lanes);
+    let mut sketch_positions = HashMap::new();
+    for (position, sketch) in sketches.iter().enumerate() {
+        sketch_positions
+            .entry(sketch.id.clone())
+            .or_insert(position);
+    }
     'feature: for feature in features {
         let (
             Some(native_ref),
@@ -1692,7 +1714,11 @@ pub(crate) fn project_marker_dimensioned_circles(
             continue;
         };
         reconcile_direct_circle_dimension_carriers(
-            entities, sketches, sketch_id, native_ref, &inputs,
+            entities,
+            sketch_at(sketches, &sketch_positions, sketch_id),
+            sketch_id,
+            native_ref,
+            &inputs,
         );
         let radial_dimensions = inputs.radial_dimensions(&feature.id).to_vec();
         if radial_dimensions.is_empty() {
@@ -1783,9 +1809,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         let removed = SketchEntityId::clone(carrier_id);
                         let carrier_ref = carrier_ref.to_owned();
                         entities.retain(|entity| entity.id() != &removed);
-                        let Some(sketch) =
-                            sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
-                        else {
+                        let Some(sketch) = sketch_at(sketches, &sketch_positions, sketch_id) else {
                             continue;
                         };
                         sketch.profiles.retain_uses(|usage| usage.entity != removed);
@@ -1835,6 +1859,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             continue 'feature;
         }
         let mut radial_records = Vec::new();
+        let mut native_carrier_refs = None;
         for group in feature_markers {
             let lane = group.lane;
             let mut range: Option<(usize, usize)> = None;
@@ -1860,14 +1885,20 @@ pub(crate) fn project_marker_dimensioned_circles(
                     continue;
                 }
                 let carrier_ref = marker_circle_carrier_reference(lane_key, record.0);
-                if entities.iter().any(|entity| {
-                    entity.sketch == *sketch_id
-                        && entity.native_ref.as_deref() == Some(carrier_ref.as_str())
-                        && matches!(
-                            entity.geometry.definition(),
-                            SketchGeometryDefinition::Native { .. }
-                        )
-                }) {
+                let native_carrier_refs = native_carrier_refs.get_or_insert_with(|| {
+                    entities
+                        .iter()
+                        .filter(|entity| {
+                            entity.sketch == *sketch_id
+                                && matches!(
+                                    entity.geometry.definition(),
+                                    SketchGeometryDefinition::Native { .. }
+                                )
+                        })
+                        .filter_map(|entity| entity.native_ref.as_deref())
+                        .collect::<HashSet<_>>()
+                });
+                if native_carrier_refs.contains(carrier_ref.as_str()) {
                     radial_records.push((group, *record));
                 }
             }
@@ -1967,8 +1998,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     }
                 }
                 entities.retain(|entity| !removed.contains(entity.id()));
-                let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
-                else {
+                let Some(sketch) = sketch_at(sketches, &sketch_positions, sketch_id) else {
                     continue;
                 };
                 sketch
@@ -2118,8 +2148,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         }
                     }
                     entities.retain(|entity| !removed.contains(entity.id()));
-                    let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
-                    else {
+                    let Some(sketch) = sketch_at(sketches, &sketch_positions, sketch_id) else {
                         continue;
                     };
                     sketch
@@ -2178,7 +2207,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         else {
             continue;
         };
-        let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) else {
+        let Some(sketch) = sketch_at(sketches, &sketch_positions, sketch_id) else {
             continue;
         };
         for (parameter, radius) in radial_dimensions {
