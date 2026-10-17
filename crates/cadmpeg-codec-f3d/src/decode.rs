@@ -23,7 +23,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::native::F3dNative;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
@@ -2290,8 +2290,9 @@ enum SessionPath {
 enum DesignState {
     /// Phase 2 ran. Its native records wait for finalization.
     Projected(Box<design_intent::DesignNative>),
-    /// No phase-2 output. The design reports read phase-2 records, so they do
-    /// not run; the containment loss says so.
+    /// No phase-2 output: the request is below [`DecodeDepth::Full`], or
+    /// phase 2 failed and the containment loss says so. The design reports
+    /// read phase-2 records, so they do not run.
     Absent,
 }
 
@@ -2330,7 +2331,7 @@ impl<'a> F3dDecodeSession<'a> {
         } = session_state;
         let mut report = crate::report::build_decode_report(
             scan,
-            cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+            cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), true),
             geometry_losses(&brep),
         )?;
         if undecoded_candidates != 0 {
@@ -2410,7 +2411,7 @@ impl<'a> F3dDecodeSession<'a> {
         let mut native = F3dNative::default();
         let mut report = crate::report::build_decode_report(
             scan,
-            cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+            cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
             container_losses(scan),
         )?;
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
@@ -2451,14 +2452,25 @@ impl<'a> F3dDecodeSession<'a> {
     ///
     /// This is the one point that decides whether design intent enters the
     /// document. Phase 2 does not run when the phase-1 timelines did not
-    /// decode. [`DesignState::Absent`] leaves a complete product and geometry
-    /// document from phase 1. A resource refusal, or any error after the
-    /// session fused, still refuses the document.
+    /// decode, nor below [`DecodeDepth::Full`] where
+    /// [`Self::cuts_design_intent`] holds; where it does not, phase 2 runs and
+    /// the session delivers `Full`. [`DesignState::Absent`] leaves a complete
+    /// product and geometry document from phase 1. A resource refusal, or any
+    /// error after the session fused, still refuses the document.
     fn decode_design_state(
         &mut self,
         path: &FinalizePath,
         prereqs: &prereqs::ProductPrereqs,
     ) -> Result<DesignState, CodecError> {
+        if self.ctx.depth() < DecodeDepth::Full {
+            if self.cuts_design_intent(path, prereqs) {
+                return Ok(DesignState::Absent);
+            }
+            self.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
+                DecodeDepth::Full,
+                self.report.transfer.geometry_transferred(),
+            );
+        }
         let failure = match &prereqs.design_feature_timelines {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
                 Ok(design) => {
@@ -2483,6 +2495,26 @@ impl<'a> F3dDecodeSession<'a> {
             format_args!("Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"),
         );
         Ok(DesignState::Absent)
+    }
+
+    /// Whether a decode below full depth can stop before phase 2; see
+    /// [`cuts_design_intent`].
+    fn cuts_design_intent(&self, path: &FinalizePath, prereqs: &prereqs::ProductPrereqs) -> bool {
+        let bodyless_without_body_source = match path {
+            FinalizePath::Geometry(_) => false,
+            FinalizePath::Bodyless(inputs) => {
+                inputs.mesh_projection.count == 0
+                    && container::design_breps(self.scan).next().is_none()
+                    && container::text_brep_names(self.scan).next().is_none()
+                    && prereqs.design_body_bindings.is_empty()
+                    && prereqs.design_body_members.is_empty()
+            }
+        };
+        cuts_design_intent(
+            &self.report_scope,
+            &prereqs.design_parameter_scopes,
+            bodyless_without_body_source,
+        )
     }
 
     /// Phase 1: take the geometry body bindings and decode the other product
@@ -2836,6 +2868,30 @@ impl<'a> F3dDecodeSession<'a> {
             &mut admitted_entities,
         )
     }
+}
+
+/// Whether a decode below full depth can stop before phase 2 and still agree
+/// with the full decode on every model arena and loss.
+///
+/// Phase 2 projects Canvas and Decal images into model assets. A bodyless
+/// document without a mesh, BREP stream, or declared body classifies itself
+/// by the sketch entities and canvas images phase 2 projects. An F3Z member
+/// merges into one document with the rest of its archive, so no member decides
+/// the archive's depth alone.
+fn cuts_design_intent(
+    report_scope: &crate::report::ReportScope,
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    bodyless_without_body_source: bool,
+) -> bool {
+    use crate::records::feature::scope::DesignFeatureKind;
+    matches!(report_scope, crate::report::ReportScope::Standalone)
+        && !bodyless_without_body_source
+        && !scopes.iter().any(|scope| {
+            matches!(
+                scope.kind(),
+                DesignFeatureKind::Canvas | DesignFeatureKind::Decal
+            )
+        })
 }
 
 fn brep_identity_namespace(entry: &str) -> Option<&str> {
@@ -3641,7 +3697,7 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan,
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+    report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(report.transfer.depth(), true);
     push_loss_vec(
         &mut report.losses,
         F3dLossCode::MeshVertexPrecisionReduced,
@@ -3679,7 +3735,7 @@ fn apply_bodyless_design_classification(
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+    report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(report.transfer.depth(), true);
     let message = match (sketch_entities, reference_images) {
         (0, _) => format!("presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"),
         (_, 0) => format!("sketch-only design: the document declares no body, and its {sketch_entities} sketch entity(s) are its complete geometry"),
