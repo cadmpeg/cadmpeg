@@ -396,16 +396,16 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 212.
+Production `MAX_*` constants: 210.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 67    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 98    |
+| 4    | Local work cap             | 96    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 212   |
+|      | Total                      | 210   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -414,7 +414,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 7,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 16,
-`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
 and `cadmpeg-codec-catia` 49.
 
 ## Routing
