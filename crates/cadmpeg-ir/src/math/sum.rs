@@ -774,5 +774,84 @@ pub(crate) fn product_sum<const N: usize>(
     ProductSum::from_scaled(sum.finish())
 }
 
+/// The f64 pass of [`product_sum`] over several sums whose terms share their
+/// leading factors. Lane `k` of a term is the product of the shared factors
+/// and then `lanes[k]`, formed in that order, so every product, partial sum
+/// and range test of a lane is the one `product_sum` forms for the terms
+/// `[shared.., lanes[k]]`.
+#[derive(Clone, Copy)]
+pub(crate) struct LaneProductSums<const LANES: usize> {
+    sum: [f64; LANES],
+    largest: [f64; LANES],
+    exact: [bool; LANES],
+}
+
+impl<const LANES: usize> Default for LaneProductSums<LANES> {
+    fn default() -> Self {
+        Self {
+            sum: [0.0; LANES],
+            largest: [0.0; LANES],
+            exact: [false; LANES],
+        }
+    }
+}
+
+impl<const LANES: usize> LaneProductSums<LANES> {
+    /// Add one term. `None` states a factor that is not finite, for which
+    /// `product_sum` leaves the sum undefined.
+    pub(crate) fn add<const SHARED: usize>(
+        &mut self,
+        shared: [f64; SHARED],
+        lanes: [f64; LANES],
+    ) -> Option<()> {
+        if shared.iter().chain(&lanes).any(|value| !value.is_finite()) {
+            return None;
+        }
+        if shared.contains(&0.0) {
+            return Some(());
+        }
+        let mut product = 1.0_f64;
+        let mut exact = false;
+        for factor in shared {
+            product *= factor;
+            exact |= !product.is_normal();
+        }
+        for (lane, factor) in lanes.into_iter().enumerate() {
+            if factor == 0.0 {
+                continue;
+            }
+            let lane_product = product * factor;
+            self.exact[lane] |= exact || !lane_product.is_normal();
+            self.sum[lane] += lane_product;
+            self.largest[lane] = self.largest[lane].max(lane_product.abs());
+            self.exact[lane] |= !self.sum[lane].is_finite();
+        }
+        Some(())
+    }
+
+    /// Each lane's sum where the f64 pass states it, or its replay.
+    pub(crate) fn finish(&self) -> [LaneSum; LANES] {
+        std::array::from_fn(|lane| {
+            let (sum, largest) = (self.sum[lane], self.largest[lane]);
+            let exact = self.exact[lane] || (largest != 0.0 && sum.abs() / largest < f64::EPSILON);
+            if exact {
+                LaneSum::Replay
+            } else {
+                LaneSum::Settled(scaled_finite(sum))
+            }
+        })
+    }
+}
+
+/// A lane of [`LaneProductSums`] after its f64 pass.
+#[derive(Clone, Copy)]
+pub(crate) enum LaneSum {
+    /// The f64 pass states the sum. `None` is an exact zero.
+    Settled(Option<ScaledValue>),
+    /// A product left the normal range or the sum cancelled: `product_sum`
+    /// replays the lane's terms through [`ExactSignedSum`].
+    Replay,
+}
+
 #[cfg(test)]
 mod tests;
