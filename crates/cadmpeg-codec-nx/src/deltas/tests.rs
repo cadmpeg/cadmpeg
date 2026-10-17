@@ -893,7 +893,7 @@ fn deltas_walks_auxiliary_family_tombstones() {
         "TYPE_45",
         "B_SURFACE_DATA",
         "B_CURVE_DESCRIPTOR",
-        "TYPE_141",
+        "GEOMETRIC_OWNER",
         "SUPPORT_UV",
     ] {
         assert_eq!(

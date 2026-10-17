@@ -674,28 +674,24 @@ fn deltas_walks_complete_curve_data_headers() {
 }
 
 #[test]
-fn deltas_walks_complete_type_141_records() {
-    fn record(escape: bool, xmt: u32, references: [u32; 4], boundary_statuses: [u8; 2]) -> Vec<u8> {
+fn deltas_walks_complete_geometric_owner_records() {
+    fn record(escape: bool, xmt: u32, references: [u32; 4], statuses: [u8; 4]) -> Vec<u8> {
         let mut bytes = 141u16.to_be_bytes().to_vec();
         if escape {
             bytes.push(0xff);
         }
         bytes.extend(encoded_xmt(xmt));
-        for (reference, status) in
-            references
-                .into_iter()
-                .zip([boundary_statuses[0], 0, 0, boundary_statuses[1]])
-        {
+        for (reference, status) in references.into_iter().zip(statuses) {
             bytes.extend(encoded_xmt(reference));
             bytes.push(status);
         }
         bytes
     }
 
-    let direct = record(false, 3158, [646, 3943, 3165, 131], [0, 1]);
-    let direct_extended = record(false, 33_000, [646, 3943, 3165, 131], [1, 0]);
-    let escaped = record(true, 40_000, [40_001, 1, 0, 40_002], [1, 1]);
-    let ambiguous_escaped = record(true, 325, [317, 44, 44, 8], [1, 1]);
+    let direct = record(false, 3158, [646, 3943, 3165, 131], [0, 0, 0, 1]);
+    let direct_extended = record(false, 33_000, [646, 3943, 3165, 131], [1, 0, 0, 0]);
+    let escaped = record(true, 40_000, [40_001, 40_003, 40_004, 40_002], [1, 0, 0, 1]);
+    let ambiguous_escaped = record(true, 325, [317, 44, 44, 8], [1, 0, 0, 1]);
     let mut stream = direct.clone();
     stream.extend_from_slice(&direct_extended);
     stream.extend_from_slice(&escaped);
@@ -708,7 +704,7 @@ fn deltas_walks_complete_type_141_records() {
             .unwrap();
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap()
-            ["TYPE_141"],
+            ["GEOMETRIC_OWNER"],
         4
     );
     assert_eq!(census.bytes_decoded(), decoded_len);
@@ -719,7 +715,7 @@ fn deltas_walks_complete_type_141_records() {
     assert_eq!(census.records[2].xmt, 40_000);
     assert_eq!(
         census.records[2].family.references(),
-        [40_001, 1, 0, 40_002]
+        [40_001, 40_003, 40_004, 40_002]
     );
     assert_eq!(census.records[3].canonical_bytes, ambiguous_escaped);
     assert_eq!(census.records[3].xmt, 325);
@@ -731,4 +727,36 @@ fn deltas_walks_complete_type_141_records() {
     .unwrap();
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[direct, direct_extended, escaped, ambiguous_escaped].concat()));
+
+    for escape in [false, true] {
+        for boundary_statuses in [[0, 0], [0, 1], [1, 0], [1, 1]] {
+            let statuses = [boundary_statuses[0], 0, 0, boundary_statuses[1]];
+            for (slot, invalid_status) in [(0, 2), (1, 1), (2, 1), (3, 2)] {
+                let mut invalid_statuses = statuses;
+                invalid_statuses[slot] = invalid_status;
+                let invalid = record(escape, 3158, [646, 3943, 3165, 131], invalid_statuses);
+                assert!(
+                    crate::deltas::geometric_owner_layout(&invalid, 0, usize::from(escape))
+                        .is_none()
+                );
+            }
+            let valid = record(escape, 3158, [646, 3943, 3165, 131], statuses);
+            assert!(
+                crate::deltas::geometric_owner_layout(&valid, 0, usize::from(escape)).is_some()
+            );
+            for slot in 0..4 {
+                for null in [0, 1] {
+                    let mut references = [646, 3943, 3165, 131];
+                    references[slot] = null;
+                    let invalid = record(escape, 3158, references, statuses);
+                    assert!(crate::deltas::geometric_owner_layout(
+                        &invalid,
+                        0,
+                        usize::from(escape)
+                    )
+                    .is_none());
+                }
+            }
+        }
+    }
 }

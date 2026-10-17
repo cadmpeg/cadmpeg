@@ -7,6 +7,7 @@ use super::list::ListFields;
 use super::pointer_list_block::PointerListBlockFields;
 use super::record_kind::RecordKind;
 use super::world::WorldReferences;
+use crate::framing::xmt_reference::NonNullXmt;
 use crate::iter_wire::IterWire;
 use crate::nurbs::curve_references::CurveDescriptorReferences;
 use crate::parasolid::entity_references::EntityReferences;
@@ -227,8 +228,11 @@ pub(crate) enum RecordFamily {
         references: [u32; 8],
         node_id: u32,
     },
-    Type141 {
-        references: [u32; 4],
+    GeometricOwner {
+        owner: NonNullXmt,
+        next: NonNullXmt,
+        previous: NonNullXmt,
+        shared_geometry: NonNullXmt,
     },
     SupportUv,
 }
@@ -290,7 +294,18 @@ impl Serialize for RecordFamilyReferences<'_> {
                 }
             },
             RecordFamily::SpCurve { references, .. } => references.serialize(serializer),
-            RecordFamily::Type141 { references } => references.serialize(serializer),
+            RecordFamily::GeometricOwner {
+                owner,
+                next,
+                previous,
+                shared_geometry,
+            } => [
+                u32::from(*owner),
+                u32::from(*next),
+                u32::from(*previous),
+                u32::from(*shared_geometry),
+            ]
+            .serialize(serializer),
             RecordFamily::Chart
             | RecordFamily::TermUse
             | RecordFamily::Type45
@@ -367,7 +382,7 @@ impl RecordFamily {
             RecordKind::BCurveData => 135,
             RecordKind::BCurveDescriptor => 136,
             RecordKind::SpCurve => 137,
-            RecordKind::Type141 => 141,
+            RecordKind::GeometricOwner => 141,
             RecordKind::SupportUv => 204,
         }
     }
@@ -424,7 +439,7 @@ impl RecordFamily {
             Self::BCurveData => RecordKind::BCurveData,
             Self::BCurveDescriptor { .. } => RecordKind::BCurveDescriptor,
             Self::SpCurve { .. } => RecordKind::SpCurve,
-            Self::Type141 { .. } => RecordKind::Type141,
+            Self::GeometricOwner { .. } => RecordKind::GeometricOwner,
             Self::SupportUv => RecordKind::SupportUv,
         }
     }
@@ -482,7 +497,7 @@ impl RecordFamily {
             | Self::Knots
             | Self::BCurveData
             | Self::BCurveDescriptor { .. }
-            | Self::Type141 { .. }
+            | Self::GeometricOwner { .. }
             | Self::SupportUv => None,
         }
     }
@@ -553,7 +568,18 @@ impl RecordFamily {
             Self::BCurve { references, .. } => references.to_vec(),
             Self::BCurveDescriptor { references, .. } => references.values(),
             Self::SpCurve { references, .. } => references.to_vec(),
-            Self::Type141 { references, .. } => references.to_vec(),
+            Self::GeometricOwner {
+                owner,
+                next,
+                previous,
+                shared_geometry,
+            } => [
+                u32::from(*owner),
+                u32::from(*next),
+                u32::from(*previous),
+                u32::from(*shared_geometry),
+            ]
+            .to_vec(),
             Self::Chart
             | Self::TermUse
             | Self::Type45
@@ -915,9 +941,16 @@ impl RecordFamily {
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
-            "TYPE_141" => Self::Type141 {
-                references: references.try_into().ok()?,
-            },
+            "GEOMETRIC_OWNER" => {
+                let [owner, next, previous, shared_geometry]: [u32; 4] =
+                    references.try_into().ok()?;
+                Self::GeometricOwner {
+                    owner: owner.try_into().ok()?,
+                    next: next.try_into().ok()?,
+                    previous: previous.try_into().ok()?,
+                    shared_geometry: shared_geometry.try_into().ok()?,
+                }
+            }
             "SUPPORT_UV" => {
                 references.is_empty().then_some(())?;
                 Self::SupportUv
@@ -1013,5 +1046,87 @@ mod point_coordinate_tests {
                 .is_none());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod geometric_owner_tests {
+    use super::{RecordFamily, RecordFamilyReferences};
+
+    #[test]
+    fn geometric_owner_wire_preserves_primary_pointer_order_and_rejects_null_targets() {
+        let references = [1119, 4949, 951, 936];
+        let family = RecordFamily::from_wire(
+            "GEOMETRIC_OWNER",
+            141,
+            None,
+            None,
+            None,
+            None,
+            references.to_vec(),
+        )
+        .expect("four canonical pointers");
+        let RecordFamily::GeometricOwner {
+            owner,
+            next,
+            previous,
+            shared_geometry,
+        } = &family
+        else {
+            panic!("named geometric-owner family");
+        };
+        assert_eq!(
+            [
+                u32::from(*owner),
+                u32::from(*next),
+                u32::from(*previous),
+                u32::from(*shared_geometry)
+            ],
+            references
+        );
+        assert_eq!(family.family_name(), "GEOMETRIC_OWNER");
+        assert_eq!(family.kind(), 141);
+        assert_eq!(
+            serde_json::to_value(RecordFamilyReferences(&family)).unwrap(),
+            serde_json::json!(references)
+        );
+        for slot in 0..4 {
+            for null in [0, 1] {
+                let mut invalid = references;
+                invalid[slot] = null;
+                assert!(RecordFamily::from_wire(
+                    "GEOMETRIC_OWNER",
+                    141,
+                    None,
+                    None,
+                    None,
+                    None,
+                    invalid.to_vec(),
+                )
+                .is_none());
+            }
+        }
+        for invalid in [vec![1119, 4949, 951], vec![1119, 4949, 951, 936, 937]] {
+            assert!(RecordFamily::from_wire(
+                "GEOMETRIC_OWNER",
+                141,
+                None,
+                None,
+                None,
+                None,
+                invalid,
+            )
+            .is_none());
+        }
+        assert!(RecordFamily::from_wire(
+            "TYPE_141",
+            141,
+            None,
+            None,
+            None,
+            None,
+            references.to_vec(),
+        )
+        .is_none());
     }
 }

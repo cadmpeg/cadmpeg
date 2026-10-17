@@ -938,7 +938,7 @@ fn first_complete_record(
     if let Some(record) = consume_nurbs_auxiliary(ctx, stream, offset)? {
         return Ok(Some(record));
     }
-    if let Some(record) = consume_type_141(ctx, stream, offset)? {
+    if let Some(record) = consume_geometric_owner(ctx, stream, offset)? {
         return Ok(Some(record));
     }
     if let Some(record) = consume_type_45(ctx, stream, offset)? {
@@ -2302,17 +2302,17 @@ fn type_91_layout(
     Some((xmt, references, at))
 }
 
-fn consume_type_141(
+fn consume_geometric_owner(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
 ) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(141)).then_some(())?;
-        let direct = type_141_layout(stream, offset, 0);
+        let direct = geometric_owner_layout(stream, offset, 0);
         let escaped_marker = stream.get(offset + 2) == Some(&0xff);
         let escaped = escaped_marker
-            .then(|| type_141_layout(stream, offset, 1))
+            .then(|| geometric_owner_layout(stream, offset, 1))
             .flatten();
         let (xmt, references, end) = if escaped_marker {
             escaped.or(direct)?
@@ -2320,8 +2320,14 @@ fn consume_type_141(
             direct?
         };
         Some((
-            RecordFamily::Type141 {
-                references: references.try_into().ok()?,
+            {
+                let [owner, next, previous, shared_geometry] = references;
+                RecordFamily::GeometricOwner {
+                    owner,
+                    next,
+                    previous,
+                    shared_geometry,
+                }
             },
             xmt,
             end,
@@ -2449,26 +2455,32 @@ fn type_45_layout(
     parsed.transpose()
 }
 
-fn type_141_layout(
+fn geometric_owner_layout(
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, Vec<u32>, usize)> {
+) -> Option<(u32, [crate::framing::xmt_reference::NonNullXmt; 4], usize)> {
+    use crate::framing::xmt_reference::NonNullXmt;
+
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
-    let mut references = Vec::new();
-    for required_status in [None, Some(0), Some(0), None] {
-        let (reference, consumed) = read_xmt(stream, at)?;
+    let mut reference = |required_status: Option<u8>| {
+        let (value, consumed) = read_xmt(stream, at)?;
+        let target = NonNullXmt::try_from(value).ok()?;
         at = at.checked_add(consumed)?;
         let status = *stream.get(at)?;
         required_status
             .map_or(matches!(status, 0 | 1), |required| status == required)
             .then_some(())?;
-        at += 1;
-        references.push(reference);
-    }
-    Some((xmt, references, at))
+        at = at.checked_add(1)?;
+        Some(target)
+    };
+    let owner = reference(None)?;
+    let next = reference(Some(0))?;
+    let previous = reference(Some(0))?;
+    let shared_geometry = reference(None)?;
+    Some((xmt, [owner, next, previous, shared_geometry], at))
 }
 
 fn select_enveloped_layout<T>(
@@ -2772,7 +2784,7 @@ mod plane_boundary_tests {
             let plane_end = bytes.len();
             bytes.extend(141u16.to_be_bytes());
             bytes.extend(encoded_xmt(66_707));
-            for (reference, status) in [(3, 1), (1, 0), (1, 0), (66_706, 0)] {
+            for (reference, status) in [(66_709, 1), (66_708, 0), (66_708, 0), (66_706, 1)] {
                 bytes.extend(encoded_xmt(reference));
                 bytes.push(status);
             }

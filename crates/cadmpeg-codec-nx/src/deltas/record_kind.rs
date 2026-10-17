@@ -55,7 +55,7 @@ pub(crate) enum RecordKind {
     BCurveData = 135,
     BCurveDescriptor = 136,
     SpCurve = 137,
-    Type141 = 141,
+    GeometricOwner = 141,
     SupportUv = 204,
 }
 
@@ -112,7 +112,7 @@ impl RecordKind {
             RecordKind::BCurveData => 135,
             RecordKind::BCurveDescriptor => 136,
             RecordKind::SpCurve => 137,
-            RecordKind::Type141 => 141,
+            RecordKind::GeometricOwner => 141,
             RecordKind::SupportUv => 204,
         }
     }
@@ -169,7 +169,7 @@ impl RecordKind {
             Self::BCurveData => "B_CURVE_DATA",
             Self::BCurveDescriptor => "B_CURVE_DESCRIPTOR",
             Self::SpCurve => "SP_CURVE",
-            Self::Type141 => "TYPE_141",
+            Self::GeometricOwner => "GEOMETRIC_OWNER",
             Self::SupportUv => "SUPPORT_UV",
         }
     }
@@ -229,7 +229,7 @@ impl TryFrom<u16> for RecordKind {
             135 => Ok(Self::BCurveData),
             136 => Ok(Self::BCurveDescriptor),
             137 => Ok(Self::SpCurve),
-            141 => Ok(Self::Type141),
+            141 => Ok(Self::GeometricOwner),
             204 => Ok(Self::SupportUv),
             _ => Err("unknown deltas node kind"),
         }

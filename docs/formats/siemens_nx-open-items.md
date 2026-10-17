@@ -90,14 +90,6 @@ relation to the owning pmark edge before assigning body change-state roles.
 
 **Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. Topology snapshot replay uses typed keys and BODY revision scopes; that rule does not by itself assign the same semantics to GROUP updates.
 
-### PS-16. Deltas type 141
-
-**Question.** What is the canonical node-type name of deltas type 141 (`008d`), and what is the role of each reference field?
-
-**Known.** `siemens_nx.md` §4.2 "Type 141 has the complete deltas record" defines the four-reference status-framed grammar and boundary.
-
-**Need.** We must know the name and reference roles to relate the record to its owner and operands.
-
 ### PS-18. Deltas tagged-reference lanes
 
 **Question.** Which record owns each deltas tagged-reference lane, and what does each field mean?

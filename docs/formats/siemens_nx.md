@@ -938,7 +938,21 @@ Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, a
 
 Direct and escaped type-125 through type-128 and type-135 through type-136 NURBS records use the layouts in section 9.3. Counted payload, multiplicity, and knot records end after their declared value lanes. A type-125 surface-data header ends after its four trailing status-framed references. A type-135 curve-data header ends after its single status-framed reference. Surface descriptors end after the control-payload reference following the type-125 payload-family marker in their selected short or extended-reference layout. Curve descriptors end after their knot reference. These records participate in the deltas byte ledger and remain in the semantic lane.
 
-Type 141 has the complete deltas record `008d [ff], xmt, ref status, ref 00, ref 00, ref status`, where the first and fourth statuses are binary. Each XMT field uses the compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity and selects the escaped layout when the same byte also begins a coincidental direct large-index identity. The record ends after the fourth status byte, participates in the deltas byte ledger, and remains in the semantic lane.
+Type 141 is `GEOMETRIC_OWNER`. Its complete deltas record is
+`008d [ff], xmt, owner status, next 00, previous 00, shared_geometry status`.
+The four pointers are non-null. A zero status does not make a pointer null.
+`owner` is the geometry that uses `shared_geometry`. Both fields target the
+GEOMETRY union. `next` and `previous` link the doubly linked ring of
+GEOMETRIC_OWNER nodes for the same shared geometry. A geometry node's
+`geometric_owner` pointer enters this ring. GEOMETRIC_OWNER has no `node_id`.
+
+The first and fourth statuses are binary. Each XMT field uses the compact or
+extended XMT encoding. The optional `ff` envelope precedes the record identity.
+A complete escaped family grammar selects the escaped layout when the same
+byte also begins a direct large-index identity. The record ends after the
+fourth status byte, participates in the deltas byte ledger, and remains in
+the semantic lane. The native record retains the pointers in the order
+`[owner, next, previous, shared_geometry]`.
 
 Type 67 has the complete deltas record
 `0043 [ff], xmt, node_id:u32 BE, ref(1) 01, ref(3) 01, ref 01, ref 01,
