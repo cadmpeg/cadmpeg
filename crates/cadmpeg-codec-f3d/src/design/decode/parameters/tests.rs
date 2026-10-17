@@ -684,16 +684,20 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     );
     assert_eq!(parsed.evaluated_value().get(), 0.0);
 
-    for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
-        assert!(parse_legacy_parameter_owner_68(
-            &legacy_parameter_owner_68_frame(class_tag),
-            crate::records::identity::Located {
-                value: 1.25,
-                offset: 700
-            },
-            0
-        )
-        .is_some());
+    for class_tag in ["268", "282", "289", "292", "297", "299", "325", "336"] {
+        assert!(
+            parse_legacy_parameter_owner_68(
+                &legacy_parameter_owner_68_frame(class_tag),
+                crate::records::identity::Located {
+                    value: 1.25,
+                    offset: 700
+                },
+                0
+            )
+            .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
+            .is_some(),
+            "class {class_tag}"
+        );
     }
 }
 

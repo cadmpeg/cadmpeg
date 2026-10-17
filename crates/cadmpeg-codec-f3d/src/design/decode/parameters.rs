@@ -488,7 +488,7 @@ pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
 pub(crate) fn is_legacy_parameter_owner_68_class(class_tag: &str) -> bool {
     matches!(
         class_tag,
-        "268" | "282" | "284" | "289" | "297" | "299" | "325" | "336"
+        "268" | "282" | "284" | "289" | "292" | "297" | "299" | "325" | "336"
     )
 }
 
