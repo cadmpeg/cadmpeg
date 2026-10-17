@@ -134,6 +134,49 @@ fn loops(outer: u32, holes: Vec<u32>) -> SketchProfileRegion {
     SketchProfileRegion::loops(outer, holes).unwrap()
 }
 
+fn line_square(prefix: &str, low: Point2, side: f64) -> Vec<SketchEntity> {
+    let corners = [
+        low,
+        Point2::new(low.u + side, low.v),
+        Point2::new(low.u + side, low.v + side),
+        Point2::new(low.u, low.v + side),
+    ];
+    (0..corners.len())
+        .map(|index| {
+            line(
+                &format!("{prefix}-{index}"),
+                corners[index],
+                corners[(index + 1) % corners.len()],
+            )
+        })
+        .collect()
+}
+
+/// Resolve the arrangement region at `point` and require that no local cap
+/// skipped work.
+fn arrangement_region_at(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    point: Point2,
+) -> Option<SketchProfileRegion> {
+    let work = local_profile_work();
+    let region = crate::test_support::with_decode_context(|decode_ctx| {
+        arrangement_region_containing_points(
+            sketch,
+            entities,
+            &[point],
+            EPS_EXACT_ARC_REGION,
+            &work,
+            decode_ctx,
+        )
+    })
+    .unwrap();
+    work.finish_selection();
+    let losses = work.losses();
+    assert!(losses.is_empty(), "unexpected losses {losses:?}");
+    region
+}
+
 #[test]
 fn nurbs_bounded_profile_with_circular_hole_resolves_region_and_hole() {
     let outline = nurbs_topped_square();
@@ -258,4 +301,36 @@ fn arrangement_certifies_a_large_circle_around_a_nurbs_profile_exactly() {
     assert_eq!(faces.map(|faces| faces.len()), Some(2));
     work.finish_selection();
     assert!(work.losses().is_empty());
+}
+
+/// The square's arrangement face has no hole ring for the circle inside it,
+/// so it is not the region between them; whole profiles name the hole.
+#[test]
+fn arrangement_region_refuses_a_face_around_a_circular_hole() {
+    let outline = line_square("plate", Point2::new(0.0, 0.0), 10.0);
+    let hole = [circle("plate-hole", Point2::new(5.0, 5.0), 2.0)];
+    let sketch = sketch(&[&outline, &hole]);
+    let entities = [outline.as_slice(), &hole].concat();
+    let between = Point2::new(1.0, 1.0);
+
+    assert_eq!(arrangement_region_at(&sketch, &entities, between), None);
+    assert_eq!(
+        region_at(&sketch, &entities, between),
+        Some(loops(0, vec![1]))
+    );
+}
+
+#[test]
+fn arrangement_region_keeps_a_face_beside_a_separate_circle() {
+    let outline = line_square("block", Point2::new(0.0, 0.0), 10.0);
+    let disc = [circle("block-disc", Point2::new(20.0, 5.0), 2.0)];
+    let sketch = sketch(&[&outline, &disc]);
+    let entities = [outline.as_slice(), &disc].concat();
+
+    for point in [Point2::new(1.0, 1.0), Point2::new(20.0, 5.0)] {
+        assert!(matches!(
+            arrangement_region_at(&sketch, &entities, point),
+            Some(SketchProfileRegion::Trimmed { .. })
+        ));
+    }
 }
