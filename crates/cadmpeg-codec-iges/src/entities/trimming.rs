@@ -36,6 +36,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::CadIr;
 use std::cmp::Ordering;
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Endpoint clustering compares every endpoint pair of one boundary. A boundary
@@ -1453,6 +1454,20 @@ enum PcurveBounds {
     Unchecked,
 }
 
+/// Boundary pcurve results keyed by (pcurve sequence, support surface
+/// sequence).
+///
+/// Both results depend only on the key, so a pcurve that many boundaries
+/// share is resolved and checked against the support parameter bounds once,
+/// and its [`MAX_BEZIER_BLENDS`] work is not repeated per reference.
+#[derive(Default)]
+struct SharedPcurves {
+    /// The resolved geometry, or the text of the non-resource refusal.
+    geometry: BTreeMap<(u32, u32), Result<Option<(PcurveGeometry, [f64; 2])>, String>>,
+    /// The support-bounds verdict after the source control-polygon fallback.
+    bounds: BTreeMap<(u32, u32), PcurveBounds>,
+}
+
 fn pcurve_declared_interval_bounds(
     geometry: &PcurveGeometry,
     range: [f64; 2],
@@ -1899,6 +1914,7 @@ pub(super) fn project(
     let carrier_index = ModelIndex::new_model_only(ir);
 
     let mut composite_index: Option<CompositeIndex> = None;
+    let mut shared_pcurves = SharedPcurves::default();
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
@@ -2399,24 +2415,37 @@ pub(super) fn project(
                 let mut pcurves = Some(Vec::new());
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
-                    if composite_index.is_none() {
-                        composite_index = Some(CompositeIndex::from_ir(ir));
-                    }
-                    let index = composite_index.as_ref().ok_or_else(|| {
-                        CodecError::Malformed("IGES trimming composite index is absent".into())
-                    })?;
-                    match pcurve_geometry(
-                        &carrier_index,
-                        *sequence,
-                        &PcurveSupport {
-                            surface_id: &surface_id,
-                            geometry: &support_geometry,
-                            factor,
-                        },
-                        Some(carrier_agreement_tolerance),
-                        ctx,
-                        Some(index),
-                    ) {
+                    let resolved =
+                        match shared_pcurves.geometry.entry((*sequence, surface_sequence)) {
+                            Entry::Occupied(resolved) => resolved.get().clone(),
+                            Entry::Vacant(slot) => {
+                                if composite_index.is_none() {
+                                    composite_index = Some(CompositeIndex::from_ir(ir));
+                                }
+                                let index = composite_index.as_ref().ok_or_else(|| {
+                                    CodecError::Malformed(
+                                        "IGES trimming composite index is absent".into(),
+                                    )
+                                })?;
+                                let resolved = match pcurve_geometry(
+                                    &carrier_index,
+                                    *sequence,
+                                    &PcurveSupport {
+                                        surface_id: &surface_id,
+                                        geometry: &support_geometry,
+                                        factor,
+                                    },
+                                    Some(carrier_agreement_tolerance),
+                                    ctx,
+                                    Some(index),
+                                ) {
+                                    Ok(resolved) => Ok(resolved),
+                                    Err(error) => Err(error.non_resource()?.to_string()),
+                                };
+                                slot.insert(resolved).clone()
+                            }
+                        };
+                    match resolved {
                         Ok(Some(resolved)) => {
                             if let Some(pcurves) = pcurves.as_mut() {
                                 pcurves.push(resolved);
@@ -2459,28 +2488,38 @@ pub(super) fn project(
                 let mut pcurve_outside_support = false;
                 let mut pcurve_unchecked = false;
                 for ((geometry, range), sequence) in pcurves.iter().zip(&segment.pcurves) {
-                    let bounds = pcurve_declared_interval_bounds(
-                        geometry,
-                        *range,
-                        support_parameter_intervals,
-                        periodic_parameters,
-                        ctx,
-                    )?;
-                    if bounds != PcurveBounds::Within
-                        && !source_curve_control_polygon_within_bounds(
-                            &carrier_index,
-                            &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
-                            &PcurveSupport {
-                                surface_id: &surface_id,
-                                geometry: &support_geometry,
-                                factor,
-                            },
-                            support_parameter_intervals,
-                            (&entries, &records),
-                            global.real_precision(),
-                            ctx,
-                        )?
-                    {
+                    let bounds = match shared_pcurves.bounds.entry((*sequence, surface_sequence)) {
+                        Entry::Occupied(bounds) => *bounds.get(),
+                        Entry::Vacant(slot) => {
+                            let bounds = pcurve_declared_interval_bounds(
+                                geometry,
+                                *range,
+                                support_parameter_intervals,
+                                periodic_parameters,
+                                ctx,
+                            )?;
+                            let polygon_within = bounds != PcurveBounds::Within
+                                && source_curve_control_polygon_within_bounds(
+                                    &carrier_index,
+                                    &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
+                                    &PcurveSupport {
+                                        surface_id: &surface_id,
+                                        geometry: &support_geometry,
+                                        factor,
+                                    },
+                                    support_parameter_intervals,
+                                    (&entries, &records),
+                                    global.real_precision(),
+                                    ctx,
+                                )?;
+                            *slot.insert(if polygon_within {
+                                PcurveBounds::Within
+                            } else {
+                                bounds
+                            })
+                        }
+                    };
+                    if bounds != PcurveBounds::Within {
                         pcurve_unchecked = bounds == PcurveBounds::Unchecked;
                         pcurve_outside_support = !pcurve_unchecked;
                         break;
