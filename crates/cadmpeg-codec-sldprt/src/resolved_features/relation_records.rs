@@ -1007,30 +1007,59 @@ pub(super) fn relation_uses_dynamic_operands(relation: &FeatureInputRelationInst
     }
 }
 
-fn relation_target_value(
-    relation: &FeatureInputRelationInstance,
-    lane: &FeatureInputLane,
-) -> Option<cadmpeg_ir::scalar::FiniteReal> {
-    let scalar_id = relation
-        .parameter_scalar_ref()
-        .or(relation.display_scalar_ref())?;
-    let scalar = lane.scalars.iter().find(|scalar| scalar.id == scalar_id)?;
-    Some(scalar.value)
+/// A lane's scalar values and per-feature sketch entities, indexed once for
+/// every relation that measures against them.
+struct RelationOperandIndex<'a> {
+    scalar_values: HashMap<&'a str, cadmpeg_ir::scalar::FiniteReal>,
+    feature_entities: HashMap<&'a str, Vec<&'a crate::records::SketchInputEntity>>,
 }
 
-fn feature_entities<'a>(
-    lane: &'a FeatureInputLane,
-    feature: &str,
-) -> Vec<&'a crate::records::SketchInputEntity> {
-    let mut entities = lane
-        .sketch_entities
-        .iter()
-        .filter(|entity| entity.feature_ref.as_deref() == Some(feature))
-        .collect::<Vec<_>>();
-    entities.sort_unstable_by(|left, right| {
-        (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal()))
-    });
-    entities
+impl<'a> RelationOperandIndex<'a> {
+    fn new(lane: &'a FeatureInputLane) -> Self {
+        let mut scalar_values = HashMap::new();
+        for scalar in &lane.scalars {
+            scalar_values
+                .entry(scalar.id.as_str())
+                .or_insert(scalar.value);
+        }
+        let mut feature_entities = HashMap::<_, Vec<_>>::new();
+        for entity in &lane.sketch_entities {
+            if let Some(feature) = entity.feature_ref.as_deref() {
+                feature_entities.entry(feature).or_default().push(entity);
+            }
+        }
+        for entities in feature_entities.values_mut() {
+            entities.sort_unstable_by(|left, right| {
+                (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal()))
+            });
+        }
+        Self {
+            scalar_values,
+            feature_entities,
+        }
+    }
+
+    fn scalar_value(&self, id: &str) -> Option<cadmpeg_ir::scalar::FiniteReal> {
+        self.scalar_values.get(id).copied()
+    }
+
+    fn target_value(
+        &self,
+        relation: &FeatureInputRelationInstance,
+    ) -> Option<cadmpeg_ir::scalar::FiniteReal> {
+        self.scalar_value(
+            relation
+                .parameter_scalar_ref()
+                .or(relation.display_scalar_ref())?,
+        )
+    }
+
+    /// The feature's entities in offset and ordinal order.
+    fn feature_entities(&self, feature: &str) -> &[&'a crate::records::SketchInputEntity] {
+        self.feature_entities
+            .get(feature)
+            .map_or(&[], Vec::as_slice)
+    }
 }
 
 fn is_finite_point(entity: &crate::records::SketchInputEntity) -> bool {
@@ -1421,6 +1450,7 @@ fn bind_relation_geometry_operands(
     relations: &mut [FeatureInputRelationInstance],
     lane: &FeatureInputLane,
 ) {
+    let index = RelationOperandIndex::new(lane);
     for relation in relations.iter_mut().filter(|relation| {
         relation_uses_dynamic_operands(relation)
             || (matches!(
@@ -1437,7 +1467,7 @@ fn bind_relation_geometry_operands(
             continue;
         }
         let dynamic = relation_uses_dynamic_operands(relation);
-        let Some(target) = relation_target_value(relation, lane) else {
+        let Some(target) = index.target_value(relation) else {
             if dynamic {
                 clear_relation_operands(relation);
             }
@@ -1452,25 +1482,25 @@ fn bind_relation_geometry_operands(
             }
             continue;
         }
-        let entities = feature_entities(lane, relation.feature_ref.as_str());
+        let entities = index.feature_entities(relation.feature_ref.as_str());
         match relation.family {
             FeatureInputRelationFamily::PointPointDistance => {
-                bind_dynamic_point_relation(relation, &entities, target.get(), None);
+                bind_dynamic_point_relation(relation, entities, target.get(), None);
             }
             FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                bind_dynamic_point_relation(relation, &entities, target.get(), Some(true));
+                bind_dynamic_point_relation(relation, entities, target.get(), Some(true));
             }
             FeatureInputRelationFamily::PointPointVerticalDistance => {
-                bind_dynamic_point_relation(relation, &entities, target.get(), Some(false));
+                bind_dynamic_point_relation(relation, entities, target.get(), Some(false));
             }
             FeatureInputRelationFamily::PointLineDistance => {
-                bind_dynamic_point_line_relation(relation, &entities, target.get());
+                bind_dynamic_point_line_relation(relation, entities, target.get());
             }
             FeatureInputRelationFamily::LineLineDistance => {
-                bind_dynamic_line_relation(relation, &entities, target.get(), false);
+                bind_dynamic_line_relation(relation, entities, target.get(), false);
             }
             FeatureInputRelationFamily::Angle => {
-                bind_dynamic_line_relation(relation, &entities, target.get(), true);
+                bind_dynamic_line_relation(relation, entities, target.get(), true);
             }
             FeatureInputRelationFamily::CircleDiameter => {}
         }
@@ -1710,6 +1740,70 @@ mod relation_records_tests {
             value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role,
             operands,
+        }
+    }
+
+    #[test]
+    fn relation_operand_index_matches_the_linear_lookups() {
+        use crate::records::{SketchInputEntity, SketchInputKind};
+
+        let mut state = 0x2545_f491_u64;
+        let mut next = |bound: u64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) % bound
+        };
+        let base = SketchInputEntity::new("entity", "lane", 0, 0, SketchInputKind::Point);
+        let features = ["sketch-0", "sketch-1", "sketch-2", "sketch-3", "absent"];
+        for _ in 0..16 {
+            let mut lane = lane(Vec::new(), Vec::new());
+            lane.scalars = (0..200)
+                .map(|offset| {
+                    let mut scalar = scalar(offset, FeatureInputScalarRole::Driving);
+                    scalar.id = format!("scalar-{}", next(60));
+                    scalar.value = cadmpeg_ir::scalar::FiniteReal::new(f64::from(
+                        u32::try_from(offset).unwrap(),
+                    ))
+                    .unwrap();
+                    scalar
+                })
+                .collect();
+            lane.sketch_entities = (0..300)
+                .map(|_| {
+                    let mut entity =
+                        base.with_test_position(u32::try_from(next(40)).unwrap(), next(80));
+                    entity.feature_ref = (next(5) != 0)
+                        .then(|| features[usize::try_from(next(4)).unwrap()].to_owned());
+                    entity
+                })
+                .collect();
+            let index = super::RelationOperandIndex::new(&lane);
+            for id in (0..70).map(|id| format!("scalar-{id}")) {
+                assert_eq!(
+                    index.scalar_value(&id),
+                    lane.scalars
+                        .iter()
+                        .find(|scalar| scalar.id == id)
+                        .map(|scalar| scalar.value)
+                );
+            }
+            for feature in features {
+                let mut linear = lane
+                    .sketch_entities
+                    .iter()
+                    .filter(|entity| entity.feature_ref.as_deref() == Some(feature))
+                    .collect::<Vec<_>>();
+                linear.sort_unstable_by(|left, right| {
+                    (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal()))
+                });
+                let indexed = index.feature_entities(feature);
+                assert_eq!(linear.len(), indexed.len());
+                assert!(linear
+                    .iter()
+                    .zip(indexed)
+                    .all(|(linear, indexed)| std::ptr::eq(*linear, *indexed)));
+            }
         }
     }
 
