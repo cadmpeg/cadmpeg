@@ -8,7 +8,7 @@ use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -30,6 +30,7 @@ const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
 const EPS_DISPLAY_QUANTIZATION: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
+const EPS_POLE_BOX_ROUNDING: f64 = 1.0e-9;
 const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
 const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
@@ -818,6 +819,25 @@ struct SurfaceCandidate<'a> {
     trim: Option<AnalyticTrim>,
 }
 
+/// A mesh's positions, shading normals and triangles, which its accessors
+/// copy out of the stored layout. Every owner test against the mesh reads
+/// this one copy.
+struct MeshSamples {
+    vertices: Vec<FinitePoint3>,
+    normals: Vec<FiniteVector3>,
+    triangles: Vec<[u32; 3]>,
+}
+
+impl MeshSamples {
+    fn of(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Self {
+        Self {
+            vertices: mesh.vertices(),
+            normals: mesh.vertex_normals(),
+            triangles: mesh.triangles(),
+        }
+    }
+}
+
 /// Bind a face-tessellation table when its vertices select one surface face.
 ///
 /// Display coordinates are stored as f32, while the B-rep carriers are f64.
@@ -958,8 +978,9 @@ fn assign_unique_surface_owners_within(
             capped += 1;
             continue;
         }
-        let coordinate_scale = mesh
-            .vertices()
+        let samples = MeshSamples::of(mesh);
+        let coordinate_scale = samples
+            .vertices
             .iter()
             .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
             .fold(1.0_f64, f64::max);
@@ -976,7 +997,7 @@ fn assign_unique_surface_owners_within(
                 continue;
             };
             let mut fits = true;
-            for point in mesh.vertices() {
+            for point in &samples.vertices {
                 if !work.charge() {
                     fits = false;
                     break;
@@ -997,7 +1018,7 @@ fn assign_unique_surface_owners_within(
             }
             if fits
                 && candidate.trim.as_ref().is_none_or(|trim| {
-                    trim.contains_mesh(mesh, candidate.inverse, tolerance, &work)
+                    trim.contains_mesh(&samples, candidate.inverse, tolerance, &work)
                 })
             {
                 owners.push(candidate);
@@ -1020,7 +1041,7 @@ fn assign_unique_surface_owners_within(
                 }
                 let approximate = approximate_surface_owner(
                     ctx,
-                    mesh,
+                    &samples,
                     &candidates,
                     quantization_tolerance,
                     &work,
@@ -1057,12 +1078,12 @@ fn assign_unique_surface_owners_within(
 
 fn approximate_surface_owner(
     ctx: &DecodeContext<'_>,
-    mesh: &cadmpeg_ir::tessellation::Tessellation,
+    mesh: &MeshSamples,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
     work: &WorkBudget,
 ) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
-    if mesh.vertex_normals().len() != mesh.vertex_count() || mesh.vertex_normals().is_empty() {
+    if mesh.normals.len() != mesh.vertices.len() || mesh.normals.is_empty() {
         return Ok(None);
     }
     let mut fits = Vec::new();
@@ -1071,7 +1092,7 @@ fn approximate_surface_owner(
         .enumerate()
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
-            for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
+            for (point, normal) in mesh.vertices.iter().zip(&mesh.normals) {
                 if !work.charge() {
                     return None;
                 }
@@ -1137,7 +1158,7 @@ fn approximate_surface_owner(
 /// owner without the normal agreement required above.
 fn approximate_trimmed_surface_owner(
     ctx: &DecodeContext<'_>,
-    mesh: &cadmpeg_ir::tessellation::Tessellation,
+    mesh: &MeshSamples,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
     work: &WorkBudget,
@@ -1149,7 +1170,7 @@ fn approximate_trimmed_surface_owner(
         .filter_map(|(index, candidate)| {
             let trim = candidate.trim.as_ref()?;
             let mut max_residual = 0.0_f64;
-            for point in mesh.vertices() {
+            for point in &mesh.vertices {
                 if !work.charge() {
                     return None;
                 }
@@ -1329,7 +1350,7 @@ enum AnalyticTrim {
 impl AnalyticTrim {
     fn contains_mesh(
         &self,
-        mesh: &cadmpeg_ir::tessellation::Tessellation,
+        mesh: &MeshSamples,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
         work: &WorkBudget,
@@ -1337,11 +1358,11 @@ impl AnalyticTrim {
         match self {
             Self::Planar(trim) => trim.contains_mesh(mesh, inverse_body, tolerance, work),
             Self::Cylindrical(trim) => {
-                work.charge_by(mesh.vertex_count())
+                work.charge_by(mesh.vertices.len())
                     && trim.contains_mesh(mesh, inverse_body, tolerance)
             }
             Self::Conical(trim) => {
-                work.charge_by(mesh.vertex_count())
+                work.charge_by(mesh.vertices.len())
                     && trim.contains_mesh(mesh, inverse_body, tolerance)
             }
         }
@@ -1419,11 +1440,11 @@ struct ConicalTrim {
 impl CylindricalTrim {
     fn contains_mesh(
         self,
-        mesh: &cadmpeg_ir::tessellation::Tessellation,
+        mesh: &MeshSamples,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
     ) -> bool {
-        mesh.vertices().iter().all(|point| {
+        mesh.vertices.iter().all(|point| {
             let Some(point) = inverse_body.apply_point(point.get()) else {
                 return false;
             };
@@ -1451,11 +1472,11 @@ impl CylindricalTrim {
 impl ConicalTrim {
     fn contains_mesh(
         self,
-        mesh: &cadmpeg_ir::tessellation::Tessellation,
+        mesh: &MeshSamples,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
     ) -> bool {
-        mesh.vertices().iter().all(|point| {
+        mesh.vertices.iter().all(|point| {
             let Some(point) = inverse_body.apply_point(point.get()) else {
                 return false;
             };
@@ -1487,7 +1508,7 @@ impl ConicalTrim {
 impl PlanarTrim {
     fn contains_mesh(
         &self,
-        mesh: &cadmpeg_ir::tessellation::Tessellation,
+        mesh: &MeshSamples,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
         work: &WorkBudget,
@@ -1507,11 +1528,11 @@ impl PlanarTrim {
             work.exhaust();
             return false;
         };
-        if !charge_product(work, mesh.vertex_count(), point_edges) {
+        if !charge_product(work, mesh.vertices.len(), point_edges) {
             return false;
         }
         let mut projected = Vec::new();
-        for point in mesh.vertices() {
+        for point in &mesh.vertices {
             let Some(point) = inverse_body.apply_point(point.get()) else {
                 return false;
             };
@@ -1553,7 +1574,7 @@ impl PlanarTrim {
         }) {
             return false;
         }
-        let outer_polygon = if mesh.triangle_count() == 0 {
+        let outer_polygon = if mesh.triangles.is_empty() {
             None
         } else if let Some(PlanarOuter::Polygon(boundary)) = &self.outer {
             let Some(polygon) = CheckedPlanarPolygon::new(boundary, tolerance, work) else {
@@ -1573,10 +1594,10 @@ impl PlanarTrim {
             work.exhaust();
             return false;
         };
-        if !charge_product(work, mesh.triangle_count(), hole_triangles) {
+        if !charge_product(work, mesh.triangles.len(), hole_triangles) {
             return false;
         }
-        for triangle in mesh.triangles() {
+        for triangle in &mesh.triangles {
             let [Some(a), Some(b), Some(c)] = triangle.map(|index| {
                 projected
                     .get(cadmpeg_core::decode::index_from_u32(index))
@@ -3314,6 +3335,53 @@ struct SurfaceMeasure {
     normal: Option<Vector3>,
 }
 
+/// Whether `point` lies more than `tolerance` outside the box of `nurbs`'s
+/// poles on some axis, so that no point of the surface fits it.
+///
+/// Over its knot domain a surface whose weights are all positive lies in the
+/// convex hull of its poles. An evaluated point leaves that hull by rounding
+/// only, far less than [`EPS_POLE_BOX_ROUNDING`] of the coordinate scale. A
+/// weight of zero or less gives no such bound, so the answer is then `false`.
+fn outside_pole_box(
+    nurbs: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    point: Point3,
+    tolerance: f64,
+) -> bool {
+    let mut low = [f64::INFINITY; 3];
+    let mut high = [f64::NEG_INFINITY; 3];
+    let mut include = |pole: &FinitePoint3| {
+        for (axis, value) in [pole.x, pole.y, pole.z].into_iter().enumerate() {
+            low[axis] = low[axis].min(value);
+            high[axis] = high[axis].max(value);
+        }
+    };
+    match nurbs.pole_grid() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => {
+            rows.iter().flatten().for_each(&mut include);
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } => {
+            for pole in rows.iter().flatten() {
+                if pole.weight.get() <= 0.0 {
+                    return false;
+                }
+                include(&pole.point);
+            }
+        }
+    }
+    let coordinates = [point.x, point.y, point.z];
+    let scale = low
+        .iter()
+        .chain(&high)
+        .chain(&coordinates)
+        .filter(|value| value.is_finite())
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    let margin = tolerance + EPS_POLE_BOX_ROUNDING * scale;
+    coordinates
+        .into_iter()
+        .zip(low.into_iter().zip(high))
+        .any(|(value, (low, high))| value < low - margin || value > high + margin)
+}
+
 fn surface_measure(
     ctx: &DecodeContext<'_>,
     surface: &SolvedSurfaceGeometry,
@@ -3324,6 +3392,9 @@ fn surface_measure(
         let Some(tolerance) = fit_tolerance else {
             return Ok(None);
         };
+        if outside_pole_box(nurbs, point, tolerance) {
+            return Ok(None);
+        }
         let Some(parameters) =
             crate::brep::evaluation::nurbs_surface_parameter_near_point(ctx, nurbs, point, None)?
         else {
