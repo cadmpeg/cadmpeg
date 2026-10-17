@@ -239,6 +239,23 @@ impl Subtypes {
     }
 }
 
+/// Compare floats by bits so signed zeros and NaN payloads stay distinct.
+fn same_tokens(left: &[Token], right: &[Token]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|pair| match pair {
+            (Token::Float(left), Token::Float(right)) => left.to_bits() == right.to_bits(),
+            (Token::Double(left), Token::Double(right)) => left.to_bits() == right.to_bits(),
+            (Token::Position(left), Token::Position(right))
+            | (Token::Vector3(left), Token::Vector3(right)) => {
+                left.map(f64::to_bits) == right.map(f64::to_bits)
+            }
+            (Token::Vector2(left), Token::Vector2(right)) => {
+                left.map(f64::to_bits) == right.map(f64::to_bits)
+            }
+            (left, right) => left == right,
+        })
+}
+
 type Slots = BTreeSet<i64>;
 type Table<'a> = BTreeMap<i64, &'a Record>;
 
@@ -961,6 +978,22 @@ impl<'a> Binder<'a> {
         out
     }
 
+    /// Rows depend on record content, so a revision with identical content
+    /// changes only the slot's version.
+    fn same_content(&self, slot: i64, versions: &BTreeMap<i64, i64>) -> bool {
+        match (
+            self.live.table.get(&slot),
+            versions
+                .get(&slot)
+                .and_then(|revision| self.archive.get(revision)),
+        ) {
+            (Some(current), Some(next)) => {
+                current.name == next.name && same_tokens(&current.tokens, &next.tokens)
+            }
+            _ => false,
+        }
+    }
+
     /// Replace keyed rows and return the two sides of this transition.
     fn incremental(
         &mut self,
@@ -972,8 +1005,12 @@ impl<'a> Binder<'a> {
         stats: &mut Statistics,
     ) -> Result<Option<(AsmHistoricalTopology, AsmHistoricalTopology)>, cadmpeg_core::CodecError>
     {
-        let revisions = changed;
-        let expanded = self.resolution_changes(changed, versions);
+        let all = changed;
+        let (revisions, restamped): (Slots, Slots) = changed
+            .iter()
+            .partition(|&&slot| !self.same_content(slot, versions));
+        let revisions = &revisions;
+        let expanded = self.resolution_changes(revisions, versions);
         let changed = &expanded;
         let saved_containers = previous.bodies().any(|slot| {
             self.live
@@ -1001,7 +1038,7 @@ impl<'a> Binder<'a> {
             .copied()
             .collect();
         let mut wire_changed = !changed.is_disjoint(&self.wires);
-        if self.update(revisions, versions).is_none() {
+        if self.update(all, versions).is_none() {
             return Ok(None);
         }
         let targets = self.attribute_targets(changed);
@@ -1250,15 +1287,20 @@ impl<'a> Binder<'a> {
             };
             Some(part)
         };
-        let mut prior = previous.project(&keys, false);
-        let containers = previous.project(&container_keys, true);
+        // Restamped rows are unchanged, but their versions still enter the transition.
+        let mut shown = keys.clone();
+        shown.extend(&restamped);
+        let mut shown_containers = container_keys.clone();
+        shown_containers.extend(&restamped);
+        let mut prior = previous.project(&shown, false);
+        let containers = previous.project(&shown_containers, true);
         append_containers(&mut prior, containers);
         previous.replace(part, &keys, false);
         if let Some(part) = container_part {
             previous.replace(part, &container_keys, true);
         }
-        let mut older = previous.project(&keys, false);
-        append_containers(&mut older, previous.project(&container_keys, true));
+        let mut older = previous.project(&shown, false);
+        append_containers(&mut older, previous.project(&shown_containers, true));
         Ok(Some((older, prior)))
     }
 

@@ -241,6 +241,24 @@ fn carrier_update() {
 }
 
 #[test]
+fn restamped_records_enter_the_transition_without_decoding() {
+    let a = fixture();
+    let stats = compare_step(&a, &a, &Slots::from([11, 13, 14, 16]), None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+    assert_eq!(stats.decoded_records, a.len());
+}
+
+#[test]
+fn signed_zero_is_a_content_change() {
+    let a = fixture();
+    let mut b = a.clone();
+    b.get_mut(&16).unwrap().tokens = vec![Token::Ref(-1), Token::Position([-0.0, 0.0, 0.0])].into();
+    let stats = compare_step(&a, &b, &Slots::from([16]), None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+    assert!(stats.decoded_records > a.len());
+}
+
+#[test]
 fn shell_face_chain_change() {
     incremental_change(|b| {
         set_ref(b, 3, 5, 20);
