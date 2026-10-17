@@ -788,56 +788,100 @@ fn refine_consolidated_analytic_surfaces(
     records: &[ConsolidatedRecord],
     surfaces: &mut [Option<SurfaceGeometry>],
 ) -> HashMap<usize, usize> {
-    fn exactly_one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
-        let value = values.next()?;
-        values.next().is_none().then_some(value)
+    /// Key each candidate; a key two candidates share maps to `None`.
+    fn unique_by_key<K: Eq + std::hash::Hash, T>(
+        candidates: impl Iterator<Item = T>,
+        key: impl Fn(&T) -> Option<K>,
+    ) -> HashMap<K, Option<T>> {
+        let mut unique = HashMap::new();
+        for candidate in candidates {
+            if let Some(key) = key(&candidate) {
+                unique
+                    .entry(key)
+                    .and_modify(|slot: &mut Option<T>| *slot = None)
+                    .or_insert(Some(candidate));
+            }
+        }
+        unique
+    }
+    fn exactly_one<'a, K: Eq + std::hash::Hash, T>(
+        unique: &'a HashMap<K, Option<T>>,
+        key: &K,
+    ) -> Option<&'a T> {
+        unique.get(key)?.as_ref()
     }
 
-    let cylinders =
-        crate::families::b2::records::b2_cylinders_from_records(bytes, records).collect::<Vec<_>>();
-    let cones =
-        crate::families::b2::records::b2_cones_from_records(bytes, records).collect::<Vec<_>>();
-    let spheres =
-        crate::families::b2::records::b2_spheres_from_records(bytes, records).collect::<Vec<_>>();
-    let tori =
-        crate::families::b2::records::b2_tori_from_records(bytes, records).collect::<Vec<_>>();
-    let quantized = |value: f64| f32_from_f64(value).map(f64::from);
-    let same_point = |point: Point3, stored: [f64; 3]| {
-        quantized(stored[0]).is_some_and(|value| point.x.to_bits() == value.to_bits())
-            && quantized(stored[1]).is_some_and(|value| point.y.to_bits() == value.to_bits())
-            && quantized(stored[2]).is_some_and(|value| point.z.to_bits() == value.to_bits())
+    let bits = |vector: Vector3| [vector.x.to_bits(), vector.y.to_bits(), vector.z.to_bits()];
+    let point_bits = |point: Point3| [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()];
+    let quantized = |value: f64| f32_from_f64(value).map(|value| f64::from(value).to_bits());
+    let quantized_point = |stored: [f64; 3]| {
+        Some([
+            quantized(stored[0])?,
+            quantized(stored[1])?,
+            quantized(stored[2])?,
+        ])
     };
-    let same_axis = |axis: Vector3, stored: [f64; 3]| {
-        let Some(x) = f32_from_f64(stored[0]) else {
-            return false;
-        };
-        let Some(y) = f32_from_f64(stored[1]) else {
-            return false;
-        };
+    let quantized_axis = |stored: [f64; 3]| {
+        let x = f32_from_f64(stored[0])?;
+        let y = f32_from_f64(stored[1])?;
         let z = (1.0 - f64::from(x * x + y * y))
             .max(0.0)
             .sqrt()
             .copysign(stored[2]);
-        unit_vector(Vector3::new(f64::from(x), f64::from(y), z)).is_some_and(|reconstructed| {
-            axis.x.to_bits() == reconstructed.as_raw().x.to_bits()
-                && axis.y.to_bits() == reconstructed.as_raw().y.to_bits()
-                && axis.z.to_bits() == reconstructed.as_raw().z.to_bits()
-        })
+        unit_vector(Vector3::new(f64::from(x), f64::from(y), z))
+            .map(|reconstructed| bits(*reconstructed.as_raw()))
     };
+    let cylinders = unique_by_key(
+        crate::families::b2::records::b2_cylinders_from_records(bytes, records),
+        |cylinder| {
+            Some((
+                quantized_point(cylinder.origin.get().into())?,
+                quantized_axis(cylinder.frame.axis().get())?,
+                quantized(cylinder.radius.get())?,
+            ))
+        },
+    );
+    let cones = unique_by_key(
+        crate::families::b2::records::b2_cones_from_records(bytes, records),
+        |cone| {
+            Some((
+                quantized_point(cone.apex.get().into())?,
+                quantized_axis(cone.frame.axis().get())?,
+                quantized(cone.half_angle.get())?,
+            ))
+        },
+    );
+    let spheres = unique_by_key(
+        crate::families::b2::records::b2_spheres_from_records(bytes, records),
+        |sphere| {
+            Some((
+                quantized_point(sphere.center.get().into())?,
+                quantized(sphere.radius.get())?,
+            ))
+        },
+    );
+    let tori = unique_by_key(
+        crate::families::b2::records::b2_tori_from_records(bytes, records),
+        |torus| {
+            Some((
+                quantized_point(torus.center.get().into())?,
+                quantized_axis(torus.frame.axis().get())?,
+                quantized(torus.major_radius.get())?,
+                quantized(torus.minor_radius.get())?,
+            ))
+        },
+    );
     let mut refined = HashMap::new();
     for (index, surface) in surfaces.iter_mut().enumerate() {
         let replacement = match surface.as_ref() {
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) => {
-                let origin = cylinder_surface.origin().get();
-                let axis = cylinder_surface.frame().axis().as_raw();
-                let radius = cylinder_surface.radius().get();
-                exactly_one(cylinders.iter().filter(|cylinder| {
-                    same_point(origin, cylinder.origin.get().into())
-                        && same_axis(*axis, cylinder.frame.axis().get())
-                        && quantized(cylinder.radius.get())
-                            .is_some_and(|value| radius.to_bits() == value.to_bits())
-                }))
-                .map(|cylinder| (cylinder.surface_geometry(), cylinder.pos))
+                let key = (
+                    point_bits(cylinder_surface.origin().get()),
+                    bits(*cylinder_surface.frame().axis().as_raw()),
+                    cylinder_surface.radius().get().to_bits(),
+                );
+                exactly_one(&cylinders, &key)
+                    .map(|cylinder| (cylinder.surface_geometry(), cylinder.pos))
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
@@ -846,16 +890,12 @@ fn refine_consolidated_analytic_surfaces(
                     radius == 0.0 && ratio == 1.0
                 } =>
             {
-                let origin = cone_surface.origin().get();
-                let axis = cone_surface.frame().axis().as_raw();
-                let half_angle = cone_surface.half_angle().get();
-                exactly_one(cones.iter().filter(|cone| {
-                    same_point(origin, cone.apex.get().into())
-                        && same_axis(*axis, cone.frame.axis().get())
-                        && quantized(cone.half_angle.get())
-                            .is_some_and(|value| half_angle.to_bits() == value.to_bits())
-                }))
-                .map(|cone| {
+                let key = (
+                    point_bits(cone_surface.origin().get()),
+                    bits(*cone_surface.frame().axis().as_raw()),
+                    cone_surface.half_angle().get().to_bits(),
+                );
+                exactly_one(&cones, &key).map(|cone| {
                     (
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                             cadmpeg_ir::geometry::analytic::ConeSurface::new(
@@ -871,14 +911,11 @@ fn refine_consolidated_analytic_surfaces(
                 })
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) => {
-                let center = sphere_surface.center().get();
-                let radius = sphere_surface.radius().get();
-                exactly_one(spheres.iter().filter(|sphere| {
-                    same_point(center, sphere.center.get().into())
-                        && quantized(sphere.radius.get())
-                            .is_some_and(|value| radius.to_bits() == value.to_bits())
-                }))
-                .map(|sphere| {
+                let key = (
+                    point_bits(sphere_surface.center().get()),
+                    sphere_surface.radius().get().to_bits(),
+                );
+                exactly_one(&spheres, &key).map(|sphere| {
                     (
                         crate::families::b2::records::b2_sphere_geometry(sphere),
                         sphere.pos,
@@ -886,19 +923,13 @@ fn refine_consolidated_analytic_surfaces(
                 })
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))) => {
-                let center = torus_surface.center().get();
-                let axis = torus_surface.frame().axis().as_raw();
-                let major_radius = torus_surface.major_radius().get();
-                let minor_radius = torus_surface.minor_radius().get();
-                exactly_one(tori.iter().filter(|torus| {
-                    same_point(center, torus.center.get().into())
-                        && same_axis(*axis, torus.frame.axis().get())
-                        && quantized(torus.major_radius.get())
-                            .is_some_and(|value| major_radius.to_bits() == value.to_bits())
-                        && quantized(torus.minor_radius.get())
-                            .is_some_and(|value| minor_radius.to_bits() == value.to_bits())
-                }))
-                .map(|torus| {
+                let key = (
+                    point_bits(torus_surface.center().get()),
+                    bits(*torus_surface.frame().axis().as_raw()),
+                    torus_surface.major_radius().get().to_bits(),
+                    torus_surface.minor_radius().get().to_bits(),
+                );
+                exactly_one(&tori, &key).map(|torus| {
                     (
                         crate::families::b2::records::b2_torus_geometry(torus),
                         torus.pos,
