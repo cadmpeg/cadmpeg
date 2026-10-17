@@ -987,10 +987,10 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     let membership = standard_face_point_membership(&ctx, &ir, &bindings, &surface_indices, None)
         .expect("build the face point membership cache");
 
-    assert!(membership[0][0]);
-    assert!(!membership[0][1]);
-    assert!(membership[0].iter().enumerate().all(|(point, cached)| {
-        *cached
+    assert_eq!(membership[0], [0]);
+    assert!(membership[1].is_empty());
+    assert!(membership.iter().enumerate().all(|(point, faces)| {
+        faces.contains(&0)
             == point_on_standard_face(
                 &ctx,
                 ir.model.points[point].position().get(),
@@ -999,6 +999,141 @@ fn cached_face_point_membership_matches_the_source_predicate() {
             )
             .expect("surface evaluator accepts the fixture")
     }));
+}
+
+#[test]
+fn point_face_membership_matches_a_dense_face_point_table() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let finite = crate::test_support::test_b5::finite;
+    let length = crate::test_support::test_b5::nonnegative_length;
+    let mut ir = CadIr::empty();
+    ir.model.points.extend(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 2.0],
+            [2.0, 0.0, 0.0],
+            [2.0, 4.0, 6.0],
+            [5.0, 5.0, 5.0],
+            [0.0, -1.0, 0.5],
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(point, [x, y, z])| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#point-{point}")).expect("identity grammar"),
+                FinitePoint3::new(Point3::new(x, y, z)).expect("a finite position is a point"),
+                None,
+            )
+        }),
+    );
+    let geometries = [
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("valid CylinderSurface fixture"),
+        )),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("valid SphereSurface fixture"),
+        )),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+    ];
+    let surface_ids = (0..=geometries.len())
+        .map(|surface| {
+            SurfaceId::mint(format!("catia:test:surface#surface-{surface}"))
+                .expect("identity grammar")
+        })
+        .collect::<Vec<_>>();
+    for (id, geometry) in surface_ids.iter().zip(geometries) {
+        ir.model.surfaces.push(Surface {
+            id: id.clone(),
+            geometry,
+            source_object: None,
+        });
+    }
+    let surface_indices = surface_ids
+        .iter()
+        .take(ir.model.surfaces.len())
+        .cloned()
+        .enumerate()
+        .map(|(index, id)| (id, index))
+        .collect::<HashMap<_, _>>();
+    // Face 2 names a surface the model does not hold.
+    let bindings = [0, 1, 4, 2, 3, 0, 3]
+        .map(|surface| (surface_ids[surface].clone(), false, 0))
+        .to_vec();
+    let bounds = |center: [f64; 3], half_extents: [f64; 3], radius: f64| StandardFaceBounds {
+        aabb_center: center.map(finite),
+        aabb_half_extents: half_extents.map(length),
+        sphere_center: center.map(finite),
+        sphere_radius: length(radius),
+    };
+    let face_bounds = [
+        None,
+        None,
+        None,
+        None,
+        Some(bounds([2.0, 3.0, 4.0], [1.0, 2.0, 3.0], 3.5)),
+        Some(bounds([1.0, 0.0, 0.0], [0.5, 0.5, 0.5], 1.0)),
+        None,
+    ];
+
+    let dense = bindings
+        .iter()
+        .zip(face_bounds)
+        .map(|((surface_id, ..), bounds)| {
+            let Some(surface) = surface_indices
+                .get(surface_id)
+                .map(|index| &ir.model.surfaces[*index])
+            else {
+                return Vec::new();
+            };
+            ir.model
+                .points
+                .iter()
+                .map(|point| {
+                    point_on_standard_face(&ctx, point.position().get(), &surface.geometry, bounds)
+                        .expect("surface evaluator accepts the fixture")
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let membership = standard_face_point_membership(
+        &ctx,
+        &ir,
+        &bindings,
+        &surface_indices,
+        Some(face_bounds.as_slice()),
+    )
+    .expect("build the face point membership cache");
+
+    assert_eq!(membership.len(), ir.model.points.len());
+    for (point, faces) in membership.iter().enumerate() {
+        let dense_faces = (0..dense.len())
+            .filter(|face| dense[*face].get(point) == Some(&true))
+            .collect::<Vec<_>>();
+        assert_eq!(*faces, dense_faces, "point {point}");
+    }
+    assert!(membership.iter().any(|faces| faces.len() > 2));
+    assert!(membership.iter().any(|faces| faces == &[6]));
 }
 
 #[test]

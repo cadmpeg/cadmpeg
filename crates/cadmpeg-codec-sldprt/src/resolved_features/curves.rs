@@ -12,7 +12,7 @@ use super::markers::{
 };
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
@@ -1362,8 +1362,10 @@ pub(super) fn lane_sketch_plane_frames(
 ) -> HashMap<u32, SketchPlaneFrame> {
     let mut frames = sketch_plane_frames(features, histories);
     let mut lane_candidates = HashMap::<u32, Vec<SketchPlaneFrame>>::new();
+    let names = FeatureObjectNames::new(&lane.names);
     for native in histories.iter().flat_map(|history| &history.features) {
-        let Some(source) = feature_object_name(native, lane)
+        let Some(source) = names
+            .of(native)
             .and_then(|name| name.object_id.and_then(ObjectId::value))
         else {
             continue;

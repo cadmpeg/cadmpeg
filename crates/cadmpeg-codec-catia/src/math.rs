@@ -24,9 +24,34 @@ pub(crate) fn distance<P: Into<[f64; 3]>>(left: P, right: P) -> f64 {
         .hypot(left[2] - right[2])
 }
 
+/// Whether `distance(left, right) < limit`.
+///
+/// A faithfully rounded `hypot` is never below either argument, so a
+/// coordinate difference of `limit` or more gives the answer without the
+/// distance.
+pub(crate) fn distance_below<P: Into<[f64; 3]>>(left: P, right: P, limit: f64) -> bool {
+    let left = left.into();
+    let right = right.into();
+    left.iter()
+        .zip(&right)
+        .all(|(left, right)| (left - right).abs() < limit)
+        && distance(left, right) < limit
+}
+
+/// Whether `distance(left, right) <= limit`, with the early answer of
+/// [`distance_below`].
+pub(crate) fn distance_at_most<P: Into<[f64; 3]>>(left: P, right: P, limit: f64) -> bool {
+    let left = left.into();
+    let right = right.into();
+    left.iter()
+        .zip(&right)
+        .all(|(left, right)| (left - right).abs() <= limit)
+        && distance(left, right) <= limit
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{distance, unit_vector};
+    use super::{distance, distance_at_most, distance_below, unit_vector};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     const EPS_UNIT_ROUNDING: f64 = 4.0 * f64::EPSILON;
@@ -107,5 +132,44 @@ mod tests {
             distance([f64::MAX, 0.0, 0.0], [-f64::MAX, 0.0, 0.0]),
             f64::INFINITY
         );
+    }
+
+    #[test]
+    fn distance_thresholds_answer_as_the_distance_does() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let limit = 2.0e-3;
+        let scales = [0.0, 1.0e-300, 1.0e-4, 1.0e-3, 2.0e-3, 1.0e-2, 1.0, 1.0e300];
+        let mut coordinate = |base: f64| {
+            let scale = scales[usize::try_from(next() % 8).expect("index below 8")];
+            let unit =
+                f64::from(u32::try_from(next() >> 32).expect("high 32 bits")) / f64::from(u32::MAX);
+            base + scale * (2.0 * unit - 1.0)
+        };
+        for _ in 0..200_000 {
+            let left = [coordinate(0.0), coordinate(0.0), coordinate(0.0)];
+            let right = left.map(&mut coordinate);
+            assert_eq!(
+                distance_below(left, right, limit),
+                distance(left, right) < limit,
+                "{left:?} {right:?}"
+            );
+            assert_eq!(
+                distance_at_most(left, right, limit),
+                distance(left, right) <= limit,
+                "{left:?} {right:?}"
+            );
+        }
+        for special in [f64::NAN, f64::INFINITY, -f64::INFINITY] {
+            assert!(!distance_below([special, 0.0, 0.0], [0.0; 3], limit));
+            assert!(!distance_at_most([0.0, special, 0.0], [0.0; 3], limit));
+        }
+        assert!(distance_at_most([limit, 0.0, 0.0], [0.0; 3], limit));
+        assert!(!distance_below([limit, 0.0, 0.0], [0.0; 3], limit));
     }
 }

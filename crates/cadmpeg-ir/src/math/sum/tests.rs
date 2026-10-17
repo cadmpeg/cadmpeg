@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+use proptest::{prop_assert_eq, proptest};
+
 use super::{
-    scaled_finite, ExactSignedSum, ScaledValue, MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT,
-    MIN_SIGNIFICAND_EXPONENT,
+    bit_is_set, rounded_magnitude, scaled_finite, ExactSignedSum, ScaledValue,
+    EXACT_PRODUCT_EXPONENT, EXACT_SUM_WORDS, MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT,
+    MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
 };
 use crate::scalar::{FiniteReal, NonZeroReal};
 
@@ -166,4 +169,126 @@ fn a_nonzero_value_has_a_scaled_form_that_states_it_exactly() {
     }
     assert!(scaled_finite(0.0).is_none());
     assert!(scaled_finite(f64::INFINITY).is_none());
+}
+
+/// An accumulator magnitude: up to four random words ending at word `top`,
+/// with `low_bit` also set when it lies below them.
+fn magnitude(top: usize, words: &[u64], low_bit: usize) -> [u64; EXACT_SUM_WORDS] {
+    let mut magnitude = [0_u64; EXACT_SUM_WORDS];
+    for (offset, word) in words.iter().enumerate() {
+        if let Some(index) = top.checked_sub(offset) {
+            magnitude[index] = *word;
+        }
+    }
+    magnitude[top] |= 1;
+    let lowest_word = top.saturating_sub(words.len());
+    if low_bit < lowest_word * 64 {
+        magnitude[low_bit / 64] |= 1_u64 << (low_bit % 64);
+    }
+    magnitude
+}
+
+fn highest_bit(magnitude: &[u64; EXACT_SUM_WORDS]) -> usize {
+    let word = magnitude
+        .iter()
+        .rposition(|value| *value != 0)
+        .expect("a nonzero magnitude");
+    word * 64 + 63 - cadmpeg_core::decode::index_from_u32(magnitude[word].leading_zeros())
+}
+
+/// `rounded_magnitude` as it read bit by bit, as `(sign, mantissa, exponent)`.
+fn bitwise_rounded_magnitude(
+    negative: bool,
+    magnitude: &[u64; EXACT_SUM_WORDS],
+    highest_bit: u16,
+) -> (f64, f64, i32) {
+    let sign = if negative { -1.0 } else { 1.0 };
+    let keep = (highest_bit + 1).min(53);
+    let mut significand = 0_u64;
+    for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
+        significand = (significand << 1) | u64::from(bit_is_set(magnitude, usize::from(bit)));
+    }
+    if keep == 53 {
+        let guard = highest_bit
+            .checked_sub(keep)
+            .is_some_and(|bit| bit_is_set(magnitude, usize::from(bit)));
+        let sticky = highest_bit.checked_sub(keep).is_some_and(|bit| {
+            (0..bit).any(|candidate| bit_is_set(magnitude, usize::from(candidate)))
+        });
+        if guard && (sticky || significand & 1 != 0) {
+            significand += 1;
+            if significand == 1_u64 << 53 {
+                return (
+                    sign,
+                    0.5,
+                    EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 2,
+                );
+            }
+        }
+    }
+    (
+        sign,
+        cadmpeg_core::convert::f64_from_u64(significand).expect("a 53-bit significand")
+            * 2.0_f64.powi(-i32::from(keep)),
+        EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1,
+    )
+}
+
+/// `ExactSignedSum::finite_sum` below the normal range as it read bit by bit.
+fn bitwise_subnormal_sum(magnitude: &[u64; EXACT_SUM_WORDS], highest_bit: usize) -> FiniteReal {
+    let mut units = 0_u64;
+    if highest_bit >= SUBNORMAL_UNIT_BIT {
+        for bit in (SUBNORMAL_UNIT_BIT..=highest_bit).rev() {
+            units = (units << 1) | u64::from(bit_is_set(magnitude, bit));
+        }
+    }
+    let guard = bit_is_set(magnitude, SUBNORMAL_UNIT_BIT - 1);
+    let sticky = (0..SUBNORMAL_UNIT_BIT - 1).any(|bit| bit_is_set(magnitude, bit));
+    if guard && (sticky || units & 1 != 0) {
+        units += 1;
+    }
+    if units == 0 {
+        return FiniteReal::ZERO;
+    }
+    FiniteReal::subnormal_units(false, units).expect("a subnormal unit count")
+}
+
+proptest! {
+    #[test]
+    fn rounding_reads_the_same_bits_as_a_bitwise_scan(
+        top in 0_usize..EXACT_SUM_WORDS,
+        words in proptest::collection::vec(proptest::num::u64::ANY, 0..4),
+        low_bit in 0_usize..EXACT_SUM_WORDS * 64,
+        negative in proptest::bool::ANY,
+    ) {
+        let magnitude = magnitude(top, &words, low_bit);
+        let highest = u16::try_from(highest_bit(&magnitude)).expect("a u16 bit index");
+        let rounded = rounded_magnitude(negative, &magnitude, highest).expect("a rounded value");
+        let (sign, mantissa, exponent) = bitwise_rounded_magnitude(negative, &magnitude, highest);
+        prop_assert_eq!(rounded.sign.to_bits(), sign.to_bits());
+        prop_assert_eq!(rounded.mantissa.to_bits(), mantissa.to_bits());
+        prop_assert_eq!(rounded.exponent.0, exponent);
+    }
+
+    #[test]
+    fn subnormal_rounding_reads_the_same_bits_as_a_bitwise_scan(
+        top in 0_usize..=(SUBNORMAL_UNIT_BIT + 51) / 64,
+        words in proptest::collection::vec(proptest::num::u64::ANY, 0..4),
+        low_bit in 0_usize..SUBNORMAL_UNIT_BIT,
+    ) {
+        let mut magnitude = magnitude(top, &words, low_bit);
+        for bit in SUBNORMAL_UNIT_BIT + 52..(top + 1) * 64 {
+            magnitude[bit / 64] &= !(1_u64 << (bit % 64));
+        }
+        let highest = highest_bit(&magnitude);
+        let sum = ExactSignedSum {
+            positive: magnitude,
+            negative: [0; EXACT_SUM_WORDS],
+            invalid: false,
+        };
+        prop_assert_eq!(
+            sum.finite_sum().map(|value| value.get().to_bits()),
+            Some(bitwise_subnormal_sum(&magnitude, highest).get().to_bits())
+        );
+    }
 }

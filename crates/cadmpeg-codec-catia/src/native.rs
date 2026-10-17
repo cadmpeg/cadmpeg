@@ -4875,6 +4875,12 @@ fn entity_value_schema_selections(
                 .map(|_| index)
         })
         .collect::<Vec<_>>();
+    let mut packets_by_start = packets
+        .iter()
+        .enumerate()
+        .filter_map(|(packet, value)| value.byte_range().map(|range| (range, packet)))
+        .collect::<Vec<_>>();
+    packets_by_start.sort_unstable_by_key(|(range, packet)| (range.start, *packet));
     let mut selections = Vec::new();
     for (rank, index) in selector_indices.iter().enumerate() {
         let value_block::ValueField::SchemaSelector { ordinal, offset } = &fields[*index] else {
@@ -4892,15 +4898,24 @@ fn entity_value_schema_selections(
             .unwrap_or(fields.len());
         let value_start_offset = fields.get(index + 1).map(value_field_offset);
         let value_end_offset = fields.get(value_end).map(value_field_offset);
-        let mut selected_packets = Vec::new();
-        for packet in packets.iter().filter(|packet| {
-            packet.byte_range().is_some_and(|range| {
-                value_start_offset.is_some_and(|start| range.start >= start)
-                    && value_end_offset.is_none_or(|end| range.end <= end)
-            })
-        }) {
-            selected_packets.push(packet.clone());
+        let mut selected = Vec::new();
+        if let Some(start) = value_start_offset {
+            let first = packets_by_start.partition_point(|(range, _)| range.start < start);
+            // A packet range never ends before it starts, so a packet that
+            // starts past the value end cannot end inside it.
+            selected.extend(
+                packets_by_start[first..]
+                    .iter()
+                    .take_while(|(range, _)| value_end_offset.is_none_or(|end| range.start <= end))
+                    .filter(|(range, _)| value_end_offset.is_none_or(|end| range.end <= end))
+                    .map(|(_, packet)| *packet),
+            );
+            selected.sort_unstable();
         }
+        let selected_packets = selected
+            .into_iter()
+            .map(|packet| packets[packet].clone())
+            .collect();
         charge_class_text(ctx, &catalog_entry.id, &catalog_entry.value)?;
         let selection = CatiaEntityValueSchemaSelection {
             offset: u64_from_index(*offset),

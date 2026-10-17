@@ -20,6 +20,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::history::literals::{parse_point3_mm, parse_vector3};
 use crate::records::FeatureSource;
+use crate::resolved_features::scalars::FeatureObjectNames;
 
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
@@ -706,15 +707,17 @@ fn history_feature_sources<'a>(
     histories: &'a [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) -> HashMap<&'a str, Option<FeatureSourceId>> {
+    let lane_names = lanes
+        .iter()
+        .map(|lane| FeatureObjectNames::new(&lane.names))
+        .collect::<Vec<_>>();
     let mut sources = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         let mut source = feature.source_id;
         if source.is_none() {
-            let mut candidates = lanes.iter().filter_map(|lane| {
-                crate::resolved_features::scalars::feature_object_name(feature, lane)?
-                    .object_id?
-                    .value()
-            });
+            let mut candidates = lane_names
+                .iter()
+                .filter_map(|names| names.of(feature)?.object_id?.value());
             if let Some(first) = candidates.next() {
                 if candidates.all(|candidate| candidate == first) {
                     source = FeatureSource::from_value(first);

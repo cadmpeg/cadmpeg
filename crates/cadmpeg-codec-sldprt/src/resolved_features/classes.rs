@@ -2,7 +2,7 @@
 
 use super::is_class_token;
 use super::operations::repeated_class_token;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
 use cadmpeg_core::decode::u64_from_index;
@@ -154,13 +154,14 @@ pub(crate) fn bind_history_classes(
             .iter()
             .map(|class| class.offset + 6 + u64_from_index(class.name.len()))
             .collect::<HashSet<_>>();
+        let names = FeatureObjectNames::new(&lane.names);
         let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
         for feature in histories
             .iter()
             .flat_map(|history| &history.features)
             .filter(|feature| feature.input_class.is_none())
         {
-            let Some(name) = feature_object_name(feature, lane).filter(|name| {
+            let Some(name) = names.of(feature).filter(|name| {
                 !direct_name_offsets.contains(&name.offset)
                     && name.object_id.and_then(ObjectId::value).is_some()
                     && name.value == feature.name

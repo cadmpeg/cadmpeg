@@ -1,6 +1,6 @@
 //! Design parameter enrichment and scalar synchronisation.
 
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::{NAME_MARKER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
@@ -83,10 +83,11 @@ pub(crate) fn enrich_history_parameters<'a>(
                 scalar_units.insert(scalar.as_str(), unit);
             }
         }
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                let Some(name) = feature_object_name(feature, lane) else {
+                let Some(name) = object_names.of(feature) else {
                     continue;
                 };
                 starts.push((name.offset, history_index, feature_index));
@@ -296,12 +297,11 @@ pub(crate) fn sync_changed_feature_scalars(
             .iter()
             .map(|name| (name.id.as_str(), name.value.as_str()))
             .collect::<HashMap<_, _>>();
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter_map(|feature| {
-                feature_object_name(feature, lane).map(|name| (name.offset, feature))
-            })
+            .filter_map(|feature| object_names.of(feature).map(|name| (name.offset, feature)))
             .collect::<Vec<_>>();
         starts.sort_by_key(|(left, _)| *left);
         let mut updates = Vec::<(usize, f64)>::new();

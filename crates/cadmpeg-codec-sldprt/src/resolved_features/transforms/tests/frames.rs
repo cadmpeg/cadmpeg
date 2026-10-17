@@ -18,6 +18,7 @@ use crate::resolved_features::relation_geometry::declared_entity_handle_circular
 use crate::resolved_features::relation_geometry::implicit_circle_marker;
 use crate::resolved_features::relation_geometry::owned_relation_parameters;
 use crate::resolved_features::relation_geometry::relation_parameter_by_display_name;
+use crate::resolved_features::relation_geometry::{LaneIds, RelationParameters};
 use crate::resolved_features::relation_loci::typed_relation_definition;
 use crate::resolved_features::relation_records::bind_circle_dimension_centers;
 use crate::resolved_features::relation_records::bind_detached_relation_drivers;
@@ -436,9 +437,11 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     assert_eq!(
         relation_parameter_by_display_name(
             &relation,
-            &lane,
-            std::slice::from_ref(&feature),
-            std::slice::from_ref(&parameter),
+            &LaneIds::new(&lane),
+            &RelationParameters::new(
+                std::slice::from_ref(&feature),
+                std::slice::from_ref(&parameter),
+            ),
         )
         .map(|parameter| &parameter.id),
         Some(&parameter.id)
@@ -460,9 +463,11 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     assert_eq!(
         relation_parameter_by_display_name(
             &relation,
-            &lane,
-            std::slice::from_ref(&feature),
-            std::slice::from_ref(&mismatched_parameter),
+            &LaneIds::new(&lane),
+            &RelationParameters::new(
+                std::slice::from_ref(&feature),
+                std::slice::from_ref(&mismatched_parameter),
+            ),
         )
         .map(|parameter| &parameter.id),
         None

@@ -2,6 +2,7 @@
 
 use crate::native::features::assign_operation_header_identities;
 use crate::native::features::body_history_partition_stream;
+use crate::native::features::body_history_partition_streams;
 use crate::native::features::feature_body_reference_occurrences;
 use crate::native::features::feature_body_references;
 use crate::native::features::feature_body_write_group_partition_uses;
@@ -847,10 +848,11 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     .is_empty());
 
     let repeated_terminal = [binding("plain-0", 0, 11, 16), binding("plain-1", 1, 12, 16)];
-    assert!(
-        body_history_partition_stream(&repeated_terminal[1], &repeated_terminal, &streams,)
-            .is_none()
-    );
+    assert!(body_history_partition_stream(
+        &repeated_terminal[1],
+        &body_history_partition_streams(&repeated_terminal, &streams),
+    )
+    .is_none());
 
     let interrupted_streams = [
         stream(crate::parasolid::ParasolidSubtype::Plain),
@@ -1145,6 +1147,263 @@ fn body_group_partition_uses_match_the_pairwise_join_over_many_writes() {
         expected
     );
     assert!(expected.len() > 1000);
+}
+
+/// The pairwise partition rule the indexed join replaced: each use rescans the
+/// writes, bindings, streams, groups and members.
+fn pairwise_body_partition_uses(
+    writes: &[FeatureOperationBodyWrite],
+    image_uses: &[crate::native::features::FeatureOperationBodyImageSegmentUse],
+    bindings: &[SegmentBodyBinding],
+    streams: &[crate::parasolid::Stream],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> Vec<crate::native::features::FeatureOperationBodyPartitionUse> {
+    use crate::parasolid::StreamKind;
+
+    fn sole<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    }
+    let partition_stream = |binding: &SegmentBodyBinding| {
+        if binding.stream_kind != StreamKind::Plain {
+            return None;
+        }
+        let stream_ordinal = usize::try_from(binding.stream_ordinal).ok()?;
+        if streams
+            .get(stream_ordinal)
+            .is_none_or(|stream| stream.kind() != StreamKind::Plain)
+        {
+            return None;
+        }
+        let partition_ordinal = streams
+            .iter()
+            .enumerate()
+            .skip(stream_ordinal + 1)
+            .find_map(|(ordinal, stream)| {
+                (stream.kind() == StreamKind::Partition).then_some(ordinal)
+            })?;
+        let run_start = streams[..stream_ordinal]
+            .iter()
+            .rposition(|stream| stream.kind() != StreamKind::Plain)
+            .map_or(0, |ordinal| ordinal + 1);
+        if !streams[run_start..partition_ordinal]
+            .iter()
+            .all(|stream| stream.kind() == StreamKind::Plain)
+        {
+            return None;
+        }
+        let mut terminal_role = None;
+        for ordinal in run_start..partition_ordinal {
+            let mut matches = bindings.iter().filter(|candidate| {
+                candidate.stream_kind == StreamKind::Plain
+                    && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
+            });
+            let candidate = matches.next()?;
+            if matches.next().is_some() || terminal_role == Some(16) {
+                return None;
+            }
+            terminal_role = Some(candidate.stream_role);
+        }
+        (terminal_role == Some(16)).then_some(())?;
+        u32::try_from(partition_ordinal).ok()
+    };
+    let mut output = Vec::new();
+    for image_use in image_uses {
+        let Some(write) = sole(
+            writes
+                .iter()
+                .filter(|write| write.id == image_use.operation_body_write),
+        ) else {
+            continue;
+        };
+        let Some(binding) = sole(
+            bindings
+                .iter()
+                .filter(|binding| binding.id == image_use.segment_body_binding),
+        ) else {
+            continue;
+        };
+        let Some(partition_stream_ordinal) = partition_stream(binding) else {
+            continue;
+        };
+        let group_node = write.frame.group_node().value();
+        output.push(crate::native::features::FeatureOperationBodyPartitionUse {
+            id: write
+                .id
+                .replacen("operation-body-write", "operation-body-partition-use", 1),
+            operation_body_write: write.id.clone(),
+            body_image_segment_use: image_use.id.clone(),
+            segment_body_binding: binding.id.clone(),
+            partition_stream_ordinal,
+            group_node,
+            parasolid_group_records: groups
+                .iter()
+                .filter(|group| {
+                    group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
+                        && group.node_id == group_node
+                })
+                .map(|group| group.id.clone())
+                .collect(),
+            parasolid_group_members: members
+                .iter()
+                .filter(|member| {
+                    member.partition_stream_ordinal == partition_stream_ordinal
+                        && member.group_node_id == group_node
+                })
+                .map(|member| member.id.clone())
+                .collect(),
+        });
+    }
+    output
+}
+
+#[test]
+fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
+    use crate::parasolid::ParasolidSubtype;
+
+    let stream = |subtype| crate::parasolid::Stream {
+        file_offset: 0,
+        consumed: 0,
+        inflated: Vec::new(),
+        body: crate::parasolid::StreamBody::Parasolid {
+            subtype,
+            schema: Some(
+                cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST")
+                    .expect("the fixture text is a schema token"),
+            ),
+        },
+    };
+    let pattern = [
+        ParasolidSubtype::Plain,
+        ParasolidSubtype::Plain,
+        ParasolidSubtype::Partition,
+        ParasolidSubtype::Deltas,
+        ParasolidSubtype::Plain,
+        ParasolidSubtype::Partition,
+        ParasolidSubtype::Plain,
+        ParasolidSubtype::Deltas,
+        ParasolidSubtype::Partition,
+        ParasolidSubtype::Plain,
+        ParasolidSubtype::Plain,
+        ParasolidSubtype::Plain,
+        ParasolidSubtype::Partition,
+        ParasolidSubtype::Plain,
+    ];
+    let streams = (0..256)
+        .map(|ordinal| stream(pattern[ordinal % pattern.len()]))
+        .collect::<Vec<_>>();
+    // Plain streams carry zero, one or two plain bindings; the binding before
+    // each partition is usually terminal, and a few others are terminal too.
+    let bindings = (0..256_u32)
+        .flat_map(|ordinal| {
+            let index = usize::try_from(ordinal).unwrap();
+            let plain = streams[index].kind() == crate::parasolid::StreamKind::Plain;
+            let before_partition = streams
+                .get(index + 1)
+                .is_some_and(|next| next.kind() == crate::parasolid::StreamKind::Partition);
+            let copies = match ordinal % 9 {
+                4 => 0,
+                7 => 2,
+                _ => 1,
+            };
+            (0..copies).map(move |copy| SegmentBodyBinding {
+                id: format!(
+                    "binding#{}",
+                    if ordinal % 23 == 5 {
+                        0
+                    } else {
+                        ordinal * 2 + copy
+                    }
+                ),
+                stream_link: "stream#0".to_string(),
+                stream_ordinal: ordinal,
+                stream_kind: if plain && ordinal % 31 != 6 {
+                    crate::parasolid::StreamKind::Plain
+                } else {
+                    crate::parasolid::StreamKind::Partition
+                },
+                body_object_index: 10,
+                body_alias_object_index: ordinal,
+                stream_role: if before_partition == (ordinal % 13 == 2) {
+                    10
+                } else {
+                    16
+                },
+                source_offset: 0,
+            })
+        })
+        .collect::<Vec<_>>();
+    let writes = (0..1024_u32)
+        .map(|index| indexed_body_write(index % 1000, 11, 200 + index % 24))
+        .collect::<Vec<_>>();
+    let image_uses = (0..1500_u32)
+        .map(|index| {
+            let binding = &bindings[usize::try_from(index).unwrap() % bindings.len()];
+            crate::native::features::FeatureOperationBodyImageSegmentUse {
+                id: format!("image-use#{index}"),
+                operation_body_write: format!("nx:operation-body-write#{}", index % 1100),
+                body_image_data_block: "block#0".to_string(),
+                segment_body_binding: binding.id.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let group = |index: u32, origin| crate::native::parasolid::ParasolidGroupRecord {
+        id: format!("group#{index}"),
+        origin,
+        xmt: 10,
+        node_id: 200 + index % 30,
+        references: [3, 4, 5, 6, 7],
+        selector: crate::deltas::group::GroupSelector::Form4,
+        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+        byte_len: 20,
+        inflated_offset: 0,
+    };
+    let groups = (0..2000_u32)
+        .map(|index| {
+            let partition = index % 256;
+            group(
+                index,
+                match index % 3 {
+                    0 => crate::native::parasolid::group_record::GroupOrigin::Partition {
+                        stream_ordinal: partition,
+                    },
+                    1 => crate::native::parasolid::group_record::GroupOrigin::Deltas {
+                        stream_ordinal: partition + 1,
+                        partition_stream_ordinal: Some(partition),
+                    },
+                    _ => crate::native::parasolid::group_record::GroupOrigin::Deltas {
+                        stream_ordinal: partition + 1,
+                        partition_stream_ordinal: (index % 2 == 0).then_some(partition),
+                    },
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let members = (0..3000_u32)
+        .map(|index| crate::native::parasolid::ParasolidGroupMember {
+            id: format!("member#{index}"),
+            partition_stream_ordinal: index % 256,
+            group_xmt: 10,
+            group_node_id: 200 + index % 26,
+            ordinal: 0,
+            list_record_xmt: 20,
+            member_xmt: 30,
+            target: crate::native::parasolid::group_member::GroupMemberTarget::Fin,
+        })
+        .collect::<Vec<_>>();
+
+    let expected =
+        pairwise_body_partition_uses(&writes, &image_uses, &bindings, &streams, &groups, &members);
+    assert!(expected.len() > 100);
+    assert!(expected
+        .iter()
+        .any(|item| !item.parasolid_group_records.is_empty()
+            && !item.parasolid_group_members.is_empty()));
+    assert_eq!(
+        body_partition_uses_for_test(&writes, &image_uses, &bindings, &streams, &groups, &members),
+        expected
+    );
 }
 
 fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {

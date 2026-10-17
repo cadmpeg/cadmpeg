@@ -41,6 +41,7 @@ use crate::brep::graph::{decode_bodies, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
 use crate::records::ObjectId;
+use crate::resolved_features::scalars::FeatureObjectNames;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 struct DecodedBrep {
@@ -1735,13 +1736,12 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
             .filter_map(|feature| feature.source_value().zip(feature.input_class.as_deref())),
     );
     let named_binding_counts = count_keys(native.feature_input_lanes.iter().flat_map(|lane| {
+        let names = FeatureObjectNames::new(&lane.names);
         features.clone().filter_map(move |feature| {
             feature
                 .input_class
                 .as_deref()
-                .zip(crate::resolved_features::scalars::feature_object_name(
-                    feature, lane,
-                ))
+                .zip(names.of(feature))
                 .map(|(class, name)| (lane.id.as_str(), name.id.as_str(), class))
         })
     }));

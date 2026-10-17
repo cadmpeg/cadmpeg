@@ -1,7 +1,7 @@
 //! Draft-operation plane and face operands.
 
 use super::is_class_token;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::selections::{
     compact_mixed_component_path, component_vector_path_at, is_component_vector_selector,
     COMPACT_EDGE_VECTOR_MARKER,
@@ -401,9 +401,10 @@ pub(super) fn draft_operand_candidates(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<(String, DraftOperands)>, CodecError> {
+    let names = FeatureObjectNames::new(&lane.names);
     let mut objects = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        if let Some(name) = feature_object_name(feature, lane) {
+        if let Some(name) = names.of(feature) {
             objects.push((name.offset, feature));
         }
     }

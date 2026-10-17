@@ -138,11 +138,15 @@ fn generated_document(objects: &[GeneratedObject]) -> String {
     xml
 }
 
+/// The persistence graph of `document`, admitted under the session of the
+/// compressed `FCStd` that carries it.
 fn graph(document: &str) -> crate::persistence::Graph {
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let xml = crate::container::admit_document(&ctx, document.as_bytes()).expect("document XML");
-    crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
-        .expect("persistence graph")
+    let archive = crate::test_support::test_archive::streaming_archive(document);
+    crate::test_support::with_service_context(&archive, |ctx| {
+        let xml = crate::container::admit_document(ctx, document.as_bytes()).expect("document XML");
+        crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
+            .expect("persistence graph")
+    })
 }
 
 fn owned_ordering(result: Result<(HashMap<&str, u64>, BTreeSet<String>), CodecError>) -> Ordering {

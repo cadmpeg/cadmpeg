@@ -201,13 +201,13 @@ pub(super) fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
 }
 
 /// Unique source and display-name lookups for repeated feature ownership queries.
-pub(super) struct FeatureObjectNames<'a> {
+pub(crate) struct FeatureObjectNames<'a> {
     by_source: HashMap<u32, Option<&'a FeatureInputName>>,
     by_value: HashMap<&'a str, Option<&'a FeatureInputName>>,
 }
 
 impl<'a> FeatureObjectNames<'a> {
-    pub(super) fn new(names: &'a [FeatureInputName]) -> Self {
+    pub(crate) fn new(names: &'a [FeatureInputName]) -> Self {
         let mut by_source = HashMap::new();
         let mut by_value = HashMap::<&str, Option<&FeatureInputName>>::new();
         for name in names {
@@ -235,6 +235,39 @@ impl<'a> FeatureObjectNames<'a> {
             }
         }
         self.by_value.get(name).copied().flatten()
+    }
+
+    /// The name [`feature_object_name`] finds for `feature` in this lane.
+    pub(crate) fn of(&self, feature: &crate::records::Feature) -> Option<&'a FeatureInputName> {
+        self.get(feature.source_value(), &feature.name)
+    }
+}
+
+/// Object-name offsets of every history feature in one lane, in ascending order.
+pub(super) struct FeatureObjectStarts(Vec<u64>);
+
+impl FeatureObjectStarts {
+    pub(super) fn new(
+        histories: &[crate::records::FeatureHistory],
+        names: &FeatureObjectNames<'_>,
+    ) -> Self {
+        let mut starts = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(|feature| names.of(feature))
+            .map(|name| name.offset)
+            .collect::<Vec<_>>();
+        starts.sort_unstable();
+        Self(starts)
+    }
+
+    /// End of the feature object named at `start`: the next feature object
+    /// start after it, else `payload_len`.
+    pub(super) fn end(&self, start: u64, payload_len: usize) -> usize {
+        self.0
+            .get(self.0.partition_point(|offset| *offset <= start))
+            .and_then(|offset| usize::try_from(*offset).ok())
+            .unwrap_or(payload_len)
     }
 }
 
