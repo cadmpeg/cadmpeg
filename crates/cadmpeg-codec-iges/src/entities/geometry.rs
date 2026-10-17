@@ -1416,7 +1416,10 @@ pub(crate) fn project_geometry(
         } else if !entry.line_font.is_none_or(|font| {
             base_geometry_line_font_valid(entry.entity_type, entry.form, font, global_table)
         }) {
-            losses.push(crate::loss::IgesLossCode::DirectoryMetadataNoncanonical.note(format!("Directory D{} Line Font must be nonzero for this IGES 4.0 geometry entity; geometry retained", entry.sequence)));
+            losses.push(IgesLossCode::DirectoryMetadataNoncanonical.note(format!(
+                "Directory D{} Line Font must be nonzero for this IGES 4.0 geometry entity; geometry retained",
+                entry.sequence,
+            )));
         }
     }
     let admitted_directory = if directory.iter().any(|entry| !admitted(entry)) {
