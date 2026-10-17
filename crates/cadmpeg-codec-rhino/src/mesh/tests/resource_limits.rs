@@ -99,7 +99,7 @@ fn document_mesh_cap_fails_the_buffer_before_copy_and_preserves_usage() {
         assert!(matches!(error, GeometryError::Malformed(_)));
         assert!(error
             .to_string()
-            .contains("document mesh buffer budget exceeded"));
+            .contains("document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)"));
         assert_eq!(expand.ctx().resource_refusal(), None);
         assert_eq!(budget.used(), 4);
         assert_eq!(second.position(), 4);
