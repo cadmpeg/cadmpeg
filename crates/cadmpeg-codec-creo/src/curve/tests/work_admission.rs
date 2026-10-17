@@ -5,7 +5,7 @@ use crate::curve::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn with_policy<T>(
     policy: DecodePolicy,
@@ -128,7 +128,7 @@ fn relation_quantity_serialization_preserves_base_power_fields() {
     );
 }
 
-fn nonlinear_ceiling_solution(left: &str, seed: f64) -> (Option<Vec<f64>>, Option<&'static str>) {
+fn nonlinear_ceiling_solution(left: &str, seed: f64) -> (Option<Vec<f64>>, BTreeSet<&'static str>) {
     use crate::curve::{
         refine_nonlinear_solution, CurveExpressionEquation, CurveExpressionSolveBlock,
         RelationDimension, SolveUnknown,
@@ -147,10 +147,10 @@ fn nonlinear_ceiling_solution(left: &str, seed: f64) -> (Option<Vec<f64>>, Optio
         }],
         offset: 0,
         for_offset: 1,
-        work_cap: None,
+        work_caps: BTreeSet::new(),
     };
     with_policy(DecodePolicy::service(), |ctx| {
-        let mut work_cap = None;
+        let mut work_caps = BTreeSet::new();
         let solution = refine_nonlinear_solution(
             ctx,
             &block,
@@ -158,16 +158,16 @@ fn nonlinear_ceiling_solution(left: &str, seed: f64) -> (Option<Vec<f64>>, Optio
             &[RelationDimension::default()],
             &[seed],
             RelationEvaluationContext::default(),
-            &mut work_cap,
+            &mut work_caps,
         )?;
         assert!(ctx.resource_refusal().is_none());
-        Ok((solution, work_cap))
+        Ok((solution, work_caps))
     })
     .expect("a local solver ceiling is not a decode failure")
 }
 
-fn assert_unsolved_work_cap_loss(bound: &str, work_cap: Option<&str>) {
-    assert_eq!(work_cap, Some(bound));
+fn assert_unsolved_work_cap_loss(bound: &str, work_caps: &BTreeSet<&str>) {
+    assert_eq!(work_caps, &BTreeSet::from([bound]));
     let loss = crate::loss::CreoLossCode::CurveExpressionSolveUnresolved.note(format!(
         "1 active curve-equation simultaneous-solve block(s) retain their ordered equations and unknowns without solved values or derived curves ({bound})."
     ));
@@ -176,18 +176,35 @@ fn assert_unsolved_work_cap_loss(bound: &str, work_cap: Option<&str>) {
 
 #[test]
 fn nonlinear_iteration_ceiling_leaves_a_progressing_smooth_system_unsolved() {
-    let (solved, work_cap) = nonlinear_ceiling_solution("x+100000000000000000000*x*x*x+0.001", 0.0);
+    let (solved, work_caps) =
+        nonlinear_ceiling_solution("x+100000000000000000000*x*x*x+0.001", 0.0);
     assert!(solved.is_none());
-    assert_unsolved_work_cap_loss("MAX_NONLINEAR_SOLVE_ITERATIONS", work_cap);
+    assert_unsolved_work_cap_loss("MAX_NONLINEAR_SOLVE_ITERATIONS", &work_caps);
     assert!(nonlinear_ceiling_solution("x*x*x+x-2", 0.5).0.is_some());
 }
 
 #[test]
 fn nonlinear_line_search_ceiling_leaves_valid_non_improving_probes_unsolved() {
     const SMALL_NONZERO_SEED: f64 = 0.000_000_1;
-    let (solved, work_cap) = nonlinear_ceiling_solution("x*x+1", SMALL_NONZERO_SEED);
+    let (solved, work_caps) = nonlinear_ceiling_solution("x*x+1", SMALL_NONZERO_SEED);
     assert!(solved.is_none());
-    assert_unsolved_work_cap_loss("MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS", work_cap);
+    assert_unsolved_work_cap_loss("MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS", &work_caps);
+}
+
+#[test]
+fn a_solve_block_that_another_seed_solves_records_no_work_cap() {
+    // From x=0.01 the cubic's Newton path stalls at its local minimum, where
+    // no step improves the residual. The declared x=-2 reaches the real root.
+    let (stalled, work_caps) = nonlinear_ceiling_solution("x*x*x-3*x+3", 0.01);
+    assert!(stalled.is_none());
+    assert_unsolved_work_cap_loss("MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS", &work_caps);
+    let records = crate::curve::expression_records(
+        b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+          \xe0\x0aexpression\0\xf8\x04x=-2\0SOLVE\0x*x*x-3*x+3=0\0FOR x\0",
+    );
+    let block = &records[0].solve_blocks[0];
+    assert!(block.unknowns[0].solution.is_some());
+    assert!(block.work_caps.is_empty());
 }
 
 #[test]
@@ -265,11 +282,11 @@ fn nonlinear_cubic_negative_seeds_preserve_progress_with_one_residual_scale() {
         }],
         offset: 0,
         for_offset: 1,
-        work_cap: None,
+        work_caps: BTreeSet::new(),
     };
     for seed in [-100.0, -10.0, -1.0, -0.1, -0.01] {
         let solution = with_policy(DecodePolicy::service(), |ctx| {
-            let mut work_cap = None;
+            let mut work_caps = BTreeSet::new();
             refine_nonlinear_solution(
                 ctx,
                 &block,
@@ -277,7 +294,7 @@ fn nonlinear_cubic_negative_seeds_preserve_progress_with_one_residual_scale() {
                 &[RelationDimension::default()],
                 &[seed],
                 RelationEvaluationContext::default(),
-                &mut work_cap,
+                &mut work_caps,
             )
         })
         .expect("negative cubic seed admits refinement")

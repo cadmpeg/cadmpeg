@@ -82,7 +82,7 @@ fn infer_solve_variable_dimensions(
             values,
             known_dimensions,
             context,
-            &mut None,
+            &mut std::collections::BTreeSet::new(),
         )
     })
     .expect("test dimension inference")
@@ -976,7 +976,7 @@ fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
         }],
         offset: 0,
         for_offset: 1,
-        work_cap: None,
+        work_caps: std::collections::BTreeSet::new(),
     };
     let values = BTreeMap::from([(
         "length".to_owned(),
