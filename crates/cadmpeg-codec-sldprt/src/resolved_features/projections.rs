@@ -1340,7 +1340,6 @@ pub(crate) fn project_compact_surface_selections(
                     if let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
                         definition
                     {
-
                         if !matches!(
                             targets,
                             cadmpeg_ir::features::FaceSelection::Unresolved
