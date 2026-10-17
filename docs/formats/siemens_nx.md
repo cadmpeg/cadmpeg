@@ -880,7 +880,10 @@ and original-curve slots. A fixed-record-shaped byte run with no such owner is
 not part of the body topology image.
 
 Type 38 is the XT `INTERSECTION` node. A first-use declaration may append
-an `intersection_data` pointer to type 204 (`00cc`) support-UV data. The
+an `intersection_data` pointer to type 204 (`00cc`) `INTERSECTION_DATA`.
+The type-204 declaration gives the node name `INTERSECTION_DATA`, description
+`Intersection data`, and two fields: `uv_type` is a byte, and `values` is a
+variable binary64 array. The array count precedes the node index. The
 terminal ASCII `Z` (`5a`) ends that declaration; the first type-38 instance's
 index follows it. It is not a separate node tag. Type 90 `GROUP` has the
 two-byte nodetype `005a`.
