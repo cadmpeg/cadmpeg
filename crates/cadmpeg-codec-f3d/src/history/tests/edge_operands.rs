@@ -97,7 +97,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&scope),
         &[],
-        std::slice::from_ref(&history),
+        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
         &scope_histories,
     )
     .unwrap();

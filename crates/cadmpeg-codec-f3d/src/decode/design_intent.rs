@@ -1198,7 +1198,7 @@ fn extend_related_design_records(
         &mut design.design_body_recipe_operands,
         &prereqs.construction_recipes,
         &design.design_parameter_scopes,
-        &design.asm_histories,
+        crate::history::BindingHistories::Release(&mut design.asm_histories),
     )?;
     crate::design::decode::operands::bind_extrude_selection_identities(
         &mut design.design_extrude_selection_members,
@@ -1225,7 +1225,7 @@ fn extend_related_design_records(
         &mut design.design_edge_identity_operands,
         &design.design_construction_operand_identities,
         &design.design_parameter_scopes,
-        &design.asm_histories,
+        crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
     );
     design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
@@ -1245,7 +1245,7 @@ fn extend_related_design_records(
         &mut design.design_edge_operands,
         &design.design_parameter_scopes,
         &prereqs.construction_recipes,
-        &design.asm_histories,
+        crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
     )?;
     design.design_edge_treatment_vertex_operands =
@@ -1302,7 +1302,7 @@ fn extend_related_design_records(
         &design.design_parameter_scopes,
         &design.design_construction_operand_groups,
         &prereqs.construction_recipes,
-        &design.asm_histories,
+        crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
     )?;
     crate::history::selection::bind_mirror_selection_planes(
