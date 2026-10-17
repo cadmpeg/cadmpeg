@@ -234,7 +234,17 @@ pub(crate) fn power_of_two_product(mut value: f64, mut exponent: i32) -> f64 {
         }
         exponent += 969;
     }
-    value * 2.0_f64.powi(exponent)
+    value * normal_power_of_two(exponent).unwrap_or_else(|| 2.0_f64.powi(exponent))
+}
+
+/// `2^exponent` for a normal binary64 exponent, `-1022..=1023`, formed from
+/// its exponent field; none outside that range. Every such power of two is
+/// exact, so it is the value `powi` reaches by repeated exact multiplication.
+pub(crate) fn normal_power_of_two(exponent: i32) -> Option<f64> {
+    let field = u64::try_from(exponent.checked_add(1023)?).ok()?;
+    (1..=2046)
+        .contains(&field)
+        .then(|| f64::from_bits(field << 52))
 }
 
 /// The exponent of the least power of two above a finite nonzero magnitude.

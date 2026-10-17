@@ -632,7 +632,7 @@ fn rounded_magnitude(
     Some(ScaledValue {
         sign: if negative { -1.0 } else { 1.0 },
         mantissa: cadmpeg_core::convert::f64_from_u64(significand)?
-            * 2.0_f64.powi(-i32::from(keep)),
+            * super::normal_power_of_two(-i32::from(keep))?,
         exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1),
     })
 }
