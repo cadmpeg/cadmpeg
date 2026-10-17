@@ -45,7 +45,8 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
 
     ({
         let sketch = super::super::attach_sketch_graph(
-            &mut ir,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
             &label,
             &super::super::SketchSources {
                 point_uses: &[],
@@ -110,7 +111,8 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
 
     ({
         let sketch = super::super::attach_sketch_graph(
-            &mut ir,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
             &label,
             &super::super::SketchSources {
                 point_uses: &[],

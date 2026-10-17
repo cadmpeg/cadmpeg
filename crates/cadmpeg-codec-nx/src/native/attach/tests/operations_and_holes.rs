@@ -4,6 +4,8 @@ use crate::native::attach::feature_projection::block_placement;
 use crate::native::attach::feature_projection::non_boolean_feature_definition;
 use crate::native::attach::feature_projection::non_modeling_history_definition;
 use crate::native::attach::feature_projection::sphere_body_projection;
+use crate::native::attach::feature_projection::FeatureProjectionIndex;
+use crate::native::attach::feature_projection::ProjectionArenas;
 use crate::native::attach::projects_neutral_feature;
 use crate::native::attach::text_semantic_annotation;
 use crate::native::attach::BodyId;
@@ -1215,8 +1217,12 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             }
         }
         let output = ir.model.bodies[0].id.clone();
+        let block = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
+            let index = FeatureProjectionIndex::new(ProjectionArenas::of(ir));
+            block_placement(&index, &ir.tolerances, dimensions, outputs)
+        };
         let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
-            block_placement(ir, dimensions, outputs).map(|(_, transform)| transform)
+            block(ir, dimensions, outputs).map(|(_, transform)| transform)
         };
 
         assert_eq!(
@@ -1224,7 +1230,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             Some(cadmpeg_ir::transform::Transform::identity())
         );
         assert_eq!(
-            block_placement(&ir, dimensions, &[]),
+            block(&ir, dimensions, &[]),
             Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
         );
         assert_eq!(
@@ -1417,9 +1423,15 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             )
             .unwrap(),
         ));
+        let sphere = |ir: &CadIr, outputs: &[BodyId]| {
+            sphere_body_projection(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+            )
+        };
 
         assert_eq!(
-            sphere_body_projection(&ir, &[]),
+            sphere(&ir, &[]),
             Some((
                 body.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1429,7 +1441,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             ))
         );
         assert_eq!(
-            sphere_body_projection(&ir, std::slice::from_ref(&body)),
+            sphere(&ir, std::slice::from_ref(&body)),
             Some((
                 body.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
@@ -1438,6 +1450,16 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
                     .expect("the sphere radius is positive")
             ))
         );
+        let mut shadowed = ir.clone();
+        let mut shadow = shadowed.model.surfaces[0].clone();
+        shadow.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        shadowed.model.surfaces.push(shadow);
+        assert_eq!(
+            sphere(&shadowed, std::slice::from_ref(&body)),
+            sphere(&ir, std::slice::from_ref(&body))
+        );
+        shadowed.model.surfaces.swap(0, 1);
+        assert!(sphere(&shadowed, std::slice::from_ref(&body)).is_none());
 
         let mut second_body = ir.model.bodies[0].clone();
         second_body.id = BodyId::mint("test:model:entity#second-body").expect("identity grammar");
@@ -1481,8 +1503,8 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         ir.model.faces.push(second_face);
         ir.model.surfaces.push(second_surface);
 
-        assert!(sphere_body_projection(&ir, &[]).is_none());
-        assert!(sphere_body_projection(
+        assert!(sphere(&ir, &[]).is_none());
+        assert!(sphere(
             &ir,
             &[
                 body,
