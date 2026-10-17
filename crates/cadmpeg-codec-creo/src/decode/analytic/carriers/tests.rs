@@ -350,6 +350,36 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
 }
 
 #[test]
+fn placed_carriers_resolve_each_row_namespace_once() {
+    // Selecting the row namespace again for every candidate surface would
+    // visit about ROWS * ROWS * ROWS / 2 = 4e9 surface rows here.
+    const ROWS: u32 = 2_000;
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.surfaces
+        .rows
+        .extend((1..=ROWS).map(|id| carrier_row(id, crate::surface::SurfaceKind::Cylinder)));
+    let mut ir = CadIr::empty();
+    ir.model
+        .surfaces
+        .extend((1..=ROWS).map(|id| cylinder_surface(id, f64::from(id))));
+
+    let carriers = crate::decode::with_service_context(|ctx| {
+        placed_carriers(
+            ctx,
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("resolve the placed carriers");
+    assert_eq!(carriers.len(), 2_000);
+    assert!((1..=ROWS).all(|id| matches!(
+        carriers.get(&id),
+        Some(CarrierEquation::Cylinder(cylinder)) if cylinder.radius == f64::from(id)
+    )));
+}
+
+#[test]
 fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();

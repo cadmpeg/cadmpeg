@@ -21,7 +21,7 @@ use crate::topology::HalfEdgeId;
 
 use super::super::native::annotate;
 use super::super::surfaces::cylinders::rowless_round_cylinder_pairs;
-use super::super::surfaces::matches_native_surface_id;
+use super::super::surfaces::native_surface_id_matcher;
 
 use super::super::uniqueness::exactly_one;
 use super::equations::{
@@ -389,11 +389,12 @@ pub(in crate::decode) fn placed_carriers(
                 carriers.insert(row.id, carrier);
                 continue;
             }
+            let matches = native_surface_id_matcher(scan, row.id);
             let mut model_surfaces = ir
                 .model
                 .surfaces
                 .iter()
-                .filter(|surface| matches_native_surface_id(scan, row.id, &surface.id));
+                .filter(|surface| matches(&surface.id));
             let surface = match (model_surfaces.next(), model_surfaces.next()) {
                 (None, _) => continue,
                 (Some(surface), None) => surface,
@@ -428,11 +429,12 @@ pub(in crate::decode) fn placed_carriers(
         }
     }
     for datum in &scan.planes.datum_cylinders {
+        let matches = native_surface_id_matcher(scan, datum.id);
         let Some(surface) = exactly_one(
             ir.model
                 .surfaces
                 .iter()
-                .filter(|surface| matches_native_surface_id(scan, datum.id, &surface.id)),
+                .filter(|surface| matches(&surface.id)),
         ) else {
             carriers.remove(&datum.id);
             continue;
@@ -502,11 +504,12 @@ fn positional_cylinder_carrier(
         == Some(SchemaClass::Round)
         && inline
     {
+        let matches = native_surface_id_matcher(scan, row.id);
         if let Some(surface) = exactly_one(
             ir.model
                 .surfaces
                 .iter()
-                .filter(|surface| matches_native_surface_id(scan, row.id, &surface.id)),
+                .filter(|surface| matches(&surface.id)),
         ) {
             if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
                 return Ok(Some(carrier));
