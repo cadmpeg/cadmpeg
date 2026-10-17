@@ -7,12 +7,14 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
-use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocument, JointConnector, JointLimits, JointOperand, PairedJointKind,
 };
+use cadmpeg_ir::report::loss::LossNote;
 
+use crate::design::components::ComponentInserts;
 use crate::ids::native_stream;
+use crate::loss::F3dLossCode;
 use crate::records::feature::{
     assembly::{
         DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandQualifier,
@@ -243,12 +245,24 @@ pub(crate) fn legacy_as_built_421_generation(
     }
 }
 
+/// Assembly joints and the losses of the joint scopes that do not project.
+#[derive(Debug, Default)]
+pub(crate) struct AssemblyJointProjection {
+    pub(crate) joints: Vec<AssemblyJoint>,
+    pub(crate) losses: Vec<LossNote>,
+}
+
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
+///
+/// Joints are product structure. They read scopes, local occurrence carriers,
+/// and the `Component Insert` occurrences, and no features. A joint scope
+/// whose operands, frames, limits, or alignment values do not project is
+/// skipped and counted in one loss.
 pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
-    features: &[Feature],
-) -> Result<Vec<AssemblyJoint>, CodecError> {
+    inserts: &ComponentInserts,
+) -> AssemblyJointProjection {
     let mut occurrences = BTreeMap::new();
     for occurrence in native_occurrences {
         let Some(stream) = native_stream(&occurrence.id) else {
@@ -267,115 +281,168 @@ pub(crate) fn project_assembly_joints(
             }
         }
     }
-    let mut joints = BTreeMap::new();
+    let mut joints = BTreeMap::<String, AssemblyJoint>::new();
+    let mut unprojected = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(alignment) = scope.assembly_alignment() else {
-            continue;
-        };
-        let (frames, operands, limits) = match alignment.form.as_ref() {
-            Some(
-                crate::records::feature::assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
-                    carriers,
-                    solved_frame,
-                    limits,
-                    ..
-                },
-            ) => (
-                carriers
-                    .frames(solved_frame)
-                    .map_err(cadmpeg_core::CodecError::NotImplemented)?,
-                {
-                    let [first, second] = carriers.selections().map(|selection| {
-                        JointOperand::root(
-                            crate::ids::neutral_assembly_legacy_object_id(selection),
-                            Vec::new(),
-                        )
-                    });
-                    [first, second]
-                },
-                limits.as_ref(),
-            ),
-            Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(
-                operands,
-            )) => {
-                let Some(projected) = project_qualified_operands(
-                    operands.each_ref().map(|operand| &operand.qualifier),
-                    stream,
-                    &occurrences,
-                    scopes,
-                    features,
-                )?
-                else {
-                    continue;
-                };
-                (
-                    operands.each_ref().map(|operand| operand.frame.clone()),
-                    projected,
-                    None,
-                )
+        match project_assembly_joint(scope, stream, &occurrences, scopes, inserts) {
+            Ok(Some(joint)) => {
+                joints.entry(joint.id.as_str().to_owned()).or_insert(joint);
             }
-            _ => continue,
-        };
-        let (angular_limits, linear_limits) = match limits {
-            Some(limits) => {
-                let projected = JointLimits::new(Some(limits.minimum()), Some(limits.maximum()))
-                    .ok_or_else(|| {
-                        CodecError::Malformed(
-                            "joint limits minimum/maximum must be finite and ordered".into(),
-                        )
-                    })?;
-                match limits.kind {
-                    DesignAssemblyLimitKind::Angular => (Some(projected), None),
-                    DesignAssemblyLimitKind::Linear => (None, Some(projected)),
-                }
-            }
-            None => (None, None),
-        };
-        let id = crate::ids::neutral_assembly_joint_id(scope);
-        let [first_operand, second_operand] = operands;
-        let first_frame = super::components::neutral_transform(frames[0].transform)?;
-        let second_frame = super::components::neutral_transform(frames[1].transform)?;
-        let angle = cadmpeg_ir::scalar::FiniteReal::new(alignment.angle())
-            .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
-        let [x, y, z] = alignment.offset().map(|value| {
-            cadmpeg_ir::scalar::FiniteReal::new(value * 10.0).ok_or_else(|| {
-                CodecError::Malformed("joint translation_offset must be finite".into())
-            })
-        });
-        let translation_offset = [x?, y?, z?];
-        if !joints.contains_key(id.as_str()) {
-            let key = id.as_str().to_owned();
-            let native_ref = scope.id.clone();
-            let mut joint = AssemblyJoint::paired(
-                id,
-                PairedJointKind::Fixed {
-                    angle: Some(angle),
-                    translation_offset: Some(translation_offset),
-                    angular_limits,
-                    linear_limits,
-                },
-                [
-                    JointConnector {
-                        operand: first_operand,
-                        frame: first_frame,
-                        detached: false,
-                    },
-                    JointConnector {
-                        operand: second_operand,
-                        frame: second_frame,
-                        detached: false,
-                    },
-                ],
-                None,
-            );
-            joint.native_ref = Some(native_ref);
-            joints.insert(key, joint);
+            Ok(None) => {}
+            Err(_) => unprojected += 1,
         }
     }
-    Ok(joints.into_values().collect())
+    let mut losses = Vec::new();
+    if unprojected != 0 {
+        losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+            "{unprojected} Design assembly joint scope(s) were retained natively: their operands, connector frames, limits, or alignment values do not project."
+        )));
+    }
+    AssemblyJointProjection {
+        joints: joints.into_values().collect(),
+        losses,
+    }
+}
+
+fn project_assembly_joint(
+    scope: &DesignParameterScope,
+    stream: &str,
+    occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
+    scopes: &[DesignParameterScope],
+    inserts: &ComponentInserts,
+) -> Result<Option<AssemblyJoint>, CodecError> {
+    let Some(alignment) = scope.assembly_alignment() else {
+        return Ok(None);
+    };
+    let (frames, operands, limits) = match alignment.form.as_ref() {
+        Some(
+            crate::records::feature::assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                carriers,
+                solved_frame,
+                limits,
+                ..
+            },
+        ) => (
+            carriers
+                .frames(solved_frame)
+                .map_err(cadmpeg_core::CodecError::NotImplemented)?,
+            {
+                let [first, second] = carriers.selections().map(|selection| {
+                    JointOperand::root(
+                        crate::ids::neutral_assembly_legacy_object_id(selection),
+                        Vec::new(),
+                    )
+                });
+                [first, second]
+            },
+            limits.as_ref(),
+        ),
+        Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(
+            operands,
+        )) => {
+            let projected = project_qualified_operands(
+                operands.each_ref().map(|operand| &operand.qualifier),
+                stream,
+                occurrences,
+                scopes,
+                inserts,
+            )
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "assembly joint operand names no projected occurrence or origin".into(),
+                )
+            })?;
+            (
+                operands.each_ref().map(|operand| operand.frame.clone()),
+                projected,
+                None,
+            )
+        }
+        _ => return Ok(None),
+    };
+    let (angular_limits, linear_limits) = match limits {
+        Some(limits) => {
+            let projected = JointLimits::new(Some(limits.minimum()), Some(limits.maximum()))
+                .ok_or_else(|| {
+                    CodecError::Malformed(
+                        "joint limits minimum/maximum must be finite and ordered".into(),
+                    )
+                })?;
+            match limits.kind {
+                DesignAssemblyLimitKind::Angular => (Some(projected), None),
+                DesignAssemblyLimitKind::Linear => (None, Some(projected)),
+            }
+        }
+        None => (None, None),
+    };
+    let [first_operand, second_operand] = operands;
+    let first_frame = super::components::neutral_transform(frames[0].transform)?;
+    let second_frame = super::components::neutral_transform(frames[1].transform)?;
+    let angle = cadmpeg_ir::scalar::FiniteReal::new(alignment.angle())
+        .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
+    let [x, y, z] = alignment.offset().map(|value| {
+        cadmpeg_ir::scalar::FiniteReal::new(value * 10.0)
+            .ok_or_else(|| CodecError::Malformed("joint translation_offset must be finite".into()))
+    });
+    let translation_offset = [x?, y?, z?];
+    let mut joint = AssemblyJoint::paired(
+        crate::ids::neutral_assembly_joint_id(scope),
+        PairedJointKind::Fixed {
+            angle: Some(angle),
+            translation_offset: Some(translation_offset),
+            angular_limits,
+            linear_limits,
+        },
+        [
+            JointConnector {
+                operand: first_operand,
+                frame: first_frame,
+                detached: false,
+            },
+            JointConnector {
+                operand: second_operand,
+                frame: second_frame,
+                detached: false,
+            },
+        ],
+        None,
+    );
+    joint.native_ref = Some(scope.id.clone());
+    Ok(Some(joint))
+}
+
+/// Bind each native `Assemble` feature to the joint that product projection
+/// emitted for its scope.
+pub(crate) fn bind_assembly_joint_features(features: &mut [Feature], joints: &[AssemblyJoint]) {
+    let joints = joints
+        .iter()
+        .filter_map(|joint| Some((joint.native_ref.as_deref()?, &joint.id)))
+        .collect::<BTreeMap<_, _>>();
+    for feature in features {
+        let Some(joint) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|scope| joints.get(scope))
+        else {
+            continue;
+        };
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        ) {
+            continue;
+        }
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(
+                FeatureOperation::AssemblyJoint {
+                    joint: (*joint).clone(),
+                },
+            ));
+    }
 }
 
 fn project_qualified_operands(
@@ -383,114 +450,75 @@ fn project_qualified_operands(
     stream: &str,
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
-    features: &[Feature],
-) -> Result<Option<[JointOperand; 2]>, CodecError> {
-    let project =
-        |qualifier: &DesignAssemblyOperandQualifier| -> Result<Option<JointOperand>, CodecError> {
-            match qualifier {
-                DesignAssemblyOperandQualifier::OccurrencePath { path } => {
-                    let Some(root_guid) = path.occurrence_guids().first().map(|guid| &guid.value)
-                    else {
-                        return Ok(None);
-                    };
-                    let lookup_guid = root_guid.as_str().to_ascii_lowercase();
-                    let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
-                    if occurrence.is_none() && !matches!(path.class_tag().as_str(), "330" | "386") {
-                        return Ok(None);
-                    }
-                    let object = root_guid.as_str().to_ascii_lowercase();
-                    let subelement_guids = &path.occurrence_guids()[1..];
-
-                    let mut subelements = Vec::new();
-                    for guid in subelement_guids {
-                        subelements.push(guid.value.as_str().to_ascii_lowercase());
-                    }
-                    Ok(Some(match occurrence {
-                        Some(_) => JointOperand::occurrence(
-                            crate::ids::neutral_component_occurrence_id(root_guid),
-                            object,
-                            subelements,
-                        ),
-                        None => {
-                            let Some(identity_guid) = path.identity_guids().first() else {
-                                return Ok(None);
-                            };
-                            JointOperand::external(
-                                ExternalDocument::document_id(
-                                    identity_guid.value.as_str().to_owned(),
-                                ),
-                                object,
-                                subelements,
-                            )
-                        }
-                    }))
+    inserts: &ComponentInserts,
+) -> Option<[JointOperand; 2]> {
+    let project = |qualifier: &DesignAssemblyOperandQualifier| -> Option<JointOperand> {
+        match qualifier {
+            DesignAssemblyOperandQualifier::OccurrencePath { path } => {
+                let root_guid = &path.occurrence_guids().first()?.value;
+                let lookup_guid = root_guid.as_str().to_ascii_lowercase();
+                let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
+                if occurrence.is_none() && !matches!(path.class_tag().as_str(), "330" | "386") {
+                    return None;
                 }
-                DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
-                    DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                        component_insert_scope_record_index,
-                        selectors,
-                        ..
-                    } => {
-                        let Some(target_scope) = unique_scope(
-                            scopes,
-                            stream,
-                            *component_insert_scope_record_index,
-                            &crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
-                        ) else {
-                            return Ok(None);
-                        };
-                        let Some(feature) = unique_feature(features, &target_scope.id) else {
-                            return Ok(None);
-                        };
-                        let FeatureDefinition::Operation(FeatureOperation::InsertComponent {
-                            occurrence,
-                        }) = feature.evaluation.definition()
-                        else {
-                            return Ok(None);
-                        };
-                        Ok(Some(JointOperand::occurrence(
-                            OccurrenceId::mint(occurrence.as_str().to_owned()).map_err(
-                                |error| {
-                                    crate::design::text::malformed_design(format_args!("{error}"))
-                                },
-                            )?,
-                            crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
-                            Vec::new(),
-                        )))
-                    }
-                    DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
-                        scope_record_index,
-                    } => Ok(project_joint_origin_operand(
-                        *scope_record_index,
-                        stream,
-                        scopes,
-                        features,
-                    )),
-                },
-                DesignAssemblyOperandQualifier::JointOrigin {
-                    scope_record_index, ..
-                } => Ok(project_joint_origin_operand(
-                    *scope_record_index,
-                    stream,
-                    scopes,
-                    features,
-                )),
+                let object = root_guid.as_str().to_ascii_lowercase();
+                let subelement_guids = &path.occurrence_guids()[1..];
+
+                let mut subelements = Vec::new();
+                for guid in subelement_guids {
+                    subelements.push(guid.value.as_str().to_ascii_lowercase());
+                }
+                Some(match occurrence {
+                    Some(_) => JointOperand::occurrence(
+                        crate::ids::neutral_component_occurrence_id(root_guid),
+                        object,
+                        subelements,
+                    ),
+                    None => JointOperand::external(
+                        ExternalDocument::document_id(
+                            path.identity_guids().first()?.value.as_str().to_owned(),
+                        ),
+                        object,
+                        subelements,
+                    ),
+                })
             }
-        };
-    let Some(first) = project(qualifiers[0])? else {
-        return Ok(None);
+            DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
+                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                    component_insert_scope_record_index,
+                    selectors,
+                    ..
+                } => {
+                    let target_scope = unique_scope(
+                        scopes,
+                        stream,
+                        *component_insert_scope_record_index,
+                        &crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+                    )?;
+                    Some(JointOperand::occurrence(
+                        inserts.occurrence(&target_scope.id)?.clone(),
+                        crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
+                        Vec::new(),
+                    ))
+                }
+                DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                    scope_record_index,
+                } => project_joint_origin_operand(*scope_record_index, stream, scopes),
+            },
+            DesignAssemblyOperandQualifier::JointOrigin {
+                scope_record_index, ..
+            } => project_joint_origin_operand(*scope_record_index, stream, scopes),
+        }
     };
-    let Some(second) = project(qualifiers[1])? else {
-        return Ok(None);
-    };
-    Ok(Some([first, second]))
+    Some([project(qualifiers[0])?, project(qualifiers[1])?])
 }
 
+/// The current-document-root operand named by a `JointOrigin` scope whose
+/// solved frame projects.
 fn project_joint_origin_operand(
     scope_record_index: u32,
     stream: &str,
     scopes: &[DesignParameterScope],
-    features: &[Feature],
 ) -> Option<JointOperand> {
     let target_scope = unique_scope(
         scopes,
@@ -498,20 +526,12 @@ fn project_joint_origin_operand(
         scope_record_index,
         &crate::records::feature::scope::DesignFeatureKind::JointOrigin,
     )?;
-    if let Some(feature) = unique_feature(features, &target_scope.id) {
-        if !matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
-        ) {
-            return None;
-        }
-    } else if target_scope.joint_origin_transform().is_none() {
-        return None;
-    }
-    Some(JointOperand::root(
-        crate::ids::neutral_feature_id(target_scope).into_string(),
-        Vec::new(),
-    ))
+    crate::design::feature_project::joint_origin_frame(target_scope).map(|_| {
+        JointOperand::root(
+            crate::ids::neutral_feature_id(target_scope).into_string(),
+            Vec::new(),
+        )
+    })
 }
 
 fn unique_scope<'a>(
@@ -529,14 +549,6 @@ fn unique_scope<'a>(
     matches.next().is_none().then_some(scope)
 }
 
-fn unique_feature<'a>(features: &'a [Feature], native_ref: &str) -> Option<&'a Feature> {
-    let mut matches = features
-        .iter()
-        .filter(|feature| feature.native_ref.as_deref() == Some(native_ref));
-    let feature = matches.next()?;
-    matches.next().is_none().then_some(feature)
-}
-
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::u64_from_index;
@@ -545,8 +557,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-    use cadmpeg_ir::ids::OccurrenceId;
-    use cadmpeg_ir::math::{Point3, Vector3};
 
     use crate::records::feature::{
         assembly::{
@@ -662,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_rejects_cadir_assembly_translation_overflow() {
+    fn a_joint_frame_translation_overflow_skips_the_joint_with_a_loss() {
         use crate::records::feature::{
             assembly::{
                 DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
@@ -716,20 +726,32 @@ mod tests {
             })
             .unwrap();
         scopes.push(scope);
+
+        let projection = super::project_assembly_joints(
+            &scopes,
+            &[],
+            &crate::design::components::ComponentInserts::default(),
+        );
+        assert!(projection.joints.is_empty());
+        assert_eq!(
+            projection
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()]
+        );
+
         let native = crate::native::F3dNative {
             design_parameter_scopes: scopes,
             ..Default::default()
         };
         let native = serde_json::from_value(serde_json::to_value(native).unwrap()).unwrap();
-        let result = crate::writer::primitives::validate_assembly_projection(
+        crate::writer::primitives::validate_assembly_projection(
             &cadmpeg_ir::document::CadIr::empty(),
             Some(&native),
-        );
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::NotImplemented(m))
-                if m.contains("finite affine transform")
-        ));
+        )
+        .expect("the writer re-projects the same skipped joint");
     }
 
     #[test]
@@ -1052,22 +1074,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn axial_operands_project_component_and_document_root_qualifiers() {
-        let component_scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:component-insert#200",
-            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
-            200,
-        );
-        let origin_scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:joint-origin#80",
+    fn joint_origin_scope(record_index: u32, translation_x: f64) -> DesignParameterScope {
+        let mut scope = DesignParameterScope::empty(
+            &format!("f3d:Design/BulkStream.dat:joint-origin#{record_index}"),
             crate::records::feature::scope::DesignFeatureKind::JointOrigin,
-            80,
+            record_index,
         );
-        let mut origin_scope = origin_scope;
-        origin_scope.with_joint_origin_transform(
+        scope.with_joint_origin_transform(
             [
-                [1.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, translation_x],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
@@ -1075,28 +1090,31 @@ mod tests {
             .try_into()
             .unwrap(),
         );
-        let occurrence =
-            OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
-        let features = [
-            feature(
-                &component_scope.id,
-                FeatureDefinition::Operation(FeatureOperation::InsertComponent {
-                    occurrence: occurrence.clone(),
-                }),
-            ),
-            feature(
-                &origin_scope.id,
-                FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
-                    frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                        Vector3::new(0.0, 1.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                    )
-                    .unwrap(),
-                }),
-            ),
-        ];
+        scope
+    }
+
+    #[test]
+    fn axial_operands_project_component_and_document_root_qualifiers() {
+        let mut component_scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:component-insert#200",
+            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+            200,
+        );
+        if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
+            component_scope.payload_mut()
+        {
+            *slot = Some(
+                crate::records::feature::assembly_features::DesignComponentInsertConstruction {
+                    relation_record_index: 201,
+                    carrier_record_index: 202,
+                    occurrence_identity: None,
+                    neutron_role: "component-role".into(),
+                    neutron_role_offset: 0,
+                    placement: None,
+                },
+            );
+        }
+        let origin_scope = joint_origin_scope(80, 0.0);
         let targets = [
             DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
                 component_insert_scope_record_index: 200,
@@ -1120,20 +1138,32 @@ mod tests {
 
         let qualifiers =
             targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
-        let scopes = vec![component_scope, origin_scope.clone()];
-        let operands = super::project_qualified_operands(
-            qualifiers.each_ref(),
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
+        let scopes = vec![component_scope.clone(), origin_scope.clone()];
+        let inserts = crate::design::components::ComponentInserts::decide(
             &scopes,
-            &features,
-        )
-        .unwrap()
-        .expect("complete axial operands");
+            &crate::design::test_support::synthetic_feature_timelines(std::slice::from_ref(
+                &component_scope,
+            )),
+            &[],
+        );
+        let project =
+            |scopes: &[DesignParameterScope],
+             inserts: &crate::design::components::ComponentInserts| {
+                super::project_qualified_operands(
+                    qualifiers.each_ref(),
+                    "f3d:Design/BulkStream.dat",
+                    &BTreeMap::new(),
+                    scopes,
+                    inserts,
+                )
+            };
+        let operands = project(&scopes, &inserts).expect("complete axial operands");
 
         assert_eq!(
             operands[0].container,
-            cadmpeg_ir::OperandContainer::Occurrence { occurrence }
+            cadmpeg_ir::OperandContainer::Occurrence {
+                occurrence: crate::ids::neutral_component_insert_occurrence_id(&component_scope)
+            }
         );
         assert!(operands[0]
             .object
@@ -1144,16 +1174,68 @@ mod tests {
             crate::ids::neutral_feature_id(&origin_scope).as_str()
         );
 
-        let unlisted_operands = super::project_qualified_operands(
-            qualifiers.each_ref(),
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
-            &scopes,
-            &features[..1],
-        )
-        .unwrap()
-        .expect("frame-resolved unlisted root JointOrigin");
-        assert_eq!(unlisted_operands[1].object, operands[1].object);
+        assert!(
+            project(
+                &scopes,
+                &crate::design::components::ComponentInserts::default()
+            )
+            .is_none(),
+            "an insert without a projected occurrence is no operand"
+        );
+        let unframed = [component_scope, joint_origin_scope(80, 1.0e308)];
+        assert!(
+            project(&unframed, &inserts).is_none(),
+            "a JointOrigin whose frame does not project is no operand"
+        );
+    }
+
+    #[test]
+    fn assemble_features_bind_only_to_projected_joints() {
+        let native = FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "Assemble".into(),
+            parameters: BTreeMap::new(),
+        });
+        let scope = "f3d:Design/BulkStream.dat:design-parameter-scope#3";
+        let mut features = [
+            feature(scope, native.clone()),
+            feature(
+                "f3d:Design/BulkStream.dat:design-parameter-scope#4",
+                native.clone(),
+            ),
+        ];
+        let mut joint = cadmpeg_ir::products::AssemblyJoint::paired(
+            crate::ids::neutral_assembly_joint_id(&DesignParameterScope::empty(
+                scope,
+                crate::records::feature::scope::DesignFeatureKind::Assemble,
+                3,
+            )),
+            cadmpeg_ir::products::PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [0, 1].map(|index| cadmpeg_ir::products::JointConnector {
+                operand: cadmpeg_ir::products::JointOperand::root(
+                    format!("origin-{index}"),
+                    Vec::new(),
+                ),
+                frame: cadmpeg_ir::transform::Transform::identity(),
+                detached: false,
+            }),
+            None,
+        );
+        joint.native_ref = Some(scope.into());
+
+        super::bind_assembly_joint_features(&mut features, std::slice::from_ref(&joint));
+
+        assert_eq!(
+            *features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
+                joint: joint.id.clone()
+            })
+        );
+        assert_eq!(*features[1].evaluation.definition(), native);
     }
 
     #[test]

@@ -13,6 +13,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::design::decode::components::{ComponentDefinition, StreamComponents};
 use crate::loss::F3dLossCode;
 use crate::records::bodies::DesignBodyBinding;
+use crate::records::entity_header::DesignFeatureTimeline;
 use crate::records::feature::{
     assembly::DesignAssemblyOperandQualifier, assembly_features::DesignComponentOccurrence,
     scope::DesignParameterScope,
@@ -539,69 +540,176 @@ pub(crate) fn project_derived_instance_features(
     }
 }
 
-/// Project the occurrence side of an external `Component Insert` when no
-/// container reference places it.
+/// The occurrence of every top-level `Component Insert`.
 ///
-/// The operation still has a complete local placement. The prototype remains
-/// explicitly unresolved because the source does not provide a target
-/// document or a target object that this decoder can identify. Keeping the
-/// occurrence in the product graph lets the feature retain its operation and
-/// transform while native storage retains the exact external-reference role.
-/// The scope alone decides the occurrence; the feature binds to it in
-/// [`bind_unresolved_component_insert_features`].
-pub(crate) fn project_unresolved_component_insert_occurrences(
-    scopes: &[DesignParameterScope],
-    xref: Option<&crate::xref::XrefTable>,
-    ordinal_start: usize,
-) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
-    let mut occurrences = Vec::new();
-    for scope in scopes {
-        let Some(construction) = scope.component_insert_construction() else {
-            continue;
-        };
-        if xref.is_some_and(|table| {
-            crate::xref::component_insert_reference(table, construction).is_some()
-        }) {
-            continue;
+/// The timeline item run names the top-level inserts. An unlisted scope is an
+/// internal operation operand and has no occurrence of its own. A container
+/// reference whose role and transform select a top-level insert places it;
+/// any other top-level insert projects an unresolved occurrence from its own
+/// placement. The prototype of that occurrence stays unresolved because the
+/// source names no target document or object this decoder can identify.
+#[derive(Debug, Default)]
+pub(crate) struct ComponentInserts {
+    /// Occurrence of each placed top-level insert, keyed by scope id.
+    occurrences: BTreeMap<String, OccurrenceId>,
+    /// Inserts that no container reference places, in scope order.
+    unresolved: Vec<UnresolvedComponentInsert>,
+    /// Top-level inserts with no container reference whose placement has no
+    /// finite millimetre transform.
+    unplaced: usize,
+    /// Inserts with no container reference that no authored order classifies.
+    unordered: usize,
+}
+
+#[derive(Debug)]
+struct UnresolvedComponentInsert {
+    id: OccurrenceId,
+    scope: String,
+    name: String,
+    transform: cadmpeg_ir::transform::Transform,
+}
+
+impl ComponentInserts {
+    /// Decide every `Component Insert` occurrence from the scopes, the
+    /// timelines, and the container references.
+    ///
+    /// Timelines that did not decode are passed as none. Native storage keeps
+    /// no record of that failure, so the writer's re-projection would read
+    /// the timelines as absent too. The timeline-less rule then decides, and
+    /// it orders only a single-family stream.
+    pub(crate) fn decide(
+        scopes: &[DesignParameterScope],
+        timelines: &[DesignFeatureTimeline],
+        references: &[crate::records::xref::XrefReference],
+    ) -> Self {
+        let mut inserts = Self::default();
+        if scopes
+            .iter()
+            .all(|scope| scope.component_insert_construction().is_none())
+        {
+            return inserts;
         }
-        occurrences.push(Occurrence {
-            id: crate::ids::neutral_component_insert_occurrence_id(scope),
-            prototype: PrototypeReference::Unresolved {},
-            parent: OccurrenceParent::Root {},
-            ordinal: u32::try_from(ordinal_start.checked_add(occurrences.len()).ok_or_else(
-                || {
+        let authored =
+            crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)
+                .ok();
+        for scope in scopes {
+            let Some(construction) = scope.component_insert_construction() else {
+                continue;
+            };
+            let reference = crate::xref::component_insert_reference(references, construction);
+            let Some(authored) = &authored else {
+                if reference.is_none() {
+                    inserts.unordered += 1;
+                }
+                continue;
+            };
+            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+            if !authored.contains_key(&(stream, scope.record_index)) {
+                continue;
+            }
+            if let Some(reference) = reference {
+                inserts.occurrences.insert(
+                    scope.id.clone(),
+                    crate::ids::neutral_xref_occurrence_id(
+                        reference.ordinal,
+                        reference.occurrence_ordinal,
+                    ),
+                );
+                continue;
+            }
+            let Some(transform) = neutral_affine(*construction.transform()) else {
+                inserts.unplaced += 1;
+                continue;
+            };
+            let id = crate::ids::neutral_component_insert_occurrence_id(scope);
+            inserts.occurrences.insert(scope.id.clone(), id.clone());
+            inserts.unresolved.push(UnresolvedComponentInsert {
+                id,
+                scope: scope.id.clone(),
+                name: construction.neutron_role.clone(),
+                transform,
+            });
+        }
+        inserts
+    }
+
+    /// The occurrence that places the top-level insert `scope`.
+    pub(crate) fn occurrence(&self, scope: &str) -> Option<&OccurrenceId> {
+        self.occurrences.get(scope)
+    }
+
+    /// Root occurrences of the inserts that no container reference places,
+    /// numbered from `ordinal_start`.
+    pub(crate) fn unresolved_occurrences(
+        &self,
+        ordinal_start: usize,
+    ) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
+        let mut occurrences = Vec::new();
+        for (offset, insert) in self.unresolved.iter().enumerate() {
+            let ordinal = ordinal_start
+                .checked_add(offset)
+                .and_then(|ordinal| u32::try_from(ordinal).ok())
+                .ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(
                         "Fusion Design occurrence ordinal exceeds u32",
                     )
-                },
-            )?)
-            .map_err(|_| {
-                cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32")
-            })?,
-            transform: neutral_transform(*construction.transform())?,
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some(construction.neutron_role.clone()),
-            visible: None,
-            link: None,
-            native_ref: Some(scope.id.clone()),
-        });
+                })?;
+            occurrences.push(Occurrence {
+                id: insert.id.clone(),
+                prototype: PrototypeReference::Unresolved {},
+                parent: OccurrenceParent::Root {},
+                ordinal,
+                transform: insert.transform,
+                linked_prototype: None,
+                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+                name: Some(insert.name.clone()),
+                visible: None,
+                link: None,
+                native_ref: Some(insert.scope.clone()),
+            });
+        }
+        Ok(occurrences)
     }
-    Ok(occurrences)
+
+    /// Losses for the inserts that project no occurrence.
+    pub(crate) fn losses(&self) -> Vec<LossNote> {
+        let mut losses = Vec::new();
+        if self.unplaced != 0 {
+            losses.push(F3dLossCode::ComponentInsertUnplaced.note(format!(
+                "{} unresolved Component Insert occurrence(s) were not projected: the placement has no finite millimetre transform.",
+                self.unplaced
+            )));
+        }
+        if self.unordered != 0 {
+            losses.push(F3dLossCode::ComponentInsertOrderUnknown.note(format!(
+                "{} unresolved Component Insert occurrence(s) were not projected: no authored timeline order tells top-level inserts from internal operands.",
+                self.unordered
+            )));
+        }
+        losses
+    }
 }
 
 /// Bind each `Component Insert` feature that no container reference resolved
-/// to the occurrence that [`project_unresolved_component_insert_occurrences`]
-/// projects from its scope.
+/// to the unresolved occurrence that product projection emitted for its scope.
 ///
 /// Run after `crate::xref::bind_component_insert_features`: a feature that
 /// still has its native definition has no container reference.
 pub(crate) fn bind_unresolved_component_insert_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
+    occurrences: &[Occurrence],
 ) {
+    let projected = occurrences
+        .iter()
+        .map(|occurrence| occurrence.id.as_str())
+        .collect::<BTreeSet<_>>();
     for scope in scopes {
         if scope.component_insert_construction().is_none() {
+            continue;
+        }
+        let occurrence = crate::ids::neutral_component_insert_occurrence_id(scope);
+        if !projected.contains(occurrence.as_str()) {
             continue;
         }
         let Some(feature) = features
@@ -619,28 +727,32 @@ pub(crate) fn bind_unresolved_component_insert_features(
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
-                FeatureOperation::InsertComponent {
-                    occurrence: crate::ids::neutral_component_insert_occurrence_id(scope),
-                },
+                FeatureOperation::InsertComponent { occurrence },
             ));
     }
+}
+
+/// A millimetre placement projected from source centimetres, when it is a
+/// finite affine transform.
+pub(crate) fn neutral_affine(
+    transform: impl Into<[[f64; 4]; 4]>,
+) -> Option<cadmpeg_ir::transform::Transform> {
+    let source = transform.into();
+    if source[3] != [0.0, 0.0, 0.0, 1.0] {
+        return None;
+    }
+    let mut rows = [source[0], source[1], source[2]];
+    for row in &mut rows {
+        row[3] *= 10.0;
+    }
+    cadmpeg_ir::transform::Transform::affine(rows)
 }
 
 /// A millimetre placement projected from source centimetres.
 pub(crate) fn neutral_transform(
     transform: impl Into<[[f64; 4]; 4]>,
 ) -> Result<cadmpeg_ir::transform::Transform, cadmpeg_core::CodecError> {
-    let source = transform.into();
-    if source[3] != [0.0, 0.0, 0.0, 1.0] {
-        return Err(cadmpeg_core::CodecError::NotImplemented(
-            "F3D placement must project to a finite affine transform".into(),
-        ));
-    }
-    let mut rows = [source[0], source[1], source[2]];
-    for row in &mut rows {
-        row[3] *= 10.0;
-    }
-    cadmpeg_ir::transform::Transform::affine(rows).ok_or_else(|| {
+    neutral_affine(transform).ok_or_else(|| {
         cadmpeg_core::CodecError::NotImplemented(
             "F3D placement must project to a finite affine transform".into(),
         )
@@ -1121,30 +1233,60 @@ mod tests {
         scope
     }
 
+    fn placed_component_insert_scope(
+        record_index: u32,
+        role: &str,
+        translation: [f64; 3],
+    ) -> DesignParameterScope {
+        let mut scope = component_insert_scope(record_index, role);
+        let mut matrix = identity_matrix();
+        for (row, value) in matrix.iter_mut().zip(translation) {
+            row[3] = value;
+        }
+        if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(Some(
+            construction,
+        )) = scope.payload_mut()
+        {
+            construction.placement = Some(
+                crate::records::feature::assembly_features::DesignComponentInsertMatrix {
+                    scope: crate::records::identity::Located {
+                        value: matrix.try_into().unwrap(),
+                        offset: 0,
+                    },
+                    carrier_offset: None,
+                },
+            );
+        }
+        scope
+    }
+
+    fn resolved_role_reference() -> crate::records::xref::XrefReference {
+        crate::records::xref::XrefReference {
+            id: "f3d:xref:reference#0-occurrence-0".into(),
+            ordinal: 0,
+            occurrence_ordinal: 0,
+            from: "root.f3d".to_owned().try_into().unwrap(),
+            relative_path: "part.f3d".to_owned().try_into().unwrap(),
+            neutron_role: "resolved-role".to_owned().try_into().unwrap(),
+            neutron_data: "data".into(),
+            transform: Some(identity_matrix().try_into().unwrap()),
+        }
+    }
+
+    fn loss_codes(inserts: &super::ComponentInserts) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+        inserts.losses().into_iter().map(|loss| loss.code).collect()
+    }
+
     #[test]
     fn unresolved_component_insert_occurrences_follow_scopes_without_features() {
         let unresolved = component_insert_scope(40, "unresolved-role");
         let resolved = component_insert_scope(50, "resolved-role");
-        let table = crate::xref::XrefTable {
-            designs: Vec::new(),
-            references: vec![crate::records::xref::XrefReference {
-                id: "f3d:xref:reference#0-occurrence-0".into(),
-                ordinal: 0,
-                occurrence_ordinal: 0,
-                from: "root.f3d".to_owned().try_into().unwrap(),
-                relative_path: "part.f3d".to_owned().try_into().unwrap(),
-                neutron_role: "resolved-role".to_owned().try_into().unwrap(),
-                neutron_data: "data".into(),
-                transform: Some(identity_matrix().try_into().unwrap()),
-            }],
-            placement_failures: Vec::new(),
-            placement_overrides: Vec::new(),
-        };
-        let scopes = [unresolved.clone(), resolved];
+        let scopes = [unresolved.clone(), resolved.clone()];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
 
-        let occurrences =
-            super::project_unresolved_component_insert_occurrences(&scopes, Some(&table), 3)
-                .unwrap();
+        let inserts =
+            super::ComponentInserts::decide(&scopes, &timelines, &[resolved_role_reference()]);
+        let occurrences = inserts.unresolved_occurrences(3).unwrap();
 
         assert_eq!(occurrences.len(), 1);
         assert_eq!(
@@ -1160,17 +1302,88 @@ mod tests {
             occurrences[0].prototype,
             PrototypeReference::Unresolved {}
         ));
+        assert_eq!(inserts.occurrence(&unresolved.id), Some(&occurrences[0].id));
         assert_eq!(
-            super::project_unresolved_component_insert_occurrences(&scopes, None, 0)
-                .unwrap()
-                .len(),
-            2
+            inserts.occurrence(&resolved.id),
+            Some(&crate::ids::neutral_xref_occurrence_id(0, 0))
+        );
+        assert!(inserts.losses().is_empty());
+    }
+
+    #[test]
+    fn an_unlisted_component_insert_scope_is_an_operand_without_an_occurrence() {
+        let listed = component_insert_scope(40, "listed-role");
+        let operand = component_insert_scope(50, "operand-role");
+        let timelines =
+            crate::design::test_support::synthetic_feature_timelines(std::slice::from_ref(&listed));
+
+        let inserts =
+            super::ComponentInserts::decide(&[listed.clone(), operand.clone()], &timelines, &[]);
+
+        let occurrences = inserts.unresolved_occurrences(0).unwrap();
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(
+            occurrences[0].native_ref.as_deref(),
+            Some(listed.id.as_str())
+        );
+        assert_eq!(inserts.occurrence(&operand.id), None);
+        assert!(inserts.losses().is_empty());
+    }
+
+    #[test]
+    fn component_inserts_without_an_authored_order_are_not_projected() {
+        let scopes = [
+            component_insert_scope(40, "first-role"),
+            component_insert_scope(50, "second-role"),
+        ];
+
+        let inserts = super::ComponentInserts::decide(&scopes, &[], &[]);
+
+        assert!(inserts.unresolved_occurrences(0).unwrap().is_empty());
+        assert_eq!(inserts.occurrence(&scopes[0].id), None);
+        assert_eq!(
+            loss_codes(&inserts),
+            [crate::loss::F3dLossCode::ComponentInsertOrderUnknown.kind()]
+        );
+    }
+
+    #[test]
+    fn a_component_insert_without_a_millimetre_placement_is_skipped_with_a_loss() {
+        let unplaced = placed_component_insert_scope(40, "unplaced-role", [1.0e308, 0.0, 0.0]);
+        let placed = placed_component_insert_scope(50, "placed-role", [1.0, 2.0, 3.0]);
+        let scopes = [unplaced.clone(), placed.clone()];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+
+        let inserts = super::ComponentInserts::decide(&scopes, &timelines, &[]);
+
+        let occurrences = inserts.unresolved_occurrences(0).unwrap();
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(
+            occurrences[0].native_ref.as_deref(),
+            Some(placed.id.as_str())
+        );
+        assert_eq!(
+            occurrences[0].transform.rows()[0][3],
+            10.0,
+            "translation projects to millimetres"
+        );
+        assert_eq!(inserts.occurrence(&unplaced.id), None);
+        assert_eq!(
+            loss_codes(&inserts),
+            [crate::loss::F3dLossCode::ComponentInsertUnplaced.kind()]
         );
     }
 
     #[test]
     fn unresolved_component_insert_features_bind_to_their_scope_occurrence() {
         let scope = component_insert_scope(40, "unresolved-role");
+        let scopes = std::slice::from_ref(&scope);
+        let inserts = super::ComponentInserts::decide(
+            scopes,
+            &crate::design::test_support::synthetic_feature_timelines(scopes),
+            &[],
+        );
+        let occurrences = inserts.unresolved_occurrences(0).unwrap();
         let mut feature = Feature {
             id: FeatureId::mint("f3d:model:feature#insert").expect("identity grammar"),
             ordinal: 1,
@@ -1189,12 +1402,24 @@ mod tests {
             ),
             native_ref: Some(scope.id.clone()),
         };
+        let native = feature.evaluation.definition().clone();
 
         super::bind_unresolved_component_insert_features(
             std::slice::from_mut(&mut feature),
-            std::slice::from_ref(&scope),
+            scopes,
+            &[],
+        );
+        assert_eq!(
+            *feature.evaluation.definition(),
+            native,
+            "no projected occurrence leaves the feature native"
         );
 
+        super::bind_unresolved_component_insert_features(
+            std::slice::from_mut(&mut feature),
+            scopes,
+            &occurrences,
+        );
         assert_eq!(
             *feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::InsertComponent {

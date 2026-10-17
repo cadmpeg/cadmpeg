@@ -1645,7 +1645,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         })
         .unwrap();
     assert!(matches!(
-        crate::design::feature_project::direct_face_selection(&historical_face_scope, std::slice::from_ref(&operand)).expect("select the direct faces"),
+        crate::design::feature_project::direct_face_selection(&historical_face_scope, std::slice::from_ref(&operand)),
         Some(FaceSelection::Historical { state, faces, native })
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&historical_face_scope), 49)
                 && faces.len() == 1
