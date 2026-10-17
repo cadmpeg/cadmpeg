@@ -103,8 +103,8 @@ use crate::container::EntryContent;
 use crate::decode::ids::{extended_id, native_entity_key, IdScope};
 use crate::decode::Scan;
 use crate::native::history::{
-    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
-    NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+    active_feature_closure, BodyWriterHistory, FeatureDependencies,
+    NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
 };
 use crate::native::om::display_color::{
     RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
@@ -514,6 +514,13 @@ fn attach_records(
     )?;
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations);
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
+    let attribute_uses = first_configuration_attribute_uses(
+        model
+            .om
+            .configuration_attribute_uses
+            .iter()
+            .map(|relation| (relation.configuration.as_str(), relation.id.as_str())),
+    );
     attach_configurations(
         ir,
         model.om.configurations.iter().map(|configuration| {
@@ -521,12 +528,7 @@ fn attach_records(
                 configuration.id.as_str(),
                 configuration.name.as_str(),
                 configuration.source_offset,
-                model
-                    .om
-                    .configuration_attribute_uses
-                    .iter()
-                    .find(|relation| relation.configuration == configuration.id)
-                    .map(|relation| relation.id.as_str()),
+                attribute_uses.get(configuration.id.as_str()).copied(),
             )
         }),
         annotations,
@@ -603,6 +605,18 @@ fn attach_part_attributes<'a>(
         });
     }
     Ok(())
+}
+
+/// The first relation of each configuration in `(configuration, relation)`
+/// pairs.
+fn first_configuration_attribute_uses<'a>(
+    relations: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> BTreeMap<&'a str, &'a str> {
+    let mut first = BTreeMap::new();
+    for (configuration, relation) in relations {
+        first.entry(configuration).or_insert(relation);
+    }
+    first
 }
 
 fn attach_configurations<'a>(
@@ -1353,22 +1367,15 @@ fn attach_active_configuration_parameter_values(
     {
         return Ok(());
     }
-    for (index, parameter) in ir.model.parameters.iter().enumerate() {
-        if ir.model.parameters[..index]
-            .iter()
-            .any(|previous| previous.id == parameter.id)
-        {
+    let mut parameters_by_id = BTreeMap::new();
+    for parameter in &ir.model.parameters {
+        if parameters_by_id.insert(&parameter.id, parameter).is_some() {
             return Ok(());
         }
     }
     for parameter in &ir.model.parameters {
         for dependency in &parameter.dependencies {
-            let Some(preceding) = ir
-                .model
-                .parameters
-                .iter()
-                .find(|candidate| candidate.id == *dependency)
-            else {
+            let Some(preceding) = parameters_by_id.get(dependency) else {
                 return Ok(());
             };
             if preceding.owner != parameter.owner || preceding.ordinal >= parameter.ordinal {
@@ -1501,13 +1508,26 @@ fn attach_initial_segment_bodies(
     annotations: &mut AnnotationBuilder,
     stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<Option<FeatureId>, CodecError> {
-    let has_binding = ir.model.bodies.iter().any(|body| {
-        body_bindings.iter().any(|binding| {
-            body.id
-                .as_str()
-                .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
-        })
-    });
+    let mut bindings_by_stream = BTreeMap::<String, Vec<_>>::new();
+    for binding in body_bindings {
+        bindings_by_stream
+            .entry(binding.stream_ordinal.to_string())
+            .or_default()
+            .push(binding);
+    }
+    let stream_bindings = |body: &cadmpeg_ir::topology::Body| {
+        body.id
+            .as_str()
+            .strip_prefix("nx:s")
+            .and_then(|rest| rest.split_once(':'))
+            .and_then(|(stream, _)| bindings_by_stream.get(stream))
+            .map_or(&[][..], Vec::as_slice)
+    };
+    let has_binding = ir
+        .model
+        .bodies
+        .iter()
+        .any(|body| !stream_bindings(body).is_empty());
     if !has_binding {
         return Ok(None);
     }
@@ -1531,23 +1551,15 @@ fn attach_initial_segment_bodies(
         {
             continue;
         }
-        let mut matched = false;
-        for binding in body_bindings {
-            if !body
-                .id
-                .as_str()
-                .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
-            {
-                continue;
-            }
-            matched = true;
+        let bindings = stream_bindings(body);
+        for binding in bindings {
             source_properties.insert(
                 cadmpeg_core::nonblank_literal!("segment_body_binding.{binding_ordinal}"),
                 binding.id.clone(),
             );
             binding_ordinal += 1;
         }
-        if matched {
+        if !bindings.is_empty() {
             selection_bodies.push(body.id.clone());
             feature_outputs.push(body.id.clone());
         }
@@ -2417,7 +2429,7 @@ fn attach_feature_operations(
                 )
             })
             .transpose()?;
-        let mut dependencies = Vec::new();
+        let mut dependencies = FeatureDependencies::default();
         let retained_operation_body_writes = body_writes_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
@@ -2431,7 +2443,7 @@ fn attach_feature_operations(
         };
         for write in operation_body_writes {
             if let Some(writer) = body_identity_writers.get(&write.frame.body_identity()) {
-                push_unique_feature_dependency(&mut dependencies, writer);
+                dependencies.push(writer);
             }
         }
         if let (
@@ -2458,7 +2470,7 @@ fn attach_feature_operations(
                     &body_alias_roots,
                     &body_writer_history,
                 ) {
-                    push_unique_feature_dependency(&mut dependencies, writer);
+                    dependencies.push(writer);
                 }
                 for body in &operation.tools {
                     if let Some(writer) = boolean_participant_writer(
@@ -2468,7 +2480,7 @@ fn attach_feature_operations(
                         &body_alias_roots,
                         &body_writer_history,
                     ) {
-                        push_unique_feature_dependency(&mut dependencies, writer);
+                        dependencies.push(writer);
                     }
                 }
             }
@@ -2481,7 +2493,7 @@ fn attach_feature_operations(
             if let Some(writer) =
                 body_writer_history.native_writer(canonical_body(operand.operand.atom.value()))
             {
-                push_unique_feature_dependency(&mut dependencies, writer);
+                dependencies.push(writer);
             }
         }
         for operand in operation_body_operands_by_operation
@@ -2495,7 +2507,7 @@ fn attach_feature_operations(
             let Some(writer) = body_writer_history.offset_store_writer(data_block) else {
                 continue;
             };
-            push_unique_feature_dependency(&mut dependencies, writer);
+            dependencies.push(writer);
         }
         for block_use in datum_plane_uses_by_input_operation
             .get(label.id.as_str())
@@ -2510,7 +2522,7 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            push_unique_feature_dependency(&mut dependencies, dependency);
+            dependencies.push(dependency);
         }
         for block_use in datum_csys_uses_by_input_operation
             .get(label.id.as_str())
@@ -2525,7 +2537,7 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            push_unique_feature_dependency(&mut dependencies, dependency);
+            dependencies.push(dependency);
         }
         for identity_use in datum_identity_uses_by_operation
             .get(label.id.as_str())
@@ -2545,13 +2557,13 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            push_unique_feature_dependency(&mut dependencies, dependency);
+            dependencies.push(dependency);
         }
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
             if let Some(feature) =
                 feature_ids_by_operation.get(dependency.sketch_operation_label.as_str())
             {
-                push_unique_feature_dependency(&mut dependencies, feature);
+                dependencies.push(feature);
             }
         }
         let mut source_properties = BTreeMap::new();
@@ -4289,7 +4301,7 @@ fn attach_feature_operations(
             }
         }
         for owner in parameter_owner_dependencies(&parameter_owners, &referenced_parameters) {
-            push_unique_feature_dependency(&mut dependencies, &owner);
+            dependencies.push(&owner);
         }
         if !source_content.is_empty() {
             annotations
@@ -4327,7 +4339,7 @@ fn attach_feature_operations(
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies.into_vec())
                 .map_err(cadmpeg_core::CodecError::from)?,
             source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
@@ -5846,14 +5858,6 @@ fn push_referenced_parameter(referenced: &mut Vec<ParameterId>, expression: &str
     }
 }
 
-fn push_unique_feature_dependency(dependencies: &mut Vec<FeatureId>, candidate: &FeatureId) {
-    if dependencies.contains(candidate) {
-        return;
-    }
-
-    dependencies.push(candidate.clone());
-}
-
 fn preceding_operation_dependency<'a>(
     operation: &str,
     consumer_position: usize,
@@ -5908,16 +5912,14 @@ pub(super) fn parameter_owner_dependencies(
     parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
     parameter_references: &[ParameterId],
 ) -> Vec<FeatureId> {
-    let mut dependencies = Vec::new();
+    let mut dependencies = FeatureDependencies::default();
     for parameter_id in parameter_references {
         let Some(owner) = parameter_owners.get(parameter_id).and_then(Option::as_ref) else {
             continue;
         };
-        if !dependencies.contains(owner) {
-            dependencies.push(owner.clone());
-        }
+        dependencies.push(owner);
     }
-    dependencies
+    dependencies.into_vec()
 }
 
 fn extrude_feature_definition(
@@ -6125,6 +6127,11 @@ fn extract_body_feature_definition(
     FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
 }
 
+fn all_distinct<T: Ord>(items: impl IntoIterator<Item = T>) -> bool {
+    let mut seen = BTreeSet::new();
+    items.into_iter().all(|item| seen.insert(item))
+}
+
 /// Project exact feature-local input-store identities for a trim target and
 /// every complete, distinct tool operand. Retained-side semantics stay unresolved.
 fn offset_store_trim_body_feature_definition(
@@ -6147,20 +6154,14 @@ fn offset_store_trim_body_feature_definition(
     let tools = if let (false, Some(primary_store), true) =
         (operands.is_empty(), primary_store, complete)
     {
-        let distinct_operand_indices = operands.iter().enumerate().all(|(index, operand)| {
-            !operands[..index]
-                .iter()
-                .any(|other| other.operand.atom.value() == operand.operand.atom.value())
-        });
+        let distinct_operand_indices =
+            all_distinct(operands.iter().map(|operand| operand.operand.atom.value()));
         let same_store = tool_data_blocks.iter().all(|block| {
             block
                 .rsplit_once(":block#")
                 .is_some_and(|(store, _)| store == primary_store)
         });
-        let distinct_tool_blocks = tool_data_blocks
-            .iter()
-            .enumerate()
-            .all(|(index, block)| !tool_data_blocks[..index].contains(block));
+        let distinct_tool_blocks = all_distinct(tool_data_blocks.iter().copied());
         let no_target_alias = tool_data_blocks.iter().all(|block| *block != data_block);
         if operands.iter().all(|operand| {
             operand.body_object_index == *object_index
@@ -6256,10 +6257,7 @@ fn sew_body_feature_definition(
                     .rsplit_once(":block#")
                     .is_some_and(|(store, _)| Some(store) == primary_store)
             })
-            && blocks
-                .iter()
-                .enumerate()
-                .all(|(index, block)| !blocks[..index].contains(block))
+            && all_distinct(blocks.iter().copied())
             && !blocks.contains(&primary_data_block);
         if valid {
             let bodies = std::iter::once(primary_data_block)

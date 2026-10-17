@@ -345,6 +345,83 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 }
 
 #[test]
+fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
+    use cadmpeg_ir::ids::RegionId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+
+    let body_ids = (0..2048)
+        .map(|index| format!("nx:s{}:body#{index}", index % 96))
+        .chain(["nx:s:body#0".into(), "nx:s12x:body#0".into()])
+        .collect::<Vec<_>>();
+    let mut ir = CadIr::empty();
+    ir.model.bodies.extend(body_ids.iter().map(|id| Body {
+        id: BodyId::mint(id.clone()).expect("identity grammar"),
+        kind: BodyKind::Solid,
+        regions: vec![
+            RegionId::mint("test:model:entity#region".to_string()).expect("identity grammar"),
+        ],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    }));
+    let bindings = (0..256_u32)
+        .map(|index| crate::native::segments::SegmentBodyBinding {
+            id: format!("nx:segment-body-bindings:binding#{index}"),
+            stream_link: "nx:segment-stream-links:link#0".to_string(),
+            stream_ordinal: (index * 7) % 80,
+            stream_kind: crate::parasolid::StreamKind::Partition,
+            body_object_index: index,
+            body_alias_object_index: index,
+            stream_role: 19,
+            source_offset: u64::from(index),
+        })
+        .collect::<Vec<_>>();
+
+    let mut sorted = ir.model.bodies.clone();
+    sorted.sort_by(|first, second| first.id.cmp(&second.id));
+    let mut expected_outputs = Vec::new();
+    let mut expected_properties = BTreeMap::new();
+    for body in &sorted {
+        let mut matched = false;
+        for binding in &bindings {
+            if body
+                .id
+                .as_str()
+                .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
+            {
+                matched = true;
+                expected_properties.insert(
+                    format!("segment_body_binding.{}", expected_properties.len()),
+                    binding.id.clone(),
+                );
+            }
+        }
+        if matched {
+            expected_outputs.push(body.id.clone());
+        }
+    }
+
+    let mut annotations = AnnotationBuilder::new();
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    attach_initial_segment_bodies(&mut ir, &bindings, &mut annotations, &stream)
+        .expect("admitted retained-history input")
+        .expect("bodies have exact segment bindings");
+
+    let feature = &ir.model.features[0];
+    assert_eq!(feature.evaluation.outputs(), expected_outputs.as_slice());
+    assert_eq!(
+        feature
+            .source_properties
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.clone()))
+            .collect::<BTreeMap<_, _>>(),
+        expected_properties
+    );
+    assert!(expected_outputs.len() > 1024 && expected_outputs.len() < 2048);
+}
+
+#[test]
 fn body_write_does_not_materialize_missing_neutral_geometry() {
     let mut ir = CadIr::empty();
     let binding = crate::native::segments::SegmentBodyBinding {
