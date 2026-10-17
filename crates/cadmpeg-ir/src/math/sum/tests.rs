@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
+use proptest::prelude::{prop_oneof, Just, Strategy};
 use proptest::{prop_assert_eq, proptest};
 
 use super::{
-    bit_is_set, rounded_magnitude, scaled_finite, ExactSignedSum, ScaledValue,
-    EXACT_PRODUCT_EXPONENT, EXACT_SUM_WORDS, MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT,
-    MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
+    bit_is_set, rounded_magnitude, scaled_finite, ExactSignedSum, LaneProductSums, LaneSum,
+    ProductSum, ScaledValue, Window, EXACT_PRODUCT_EXPONENT, EXACT_SUM_WORDS, MAX_SCALED_EXPONENT,
+    MIN_SCALED_EXPONENT, MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
 };
 use crate::scalar::{FiniteReal, NonZeroReal};
+
+mod full_scan;
 
 #[test]
 fn a_zero_value_or_denominator_makes_every_ratio_product_zero() {
@@ -196,6 +199,22 @@ fn highest_bit(magnitude: &[u64; EXACT_SUM_WORDS]) -> usize {
     word * 64 + 63 - cadmpeg_core::decode::index_from_u32(magnitude[word].leading_zeros())
 }
 
+/// The narrowest window over a nonzero magnitude's nonzero words.
+fn tight_window(magnitude: &[u64; EXACT_SUM_WORDS]) -> Window {
+    let low = magnitude
+        .iter()
+        .position(|value| *value != 0)
+        .expect("a nonzero magnitude");
+    let high = magnitude
+        .iter()
+        .rposition(|value| *value != 0)
+        .expect("a nonzero magnitude");
+    Window {
+        low,
+        high: high + 1,
+    }
+}
+
 /// `rounded_magnitude` as it read bit by bit, as `(sign, mantissa, exponent)`.
 fn bitwise_rounded_magnitude(
     negative: bool,
@@ -263,7 +282,9 @@ proptest! {
     ) {
         let magnitude = magnitude(top, &words, low_bit);
         let highest = u16::try_from(highest_bit(&magnitude)).expect("a u16 bit index");
-        let rounded = rounded_magnitude(negative, &magnitude, highest).expect("a rounded value");
+        let low = tight_window(&magnitude).low;
+        let rounded =
+            rounded_magnitude(negative, &magnitude, low, highest).expect("a rounded value");
         let (sign, mantissa, exponent) = bitwise_rounded_magnitude(negative, &magnitude, highest);
         prop_assert_eq!(rounded.sign.to_bits(), sign.to_bits());
         prop_assert_eq!(rounded.mantissa.to_bits(), mantissa.to_bits());
@@ -284,11 +305,317 @@ proptest! {
         let sum = ExactSignedSum {
             positive: magnitude,
             negative: [0; EXACT_SUM_WORDS],
+            window: tight_window(&magnitude),
             invalid: false,
         };
         prop_assert_eq!(
             sum.finite_sum().map(|value| value.get().to_bits()),
             Some(bitwise_subnormal_sum(&magnitude, highest).get().to_bits())
         );
+    }
+}
+
+/// A term of an exact sum, as the evaluators add them.
+#[derive(Clone, Debug)]
+enum Term {
+    Factors2([f64; 2]),
+    Factors3([f64; 3]),
+    Factors4([f64; 4]),
+    /// A binary64 value times a coefficient.
+    Scaled(f64, f64),
+    /// An exact three-factor product, rounded once into the extended range,
+    /// times a coefficient.
+    ScaledProduct([f64; 3], f64),
+}
+
+impl Term {
+    /// The same term with its first factor negated, and with the lowest
+    /// significand bit of that factor flipped when `perturbed`, so that the
+    /// pair cancels exactly or leaves a tail far below both terms.
+    fn opposite(&self, perturbed: bool) -> Self {
+        let flip = |value: f64| {
+            let value = -value;
+            if perturbed {
+                f64::from_bits(value.to_bits() ^ 1)
+            } else {
+                value
+            }
+        };
+        match self.clone() {
+            Self::Factors2([first, rest @ ..]) => Self::Factors2([flip(first), rest[0]]),
+            Self::Factors3([first, second, third]) => Self::Factors3([flip(first), second, third]),
+            Self::Factors4([first, second, third, fourth]) => {
+                Self::Factors4([flip(first), second, third, fourth])
+            }
+            Self::Scaled(value, factor) => Self::Scaled(flip(value), factor),
+            Self::ScaledProduct([first, second, third], factor) => {
+                Self::ScaledProduct([flip(first), second, third], factor)
+            }
+        }
+    }
+
+    fn scaled_value(&self) -> Option<(Option<ScaledValue>, FiniteReal)> {
+        match self {
+            Self::Scaled(value, factor) => Some((scaled_finite(*value), FiniteReal::new(*factor)?)),
+            Self::ScaledProduct(factors, factor) => {
+                let factors = [
+                    NonZeroReal::new(factors[0])?,
+                    NonZeroReal::new(factors[1])?,
+                    NonZeroReal::new(factors[2])?,
+                ];
+                Some((
+                    ScaledValue::product_of_nonzero(factors),
+                    FiniteReal::new(*factor)?,
+                ))
+            }
+            Self::Factors2(_) | Self::Factors3(_) | Self::Factors4(_) => None,
+        }
+    }
+
+    /// Add the term to both accumulators, and answer whether both admitted it
+    /// alike.
+    fn add(&self, windowed: &mut ExactSignedSum, scanned: &mut full_scan::FullScanSum) -> bool {
+        match self {
+            Self::Factors2(factors) => {
+                windowed.add_factors(*factors);
+                scanned.add_factors(*factors);
+            }
+            Self::Factors3(factors) => {
+                windowed.add_factors(*factors);
+                scanned.add_factors(*factors);
+            }
+            Self::Factors4(factors) => {
+                windowed.add_factors(*factors);
+                scanned.add_factors(*factors);
+            }
+            Self::Scaled(..) | Self::ScaledProduct(..) => {
+                if let Some((value, factor)) = self.scaled_value() {
+                    return windowed.add_scaled_product(value, factor)
+                        == scanned.add_scaled_product(value, factor);
+                }
+            }
+        }
+        true
+    }
+}
+
+/// A factor drawn across every binary64 exponent, the subnormal and
+/// non-finite fields included, with the ends of the range and short
+/// significands weighted in so that terms meet and carry.
+fn any_factor() -> impl Strategy<Value = f64> {
+    prop_oneof![
+        4 => (proptest::bool::ANY, 0_u64..=0x7ff, 0_u64..1 << 52).prop_map(
+            |(negative, field, fraction)| {
+                f64::from_bits((u64::from(negative) << 63) | (field << 52) | fraction)
+            }
+        ),
+        2 => (proptest::bool::ANY, 0_u64..=0x7ff).prop_map(|(negative, field)| {
+            f64::from_bits((u64::from(negative) << 63) | (field << 52) | ((1 << 52) - 1))
+        }),
+        2 => (-64_i32..64, 1_u32..16).prop_map(|(exponent, significand)| {
+            f64::from(significand) * 2.0_f64.powi(exponent)
+        }),
+        1 => proptest::sample::select(vec![
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            f64::MAX,
+            -f64::MAX,
+            f64::MIN_POSITIVE,
+            f64::from_bits(1),
+            -f64::from_bits(1),
+            f64::INFINITY,
+            f64::NAN,
+        ]),
+    ]
+}
+
+fn any_term() -> impl Strategy<Value = Term> {
+    prop_oneof![
+        3 => [any_factor(), any_factor()].prop_map(Term::Factors2),
+        1 => [any_factor(), any_factor(), any_factor()].prop_map(Term::Factors3),
+        1 => [any_factor(), any_factor(), any_factor(), any_factor()].prop_map(Term::Factors4),
+        1 => (any_factor(), any_factor()).prop_map(|(value, factor)| Term::Scaled(value, factor)),
+        1 => ([any_factor(), any_factor(), any_factor()], any_factor())
+            .prop_map(|(factors, factor)| Term::ScaledProduct(factors, factor)),
+    ]
+}
+
+/// A term, and how its opposite follows it: not at all, exactly, or with the
+/// lowest bit of its first factor flipped.
+fn any_paired_term() -> impl Strategy<Value = (Term, Option<bool>)> {
+    (
+        any_term(),
+        prop_oneof![Just(None), Just(Some(false)), Just(Some(true))],
+    )
+}
+
+type ScaledParts = Option<(u64, u64, i32)>;
+
+fn scaled_parts(value: Option<ScaledValue>) -> ScaledParts {
+    value.map(|value| {
+        (
+            value.sign.to_bits(),
+            value.mantissa.to_bits(),
+            value.exponent.0,
+        )
+    })
+}
+
+fn finished(
+    windowed: &ExactSignedSum,
+    scanned: &full_scan::FullScanSum,
+) -> [(ScaledParts, Option<u64>); 2] {
+    [
+        (
+            scaled_parts(windowed.finish()),
+            windowed.finite_sum().map(|value| value.get().to_bits()),
+        ),
+        (
+            scaled_parts(scanned.finish()),
+            scanned.finite_sum().map(|value| value.get().to_bits()),
+        ),
+    ]
+}
+
+/// Whether every word outside the window is zero on both sides.
+fn window_holds_every_nonzero_word(sum: &ExactSignedSum) -> bool {
+    let words = sum.window.words();
+    (0..EXACT_SUM_WORDS)
+        .filter(|index| !words.contains(index))
+        .all(|index| sum.positive[index] == 0 && sum.negative[index] == 0)
+}
+
+#[test]
+fn a_carry_out_of_a_full_word_rounds_as_the_full_scan_rounds() {
+    // `2^64 - 1` is the product of the subnormal significand 3855 and a normal
+    // significand. A normal exponent field of 29 modulo 64 places the product
+    // on a word boundary, so it fills one word and writes none above it; a
+    // unit at the right place then carries into a word nothing has written.
+    const SUBNORMAL_SIGNIFICAND: u64 = 3855;
+    assert_eq!(u64::MAX % SUBNORMAL_SIGNIFICAND, 0);
+    let normal_fraction = u64::MAX / SUBNORMAL_SIGNIFICAND - (1 << 52);
+    let units = (0..52)
+        .map(|bit| f64::from_bits(1 << bit))
+        .chain((1..=0x7fe).map(|field| f64::from_bits(field << 52)));
+    for field in (29..=0x7fe).step_by(64) {
+        let full_word = [
+            f64::from_bits(SUBNORMAL_SIGNIFICAND),
+            f64::from_bits((field << 52) | normal_fraction),
+        ];
+        for unit in units.clone() {
+            for unit_term in [[f64::from_bits(1), unit], [unit, 1.0], [-unit, 1.0]] {
+                let mut windowed = ExactSignedSum::default();
+                let mut scanned = full_scan::FullScanSum::default();
+                for term in [full_word, unit_term] {
+                    windowed.add_factors(term);
+                    scanned.add_factors(term);
+                    assert!(window_holds_every_nonzero_word(&windowed));
+                    let [windowed_result, scanned_result] = finished(&windowed, &scanned);
+                    assert_eq!(windowed_result, scanned_result, "{term:?}");
+                }
+            }
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn windowed_sums_round_as_the_full_scan_rounds(
+        terms in proptest::collection::vec(any_paired_term(), 0..12),
+    ) {
+        let mut windowed = ExactSignedSum::default();
+        let mut scanned = full_scan::FullScanSum::default();
+        for (term, opposite) in &terms {
+            prop_assert_eq!(term.add(&mut windowed, &mut scanned), true);
+            prop_assert_eq!(window_holds_every_nonzero_word(&windowed), true);
+            let [windowed_result, scanned_result] = finished(&windowed, &scanned);
+            prop_assert_eq!(windowed_result, scanned_result);
+            if let Some(perturbed) = opposite {
+                prop_assert_eq!(term.opposite(*perturbed).add(&mut windowed, &mut scanned), true);
+                prop_assert_eq!(window_holds_every_nonzero_word(&windowed), true);
+                let [windowed_result, scanned_result] = finished(&windowed, &scanned);
+                prop_assert_eq!(windowed_result, scanned_result);
+            }
+        }
+    }
+
+    #[test]
+    fn a_windowed_product_rounds_as_the_full_scan_rounds(
+        factors in [any_factor(), any_factor(), any_factor(), any_factor()],
+    ) {
+        let Some(factors) = factors
+            .into_iter()
+            .map(NonZeroReal::new)
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Ok(());
+        };
+        prop_assert_eq!(
+            scaled_parts(ScaledValue::product_of_nonzero([factors[0]])),
+            scaled_parts(full_scan::product_of_nonzero([factors[0]]))
+        );
+        prop_assert_eq!(
+            scaled_parts(ScaledValue::product_of_nonzero([factors[0], factors[1]])),
+            scaled_parts(full_scan::product_of_nonzero([factors[0], factors[1]]))
+        );
+        let four = [factors[0], factors[1], factors[2], factors[3]];
+        prop_assert_eq!(
+            scaled_parts(ScaledValue::product_of_nonzero(four)),
+            scaled_parts(full_scan::product_of_nonzero(four))
+        );
+    }
+
+    #[test]
+    fn each_lane_sums_as_product_sum_sums_its_own_terms(
+        terms in proptest::collection::vec(
+            (
+                [any_factor(), any_factor(), any_factor()],
+                [any_factor(), any_factor(), any_factor()],
+            ),
+            0..8,
+        ),
+    ) {
+        // The lanes of a homogeneous sum are pole coordinates and a unit
+        // weight factor, all finite.
+        let terms: Vec<_> = terms
+            .into_iter()
+            .map(|(shared, [x, y, z])| {
+                let finite = |value: f64| if value.is_finite() { value } else { 1.0 };
+                (shared, [finite(x), finite(y), finite(z), 1.0])
+            })
+            .collect();
+        let mut lanes = LaneProductSums::<4>::default();
+        let undefined = terms
+            .iter()
+            .any(|(shared, lane_factors)| lanes.add(*shared, *lane_factors).is_none());
+        let settled = lanes.finish();
+        for (lane, settled) in settled.into_iter().enumerate() {
+            let lane_terms = terms
+                .iter()
+                .map(|(shared, lane_factors)| Some([shared[0], shared[1], shared[2], lane_factors[lane]]));
+            let separate = match super::product_sum(lane_terms.clone()) {
+                ProductSum::Undefined => None,
+                ProductSum::Zero => Some(None),
+                ProductSum::Value(value) => Some(scaled_parts(Some(value))),
+            };
+            let shared = if undefined {
+                None
+            } else {
+                let value = match settled {
+                    LaneSum::Settled(value) => value,
+                    LaneSum::Replay => {
+                        let mut exact = ExactSignedSum::default();
+                        for factors in lane_terms.flatten() {
+                            exact.add_factors(factors);
+                        }
+                        exact.finish()
+                    }
+                };
+                Some(scaled_parts(value))
+            };
+            prop_assert_eq!(shared, separate, "lane {}", lane);
+        }
     }
 }

@@ -6,6 +6,85 @@ use crate::scalar::FiniteReal;
 const EPS_UNIT_RESULT: f64 = 8.0 * f64::EPSILON;
 
 #[test]
+fn a_normal_power_of_two_is_the_power_powi_forms() {
+    for exponent in -1100..=1100 {
+        let formed = super::normal_power_of_two(exponent).map(f64::to_bits);
+        if (-1022..=1023).contains(&exponent) {
+            assert_eq!(
+                formed,
+                Some(2.0_f64.powi(exponent).to_bits()),
+                "2^{exponent}"
+            );
+        } else {
+            assert_eq!(formed, None, "2^{exponent}");
+        }
+    }
+    for exponent in [i32::MIN, i32::MAX] {
+        assert_eq!(super::normal_power_of_two(exponent), None);
+    }
+}
+
+fn power_of_two_product_by_powi(mut value: f64, mut exponent: i32) -> f64 {
+    while exponent > 1023 {
+        value *= 2.0_f64.powi(1023);
+        if !value.is_finite() {
+            return value;
+        }
+        exponent -= 1023;
+    }
+    while exponent < -1022 {
+        value *= 2.0_f64.powi(-969);
+        if value == 0.0 {
+            break;
+        }
+        exponent += 969;
+    }
+    value * 2.0_f64.powi(exponent)
+}
+
+fn assert_power_of_two_product_matches(value: f64, exponent: i32) {
+    assert_eq!(
+        super::power_of_two_product(value, exponent).to_bits(),
+        power_of_two_product_by_powi(value, exponent).to_bits(),
+        "{value:e} * 2^{exponent}"
+    );
+}
+
+#[test]
+fn a_power_of_two_product_is_the_product_powi_forms_at_every_exponent() {
+    let values = [
+        0.0,
+        f64::MIN_POSITIVE,
+        f64::MIN_POSITIVE / 3.0,
+        f64::from_bits(1),
+        0.75,
+        1.0,
+        f64::MAX,
+        f64::INFINITY,
+        f64::NAN,
+    ];
+    for value in values.into_iter().flat_map(|value| [value, -value]) {
+        for exponent in -2200..=2200 {
+            assert_power_of_two_product_matches(value, exponent);
+        }
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn a_power_of_two_product_is_the_product_powi_forms(
+        bits in proptest::prop_oneof![
+            proptest::num::u64::ANY,
+            0..1_u64 << 53,
+            (1_u64 << 63)..(1_u64 << 63) | (1_u64 << 53),
+        ],
+        exponent in -2200..=2200_i32,
+    ) {
+        assert_power_of_two_product_matches(f64::from_bits(bits), exponent);
+    }
+}
+
+#[test]
 fn numerical_audit_translation_retains_finite_cancellation() {
     assert_eq!(
         Point3::new(-1e308, 0.0, 0.0).translated(Vector3::new(1e308, 0.0, 0.0), 2.0),

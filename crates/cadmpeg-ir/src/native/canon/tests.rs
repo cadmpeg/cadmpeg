@@ -684,3 +684,170 @@ fn members_are_placed_in_key_order_however_they_arrive() {
     };
     assert_eq!(stored(&nested), oracle(&nested));
 }
+
+/// Writes its text in pieces of `piece` characters.
+struct Pieces<'a> {
+    text: &'a str,
+    piece: usize,
+}
+
+impl std::fmt::Display for Pieces<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut rest = self.text;
+        while !rest.is_empty() {
+            let end = rest
+                .char_indices()
+                .nth(self.piece)
+                .map_or(rest.len(), |(at, _)| at);
+            formatter.write_str(&rest[..end])?;
+            rest = &rest[end..];
+        }
+        Ok(())
+    }
+}
+
+/// `collect_str` writes the text `serde_json` writes for the same string,
+/// for every `char` and however the `Display` value divides its text.
+#[test]
+fn display_text_is_escaped_as_serde_json_escapes_the_whole_string() {
+    let every_char = (0..=u32::from(char::MAX))
+        .filter_map(char::from_u32)
+        .collect::<String>();
+    let ctx = crate::native::test_ctx();
+    for piece in [1, 2, 3, 7, 64, 512, usize::MAX] {
+        let mut out = b"prefix".to_vec();
+        let written = CanonText::for_record(&ctx, &mut out)
+            .collect_str(&Pieces {
+                text: &every_char,
+                piece,
+            })
+            .expect("text writes");
+        assert!(matches!(written, Written::Text));
+        let mut expected = b"prefix".to_vec();
+        serde_json::to_writer(&mut expected, &every_char).unwrap();
+        assert!(out == expected, "pieces of {piece} characters");
+    }
+}
+
+/// A `Display` value that fails leaves no text behind and states the
+/// refusal the collected text stated.
+#[test]
+fn a_failing_display_value_leaves_no_text() {
+    struct Failing;
+
+    impl std::fmt::Display for Failing {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("partial \"text\"")?;
+            Err(std::fmt::Error)
+        }
+    }
+
+    let ctx = crate::native::test_ctx();
+    let mut out = b"prefix".to_vec();
+    let Err(error) = CanonText::for_record(&ctx, &mut out).collect_str(&Failing) else {
+        panic!("a failing Display value is refused");
+    };
+    assert_eq!(error.to_string(), "a formatting error occurred");
+    assert_eq!(out, b"prefix");
+}
+
+/// The member rewrite as it was before it moved the longest member in place:
+/// the body is split off and every member is copied back in order.
+fn reorder_by_copy(out: &mut Vec<u8>, body_start: usize, order: &[std::ops::Range<usize>]) {
+    let body = out.split_off(body_start);
+    for (index, text) in order.iter().enumerate() {
+        if index > 0 {
+            out.push(b',');
+        }
+        out.extend_from_slice(&body[text.start - body_start..text.end - body_start]);
+    }
+}
+
+/// Every arrival order of up to five members, each with lengths that make
+/// each member in turn the longest, ties included, rewrites to the text the
+/// split-off copy wrote.
+#[test]
+fn in_place_member_reorder_matches_the_copying_rewrite() {
+    fn permutations(items: &mut Vec<usize>, at: usize, each: &mut impl FnMut(&[usize])) {
+        if at == items.len() {
+            each(items);
+            return;
+        }
+        for index in at..items.len() {
+            items.swap(at, index);
+            permutations(items, at + 1, each);
+            items.swap(at, index);
+        }
+    }
+
+    let lengths = [1, 2, 5, 5, 40];
+    for count in 1..=lengths.len() {
+        for rotation in 0..lengths.len() {
+            let sizes = (0..count)
+                .map(|member| lengths[(member + rotation) % lengths.len()])
+                .collect::<Vec<_>>();
+            let mut arrival = (0..count).collect::<Vec<_>>();
+            permutations(&mut arrival, 0, &mut |arrival| {
+                // Member `m` in key order arrives at position `arrival[m]`.
+                let prefix = b"pre{".to_vec();
+                let mut out = prefix.clone();
+                let mut texts = vec![0..0; count];
+                for position in 0..count {
+                    let member = arrival.iter().position(|at| *at == position).unwrap();
+                    if position > 0 {
+                        out.push(b',');
+                    }
+                    let start = out.len();
+                    let byte = b'a' + u8::try_from(member).unwrap();
+                    out.extend(std::iter::repeat_n(byte, sizes[member]));
+                    texts[member] = start..out.len();
+                }
+                let mut expected = out.clone();
+                reorder_by_copy(&mut expected, prefix.len(), &texts);
+                let body = prefix.len()..out.len();
+                super::reorder(&mut out, body, texts.iter());
+                assert_eq!(out, expected, "sizes {sizes:?}, arrival {arrival:?}");
+            });
+        }
+    }
+}
+
+/// A record whose long byte payload arrives before shorter members that
+/// sort ahead of it keeps the text the value tree states.
+#[test]
+fn a_long_payload_member_keeps_canonical_order() {
+    #[derive(Serialize)]
+    struct Segment {
+        id: &'static str,
+        zulu: u8,
+        data: crate::native::bytes::NativeBytes<Vec<u8>>,
+        byte_offset: u64,
+        alpha: &'static str,
+    }
+
+    let segment = Segment {
+        id: "test:native:record#segment",
+        zulu: 1,
+        data: (0..=u8::MAX)
+            .cycle()
+            .take(100_000)
+            .collect::<Vec<_>>()
+            .into(),
+        byte_offset: 7,
+        alpha: "a",
+    };
+    let stored = crate::native::NativeRecord::from_typed(&segment).unwrap();
+    let serde_json::Value::Object(mut fields) = serde_json::to_value(&segment).unwrap() else {
+        panic!("record serializes as an object");
+    };
+    let id = fields.remove("id").unwrap();
+    let mut expected = format!("{{\"id\":{id}");
+    for (key, value) in fields {
+        expected.push(',');
+        expected.push_str(&serde_json::Value::String(key).to_string());
+        expected.push(':');
+        expected.push_str(&value.to_string());
+    }
+    expected.push('}');
+    assert_eq!(serde_json::to_string(&stored).unwrap(), expected);
+}

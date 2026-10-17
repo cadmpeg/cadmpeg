@@ -3,7 +3,7 @@
 use super::admission::EvaluationRefusal;
 use super::decode;
 use crate::features::FinitePoint3;
-use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
+use crate::math::sum::{ExactSignedSum, LaneProductSums, LaneSum, ScaledValue};
 use crate::scalar::FiniteReal;
 
 /// Cloneable pole traversal. Admission precedes each input-dependent advance.
@@ -12,6 +12,8 @@ struct SumTerms<'scratch, 'ctx, 'arena, I> {
     terms: I,
     scratch: &'scratch decode::Scratch<'ctx, 'arena>,
     input_sized: bool,
+    /// The work steps this traversal has charged.
+    charged: usize,
 }
 
 impl<I: Iterator> Iterator for SumTerms<'_, '_, '_, I> {
@@ -23,9 +25,24 @@ impl<I: Iterator> Iterator for SumTerms<'_, '_, '_, I> {
         }
         if self.input_sized {
             self.scratch.work(1)?;
+            self.charged += 1;
         }
         self.terms.next()
     }
+}
+
+/// Charge a traversal of the terms that a shared traversal has already made:
+/// `work` steps, the count one traversal charged.
+fn charge_traversal(
+    scratch: &decode::Scratch<'_, '_>,
+    work: usize,
+) -> Result<(), EvaluationRefusal> {
+    if work > 0 {
+        // A refused charge is recorded in `scratch`, which `unless_refused`
+        // states.
+        scratch.work(work);
+    }
+    scratch.unless_refused()
 }
 
 #[derive(Clone, Copy)]
@@ -35,6 +52,15 @@ pub(super) struct Homogeneous {
 }
 
 impl Homogeneous {
+    /// The four lanes are summed as `product_sum` sums each, and a constant
+    /// coordinate is one every term with a nonzero blend shares.
+    ///
+    /// One traversal forms the f64 pass of every lane and the constant
+    /// coordinates; a lane that `product_sum` would replay is replayed through
+    /// the exact accumulator. Work is charged as for one traversal per lane,
+    /// one per replay and one for the constant coordinates, in that order, so
+    /// the budget and the point of any refusal do not depend on how the
+    /// traversals are shared.
     pub(super) fn sum(
         scratch: &decode::Scratch<'_, '_>,
         terms: impl Iterator<Item = Option<([f64; 2], f64, FinitePoint3)>> + Clone,
@@ -44,33 +70,27 @@ impl Homogeneous {
             terms,
             scratch,
             input_sized,
+            charged: 0,
         };
-        let mut values = [None; 4];
-        for (axis, value) in values.iter_mut().enumerate() {
-            let sum = product_sum(terms.clone().map(|term| {
-                let (basis, weight, point) = term?;
-                Some([
-                    basis[0],
-                    basis[1],
-                    weight,
-                    [point.x, point.y, point.z, 1.0][axis],
-                ])
-            }));
-            scratch.unless_refused()?;
-            // `values` carries the same exact zero that `ExactSignedSum::finish`
-            // and `add_scaled_product` state as `None`.
-            *value = match sum {
-                ProductSum::Undefined => return Ok(None),
-                ProductSum::Zero => None,
-                ProductSum::Value(value) => Some(value),
-            };
-        }
+        let mut traversal = terms.clone();
+        let mut lanes = LaneProductSums::<4>::default();
         let mut constant = [None; 3];
         let mut first = true;
-        for term in terms {
+        for term in traversal.by_ref() {
+            // A missing pole or a factor that is not finite leaves the first
+            // lane undefined, and `product_sum` stops there.
             let Some((basis, weight, point)) = term else {
+                scratch.unless_refused()?;
                 return Ok(None);
             };
+            let shared = [basis[0], basis[1], weight];
+            if lanes
+                .add(shared, [point.x, point.y, point.z, 1.0])
+                .is_none()
+            {
+                scratch.unless_refused()?;
+                return Ok(None);
+            }
             if basis.contains(&0.0) || weight == 0.0 {
                 continue;
             }
@@ -84,6 +104,36 @@ impl Homogeneous {
             first = false;
         }
         scratch.unless_refused()?;
+        let traversal_work = traversal.charged;
+        let mut values = [None; 4];
+        for (axis, (value, lane)) in values.iter_mut().zip(lanes.finish()).enumerate() {
+            if axis > 0 {
+                charge_traversal(scratch, traversal_work)?;
+            }
+            // `values` carries the same exact zero that `ExactSignedSum::finish`
+            // and `add_scaled_product` state as `None`.
+            *value = match lane {
+                LaneSum::Settled(value) => value,
+                LaneSum::Replay => {
+                    let mut sum = ExactSignedSum::default();
+                    for term in terms.clone() {
+                        let Some((basis, weight, point)) = term else {
+                            scratch.unless_refused()?;
+                            return Ok(None);
+                        };
+                        sum.add_factors([
+                            basis[0],
+                            basis[1],
+                            weight,
+                            [point.x, point.y, point.z, 1.0][axis],
+                        ]);
+                    }
+                    scratch.unless_refused()?;
+                    sum.finish()
+                }
+            };
+        }
+        charge_traversal(scratch, traversal_work)?;
         Ok(Some(Self { values, constant }))
     }
 
