@@ -256,6 +256,74 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
     assert!(features[1].dependencies.contains(&producer));
 }
 
+#[test]
+fn compact_generated_edges_match_the_linear_repeat_check() {
+    use crate::records::FeatureInputEdgeSelection;
+    use cadmpeg_ir::features::GeneratedEdgeRef;
+
+    fn linear(
+        selections: &[&FeatureInputEdgeSelection],
+        feature_ids_by_native: &std::collections::HashMap<String, FeatureId>,
+    ) -> Option<Vec<GeneratedEdgeRef>> {
+        let mut generated = Vec::<GeneratedEdgeRef>::new();
+        for selection in selections {
+            let feature_id = feature_ids_by_native.get(selection.terminal_feature_ref.as_ref()?)?;
+            let local_id = super::super::compact_edge_path_value(selection);
+            let edge = GeneratedEdgeRef::new(feature_id.clone(), local_id).ok()?;
+            if !generated.contains(&edge) {
+                generated.push(edge);
+            }
+        }
+        Some(generated)
+    }
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        u32::try_from((state >> 33) % bound).unwrap()
+    };
+    let feature_ids_by_native = (0..3)
+        .map(|native| {
+            (
+                format!("native-{native}"),
+                FeatureId::mint(format!("synthetic:test:id#feature-{native}"))
+                    .expect("identity grammar"),
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let (mut complete, mut repeated) = (0, 0);
+    for _ in 0..256 {
+        let selections = (0..next(40))
+            .map(|ordinal| FeatureInputEdgeSelection {
+                id: format!("edge-{ordinal}"),
+                parent: "lane".into(),
+                ordinal,
+                offset: u64::from(ordinal),
+                object_name_ref: "name".into(),
+                feature_ref: "fillet".into(),
+                local_edge_ids: (0..next(3)).map(|_| next(4)).collect(),
+                components: Vec::new(),
+                references: Vec::new(),
+                producer_feature_refs: Vec::new(),
+                terminal_feature_ref: (next(32) != 0).then(|| format!("native-{}", next(4))),
+            })
+            .collect::<Vec<_>>();
+        let selections = selections.iter().collect::<Vec<_>>();
+        let expected = linear(&selections, &feature_ids_by_native);
+        if let Some(edges) = &expected {
+            complete += 1;
+            repeated += usize::from(edges.len() < selections.len());
+        }
+        assert_eq!(
+            super::super::compact_generated_edges(&selections, &feature_ids_by_native),
+            expected
+        );
+    }
+    assert!(complete > 0 && repeated > 0);
+}
+
 fn compact_edge_projection_feature() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
         id: FeatureId::mint("synthetic:test:id#fillet").expect("identity grammar"),

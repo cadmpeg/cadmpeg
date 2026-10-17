@@ -823,32 +823,12 @@ pub(crate) fn project_compact_edge_selections_with_ids(
             };
             let projected_edges = |selections: &[&FeatureInputEdgeSelection]| -> Result<_, cadmpeg_core::CodecError> {
                 let native = compact_edge_selection_set_value(selections);
-                let mut generated = Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new();
-                let mut complete = true;
-                for selection in selections {
-                    let Some(native_feature) = selection.terminal_feature_ref.as_ref() else {
-                        complete = false;
-                        break;
-                    };
-                    let Some(feature_id) = feature_ids_by_native.get(native_feature) else {
-                        complete = false;
-                        break;
-                    };
-                    let feature = feature_id.clone();
-                    let local_id = compact_edge_path_value(selection);
-                    let Ok(edge) = cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id) else {
-                        complete = false;
-                        break;
-                    };
-                    if !generated.contains(&edge) {
-                        generated.push(edge);
+                match compact_generated_edges(selections, feature_ids_by_native) {
+                    Some(generated) if !generated.is_empty() => {
+                        EdgeSelection::generated(generated, native)
+                            .map_err(cadmpeg_core::CodecError::malformed)
                     }
-                }
-                if complete && !generated.is_empty() {
-                    EdgeSelection::generated(generated, native)
-                        .map_err(cadmpeg_core::CodecError::malformed)
-                } else {
-                    Ok(EdgeSelection::Native(native))
+                    _ => Ok(EdgeSelection::Native(native)),
                 }
             };
             if let Some((existing_edges, tangency_weight)) =
@@ -919,6 +899,26 @@ pub(crate) fn project_compact_edge_selections_with_ids(
     }
 
     Ok(())
+}
+
+/// The distinct generated edges a compact selection set names, in selection
+/// order, or `None` when a selection names no generated edge.
+fn compact_generated_edges(
+    selections: &[&FeatureInputEdgeSelection],
+    feature_ids_by_native: &HashMap<String, cadmpeg_ir::features::FeatureId>,
+) -> Option<Vec<cadmpeg_ir::features::GeneratedEdgeRef>> {
+    let mut generated = Vec::new();
+    let mut seen = HashSet::new();
+    for selection in selections {
+        let feature_id = feature_ids_by_native.get(selection.terminal_feature_ref.as_ref()?)?;
+        let local_id = compact_edge_path_value(selection);
+        if !seen.insert((feature_id, local_id.clone())) {
+            continue;
+        }
+        generated
+            .push(cadmpeg_ir::features::GeneratedEdgeRef::new(feature_id.clone(), local_id).ok()?);
+    }
+    Some(generated)
 }
 
 #[derive(Debug)]
