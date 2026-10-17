@@ -45,13 +45,18 @@ pub(super) fn feature_intervals(
 }
 
 /// The interval that contains `offset`, if one does.
+///
+/// `intervals` is the start-ordered partition [`feature_intervals`] builds, so
+/// the only interval that can contain `offset` is the last one starting at or
+/// before it.
 fn feature_at_offset(
     offset: u64,
     intervals: &[(u64, Option<u64>, String)],
 ) -> Option<&(u64, Option<u64>, String)> {
+    let after = intervals.partition_point(|(start, _, _)| *start <= offset);
     intervals
-        .iter()
-        .find(|(start, end, _)| offset >= *start && end.is_none_or(|end| offset < end))
+        .get(after.checked_sub(1)?)
+        .filter(|(_, end, _)| end.is_none_or(|end| offset < end))
 }
 
 /// The feature that owns `offset`, if one does.
@@ -81,25 +86,60 @@ enum RelationScope {
     Unstatable,
 }
 
+/// Lookups the declaration search repeats for every class.
+struct DeclarationIndex<'a, 'i> {
+    intervals: &'i [(u64, Option<u64>, String)],
+    /// Ascending offsets of the relation classes each feature owns.
+    relation_offsets: HashMap<&'i str, Vec<u64>>,
+    /// Scalars in offset order; equal offsets keep slice order.
+    scalars: Vec<&'a FeatureInputScalar>,
+}
+
+impl<'a, 'i> DeclarationIndex<'a, 'i> {
+    fn new(
+        classes: &[FeatureInputClass],
+        scalars: &'a [FeatureInputScalar],
+        intervals: &'i [(u64, Option<u64>, String)],
+    ) -> Self {
+        let mut relation_offsets = HashMap::<&str, Vec<u64>>::new();
+        for class in classes
+            .iter()
+            .filter(|class| relation_family(&class.name).is_some())
+        {
+            if let Some(feature) = feature_name_at_offset(class.offset, intervals) {
+                relation_offsets
+                    .entry(feature)
+                    .or_default()
+                    .push(class.offset);
+            }
+        }
+        for offsets in relation_offsets.values_mut() {
+            offsets.sort_unstable();
+        }
+        let mut scalars = scalars.iter().collect::<Vec<_>>();
+        scalars.sort_by_key(|scalar| scalar.offset);
+        Self {
+            intervals,
+            relation_offsets,
+            scalars,
+        }
+    }
+}
+
 /// Where the relation's scope ends.
 fn relation_scope_end(
     class: &FeatureInputClass,
-    classes: &[FeatureInputClass],
-    intervals: &[(u64, Option<u64>, String)],
+    index: &DeclarationIndex<'_, '_>,
 ) -> RelationScope {
-    let class_interval = feature_at_offset(class.offset, intervals);
+    let class_interval = feature_at_offset(class.offset, index.intervals);
     let class_feature = class_interval.map(|(_, _, feature)| feature.as_str());
-    let next_class = classes
-        .iter()
-        .filter(|candidate| {
-            candidate.offset > class.offset
-                && relation_family(&candidate.name).is_some()
-                && class_feature.is_some_and(|feature| {
-                    feature_name_at_offset(candidate.offset, intervals) == Some(feature)
-                })
-        })
-        .map(|candidate| candidate.offset)
-        .min();
+    let next_class = class_feature
+        .and_then(|feature| index.relation_offsets.get(feature))
+        .and_then(|offsets| {
+            offsets
+                .get(offsets.partition_point(|offset| *offset <= class.offset))
+                .copied()
+        });
     // The interval the class sits in states its own end; a class in no
     // interval carries its relation over the unknown-feature span instead.
     let (feature_end, unknown_feature_limit) = match class_interval {
@@ -144,19 +184,18 @@ fn relation_declaration_candidates_impl<'a>(
     &'a FeatureInputScalar,
     FeatureInputRelationFamily,
 )> {
+    let index = DeclarationIndex::new(classes, scalars, intervals);
     classes
         .iter()
-        .filter_map(|class| {
-            relation_declaration_candidate(class, classes, scalars, intervals, allow_dynamic)
-        })
+        .filter_map(|class| relation_declaration_candidate(class, &index, allow_dynamic))
         .collect()
 }
 
+/// The nearest scalar after `class`, inside its scope, that states the class's
+/// relation.
 fn relation_declaration_candidate<'a>(
     class: &'a FeatureInputClass,
-    classes: &'a [FeatureInputClass],
-    scalars: &'a [FeatureInputScalar],
-    intervals: &[(u64, Option<u64>, String)],
+    index: &DeclarationIndex<'a, '_>,
     allow_dynamic: bool,
 ) -> Option<(
     &'a FeatureInputClass,
@@ -164,26 +203,29 @@ fn relation_declaration_candidate<'a>(
     FeatureInputRelationFamily,
 )> {
     let family = relation_family(&class.name)?;
-    let class_feature = feature_name_at_offset(class.offset, intervals);
-    let scope_end = match relation_scope_end(class, classes, intervals) {
+    let class_feature = feature_name_at_offset(class.offset, index.intervals);
+    let scope_end = match relation_scope_end(class, index) {
         RelationScope::Ends(end) => Some(end),
         RelationScope::Unbounded => None,
         RelationScope::Unstatable => return None,
     };
-    let scalar = scalars
+    let first_after = index
+        .scalars
+        .partition_point(|scalar| scalar.offset <= class.offset);
+    let scalar = index
+        .scalars
         .iter()
-        .filter(|scalar| {
-            scalar.offset > class.offset
-                && scope_end.is_none_or(|end| scalar.offset < end)
-                && class_feature
-                    .is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
+        .skip(first_after)
+        .take_while(|scalar| scope_end.is_none_or(|end| scalar.offset < end))
+        .find(|scalar| {
+            class_feature.is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
                 && if allow_dynamic {
                     relation_signature_for_declaration(family, scalar)
                 } else {
                     relation_signature(family, &scalar.operands)
                 }
         })
-        .min_by_key(|scalar| scalar.offset)?;
+        .copied()?;
     Some((class, scalar, family))
 }
 
@@ -243,6 +285,13 @@ pub(super) fn relation_instances(
             );
         }
     }
+    let mut relation_class_offsets = lane
+        .classes
+        .iter()
+        .filter(|class| relation_family(&class.name).is_some())
+        .map(|class| class.offset)
+        .collect::<Vec<_>>();
+    relation_class_offsets.sort_unstable();
     // Name lookup keeps the first directory record at a repeated identity.
     let mut names_by_id = HashMap::<&str, &str>::new();
     for name in &lane.names {
@@ -273,15 +322,16 @@ pub(super) fn relation_instances(
             let Some((last_index, last_scalar)) = group.scalars.last() else {
                 continue;
             };
-            // Charge the class interval search and operand comparisons only
+            // Run the class interval search and operand comparisons only
             // when this scalar can extend an existing group.
             let same_scope = group.feature_ref == feature_ref
                 && *last_index + 1 == scalar_index
-                && !lane.classes.iter().any(|class| {
-                    class.offset > last_scalar.offset
-                        && class.offset < scalar.offset
-                        && relation_family(&class.name).is_some()
-                });
+                && relation_class_offsets
+                    .get(
+                        relation_class_offsets
+                            .partition_point(|offset| *offset <= last_scalar.offset),
+                    )
+                    .is_none_or(|offset| *offset >= scalar.offset);
             let same_operands = group
                 .operands
                 .iter()
@@ -1554,6 +1604,140 @@ mod relation_records_tests {
             role,
             operands,
         }
+    }
+
+    /// The per-class linear search the declaration index replaces.
+    fn linear_declaration_candidates(
+        classes: &[FeatureInputClass],
+        scalars: &[FeatureInputScalar],
+        intervals: &[(u64, Option<u64>, String)],
+        allow_dynamic: bool,
+    ) -> Vec<(String, String)> {
+        let interval_at = |offset: u64| {
+            intervals
+                .iter()
+                .find(|(start, end, _)| offset >= *start && end.is_none_or(|end| offset < end))
+        };
+        classes
+            .iter()
+            .filter_map(|class| {
+                let family = super::relation_family(&class.name)?;
+                let interval = interval_at(class.offset);
+                let class_feature = interval.map(|(_, _, feature)| feature.as_str());
+                let next_class = classes
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.offset > class.offset
+                            && super::relation_family(&candidate.name).is_some()
+                            && class_feature.is_some_and(|feature| {
+                                interval_at(candidate.offset)
+                                    .is_some_and(|(_, _, owner)| owner.as_str() == feature)
+                            })
+                    })
+                    .map(|candidate| candidate.offset)
+                    .min();
+                let (feature_end, unknown_feature_limit) = match interval {
+                    Some((_, end, _)) => (*end, None),
+                    None => (None, Some(class.offset.checked_add(UNKNOWN_FEATURE_SPAN)?)),
+                };
+                let scope_end = [next_class, feature_end, unknown_feature_limit]
+                    .into_iter()
+                    .flatten()
+                    .min();
+                let scalar = scalars
+                    .iter()
+                    .filter(|scalar| {
+                        scalar.offset > class.offset
+                            && scope_end.is_none_or(|end| scalar.offset < end)
+                            && class_feature.is_none_or(|feature| {
+                                scalar.feature_ref.as_deref() == Some(feature)
+                            })
+                            && if allow_dynamic {
+                                super::relation_signature_for_declaration(family, scalar)
+                            } else {
+                                relation_signature(family, &scalar.operands)
+                            }
+                    })
+                    .min_by_key(|scalar| scalar.offset)?;
+                Some((class.id.clone(), scalar.id.clone()))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn indexed_declaration_search_matches_the_linear_search() {
+        let mut state = 0x2545_f491_u64;
+        let mut next = |bound: u64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) % bound
+        };
+        let intervals = [
+            (500, Some(1_500), "a".to_string()),
+            (1_500, Some(2_500), "b".to_string()),
+            (2_500, None, "a".to_string()),
+        ];
+        let mut classes = Vec::new();
+        for index in 0..300 {
+            let name = if next(3) == 0 {
+                "sgEntHandle"
+            } else {
+                "sgPntPntHorDist"
+            };
+            let mut declared = class(next(3_200), name);
+            declared.id = format!("class-{index}");
+            classes.push(declared);
+        }
+        let mut scalars = Vec::new();
+        for index in 0..600 {
+            let mut stated = scalar(next(3_200), FeatureInputScalarRole::Driving);
+            stated.id = format!("scalar-{index}");
+            stated.feature_ref = match next(4) {
+                0 => None,
+                1 => Some("b".into()),
+                _ => Some("a".into()),
+            };
+            if next(5) == 0 {
+                stated.operands.truncate(1);
+            }
+            scalars.push(stated);
+        }
+        for intervals in [&intervals[..], &[]] {
+            for allow_dynamic in [false, true] {
+                let indexed = super::relation_declaration_candidates_impl(
+                    &classes,
+                    &scalars,
+                    intervals,
+                    allow_dynamic,
+                )
+                .into_iter()
+                .map(|(class, scalar, _)| (class.id.clone(), scalar.id.clone()))
+                .collect::<Vec<_>>();
+                assert!(!indexed.is_empty());
+                assert_eq!(
+                    indexed,
+                    linear_declaration_candidates(&classes, &scalars, intervals, allow_dynamic)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn declaration_search_is_linear_in_classes_and_scalars() {
+        const RELATIONS: u64 = 1 << 14;
+        let intervals = [(0, None, "sketch".to_string())];
+        let classes = (0..RELATIONS)
+            .map(|index| class(index * 100, "sgPntPntHorDist"))
+            .collect::<Vec<_>>();
+        let scalars = (0..RELATIONS)
+            .map(|index| scalar(index * 100 + 50, FeatureInputScalarRole::Driving))
+            .collect::<Vec<_>>();
+        let candidates = relation_declaration_candidates(&classes, &scalars, &intervals);
+        assert_eq!(candidates.len(), usize::try_from(RELATIONS).unwrap());
+        assert!(candidates
+            .iter()
+            .all(|(class, scalar, _)| scalar.offset == class.offset + 50));
     }
 
     fn circle_scalar(

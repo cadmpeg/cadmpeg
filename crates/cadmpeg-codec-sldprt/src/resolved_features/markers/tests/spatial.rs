@@ -1376,3 +1376,61 @@ fn spatial_vertex_record_decodes_model_coordinates() {
     payload[7 + 43] = 0x1e;
     assert!(crate::resolved_features::markers::spatial_vertex_coordinates(&payload).is_empty());
 }
+
+#[test]
+fn reference_cells_index_classes_by_parent_and_offset() {
+    const CELLS: u64 = 1 << 14;
+    let parent = "sldprt:feature-input:resolved-features#synthetic";
+    let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
+    let cell_offset = |index: u64| 1_000 + index * 32;
+    let operands = (0..CELLS)
+        .map(|index| FeatureInputOperand {
+            offset: cell_offset(index),
+            reference_ref: format!("sldprt:feature-input:reference#synthetic:{index}"),
+            kind,
+            entity_index: 0,
+            entity_ref: None,
+        })
+        .collect();
+    let scalars = [FeatureInputScalar {
+        id: "scalar".into(),
+        parent: parent.into(),
+        feature_ref: None,
+        ordinal: 0,
+        offset: 100,
+        object_id: 1,
+        name: "name".into(),
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
+        role: FeatureInputScalarRole::Driving,
+        operands,
+    }];
+    let class = |parent: &str, offset: u64, id: String| FeatureInputClass {
+        id,
+        parent: parent.into(),
+        ordinal: 0,
+        offset,
+        name: "sgEntHandle".into(),
+    };
+    let mut classes = (0..CELLS)
+        .map(|index| {
+            class(
+                parent,
+                cell_offset(index) + 20,
+                format!("undeclared-{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    classes.push(class(parent, cell_offset(0) + 12, "declared".into()));
+    classes.push(class(
+        "other-lane",
+        cell_offset(1) + 12,
+        "other-lane".into(),
+    ));
+
+    let references = reference_cells(&scalars, &classes).unwrap();
+
+    assert_eq!(references.len(), usize::try_from(CELLS).unwrap());
+    assert!(references
+        .iter()
+        .all(|reference| reference.class_ref.as_deref() == Some("declared")));
+}

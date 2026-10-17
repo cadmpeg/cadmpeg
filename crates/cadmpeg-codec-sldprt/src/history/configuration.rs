@@ -217,7 +217,36 @@ pub(crate) fn project_compact_and_generated(
     Ok(())
 }
 
+/// History records the configuration pass may copy and enrich in total. Each
+/// configuration charges one unit per history, history content item and
+/// feature; configurations left when it runs out keep empty states.
+const CONFIGURATION_PROJECTION_WORK: usize = 1 << 26;
+
+/// The loss for configurations the pass left unprojected.
+pub(crate) fn configuration_projection_capped_loss(
+    unprojected: usize,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::SldprtLossCode::ConfigProjectionWorkCapped.note(format!(
+        "{unprojected} configuration(s) were left without projected parameter values and \
+         feature states because the configuration pass exceeded the local work cap \
+         CONFIGURATION_PROJECTION_WORK ({CONFIGURATION_PROJECTION_WORK})."
+    ))
+}
+
+/// History records one configuration pass copies, or `None` past `usize`.
+fn configuration_history_units(histories: &[FeatureHistory]) -> Option<usize> {
+    histories.iter().try_fold(0_usize, |units, history| {
+        units
+            .checked_add(1)?
+            .checked_add(history.content.len())?
+            .checked_add(history.features.len())
+    })
+}
+
 /// Reproject configuration-local evaluated parameters and feature operations from native lanes.
+///
+/// Returns how many configurations were left unprojected because the pass
+/// reached [`CONFIGURATION_PROJECTION_WORK`].
 pub(crate) fn project_configuration_design_states(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -225,7 +254,40 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<usize, cadmpeg_core::CodecError> {
+    project_configuration_design_states_within(
+        ctx,
+        ir,
+        ConfigurationSources {
+            histories,
+            lanes,
+            pmi_dimensions,
+        },
+        form_padding,
+        CONFIGURATION_PROJECTION_WORK,
+    )
+}
+
+/// The native records a configuration pass projects from.
+#[derive(Clone, Copy)]
+struct ConfigurationSources<'a> {
+    histories: &'a [FeatureHistory],
+    lanes: &'a [crate::records::FeatureInputLane],
+    pmi_dimensions: &'a [crate::records::PmiDimension],
+}
+
+fn project_configuration_design_states_within(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    sources: ConfigurationSources<'_>,
+    form_padding: Option<usize>,
+    work_limit: usize,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    let ConfigurationSources {
+        histories,
+        lanes,
+        pmi_dimensions,
+    } = sources;
     let mut resolved_base_features = copy_configuration_features(&ir.model.features);
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut resolved_base_features,
@@ -250,9 +312,13 @@ pub(crate) fn project_configuration_design_states(
         configuration.parameter_values.clear();
         configuration.feature_states.clear();
     }
-    for (configuration_index, lane_index) in
-        configuration_lane_assignments(&ir.model.configurations, lanes)
-    {
+    let assignments = configuration_lane_assignments(&ir.model.configurations, lanes);
+    let work = cadmpeg_core::decode::WorkBudget::new(work_limit);
+    let history_units = configuration_history_units(histories);
+    for (position, &(configuration_index, lane_index)) in assignments.iter().enumerate() {
+        if !history_units.is_some_and(|units| work.charge_by(units)) {
+            return Ok(assignments.len() - position);
+        }
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut projection = histories.to_vec();
         // Seed PMI types before lane enrichment so dimension semantics reject
@@ -364,7 +430,7 @@ pub(crate) fn project_configuration_design_states(
         ir.model.configurations[configuration_index].feature_states = feature_states;
     }
 
-    Ok(())
+    Ok(0)
 }
 
 /// Project edge operands carried only by supplemental config-object lanes into
@@ -373,6 +439,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
     ir: &mut cadmpeg_ir::CadIr,
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let slots = ConfigurationSlots::new(&ir.model.configurations);
     for lane in lanes
         .iter()
         .filter(|lane| crate::resolved_features::assembly::is_supplemental_config_lane(lane))
@@ -384,9 +451,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         else {
             continue;
         };
-        let Some(configuration_index) =
-            configuration_index_for_slot(&ir.model.configurations, slot_index)
-        else {
+        let Some(configuration_index) = slots.index_for_slot(slot_index) else {
             continue;
         };
         let states = &ir.model.configurations[configuration_index].feature_states;
@@ -1306,6 +1371,57 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
     }
 }
 
+/// The first configuration and whether another follows, for one slot key.
+#[derive(Clone, Copy)]
+struct SlotMatch {
+    first: usize,
+    unique: bool,
+}
+
+/// Configuration positions keyed by an explicit `id` property, and by ordinal
+/// for configurations without one.
+struct ConfigurationSlots {
+    explicit: HashMap<u32, SlotMatch>,
+    ordinal: HashMap<u32, SlotMatch>,
+}
+
+impl ConfigurationSlots {
+    fn new(configurations: &[DesignConfiguration]) -> Self {
+        fn note(matches: &mut HashMap<u32, SlotMatch>, key: u32, index: usize) {
+            matches
+                .entry(key)
+                .and_modify(|found| found.unique = false)
+                .or_insert(SlotMatch {
+                    first: index,
+                    unique: true,
+                });
+        }
+        let mut explicit = HashMap::new();
+        let mut ordinal = HashMap::new();
+        for (index, configuration) in configurations.iter().enumerate() {
+            match configuration
+                .properties
+                .get("id")
+                .and_then(|value| value.parse::<u32>().ok())
+            {
+                Some(id) => note(&mut explicit, id, index),
+                None => note(&mut ordinal, configuration.ordinal, index),
+            }
+        }
+        Self { explicit, ordinal }
+    }
+
+    /// A slot names the one configuration whose `id` is the slot, or else the
+    /// one configuration without an `id` at that ordinal.
+    fn index_for_slot(&self, slot_index: u32) -> Option<usize> {
+        let found = self
+            .explicit
+            .get(&slot_index)
+            .or_else(|| self.ordinal.get(&slot_index))?;
+        found.unique.then_some(found.first)
+    }
+}
+
 pub(super) fn configuration_lane_assignments(
     configurations: &[DesignConfiguration],
     lanes: &[crate::records::FeatureInputLane],
@@ -1326,19 +1442,20 @@ pub(super) fn configuration_lane_assignments(
         let indices = lanes_by_configuration.entry(slot_index).or_default();
         indices.push(lane_index);
     }
+    let slots = ConfigurationSlots::new(configurations);
     let mut result = Vec::new();
     for (slot_index, lane_indices) in lanes_by_configuration {
         let [lane_index] = lane_indices.as_slice() else {
             continue;
         };
-        if let Some(configuration_index) = configuration_index_for_slot(configurations, slot_index)
-        {
+        if let Some(configuration_index) = slots.index_for_slot(slot_index) {
             result.push((configuration_index, *lane_index));
         }
     }
     result
 }
 
+#[cfg(test)]
 fn configuration_index_for_slot(
     configurations: &[DesignConfiguration],
     slot_index: u32,

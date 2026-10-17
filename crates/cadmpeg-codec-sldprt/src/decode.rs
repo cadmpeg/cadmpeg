@@ -3857,7 +3857,7 @@ fn project_design_history(
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters =
         crate::history::parameters::project_parameters(ctx, &parameter_projection)?;
-    crate::history::configuration::project_configuration_design_states(
+    let unprojected = crate::history::configuration::project_configuration_design_states(
         ctx,
         ir,
         histories,
@@ -3865,6 +3865,10 @@ fn project_design_history(
         pmi_dimensions,
         form_padding,
     )?;
+    if unprojected > 0 {
+        losses
+            .push(crate::history::configuration::configuration_projection_capped_loss(unprojected));
+    }
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
