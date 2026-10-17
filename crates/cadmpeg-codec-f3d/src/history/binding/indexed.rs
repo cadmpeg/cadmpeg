@@ -9,10 +9,20 @@ use crate::history_records::{
 };
 use std::collections::BTreeMap;
 
-fn group<T>(rows: Vec<T>, key: impl Fn(&T) -> i64) -> BTreeMap<i64, Vec<T>> {
+/// One bit per topology family.
+type Families = u64;
+
+fn group<T>(
+    rows: Vec<T>,
+    key: impl Fn(&T) -> i64,
+    family: Families,
+    families: &mut BTreeMap<i64, Families>,
+) -> BTreeMap<i64, Vec<T>> {
     let mut groups = BTreeMap::<i64, Vec<T>>::new();
     for row in rows {
-        groups.entry(key(&row)).or_default().push(row);
+        let slot = key(&row);
+        *families.entry(slot).or_default() |= family;
+        groups.entry(slot).or_default().push(row);
     }
     groups
 }
@@ -21,67 +31,49 @@ fn ordered_rows<T>(rows: &[T], key: impl Fn(&T) -> i64) -> bool {
     rows.windows(2).all(|pair| key(&pair[0]) <= key(&pair[1]))
 }
 
-fn project_family<T: Clone>(current: &BTreeMap<i64, Vec<T>>, keys: &Slots) -> Vec<T> {
-    if keys.len() < current.len() {
-        keys.iter()
-            .filter_map(|key| current.get(key))
-            .flatten()
-            .cloned()
-            .collect()
-    } else {
-        current
-            .iter()
-            .filter(|(key, _)| keys.contains(key))
-            .flat_map(|(_, rows)| rows.iter().cloned())
-            .collect()
-    }
-}
-
-fn replace_family<T: Clone>(
+fn insert_family<T: Clone>(
     current: &mut BTreeMap<i64, Vec<T>>,
+    families: &mut BTreeMap<i64, Families>,
     rows: &[T],
     keys: &Slots,
     key: impl Fn(&T) -> i64,
+    family: Families,
 ) {
-    if current.len() < keys.len() {
-        current.retain(|slot, _| !keys.contains(slot));
-    } else {
-        for slot in keys {
-            current.remove(slot);
-        }
-    }
-    if rows.len() < keys.len() {
-        for row in rows {
-            let slot = key(row);
-            if keys.contains(&slot) {
-                current.entry(slot).or_default().push(row.clone());
-            }
-        }
-    } else {
-        for slot in keys {
-            let start = rows.partition_point(|row| key(row) < *slot);
-            let end = rows.partition_point(|row| key(row) <= *slot);
-            if start != end {
-                current.insert(*slot, rows[start..end].to_vec());
-            }
+    for run in rows.chunk_by(|left, right| key(left) == key(right)) {
+        let slot = key(&run[0]);
+        if keys.contains(&slot) {
+            current.entry(slot).or_default().extend_from_slice(run);
+            *families.entry(slot).or_default() |= family;
         }
     }
 }
 
 macro_rules! indexed_topology {
-    (entities { $($entity:ident: $ety:ty => $ekey:expr),* $(,)? }
-     containers { $($container:ident: $cty:ty => $ckey:expr),* $(,)? }) => {
+    (entities { $($entity:ident = $ebit:literal: $ety:ty => $ekey:expr),* $(,)? }
+     containers { $($container:ident = $cbit:literal: $cty:ty => $ckey:expr),* $(,)? }) => {
+        /// Rows of each family grouped by key. `families` holds the families
+        /// with rows at each slot, so a keyed edit visits only those.
         #[derive(Default)]
         pub(super) struct IndexedTopology {
+            families: BTreeMap<i64, Families>,
             $($entity: BTreeMap<i64, Vec<$ety>>),*,
             $($container: BTreeMap<i64, Vec<$cty>>),*
         }
+        impl IndexedTopology {
+            const ENTITIES: Families = $((1 << $ebit))|*;
+            const CONTAINERS: Families = $((1 << $cbit))|*;
+        }
+        const _: () = assert!(
+            IndexedTopology::ENTITIES | IndexedTopology::CONTAINERS
+                == (1 << [$($ebit,)* $($cbit,)*].len()) - 1,
+            "family bits are distinct and dense"
+        );
         impl From<AsmHistoricalTopology> for IndexedTopology {
             fn from(topology: AsmHistoricalTopology) -> Self {
-                Self {
-                    $($entity: group(topology.$entity, $ekey)),*,
-                    $($container: group(topology.$container, $ckey)),*
-                }
+                let mut families = BTreeMap::new();
+                $(let $entity = group(topology.$entity, $ekey, 1 << $ebit, &mut families);)*
+                $(let $container = group(topology.$container, $ckey, 1 << $cbit, &mut families);)*
+                Self { families, $($entity),*, $($container),* }
             }
         }
         impl IndexedTopology {
@@ -98,18 +90,60 @@ macro_rules! indexed_topology {
             }
             pub(super) fn project(&self, keys: &Slots, containers: bool) -> AsmHistoricalTopology {
                 let mut out = AsmHistoricalTopology::default();
-                if containers {
-                    $(out.$container = project_family(&self.$container, keys);)*
-                } else {
-                    $(out.$entity = project_family(&self.$entity, keys);)*
+                for key in keys {
+                    let Some(&present) = self.families.get(key) else {
+                        continue;
+                    };
+                    if containers {
+                        $(if present & (1 << $cbit) != 0 {
+                            out.$container.extend(self.$container.get(key).into_iter().flatten().cloned());
+                        })*
+                    } else {
+                        $(if present & (1 << $ebit) != 0 {
+                            out.$entity.extend(self.$entity.get(key).into_iter().flatten().cloned());
+                        })*
+                    }
                 }
                 out
             }
             pub(super) fn replace(&mut self, part: AsmHistoricalTopology, keys: &Slots, containers: bool) {
+                let half = if containers { Self::CONTAINERS } else { Self::ENTITIES };
+                for key in keys {
+                    let Some(present) = self.families.get_mut(key) else {
+                        continue;
+                    };
+                    if containers {
+                        $(if *present & (1 << $cbit) != 0 {
+                            self.$container.remove(key);
+                        })*
+                    } else {
+                        $(if *present & (1 << $ebit) != 0 {
+                            self.$entity.remove(key);
+                        })*
+                    }
+                    *present &= !half;
+                    if *present == 0 {
+                        self.families.remove(key);
+                    }
+                }
                 if containers {
-                    $(replace_family(&mut self.$container, &part.$container, keys, $ckey);)*
+                    $(insert_family(
+                        &mut self.$container,
+                        &mut self.families,
+                        &part.$container,
+                        keys,
+                        $ckey,
+                        1 << $cbit,
+                    );)*
                 } else {
-                    $(replace_family(&mut self.$entity, &part.$entity, keys, $ekey);)*
+                    $(insert_family(
+                        &mut self.$entity,
+                        &mut self.families,
+                        &part.$entity,
+                        keys,
+                        $ekey,
+                        1 << $ebit,
+                    );)*
                 }
             }
         }
@@ -118,40 +152,40 @@ macro_rules! indexed_topology {
 
 indexed_topology! {
     entities {
-        faces: i64 => |row: &i64| *row,
-        loops: i64 => |row: &i64| *row,
-        coedges: i64 => |row: &i64| *row,
-        edges: i64 => |row: &i64| *row,
-        vertices: i64 => |row: &i64| *row,
-        points: i64 => |row: &i64| *row,
-        surfaces: i64 => |row: &i64| *row,
-        surface_radii: AsmHistoricalSurfaceRadius => |row: &AsmHistoricalSurfaceRadius| row.surface,
-        surface_cylinders: AsmHistoricalCylinder => |row: &AsmHistoricalCylinder| row.surface,
-        surface_planes: AsmHistoricalPlane => |row: &AsmHistoricalPlane| row.surface,
-        surface_axes: AsmHistoricalSurfaceAxis => |row: &AsmHistoricalSurfaceAxis| row.surface,
-        curves: i64 => |row: &i64| *row,
-        curve_axes: AsmHistoricalCurveAxis => |row: &AsmHistoricalCurveAxis| row.curve,
-        pcurves: i64 => |row: &i64| *row,
-        persistent_subentity_tags: AsmHistoricalPersistentSubentityTag => |row: &AsmHistoricalPersistentSubentityTag| row.entity_ref,
-        face_loops: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        loop_coedges: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        coedge_topology: AsmHistoricalCoedge => |row: &AsmHistoricalCoedge| row.coedge,
-        edge_vertices: AsmHistoricalEdge => |row: &AsmHistoricalEdge| row.edge,
-        face_surfaces: AsmHistoricalCarrierBinding => |row: &AsmHistoricalCarrierBinding| row.entity,
-        edge_curves: AsmHistoricalOptionalCarrierBinding => |row: &AsmHistoricalOptionalCarrierBinding| row.entity,
-        coedge_pcurves: AsmHistoricalOptionalCarrierBinding => |row: &AsmHistoricalOptionalCarrierBinding| row.entity,
-        vertex_points: AsmHistoricalCarrierBinding => |row: &AsmHistoricalCarrierBinding| row.entity,
-        point_positions: AsmHistoricalPoint => |row: &AsmHistoricalPoint| row.point,
+        faces = 0: i64 => |row: &i64| *row,
+        loops = 1: i64 => |row: &i64| *row,
+        coedges = 2: i64 => |row: &i64| *row,
+        edges = 3: i64 => |row: &i64| *row,
+        vertices = 4: i64 => |row: &i64| *row,
+        points = 5: i64 => |row: &i64| *row,
+        surfaces = 6: i64 => |row: &i64| *row,
+        surface_radii = 7: AsmHistoricalSurfaceRadius => |row: &AsmHistoricalSurfaceRadius| row.surface,
+        surface_cylinders = 8: AsmHistoricalCylinder => |row: &AsmHistoricalCylinder| row.surface,
+        surface_planes = 9: AsmHistoricalPlane => |row: &AsmHistoricalPlane| row.surface,
+        surface_axes = 10: AsmHistoricalSurfaceAxis => |row: &AsmHistoricalSurfaceAxis| row.surface,
+        curves = 11: i64 => |row: &i64| *row,
+        curve_axes = 12: AsmHistoricalCurveAxis => |row: &AsmHistoricalCurveAxis| row.curve,
+        pcurves = 13: i64 => |row: &i64| *row,
+        persistent_subentity_tags = 14: AsmHistoricalPersistentSubentityTag => |row: &AsmHistoricalPersistentSubentityTag| row.entity_ref,
+        face_loops = 15: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        loop_coedges = 16: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        coedge_topology = 17: AsmHistoricalCoedge => |row: &AsmHistoricalCoedge| row.coedge,
+        edge_vertices = 18: AsmHistoricalEdge => |row: &AsmHistoricalEdge| row.edge,
+        face_surfaces = 19: AsmHistoricalCarrierBinding => |row: &AsmHistoricalCarrierBinding| row.entity,
+        edge_curves = 20: AsmHistoricalOptionalCarrierBinding => |row: &AsmHistoricalOptionalCarrierBinding| row.entity,
+        coedge_pcurves = 21: AsmHistoricalOptionalCarrierBinding => |row: &AsmHistoricalOptionalCarrierBinding| row.entity,
+        vertex_points = 22: AsmHistoricalCarrierBinding => |row: &AsmHistoricalCarrierBinding| row.entity,
+        point_positions = 23: AsmHistoricalPoint => |row: &AsmHistoricalPoint| row.point,
     }
     containers {
-        bodies: i64 => |row: &i64| *row,
-        regions: i64 => |row: &i64| *row,
-        shells: i64 => |row: &i64| *row,
-        body_regions: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        region_shells: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        shell_faces: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        shell_wire_edges: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
-        shell_free_vertices: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        bodies = 24: i64 => |row: &i64| *row,
+        regions = 25: i64 => |row: &i64| *row,
+        shells = 26: i64 => |row: &i64| *row,
+        body_regions = 27: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        region_shells = 28: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        shell_faces = 29: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        shell_wire_edges = 30: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        shell_free_vertices = 31: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
     }
 }
 
@@ -241,5 +275,31 @@ mod tests {
         );
         assert_eq!(indexed.materialize().surfaces, vec![10, 20, 20, 30]);
         assert_eq!(indexed.project(&keys, false).surfaces, vec![20, 20]);
+    }
+
+    #[test]
+    fn replace_keeps_the_other_half_of_a_slot() {
+        let mut indexed = IndexedTopology::from(AsmHistoricalTopology {
+            faces: vec![5],
+            surfaces: vec![5],
+            bodies: vec![5],
+            ..Default::default()
+        });
+        let keys = Slots::from([5]);
+        indexed.replace(
+            AsmHistoricalTopology {
+                surfaces: vec![5],
+                ..Default::default()
+            },
+            &keys,
+            false,
+        );
+        let replaced = indexed.materialize();
+        assert!(replaced.faces.is_empty());
+        assert_eq!(replaced.surfaces, vec![5]);
+        assert_eq!(replaced.bodies, vec![5]);
+        indexed.replace(AsmHistoricalTopology::default(), &keys, true);
+        assert!(indexed.project(&keys, true).bodies.is_empty());
+        assert_eq!(indexed.project(&keys, false).surfaces, vec![5]);
     }
 }
