@@ -5,6 +5,7 @@ use super::reference;
 use super::simple_hole_definition;
 use crate::swift::enrich_implicit_nominals;
 use crate::swift::pattern_hole_nominal_context;
+use crate::swift::positions_by_id_prefix;
 use crate::swift::project;
 use crate::swift::project_with_topology;
 use crate::swift::Entity;
@@ -22,6 +23,52 @@ use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiTarget;
 use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::BTreeMap;
+
+#[test]
+fn id_prefix_positions_match_the_prefix_filter() {
+    fn text(next: &mut impl FnMut(u64) -> usize, length: u64) -> String {
+        (0..next(length))
+            .filter_map(|_| ['a', 'b', ':'].get(next(3)).copied())
+            .collect()
+    }
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from((state >> 33) % bound).unwrap()
+    };
+    for _ in 0..256 {
+        let ids = (0..next(12))
+            .map(|_| text(&mut next, 6))
+            .collect::<Vec<_>>();
+        let index = positions_by_id_prefix(ids.iter().map(String::as_str));
+        let prefixes = (0..8)
+            .map(|_| text(&mut next, 4))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .chain(ids.iter().cloned());
+        for prefix in prefixes {
+            let expected = ids
+                .iter()
+                .enumerate()
+                .filter(|(_, id)| {
+                    **id == prefix
+                        || id
+                            .strip_prefix(&prefix)
+                            .is_some_and(|suffix| suffix.starts_with(':'))
+                })
+                .map(|(position, _)| position)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                index.get(prefix.as_str()).cloned().unwrap_or_default(),
+                expected,
+                "{ids:?} {prefix:?}"
+            );
+        }
+    }
+}
 
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {

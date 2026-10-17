@@ -4,7 +4,7 @@
 
 use std::cell::Cell;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, WorkBudget};
@@ -553,6 +553,8 @@ pub(crate) fn annotations(
     )?;
     losses.extend(projection.walk_caps.losses());
     let projected = projection.annotations;
+    let positions_by_prefix =
+        positions_by_id_prefix(projected.iter().map(|annotation| annotation.id.as_str()));
     for (reference, entity) in root
         .annotations
         .references
@@ -562,14 +564,12 @@ pub(crate) fn annotations(
         let Some(prefix) = pmi_id(&reference.id).map(PmiId::into_string) else {
             continue;
         };
-        for annotation in projected.iter().filter(|annotation| {
-            annotation.id.as_str() == prefix
-                || annotation
-                    .id
-                    .as_str()
-                    .strip_prefix(&prefix)
-                    .is_some_and(|suffix| suffix.starts_with(':'))
-        }) {
+        for annotation in positions_by_prefix
+            .get(prefix.as_str())
+            .into_iter()
+            .flatten()
+            .filter_map(|&position| projected.get(position))
+        {
             crate::annotations::note(
                 annotations,
                 annotation.id.as_str(),
@@ -581,6 +581,21 @@ pub(crate) fn annotations(
         }
     }
     Ok(projected)
+}
+
+/// Positions of the ids that equal each key or continue it with `:`, in id
+/// order.
+fn positions_by_id_prefix<'a>(ids: impl Iterator<Item = &'a str>) -> HashMap<&'a str, Vec<usize>> {
+    let mut positions = HashMap::<_, Vec<_>>::new();
+    for (position, id) in ids.enumerate() {
+        positions.entry(id).or_default().push(position);
+        for (end, _) in id.match_indices(':') {
+            if let Some(prefix) = id.get(..end) {
+                positions.entry(prefix).or_default().push(position);
+            }
+        }
+    }
+    positions
 }
 
 /// Build the native-history join used when a SWIFT hole-pattern graph omits all
