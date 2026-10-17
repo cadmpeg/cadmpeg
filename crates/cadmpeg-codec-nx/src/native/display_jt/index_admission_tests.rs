@@ -57,7 +57,7 @@ fn display_jt_index_row_entity_refuses_before_identity_allocation() {
 }
 
 #[test]
-fn display_jt_index_service_profile_keeps_one_row() {
+fn display_jt_index_keeps_one_row() {
     let container = one_row_index();
 
     crate::test_support::with_decode_context(|ctx| {
