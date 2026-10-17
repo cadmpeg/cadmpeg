@@ -388,6 +388,69 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
 }
 
 #[test]
+fn a_sketch_that_spends_the_endpoint_work_limit_leaves_later_sketches_chained() {
+    use std::fmt::Write;
+
+    // Each endpoint of 4096 coincident segments examines every coincident
+    // endpoint, 2 * 4096² candidates in all, which exceeds the per-sketch
+    // MAX_PROFILE_ENDPOINT_CANDIDATES.
+    let dense_count = 4096;
+    let mut dense = String::new();
+    for _ in 0..dense_count {
+        dense.push_str(
+            r#"<Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="1" EndX="2" EndY="1"/></Geometry>"#,
+        );
+    }
+    let mut document = String::from(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Dense" id="1"/><Object type="Sketcher::SketchObject" name="Triangle" id="2"/></Objects>
+<ObjectData Count="2">"#,
+    );
+    write!(
+        document,
+        r#"<Object name="Dense"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="{dense_count}">{dense}</GeometryList></Property>
+</Properties></Object>
+<Object name="Triangle"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="1" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="0" EndY="0"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#
+    )
+    .unwrap();
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+        .expect("two sketches");
+    let sketch = |name: &str| {
+        result
+            .ir()
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| sketch.name.as_deref() == Some(name))
+            .expect("decoded sketch")
+    };
+
+    assert!(sketch("Dense").profiles.is_empty());
+    assert_eq!(sketch("Triangle").profiles.as_slice().len(), 1);
+    let bounded = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "sketch.profile-matching-bounded")
+        .collect::<Vec<_>>();
+    assert_eq!(bounded.len(), 1, "{bounded:#?}");
+    assert!(bounded[0]
+        .message
+        .starts_with("sketch Dense profiles are not chained"));
+}
+
+#[test]
 fn transfers_geom_point_carrier() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
