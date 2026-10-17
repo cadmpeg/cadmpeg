@@ -893,29 +893,34 @@ pub(super) fn loop_chain(
     out
 }
 
+/// Append the kept faces of the chain starting at `first` until the chain
+/// revisits a face listed anywhere in this shell or reaches a face `owned`
+/// rejects.
 fn face_chain(
-    shell_rec: &Record,
+    first: Option<i64>,
+    owned: impl Fn(&Record) -> bool,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Vec<FaceId> {
-    let id = |i: i64| FaceId::from(super::id(format, i));
-    let mut out = Vec::new();
-    let mut cur = shell_rec.ref_at(5);
-    let mut guard = HashSet::new();
+    guard: &mut HashSet<i64>,
+    out: &mut Vec<FaceId>,
+) {
+    let mut cur = first;
     while let Some(fi) = cur {
         if !guard.insert(fi) {
             break;
         }
-        let Some(f) = owned_child(by_index, fi, &["face"], 5, shell_rec) else {
+        let Some(f) = by_index
+            .get(&fi)
+            .filter(|record| record.head() == "face" && owned(record))
+        else {
             break;
         };
         if kept.contains(&fi) {
-            out.push(id(fi));
+            out.push(FaceId::from(super::id(format, fi)));
         }
         cur = f.ref_at(3);
     }
-    out
 }
 
 pub(super) fn subshell_ancestor_shells(
@@ -960,13 +965,32 @@ pub(super) fn subshell_ancestor_shells(
     Ok(out)
 }
 
+/// Faces of `shell`, then of its subshell tree. Only subshells whose ancestor
+/// is `shell` and faces whose owner resolves to `shell` are listed, each once,
+/// matching the shell emission assigns each face.
 pub(super) fn shell_faces(
     shell: &Record,
     by_index: &HashMap<i64, &Record>,
+    subshell_shells: &HashMap<i64, i64>,
     kept: &HashSet<i64>,
     format: IdFormat,
 ) -> Vec<FaceId> {
-    let mut out = face_chain(shell, by_index, kept, format);
+    let mut out = Vec::new();
+    let Ok(shell_index) = i64::try_from(shell.index) else {
+        return out;
+    };
+    let in_shell =
+        |owner: i64| owner == shell_index || subshell_shells.get(&owner) == Some(&shell_index);
+    let mut faces = HashSet::new();
+    face_chain(
+        shell.ref_at(5),
+        |face| face.ref_at(5) == Some(shell_index),
+        by_index,
+        kept,
+        format,
+        &mut faces,
+        &mut out,
+    );
     let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop() {
@@ -975,13 +999,19 @@ pub(super) fn shell_faces(
         }
         let Some(record) = by_index
             .get(&index)
-            .filter(|record| record.head() == "subshell")
+            .filter(|record| record.head() == "subshell" && in_shell(index))
         else {
             break;
         };
-        for face in face_chain_from(record.ref_at(6), by_index, kept, format) {
-            out.push(face);
-        }
+        face_chain(
+            record.ref_at(6),
+            |face| face.ref_at(5).is_some_and(in_shell),
+            by_index,
+            kept,
+            format,
+            &mut faces,
+            &mut out,
+        );
         if let Some(next) = record.ref_at(4) {
             pending.push(next);
         }
@@ -1015,29 +1045,6 @@ pub(super) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>)
         if let Some(child) = record.ref_at(5) {
             pending.push(child);
         }
-    }
-    out
-}
-
-fn face_chain_from(
-    mut current: Option<i64>,
-    by_index: &HashMap<i64, &Record>,
-    kept: &HashSet<i64>,
-    format: IdFormat,
-) -> Vec<FaceId> {
-    let mut out = Vec::new();
-    let mut guard = HashSet::new();
-    while let Some(index) = current {
-        if !guard.insert(index) {
-            break;
-        }
-        if kept.contains(&index) {
-            out.push(FaceId::from(id(format, index)));
-        }
-        let Some(face) = by_index.get(&index) else {
-            break;
-        };
-        current = face.ref_at(3);
     }
     out
 }
