@@ -3705,7 +3705,7 @@ pub(super) fn standard_object_evidence_from_streams(
             ))),
         )?;
         merge_standard_limit_curves_from_records(&mut limit_curves, stream, &records, refusal);
-        for population in crate::families::b5::graph::object_stream_populations(stream) {
+        for population in crate::families::b5::graph::object_stream_populations(stream, refusal) {
             populations.push(population);
         }
     }
@@ -5228,6 +5228,7 @@ fn attach_standard_topology(
             ctx,
             spine,
             &serialized_edge_faces,
+            refusal,
         )
         .map_err(StandardTopologyError::Codec)?;
         let mut allowed_faces = Vec::new();
@@ -6416,6 +6417,7 @@ fn standard_face_loops(
     topology: &crate::families::standard::topology::admitted::StandardTopology,
     face_index: usize,
     point_assignment: &[usize],
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<cadmpeg_ir::topology::FaceLoops, CodecError> {
     let Some(face_topology) = topology.faces().get(face_index) else {
         return Ok(cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()));
@@ -6467,7 +6469,7 @@ fn standard_face_loops(
         let id = id.clone();
         rows.push((id, points));
     }
-    crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows)
+    crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows, refusal)
 }
 
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
@@ -6650,6 +6652,7 @@ fn emit_standard_topology(
             topology,
             face_index,
             point_assignment,
+            refusal,
         )?;
         for (loop_index, boundary) in face_topology.boundaries().iter().enumerate() {
             let loop_id = standard_id(

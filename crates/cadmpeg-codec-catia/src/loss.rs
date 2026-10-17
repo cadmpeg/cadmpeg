@@ -60,6 +60,8 @@ pub(crate) enum CatiaLossCode {
     SourceRouteFellThrough,
     /// Carrier populations assigned conflicting annotations to one identity.
     SourceAnnotationCollision,
+    /// The `7C02` catalog scan skipped candidates at its walk allowance.
+    SourceCatalogScanBounded,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
     /// Transferred model retains unresolved curve or surface carriers.
@@ -88,6 +90,8 @@ pub(crate) enum CatiaLossCode {
     TopologyGraphNotBuilt,
     /// A standard-family topology evidence search reached its local work bound.
     TopologyStandardSearchBounded,
+    /// A planar face stated too many boundary points to classify its loops.
+    TopologyPlanarBoundaryBounded,
     /// E5 reference graph is closed; orientation uses an incidence-derived gauge.
     TopologyE5GaugeSubstituted,
     /// E5 carriers decoded, but the reference graph did not close.
@@ -100,6 +104,8 @@ pub(crate) enum CatiaLossCode {
     TopologyObjectStreamWorkSliceExhausted,
     /// Object-stream and NURBS carriers decoded, but the B5 graph did not close.
     TopologyB5GraphUnclosed,
+    /// B5 topology runs were read without the isolated geometry they reference.
+    TopologyB5PopulationBounded,
     /// Zero-entity support runs retain face-local occurrences without closed topology.
     TopologyZeroEntitySupportsRetained,
     /// Zero-entity endpoint-pair and endpoint-locus candidates exceeded their work bound.
@@ -131,6 +137,7 @@ impl CatiaLossCode {
         Self::SourceDialectUnverified,
         Self::SourceRouteFellThrough,
         Self::SourceAnnotationCollision,
+        Self::SourceCatalogScanBounded,
         Self::GeometryCarrierSummary,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
@@ -145,12 +152,14 @@ impl CatiaLossCode {
         Self::TopologyFbbRowsWithheld,
         Self::TopologyGraphNotBuilt,
         Self::TopologyStandardSearchBounded,
+        Self::TopologyPlanarBoundaryBounded,
         Self::TopologyE5GaugeSubstituted,
         Self::TopologyE5GraphUnclosed,
         Self::TopologyB5GaugeSubstituted,
         Self::TopologyB5SubsetIncomplete,
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
+        Self::TopologyB5PopulationBounded,
         Self::TopologyZeroEntitySupportsRetained,
         Self::TopologyZeroEntityCandidatesBounded,
         Self::TopologyZeroEntityGaugeSubstituted,
@@ -171,6 +180,7 @@ impl CatiaLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceRouteFellThrough => "source.route-fell-through",
             Self::SourceAnnotationCollision => "source.annotation-identity-collision",
+            Self::SourceCatalogScanBounded => "source.catalog-scan-bounded",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
@@ -187,6 +197,7 @@ impl CatiaLossCode {
             Self::TopologyFbbRowsWithheld => "topology.fbb-rows-withheld",
             Self::TopologyGraphNotBuilt => "topology.graph-not-built",
             Self::TopologyStandardSearchBounded => "topology.standard-search-bounded",
+            Self::TopologyPlanarBoundaryBounded => "topology.planar-boundary-bounded",
             Self::TopologyE5GaugeSubstituted => "topology.e5-gauge-substituted",
             Self::TopologyE5GraphUnclosed => "topology.e5-graph-unclosed",
             Self::TopologyB5GaugeSubstituted => "topology.b5-gauge-substituted",
@@ -195,6 +206,7 @@ impl CatiaLossCode {
                 "topology.object-stream-work-slice-exhausted"
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
+            Self::TopologyB5PopulationBounded => "topology.b5-population-bounded",
             Self::TopologyZeroEntitySupportsRetained => "topology.zero-entity-supports-retained",
             Self::TopologyZeroEntityCandidatesBounded => "topology.zero-entity-candidates-bounded",
             Self::TopologyZeroEntityGaugeSubstituted => "topology.zero-entity-gauge-substituted",
@@ -240,9 +252,9 @@ impl CatiaLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceRouteFellThrough | Self::SourceAnnotationCollision => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::SourceRouteFellThrough
+            | Self::SourceAnnotationCollision
+            | Self::SourceCatalogScanBounded => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
@@ -257,12 +269,14 @@ impl CatiaLossCode {
             | Self::TopologyFbbRowsWithheld
             | Self::TopologyGraphNotBuilt
             | Self::TopologyStandardSearchBounded
+            | Self::TopologyPlanarBoundaryBounded
             | Self::TopologyE5GaugeSubstituted
             | Self::TopologyE5GraphUnclosed
             | Self::TopologyB5GaugeSubstituted
             | Self::TopologyB5SubsetIncomplete
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
+            | Self::TopologyB5PopulationBounded
             | Self::TopologyZeroEntitySupportsRetained
             | Self::TopologyZeroEntityCandidatesBounded
             | Self::TopologyZeroEntityNotTransferred
@@ -317,6 +331,7 @@ mod tests {
                 "source.dialect-unverified",
                 "source.route-fell-through",
                 "source.annotation-identity-collision",
+                "source.catalog-scan-bounded",
                 "geometry.carrier-summary",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",
@@ -331,12 +346,14 @@ mod tests {
                 "topology.fbb-rows-withheld",
                 "topology.graph-not-built",
                 "topology.standard-search-bounded",
+                "topology.planar-boundary-bounded",
                 "topology.e5-gauge-substituted",
                 "topology.e5-graph-unclosed",
                 "topology.b5-gauge-substituted",
                 "topology.b5-subset-incomplete",
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
+                "topology.b5-population-bounded",
                 "topology.zero-entity-supports-retained",
                 "topology.zero-entity-candidates-bounded",
                 "topology.zero-entity-gauge-substituted",

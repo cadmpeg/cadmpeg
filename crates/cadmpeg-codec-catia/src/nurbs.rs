@@ -91,6 +91,52 @@ impl LaneRefusals {
         );
     }
 
+    /// Record the `7C02` catalog candidates the catalog scan skipped at its
+    /// walk allowance.
+    pub(crate) fn push_catalog_scan_bounded(&mut self, bounded_candidates: usize) {
+        if bounded_candidates == 0 {
+            return;
+        }
+        self.notes.push(
+            crate::loss::CatiaLossCode::SourceCatalogScanBounded.note(format!(
+                "The 7C02 catalog scan reached its bound of {} walked entry bytes per input \
+                 byte; {bounded_candidates} later catalog candidates were not read, and the \
+                 object classes they name stay unresolved.",
+                crate::catalog::MAX_CATALOG_WALK_BYTES_PER_INPUT_BYTE
+            )),
+        );
+    }
+
+    /// Record a planar face whose loops were left unclassified because its
+    /// boundaries state more points than the classification bound.
+    pub(crate) fn push_planar_boundary_bounded(&mut self, first_loop: &str, points: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyPlanarBoundaryBounded.note(format!(
+                "The planar face with loop {first_loop} states {points} boundary points, past \
+                 the bound of {} points for classifying loops by containment; its outer and \
+                 inner loops stay unclassified.",
+                crate::boundary_roles::MAX_PLANAR_BOUNDARY_POINTS
+            )),
+        );
+    }
+
+    /// Record the B5 topology runs of one object stream that were read without
+    /// their isolated geometry at the attached-bytes allowance.
+    pub(crate) fn push_b5_population_bounded(&mut self, bounded_runs: usize) {
+        if bounded_runs == 0 {
+            return;
+        }
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyB5PopulationBounded.note(format!(
+                "The B5 topology populations of one object stream reached their bound of {} \
+                 attached geometry bytes per stream byte; {bounded_runs} topology runs were \
+                 read without the isolated geometry frames they reference, and those \
+                 surfaces stay unresolved for them.",
+                crate::families::b5::graph::MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE
+            )),
+        );
+    }
+
     /// Record that a standard-family topology evidence search reached its
     /// local work bound. `detail` names the bound and the evidence it skipped.
     pub(crate) fn push_standard_search_bounded(&mut self, detail: impl std::fmt::Display) {

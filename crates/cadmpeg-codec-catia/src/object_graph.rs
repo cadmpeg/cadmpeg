@@ -741,6 +741,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
             .any(|block| extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len))
     });
     let catalogs = catalog::parse(data)
+        .catalogs
         .into_iter()
         .filter(|catalog| {
             !object_graphs.iter().any(|graph| {
@@ -879,7 +880,7 @@ pub(crate) fn parse_all_with_paired_roots(
     data: &[u8],
     paired_roots: &std::collections::HashMap<usize, usize>,
 ) -> Vec<ObjectGraph> {
-    let catalogs = catalog::parse(data);
+    let catalogs = catalog::parse(data).catalogs;
     let value_blocks = value_block::parse(data);
     let mut roots = Vec::<ObjectGraph>::new();
     let mut enclosing_end = 0usize;

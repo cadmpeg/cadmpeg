@@ -8755,7 +8755,9 @@ impl CatiaNative {
                 data: (data).into(),
             });
         }
-        let mut parsed_catalogs = catalog::parse(bytes);
+        let catalog_scan = catalog::parse(bytes);
+        refusal.push_catalog_scan_bounded(catalog_scan.bounded_candidates);
+        let mut parsed_catalogs = catalog_scan.catalogs;
         let entity_runs = entity_table::parse_runs(ctx, bytes)?;
         let paired_object_graph_roots = entity_runs
             .iter()
