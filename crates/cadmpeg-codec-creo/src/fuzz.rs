@@ -10,10 +10,9 @@
 use crate::scalar::{decode, decode_in_lane, ScalarCache};
 
 /// Exercise Creo datum plane decoders.
-pub fn datum(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+pub fn datum(data: &[u8]) {
     let _probe = crate::datum::planes(data);
     let _probe = crate::datum::named_plane(data);
-    Ok(())
 }
 
 /// Exercise Creo curve prototype extraction.
@@ -27,13 +26,12 @@ pub fn curve_prototypes(
 }
 
 /// Exercise Creo surface namespace row extraction.
-pub fn surface_rows(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+pub fn surface_rows(data: &[u8]) {
     let _probe = crate::surface::rows(data);
-    Ok(())
 }
 
 /// Exercise Creo PSB scalar decoding.
-pub fn scalar(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+pub fn scalar(data: &[u8]) {
     let cache = ScalarCache::from_section_checked(data);
     let mut offset = 0usize;
     while offset < data.len() {
@@ -43,7 +41,6 @@ pub fn scalar(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         }
     }
     let _probe = decode(data, 0);
-    Ok(())
 }
 
 /// Exercise Creo compact integer decoding.
@@ -79,11 +76,11 @@ pub fn container_scan(
 mod tests {
     #[test]
     fn wrappers_accept_empty() {
-        super::datum(&[]).expect("datum fuzz wrapper");
+        super::datum(&[]);
         crate::decode::with_service_context(|ctx| super::curve_prototypes(ctx, &[]))
             .expect("curve fuzz wrapper");
-        super::surface_rows(&[]).expect("surface row fuzz wrapper");
-        super::scalar(&[]).expect("scalar fuzz wrapper");
+        super::surface_rows(&[]);
+        super::scalar(&[]);
         super::compact_int(&[]);
         super::psb_tokens(&[]);
         super::short_form_float(&[]);
@@ -93,11 +90,11 @@ mod tests {
     #[test]
     fn wrappers_accept_fixture() {
         let data = crate::test_support::build_prt("1.0", &[]);
-        super::datum(&data).expect("datum fuzz wrapper");
+        super::datum(&data);
         crate::decode::with_service_context(|ctx| super::curve_prototypes(ctx, &data))
             .expect("curve fuzz wrapper");
-        super::surface_rows(&data).expect("surface row fuzz wrapper");
-        super::scalar(&data).expect("scalar fuzz wrapper");
+        super::surface_rows(&data);
+        super::scalar(&data);
         super::compact_int(&data);
         super::psb_tokens(&data);
         super::short_form_float(&data);
