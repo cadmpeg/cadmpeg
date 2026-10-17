@@ -2315,7 +2315,29 @@ fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[
     ))
 }
 
+/// The search frames packets past the last topology lane, where the bytes are
+/// not packets. A probe there that passes [`crate::jt::MAX_ARITHMETIC_WORK`]
+/// drops no lane, so its bound counts only when no lane count is found.
 fn jt9_topology_high_degree_lane_count(
+    ctx: &DecodeContext<'_>,
+    work_bound: &ArithmeticWorkBound,
+    representation: &[u8],
+    expected_vertex_bindings: u64,
+) -> Result<Option<usize>, CodecError> {
+    let probe = ArithmeticWorkBound::default();
+    let lane_count = jt9_topology_high_degree_lane_search(
+        ctx,
+        &probe,
+        representation,
+        expected_vertex_bindings,
+    )?;
+    if lane_count.is_none() {
+        work_bound.include(&probe);
+    }
+    Ok(lane_count)
+}
+
+fn jt9_topology_high_degree_lane_search(
     ctx: &DecodeContext<'_>,
     work_bound: &ArithmeticWorkBound,
     representation: &[u8],

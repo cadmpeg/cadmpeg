@@ -964,6 +964,189 @@ fn body_group_partition_admits_fixture() {
     assert_eq!(admitted.len(), 1);
 }
 
+fn indexed_body_write(index: u32, body_identity: u8, group_node: u32) -> FeatureOperationBodyWrite {
+    let group_raw = [
+        0x80 + u8::try_from(group_node >> 8).unwrap(),
+        u8::try_from(group_node & 0xff).unwrap(),
+    ];
+    FeatureOperationBodyWrite {
+        id: format!("nx:operation-body-write#{index}"),
+        operation_label: Some(format!("operation#{index}")),
+        operation_record: format!("record#{index}"),
+        ordinal: 0,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            body_identity,
+            crate::om::body_write::BodyWriteIndex::from_wire(group_node, &group_raw)
+                .expect("group token"),
+            crate::om::body_write::BodyImageTag::Form12,
+            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
+            0,
+        )
+        .expect("body-write frame"),
+        body_image_data_block: (!index.is_multiple_of(7)).then(|| format!("block#{index}")),
+    }
+}
+
+#[test]
+fn body_segment_joins_resolve_many_writes_through_sole_plain_aliases() {
+    let writes = (0..4096_u32)
+        .map(|index| indexed_body_write(index, u8::try_from(index % 256).unwrap(), 200))
+        .collect::<Vec<_>>();
+    // Alias a has a % 3 plain bindings and one partition binding.
+    let bindings = (0..256_u32)
+        .flat_map(|alias| {
+            (0..=alias % 3).map(move |copy| SegmentBodyBinding {
+                id: format!("binding#{alias}-{copy}"),
+                stream_link: "stream#0".to_string(),
+                stream_ordinal: copy,
+                stream_kind: if copy == alias % 3 {
+                    crate::parasolid::StreamKind::Partition
+                } else {
+                    crate::parasolid::StreamKind::Plain
+                },
+                body_object_index: 10,
+                body_alias_object_index: alias,
+                stream_role: 16,
+                source_offset: 0,
+            })
+        })
+        .collect::<Vec<_>>();
+    let sole_plain = |write: &FeatureOperationBodyWrite| {
+        let mut matches = bindings.iter().filter(|binding| {
+            binding.stream_kind == crate::parasolid::StreamKind::Plain
+                && binding.body_alias_object_index == u32::from(write.frame.body_identity())
+        });
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    };
+
+    let image_uses = image_segment_uses_for_test(&writes, &bindings);
+    let expected_image = writes
+        .iter()
+        .filter(|write| write.body_image_data_block.is_some())
+        .filter_map(|write| Some((write.id.clone(), sole_plain(write)?.id.clone())))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        image_uses
+            .iter()
+            .map(|item| (
+                item.operation_body_write.clone(),
+                item.segment_body_binding.clone()
+            ))
+            .collect::<Vec<_>>(),
+        expected_image
+    );
+
+    let identity_uses = identity_segment_uses_for_test(&writes, &bindings);
+    let expected_identity = writes
+        .iter()
+        .filter_map(|write| Some((write.id.clone(), sole_plain(write)?.id.clone())))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        identity_uses
+            .iter()
+            .map(|item| (
+                item.operation_body_write.clone(),
+                item.segment_body_binding.clone()
+            ))
+            .collect::<Vec<_>>(),
+        expected_identity
+    );
+    assert!(expected_image.len() > 1000 && expected_image.len() < expected_identity.len());
+}
+
+#[test]
+fn body_group_partition_uses_match_the_pairwise_join_over_many_writes() {
+    let group =
+        |index: u32, node_id: u32, partition: u32| crate::native::parasolid::ParasolidGroupRecord {
+            id: format!("group#{index}"),
+            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
+                stream_ordinal: 3,
+                partition_stream_ordinal: Some(partition),
+            },
+            xmt: 10,
+            node_id,
+            references: [3, 4, 5, 6, 7],
+            selector: crate::deltas::group::GroupSelector::Form4,
+            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+            byte_len: 20,
+            inflated_offset: 0,
+        };
+    let writes = (0..2048_u32)
+        .map(|index| indexed_body_write(index, 11, 200 + index % 512))
+        .collect::<Vec<_>>();
+    let unlabeled = (2048..2560_u32)
+        .map(|index| indexed_body_write(index, 12, 200 + index % 640))
+        .collect::<Vec<_>>();
+    // Node n has n % 4 groups; a node with three groups disagrees on its partition.
+    let groups = (0..768_u32)
+        .flat_map(|node| {
+            (0..node % 4).map(move |copy| {
+                let partition = if copy == 2 { 9 } else { node % 5 };
+                group(node * 4 + copy, 200 + node, partition)
+            })
+        })
+        .collect::<Vec<_>>();
+    let members = (0..3072_u32)
+        .map(|index| crate::native::parasolid::ParasolidGroupMember {
+            id: format!("member#{index}"),
+            partition_stream_ordinal: index % 5,
+            group_xmt: 10,
+            group_node_id: 200 + index % 768,
+            ordinal: 0,
+            list_record_xmt: 20,
+            member_xmt: 30,
+            target: crate::native::parasolid::group_member::GroupMemberTarget::Fin,
+        })
+        .collect::<Vec<_>>();
+
+    let uses = body_group_partition_uses_for_test(&writes, &unlabeled, &groups, &members);
+
+    let mut expected = Vec::new();
+    for write in writes.iter().chain(&unlabeled) {
+        let group_node = write.frame.group_node().value();
+        let node_groups = groups
+            .iter()
+            .filter(|group| group.node_id == group_node)
+            .collect::<Vec<_>>();
+        let partitions = node_groups
+            .iter()
+            .map(|group| group.origin.partition_stream_ordinal())
+            .collect::<std::collections::BTreeSet<_>>();
+        let [Some(partition)] = partitions.into_iter().collect::<Vec<_>>()[..] else {
+            continue;
+        };
+        expected.push((
+            write.id.clone(),
+            partition,
+            node_groups
+                .iter()
+                .map(|group| group.id.clone())
+                .collect::<Vec<_>>(),
+            members
+                .iter()
+                .filter(|member| {
+                    member.partition_stream_ordinal == partition
+                        && member.group_node_id == group_node
+                })
+                .map(|member| member.id.clone())
+                .collect::<Vec<_>>(),
+        ));
+    }
+    assert_eq!(
+        uses.iter()
+            .map(|item| (
+                item.body_write.clone(),
+                item.partition_stream_ordinal,
+                item.parasolid_group_records.clone(),
+                item.parasolid_group_members.clone(),
+            ))
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert!(expected.len() > 1000);
+}
+
 fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {
     JournalRow::new(
         source_offset,
