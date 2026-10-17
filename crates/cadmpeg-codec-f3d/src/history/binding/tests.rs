@@ -538,7 +538,7 @@ fn container_owner_insertion_updates_closure_without_a_forward_link() {
 }
 
 #[test]
-fn saved_container_before_later_body_matches_full_transition_refusal() {
+fn saved_container_before_later_body_binds_in_key_order() {
     let mut records = fixture();
     records.insert(100, refs(100, "body", &[]));
     let mut saved = records[&14].clone();
@@ -558,16 +558,16 @@ fn saved_container_before_later_body_matches_full_transition_refusal() {
     let topology = super::historical_topology_with_tags(&decoded)
         .unwrap()
         .unwrap();
-    assert_eq!(topology.bodies, vec![1, 100, 40]);
-    assert!(!super::IndexedTopology::ordered(&topology));
+    assert_eq!(topology.bodies, vec![1, 40, 100]);
+    assert!(super::IndexedTopology::ordered(&topology));
     let versions = records.keys().map(|&slot| (slot, slot)).collect();
     let snapshot = crate::history_records::AsmStateSnapshot {
         state_id: 1,
         topology: &topology,
         versions: &versions,
     };
-    assert!(super::AsmHistoricalTransition::between(None, snapshot).is_none());
-    assert!(super::transition_for_changes(snapshot, snapshot, &Slots::from([40])).is_none());
+    assert!(super::AsmHistoricalTransition::between(None, snapshot).is_some());
+    assert!(super::transition_for_changes(snapshot, snapshot, &Slots::from([40])).is_some());
     let archive = records
         .iter()
         .map(|(&slot, record)| (slot, record.clone()))
@@ -576,8 +576,9 @@ fn saved_container_before_later_body_matches_full_transition_refusal() {
     binder
         .update(&records.keys().copied().collect(), &versions)
         .unwrap();
-    assert!(binder
+    let full = binder
         .full(&ctx, &bytes, &mut Statistics::default())
         .unwrap()
-        .is_none());
+        .unwrap();
+    assert_eq!(full, topology);
 }

@@ -7694,7 +7694,7 @@ fn historical_topology(
         }
     }
 
-    Ok(Some(AsmHistoricalTopology {
+    let mut topology = AsmHistoricalTopology {
         bodies: topology_some!(refs(brep.bodies.iter().map(|entity| entity.id.as_str()))),
         regions: topology_some!(refs(brep.regions.iter().map(|entity| entity.id.as_str()))),
         shells: topology_some!(refs(brep.shells.iter().map(|entity| entity.id.as_str()))),
@@ -7877,7 +7877,25 @@ fn historical_topology(
                 })
             })
             .collect::<Option<Vec<_>>>()),
-    }))
+    };
+    // Transitions diff each family in key order. The decoder appends the
+    // containers it builds for saved free edges after the containers it walks,
+    // and the curves it builds for tolerant coedges after the curves it walks.
+    topology.bodies.sort_unstable();
+    topology.regions.sort_unstable();
+    topology.shells.sort_unstable();
+    topology.curves.sort_unstable();
+    topology.curve_axes.sort_by_key(|axis| axis.curve);
+    for family in [
+        &mut topology.body_regions,
+        &mut topology.region_shells,
+        &mut topology.shell_faces,
+        &mut topology.shell_wire_edges,
+        &mut topology.shell_free_vertices,
+    ] {
+        family.sort_by_key(|relation| relation.owner_ref);
+    }
+    Ok(Some(topology))
 }
 
 pub(crate) fn historical_topology_with_tags(
