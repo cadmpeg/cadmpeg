@@ -57,6 +57,64 @@ fn reference_name(source_name: &str, offset: Option<u64>, suffix: Option<u32>) -
     format!("{source_name}@reference{offset}{suffix}")
 }
 
+/// Design parameter names taken per owner.
+#[derive(Default)]
+struct ReferenceNames {
+    taken: HashMap<cadmpeg_ir::features::FeatureId, HashSet<String>>,
+    /// Where the offset search for an owner, source name and offset resumes.
+    next_suffixes: HashMap<(cadmpeg_ir::features::FeatureId, String, u64), u32>,
+}
+
+impl ReferenceNames {
+    fn insert(&mut self, owner: &cadmpeg_ir::features::FeatureId, name: String) {
+        self.taken.entry(owner.clone()).or_default().insert(name);
+    }
+
+    fn is_taken(&self, owner: &cadmpeg_ir::features::FeatureId, name: &str) -> bool {
+        self.taken
+            .get(owner)
+            .is_some_and(|names| names.contains(name))
+    }
+
+    /// The plain reference name for `source_name` if `owner` has not taken it,
+    /// else the first free name with `offset`, then with `offset` and suffix
+    /// 1, 2, and so on.
+    ///
+    /// Names are never released, so every name a search passed over stays
+    /// taken and the next search for the same key resumes where this one
+    /// stopped.
+    fn free(
+        &mut self,
+        owner: &cadmpeg_ir::features::FeatureId,
+        source_name: &str,
+        offset: u64,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        let plain = reference_name(source_name, None, None);
+        if !self.is_taken(owner, &plain) {
+            return Ok(plain);
+        }
+        let mut suffix = self
+            .next_suffixes
+            .get(&(owner.clone(), source_name.to_owned(), offset))
+            .copied()
+            .unwrap_or(0);
+        loop {
+            let candidate =
+                reference_name(source_name, Some(offset), (suffix != 0).then_some(suffix));
+            if !self.is_taken(owner, &candidate) {
+                self.next_suffixes
+                    .insert((owner.clone(), source_name.to_owned(), offset), suffix);
+                return Ok(candidate);
+            }
+            suffix = suffix.checked_add(1).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "SLDPRT reference parameter name suffix overflows u32",
+                )
+            })?;
+        }
+    }
+}
+
 pub(super) fn bind_circular_profile_by_dimension(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut [Sketch],
@@ -393,7 +451,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
     }
     let mut relation_ids = HashSet::new();
     let mut parameter_ids = HashSet::new();
-    let mut names_by_owner = HashSet::new();
+    let mut names = ReferenceNames::default();
     let mut next_ordinals = HashMap::<cadmpeg_ir::features::FeatureId, u32>::new();
     for parameter in parameters.iter() {
         if let Some(relation_id) = parameter.properties.get(RELATION_PARAMETER_ID_PROPERTY) {
@@ -407,7 +465,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         let Some(owner) = parameter.owner.as_ref() else {
             continue;
         };
-        names_by_owner.insert((owner.clone(), parameter.name.clone()));
+        names.insert(owner, parameter.name.clone());
         let next = if parameter.ordinal == u32::MAX {
             parameter.ordinal
         } else {
@@ -464,22 +522,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             } else {
                 next_ordinals.insert(owner.clone(), next_ordinal);
             }
-            let mut candidate = reference_name(source_name, None, None);
-            if names_by_owner.contains(&(owner.clone(), candidate.clone())) {
-                candidate = reference_name(source_name, Some(relation.offset), None);
-                let mut suffix = 0u32;
-                loop {
-                    if !names_by_owner.contains(&(owner.clone(), candidate.clone())) {
-                        break;
-                    }
-                    suffix = suffix.checked_add(1).ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed(
-                            "SLDPRT reference parameter name suffix overflows u32",
-                        )
-                    })?;
-                    candidate = reference_name(source_name, Some(relation.offset), Some(suffix));
-                }
-            }
+            let candidate = names.free(owner, source_name, relation.offset)?;
             let relation_key = relation
                 .id
                 .rsplit_once('#')
@@ -526,7 +569,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 pmi: None,
                 native_ref: None,
             });
-            names_by_owner.insert((owner.clone(), candidate));
+            names.insert(owner, candidate);
             if !relation_ids.contains(relation.id.as_str()) {
                 relation_ids.insert(relation.id.clone());
             }
