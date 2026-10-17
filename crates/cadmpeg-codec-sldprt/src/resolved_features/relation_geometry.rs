@@ -19,7 +19,7 @@ use super::relation_loci::{
     unoriented_line_line_angle,
 };
 use super::relation_records::{
-    circle_dimension_handle_driver, relation_uses_dynamic_operands, relation_uses_solver_points,
+    relation_uses_dynamic_operands, relation_uses_solver_points, CircleHandleDrivers,
 };
 use super::transforms::{
     marker_entities, sketch_entity_locus_points, sketch_frame_marker_transform, MarkerEntityFilter,
@@ -2822,6 +2822,7 @@ pub(crate) fn owned_relation_parameters<'a>(
         }
     }
     for lane in &lane_refs {
+        let mut circle_drivers = None;
         for relation in &lane.relation_instances {
             if relation.parameter_scalar_ref().is_some() {
                 continue;
@@ -2842,7 +2843,10 @@ pub(crate) fn owned_relation_parameters<'a>(
                     relation_parameter_by_driving_name(relation, lane, features, parameters);
             }
             if parameter.is_none() {
-                if let Some(scalar) = circle_dimension_handle_driver(relation, lane) {
+                if let Some(scalar) = circle_drivers
+                    .get_or_insert_with(|| CircleHandleDrivers::new(lane))
+                    .driver(relation)
+                {
                     parameter = parameters_by_scalar.get(scalar.id.as_str()).copied();
                 }
             }
