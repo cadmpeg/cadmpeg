@@ -882,6 +882,27 @@ pub(crate) fn bind_feature_outputs(
             .unwrap_or_else(|| (0..history.states().len()).collect());
         let mut walked_deletions: Option<(usize, Option<BTreeSet<i64>>)> = None;
         for (position, &index) in order.iter().enumerate() {
+            let state = &history.states()[index];
+            let walked = walked_deletions.take();
+            let deleted_bodies = match state.next_ref.map(|node| by_node.get(&node)) {
+                Some(Some(&previous)) if output_states.contains(&state.state_id) => {
+                    match walked.filter(|(walked, _)| *walked == previous) {
+                        Some((_, bodies)) => bodies,
+                        None => state
+                            .transition
+                            .as_ref()
+                            .and_then(|transition| {
+                                bodies_touching(
+                                    history.topology(&history.states()[previous])?,
+                                    &[&changed_family_refs(&transition.topology, true)],
+                                )
+                            })
+                            .and_then(|touched| touched.into_iter().next()),
+                    }
+                }
+                _ => None,
+            };
+            history.advance_topology(index);
             let mut next_deletions = None;
             let outputs = (|| {
                 let state = &history.states()[index];
@@ -920,22 +941,7 @@ pub(crate) fn bind_feature_outputs(
                     return None;
                 };
                 next_deletions = Some((index, Some(successor_bodies)));
-                if let Some(previous) = previous {
-                    let deleted_bodies = match walked_deletions
-                        .take()
-                        .filter(|(walked, _)| *walked == previous)
-                    {
-                        Some((_, bodies)) => bodies,
-                        None => history
-                            .topology(&history.states()[previous])
-                            .and_then(|topology| {
-                                bodies_touching(
-                                    topology,
-                                    &[&changed_family_refs(&transition.topology, true)],
-                                )
-                            })
-                            .and_then(|touched| touched.into_iter().next()),
-                    };
+                if previous.is_some() {
                     affected.extend(deleted_bodies?);
                 }
                 Some((state.state_id, affected.into_iter().collect::<Vec<_>>()))
@@ -2905,7 +2911,9 @@ fn bind_entity_selection_path(
 
 /// History access for a pass that visits states oldest first.
 pub(crate) enum BindingHistories<'a> {
-    /// Keep only the visited state materialized between visits.
+    /// Keep only the visited state materialized between visits, advancing the
+    /// previous visit's materialization to it. A visit reads the visited
+    /// state or newer ones.
     Release(&'a mut [AsmHistory]),
     /// Leave materializations in place for a caller that holds the histories
     /// shared.
@@ -2924,6 +2932,14 @@ impl BindingHistories<'_> {
         match self {
             Self::Release(histories) => BindingHistories::Release(histories),
             Self::Shared(histories) => BindingHistories::Shared(histories),
+        }
+    }
+
+    fn advance(&mut self, history_index: usize, state_index: usize) {
+        if let Self::Release(histories) = self {
+            if let Some(history) = histories.get_mut(history_index) {
+                history.advance_topology(state_index);
+            }
         }
     }
 
@@ -2963,6 +2979,7 @@ fn visit_state_groups_oldest_first<J>(
         {
             group.push(job);
         }
+        histories.advance(history_index, state_index);
         visit(histories.get(), history_index, state_index, group);
         histories.retain(history_index, state_index);
     }
