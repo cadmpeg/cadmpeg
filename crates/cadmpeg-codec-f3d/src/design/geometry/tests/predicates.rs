@@ -58,6 +58,11 @@ fn chord_arc_distance_takes_the_nearest_end_or_normal_pair() {
             unit_arc(0., TAU),
             0.,
         ),
+        (
+            (Point2::new(-0.5, 0.), Point2::new(0.5, 0.)),
+            unit_arc(0., TAU),
+            0.5,
+        ),
     ] {
         let distance = chord_boundary_segment_distance(chord, &arc);
         assert!(
