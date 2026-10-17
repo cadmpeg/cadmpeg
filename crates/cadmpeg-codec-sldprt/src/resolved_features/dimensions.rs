@@ -94,12 +94,7 @@ fn native_dimensioned_circle_construction_state(
     center: &SketchInputEntity,
     radius: f64,
 ) -> Option<bool> {
-    if center.feature_ref.as_deref() != Some(feature) || !radius.is_finite() || radius <= 0.0 {
-        return None;
-    }
-    let [cu, cv] = center
-        .coordinates_m
-        .map(cadmpeg_ir::units::FiniteVector::get)?;
+    let center_coordinates = radial_construction_center(feature, center, radius)?;
     let mut state = None;
     for lane in lanes {
         if !lane.sketch_entities.iter().any(|marker| {
@@ -107,45 +102,75 @@ fn native_dimensioned_circle_construction_state(
         }) {
             continue;
         }
-        let mut roster = Vec::new();
-        for marker in &lane.sketch_entities {
-            if marker.feature_ref.as_deref() != Some(feature) || marker.coordinates_m.is_none() {
-                continue;
-            }
-            roster.push(marker);
-        }
-        roster.sort_unstable_by_key(|left| left.offset());
-        let records = radial_circle_records(&lane.native_payload);
-        for (_, radial_index, construction) in records {
-            let Some(radial) = roster.get(radial_index) else {
-                continue;
-            };
-            let Some([ru, rv]) = radial
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get)
-            else {
-                continue;
-            };
-            if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, radius) {
-                if state.is_some_and(|previous| previous != construction) {
-                    return None;
-                }
-                state = Some(construction);
-            }
-        }
+        fold_radial_construction_state(
+            &mut state,
+            center_coordinates,
+            radius,
+            lane.sketch_entities
+                .iter()
+                .filter(|marker| marker.feature_ref.as_deref() == Some(feature)),
+            &radial_circle_records(&lane.native_payload),
+        )?;
     }
     state
 }
 
-fn native_radial_record_for_marker(
-    lanes: &[FeatureInputLane],
+fn radial_construction_center(
     feature: &str,
+    center: &SketchInputEntity,
+    radius: f64,
+) -> Option<[f64; 2]> {
+    if center.feature_ref.as_deref() != Some(feature) || !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    center
+        .coordinates_m
+        .map(cadmpeg_ir::units::FiniteVector::get)
+}
+
+/// Fold the construction states of one lane's radial records whose witness
+/// lies at `radius` from the center; `None` when two states disagree.
+fn fold_radial_construction_state<'a>(
+    state: &mut Option<bool>,
+    [cu, cv]: [f64; 2],
+    radius: f64,
+    feature_markers: impl Iterator<Item = &'a SketchInputEntity>,
+    records: &[(usize, usize, bool)],
+) -> Option<()> {
+    let mut roster = feature_markers
+        .filter(|marker| marker.coordinates_m.is_some())
+        .collect::<Vec<_>>();
+    roster.sort_unstable_by_key(|left| left.offset());
+    for &(_, radial_index, construction) in records {
+        let Some(radial) = roster.get(radial_index) else {
+            continue;
+        };
+        let Some([ru, rv]) = radial
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get)
+        else {
+            continue;
+        };
+        if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, radius) {
+            if state.is_some_and(|previous| previous != construction) {
+                return None;
+            }
+            *state = Some(construction);
+        }
+    }
+    Some(())
+}
+
+fn native_radial_record_for_marker(
+    feature_markers: &[FeatureLaneMarkers<'_>],
     marker_id: &str,
 ) -> Option<(usize, bool)> {
-    lanes.iter().find_map(|lane| {
-        let marker = lane.sketch_entities.iter().find(|marker| {
-            marker.id() == marker_id && marker.feature_ref.as_deref() == Some(feature)
-        })?;
+    feature_markers.iter().find_map(|group| {
+        let lane = group.lane;
+        let marker = group
+            .markers
+            .iter()
+            .find(|marker| marker.id() == marker_id)?;
         let offset = usize::try_from(marker.offset()).ok()?;
         compact_radial_circle_index(&lane.native_payload, offset)
             .or_else(|| {
@@ -1310,15 +1335,10 @@ fn reconcile_direct_circle_dimension_carriers(
     sketches: &mut [Sketch],
     sketch_id: &cadmpeg_ir::sketches::SketchId,
     feature: &str,
-    lanes: &[FeatureInputLane],
+    inputs: &MarkerCircleInputs<'_>,
 ) {
     let mut replacements = HashMap::<&str, &SketchEntityId>::new();
-    for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
-        if relation.feature_ref != feature
-            || relation.family != FeatureInputRelationFamily::CircleDiameter
-        {
-            continue;
-        }
+    for relation in inputs.circle_diameters(feature) {
         let ([operand] | [_, operand]) = relation.operands.as_slice() else {
             continue;
         };
@@ -1327,8 +1347,12 @@ fn reconcile_direct_circle_dimension_carriers(
         };
         let mut candidate = None;
         let mut ambiguous = false;
-        for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
-            if marker.id() != marker_id || marker.feature_ref.as_deref() != Some(feature) {
+        for marker in inputs
+            .markers(feature)
+            .iter()
+            .flat_map(|group| group.markers.iter().copied())
+        {
+            if marker.id() != marker_id {
                 continue;
             }
             if candidate.is_some() {
@@ -1511,6 +1535,135 @@ fn copy_marker_circle_sketch_id(
     })
 }
 
+/// One lane's sketch markers owned by one feature, in stream order.
+struct FeatureLaneMarkers<'a> {
+    position: usize,
+    lane: &'a FeatureInputLane,
+    markers: Vec<&'a SketchInputEntity>,
+}
+
+/// The parameters and lane records the marker circle projection reads for
+/// each sketch feature, gathered once in parameter, lane and stream order.
+struct MarkerCircleInputs<'a> {
+    radial_dimensions: HashMap<
+        &'a cadmpeg_ir::features::FeatureId,
+        Vec<(&'a cadmpeg_ir::features::DesignParameter, f64)>,
+    >,
+    markers: HashMap<&'a str, Vec<FeatureLaneMarkers<'a>>>,
+    circle_diameters: HashMap<&'a str, Vec<&'a FeatureInputRelationInstance>>,
+    radial_records: Vec<Vec<(usize, usize, bool)>>,
+    radial_records_by_lane: HashMap<&'a str, usize>,
+}
+
+impl<'a> MarkerCircleInputs<'a> {
+    fn new(
+        parameters: &'a [cadmpeg_ir::features::DesignParameter],
+        lanes: &'a [FeatureInputLane],
+    ) -> Self {
+        let mut radial_dimensions = HashMap::<_, Vec<_>>::new();
+        for parameter in parameters {
+            if let (Some(owner), Some(radius)) =
+                (parameter.owner.as_ref(), radial_dimension_radius(parameter))
+            {
+                radial_dimensions
+                    .entry(owner)
+                    .or_default()
+                    .push((parameter, radius));
+            }
+        }
+        let mut markers = HashMap::<_, Vec<FeatureLaneMarkers<'a>>>::new();
+        let mut circle_diameters = HashMap::<_, Vec<_>>::new();
+        let mut radial_records = Vec::with_capacity(lanes.len());
+        let mut radial_records_by_lane = HashMap::new();
+        for (position, lane) in lanes.iter().enumerate() {
+            for marker in &lane.sketch_entities {
+                let Some(feature) = marker.feature_ref.as_deref() else {
+                    continue;
+                };
+                let groups = markers.entry(feature).or_default();
+                match groups.last_mut() {
+                    Some(group) if group.position == position => group.markers.push(marker),
+                    _ => groups.push(FeatureLaneMarkers {
+                        position,
+                        lane,
+                        markers: vec![marker],
+                    }),
+                }
+            }
+            for relation in &lane.relation_instances {
+                if relation.family == FeatureInputRelationFamily::CircleDiameter {
+                    circle_diameters
+                        .entry(relation.feature_ref.as_str())
+                        .or_default()
+                        .push(relation);
+                }
+            }
+            radial_records.push(radial_circle_records(&lane.native_payload));
+            radial_records_by_lane.insert(lane.id.as_str(), position);
+        }
+        Self {
+            radial_dimensions,
+            markers,
+            circle_diameters,
+            radial_records,
+            radial_records_by_lane,
+        }
+    }
+
+    fn radial_dimensions(
+        &self,
+        feature: &cadmpeg_ir::features::FeatureId,
+    ) -> &[(&'a cadmpeg_ir::features::DesignParameter, f64)] {
+        self.radial_dimensions
+            .get(feature)
+            .map_or(&[], Vec::as_slice)
+    }
+
+    fn markers(&self, feature: &str) -> &[FeatureLaneMarkers<'a>] {
+        self.markers.get(feature).map_or(&[], Vec::as_slice)
+    }
+
+    fn circle_diameters(&self, feature: &str) -> &[&'a FeatureInputRelationInstance] {
+        self.circle_diameters
+            .get(feature)
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// Radial records of the last lane with this id.
+    fn lane_radial_records(&self, lane: &str) -> &[(usize, usize, bool)] {
+        self.radial_records_by_lane
+            .get(lane)
+            .map_or(&[], |&position| &self.radial_records[position])
+    }
+
+    fn construction_state(
+        &self,
+        feature: &str,
+        center: &SketchInputEntity,
+        radius: f64,
+    ) -> Option<bool> {
+        let center_coordinates = radial_construction_center(feature, center, radius)?;
+        let mut state = None;
+        for group in self.markers(feature) {
+            if !group
+                .markers
+                .iter()
+                .any(|marker| marker.id() == center.id())
+            {
+                continue;
+            }
+            fold_radial_construction_state(
+                &mut state,
+                center_coordinates,
+                radius,
+                group.markers.iter().copied(),
+                &self.radial_records[group.position],
+            )?;
+        }
+        state
+    }
+}
+
 /// Materialize marker-only circles whose radial witnesses have exact radial
 /// dimensions, including repeated circles constrained to the same radius.
 pub(crate) fn project_marker_dimensioned_circles(
@@ -1524,11 +1677,7 @@ pub(crate) fn project_marker_dimensioned_circles(
     const QUANTUM: f64 = 1.0e-8;
 
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
-    let mut radial_records_by_lane = HashMap::<&str, Vec<_>>::new();
-    for lane in lanes {
-        let records = radial_circle_records(&lane.native_payload);
-        radial_records_by_lane.insert(lane.id.as_str(), records);
-    }
+    let inputs = MarkerCircleInputs::new(parameters, lanes);
     'feature: for feature in features {
         let (
             Some(native_ref),
@@ -1543,18 +1692,9 @@ pub(crate) fn project_marker_dimensioned_circles(
             continue;
         };
         reconcile_direct_circle_dimension_carriers(
-            entities, sketches, sketch_id, native_ref, lanes,
+            entities, sketches, sketch_id, native_ref, &inputs,
         );
-        let mut radial_dimensions = Vec::new();
-        for parameter in parameters {
-            if parameter.owner.as_ref() != Some(&feature.id) {
-                continue;
-            }
-            let Some(radius) = radial_dimension_radius(parameter) else {
-                continue;
-            };
-            radial_dimensions.push((parameter, radius));
-        }
+        let radial_dimensions = inputs.radial_dimensions(&feature.id).to_vec();
         if radial_dimensions.is_empty() {
             continue;
         }
@@ -1563,21 +1703,12 @@ pub(crate) fn project_marker_dimensioned_circles(
             .as_str()
             .rsplit_once('#')
             .map_or(feature.id.as_str(), |(_, key)| key);
-        let mut owned_lanes = Vec::new();
-        for lane in lanes {
-            if lane
-                .sketch_entities
-                .iter()
-                .any(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-            {
-                owned_lanes.push(lane);
-            }
-        }
+        let feature_markers = inputs.markers(native_ref);
         let mut markers = Vec::new();
-        for marker in owned_lanes.iter().flat_map(|lane| &lane.sketch_entities) {
-            if marker.feature_ref.as_deref() != Some(native_ref) {
-                continue;
-            }
+        for marker in feature_markers
+            .iter()
+            .flat_map(|group| group.markers.iter().copied())
+        {
             let Some(coordinates) = marker.coordinates_m else {
                 continue;
             };
@@ -1607,7 +1738,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         let circle_only_carrier = match native_carriers.as_slice() {
             [carrier] if !has_resolved_curves => {
                 if let Some(reference) = carrier.native_ref.as_deref() {
-                    native_radial_record_for_marker(lanes, native_ref, reference).map(
+                    native_radial_record_for_marker(feature_markers, reference).map(
                         |(radial_index, construction)| {
                             (carrier.id(), reference, radial_index, construction)
                         },
@@ -1704,12 +1835,10 @@ pub(crate) fn project_marker_dimensioned_circles(
             continue 'feature;
         }
         let mut radial_records = Vec::new();
-        for lane in &owned_lanes {
+        for group in feature_markers {
+            let lane = group.lane;
             let mut range: Option<(usize, usize)> = None;
-            for marker in &lane.sketch_entities {
-                if marker.feature_ref.as_deref() != Some(native_ref) {
-                    continue;
-                }
+            for marker in &group.markers {
                 let offset = usize::try_from(marker.offset()).map_err(|_| {
                     cadmpeg_core::CodecError::malformed(
                         "SLDPRT sketch marker offset exceeds the address space",
@@ -1726,11 +1855,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            for record in radial_records_by_lane
-                .get(lane.id.as_str())
-                .into_iter()
-                .flatten()
-            {
+            for record in inputs.lane_radial_records(lane.id.as_str()) {
                 if record.0 < start || record.0 > end {
                     continue;
                 }
@@ -1743,19 +1868,19 @@ pub(crate) fn project_marker_dimensioned_circles(
                             SketchGeometryDefinition::Native { .. }
                         )
                 }) {
-                    radial_records.push((*lane, *record));
+                    radial_records.push((group, *record));
                 }
             }
         }
         let mut repeated_radial_sets = Vec::new();
-        for (lane, (offset, radial_index, construction)) in &radial_records {
+        for (group, (offset, radial_index, construction)) in &radial_records {
             if *construction {
                 continue;
             }
-            let mut roster = (lane
-                .sketch_entities
+            let mut roster = (group
+                .markers
                 .iter()
-                .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+                .copied()
                 .filter(|marker| marker.coordinates_m.is_some()))
             .collect::<Vec<_>>();
             roster.sort_unstable_by_key(|left| left.offset());
@@ -1767,10 +1892,11 @@ pub(crate) fn project_marker_dimensioned_circles(
                 ) else {
                     continue;
                 };
-                repeated_radial_sets.push((*lane, *offset, *parameter, *radius, pairs));
+                repeated_radial_sets.push((*group, *offset, *parameter, *radius, pairs));
             }
         }
-        if let [(lane, offset, parameter, radius, pairs)] = repeated_radial_sets.as_slice() {
+        if let [(group, offset, parameter, radius, pairs)] = repeated_radial_sets.as_slice() {
+            let lane = group.lane;
             let mut transformed = Vec::new();
             for (center, _) in pairs {
                 let Some([cu, cv]) = center
@@ -1808,22 +1934,20 @@ pub(crate) fn project_marker_dimensioned_circles(
                 }
                 let mut consumed_carrier_refs = HashSet::new();
                 for (candidate_offset, candidate_radial_index, construction) in
-                    radial_records_by_lane
-                        .get(lane.id.as_str())
-                        .into_iter()
-                        .flatten()
+                    inputs.lane_radial_records(lane.id.as_str())
                 {
                     if *construction {
                         continue;
                     }
                     let candidate_offset_u64 =
                         cadmpeg_core::decode::u64_from_index(*candidate_offset);
-                    if lane.sketch_entities.iter().any(|marker| {
-                        marker.feature_ref.as_deref() == Some(native_ref)
-                            && marker.offset() == candidate_offset_u64
-                    }) && (*candidate_offset == *offset
-                        || id_from_index(*candidate_radial_index)
-                            .is_some_and(|index| pair_radial_object_indices.contains(&index)))
+                    if group
+                        .markers
+                        .iter()
+                        .any(|marker| marker.offset() == candidate_offset_u64)
+                        && (*candidate_offset == *offset
+                            || id_from_index(*candidate_radial_index)
+                                .is_some_and(|index| pair_radial_object_indices.contains(&index)))
                     {
                         let reference =
                             marker_circle_carrier_reference(lane_key, *candidate_offset);
@@ -1876,16 +2000,13 @@ pub(crate) fn project_marker_dimensioned_circles(
         if !radial_records.is_empty() {
             let radial_record_count = radial_records.len();
             let mut resolved = Vec::new();
-            for (lane, (offset, radial_index, construction)) in radial_records {
-                let mut roster = (lane
-                    .sketch_entities
-                    .iter()
-                    .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                    .filter_map(|marker| {
-                        marker
-                            .coordinates_m
-                            .map(|coordinates| (marker, coordinates.get()))
-                    }))
+            for (group, (offset, radial_index, construction)) in radial_records {
+                let lane = group.lane;
+                let mut roster = (group.markers.iter().copied().filter_map(|marker| {
+                    marker
+                        .coordinates_m
+                        .map(|coordinates| (marker, coordinates.get()))
+                }))
                 .collect::<Vec<_>>();
                 roster.sort_unstable_by_key(|(left, _)| left.offset());
                 let Some((radial, [ru, rv])) = roster.get(radial_index).copied() else {
@@ -2061,12 +2182,8 @@ pub(crate) fn project_marker_dimensioned_circles(
             continue;
         };
         for (parameter, radius) in radial_dimensions {
-            let Some(construction) = native_dimensioned_circle_construction_state(
-                lanes,
-                native_ref,
-                center_marker,
-                radius,
-            ) else {
+            let Some(construction) = inputs.construction_state(native_ref, center_marker, radius)
+            else {
                 continue;
             };
             if entities.iter().any(|entity| entity.sketch == *sketch_id && matches!(entity.geometry.definition(),

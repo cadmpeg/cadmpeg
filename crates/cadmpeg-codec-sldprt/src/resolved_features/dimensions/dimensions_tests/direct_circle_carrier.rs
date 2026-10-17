@@ -1,4 +1,4 @@
-use super::super::reconcile_direct_circle_dimension_carriers;
+use super::super::{reconcile_direct_circle_dimension_carriers, MarkerCircleInputs};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -194,7 +194,7 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
-        std::slice::from_ref(&lane),
+        &MarkerCircleInputs::new(&[], std::slice::from_ref(&lane)),
     );
 
     assert!(!entities.iter().any(|entity| entity.id().clone()
@@ -231,7 +231,7 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
-        std::slice::from_ref(&lane),
+        &MarkerCircleInputs::new(&[], std::slice::from_ref(&lane)),
     );
 
     assert_eq!(entities.len(), 1);
