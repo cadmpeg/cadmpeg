@@ -8,7 +8,7 @@
 
 use super::{length_cm, Record, Token};
 use crate::brep::geometry::coedge_pcurve_ref;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// The stream length unit of each record: `(first record, millimetres per
 /// unit)` for every independently headed stream, in record order.
@@ -29,15 +29,20 @@ pub(super) fn convert(records: &mut [Record], scales: &SegmentScales) -> Result<
             .collect()
     };
     let elsewhere = blocks(&elsewhere);
-    for (owner, marker) in blocks(&on_plane).difference(&elsewhere) {
-        let scale = scales
-            .iter()
-            .take_while(|(start, _)| start <= owner)
-            .last()
+    let converted = blocks(&on_plane);
+    let mut pending = converted.difference(&elsewhere).peekable();
+    while let Some(&(owner, marker)) = pending.next() {
+        let segment = scales.partition_point(|(start, _)| *start <= owner);
+        let scale = segment
+            .checked_sub(1)
+            .and_then(|segment| scales.get(segment))
             .map_or(1.0, |(_, scale)| *scale);
-        let record = &mut records[*owner];
+        let record = &mut records[owner];
         let mut tokens = record.tokens.to_vec();
-        scale_bs2_block(&mut tokens, *marker, scale).ok_or(*owner)?;
+        scale_bs2_block(&mut tokens, marker, scale).ok_or(owner)?;
+        while let Some(&(_, marker)) = pending.next_if(|(next, _)| *next == owner) {
+            scale_bs2_block(&mut tokens, marker, scale).ok_or(owner)?;
+        }
         record.tokens = tokens.into();
     }
     Ok(())
@@ -47,25 +52,33 @@ fn record_at(records: &[Record], reference: Option<i64>) -> Option<&Record> {
     records.get(usize::try_from(reference?).ok()?)
 }
 
+/// The pcurves bound by one kind of face, with the loops and coedges already
+/// walked for that kind. A walk that reaches a walked loop or coedge has
+/// already collected the rest of that chain or ring.
+#[derive(Default)]
+struct BoundPcurves {
+    loops: HashSet<i64>,
+    coedges: HashSet<i64>,
+    pcurves: BTreeSet<usize>,
+}
+
 /// Pcurve record indices bound to a coedge of a plane face, and those bound
 /// to a coedge of any other face.
 fn face_bound_pcurves(records: &[Record]) -> (BTreeSet<usize>, BTreeSet<usize>) {
-    let mut on_plane = BTreeSet::new();
-    let mut elsewhere = BTreeSet::new();
+    let mut on_plane = BoundPcurves::default();
+    let mut elsewhere = BoundPcurves::default();
     for face in records.iter().filter(|record| record.head() == "face") {
         let plane =
             record_at(records, face.ref_at(7)).is_some_and(|surface| surface.head() == "plane");
         let bound = if plane { &mut on_plane } else { &mut elsewhere };
-        let mut loops = BTreeSet::new();
         let mut loop_ref = face.ref_at(4);
         while let Some(index) = loop_ref {
             let Some(lp) = record_at(records, Some(index)).filter(|lp| lp.head() == "loop") else {
                 break;
             };
-            if !loops.insert(index) {
+            if !bound.loops.insert(index) {
                 break;
             }
-            let mut coedges = BTreeSet::new();
             let mut coedge_ref = lp.ref_at(4);
             while let Some(index) = coedge_ref {
                 let Some(coedge) = record_at(records, Some(index))
@@ -73,20 +86,20 @@ fn face_bound_pcurves(records: &[Record]) -> (BTreeSet<usize>, BTreeSet<usize>) 
                 else {
                     break;
                 };
-                if !coedges.insert(index) {
+                if !bound.coedges.insert(index) {
                     break;
                 }
                 if let Some(pcurve) =
                     coedge_pcurve_ref(coedge).and_then(|pcurve| usize::try_from(pcurve).ok())
                 {
-                    bound.insert(pcurve);
+                    bound.pcurves.insert(pcurve);
                 }
                 coedge_ref = coedge.ref_at(3);
             }
             loop_ref = lp.ref_at(3);
         }
     }
-    (on_plane, elsewhere)
+    (on_plane.pcurves, elsewhere.pcurves)
 }
 
 /// The record and token index of the BS2 marker of the inline or referenced
@@ -199,3 +212,6 @@ fn pole_coordinates(tokens: &[Token], marker: usize) -> Option<Vec<usize>> {
                 .collect()
         })
 }
+
+#[cfg(test)]
+mod tests;

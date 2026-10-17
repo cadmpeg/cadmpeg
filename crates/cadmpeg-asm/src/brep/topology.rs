@@ -310,29 +310,24 @@ pub(super) fn walk_reachable_topology(
             continue;
         };
         let mut loop_ref = face.ref_at(4);
-        let mut loop_guard = HashSet::new();
         while let Some(li) = loop_ref {
-            if !loop_guard.insert(li) {
-                break;
-            }
             let Some(lp) = by_index.get(&li) else { break };
             if lp.head() != "loop" {
                 break;
             }
-            kept_loops.insert(li);
+            // A loop kept from another face was walked with the rest of its
+            // chain, so the walk ends here.
+            if !kept_loops.insert(li) {
+                break;
+            }
             // Ring-walk coedges via chunk[3] = next.
             if let Some(first_ce) = lp.ref_at(4) {
                 let mut ce_ref = Some(first_ce);
-                let mut ce_guard = HashSet::new();
                 while let Some(ci) = ce_ref {
-                    if !ce_guard.insert(ci) {
-                        break;
-                    }
                     let Some(ce) = by_index.get(&ci) else { break };
-                    if !is_coedge_record(ce) {
+                    if !is_coedge_record(ce) || !kept_coedges.insert(ci) {
                         break;
                     }
-                    kept_coedges.insert(ci);
                     if let Some(pc) = coedge_pcurve_ref(ce) {
                         if let Some(prec) = by_index.get(&pc) {
                             if purpose == DecodePurpose::History {
@@ -861,8 +856,10 @@ pub(super) fn ring_coedges(
         if !guard.insert(ci) || !kept.contains(&ci) {
             break;
         }
+        let Some(ce) = owned_child(by_index, ci, &["coedge", "tcoedge"], 8, loop_rec) else {
+            break;
+        };
         out.push(id(ci));
-        let Some(ce) = by_index.get(&ci) else { break };
         cur = ce.ref_at(3);
         if cur == Some(first) {
             break;
@@ -885,10 +882,12 @@ pub(super) fn loop_chain(
         if !guard.insert(li) {
             break;
         }
+        let Some(lp) = owned_child(by_index, li, &["loop"], 5, face_rec) else {
+            break;
+        };
         if kept.contains(&li) {
             out.push(id(li));
         }
-        let Some(lp) = by_index.get(&li) else { break };
         cur = lp.ref_at(3);
     }
     out
@@ -908,10 +907,12 @@ fn face_chain(
         if !guard.insert(fi) {
             break;
         }
+        let Some(f) = owned_child(by_index, fi, &["face"], 5, shell_rec) else {
+            break;
+        };
         if kept.contains(&fi) {
             out.push(id(fi));
         }
-        let Some(f) = by_index.get(&fi) else { break };
         cur = f.ref_at(3);
     }
     out
@@ -922,31 +923,38 @@ pub(super) fn subshell_ancestor_shells(
     by_index: &HashMap<i64, &Record>,
 ) -> Result<HashMap<i64, i64>, cadmpeg_core::CodecError> {
     let mut out = HashMap::new();
+    // A subshell's owner chain ends where its owning subshell's chain ends:
+    // at the same shell, or at none when the chain breaks or cycles.
+    let mut resolved: HashMap<i64, Option<i64>> = HashMap::new();
     for record in records.iter().filter(|record| record.head() == "subshell") {
-        let mut owner = record.ref_at(3);
-        let mut guard = HashSet::new();
-        while let Some(index) = owner {
-            if !guard.insert(index) {
-                break;
+        let index = i64::try_from(record.index).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
+        })?;
+        let mut path = vec![index];
+        let mut on_path = HashSet::from([index]);
+        let mut current: &Record = record;
+        let shell = loop {
+            let Some(owner) = current.ref_at(3) else {
+                break None;
+            };
+            if let Some(known) = resolved.get(&owner) {
+                break *known;
             }
-            let Some(parent) = by_index.get(&index) else {
-                break;
+            let Some(parent) = by_index.get(&owner) else {
+                break None;
             };
             if parent.head() == "shell" {
-                out.insert(
-                    i64::try_from(record.index).map_err(|_| {
-                        cadmpeg_core::CodecError::malformed(
-                            "ASM record index exceeds the i64 range",
-                        )
-                    })?,
-                    index,
-                );
-                break;
+                break Some(owner);
             }
-            if parent.head() != "subshell" {
-                break;
+            if parent.head() != "subshell" || !on_path.insert(owner) {
+                break None;
             }
-            owner = parent.ref_at(3);
+            path.push(owner);
+            current = *parent;
+        };
+        resolved.extend(path.into_iter().map(|subshell| (subshell, shell)));
+        if let Some(shell) = shell {
+            out.insert(index, shell);
         }
     }
     Ok(out)
