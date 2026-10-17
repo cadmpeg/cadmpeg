@@ -4936,6 +4936,13 @@ fn attach_standard_topology(
     let face_point_membership =
         standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
             .map_err(StandardTopologyError::Codec)?;
+    let point_on_face = |face: usize, point: usize| {
+        face_point_membership
+            .get(face)
+            .and_then(|points| points.get(point))
+            .copied()
+            .unwrap_or(false)
+    };
     let limit_curve_bindings = standard_limit_curve_bindings(
         ctx,
         ir,
@@ -5262,57 +5269,48 @@ fn attach_standard_topology(
             refusal,
         )
         .map_err(StandardTopologyError::Codec)?;
+        let point_faces = if supports
+            .iter()
+            .any(|support| support.faces[0] == support.faces[1])
+        {
+            standard_point_faces(&face_point_membership, &ir.model.points)
+        } else {
+            Vec::new()
+        };
         let mut allowed_faces = Vec::new();
         for (edge, support) in supports.iter().enumerate() {
             let mut faces = Vec::new();
             if support.faces[0] == support.faces[1] {
-                for face in (0..face_count).filter(|face| *face != support.faces[0]) {
-                    let res = {
-                        let Some(surface) = face_surface(ir, bindings, &surface_indices, face)
-                        else {
-                            continue;
-                        };
-                        let mut any_pair = false;
-                        for pair in &options[edge] {
-                            let mut all_points = true;
-                            for point in pair {
-                                let Some(point) = ir.model.points.get(*point) else {
-                                    all_points = false;
-                                    break;
-                                };
-                                if !point_on_standard_face(
-                                    ctx,
-                                    point.position().get(),
-                                    &surface.geometry,
-                                    face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                                )
-                                .map_err(CodecError::from)
-                                .map_err(StandardTopologyError::Codec)?
-                                {
-                                    all_points = false;
-                                    break;
-                                }
-                            }
-                            if all_points
-                                && standard_nurbs_line_pair_on_face(
-                                    ctx,
-                                    &surface.geometry,
-                                    support,
-                                    pair,
-                                    &ir.model.points,
-                                    face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                                )
-                                .map_err(CodecError::from)
-                                .map_err(StandardTopologyError::Codec)?
-                            {
-                                any_pair = true;
-                                break;
-                            }
-                        }
-                        any_pair
+                let mut candidates = options[edge]
+                    .iter()
+                    .filter_map(|pair| point_faces.get(pair[0]))
+                    .flatten()
+                    .copied()
+                    .filter(|face| *face < face_count && *face != support.faces[0])
+                    .collect::<Vec<_>>();
+                candidates.sort_unstable();
+                candidates.dedup();
+                for face in candidates {
+                    let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
+                        continue;
                     };
-                    if res {
-                        faces.push(face);
+                    let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
+                    for pair in &options[edge] {
+                        if pair.iter().all(|point| point_on_face(face, *point))
+                            && standard_nurbs_line_pair_on_face(
+                                ctx,
+                                &surface.geometry,
+                                support,
+                                pair,
+                                &ir.model.points,
+                                bounds,
+                            )
+                            .map_err(CodecError::from)
+                            .map_err(StandardTopologyError::Codec)?
+                        {
+                            faces.push(face);
+                            break;
+                        }
                     }
                 }
             }
@@ -5980,13 +5978,6 @@ fn attach_standard_topology(
                 false,
                 "catia_standard_missing_direction_evidence",
             )?,
-        };
-        let point_on_face = |face: usize, point: usize| {
-            face_point_membership
-                .get(face)
-                .and_then(|points| points.get(point))
-                .copied()
-                .unwrap_or(false)
         };
         let mut point_positions = Vec::new();
         for point in &ir.model.points {
@@ -7756,6 +7747,22 @@ fn standard_face_point_membership(
         }
     }
     Ok(memberships)
+}
+
+/// Invert the cached face membership: the faces that hold each point, in
+/// ascending face order.
+fn standard_point_faces(memberships: &[Vec<bool>], points: &[Point]) -> Vec<Vec<usize>> {
+    let mut point_faces = vec![Vec::new(); points.len()];
+    for (face, membership) in memberships.iter().enumerate() {
+        for (faces, _) in point_faces
+            .iter_mut()
+            .zip(membership)
+            .filter(|(_, member)| **member)
+        {
+            faces.push(face);
+        }
+    }
+    point_faces
 }
 
 fn point_on_standard_face(
