@@ -117,6 +117,63 @@ fn only_enclosed(offsets: &[(u64, usize)], start: u64, end: Option<u64>) -> Opti
     }
 }
 
+/// Offsets sorted for span queries.
+struct SortedOffsets(Vec<u64>);
+
+impl SortedOffsets {
+    fn new(offsets: impl IntoIterator<Item = u64>) -> Self {
+        let mut offsets = offsets.into_iter().collect::<Vec<_>>();
+        offsets.sort_unstable();
+        Self(offsets)
+    }
+
+    /// The offsets in `start..end`.
+    fn within(&self, start: u64, end: u64) -> &[u64] {
+        let first = self.0.partition_point(|&offset| offset < start);
+        let last = self.0.partition_point(|&offset| offset < end);
+        self.0.get(first..last).unwrap_or_default()
+    }
+
+    /// Whether an offset lies strictly between `start` and `end`.
+    fn any_strictly_between(&self, start: u64, end: u64) -> bool {
+        let first = self.0.partition_point(|&offset| offset <= start);
+        self.0.get(first).is_some_and(|&offset| offset < end)
+    }
+}
+
+/// The driving dimension values, in IR units, of each feature's non-angular,
+/// non-diameter relations in `lane`, in relation order. A relation's
+/// parameter scalar is the first scalar with its id.
+fn compact_linear_dimensions(
+    lane: &FeatureInputLane,
+    native_to_ir: f64,
+) -> HashMap<&str, Vec<f64>> {
+    let mut scalars = HashMap::new();
+    for scalar in &lane.scalars {
+        scalars.entry(scalar.id.as_str()).or_insert(scalar);
+    }
+    let mut dimensions = HashMap::<&str, Vec<f64>>::new();
+    for relation in &lane.relation_instances {
+        if matches!(
+            relation.family,
+            FeatureInputRelationFamily::Angle | FeatureInputRelationFamily::CircleDiameter
+        ) {
+            continue;
+        }
+        let Some(scalar) = relation
+            .parameter_scalar_ref()
+            .and_then(|scalar| scalars.get(scalar))
+        else {
+            continue;
+        };
+        dimensions
+            .entry(relation.feature_ref.as_str())
+            .or_default()
+            .push(scalar.value.get() * native_to_ir);
+    }
+    dimensions
+}
+
 /// Lane markers grouped by owning feature, in lane order.
 fn markers_by_owner(markers: &[SketchInputEntity]) -> HashMap<&str, Vec<&SketchInputEntity>> {
     let mut owned = HashMap::<_, Vec<_>>::new();
@@ -386,6 +443,17 @@ pub(crate) fn project_compact_sketch_profiles(
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
         let names = FeatureObjectNames::new(&lane.names);
         let markers_by_feature = markers_by_owner(&lane.sketch_entities);
+        let dimensions_by_feature = compact_linear_dimensions(lane, NATIVE_TO_IR);
+        let class_offsets = |name: &str| {
+            SortedOffsets::new(
+                lane.classes
+                    .iter()
+                    .filter(|class| class.name == name)
+                    .map(|class| class.offset),
+            )
+        };
+        let line_class_offsets = class_offsets("sgLineHandle");
+        let arc_class_offsets = class_offsets("sgArcHandle");
         let mut objects = native_features
             .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
@@ -444,52 +512,28 @@ pub(crate) fn project_compact_sketch_profiles(
                 .get(native_feature.id.as_str())
                 .cloned()
                 .unwrap_or_default();
-            let dimensions = lane
-                .relation_instances
-                .iter()
-                .filter(|relation| relation.feature_ref == native_feature.id)
-                .filter(|relation| {
-                    !matches!(
-                        relation.family,
-                        FeatureInputRelationFamily::Angle
-                            | FeatureInputRelationFamily::CircleDiameter
-                    )
-                })
-                .filter_map(|relation| relation.parameter_scalar_ref())
-                .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
-                .map(|scalar| scalar.value.get() * NATIVE_TO_IR)
-                .collect::<Vec<_>>();
+            let dimensions = dimensions_by_feature
+                .get(native_feature.id.as_str())
+                .map_or(&[][..], Vec::as_slice);
             let dimensioned_rectangle = if addresses.is_none() {
-                unique_dimensioned_rectangle_markers(&owned_markers, &dimensions)
+                unique_dimensioned_rectangle_markers(&owned_markers, dimensions)
             } else {
                 None
             };
             let markers = if let Some(rectangle) = dimensioned_rectangle {
                 rectangle.to_vec()
             } else if region_addresses.is_some() {
-                let line_classes = lane
-                    .classes
-                    .iter()
-                    .filter(|class| {
-                        class.name == "sgLineHandle"
-                            && class.offset >= u64_from_index(start)
-                            && class.offset < u64_from_index(end)
-                    })
-                    .collect::<Vec<_>>();
-                let [line_class] = line_classes.as_slice() else {
+                let span = (u64_from_index(start), u64_from_index(end));
+                let [line_class_offset] = line_class_offsets.within(span.0, span.1) else {
                     continue;
                 };
-                if lane.classes.iter().any(|class| {
-                    class.name == "sgArcHandle"
-                        && class.offset >= u64_from_index(start)
-                        && class.offset < u64_from_index(end)
-                }) {
+                if !arc_class_offsets.within(span.0, span.1).is_empty() {
                     continue;
                 }
                 let Some(first_marker) = owned_markers
                     .iter()
                     .copied()
-                    .filter(|marker| marker.offset() <= line_class.offset)
+                    .filter(|marker| marker.offset() <= *line_class_offset)
                     .max_by_key(|marker| marker.offset())
                 else {
                     continue;
@@ -922,33 +966,59 @@ fn collect_marker_arc_centers(
     candidates
 }
 
-fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInputEntity) -> bool {
-    if !matches!(
-        marker.kind(),
-        SketchInputKind::LineOrCircle | SketchInputKind::Arc
-    ) || marker.coordinates_m.is_some()
-    {
-        return false;
+/// The classes and relation instances of one lane, indexed to recognize the
+/// markers that carry a terminal relation's display.
+struct TerminalRelationCarriers<'a> {
+    lane: &'a FeatureInputLane,
+    /// The first class at each offset.
+    classes_by_offset: HashMap<u64, &'a str>,
+    /// The `(feature, class)` of every relation instance.
+    relations: HashSet<(&'a str, &'a str)>,
+}
+
+impl<'a> TerminalRelationCarriers<'a> {
+    fn new(lane: &'a FeatureInputLane) -> Self {
+        let mut classes_by_offset = HashMap::new();
+        for class in &lane.classes {
+            classes_by_offset
+                .entry(class.offset)
+                .or_insert(class.id.as_str());
+        }
+        let relations = lane
+            .relation_instances
+            .iter()
+            .map(|relation| (relation.feature_ref.as_str(), relation.class_ref.as_str()))
+            .collect();
+        Self {
+            lane,
+            classes_by_offset,
+            relations,
+        }
     }
-    let Some(feature_ref) = marker.feature_ref.as_deref() else {
-        return false;
-    };
-    let Some(offset) = index_from_u64(marker.offset()) else {
-        return false;
-    };
-    let Some(class_offset) = terminal_relation_class_offset(&lane.native_payload, offset) else {
-        return false;
-    };
-    let Some(class) = lane
-        .classes
-        .iter()
-        .find(|class| class.offset == u64_from_index(class_offset))
-    else {
-        return false;
-    };
-    lane.relation_instances
-        .iter()
-        .any(|relation| relation.feature_ref == feature_ref && relation.class_ref == class.id)
+
+    fn carries(&self, marker: &SketchInputEntity) -> bool {
+        if !matches!(
+            marker.kind(),
+            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+        ) || marker.coordinates_m.is_some()
+        {
+            return false;
+        }
+        let Some(feature_ref) = marker.feature_ref.as_deref() else {
+            return false;
+        };
+        let Some(offset) = index_from_u64(marker.offset()) else {
+            return false;
+        };
+        let Some(class_offset) = terminal_relation_class_offset(&self.lane.native_payload, offset)
+        else {
+            return false;
+        };
+        let Some(&class) = self.classes_by_offset.get(&u64_from_index(class_offset)) else {
+            return false;
+        };
+        self.relations.contains(&(feature_ref, class))
+    }
 }
 
 pub(crate) fn project_marker_backed_sketches(
@@ -991,6 +1061,9 @@ pub(crate) fn project_marker_backed_sketches(
         }
         let names = FeatureObjectNames::new(&lane.names);
         let markers_by_feature = markers_by_owner(&lane.sketch_entities);
+        let marker_offsets =
+            SortedOffsets::new(lane.sketch_entities.iter().map(SketchInputEntity::offset));
+        let terminal_carriers = TerminalRelationCarriers::new(lane);
         let mut objects = Vec::new();
         for feature in native_features
             .iter()
@@ -1103,7 +1176,7 @@ pub(crate) fn project_marker_backed_sketches(
                             marker,
                             &object_markers,
                         )
-                        || terminal_relation_display_carrier(lane, marker)
+                        || terminal_carriers.carries(marker)
                     {
                         continue;
                     }
@@ -1111,9 +1184,8 @@ pub(crate) fn project_marker_backed_sketches(
                 markers.push(marker);
             }
             if markers.is_empty() {
-                let has_unbound_marker = lane.sketch_entities.iter().any(|marker| {
-                    marker.offset() > u64_from_index(start) && marker.offset() < u64_from_index(end)
-                });
+                let has_unbound_marker =
+                    marker_offsets.any_strictly_between(u64_from_index(start), u64_from_index(end));
                 if object_markers.is_empty()
                     && !has_unbound_marker
                     && !marker_owners.contains(native_feature.id.as_str())
@@ -3248,9 +3320,9 @@ fn legacy_config_collinear_sketch(
 mod detached_legacy_sketch_tests {
     use super::super::bindings::bind_detached_legacy_sketch_objects;
     use super::{
-        assemble_sketch_block_profile, legacy_config_collinear_sketch, legacy_config_hex_sketch,
-        project_marker_backed_sketches, terminal_relation_display_carrier,
-        SketchBlockInstancePlacement, SketchBlockProfileInput,
+        assemble_sketch_block_profile, compact_linear_dimensions, legacy_config_collinear_sketch,
+        legacy_config_hex_sketch, project_marker_backed_sketches, SketchBlockInstancePlacement,
+        SketchBlockProfileInput, SortedOffsets, TerminalRelationCarriers,
     };
     use crate::layout::current_terminal_relation_carrier as terminal;
     use crate::records::FeatureInputLane;
@@ -3766,25 +3838,153 @@ mod detached_legacy_sketch_tests {
             sketch_entities: Vec::new(),
         };
 
-        assert!(terminal_relation_display_carrier(&lane, &carrier));
+        assert!(TerminalRelationCarriers::new(&lane).carries(&carrier));
 
         let mut wrong_feature = lane.relation_instances[0].clone();
         wrong_feature.feature_ref = "other-feature".into();
         let mut wrong_feature_lane = lane.clone();
         wrong_feature_lane.relation_instances = vec![wrong_feature];
-        assert!(!terminal_relation_display_carrier(
-            &wrong_feature_lane,
-            &carrier
-        ));
+        assert!(!TerminalRelationCarriers::new(&wrong_feature_lane).carries(&carrier));
 
         let mut wrong_class = lane.relation_instances[0].clone();
         wrong_class.class_ref = "other-class".into();
-        let mut wrong_class_lane = lane;
+        let mut wrong_class_lane = lane.clone();
         wrong_class_lane.relation_instances = vec![wrong_class];
-        assert!(!terminal_relation_display_carrier(
-            &wrong_class_lane,
-            &carrier
-        ));
+        assert!(!TerminalRelationCarriers::new(&wrong_class_lane).carries(&carrier));
+
+        let mut shadowed_class = lane.classes[0].clone();
+        shadowed_class.id = "earlier-class".into();
+        let mut shadowed_class_lane = lane;
+        shadowed_class_lane.classes.insert(0, shadowed_class);
+        assert!(!TerminalRelationCarriers::new(&shadowed_class_lane).carries(&carrier));
+    }
+
+    fn xorshift(state: &mut u64, bound: u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state % bound
+    }
+
+    #[test]
+    fn sorted_offset_spans_match_the_linear_scans() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        for _ in 0..500 {
+            let offsets = (0..xorshift(&mut state, 8))
+                .map(|_| xorshift(&mut state, 12))
+                .collect::<Vec<_>>();
+            let sorted = SortedOffsets::new(offsets.iter().copied());
+            for start in 0..14 {
+                for end in 0..14 {
+                    let mut within = offsets
+                        .iter()
+                        .copied()
+                        .filter(|offset| *offset >= start && *offset < end)
+                        .collect::<Vec<_>>();
+                    within.sort_unstable();
+                    assert_eq!(sorted.within(start, end), within.as_slice());
+                    assert_eq!(
+                        sorted.any_strictly_between(start, end),
+                        offsets
+                            .iter()
+                            .any(|offset| *offset > start && *offset < end)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_linear_dimensions_match_the_per_feature_scan() {
+        const NATIVE_TO_IR: f64 = 1000.0;
+        let families = [
+            FeatureInputRelationFamily::CircleDiameter,
+            FeatureInputRelationFamily::LineLineDistance,
+            FeatureInputRelationFamily::PointPointDistance,
+            FeatureInputRelationFamily::Angle,
+        ];
+        let feature_ids = ["feature-a", "feature-b", "feature-c"];
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        for _ in 0..200 {
+            let scalars = (0..xorshift(&mut state, 6))
+                .map(|ordinal| crate::records::FeatureInputScalar {
+                    id: format!("scalar-{}", xorshift(&mut state, 4)),
+                    parent: "lane".into(),
+                    feature_ref: None,
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                    offset: ordinal,
+                    object_id: 0,
+                    name: "name".into(),
+                    value: cadmpeg_ir::scalar::FiniteReal::new(
+                        f64::from(u32::try_from(ordinal).unwrap()) + 0.5,
+                    )
+                    .unwrap(),
+                    role: crate::records::FeatureInputScalarRole::Driving,
+                    operands: Vec::new(),
+                })
+                .collect::<Vec<_>>();
+            let relation_instances = (0..xorshift(&mut state, 8))
+                .map(|ordinal| {
+                    let scalar = format!("scalar-{}", xorshift(&mut state, 5));
+                    let parameter = (xorshift(&mut state, 3) != 0).then(|| scalar.clone());
+                    FeatureInputRelationInstance {
+                        id: format!("relation-{ordinal}"),
+                        parent: "lane".into(),
+                        ordinal: u32::try_from(ordinal).unwrap(),
+                        offset: ordinal,
+                        family: families[usize::try_from(xorshift(&mut state, 4)).unwrap()],
+                        class_ref: "class".into(),
+                        feature_ref: feature_ids[usize::try_from(xorshift(&mut state, 3)).unwrap()]
+                            .into(),
+                        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                            vec![scalar],
+                            parameter,
+                            None,
+                        )
+                        .unwrap(),
+                        operands: Vec::new(),
+                    }
+                })
+                .collect::<Vec<_>>();
+            let lane = FeatureInputLane {
+                id: "lane".into(),
+                configuration: None,
+                native_payload: Vec::new().into(),
+                classes: Vec::new(),
+                names: Vec::new(),
+                scalars,
+                relation_bindings: Vec::new(),
+                relation_instances,
+                body_selections: Vec::new(),
+                edge_selections: Vec::new(),
+                surface_selections: Vec::new(),
+                generated_surface_identities: Vec::new(),
+                references: Vec::new(),
+                sketch_entities: Vec::new(),
+            };
+            let indexed = compact_linear_dimensions(&lane, NATIVE_TO_IR);
+            for feature_id in feature_ids {
+                let scanned = lane
+                    .relation_instances
+                    .iter()
+                    .filter(|relation| relation.feature_ref == feature_id)
+                    .filter(|relation| {
+                        !matches!(
+                            relation.family,
+                            FeatureInputRelationFamily::Angle
+                                | FeatureInputRelationFamily::CircleDiameter
+                        )
+                    })
+                    .filter_map(|relation| relation.parameter_scalar_ref())
+                    .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
+                    .map(|scalar| scalar.value.get() * NATIVE_TO_IR)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    indexed.get(feature_id).map_or(&[][..], Vec::as_slice),
+                    scanned.as_slice()
+                );
+            }
+        }
     }
 
     #[test]
