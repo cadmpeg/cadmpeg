@@ -57,6 +57,7 @@ pub struct AnnotationRecord {
 /// Emit annotation records mapping every emitted entity, attribute, unknown,
 /// and synthetic procedural id back to its source record offset.
 pub(super) fn emit_annotation_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -64,6 +65,14 @@ pub(super) fn emit_annotation_records(
     stream: &str,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    // Each record copies the stream name, so each copy is charged.
+    let stream_copy = || -> Result<String, cadmpeg_core::CodecError> {
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(stream.len()),
+            "ASM annotation stream",
+        )?;
+        Ok(stream.to_owned())
+    };
     let curve_geometries = out
         .curves
         .iter()
@@ -193,7 +202,7 @@ pub(super) fn emit_annotation_records(
 
             out.annotation_records.push(AnnotationRecord {
                 id: entity_id,
-                stream: stream.to_owned(),
+                stream: stream_copy()?,
                 offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 tag: AnnotationTag::Record(record.name.clone()),
                 derived_fields,
@@ -203,7 +212,7 @@ pub(super) fn emit_annotation_records(
         if attribute_ids.contains(attribute_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
-                stream: stream.to_owned(),
+                stream: stream_copy()?,
                 offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 tag: AnnotationTag::Record(record.name.clone()),
                 derived_fields: Vec::new(),
@@ -213,7 +222,7 @@ pub(super) fn emit_annotation_records(
         if unknown_ids.contains(unknown_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id.into_string(),
-                stream: stream.to_owned(),
+                stream: stream_copy()?,
                 offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 tag: AnnotationTag::Record(record.name.clone()),
                 derived_fields: Vec::new(),
@@ -238,7 +247,7 @@ pub(super) fn emit_annotation_records(
             if procedural_ids.contains(synthetic_id.as_str()) {
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
-                    stream: stream.to_owned(),
+                    stream: stream_copy()?,
                     offset: cadmpeg_core::decode::u64_from_index(record.offset),
                     tag,
                     derived_fields: Vec::new(),
@@ -265,7 +274,7 @@ pub(super) fn emit_annotation_records(
 
         out.annotation_records.push(AnnotationRecord {
             id: entity_id.to_owned(),
-            stream: stream.to_owned(),
+            stream: stream_copy()?,
             offset: cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             derived_fields: Vec::new(),
