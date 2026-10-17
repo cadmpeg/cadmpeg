@@ -1011,7 +1011,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
 
     ({
         let sketch = attach_sketch_graph(
-            &mut ir,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
             &label,
             &SketchSources {
                 point_uses: &[&point_use],
@@ -1036,7 +1037,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         let mut rejected_annotations = AnnotationBuilder::new();
         let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         assert!(attach_sketch_graph(
-            &mut rejected_ir,
+            &mut rejected_ir.model.sketches,
+            &mut rejected_ir.model.sketch_entities,
             &label,
             &SketchSources {
                 point_uses: &[&point_use, &point_use],
@@ -1110,7 +1112,8 @@ fn named_sketch_points_project_without_an_external_named_point() {
 
     ({
         let sketch = attach_sketch_graph(
-            &mut ir,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
             &label,
             &SketchSources {
                 point_uses: &[],
