@@ -5095,15 +5095,49 @@ pub(super) fn feature_input_block_identity_groups(
     output
 }
 
-fn visit_column_slots<'a>(
+/// One column-row slot and the sole column table that lists its row.
+struct ColumnSlot<'a> {
+    row: &'a str,
+    row_kind: ColumnIndexRowKind,
+    slot: ColumnRowSlot,
+    source_offset: u64,
+    table: Option<&'a str>,
+}
+
+/// Column-row slots grouped by the block they address, in index, linked and
+/// target row order.
+fn column_slots_by_block<'a>(
     index_rows: &'a [DataBlockIndexRow],
     linked_rows: &'a [DataBlockLinkedIndexRow],
     target_rows: &'a [DataBlockTargetIndexRow],
-    mut visit: impl FnMut(&'a str, &'a str, ColumnIndexRowKind, ColumnRowSlot, u64),
-) {
+    tables: &'a [DataBlockColumnIndexTable],
+) -> BTreeMap<&'a str, Vec<ColumnSlot<'a>>> {
+    // A row listed twice, in one table or in two, has no sole table.
+    let mut row_tables = BTreeMap::new();
+    for table in tables {
+        for row in std::iter::once(table.opening_linked_row.as_str())
+            .chain(table.rows.target_rows().iter().map(String::as_str))
+            .chain(table.rows.linked_rows().iter().map(String::as_str))
+        {
+            row_tables
+                .entry(row)
+                .and_modify(|table| *table = None)
+                .or_insert(Some(table.id.as_str()));
+        }
+    }
+    let mut slots = BTreeMap::<&str, Vec<_>>::new();
+    let mut push = |data_block, row: &'a str, row_kind, slot, source_offset| {
+        slots.entry(data_block).or_default().push(ColumnSlot {
+            row,
+            row_kind,
+            slot,
+            source_offset,
+            table: row_tables.get(row).copied().flatten(),
+        });
+    };
     for row in index_rows {
         for (slot, token) in ColumnRowSlot::ALL.into_iter().zip(row.frame.indices()) {
-            visit(
+            push(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::Index,
@@ -5117,7 +5151,7 @@ fn visit_column_slots<'a>(
             .into_iter()
             .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
         {
-            visit(
+            push(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::LinkedIndex,
@@ -5131,7 +5165,7 @@ fn visit_column_slots<'a>(
             .into_iter()
             .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
         {
-            visit(
+            push(
                 token.target,
                 &row.id,
                 ColumnIndexRowKind::TargetIndex,
@@ -5140,25 +5174,7 @@ fn visit_column_slots<'a>(
             );
         }
     }
-}
-
-fn unique_column_table<'a>(row: &str, tables: &'a [DataBlockColumnIndexTable]) -> Option<&'a str> {
-    let mut unique = None;
-    for table in tables {
-        for candidate in std::iter::once(table.opening_linked_row.as_str())
-            .chain(table.rows.target_rows().iter().map(String::as_str))
-            .chain(table.rows.linked_rows().iter().map(String::as_str))
-        {
-            if candidate != row {
-                continue;
-            }
-            if unique.is_some() {
-                return None;
-            }
-            unique = Some(table.id.as_str());
-        }
-    }
-    unique
+    slots
 }
 
 fn format_column_relation_id(
@@ -5183,40 +5199,34 @@ pub(super) fn feature_input_column_row_uses(
     target_rows: &[DataBlockTargetIndexRow],
     tables: &[DataBlockColumnIndexTable],
 ) -> Vec<FeatureInputColumnRowUse> {
+    let slots_by_block = column_slots_by_block(index_rows, linked_rows, target_rows, tables);
     let mut output = Vec::new();
     for input in inputs {
-        let mut ordinal = 0usize;
-        visit_column_slots(
-            index_rows,
-            linked_rows,
-            target_rows,
-            |data_block, row, row_kind, slot, source_offset| {
-                if data_block != input.data_block {
-                    return;
-                }
-                let table = unique_column_table(row, tables);
-
-                output.push(FeatureInputColumnRowUse {
-                    id: format_column_relation_id(
-                        "nx:feature-history:input-column-row-use#",
-                        input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
-                        None,
-                        row_kind,
-                        ordinal,
-                    ),
-                    input_block: input.id.clone(),
-                    operation_label: input.operation_label.clone(),
-                    input_slot: input.input_slot,
-                    row_kind,
-                    column_row: row.to_owned(),
-                    column_table: table.map(ToOwned::to_owned),
-                    row_slot: slot,
-                    data_block: input.data_block.clone(),
-                    source_offset,
-                });
-                ordinal += 1;
-            },
-        );
+        for (ordinal, slot) in slots_by_block
+            .get(input.data_block.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            output.push(FeatureInputColumnRowUse {
+                id: format_column_relation_id(
+                    "nx:feature-history:input-column-row-use#",
+                    input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
+                    None,
+                    slot.row_kind,
+                    ordinal,
+                ),
+                input_block: input.id.clone(),
+                operation_label: input.operation_label.clone(),
+                input_slot: input.input_slot,
+                row_kind: slot.row_kind,
+                column_row: slot.row.to_owned(),
+                column_table: slot.table.map(ToOwned::to_owned),
+                row_slot: slot.slot,
+                data_block: input.data_block.clone(),
+                source_offset: slot.source_offset,
+            });
+        }
     }
     output
 }
@@ -5230,48 +5240,42 @@ pub(super) fn feature_datum_csys_column_row_uses(
     target_rows: &[DataBlockTargetIndexRow],
     tables: &[DataBlockColumnIndexTable],
 ) -> Vec<FeatureDatumCsysColumnRowUse> {
+    let slots_by_block = column_slots_by_block(index_rows, linked_rows, target_rows, tables);
     let mut output = Vec::new();
     for construction in constructions {
         for (construction_slot, (_, data_block, source_offset)) in DatumCsysSlot::ALL
             .into_iter()
             .zip(construction.frame.references())
         {
-            let mut ordinal = 0usize;
-            visit_column_slots(
-                index_rows,
-                linked_rows,
-                target_rows,
-                |target, row, row_kind, row_slot, row_source_offset| {
-                    if target != data_block {
-                        return;
-                    }
-                    let table = unique_column_table(row, tables);
-
-                    output.push(FeatureDatumCsysColumnRowUse {
-                        id: format_column_relation_id(
-                            "nx:feature-history:datum-csys-column-row-use#",
-                            construction
-                                .id
-                                .rsplit_once('#')
-                                .map_or("unknown", |(_, key)| key),
-                            Some(construction_slot),
-                            row_kind,
-                            ordinal,
-                        ),
-                        construction: construction.id.clone(),
-                        operation_label: construction.operation_label.clone(),
-                        construction_slot,
-                        row_kind,
-                        column_row: row.to_owned(),
-                        column_table: table.map(ToOwned::to_owned),
-                        row_slot,
-                        data_block: data_block.to_owned(),
-                        construction_source_offset: source_offset,
-                        row_source_offset,
-                    });
-                    ordinal += 1;
-                },
-            );
+            for (ordinal, slot) in slots_by_block
+                .get(data_block.as_str())
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                output.push(FeatureDatumCsysColumnRowUse {
+                    id: format_column_relation_id(
+                        "nx:feature-history:datum-csys-column-row-use#",
+                        construction
+                            .id
+                            .rsplit_once('#')
+                            .map_or("unknown", |(_, key)| key),
+                        Some(construction_slot),
+                        slot.row_kind,
+                        ordinal,
+                    ),
+                    construction: construction.id.clone(),
+                    operation_label: construction.operation_label.clone(),
+                    construction_slot,
+                    row_kind: slot.row_kind,
+                    column_row: slot.row.to_owned(),
+                    column_table: slot.table.map(ToOwned::to_owned),
+                    row_slot: slot.slot,
+                    data_block: data_block.to_owned(),
+                    construction_source_offset: source_offset,
+                    row_source_offset: slot.source_offset,
+                });
+            }
         }
     }
     output
