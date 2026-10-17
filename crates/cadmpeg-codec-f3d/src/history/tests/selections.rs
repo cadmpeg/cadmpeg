@@ -335,7 +335,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         &mut operands,
         &[],
         std::slice::from_ref(&scope),
-        std::slice::from_ref(&history),
+        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
     );
 
