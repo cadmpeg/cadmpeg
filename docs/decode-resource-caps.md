@@ -416,16 +416,16 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 214.
+Production `MAX_*` constants: 215.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 68    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 99    |
+| 4    | Local work cap             | 100   |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 214   |
+|      | Total                      | 215   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
