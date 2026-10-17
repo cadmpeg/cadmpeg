@@ -256,6 +256,59 @@ struct RelationGroup<'a> {
     class_ref: &'a str,
     operands: &'a [FeatureInputOperand],
     scalars: Vec<(usize, &'a FeatureInputScalar)>,
+    /// Present while every scalar is a one-operand display scalar of one
+    /// operand kind and object name.
+    circle_displays: Option<CircleDisplays<'a>>,
+}
+
+impl<'a> RelationGroup<'a> {
+    fn push(&mut self, index: usize, scalar: &'a FeatureInputScalar, name: Option<&'a str>) {
+        self.scalars.push((index, scalar));
+        if let Some(displays) = &mut self.circle_displays {
+            match display_operand(scalar) {
+                Some(operand) if operand.kind == displays.kind && name == Some(displays.name) => {
+                    displays.entity_indices.insert(operand.entity_index);
+                }
+                _ => self.circle_displays = None,
+            }
+        }
+    }
+}
+
+/// The operand kind, object name and entity indices a group's display scalars
+/// share.
+struct CircleDisplays<'a> {
+    kind: FeatureInputOperandKind,
+    name: &'a str,
+    entity_indices: HashSet<u16>,
+}
+
+impl<'a> CircleDisplays<'a> {
+    fn of(scalar: &FeatureInputScalar, name: Option<&'a str>) -> Option<Self> {
+        let operand = display_operand(scalar)?;
+        Some(Self {
+            kind: operand.kind,
+            name: name?,
+            entity_indices: HashSet::from([operand.entity_index]),
+        })
+    }
+
+    /// Whether `scalar`, named `name`, repeats the shared display on another
+    /// entity.
+    fn repeated_by(&self, scalar: &FeatureInputScalar, name: Option<&str>) -> bool {
+        display_operand(scalar).is_some_and(|operand| {
+            operand.kind == self.kind
+                && name == Some(self.name)
+                && !self.entity_indices.contains(&operand.entity_index)
+        })
+    }
+}
+
+fn display_operand(scalar: &FeatureInputScalar) -> Option<&FeatureInputOperand> {
+    match scalar.operands.as_slice() {
+        [operand] if scalar.role == FeatureInputScalarRole::Display => Some(operand),
+        _ => None,
+    }
 }
 
 pub(super) fn relation_instances(
@@ -309,6 +362,7 @@ pub(super) fn relation_instances(
         else {
             continue;
         };
+        let scalar_name = names_by_id.get(scalar.name.as_str()).copied();
         let declaration = declarations.get(scalar.id.as_str());
         let Some((class_offset, family, class_ref)) = declaration else {
             if candidate_counts
@@ -341,32 +395,18 @@ pub(super) fn relation_instances(
                     .operands
                     .iter()
                     .map(|operand| (operand.kind, operand.entity_index)));
-            let mut repeated_circle_display = same_scope
+            let repeated_circle_display = same_scope
                 && group.family == FeatureInputRelationFamily::CircleDiameter
-                && scalar.role == FeatureInputScalarRole::Display
-                && scalar.operands.len() == 1;
+                && group
+                    .circle_displays
+                    .as_ref()
+                    .is_some_and(|displays| displays.repeated_by(scalar, scalar_name));
             if repeated_circle_display {
-                let scalar_name = names_by_id.get(scalar.name.as_str()).copied();
-                for (_, candidate) in &group.scalars {
-                    if candidate.role != FeatureInputScalarRole::Display
-                        || candidate.operands.len() != 1
-                        || candidate.operands[0].kind != scalar.operands[0].kind
-                        || candidate.operands[0].entity_index == scalar.operands[0].entity_index
-                        || !scalar_name.is_some_and(|name| {
-                            names_by_id.get(candidate.name.as_str()).copied() == Some(name)
-                        })
-                    {
-                        repeated_circle_display = false;
-                        break;
-                    }
-                }
-            }
-            if repeated_circle_display {
-                group.scalars.push((scalar_index, scalar));
+                group.push(scalar_index, scalar, scalar_name);
             } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
             {
                 if group.scalars.len() == 1 {
-                    group.scalars.push((scalar_index, scalar));
+                    group.push(scalar_index, scalar, scalar_name);
                 } else {
                     let next = RelationGroup {
                         feature_ref: group.feature_ref,
@@ -374,6 +414,7 @@ pub(super) fn relation_instances(
                         class_ref: group.class_ref,
                         operands: &scalar.operands,
                         scalars: vec![(scalar_index, scalar)],
+                        circle_displays: CircleDisplays::of(scalar, scalar_name),
                     };
                     groups.push(next);
                 }
@@ -410,7 +451,7 @@ pub(super) fn relation_instances(
                 group.family = *family;
                 group.class_ref = *class_ref;
             }
-            group.scalars.push((scalar_index, scalar));
+            group.push(scalar_index, scalar, scalar_name);
         } else {
             groups.push(RelationGroup {
                 feature_ref,
@@ -418,6 +459,7 @@ pub(super) fn relation_instances(
                 class_ref,
                 operands: &scalar.operands,
                 scalars: vec![(scalar_index, scalar)],
+                circle_displays: CircleDisplays::of(scalar, scalar_name),
             });
         }
     }
@@ -2620,6 +2662,93 @@ mod relation_records_tests {
             }
         }
         assert!(found > 0);
+    }
+
+    #[test]
+    fn circle_display_aggregate_matches_the_linear_repeat_check() {
+        use super::{CircleDisplays, RelationGroup};
+        use std::collections::HashMap;
+
+        fn linear(
+            group: &RelationGroup<'_>,
+            scalar: &FeatureInputScalar,
+            names: &HashMap<&str, &str>,
+        ) -> bool {
+            let scalar_name = names.get(scalar.name.as_str()).copied();
+            scalar.role == FeatureInputScalarRole::Display
+                && scalar.operands.len() == 1
+                && group.scalars.iter().all(|(_, candidate)| {
+                    candidate.role == FeatureInputScalarRole::Display
+                        && candidate.operands.len() == 1
+                        && candidate.operands[0].kind == scalar.operands[0].kind
+                        && candidate.operands[0].entity_index != scalar.operands[0].entity_index
+                        && scalar_name.is_some_and(|name| {
+                            names.get(candidate.name.as_str()).copied() == Some(name)
+                        })
+                })
+        }
+
+        let mut state = 0x2545_f491_u64;
+        let mut next = |bound: u64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) % bound
+        };
+        let names = HashMap::from([("name-0", "D1"), ("name-1", "D1"), ("name-2", "D2")]);
+        let scalars = (0..3_000)
+            .map(|offset| {
+                let role = match next(8) {
+                    0 => FeatureInputScalarRole::Driving,
+                    1 => FeatureInputScalarRole::Native,
+                    _ => FeatureInputScalarRole::Display,
+                };
+                let name = if next(4) == 0 {
+                    format!("name-{}", next(4))
+                } else {
+                    "name-0".to_string()
+                };
+                let mut scalar = circle_scalar(offset, &name, role, None);
+                scalar.operands[0].entity_index = u16::try_from(next(10)).unwrap();
+                if next(10) == 0 {
+                    scalar.operands[0].kind = FeatureInputOperandKind::E1;
+                }
+                match next(20) {
+                    0 => scalar.operands.clear(),
+                    1 => scalar.operands.push(scalar.operands[0].clone()),
+                    _ => {}
+                }
+                scalar
+            })
+            .collect::<Vec<_>>();
+        let name_of = |scalar: &FeatureInputScalar| names.get(scalar.name.as_str()).copied();
+        let mut repeats = 0;
+        let mut rest = scalars.iter().enumerate();
+        while let Some((index, first)) = rest.next() {
+            let mut group = RelationGroup {
+                feature_ref: "sketch",
+                family: FeatureInputRelationFamily::CircleDiameter,
+                class_ref: "class",
+                operands: &first.operands,
+                scalars: vec![(index, first)],
+                circle_displays: CircleDisplays::of(first, name_of(first)),
+            };
+            for (index, scalar) in rest.by_ref().take(usize::try_from(next(12)).unwrap()) {
+                let repeated = linear(&group, scalar, &names);
+                assert_eq!(
+                    group
+                        .circle_displays
+                        .as_ref()
+                        .is_some_and(|displays| displays.repeated_by(scalar, name_of(scalar))),
+                    repeated
+                );
+                repeats += usize::from(repeated && group.scalars.len() > 1);
+                if repeated || next(4) == 0 {
+                    group.push(index, scalar, name_of(scalar));
+                }
+            }
+        }
+        assert!(repeats > 0);
     }
 
     #[test]
