@@ -38,11 +38,11 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -198,9 +198,12 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         ));
     }
-    match design::census(&objects, &ir.model.features) {
-        Ok(expected) if design_census == expected => {}
-        Ok(expected) => {
+    let derived_census = (ir.decode_depth() == DecodeDepth::Full)
+        .then(|| design::census(&objects, &ir.model.features));
+    match derived_census {
+        None => {}
+        Some(Ok(expected)) if design_census == expected => {}
+        Some(Ok(expected)) => {
             let detail = design_census
                 .iter()
                 .zip(&expected)
@@ -221,7 +224,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 None,
             ));
         }
-        Err(error) => findings.push(finding(
+        Some(Err(error)) => findings.push(finding(
             Check::ReferentialIntegrity,
             error.to_string(),
             None,
@@ -1030,17 +1033,32 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
-            let (cycle_affected, design_losses) = design::transfer(
-                ctx,
-                &mut ir,
-                &graph.objects,
-                &graph.properties,
-                &shape_payloads,
-                &entry_records,
-                scan.document.program_version.as_deref(),
+            if ctx.depth() == DecodeDepth::Full {
+                let (cycle_affected, design_losses) = design::transfer(
+                    ctx,
+                    &mut ir,
+                    &graph.objects,
+                    &graph.properties,
+                    &shape_payloads,
+                    &entry_records,
+                    scan.document.program_version.as_deref(),
+                )?;
+                cycle_affected_design_objects = cycle_affected;
+                transfer_losses.extend(design_losses);
+            }
+            ctx.admit_entities(
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                &mut admitted_entities,
+                "admit FCStd entities",
             )?;
-            cycle_affected_design_objects = cycle_affected;
-            transfer_losses.extend(design_losses);
+            let link_occurrences = product::link_occurrence_count(&product_nodes)?;
+            ctx.admit_entities(
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
+                    .checked_add(link_occurrences)
+                    .ok_or_else(|| CodecError::malformed("FCStd entity count overflows u64"))?,
+                &mut admitted_entities,
+                "admit FCStd link occurrences",
+            )?;
             let (product_definitions, occurrences) = product::transfer_neutral(
                 ctx,
                 &product_nodes,
@@ -1059,10 +1077,12 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            let design_census = design::census(&graph.objects, &ir.model.features)?;
-            ir.native
-                .namespace_mut("fcstd")
-                .set_arena(ctx, "design_census", &design_census)?;
+            if ctx.depth() == DecodeDepth::Full {
+                let design_census = design::census(&graph.objects, &ir.model.features)?;
+                ir.native
+                    .namespace_mut("fcstd")
+                    .set_arena(ctx, "design_census", &design_census)?;
+            }
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let mut gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
@@ -1195,11 +1215,10 @@ impl CodecBackend for FcstdCodec {
         Ok(Decoded {
             ir,
             body: DecodeBody {
-                transfer: if ctx.container_only() {
-                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
-                } else {
-                    cadmpeg_ir::report::decode::DecodeTransfer::full(geometry_transferred)
-                },
+                transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(
+                    ctx.depth(),
+                    geometry_transferred,
+                ),
                 coverage: cadmpeg_ir::report::decode::Coverage::default(),
                 losses,
                 notes: summary_notes,
@@ -1212,6 +1231,9 @@ impl CodecBackend for FcstdCodec {
 
 impl EncoderBackend for FcstdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Writes the feature tree and patches retained sources, so design records
+    /// must be present.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 

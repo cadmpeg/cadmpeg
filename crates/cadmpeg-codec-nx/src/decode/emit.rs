@@ -1991,20 +1991,16 @@ mod tests {
                 schema: None,
             },
         });
-        crate::test_support::with_decode_context(|service_ctx| {
-            let (dialects, _) = crate::dialect::classify_layers(service_ctx, &scan)
-                .expect("dialects")
-                .into_report_parts();
-            let parsed = crate::native::substrate::ParsedStreams::parse(&scan)
-                .expect("prepared delta census");
-            let expected = source_meta(&scan, &dialects, None).expect("uncached source metadata");
-            let actual = source_meta(&scan, &dialects, Some(&parsed))
-                .expect("source metadata reads the existing census");
-            assert_eq!(
-                serde_json::to_value(actual).expect("source metadata"),
-                serde_json::to_value(expected).expect("source metadata")
-            );
-        });
+        let (dialects, _) = crate::dialect::classify_layers(&scan).into_report_parts();
+        let parsed =
+            crate::native::substrate::ParsedStreams::parse(&scan).expect("prepared delta census");
+        let expected = source_meta(&scan, &dialects, None).expect("uncached source metadata");
+        let actual = source_meta(&scan, &dialects, Some(&parsed))
+            .expect("source metadata reads the existing census");
+        assert_eq!(
+            serde_json::to_value(actual).expect("source metadata"),
+            serde_json::to_value(expected).expect("source metadata")
+        );
     }
 
     #[test]

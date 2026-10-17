@@ -4,8 +4,9 @@
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
 use super::nurbs_controls::{
-    euclidean_control_points, homogeneous_control_points, homogeneous_point_is_valid,
-    insert_homogeneous_knot, trim_nurbs_lanes, EuclideanControlNet, InsertedKnotNet,
+    bezier_blends, bezier_span_count, euclidean_control_points, homogeneous_control_points,
+    homogeneous_point_is_valid, trim_nurbs_lanes, BlendCheck, EuclideanControlNet, RefiningNet,
+    MAX_BEZIER_BLENDS,
 };
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
@@ -703,6 +704,13 @@ pub(super) enum CompositeCurveError {
         /// The nesting depth the flattening admits.
         limit: usize,
     },
+    /// Raising the children's Bézier spans to the composite degree exceeds
+    /// [`MAX_BEZIER_BLENDS`].
+    #[error("raising the children to the composite degree {degree} exceeds MAX_BEZIER_BLENDS")]
+    ElevationBlendLimit {
+        /// Degree the composite states.
+        degree: u32,
+    },
     /// A decode resource refusal.
     #[error(transparent)]
     Budget(#[from] cadmpeg_core::CodecError),
@@ -872,17 +880,28 @@ fn elevate_nurbs_to_degree(
     }
     // `homogeneous_control_points` already answers `None` on the first invalid
     // point, so no second pass over the net can observe one.
-    let mut homogeneous = homogeneous_control_points(curve);
-    let mut knots = curve.knots().to_vec();
-    let mut internal_values = Vec::new();
-    for &knot in &knots {
-        if knot > interval[0] && knot < interval[1] && internal_values.last().copied() != Some(knot)
-        {
-            internal_values.push(knot);
+    let homogeneous = homogeneous_control_points(curve);
+    // Validated knots do not decrease, so each internal value is one run.
+    let mut internal_runs: Vec<(f64, usize)> = Vec::new();
+    for &knot in curve.knots() {
+        if knot > interval[0] && knot < interval[1] {
+            match internal_runs.last_mut() {
+                Some((value, multiplicity)) if *value == knot => *multiplicity += 1,
+                _ => internal_runs.push((knot, 1)),
+            }
         }
     }
-    for value in internal_values {
-        let multiplicity = knots.iter().filter(|knot| **knot == value).count();
+    let insertions = internal_runs
+        .iter()
+        .filter(|(_, multiplicity)| *multiplicity < source_degree)
+        .map(|(_, multiplicity)| source_degree - multiplicity)
+        .sum();
+    let mut net = homogeneous
+        .as_deref()
+        .map(|points| RefiningNet::new(ctx, curve.knots(), points, insertions))
+        .transpose()
+        .map_err(DegreeElevationError::Allocation)?;
+    for (value, multiplicity) in internal_runs {
         if multiplicity > source_degree + 1 {
             return Err(DegreeElevationError::InternalMultiplicity {
                 knot: value,
@@ -892,22 +911,18 @@ fn elevate_nurbs_to_degree(
             .into());
         }
         for _ in multiplicity..source_degree {
-            let Some(points) = homogeneous.take() else {
+            let Some(net) = net.as_mut() else {
                 return Err(DegreeElevationError::HomogeneousControlNet.into());
             };
-            let Some(InsertedKnotNet {
-                control_points: new_points,
-                knots: new_knots,
-            }) = insert_homogeneous_knot(ctx, &points, &knots, source_degree, value)
-                .map_err(DegreeElevationError::Allocation)?
-            else {
+            if net
+                .insert(value, source_degree, BlendCheck::PositiveWeight)
+                .is_none()
+            {
                 return Err(DegreeElevationError::KnotInsertion { knot: value }.into());
-            };
-            homogeneous = Some(new_points);
-            knots = new_knots;
+            }
         }
     }
-    let Some(homogeneous) = homogeneous else {
+    let Some((knots, homogeneous)) = net.map(RefiningNet::into_parts) else {
         return Err(DegreeElevationError::HomogeneousControlNet.into());
     };
     let Some(refined_count) = homogeneous.len().checked_sub(1) else {
@@ -1013,6 +1028,23 @@ fn concatenate_nurbs<T>(
         .iter()
         .map(|(curve, _, _)| curve.degree())
         .fold(first.0.degree(), u32::max);
+    let elevated_degree = usize::try_from(degree)
+        .ok()
+        .filter(|degree| *degree <= MAX_COMPOSITE_DEGREE);
+    if let Some(elevated_degree) = elevated_degree {
+        let mut blends = Some(0_usize);
+        for (curve, interval, _) in std::iter::once(&first).chain(children.as_slice()) {
+            if curve.degree() < degree {
+                blends = blends.and_then(|total| {
+                    bezier_blends(bezier_span_count(curve.knots(), *interval), elevated_degree)
+                        .and_then(|child| total.checked_add(child))
+                });
+            }
+        }
+        if blends.is_none_or(|blends| blends > MAX_BEZIER_BLENDS) {
+            return Err(CompositeCurveError::ElevationBlendLimit { degree });
+        }
+    }
     for (curve, interval, _) in std::iter::once(&mut first).chain(children.as_mut_slice()) {
         if curve.degree() < degree {
             // A child that does not raise to the composite degree states why.

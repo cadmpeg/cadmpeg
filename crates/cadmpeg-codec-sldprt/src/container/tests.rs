@@ -472,10 +472,9 @@ fn inspection_inventory_names_cache_cell_entry() {
     let mut source = outer_header();
     source.extend(make_cache_cell(90, "Contents/DisplayLists"));
     let scan = crate::test_support::container::scan(&source);
-    let admitted = cadmpeg_test_support::service_decode_context();
     let summary = container::summarize(
         &scan,
-        crate::dialect::classify_layers(&admitted, &scan)
+        crate::dialect::classify_layers(&scan)
             .unwrap()
             .layers()
             .clone(),

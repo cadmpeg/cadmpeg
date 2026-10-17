@@ -32,6 +32,12 @@ pub(crate) fn with_service_context<T>(
     run(&ctx)
 }
 
+/// A fresh standard topology search budget, as the standard route creates one
+/// per population.
+pub(crate) fn topology_budget() -> cadmpeg_core::decode::WorkBudget {
+    cadmpeg_core::decode::WorkBudget::new(crate::solve::mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS)
+}
+
 pub(crate) fn with_entity_limit<T>(
     max_entities: u64,
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,

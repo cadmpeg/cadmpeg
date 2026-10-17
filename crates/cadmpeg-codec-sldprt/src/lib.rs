@@ -35,7 +35,8 @@
 //! Decode reports can accompany a usable model. Untyped support carriers become
 //! opaque geometry linked to retained bytes, while their resolvable topology
 //! remains in the IR. No usable geometry yields metadata with diagnostics.
-//! Set [`DecodeOptions::container_only`] to omit geometry decoding explicitly.
+//! Set [`DecodeOptions::depth`] to [`DecodeDepth::Container`] to omit geometry
+//! decoding explicitly.
 //! Semantic Parasolid graph errors propagate as decode errors.
 //!
 //! [`Codec::inspect`] inventories the outer blocks, section directory, cache
@@ -96,7 +97,8 @@
 //!
 //! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
 //! [`CodecError::NotImplemented`]: cadmpeg_core::CodecError::NotImplemented
-//! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
+//! [`DecodeOptions::depth`]: cadmpeg_ir::DecodeOptions::depth
+//! [`DecodeDepth::Container`]: cadmpeg_core::decode::DecodeDepth::Container
 
 mod annotations;
 mod appearance;
@@ -125,7 +127,7 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ContainerSummary;
@@ -133,8 +135,8 @@ use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    ArenaCoverage, ArenaDispositions, Consumption, EncodeInput, EncoderBackend, ExportBody,
-    PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDispositions, Consumption, DepthNeed, EncodeInput, EncoderBackend,
+    ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -415,9 +417,9 @@ impl CodecBackend for SldprtCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        let classification = dialect::classify_layers(ctx, &scan)?;
+        let classification = dialect::classify_layers(&scan)?;
         let mut summary = container::summarize(&scan, classification.layers().clone());
-        classification.append_losses(ctx, &mut summary.losses)?;
+        classification.append_losses(&mut summary.losses);
         Ok(summary)
     }
 
@@ -428,6 +430,9 @@ impl CodecBackend for SldprtCodec {
 
 impl EncoderBackend for SldprtCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    /// Patches the retained source, so the design records it rewrites must be
+    /// present.
+    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

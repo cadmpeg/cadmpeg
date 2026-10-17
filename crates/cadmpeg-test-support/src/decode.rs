@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Owner tests over already acquired input, with complete session finalization.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 
 /// Runs full decoding on a borrowed root so parser limits exclude input acquisition.
@@ -10,13 +10,20 @@ pub fn full(
     bytes: &[u8],
     policy: &DecodePolicy,
 ) -> Result<DecodeResult, DecodeFailure> {
+    at_depth(codec, bytes, policy, DecodeDepth::Full)
+}
+
+/// Runs decoding at `depth` on a borrowed root so parser limits exclude input
+/// acquisition.
+pub fn at_depth(
+    codec: &dyn Codec,
+    bytes: &[u8],
+    policy: &DecodePolicy,
+    depth: DecodeDepth,
+) -> Result<DecodeResult, DecodeFailure> {
     let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, policy)?;
-    let options = DecodeOptions {
-        policy: *policy,
-        container_only: false,
-    };
-    let result = codec.decode_with_context(&ctx, root, &options);
+    let (ctx, root) = DecodeContext::from_root_bytes_at(bytes, &arena, policy, depth)?;
+    let result = codec.decode_with_context(&ctx, root);
     ctx.finish_session()?;
     result
 }

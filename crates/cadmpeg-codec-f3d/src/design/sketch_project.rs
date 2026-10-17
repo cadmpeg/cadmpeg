@@ -905,7 +905,7 @@ pub(crate) fn project_spatial_sketch_design(
     let mut losses = Vec::new();
     if capped_profile_searches != 0 {
         losses.push(crate::loss::F3dLossCode::SketchProfileSearchCapped.note(format!(
-            "{capped_profile_searches} spatial sketch(es) have no closed profiles because their profile search exceeded a local cap."
+            "{capped_profile_searches} spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK ({SPATIAL_PROFILE_SEARCH_WORK})."
         )));
     }
     Ok(SpatialSketchDesign {

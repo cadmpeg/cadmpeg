@@ -129,6 +129,8 @@ loss_codes! {
     WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
     /// Free-geometry points or vertices have no topology output.
     WriterFreeGeometryOmitted => "writer.free-geometry-omitted",
+    /// Free edges or curves that duplicate a written carrier were not written.
+    WriterDuplicateCarrierOmitted => "writer.duplicate-carrier-omitted",
     /// Unowned support geometry was withheld to avoid standalone transfer.
     WriterSupportGeometryNotRepresented => "writer.support-geometry-not-represented",
     /// A body name cannot be encoded as a Type 406 Form 15 name.
@@ -190,6 +192,7 @@ impl IgesLossCode {
             | Self::WriterSupportGeometryNotRepresented
             | Self::WriterSupportEdgeNotRepresented
             | Self::WriterFreeGeometryOmitted
+            | Self::WriterDuplicateCarrierOmitted
             | Self::WriterBodyNameNotRepresented
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
@@ -224,7 +227,8 @@ impl IgesLossCode {
             | Self::NurbsTransformNonFinite
             | Self::GeometryNotProjected
             | Self::WriterSupportGeometryNotRepresented
-            | Self::WriterFreeGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            | Self::WriterFreeGeometryOmitted
+            | Self::WriterDuplicateCarrierOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::SplineClaimRecovered
             | Self::RuledDevelopabilityRecovered
             | Self::GlobalSemanticContextSubstituted
@@ -333,6 +337,7 @@ mod tests {
                 "writer.minimum-resolution-adjusted",
                 "writer.support-edge-not-represented",
                 "writer.free-geometry-omitted",
+                "writer.duplicate-carrier-omitted",
                 "writer.support-geometry-not-represented",
                 "writer.body-name-not-represented",
                 "writer.body-color-not-represented",

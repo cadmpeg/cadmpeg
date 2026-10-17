@@ -365,7 +365,7 @@ fn feature_input_topology_projects_historical_vertices() {
         ),
         native_ref: Some(scope.id.clone()),
     };
-    let history = crate::test_support::history::history(
+    let mut history = crate::test_support::history::history(
         "f3d:history".into(),
         0,
         None,
@@ -398,7 +398,7 @@ fn feature_input_topology_projects_historical_vertices() {
     let projected = super::super::project_feature_input_topologies(
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
-        std::slice::from_ref(&history),
+        std::slice::from_mut(&mut history),
         &[],
         &std::collections::HashMap::new(),
     );

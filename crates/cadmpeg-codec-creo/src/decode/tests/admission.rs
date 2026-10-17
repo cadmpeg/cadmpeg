@@ -165,7 +165,7 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
             .decode(
                 &mut Cursor::new(data),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )
@@ -226,7 +226,7 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
             .decode(
                 &mut Cursor::new(data),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )
@@ -710,7 +710,7 @@ fn container_only_preserves_sections_without_transferring_entities() {
         .decode(
             &mut Cursor::new(data),
             &DecodeOptions {
-                container_only: true,
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
                 ..DecodeOptions::default()
             },
         )

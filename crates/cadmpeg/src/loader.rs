@@ -40,7 +40,7 @@ pub(crate) fn load_artifact(
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
     let arena = DecodeArena::new();
-    let ctx = DecodeContext::new(&arena, &options.policy, options.container_only);
+    let ctx = DecodeContext::new(&arena, &options.policy, options.depth);
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut prefix =
         cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, DETECTION_PREFIX_LEN)?;
@@ -54,7 +54,7 @@ pub(crate) fn load_artifact(
         ResolvedSource::Native { codec, selection } => {
             let format_id = codec.id();
             ctx.complete_input(&mut file, &mut prefix)?;
-            let result = codec.decode_with_context(&ctx, View::over_retained(&prefix), &options);
+            let result = codec.decode_with_context(&ctx, View::over_retained(&prefix));
             ctx.finish_session()?;
             let result = result.map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)

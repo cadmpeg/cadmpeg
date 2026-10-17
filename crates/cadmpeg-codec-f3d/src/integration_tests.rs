@@ -4,7 +4,10 @@
 mod attribute_colors;
 mod design_containment;
 mod history_deltas;
+mod history_scale;
+mod inconsistent_records;
 mod optional_payloads;
+mod placement_history;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
@@ -265,7 +268,7 @@ fn container_only_pipeline_retains_native_sections_without_semantic_projection()
             .decode(
                 &mut Cursor::new(bytes),
                 &DecodeOptions {
-                    container_only: true,
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
                     ..DecodeOptions::default()
                 },
             )

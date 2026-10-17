@@ -79,7 +79,7 @@ fn active_site_copy_refuses_retained_limit() {
     let body = triangle_body();
     let source = sldprt_with_body(&body);
     let mut options = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
@@ -166,7 +166,7 @@ fn whole_source_copy_refuses_retained_limit_before_unknown_record() {
 
     let source = outer_header();
     let mut options = DecodeOptions {
-        container_only: true,
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
     };
     options.policy.limits.max_retained_bytes =
@@ -275,7 +275,7 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
 fn strict_accepts_operator_requested_container_only() {
     let fixture = synthetic_sldprt();
     let mut options = strict_options();
-    options.container_only = true;
+    options.depth = cadmpeg_core::decode::DecodeDepth::Container;
     SldprtCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("strict container-only decode is accepted");

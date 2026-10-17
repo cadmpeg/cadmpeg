@@ -79,7 +79,6 @@ pub(super) fn type_record(
         "sphere" if save_format < 103 => &[&[P, DLen]],
         "sphere" => &[&[P, DLen, VUnit, VUnit, UvSense]],
         "torus" => &[&[P, VUnit, DLen, DLen, VUnit, UvSense]],
-        "cone" if save_format < 400 => &[&[P, VUnit, VLen, D, OptB, OptB, D, D, Sense]],
         "cone" => &[&[P, VUnit, VLen, D, OptB, OptB, D, D, DLen, Sense]],
         "spline" => &[&[Sense, Sub]],
         "intcurve" => &[&[Sense, Sub]],
@@ -116,6 +115,20 @@ pub(super) fn type_record(
                 }
                 if head == "cone" && save_format < 103 && index == slots.len() - 1 {
                     cur.push_token(&mut out, Token::False);
+                    continue;
+                }
+                if head == "cone" && save_format < 400 && matches!(slot, DLen) {
+                    // These saves store no U scale. It is the magnitude of the
+                    // major-axis vector, the last vector typed so far
+                    // (asm.md §7.5).
+                    let major = out.iter().rev().find_map(|token| match token {
+                        Token::Vector3(vector) => Some(*vector),
+                        _ => None,
+                    })?;
+                    cur.push_token(
+                        &mut out,
+                        Token::Double(major[0].hypot(major[1]).hypot(major[2])),
+                    );
                     continue;
                 }
                 if matches!(head, "coedge" | "tcoedge")

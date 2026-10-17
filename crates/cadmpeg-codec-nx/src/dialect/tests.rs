@@ -56,10 +56,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
         container: { crate::container::scan_bytes(bytes.clone()) }.unwrap(),
         streams: extract_streams(&bytes),
     };
-    let (layers, losses) =
-        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+    let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -94,10 +91,7 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
         container: { crate::container::scan_bytes(bytes) }.unwrap(),
         streams,
     };
-    let (layers, losses) =
-        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+    let (layers, losses) = classify_layers(&scan).into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -120,13 +114,8 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
         streams,
     };
 
-    let summary =
-        crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
-            .expect("test container summary");
-    let (layers, losses) =
-        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+    let summary = crate::inspect::summarize(&scan).expect("test container summary");
+    let (layers, losses) = classify_layers(&scan).into_report_parts();
     assert_eq!(
         layers
             .iter()

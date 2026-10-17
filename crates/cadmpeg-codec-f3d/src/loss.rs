@@ -108,6 +108,10 @@ pub(crate) enum F3dLossCode {
     DimensionUnprojected,
     /// Feature profile selections retain native identities; no unique profile.
     FeatureProfileSelectionNative,
+    /// Extrude profile selections skipped the sketch arrangement search at a local cap.
+    FeatureProfileArrangementCapped,
+    /// Extrude profile selections skipped a certified profile test at a local cap.
+    FeatureProfileDensificationCapped,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -257,6 +261,8 @@ impl F3dLossCode {
         Self::SketchProfileSearchCapped,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
+        Self::FeatureProfileArrangementCapped,
+        Self::FeatureProfileDensificationCapped,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
@@ -359,6 +365,8 @@ impl F3dLossCode {
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
+            Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
+            Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::FeatureFaceSelectionActiveSubstituted => {
@@ -476,6 +484,8 @@ impl F3dLossCode {
             | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
+            | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileDensificationCapped
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -560,6 +570,8 @@ impl F3dLossCode {
             | Self::SketchProfileSearchCapped
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
+            | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileDensificationCapped
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -702,6 +714,8 @@ mod tests {
                 "sketch.profile-search-capped",
                 "dimension.unprojected",
                 "feature.profile-selection-native",
+                "feature.profile-arrangement-capped",
+                "feature.profile-densification-capped",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",

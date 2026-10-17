@@ -126,3 +126,71 @@ fn relation_itos_formats_a_negative_integer() {
         CurveExpressionValue::String("-1".to_owned())
     );
 }
+
+fn evaluate_relation_program(source: &[&str]) -> crate::curve::CurveExpressionEvaluation {
+    let lines = source
+        .iter()
+        .enumerate()
+        .map(|(offset, text)| crate::curve::CurveExpressionLine {
+            text: (*text).to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+    crate::decode::with_service_context(|ctx| {
+        crate::curve::evaluate_expression_program_details(
+            ctx,
+            &lines,
+            None,
+            &crate::curve::ExternalRelationSymbols::default(),
+        )
+    })
+    .expect("relation text caps are not decode failures")
+}
+
+fn text_lengths(evaluation: &crate::curve::CurveExpressionEvaluation) -> Vec<Option<usize>> {
+    evaluation
+        .assignments
+        .iter()
+        .map(|assignment| {
+            assignment
+                .value
+                .as_ref()
+                .and_then(ExpressionValue::text_len)
+        })
+        .collect()
+}
+
+#[test]
+fn doubling_relation_string_stops_at_the_expression_text_cap() {
+    let mut source = vec!["s=\"aaaaaaaa\""];
+    source.extend((0..10).map(|_| "s=s+s"));
+    let evaluation = evaluate_relation_program(&source);
+    // `s=s+s` reads `s` twice and builds the sum, so it materializes four
+    // times the length of `s`: 1024 bytes fit the 4096-byte cap, 2048 do not.
+    let mut expected = (0..9)
+        .map(|doublings| Some(8 << doublings))
+        .collect::<Vec<_>>();
+    expected.extend([None, None]);
+    assert_eq!(text_lengths(&evaluation), expected);
+    assert_eq!(
+        evaluation.text_work_caps,
+        BTreeMap::from([("MAX_RELATION_EXPRESSION_TEXT_BYTES", 1)])
+    );
+}
+
+#[test]
+fn relation_program_drops_string_values_past_the_program_text_cap() {
+    let text = "a".repeat(4000);
+    let source = (0..17)
+        .map(|index| format!("t{index}=\"{text}\""))
+        .collect::<Vec<_>>();
+    let source = source.iter().map(String::as_str).collect::<Vec<_>>();
+    let evaluation = evaluate_relation_program(&source);
+    let mut expected = vec![Some(4000); 16];
+    expected.push(None);
+    assert_eq!(text_lengths(&evaluation), expected);
+    assert_eq!(
+        evaluation.text_work_caps,
+        BTreeMap::from([("MAX_RELATION_PROGRAM_TEXT_BYTES", 1)])
+    );
+}

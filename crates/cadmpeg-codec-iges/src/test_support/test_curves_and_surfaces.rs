@@ -905,3 +905,60 @@ pub(crate) fn equal_weight_rational_nurbs_curve_file() -> Vec<u8> {
     bytes[start..start + unequal.len()].copy_from_slice(b",1,1.0,1,");
     bytes
 }
+
+/// Type 126 parameters of a clamped polynomial curve in `z = 0` with `spans`
+/// unit knot spans, `degree`, and the controls `control(index)`.
+pub(crate) fn planar_nurbs_parameters(
+    degree: u32,
+    spans: u32,
+    closed: bool,
+    control: impl Fn(u32) -> [f64; 2],
+) -> String {
+    use std::fmt::Write;
+
+    let count = spans + degree;
+    let mut parameters = format!("126,{},{degree},1,{},1,0", count - 1, u8::from(closed));
+    for _ in 0..=degree {
+        parameters.push_str(",0");
+    }
+    for knot in 1..spans {
+        write!(parameters, ",{knot}").unwrap();
+    }
+    for _ in 0..=degree {
+        write!(parameters, ",{spans}").unwrap();
+    }
+    for _ in 0..count {
+        parameters.push_str(",1");
+    }
+    for index in 0..count {
+        let [x, y] = control(index);
+        write!(parameters, ",{x:.6},{y:.6},0").unwrap();
+    }
+    write!(parameters, ",0,{spans},0,0,1;").unwrap();
+    parameters
+}
+
+/// The `index`th of `count` points of the circle of radius 1000 about the
+/// origin, the last repeating the first.
+pub(crate) fn closed_ring_point(index: u32, count: u32) -> [f64; 2] {
+    let angle = std::f64::consts::TAU * f64::from(index % (count - 1)) / f64::from(count - 1);
+    [1000.0 * angle.cos(), 1000.0 * angle.sin()]
+}
+
+/// Type 106 Form 63 parameters of the closed ring of `count` points.
+pub(crate) fn closed_ring_copious_parameters(count: u32) -> String {
+    use std::fmt::Write;
+
+    let mut parameters = format!("106,1,{count},0");
+    for index in 0..count {
+        let [x, y] = closed_ring_point(index, count);
+        write!(parameters, ",{x:.6},{y:.6}").unwrap();
+    }
+    parameters.push(';');
+    parameters
+}
+
+/// Type 126 parameters of the closed degree-1 ring through `count` points.
+pub(crate) fn closed_ring_linear_nurbs_parameters(count: u32) -> String {
+    planar_nurbs_parameters(1, count - 1, true, |index| closed_ring_point(index, count))
+}

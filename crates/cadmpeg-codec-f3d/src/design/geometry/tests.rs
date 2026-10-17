@@ -11,6 +11,7 @@ use super::region_containing_points;
 use super::sketch_arrangement_faces;
 use super::ProfileBoundary;
 use super::ProfileBoundarySegment;
+use super::ProfileGeometryWork;
 use super::MAX_ARRANGEMENT_WALK_WORK;
 use crate::design::dimensions::point_lies_on_sketch_geometry;
 use cadmpeg_core::decode::DecodeArena;
@@ -37,13 +38,16 @@ const EPS_ARRANGEMENT_SESSION: f64 = 1.0e-7;
 
 #[test]
 fn subdivision_count_requires_positive_target_error() {
-    assert_eq!(super::subdivision_count(100.0, -1.0), None);
-    assert_eq!(super::subdivision_count(0.0, 0.0), None);
-    assert_eq!(super::subdivision_count(100.0, 10.0), Some(10));
+    let work = local_profile_work();
+    assert_eq!(super::subdivision_count(100.0, -1.0, &work), None);
+    assert_eq!(super::subdivision_count(0.0, 0.0, &work), None);
+    assert_eq!(super::subdivision_count(100.0, 10.0, &work), Some(10));
+    work.finish_selection();
+    assert!(work.losses().is_empty());
 }
 
-fn local_arrangement_budget() -> WorkBudget {
-    WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK)
+fn local_profile_work() -> ProfileGeometryWork {
+    ProfileGeometryWork::new()
 }
 
 fn positive_radius(value: f64) -> PositiveLength {
@@ -87,7 +91,7 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
     )
     .expect("wide finite NURBS pcurve");
     let tubes = crate::test_support::with_decode_context(|decode_ctx| {
-        super::certified_nurbs_tubes(&curve, 0.5, decode_ctx)
+        super::certified_nurbs_tubes(&curve, 0.5, &local_profile_work(), decode_ctx)
     })
     .unwrap()
     .expect("finite wide-domain tubes");
@@ -188,7 +192,7 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
-    let arrangement_budget = local_arrangement_budget();
+    let profile_work = local_profile_work();
 
     let Some(SketchProfileRegion::Trimmed {
         outer_boundary,
@@ -204,7 +208,7 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
                 Point2::new(0.0, 19.0),
             ],
             1.0e-6,
-            &arrangement_budget,
+            &profile_work,
             decode_ctx,
         )
     })
@@ -292,6 +296,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             &entities,
             &[Point3::new(12.0, 21.0, 12.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -303,6 +308,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             &entities,
             &[Point3::new(15.0, 21.0, 12.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -335,6 +341,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             &entities,
             &[Point3::new(12.0, 21.0, 12.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -404,6 +411,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &entities,
             &[Point3::new(1.0, 1.0, 0.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -415,6 +423,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &entities,
             &[Point3::new(3.0, 3.0, 0.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -426,6 +435,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &entities,
             &[Point3::new(5.0, 5.0, 0.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -437,6 +447,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &entities,
             &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -448,6 +459,7 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &entities,
             &[Point3::new(2.0, 5.0, 0.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -547,6 +559,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
             &entities,
             &[Point3::new(1.0, 1.0, 0.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -625,9 +638,9 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
 #[test]
 fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
     let (sketch, entities, line_id, arc_id) = coincident_circle_arc_arrangement();
-    let arrangement_budget = local_arrangement_budget();
+    let profile_work = local_profile_work();
     let faces = crate::test_support::with_decode_context(|decode_ctx| {
-        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget, decode_ctx)
+        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &profile_work, decode_ctx)
     })
     .expect("arrangement collection admitted")
     .expect("endpoint arrangement faces");
@@ -642,7 +655,7 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
                 Point2::new(-1.0, 0.0),
             ],
             1.0e-7,
-            &arrangement_budget,
+            &profile_work,
             decode_ctx,
         )
     })
@@ -750,6 +763,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
             &entities,
             &[Point3::new(4.0, 0.0, 0.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -761,6 +775,7 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
             &entities,
             &[Point3::new(0.0, 0.0, 0.0)],
             1.0e-6,
+            &local_profile_work(),
             decode_ctx
         ))
         .unwrap(),
@@ -792,7 +807,7 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
     assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
-    assert!(boundary.strictly_contains(&hole));
+    assert!(boundary.strictly_contains(&hole, &local_profile_work()));
 }
 
 #[test]
@@ -816,8 +831,9 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         },
     ]);
 
-    assert!(polygon.strictly_contains(&arc_loop));
-    assert!(!arc_loop.strictly_contains(&polygon));
+    let work = local_profile_work();
+    assert!(polygon.strictly_contains(&arc_loop, &work));
+    assert!(!arc_loop.strictly_contains(&polygon, &work));
 
     let crossing = ProfileBoundary::CircularArcLoop(vec![
         ProfileBoundarySegment::Line {
@@ -831,8 +847,8 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
             end_angle: std::f64::consts::PI,
         },
     ]);
-    assert!(!polygon.strictly_contains(&crossing));
-    assert!(!crossing.strictly_contains(&polygon));
+    assert!(!polygon.strictly_contains(&crossing, &work));
+    assert!(!crossing.strictly_contains(&polygon, &work));
 }
 
 #[test]
@@ -856,10 +872,11 @@ fn arc_loop_containment_rejects_crossing_and_touching_segments() {
     let crossing = d_loop(-1.5, 1.0);
     let touching = d_loop(-1.0, 1.0);
 
-    assert!(outer.strictly_contains(&inner));
-    assert!(!inner.strictly_contains(&outer));
-    assert!(!outer.strictly_contains(&crossing));
-    assert!(!outer.strictly_contains(&touching));
+    let work = local_profile_work();
+    assert!(outer.strictly_contains(&inner, &work));
+    assert!(!inner.strictly_contains(&outer, &work));
+    assert!(!outer.strictly_contains(&crossing, &work));
+    assert!(!outer.strictly_contains(&touching, &work));
 }
 
 #[test]
@@ -1513,6 +1530,7 @@ mod arrangement_routes;
 mod certified_boundaries;
 mod circular_regions;
 mod predicates;
+mod profile_work;
 const EPS_CONTAINMENT_LINEAR: f64 = 1.0e-6;
 const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
 
@@ -1529,15 +1547,42 @@ fn arrangement_cycle_work_admits_cubic_ring_bound() {
 #[test]
 fn sketch_arrangement_faces_skips_the_arrangement_when_local_work_runs_out() {
     let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    let work = ProfileGeometryWork::with_arrangement_work(0);
     crate::test_support::with_decode_context(|ctx| {
-        let budget = cadmpeg_core::decode::WorkBudget::new(0);
         let faces =
-            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx)
+            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &work, ctx)
                 .expect("an exhausted local slice skips the arrangement");
         assert!(faces.is_none());
-        assert!(budget.exhausted());
         assert!(ctx.resource_refusal().is_none());
     });
+    work.finish_selection();
+    let losses = work.losses();
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeatureProfileArrangementCapped.kind()
+    );
+    assert_eq!(
+        loss.message,
+        format!(
+            "1 extrude profile selection(s) skipped the sketch arrangement search because the arrangement walks exceeded MAX_ARRANGEMENT_WALK_WORK ({MAX_ARRANGEMENT_WALK_WORK})."
+        )
+    );
+}
+
+#[test]
+fn sketch_arrangement_faces_within_local_work_reports_no_loss() {
+    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    let work = local_profile_work();
+    let faces = crate::test_support::with_decode_context(|ctx| {
+        sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &work, ctx)
+    })
+    .expect("arrangement collection admitted");
+    assert!(faces.is_some());
+    work.finish_selection();
+    assert!(work.losses().is_empty());
 }
 
 #[test]

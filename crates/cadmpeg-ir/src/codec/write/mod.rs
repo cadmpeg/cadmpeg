@@ -21,6 +21,7 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
@@ -33,6 +34,37 @@ use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
+/// How much of its source a document must record for an encoder to plan it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DepthNeed {
+    /// The encoder reads nothing a shallower decode leaves out and refuses a
+    /// document that records less than this depth.
+    AtLeast(DecodeDepth),
+    /// The encoder writes the document at whatever depth it records, so it
+    /// refuses none; a caller decodes at [`DecodeDepth::Full`] for it.
+    Recorded,
+}
+
+impl DepthNeed {
+    /// The depth a caller decodes at to satisfy this need.
+    #[must_use]
+    pub const fn request(self) -> DecodeDepth {
+        match self {
+            Self::AtLeast(depth) => depth,
+            Self::Recorded => DecodeDepth::Full,
+        }
+    }
+
+    /// Whether a document recording `depth` satisfies this need.
+    #[must_use]
+    pub fn admits(self, depth: DecodeDepth) -> bool {
+        match self {
+            Self::AtLeast(needed) => depth >= needed,
+            Self::Recorded => true,
+        }
+    }
+}
+
 /// Implementation surface for one output format.
 ///
 /// Backends declare one target domain and receive only a request already
@@ -40,6 +72,10 @@ use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 pub trait EncoderBackend {
     /// Stable output format id, taken from the codec that reads the format.
     const FORMAT: FormatId;
+
+    /// The decode depth this backend plans from. [`Encoder::plan`] refuses a
+    /// shallower document before the backend runs.
+    const NEEDS: DepthNeed;
 
     /// The domain this backend's targets come from.
     type Target: TargetDomain;
@@ -76,7 +112,14 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// encoder's own format namespace only.
     fn targets(&self) -> TargetCatalog;
 
+    /// The decode depth this encoder plans from, [`EncoderBackend::NEEDS`].
+    /// A caller decodes at [`DepthNeed::request`].
+    fn needs(&self) -> DepthNeed;
+
     /// Plans one export without writing to the destination.
+    ///
+    /// Refuses with [`CodecError::InsufficientDepth`] a document that records
+    /// less depth than [`Self::needs`] admits.
     fn plan(
         &self,
         input: EncodeInput<'_>,
@@ -93,11 +136,23 @@ impl<E: EncoderBackend> Encoder for E {
         E::TARGET.targets(E::FORMAT)
     }
 
+    fn needs(&self) -> DepthNeed {
+        E::NEEDS
+    }
+
     fn plan(
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan, CodecError> {
+        let recorded = input.ir.decode_depth();
+        if !E::NEEDS.admits(recorded) {
+            return Err(CodecError::InsufficientDepth {
+                format: E::FORMAT.as_str(),
+                needed: E::NEEDS.request(),
+                recorded,
+            });
+        }
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
         let body = self.plan_resolved(input, target)?;
@@ -356,6 +411,9 @@ pub struct CadirEncoder;
 
 impl EncoderBackend for CadirEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    /// The document states its own depth, so a container-only dump is a
+    /// faithful CADIR document.
+    const NEEDS: DepthNeed = DepthNeed::Recorded;
 
     /// CADIR writes the neutral document. Its version identifies the CADIR
     /// schema. The serialized export report uses the `cadir` identity variant,
