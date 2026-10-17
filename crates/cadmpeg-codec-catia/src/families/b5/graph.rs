@@ -861,20 +861,21 @@ fn topology_runs(
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<(Range<usize>, B5Graph)>, CodecError> {
-    let runs = object_stream_run_ranges(bytes);
-    let root_runs = topology_root_run_ranges_from_runs(bytes, &runs);
+    let mut populations = StreamPopulations::new(bytes);
+    let root_runs = topology_root_run_ranges_from_runs(bytes, &populations.runs);
     let candidates = if root_runs.is_empty() {
-        &runs
+        populations.runs.clone()
     } else {
-        &root_runs
+        root_runs
     };
     let mut graphs = Vec::new();
     for range in candidates {
-        let population = owned_object_stream_population(bytes, range.clone(), &runs);
+        let population = populations.population(range.clone());
         if let Some(graph) = parse_flat(ctx, &population, refusal)? {
-            graphs.push((range.clone(), graph));
+            graphs.push((range, graph));
         }
     }
+    refusal.push_b5_population_bounded(populations.bounded_runs);
     Ok(graphs)
 }
 
@@ -5637,11 +5638,12 @@ fn is_topology_root_frame(frame: ObjectFrame) -> bool {
 }
 
 /// Partition one logical stream into independently resolved object populations.
-pub(in crate::families) fn object_stream_populations(
-    stream: &[u8],
-) -> Vec<std::borrow::Cow<'_, [u8]>> {
-    let runs = object_stream_run_ranges(stream);
-    let topology_runs = topology_root_run_ranges_from_runs(stream, &runs);
+pub(in crate::families) fn object_stream_populations<'stream>(
+    stream: &'stream [u8],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Vec<std::borrow::Cow<'stream, [u8]>> {
+    let mut stream_populations = StreamPopulations::new(stream);
+    let topology_runs = topology_root_run_ranges_from_runs(stream, &stream_populations.runs);
     let mut owned_populations = HashMap::new();
     let mut claimed_isolated_ids = HashSet::new();
     for range in &topology_runs {
@@ -5650,7 +5652,7 @@ pub(in crate::families) fn object_stream_populations(
         for frame in object_stream_frames(&stream[range.clone()]) {
             root_ids.insert(frame.object_id);
         }
-        let population = owned_object_stream_population(stream, range.clone(), &runs);
+        let population = stream_populations.population(range.clone());
 
         for frame in object_stream_frames(&population) {
             if !root_ids.contains(&frame.object_id) {
@@ -5659,8 +5661,9 @@ pub(in crate::families) fn object_stream_populations(
         }
         owned_populations.insert(range.start, population);
     }
+    refusal.push_b5_population_bounded(stream_populations.bounded_runs);
     let mut populations = Vec::new();
-    for range in runs {
+    for range in stream_populations.runs {
         if let Some(population) = owned_populations.remove(&range.start) {
             populations.push(population);
             continue;
@@ -5946,67 +5949,101 @@ pub(in crate::families) fn select_object_stream_population(
     }
 }
 
-/// Build one topology population from its owning run and uniquely referenced
-/// isolated geometry frames in the same logical stream.
-fn owned_object_stream_population<'stream>(
+/// Attached isolated-geometry bytes the topology runs of one logical stream may
+/// copy into their populations, per stream byte.
+pub(crate) const MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE: usize = 2;
+
+/// The topology populations of one logical stream: its object runs, its
+/// single-frame geometry runs by object id, and the attached bytes its
+/// populations may still copy.
+struct StreamPopulations<'stream> {
     stream: &'stream [u8],
-    topology_run: Range<usize>,
-    runs: &[Range<usize>],
-) -> std::borrow::Cow<'stream, [u8]> {
-    let run = &stream[topology_run.clone()];
-    let run_frames = collect_object_stream_frames(run);
-    let run_records = records_from_frames(run, &run_frames, None);
-    let referenced = topology_surface_references(&run_records);
-    let mut owned_ids = HashSet::new();
-    for record in &run_records {
-        owned_ids.insert(record.object_id);
-    }
-    let mut isolated = HashMap::<u32, Option<Range<usize>>>::new();
-    for range in runs {
-        if *range == topology_run {
-            continue;
+    runs: Vec<Range<usize>>,
+    /// An id stated by geometry runs of differing bytes maps to `None`.
+    isolated: HashMap<u32, Option<Range<usize>>>,
+    attach_allowance: usize,
+    /// Topology runs read without their isolated geometry at the allowance.
+    bounded_runs: usize,
+}
+
+impl<'stream> StreamPopulations<'stream> {
+    fn new(stream: &'stream [u8]) -> Self {
+        let runs = object_stream_run_ranges(stream);
+        let mut isolated = HashMap::<u32, Option<Range<usize>>>::new();
+        for range in &runs {
+            let Some((end, frame_family, frame_class, object_id)) =
+                object_frame(stream, range.start)
+            else {
+                continue;
+            };
+            if end != range.end || !is_referenced_geometry_class(frame_family, frame_class) {
+                continue;
+            }
+            isolated
+                .entry(object_id)
+                .and_modify(|stored| {
+                    if stored
+                        .as_ref()
+                        .is_some_and(|stored| stream[stored.clone()] != stream[range.clone()])
+                    {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(range.clone()));
         }
-        let Some((end, frame_family, frame_class, object_id)) = object_frame(stream, range.start)
-        else {
-            continue;
+        let attach_allowance = stream
+            .len()
+            .checked_mul(MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE)
+            .unwrap_or(stream.len());
+        Self {
+            stream,
+            runs,
+            isolated,
+            attach_allowance,
+            bounded_runs: 0,
+        }
+    }
+
+    /// Build one topology population from its owning run and the uniquely
+    /// stated geometry frames it references. A run never names its own
+    /// single geometry frame: a run that references surfaces holds a face or
+    /// loop root, so it is not a single geometry frame. Past the allowance the
+    /// run is read alone and counted in `bounded_runs`.
+    fn population(&mut self, topology_run: Range<usize>) -> std::borrow::Cow<'stream, [u8]> {
+        let run = &self.stream[topology_run];
+        let run_frames = collect_object_stream_frames(run);
+        let run_records = records_from_frames(run, &run_frames, None);
+        let referenced = topology_surface_references(&run_records);
+        let mut owned_ids = HashSet::new();
+        for record in &run_records {
+            owned_ids.insert(record.object_id);
+        }
+        let mut isolated = Vec::new();
+        for object_id in &referenced {
+            if owned_ids.contains(object_id) {
+                continue;
+            }
+            if let Some(Some(range)) = self.isolated.get(object_id) {
+                isolated.push(range.clone());
+            }
+        }
+        isolated.sort_by_key(|range| range.start);
+
+        if isolated.is_empty() {
+            return std::borrow::Cow::Borrowed(run);
+        }
+        let attached = isolated.iter().map(ExactSizeIterator::len).sum::<usize>();
+        let Some(remaining) = self.attach_allowance.checked_sub(attached) else {
+            self.bounded_runs += 1;
+            return std::borrow::Cow::Borrowed(run);
         };
-        if end != range.end
-            || owned_ids.contains(&object_id)
-            || !referenced.contains(&object_id)
-            || !is_referenced_geometry_class(frame_family, frame_class)
-        {
-            continue;
+        self.attach_allowance = remaining;
+        let mut population = run.to_vec();
+        for range in isolated {
+            population.extend_from_slice(&self.stream[range]);
         }
-
-        isolated
-            .entry(object_id)
-            .and_modify(|stored| {
-                if stored
-                    .as_ref()
-                    .is_some_and(|stored| stream[stored.clone()] != stream[range.clone()])
-                {
-                    *stored = None;
-                }
-            })
-            .or_insert(Some(range.clone()));
+        std::borrow::Cow::Owned(population)
     }
-    let mut isolated_values = Vec::new();
-    for value in isolated.into_values().flatten() {
-        isolated_values.push(value);
-    }
-    let mut isolated = isolated_values;
-    isolated.sort_by_key(|left| left.start);
-
-    if isolated.is_empty() {
-        return std::borrow::Cow::Borrowed(run);
-    }
-    let mut population = run.to_vec();
-    for range in isolated {
-        let frame = &stream[range];
-
-        population.extend_from_slice(frame);
-    }
-    std::borrow::Cow::Owned(population)
 }
 
 fn record_references(record: &B5Record) -> impl Iterator<Item = u32> + '_ {

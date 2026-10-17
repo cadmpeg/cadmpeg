@@ -11,7 +11,8 @@ use cadmpeg_ir::sketches::{
     SketchGeometry, SketchId, SketchNativeOperand,
 };
 
-use crate::design_feature::DesignFeatureTransfer;
+use crate::chain_walk::{ChainStep, ChainStops};
+use crate::design_feature::{owner_chain_step, DesignFeatureTransfer};
 use crate::ids::neutral_history_id;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{
@@ -63,6 +64,17 @@ pub(crate) fn transfer_native_sketch_entities(
         let id = sketch.id.clone();
         let native_ref = native_ref.to_owned();
         sketches.push((id, native_ref));
+    }
+    let mut entity_ids = HashSet::new();
+    let mut member_refs = HashMap::<SketchId, HashSet<String>>::new();
+    for entity in &ir.model.sketch_entities {
+        entity_ids.insert(entity.id().clone());
+        if let Some(native_ref) = &entity.native_ref {
+            member_refs
+                .entry(entity.sketch.clone())
+                .or_default()
+                .insert(native_ref.clone());
+        }
     }
     let mut transferred = HashSet::new();
 
@@ -117,14 +129,19 @@ pub(crate) fn transfer_native_sketch_entities(
                 Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
                 Err(error) => return Err(error),
             };
-            if ir.model.sketch_entities.iter().any(|entity| {
-                entity.id() == &entity_id
-                    || (entity.sketch == sketch_id
-                        && entity.native_ref.as_deref() == Some(geometry_field.id.as_str()))
-            }) {
+            if entity_ids.contains(&entity_id)
+                || member_refs
+                    .get(&sketch_id)
+                    .is_some_and(|refs| refs.contains(geometry_field.id.as_str()))
+            {
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA sketch entity")?;
+            entity_ids.insert(entity_id.clone());
+            member_refs
+                .entry(sketch_id.clone())
+                .or_default()
+                .insert(geometry_field.id.clone());
             let sketch_copy = sketch_id.clone();
             let field_copy = geometry_field.id.clone();
             ir.model.sketch_entities.push(
@@ -337,6 +354,7 @@ pub(crate) fn transfer_native_sketch_constraints(
             .then(left.sketch.cmp(&right.sketch))
     });
 
+    let mut constraint_keys = SketchConstraintKeys::of(ir);
     let mut transferred = HashSet::new();
     for candidate in candidates {
         let constraint_id = match neutral_history_id(
@@ -349,11 +367,7 @@ pub(crate) fn transfer_native_sketch_constraints(
             Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
-        if ir.model.sketch_constraints.iter().any(|constraint| {
-            constraint.id == constraint_id
-                || constraint.native_ref.as_deref()
-                    == Some(candidate.target_entity_record.id.as_str())
-        }) {
+        if constraint_keys.contains(&constraint_id, &candidate.target_entity_record.id) {
             continue;
         }
         let Some(object_index) = u32::try_from(candidate.target_record.ordinal).ok() else {
@@ -433,6 +447,7 @@ pub(crate) fn transfer_native_sketch_constraints(
         );
         ctx.charge_entities(1, "admit CATIA sketch constraint")?;
         let neutral_ref = candidate.target_entity_record.id.clone();
+        constraint_keys.insert(constraint_id.clone(), neutral_ref.clone());
         ir.model.sketch_constraints.push(SketchConstraint {
             id: constraint_id,
             sketch: candidate.sketch,
@@ -655,6 +670,12 @@ pub(crate) fn transfer_constraint_ranges(
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
     let indexes = ConstraintIndexes::new(native, ir);
+    let mut sketch_owners = ChainStops::new(|id: &str| {
+        owner_chain_step(id, indexes.design_objects.get(id).copied(), |id| {
+            feature_transfer.feature_ids.contains_key(id)
+        })
+    });
+    let mut constraint_keys = SketchConstraintKeys::of(ir);
     let mut transferred = HashSet::new();
 
     for entity in &native.entity_records {
@@ -662,7 +683,7 @@ pub(crate) fn transfer_constraint_ranges(
             continue;
         };
         let Some(binding) =
-            constraint_binding(entity, range, &indexes, feature_transfer, graph_scope)
+            constraint_binding(entity, range, &indexes, &mut sketch_owners, graph_scope)
         else {
             continue;
         };
@@ -677,10 +698,7 @@ pub(crate) fn transfer_constraint_ranges(
             Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
-        if ir.model.sketch_constraints.iter().any(|constraint| {
-            constraint.id == constraint_id
-                || constraint.native_ref.as_deref() == Some(entity.id.as_str())
-        }) {
+        if constraint_keys.contains(&constraint_id, &entity.id) {
             continue;
         }
         let constraint_kind = range.constraint.value.clone();
@@ -698,6 +716,7 @@ pub(crate) fn transfer_constraint_ranges(
         );
         ctx.charge_entities(1, "admit CATIA sketch constraint")?;
         let native_ref = entity.id.clone();
+        constraint_keys.insert(constraint_id.clone(), native_ref.clone());
         ir.model.sketch_constraints.push(SketchConstraint {
             id: constraint_id,
             sketch: binding.sketch,
@@ -767,11 +786,15 @@ fn sketch_entities_by_native_ref(ir: &CadIr) -> UniqueIndex<String, (SketchEntit
     index
 }
 
-fn constraint_binding(
+/// Bind one constraint range to its exact source operand.
+///
+/// `sketch_owners` answers the nearest transferred feature on a design
+/// object's exact owner chain. A missing link or a cycle rejects the chain.
+fn constraint_binding<'a>(
     range_entity: &CatiaEntityRecord,
     range: &CatiaConstraintRange,
-    indexes: &ConstraintIndexes<'_>,
-    feature_transfer: &DesignFeatureTransfer,
+    indexes: &ConstraintIndexes<'a>,
+    sketch_owners: &mut ChainStops<&'a str, impl FnMut(&'a str) -> ChainStep<&'a str>>,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Option<ConstraintBinding> {
     let selected = (|| {
@@ -825,12 +848,9 @@ fn constraint_binding(
         ))
     })();
     let (source_record_id, source_record, source_entity_record, source_design_object) = selected?;
-    let sketch = sketch_owner_for_design_object(
-        source_design_object,
-        &indexes.design_objects,
-        &indexes.sketch_ids,
-        feature_transfer,
-    )?;
+    let sketch = sketch_owners
+        .stop(source_design_object)
+        .and_then(|owner| indexes.sketch_ids.get(owner).cloned())?;
     let entity = indexes
         .sketch_entities
         .get(source_record_id)
@@ -863,32 +883,6 @@ fn constraint_binding(
         },
         entity,
     })
-}
-
-fn sketch_owner_for_design_object<'a>(
-    start: &'a str,
-    design_objects: &UniqueIndex<&'a str, &'a CatiaDesignObject>,
-    sketch_ids: &UniqueIndex<String, SketchId>,
-    feature_transfer: &DesignFeatureTransfer,
-) -> Option<SketchId> {
-    let mut current = Some(start);
-    let mut steps = 0usize;
-    while let Some(current_id) = current {
-        if steps >= design_objects.len() {
-            return None;
-        }
-        steps += 1;
-
-        let object = design_objects.get(current_id).copied()?;
-        if feature_transfer.feature_ids.contains_key(current_id) {
-            return sketch_ids.get(current_id).cloned();
-        }
-        current = object
-            .owner_design_object
-            .as_deref()
-            .filter(|parent| *parent != current_id);
-    }
-    None
 }
 
 fn constraint_properties(range: &CatiaConstraintRange) -> BTreeMap<String, String> {
@@ -1007,6 +1001,38 @@ fn sketch_ids_by_native_ref(ir: &CadIr) -> UniqueIndex<String, SketchId> {
     index
 }
 
+/// Identities and native references of the sketch constraints in the model.
+/// A transferred constraint must not repeat either one.
+struct SketchConstraintKeys {
+    ids: HashSet<SketchConstraintId>,
+    native_refs: HashSet<String>,
+}
+
+impl SketchConstraintKeys {
+    fn of(ir: &CadIr) -> Self {
+        let mut keys = Self {
+            ids: HashSet::new(),
+            native_refs: HashSet::new(),
+        };
+        for constraint in &ir.model.sketch_constraints {
+            keys.ids.insert(constraint.id.clone());
+            if let Some(native_ref) = &constraint.native_ref {
+                keys.native_refs.insert(native_ref.clone());
+            }
+        }
+        keys
+    }
+
+    fn contains(&self, id: &SketchConstraintId, native_ref: &str) -> bool {
+        self.ids.contains(id) || self.native_refs.contains(native_ref)
+    }
+
+    fn insert(&mut self, id: SketchConstraintId, native_ref: String) {
+        self.ids.insert(id);
+        self.native_refs.insert(native_ref);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1018,6 +1044,8 @@ mod tests {
     use crate::native::CatiaNative;
     use crate::native::CatiaObjectRecord;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::sketches::SketchConstraint;
+    use cadmpeg_ir::sketches::SketchConstraintId;
     use cadmpeg_ir::sketches::SketchEntity;
     use cadmpeg_ir::sketches::SketchEntityId;
     use cadmpeg_ir::sketches::SketchGeometry;
@@ -2070,6 +2098,39 @@ mod tests {
     }
 
     #[test]
+    fn constraint_ranges_bind_through_a_long_owner_chain_and_refuse_a_cycle() {
+        const CHAIN: usize = 4096;
+        let link = |index: usize| format!("synthetic:test:object#link-{index}");
+        let transferred = |closes: bool| {
+            let (mut ir, mut native, transfer, graph_scope) = fixture(false);
+            native.design_objects.truncate(1);
+            native
+                .design_objects
+                .push(design_object("source-object", Some(&link(0))));
+            for index in 1..CHAIN {
+                native
+                    .design_objects
+                    .push(design_object(&link(index - 1), Some(&link(index))));
+            }
+            let last = if closes {
+                "sketch-object".to_string()
+            } else {
+                link(0)
+            };
+            native
+                .design_objects
+                .push(design_object(&link(CHAIN - 1), Some(&last)));
+            crate::test_support::with_service_context(|ctx| {
+                transfer_constraint_ranges(ctx, &mut ir, &native, &transfer, &graph_scope)
+            })
+            .expect("valid sketch constraint transfer");
+            ir.model.sketch_constraints.len()
+        };
+        assert_eq!(transferred(true), 1);
+        assert_eq!(transferred(false), 0);
+    }
+
+    #[test]
     fn refuses_a_constraint_range_owned_by_a_non_sketch_feature() {
         let (mut ir, native, mut transfer, graph_scope) = fixture(false);
         transfer.feature_ids.insert(
@@ -2147,5 +2208,116 @@ mod tests {
             .expect("constraint range");
         let admitted = super::constraint_properties(range);
         assert_eq!(admitted["catia_constraint_value"], "CstAttr_Dimension");
+    }
+
+    fn seeded_sketch_entity(id: &str, sketch: SketchId) -> SketchEntity {
+        SketchEntity::new(
+            SketchEntityId::mint(id.to_string()).expect("valid test fixture"),
+            sketch,
+            SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
+        )
+        .with_native_ref(Some("catia:outer:object-record#geometry-field".to_string()))
+    }
+
+    #[test]
+    fn native_sketch_members_skip_identities_already_in_the_model() {
+        let transfer_entities = |ir: &mut CadIr| {
+            let (_, native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
+            crate::test_support::with_service_context(|ctx| {
+                transfer_native_sketch_entities(ctx, ir, &native, &transfer, &graph_scope)
+            })
+            .expect("transfer the native sketch entities")
+        };
+
+        let (mut same_sketch, ..) = native_sketch_fixture("2DPoint");
+        let sketch = same_sketch.model.sketches[0].id.clone();
+        same_sketch.model.sketch_entities.push(seeded_sketch_entity(
+            "synthetic:test:sketch-entity#seeded",
+            sketch,
+        ));
+        assert!(transfer_entities(&mut same_sketch).is_empty());
+        assert_eq!(same_sketch.model.sketch_entities.len(), 1);
+
+        let (mut other_sketch, ..) = native_sketch_fixture("2DPoint");
+        other_sketch
+            .model
+            .sketch_entities
+            .push(seeded_sketch_entity(
+                "synthetic:test:sketch-entity#other",
+                SketchId::mint("synthetic:test:other-sketch#0".to_string())
+                    .expect("valid test fixture"),
+            ));
+        assert_eq!(transfer_entities(&mut other_sketch).len(), 1);
+        assert_eq!(other_sketch.model.sketch_entities.len(), 2);
+
+        let (mut repeated, ..) = native_sketch_fixture("2DPoint");
+        let mut second = repeated.model.sketches[0].clone();
+        second.id = SketchId::mint("synthetic:test:sketch#1".to_string()).expect("valid fixture");
+        repeated.model.sketches.push(second);
+        assert_eq!(transfer_entities(&mut repeated).len(), 1);
+        assert_eq!(repeated.model.sketch_entities.len(), 1);
+        assert_eq!(
+            repeated.model.sketch_entities[0].sketch.as_str(),
+            "synthetic:test:sketch#0"
+        );
+    }
+
+    fn seeded_constraint_variants(constraint: &SketchConstraint) -> [SketchConstraint; 2] {
+        [
+            SketchConstraint {
+                id: SketchConstraintId::mint("synthetic:test:sketch-constraint#seeded".to_string())
+                    .expect("valid test fixture"),
+                ..constraint.clone()
+            },
+            SketchConstraint {
+                native_ref: Some("synthetic:test:seeded-native-ref".to_string()),
+                ..constraint.clone()
+            },
+        ]
+    }
+
+    #[test]
+    fn native_sketch_relations_skip_identities_already_in_the_model() {
+        let transfer_relations = |ir: &mut CadIr| {
+            let (_, native, transfer, graph_scope) = native_sketch_constraint_fixture();
+            crate::test_support::with_service_context(|ctx| {
+                transfer_native_sketch_entities(ctx, ir, &native, &transfer, &graph_scope)?;
+                transfer_native_sketch_constraints(ctx, ir, &native, &transfer, &graph_scope)
+            })
+            .expect("transfer native sketch constraints")
+        };
+        let (mut ir, ..) = native_sketch_constraint_fixture();
+        assert_eq!(transfer_relations(&mut ir).len(), 1);
+        assert!(transfer_relations(&mut ir).is_empty());
+        assert_eq!(ir.model.sketch_constraints.len(), 1);
+
+        for seeded in seeded_constraint_variants(&ir.model.sketch_constraints[0]) {
+            let (mut seeded_ir, ..) = native_sketch_constraint_fixture();
+            seeded_ir.model.sketch_constraints.push(seeded);
+            assert!(transfer_relations(&mut seeded_ir).is_empty());
+            assert_eq!(seeded_ir.model.sketch_constraints.len(), 1);
+        }
+    }
+
+    #[test]
+    fn constraint_ranges_skip_identities_already_in_the_model() {
+        let transfer_ranges = |ir: &mut CadIr| {
+            let (_, native, transfer, graph_scope) = fixture(false);
+            crate::test_support::with_service_context(|ctx| {
+                transfer_constraint_ranges(ctx, ir, &native, &transfer, &graph_scope)
+            })
+            .expect("valid sketch constraint transfer")
+        };
+        let (mut ir, ..) = fixture(false);
+        assert_eq!(transfer_ranges(&mut ir).len(), 2);
+        assert!(transfer_ranges(&mut ir).is_empty());
+        assert_eq!(ir.model.sketch_constraints.len(), 1);
+
+        for seeded in seeded_constraint_variants(&ir.model.sketch_constraints[0]) {
+            let (mut seeded_ir, ..) = fixture(false);
+            seeded_ir.model.sketch_constraints.push(seeded);
+            assert!(transfer_ranges(&mut seeded_ir).is_empty());
+            assert_eq!(seeded_ir.model.sketch_constraints.len(), 1);
+        }
     }
 }

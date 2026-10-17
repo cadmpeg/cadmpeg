@@ -996,7 +996,10 @@ fn suffix_schema_selection_matches_the_decoded_record() {
     ]));
     let record = &native.entity_records[0];
     let catalog = native.catalogs.first();
-    let admitted = super::super::entity_suffix_schema_selection(record.suffix_value(), catalog);
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    })
+    .expect("derive the suffix schema selection");
     assert_eq!(admitted, record.suffix_schema_selection);
 }
 
@@ -1007,6 +1010,9 @@ fn nested_suffix_schema_selection_matches_the_decoded_record() {
     ]));
     let record = &native.entity_records[0];
     let catalog = native.catalogs.first();
-    let admitted = super::super::entity_suffix_schema_selection(record.suffix_value(), catalog);
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+    })
+    .expect("derive the suffix schema selection");
     assert_eq!(admitted, record.suffix_schema_selection);
 }
