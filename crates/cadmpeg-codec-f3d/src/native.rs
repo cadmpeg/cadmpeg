@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
+use crate::decode::design_intent::DesignIntentFailure;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmHistoricalTransition, AsmHistory,
 };
@@ -143,6 +144,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_face_source_groups",
     "design_feature_timelines",
     "design_fillet_radius_groups",
+    "design_intent_failures",
     "design_loft_legacy_body_carriers",
     "design_material_assignments",
     "design_mesh_features",
@@ -697,6 +699,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.design_fillet_radius_groups)
         },
         len: |model| model.design_fillet_radius_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_intent_failures",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_intent_failures)
+        },
+        len: |model| model.design_intent_failures.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1260,6 +1272,10 @@ pub(crate) struct F3dNative {
     /// Radius parameters paired with counted Fillet edge groups.
     #[serde(default)]
     pub(crate) design_fillet_radius_groups: Vec<DesignFilletRadiusGroup>,
+    /// Contained design-intent decode failures. A document with one holds
+    /// none of the records design-intent decoding produces.
+    #[serde(default)]
+    pub(crate) design_intent_failures: Vec<DesignIntentFailure>,
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
     pub(crate) design_parameter_companions: Vec<DesignParameterCompanion>,
@@ -1474,6 +1490,7 @@ impl F3dNative {
             design_extrude_selection_groups: read_arena!("design_extrude_selection_groups"),
             design_extrude_selection_members: read_arena!("design_extrude_selection_members"),
             design_fillet_radius_groups: read_arena!("design_fillet_radius_groups"),
+            design_intent_failures: read_arena!("design_intent_failures"),
             design_parameter_companions: read_arena!("design_parameter_companions"),
             design_parameter_owners: read_arena!("design_parameter_owners"),
             design_parameter_scopes: read_arena!("design_parameter_scopes"),

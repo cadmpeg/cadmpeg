@@ -757,10 +757,11 @@ impl<'a, 'd> Ctx<'a, 'd> {
     }
 
     /// Whether the document holds the design-intent records and the record
-    /// headers they read. A decode below full depth stops before them, so the
+    /// headers they read. A decode below full depth stops before them, and a
+    /// contained design-intent failure drops them, so in either case the
     /// stored scopes and owners carry no design-intent bindings.
     fn holds_design_intent(&self) -> bool {
-        self.ir.decode_depth() == DecodeDepth::Full
+        self.ir.decode_depth() == DecodeDepth::Full && self.native.design_intent_failures.is_empty()
     }
 }
 
@@ -847,6 +848,7 @@ fn validate_loaded(
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
     validate_configurations(&ctx, &mut findings);
+    validate_design_intent_failures(&ctx, &mut findings);
     validate_feature_timelines(&ctx, &mut findings)?;
     validate_parameter_scopes(&ctx, &mut findings)?;
     validate_extrude_selection_groups(&ctx, &mut findings);
@@ -1102,6 +1104,38 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             "Fusion Design configurations have no single authored table order",
             id,
         );
+    }
+}
+
+/// Report a contained design-intent failure beside features or sketches of the
+/// same document. A failure record turns off the checks that resolve design
+/// intent, so it must not sit beside the records those checks read. An F3Z
+/// member's failure is scoped to its occurrence; the other documents of the
+/// archive keep their design records.
+fn validate_design_intent_failures(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    for failure in &ctx.native.design_intent_failures {
+        let beside_design = ctx
+            .ir
+            .model
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str())
+            .chain(
+                ctx.ir
+                    .model
+                    .sketches
+                    .iter()
+                    .map(|sketch| sketch.id.as_str()),
+            )
+            .any(|id| crate::ids::same_native_occurrence(id, &failure.id));
+        if beside_design {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion design-intent failure record accompanies decoded design records",
+                Some(failure.id.clone()),
+            );
+        }
     }
 }
 

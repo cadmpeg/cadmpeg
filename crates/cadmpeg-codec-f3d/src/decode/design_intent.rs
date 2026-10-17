@@ -107,6 +107,16 @@ pub(super) enum DesignPath {
     Bodyless,
 }
 
+/// A contained phase-2 failure. A document that carries one keeps its product
+/// and geometry records and holds none of the records phase 2 produces.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DesignIntentFailure {
+    /// Globally unique deterministic identifier for this native record.
+    pub(crate) id: String,
+    /// The error that stopped design-intent decoding.
+    pub(crate) reason: String,
+}
+
 /// Native Design records that phase 2 produces.
 #[derive(Debug, Default)]
 pub(super) struct DesignNative {
