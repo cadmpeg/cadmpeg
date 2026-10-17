@@ -121,7 +121,7 @@ pub(crate) mod sealed {
     impl IndexQuery for super::StandardIndex {}
 }
 
-/// Explicit standard allocation policy for context-free model indexes.
+/// Query policy for model indexes built without a decode context.
 #[derive(Debug, Clone, Copy)]
 pub struct StandardIndex;
 
@@ -188,6 +188,7 @@ macro_rules! define_model_index {
             ir: &'a CadIr,
             $($lookup: OnceLock<IdentityIndex<'a>>,)*
             procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
+            procedural_surfaces_by_id: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
             identities: BorrowedIdentityIndex<'a, ()>,
             include_native: bool,
@@ -264,6 +265,7 @@ macro_rules! define_model_index {
                     ir,
                     $($lookup: OnceLock::new(),)*
                     procedural_surface_by_surface,
+                    procedural_surfaces_by_id,
                     procedural_curves_by_curve,
                     identities: BorrowedIdentityIndex { slots: HashMap::new() },
                     include_native,
@@ -327,6 +329,13 @@ macro_rules! define_model_index {
                 &self, surface: &str, query: P,
             ) -> P::Output<Option<&'a ProceduralSurface>> {
                 query.finish(self.procedural_surface_by_surface.get(surface, &query, "model procedural surface query").map(|value| value.copied()))
+            }
+
+            /// Looks up the first procedural surface construction with `identity`.
+            pub(crate) fn procedural_surface_construction<P: IndexQuery>(
+                &self, identity: &str, query: P,
+            ) -> P::Output<Option<&'a ProceduralSurface>> {
+                query.finish(self.procedural_surfaces_by_id.get(identity, &query, "model surface construction identity").map(|value| value.copied()))
             }
 
             /// Looks up procedural constructions that own a curve in arena order.

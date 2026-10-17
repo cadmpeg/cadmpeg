@@ -274,18 +274,57 @@ pub(in crate::validate) fn check_wire_topology(
     Ok(())
 }
 
-fn insert_incident<'ir>(
-    groups: &mut BorrowedIdentities<'ir, BorrowedIdentities<'ir>>,
-    member: &'ir str,
+/// An edge or vertex that faces share.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Incidence<'ir> {
+    Edge(&'ir str),
+    Vertex(&'ir str),
+}
+
+fn insert_incidence<'ir>(
+    incidences: &mut BorrowedIdentities<'ir, Vec<Incidence<'ir>>>,
     face: &'ir str,
+    incidence: Incidence<'ir>,
 ) {
-    if let Some(group) = groups.get_mut(member) {
-        group.insert_unique(face, ());
+    if let Some(face_incidences) = incidences.get_mut(face) {
+        face_incidences.push(incidence);
     } else {
-        let mut group = BorrowedIdentities::new();
-        group.insert_unique(face, ());
-        groups.insert(member, group);
+        incidences.insert(face, vec![incidence]);
     }
+}
+
+/// The root of `node`, halving the path on the way.
+fn component_root(parents: &mut [usize], mut node: usize) -> usize {
+    while parents[node] != node {
+        parents[node] = parents[parents[node]];
+        node = parents[node];
+    }
+    node
+}
+
+/// Whether `faces` form one component when two faces are joined by every
+/// edge or vertex they share.
+fn faces_connected<'ir>(
+    faces: &BorrowedIdentities<'ir>,
+    incidences: &BorrowedIdentities<'ir, Vec<Incidence<'ir>>>,
+) -> bool {
+    let mut parents: Vec<usize> = (0..faces.len()).collect();
+    let mut components = faces.len();
+    let mut first_faces = std::collections::HashMap::new();
+    for (face_index, face) in faces.identities().enumerate() {
+        for incidence in incidences.get(face).into_iter().flatten() {
+            let first = *first_faces.entry(*incidence).or_insert(face_index);
+            let (first, current) = (
+                component_root(&mut parents, first),
+                component_root(&mut parents, face_index),
+            );
+            if first != current {
+                parents[current] = first;
+                components -= 1;
+            }
+        }
+    }
+    components <= 1
 }
 
 pub(in crate::validate) fn check_shell_connectivity(
@@ -310,16 +349,19 @@ pub(in crate::validate) fn check_shell_connectivity(
         }
         Ok(())
     })?;
-    let mut faces_by_edge = BorrowedIdentities::new();
-    let mut faces_by_vertex = BorrowedIdentities::new();
+    let mut incidences = BorrowedIdentities::new();
     for coedge in &ir.model.coedges {
         let Some(face) = loop_faces.get(coedge.owner_loop.as_str()).copied() else {
             continue;
         };
-        insert_incident(&mut faces_by_edge, coedge.edge.as_str(), face);
+        insert_incidence(&mut incidences, face, Incidence::Edge(coedge.edge.as_str()));
         if let Some(edge) = edges.get(coedge.edge.as_str()) {
-            insert_incident(&mut faces_by_vertex, edge.start.as_str(), face);
-            insert_incident(&mut faces_by_vertex, edge.end.as_str(), face);
+            insert_incidence(
+                &mut incidences,
+                face,
+                Incidence::Vertex(edge.start.as_str()),
+            );
+            insert_incidence(&mut incidences, face, Incidence::Vertex(edge.end.as_str()));
         }
     }
     for loop_ in &ir.model.loops {
@@ -328,21 +370,15 @@ pub(in crate::validate) fn check_shell_connectivity(
         };
         match &loop_.boundary {
             crate::topology::LoopBoundary::Vertex { vertex, .. } => {
-                insert_incident(&mut faces_by_vertex, vertex.as_str(), face);
+                insert_incidence(&mut incidences, face, Incidence::Vertex(vertex.as_str()));
             }
             crate::topology::LoopBoundary::Ring(ring) => {
                 for use_ in ring.vertex_uses() {
-                    insert_incident(&mut faces_by_vertex, use_.vertex.as_str(), face);
-                }
-            }
-        }
-    }
-    let mut neighbors = BorrowedIdentities::new();
-    for incident_faces in faces_by_edge.values().chain(faces_by_vertex.values()) {
-        for face in incident_faces.identities() {
-            for other in incident_faces.identities() {
-                if other != face {
-                    insert_incident(&mut neighbors, face, other);
+                    insert_incidence(
+                        &mut incidences,
+                        face,
+                        Incidence::Vertex(use_.vertex.as_str()),
+                    );
                 }
             }
         }
@@ -366,24 +402,7 @@ pub(in crate::validate) fn check_shell_connectivity(
         }
         let mut owned = BorrowedIdentities::new();
         owned.extend_unique(shell.faces().iter().map(crate::ids::FaceId::as_str));
-        let mut reached = BorrowedIdentities::new();
-        let first = shell.faces()[0].as_str();
-        reached.insert_unique(first, ());
-        let mut pending = Vec::new();
-        pending.push(first);
-        while !pending.is_empty() {
-            let Some(face) = pending.pop() else {
-                break;
-            };
-            if let Some(group) = neighbors.get(face) {
-                for neighbor in group.identities() {
-                    if owned.contains(neighbor) && reached.insert_unique(neighbor, ()) {
-                        pending.push(neighbor);
-                    }
-                }
-            }
-        }
-        if reached.len() != owned.len() {
+        if !faces_connected(&owned, &incidences) {
             record_finding(
                 findings,
                 Check::ShellTopology,

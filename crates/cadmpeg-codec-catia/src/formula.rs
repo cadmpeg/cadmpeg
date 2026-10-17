@@ -16,6 +16,7 @@ use crate::legacy_entity::LegacyEvaluatedValueNames;
 use crate::native::{CatiaLegacyTextField, CatiaNative};
 
 const FORMULA_INTEGER_LOWER: f64 = -9_223_372_036_854_775_808.0;
+const FORMULA_OUTPUT_EXPRESSION_OPERATION: &str = "retain CATIA formula output expression";
 const FORMULA_INTEGER_UPPER: f64 = 9_223_372_036_854_775_808.0;
 
 pub(crate) fn transfer_parameters(
@@ -135,12 +136,13 @@ pub(crate) fn transfer_parameters(
         }
     }
 
+    let mut formula_parses = ExpressionParses::new();
     for formula_entity in native
         .entity_records
         .iter()
         .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
     {
-        let Some(formula) = &formula_entity.formula_relation() else {
+        let Some(formula) = formula_entity.formula_relation() else {
             continue;
         };
         let Some(expression_entity) = formula
@@ -226,33 +228,48 @@ pub(crate) fn transfer_parameters(
         let formula_type_complete = all_inputs_typed
             && used_inputs.len() == signature.inputs.len()
             && dependencies.len() == signature.inputs.len();
-        let type_checked_expression = (if formula_type_complete {
-            parse_formula_expression_with_mode(
-                ctx,
-                &expression.expression.value,
-                &type_bindings,
-                false,
-            )?
-        } else {
-            None
-        })
-        .filter(|value| {
-            canonical_parameter_type(&signature.result_type)
-                .is_some_and(|source_type| value.satisfies_source_type(source_type))
-        });
-        let evaluated_expression = (if formula_complete {
-            parse_formula_expression(ctx, &expression.expression.value, &expression_bindings)?
-        } else {
-            None
-        })
-        .filter(|value| {
-            canonical_parameter_type(&signature.result_type)
-                .is_some_and(|source_type| value.satisfies_source_type(source_type))
-        });
+        let parse = formula_parses.get_or_parse(
+            expression_entity.id.as_str(),
+            formula.parameter_dependencies.as_slice(),
+            || {
+                let type_checked = (if formula_type_complete {
+                    parse_formula_expression_with_mode(
+                        ctx,
+                        &expression.expression.value,
+                        &type_bindings,
+                        false,
+                    )?
+                } else {
+                    None
+                })
+                .filter(|value| {
+                    canonical_parameter_type(&signature.result_type)
+                        .is_some_and(|source_type| value.satisfies_source_type(source_type))
+                });
+                let evaluated = (if formula_complete {
+                    parse_formula_expression(
+                        ctx,
+                        &expression.expression.value,
+                        &expression_bindings,
+                    )?
+                } else {
+                    None
+                })
+                .filter(|value| {
+                    canonical_parameter_type(&signature.result_type)
+                        .is_some_and(|source_type| value.satisfies_source_type(source_type))
+                });
+                Ok(ExpressionParse {
+                    type_checked,
+                    evaluated,
+                })
+            },
+        )?;
+        let evaluated_expression = parse.evaluated.as_ref();
         let transferable_expression = if formula_complete {
-            evaluated_expression.as_ref()
+            evaluated_expression
         } else {
-            type_checked_expression.as_ref()
+            parse.type_checked.as_ref()
         };
         let input_parameters = transferred
             .iter()
@@ -279,7 +296,7 @@ pub(crate) fn transfer_parameters(
                         let accepted = match &value {
                             TypedParameterEvaluation::Unset => transferable_expression.is_some(),
                             TypedParameterEvaluation::Value(value) => {
-                                if let Some(evaluated) = evaluated_expression.as_ref() {
+                                if let Some(evaluated) = evaluated_expression {
                                     evaluated.agrees_with(&TypedParameterEvaluation::Value(
                                         (value).clone(),
                                     ))
@@ -305,6 +322,12 @@ pub(crate) fn transfer_parameters(
                                 cadmpeg_ir::features::DistinctMembers::default();
                             output_dependencies.extend(dependencies);
                             let output_name = output_value.name.value.clone();
+                            ctx.retain_bytes(
+                                cadmpeg_core::decode::u64_from_index(
+                                    expression.expression.value.len(),
+                                ),
+                                FORMULA_OUTPUT_EXPRESSION_OPERATION,
+                            )?;
                             let output_expression = expression.expression.value.clone();
                             let output_native_ref = output.id.clone();
                             transferred.push(FormulaParameterCandidate {
@@ -342,6 +365,7 @@ pub(crate) fn transfer_parameters(
         }
     }
 
+    let mut program_parses = ExpressionParses::new();
     for relation_entity in native
         .entity_records
         .iter()
@@ -364,9 +388,6 @@ pub(crate) fn transfer_parameters(
         else {
             continue;
         };
-        let Some(expression) = expression_entity.relation_expression() else {
-            continue;
-        };
         let Some(inputs) = instance.inputs.as_ref() else {
             continue;
         };
@@ -375,9 +396,9 @@ pub(crate) fn transfer_parameters(
             relation_entity,
             expression_entity,
             output_entity,
-            expression,
             inputs,
             &entities,
+            &mut program_parses,
         )?
         else {
             continue;
@@ -1442,16 +1463,19 @@ fn merge_formula_parameter_candidate(
     Ok(())
 }
 
-fn relation_program_output_candidate(
+fn relation_program_output_candidate<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     relation_entity: &crate::native::entity_record::CatiaEntityRecord,
-    expression_entity: &crate::native::entity_record::CatiaEntityRecord,
+    expression_entity: &'a crate::native::entity_record::CatiaEntityRecord,
     output_entity: &crate::native::entity_record::CatiaEntityRecord,
-    expression: &crate::native::CatiaRelationExpression,
-    inputs: &[crate::native::CatiaRelationProgramInput],
+    inputs: &'a [crate::native::CatiaRelationProgramInput],
     entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
+    parses: &mut ExpressionParses<'a, [crate::native::CatiaRelationProgramInput]>,
 ) -> Result<Option<(FormulaProgramCandidate, FormulaParameterCandidate)>, cadmpeg_core::CodecError>
 {
+    let Some(expression) = expression_entity.relation_expression() else {
+        return Ok(None);
+    };
     let Some(signature) = expression.signature() else {
         return Ok(None);
     };
@@ -1467,6 +1491,7 @@ fn relation_program_output_candidate(
     }
 
     let mut dependencies = Vec::new();
+    let mut dependency_ids = HashSet::new();
     let mut input_parameters = Vec::new();
     let mut expression_bindings = BTreeMap::new();
     let mut type_bindings = BTreeMap::new();
@@ -1480,7 +1505,7 @@ fn relation_program_output_candidate(
         else {
             return Ok(None);
         };
-        if dependencies.contains(&candidate.parameter.id) {
+        if !dependency_ids.insert(candidate.parameter.id.clone()) {
             return Ok(None);
         }
         let dependency = candidate.parameter.id.clone();
@@ -1501,29 +1526,36 @@ fn relation_program_output_candidate(
         input_parameters.push((candidate.parameter, candidate.parameter_type));
     }
 
-    let type_checked_expression = parse_formula_expression_with_mode(
-        ctx,
-        &expression.expression.value,
-        &type_bindings,
-        false,
-    )?
-    .filter(|value| {
-        canonical_parameter_type(&signature.result_type)
-            .is_some_and(|source_type| value.satisfies_source_type(source_type))
-    });
-    let evaluated_expression = (if all_inputs_complete {
-        parse_formula_expression(ctx, &expression.expression.value, &expression_bindings)?
-    } else {
-        None
-    })
-    .filter(|value| {
-        canonical_parameter_type(&signature.result_type)
-            .is_some_and(|source_type| value.satisfies_source_type(source_type))
-    });
+    let parse = parses.get_or_parse(expression_entity.id.as_str(), inputs, || {
+        let type_checked = parse_formula_expression_with_mode(
+            ctx,
+            &expression.expression.value,
+            &type_bindings,
+            false,
+        )?
+        .filter(|value| {
+            canonical_parameter_type(&signature.result_type)
+                .is_some_and(|source_type| value.satisfies_source_type(source_type))
+        });
+        let evaluated = (if all_inputs_complete {
+            parse_formula_expression(ctx, &expression.expression.value, &expression_bindings)?
+        } else {
+            None
+        })
+        .filter(|value| {
+            canonical_parameter_type(&signature.result_type)
+                .is_some_and(|source_type| value.satisfies_source_type(source_type))
+        });
+        Ok(ExpressionParse {
+            type_checked,
+            evaluated,
+        })
+    })?;
+    let evaluated_expression = parse.evaluated.as_ref();
     let Some(_) = (if all_inputs_complete {
-        evaluated_expression.as_ref()
+        evaluated_expression
     } else {
-        type_checked_expression.as_ref()
+        parse.type_checked.as_ref()
     }) else {
         return Ok(None);
     };
@@ -1546,7 +1578,7 @@ fn relation_program_output_candidate(
     let accepted = match &value {
         TypedParameterEvaluation::Unset => true,
         TypedParameterEvaluation::Value(value) => {
-            if let Some(evaluated) = evaluated_expression.as_ref() {
+            if let Some(evaluated) = evaluated_expression {
                 evaluated.agrees_with(&TypedParameterEvaluation::Value((value).clone()))
             } else {
                 false
@@ -1559,6 +1591,10 @@ fn relation_program_output_candidate(
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
     let candidate_id = output_id.clone();
     let output_name = output_value.name.value.clone();
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(expression.expression.value.len()),
+        FORMULA_OUTPUT_EXPRESSION_OPERATION,
+    )?;
     let output_expression = expression.expression.value.clone();
     let output_native_ref = output_entity.id.clone();
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
@@ -1912,6 +1948,45 @@ enum EvaluatedFormulaValue {
     Scalar(EvaluatedFormulaScalar),
     Boolean(EvaluatedFormulaBoolean),
     String(EvaluatedFormulaString),
+}
+
+/// Type-checked and evaluated results of one relation expression.
+struct ExpressionParse {
+    type_checked: Option<EvaluatedFormulaValue>,
+    evaluated: Option<EvaluatedFormulaValue>,
+}
+
+/// Parses of relation expressions, shared by relations that select the same
+/// parameters.
+///
+/// A relation binds its expression's symbols through its own dependency or
+/// input list, so relations that name one expression entity and carry equal
+/// lists parse it to the same results.
+struct ExpressionParses<'a, K: ?Sized> {
+    parses: HashMap<&'a str, Vec<(&'a K, ExpressionParse)>>,
+}
+
+impl<'a, K: PartialEq + ?Sized> ExpressionParses<'a, K> {
+    fn new() -> Self {
+        Self {
+            parses: HashMap::new(),
+        }
+    }
+
+    fn get_or_parse(
+        &mut self,
+        expression_entity: &'a str,
+        selection: &'a K,
+        parse: impl FnOnce() -> Result<ExpressionParse, cadmpeg_core::CodecError>,
+    ) -> Result<&ExpressionParse, cadmpeg_core::CodecError> {
+        let parses = self.parses.entry(expression_entity).or_default();
+        if let Some(index) = parses.iter().position(|(known, _)| *known == selection) {
+            return Ok(&parses[index].1);
+        }
+        let index = parses.len();
+        parses.push((selection, parse()?));
+        Ok(&parses[index].1)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

@@ -8,9 +8,9 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{BodyId, LoopId, SurfaceId};
+use cadmpeg_ir::ids::{BodyId, FaceId, LoopId, RegionId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{BodyKind, Face, FaceLoops, Sense};
+use cadmpeg_ir::topology::{Body, BodyKind, Face, FaceLoops, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{
     features::{
@@ -27,114 +27,78 @@ use cadmpeg_ir::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
-    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
-    let mut faces = Vec::new();
-    for region_id in &body.regions {
-        let region = ir
-            .model
-            .regions
-            .iter()
-            .find(|region| region.id == *region_id && region.body == body.id)?;
-        for shell_id in &region.shells {
-            let shell = ir
-                .model
-                .shells
-                .iter()
-                .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-            for face_id in shell.faces() {
-                let face = ir
-                    .model
-                    .faces
-                    .iter()
-                    .find(|face| face.id == *face_id && face.shell == shell.id)?;
-                faces.push(face);
+/// The first body, region, shell and face of each owner-qualified identity.
+pub(super) struct SolidBodyIndex<'a> {
+    bodies: BTreeMap<&'a BodyId, &'a Body>,
+    regions: BTreeMap<(&'a RegionId, &'a BodyId), &'a Region>,
+    shells: BTreeMap<(&'a ShellId, &'a RegionId), &'a Shell>,
+    faces: BTreeMap<(&'a FaceId, &'a ShellId), &'a Face>,
+}
+
+impl<'a> SolidBodyIndex<'a> {
+    pub(super) fn new(ir: &'a CadIr) -> Self {
+        fn first<'a, T, K: Ord>(items: &'a [T], key: impl Fn(&'a T) -> K) -> BTreeMap<K, &'a T> {
+            let mut first = BTreeMap::new();
+            for item in items {
+                first.entry(key(item)).or_insert(item);
             }
+            first
+        }
+        Self {
+            bodies: first(&ir.model.bodies, |body| &body.id),
+            regions: first(&ir.model.regions, |region| (&region.id, &region.body)),
+            shells: first(&ir.model.shells, |shell| (&shell.id, &shell.region)),
+            faces: first(&ir.model.faces, |face| (&face.id, &face.shell)),
         }
     }
-    Some(faces)
+
+    fn shell_faces(&self, shell: &Shell) -> Option<Vec<&'a Face>> {
+        shell
+            .faces()
+            .iter()
+            .map(|face_id| self.faces.get(&(face_id, &shell.id)).copied())
+            .collect()
+    }
+
+    pub(super) fn body_faces(&self, body_id: &BodyId) -> Option<Vec<&'a Face>> {
+        let body = self.bodies.get(body_id)?;
+        let mut faces = Vec::new();
+        for region_id in &body.regions {
+            let region = self.regions.get(&(region_id, &body.id))?;
+            for shell_id in &region.shells {
+                let shell = self.shells.get(&(shell_id, &region.id))?;
+                faces.extend(self.shell_faces(shell)?);
+            }
+        }
+        Some(faces)
+    }
+
+    pub(super) fn connected_solid_body_faces(&self, body_id: &BodyId) -> Option<Vec<&'a Face>> {
+        let body = self.bodies.get(body_id)?;
+        if body.kind != BodyKind::Solid {
+            return None;
+        }
+        let [region_id] = body.regions.as_slice() else {
+            return None;
+        };
+        let region = self.regions.get(&(region_id, &body.id))?;
+        let [shell_id] = region.shells.as_slice() else {
+            return None;
+        };
+        let shell = self.shells.get(&(shell_id, &region.id))?;
+        self.shell_faces(shell)
+    }
+}
+
+pub(super) fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
+    SolidBodyIndex::new(ir).body_faces(body_id)
 }
 
 pub(super) fn connected_solid_body_faces<'a>(
     ir: &'a CadIr,
     body_id: &BodyId,
 ) -> Option<Vec<&'a Face>> {
-    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
-    if body.kind != cadmpeg_ir::topology::BodyKind::Solid {
-        return None;
-    }
-    let [region_id] = body.regions.as_slice() else {
-        return None;
-    };
-
-    let region = ir
-        .model
-        .regions
-        .iter()
-        .find(|region| region.id == *region_id && region.body == body.id)?;
-    let [shell_id] = region.shells.as_slice() else {
-        return None;
-    };
-
-    let shell = ir
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-    let mut faces = Vec::new();
-    for face_id in shell.faces() {
-        let face = ir
-            .model
-            .faces
-            .iter()
-            .find(|face| face.id == *face_id && face.shell == shell.id)?;
-        faces.push(face);
-    }
-    Some(faces)
-}
-
-pub(super) fn connected_solid_body_exists(ir: &CadIr, body: &cadmpeg_ir::topology::Body) -> bool {
-    let Some(body) = ir
-        .model
-        .bodies
-        .iter()
-        .find(|candidate| candidate.id == body.id)
-    else {
-        return false;
-    };
-    if body.kind != BodyKind::Solid {
-        return false;
-    }
-    let [region_id] = body.regions.as_slice() else {
-        return false;
-    };
-
-    let Some(region) = ir
-        .model
-        .regions
-        .iter()
-        .find(|region| region.id == *region_id && region.body == body.id)
-    else {
-        return false;
-    };
-    let [shell_id] = region.shells.as_slice() else {
-        return false;
-    };
-
-    let Some(shell) = ir
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id == *shell_id && shell.region == region.id)
-    else {
-        return false;
-    };
-    shell.faces().iter().all(|face_id| {
-        ir.model
-            .faces
-            .iter()
-            .any(|face| face.id == *face_id && face.shell == shell.id)
-    })
+    SolidBodyIndex::new(ir).connected_solid_body_faces(body_id)
 }
 
 pub(super) fn selection_indices_native(indices: impl Iterator<Item = u32>) -> String {
@@ -768,12 +732,15 @@ pub(super) fn block_placement(
     {
         return None;
     }
+    let solid_bodies = SolidBodyIndex::new(ir);
     let body = match outputs {
         [body] => body,
         [] => {
             let mut unique = None;
             for candidate in &ir.model.bodies {
-                if connected_solid_body_faces(ir, &candidate.id).is_some()
+                if solid_bodies
+                    .connected_solid_body_faces(&candidate.id)
+                    .is_some()
                     && unique.replace(&candidate.id).is_some()
                 {
                     return None;
@@ -784,7 +751,7 @@ pub(super) fn block_placement(
         }
         _ => return None,
     };
-    let faces = connected_solid_body_faces(ir, body)?;
+    let faces = solid_bodies.connected_solid_body_faces(body)?;
     let mut bands = Vec::<PlaneBand>::new();
     for face in faces.iter().copied() {
         let geometry = ir
@@ -911,25 +878,32 @@ pub(super) fn sphere_body_projection(
     cadmpeg_ir::features::FinitePoint3,
     cadmpeg_ir::scalar::PositiveLength,
 )> {
+    let solid_bodies = SolidBodyIndex::new(ir);
     let body = match outputs {
         [body] => body,
         [] => {
+            let sphere_surfaces = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| {
+                    matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Sphere(_))
+                    )
+                })
+                .map(|surface| &surface.id)
+                .collect::<BTreeSet<_>>();
             let mut unique = None;
             for candidate in &ir.model.bodies {
-                let Some(faces) = connected_solid_body_faces(ir, &candidate.id) else {
+                let Some(faces) = solid_bodies.connected_solid_body_faces(&candidate.id) else {
                     continue;
                 };
                 let [face] = &faces[..] else {
                     continue;
                 };
 
-                if !ir.model.surfaces.iter().any(|surface| {
-                    surface.id == face.surface
-                        && matches!(
-                            surface.geometry.solved(),
-                            Some(SolvedSurfaceGeometry::Sphere(_))
-                        )
-                }) {
+                if !sphere_surfaces.contains(&face.surface) {
                     continue;
                 }
                 if unique.replace(&candidate.id).is_some() {
@@ -941,7 +915,7 @@ pub(super) fn sphere_body_projection(
         }
         _ => return None,
     };
-    let faces = connected_solid_body_faces(ir, body)?;
+    let faces = solid_bodies.connected_solid_body_faces(body)?;
     let [face] = &faces[..] else {
         return None;
     };
@@ -1518,10 +1492,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
 /// replayable parametric construction; without a closed result-body relation,
 /// retaining the native definition preserves the unresolved history edge.
 pub(super) fn brep_feature_definition(outputs: &[BodyId]) -> Option<FeatureDefinition> {
-    for (index, body) in outputs.iter().enumerate() {
-        if outputs[..index].contains(body) {
-            return None;
-        }
+    if !super::all_distinct(outputs) {
+        return None;
     }
     (!outputs.is_empty()).then_some(FeatureDefinition::Operation(
         FeatureOperation::StoredGeometry {},
@@ -1613,6 +1585,7 @@ pub(super) fn simple_hole_operations(
     groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
     operation_positions: &BTreeMap<&str, usize>,
 ) -> Option<Vec<String>> {
+    let templates_per_operation = hole_templates_per_operation(templates);
     let mut ordered_templates = Vec::new();
     for template in templates {
         if template.form != crate::native::features::holes::SimpleHoleForm::Simple
@@ -1621,11 +1594,7 @@ pub(super) fn simple_hole_operations(
             continue;
         }
 
-        if templates
-            .iter()
-            .filter(|candidate| candidate.operation_label == template.operation_label)
-            .count()
-            != 1
+        if templates_per_operation.get(template.operation_label.as_str()) != Some(&1)
             || !operation_positions.contains_key(template.operation_label.as_str())
         {
             return None;
@@ -1687,18 +1656,14 @@ pub(super) fn selected_hole_operations(
     operation_positions: &BTreeMap<&str, usize>,
     accepts: impl Fn(&crate::native::features::holes::FeatureSimpleHoleTemplate) -> bool,
 ) -> Option<Vec<String>> {
+    let templates_per_operation = hole_templates_per_operation(templates);
     let mut operations = Vec::new();
     for template in templates {
         if !accepts(template) {
             continue;
         }
 
-        if templates
-            .iter()
-            .filter(|candidate| candidate.operation_label == template.operation_label)
-            .count()
-            == 1
-        {
+        if templates_per_operation.get(template.operation_label.as_str()) == Some(&1) {
             operations.push(template.operation_label.clone());
         }
     }
@@ -1779,27 +1744,39 @@ pub(super) fn hole_package_projection(
         diameters,
         chamfers,
     } = sources;
+    let mut uses_per_operation = BTreeMap::<&str, usize>::new();
+    let mut uses_per_group = BTreeMap::<&str, usize>::new();
+    for use_ in uses {
+        *uses_per_operation
+            .entry(use_.operation_label.as_str())
+            .or_default() += 1;
+        *uses_per_group
+            .entry(use_.simple_hole_construction_group.as_str())
+            .or_default() += 1;
+    }
+    let mut groups_by_id = BTreeMap::new();
+    for group in groups {
+        groups_by_id.entry(group.id.as_str()).or_insert(group);
+    }
+    let mut templates_by_operation = BTreeMap::new();
+    for template in templates {
+        templates_by_operation
+            .entry(template.operation_label.as_str())
+            .and_modify(|existing| *existing = None)
+            .or_insert(Some(template));
+    }
+    let mut axis_placements = BTreeMap::<&BodyId, Vec<HolePlacement>>::new();
     let mut projection = HolePackageProjection::default();
     for use_ in uses {
-        if uses
-            .iter()
-            .filter(|candidate| candidate.operation_label == use_.operation_label)
-            .count()
-            != 1
-            || uses
-                .iter()
-                .filter(|candidate| {
-                    candidate.simple_hole_construction_group == use_.simple_hole_construction_group
-                })
-                .count()
-                != 1
+        if uses_per_operation.get(use_.operation_label.as_str()) != Some(&1)
+            || uses_per_group.get(use_.simple_hole_construction_group.as_str()) != Some(&1)
         {
             continue;
         }
 
-        let Some(group) = groups
-            .iter()
-            .find(|group| group.id == use_.simple_hole_construction_group)
+        let Some(group) = groups_by_id
+            .get(use_.simple_hole_construction_group.as_str())
+            .copied()
         else {
             continue;
         };
@@ -1815,15 +1792,14 @@ pub(super) fn hole_package_projection(
         let mut requests_no_treatment = true;
         let mut complete_templates = true;
         for member in group.members.iter() {
-            let mut matches = templates
-                .iter()
-                .filter(|template| template.operation_label == member.operation_label);
-            let Some(template) = matches.next() else {
+            let Some(Some(template)) = templates_by_operation
+                .get(member.operation_label.as_str())
+                .copied()
+            else {
                 complete_templates = false;
                 break;
             };
-            if matches.next().is_some()
-                || template.form != crate::native::features::holes::SimpleHoleForm::Simple
+            if template.form != crate::native::features::holes::SimpleHoleForm::Simple
                 || template.extent != crate::native::features::holes::SimpleHoleExtent::Through
             {
                 complete_templates = false;
@@ -1916,11 +1892,13 @@ pub(super) fn hole_package_projection(
                 .chamfers
                 .insert(use_.operation_label.clone(), chamfer);
         }
-        let placements = hole_axis_placements_for_body(ir, body);
+        let placements = axis_placements
+            .entry(body)
+            .or_insert_with(|| hole_axis_placements_for_body(ir, body));
         if placements.len() == group.members.len() {
             projection
                 .placements
-                .insert(use_.operation_label.clone(), placements);
+                .insert(use_.operation_label.clone(), placements.clone());
         }
     }
     projection
@@ -1933,11 +1911,19 @@ pub(super) struct HoleBodyProjection {
     pub(super) counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
+fn hole_templates_per_operation(
+    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
+) -> BTreeMap<&str, usize> {
+    let mut counts = BTreeMap::new();
+    for template in templates {
+        *counts.entry(template.operation_label.as_str()).or_default() += 1;
+    }
+    counts
+}
+
 pub(super) fn hole_operations_are_unique(operations: &[String]) -> bool {
-    operations
-        .iter()
-        .enumerate()
-        .all(|(index, operation)| !operations[..index].contains(operation))
+    let mut seen = BTreeSet::new();
+    operations.iter().all(|operation| seen.insert(operation))
 }
 
 pub(super) fn insert_hole_output_body(
@@ -1958,10 +1944,11 @@ pub(super) fn hole_body_projection(
     }
     let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
 
+    let solid_bodies = SolidBodyIndex::new(ir);
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let body_faces = solid_bodies.connected_solid_body_faces(&body)?;
         let bores = cylindrical_face_witnesses(ir, &body_faces)?;
         let radius = bores.first().map(|bore| bore.radius)?;
         if bores.len() != operations.len()
@@ -2000,6 +1987,7 @@ pub(super) fn counterbore_body_projection(
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     let mut counterbores = BTreeMap::new();
+    let solid_bodies = SolidBodyIndex::new(ir);
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             // A counterbore pair has no serialized operation-to-pair relation
@@ -2007,7 +1995,7 @@ pub(super) fn counterbore_body_projection(
             // geometry to history order.
             return Ok(None);
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = solid_bodies.connected_solid_body_faces(&body) else {
             return Ok(None);
         };
         let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
@@ -2049,11 +2037,12 @@ pub(super) fn blind_hole_body_projection(
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     let mut blind_depths = BTreeMap::new();
+    let solid_bodies = SolidBodyIndex::new(ir);
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             return None;
         };
-        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let body_faces = solid_bodies.connected_solid_body_faces(&body)?;
         let witnesses = blind_bore_cylinders(ir, &body_faces)?;
         let [witness] = witnesses.as_slice() else {
             return None;
@@ -2114,12 +2103,13 @@ pub(super) fn counterbore_axis_placements_for_operations(
     let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
         return Ok(BTreeMap::new());
     };
+    let solid_bodies = SolidBodyIndex::new(ir);
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             return Ok(BTreeMap::new());
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = solid_bodies.connected_solid_body_faces(&body) else {
             return Ok(BTreeMap::new());
         };
         let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
@@ -2156,12 +2146,13 @@ pub(super) fn blind_hole_axis_placements_for_operations(
     let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
         return BTreeMap::new();
     };
+    let solid_bodies = SolidBodyIndex::new(ir);
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             return BTreeMap::new();
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = solid_bodies.connected_solid_body_faces(&body) else {
             return BTreeMap::new();
         };
         let Some(witnesses) = blind_bore_cylinders(ir, &body_faces) else {
@@ -2846,9 +2837,12 @@ pub(super) fn hole_operations_by_body(
         return Some(operations_by_body);
     }
 
+    let solid_bodies = SolidBodyIndex::new(ir);
     let mut selected = None;
     for body in &ir.model.bodies {
-        if connected_solid_body_exists(ir, body) && selected.replace(body).is_some() {
+        if solid_bodies.connected_solid_body_faces(&body.id).is_some()
+            && selected.replace(body).is_some()
+        {
             return None;
         }
     }
@@ -2866,6 +2860,7 @@ pub(super) fn simple_hole_chamfers(
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HoleKind>, CodecError> {
+    let templates_per_operation = hole_templates_per_operation(templates);
     let mut operations = Vec::new();
     for template in templates {
         if !(template.form == crate::native::features::holes::SimpleHoleForm::Simple
@@ -2878,12 +2873,7 @@ pub(super) fn simple_hole_chamfers(
             continue;
         }
 
-        if templates
-            .iter()
-            .filter(|candidate| candidate.operation_label == template.operation_label)
-            .count()
-            != 1
-        {
+        if templates_per_operation.get(template.operation_label.as_str()) != Some(&1) {
             continue;
         }
         operations.push(template.operation_label.clone());
@@ -2899,8 +2889,9 @@ pub(super) fn simple_hole_chamfers(
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut treatments = BTreeMap::new();
+    let solid_bodies = SolidBodyIndex::new(ir);
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let Some(body_faces) = solid_bodies.connected_solid_body_faces(&body) else {
             return Ok(BTreeMap::new());
         };
         let Some(bores) = cylindrical_face_witnesses(ir, &body_faces) else {

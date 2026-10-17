@@ -12,12 +12,19 @@ use super::EvaluationFailure;
 
 const INDEPENDENT_EVALUATION_DEPTH: usize = 256;
 
-/// Local work cap for one model evaluation under a decode session.
+/// Local work cap for one model evaluation that runs without a caller's slice.
 ///
 /// Model carriers may share a support below two readers, and the cycle check
 /// covers only the active path, so a carrier chain stated by a few records
-/// can request work exponential in the session's nesting depth.
+/// can request work exponential in its nesting depth.
 const MAX_MODEL_EVALUATION_WORK: usize = 1 << 24;
+
+/// Local work cap for the model evaluations of one validation pass.
+///
+/// Each evaluation of the pass runs under a slice of at most
+/// [`MAX_MODEL_EVALUATION_WORK`] drawn from this allowance, so many readers of
+/// one costly carrier do not multiply the per-evaluation cap.
+const MAX_MODEL_PASS_EVALUATION_WORK: usize = 1 << 30;
 
 /// Why an evaluation work charge was not admitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +67,8 @@ impl EvaluationRefusal {
 pub enum EvaluationAdmission<'ctx, 'arena> {
     /// Count nesting against this live decode context.
     Decode(&'ctx DecodeContext<'arena>),
-    /// Use an independent depth limit of 256.
+    /// Use an independent depth limit of 256 and, for a model evaluation, a
+    /// fresh work slice.
     Standard,
     /// Evaluate within a work slice established by `within_work_slice`.
     WorkSlice(EvaluationWorkSlice<'ctx, 'arena>),
@@ -73,10 +81,12 @@ pub struct EvaluationWorkSlice<'ctx, 'arena> {
 }
 
 /// A session slice counts each evaluation step; an independent slice counts
-/// the stored representation's evaluation cost.
+/// the stored representation's evaluation cost. A standalone slice counts
+/// each step with no decode session behind it.
 #[derive(Clone, Copy)]
 enum WorkSlicePolicy<'ctx, 'arena> {
     Independent(&'ctx WorkBudget),
+    Standalone(&'ctx WorkBudget),
     Session {
         context: &'ctx DecodeContext<'arena>,
         work: &'ctx WorkBudget,
@@ -91,7 +101,7 @@ impl<'ctx, 'arena> From<&'ctx DecodeContext<'arena>> for EvaluationAdmission<'ct
 
 impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     /// Model carriers share the caller's depth, cycle path and work slice.
-    /// A decode admission without a slice evaluates under a fresh slice of
+    /// An admission without a slice evaluates under a fresh slice of
     /// [`MAX_MODEL_EVALUATION_WORK`].
     pub(super) fn within_model<T, R>(
         self,
@@ -104,23 +114,39 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             scratch.unless_refused()?;
             let result = run(admission);
             let result = match admission.work_slice() {
-                Some(_) => super::ModelEvaluationDepthGuard::finish_budgeted(admission, result),
+                Some(_) => super::ModelEvaluationDepthGuard::finish_sliced(admission, result),
                 None => result,
             };
             scratch.settle(result)
         };
-        if let Self::Decode(_) = self {
-            let work = WorkBudget::new(MAX_MODEL_EVALUATION_WORK);
-            self.within_work_slice(&work, evaluate)
-        } else {
-            evaluate(self)
+        let work = WorkBudget::new(MAX_MODEL_EVALUATION_WORK);
+        match self {
+            Self::Decode(_) => self.within_work_slice(&work, evaluate),
+            Self::Standard => evaluate(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
+                policy: WorkSlicePolicy::Standalone(&work),
+            })),
+            Self::WorkSlice(_) => evaluate(self),
+        }
+    }
+
+    /// An independent slice counts no evaluation steps, so a cycle ends its
+    /// walk by exhausting it.
+    pub(super) fn independent_work_slice(self) -> Option<&'ctx WorkBudget> {
+        match self {
+            Self::WorkSlice(EvaluationWorkSlice {
+                policy: WorkSlicePolicy::Independent(work),
+            }) => Some(work),
+            _ => None,
         }
     }
 
     pub(super) fn work_slice(self) -> Option<&'ctx WorkBudget> {
         match self {
             Self::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Independent(work) | WorkSlicePolicy::Session { work, .. },
+                policy:
+                    WorkSlicePolicy::Independent(work)
+                    | WorkSlicePolicy::Standalone(work)
+                    | WorkSlicePolicy::Session { work, .. },
             }) => Some(work),
             Self::Decode(_) | Self::Standard => None,
         }
@@ -168,9 +194,17 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                 session_refusal(context)?;
                 result
             }
-            None => run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Independent(parent),
-            })),
+            None => {
+                let policy = match self {
+                    Self::WorkSlice(EvaluationWorkSlice {
+                        policy: WorkSlicePolicy::Standalone(_),
+                    }) => WorkSlicePolicy::Standalone(parent),
+                    _ => WorkSlicePolicy::Independent(parent),
+                };
+                run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
+                    policy,
+                }))
+            }
         }
     }
 
@@ -182,7 +216,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                 policy: WorkSlicePolicy::Session { context, .. },
             }) => Some(context),
             Self::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Independent(_),
+                policy: WorkSlicePolicy::Independent(_) | WorkSlicePolicy::Standalone(_),
             }) => None,
         }
     }
@@ -202,13 +236,13 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
         }
     }
 
-    /// Count evaluation steps against a session slice. A slice that cannot
-    /// cover them is [`EvaluationRefusal::WorkExhausted`] unless the session
-    /// refused behind it; the session stays unrefused.
+    /// Count evaluation steps against a session or standalone slice. A slice
+    /// that cannot cover them is [`EvaluationRefusal::WorkExhausted`] unless
+    /// the session refused behind it; the session stays unrefused.
     pub(super) fn work(self, count: usize) -> Result<(), EvaluationRefusal> {
         match self {
             Self::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Session { work, .. },
+                policy: WorkSlicePolicy::Session { work, .. } | WorkSlicePolicy::Standalone(work),
             }) if !work.charge_by(count) => Err(self.exhausted()),
             _ => Ok(()),
         }
@@ -223,7 +257,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             .map(EvaluationRefusal::ResourceLimit);
         match self {
             Self::WorkSlice(EvaluationWorkSlice {
-                policy: WorkSlicePolicy::Session { work, .. },
+                policy: WorkSlicePolicy::Session { work, .. } | WorkSlicePolicy::Standalone(work),
             }) if work.exhausted() => refusal.or(Some(EvaluationRefusal::WorkExhausted)),
             _ => refusal,
         }
@@ -272,6 +306,82 @@ fn session_refusal<R>(context: &DecodeContext<'_>) -> Result<(), EvaluationFailu
     context
         .resource_refusal()
         .map_or(Ok(()), |limit| Err(EvaluationFailure::ResourceLimit(limit)))
+}
+
+/// The model evaluation work of one validation pass.
+///
+/// An evaluation that runs out of its slice reports
+/// [`EvaluationFailure::WorkExhausted`]; the pass and the decode session go
+/// on, and the pass counts it against the cap that ran out.
+pub(crate) struct ModelEvaluationPass {
+    allowance: WorkBudget,
+    capped: Cell<usize>,
+    starved: Cell<usize>,
+}
+
+impl ModelEvaluationPass {
+    pub(crate) fn new() -> Self {
+        Self::with_allowance(MAX_MODEL_PASS_EVALUATION_WORK)
+    }
+
+    fn with_allowance(allowance: usize) -> Self {
+        Self {
+            allowance: WorkBudget::new(allowance),
+            capped: Cell::new(0),
+            starved: Cell::new(0),
+        }
+    }
+
+    /// Run one model evaluation under a slice of the pass allowance.
+    pub(crate) fn evaluate<T, R>(
+        &self,
+        admission: EvaluationAdmission<'_, '_>,
+        run: impl for<'slice> FnOnce(
+            EvaluationAdmission<'slice, 'slice>,
+        ) -> Result<T, EvaluationFailure<R>>,
+    ) -> Result<T, EvaluationFailure<R>> {
+        let slice = self.allowance.child_slice(MAX_MODEL_EVALUATION_WORK);
+        let full = slice.remaining() == MAX_MODEL_EVALUATION_WORK;
+        let result = admission.within_work_slice(&slice, run);
+        let ran_out = slice.exhausted();
+        // The slice is no larger than the allowance's remainder, so the
+        // transfer fits; an allowance it empties refuses the next slice.
+        let transferred = self.allowance.consume_child(&slice).is_ok();
+        if ran_out || !transferred {
+            let count = if full { &self.capped } else { &self.starved };
+            count.set(count.get() + 1);
+        }
+        result
+    }
+
+    /// One warning per cap that skipped an evaluation of this pass.
+    pub(crate) fn report(&self, findings: &mut Vec<crate::report::check::Finding>) {
+        for (count, cap, limit) in [
+            (
+                self.capped.get(),
+                "MAX_MODEL_EVALUATION_WORK",
+                MAX_MODEL_EVALUATION_WORK,
+            ),
+            (
+                self.starved.get(),
+                "MAX_MODEL_PASS_EVALUATION_WORK",
+                MAX_MODEL_PASS_EVALUATION_WORK,
+            ),
+        ] {
+            if count > 0 {
+                findings.push(crate::report::check::Finding {
+                    check: crate::report::check::Check::GeometricConsistency,
+                    severity: crate::report::Severity::Warning,
+                    message: format!(
+                        "{count} model carrier evaluations reached the local work cap {cap} \
+                         ({limit} steps); their geometric consistency checks were skipped"
+                    ),
+                    entity: None,
+                    related: Vec::new(),
+                });
+            }
+        }
+    }
 }
 
 impl crate::ids::comparison::sealed::TextWork for EvaluationAdmission<'_, '_> {}
@@ -610,6 +720,95 @@ mod tests {
         };
         assert!(evaluate(2).is_ok());
         assert_eq!(evaluate(18), Err(EvaluationFailure::WorkExhausted));
+    }
+
+    #[test]
+    fn standard_model_evaluation_has_a_local_work_cap() {
+        let evaluate = |levels| {
+            let (ir, curve) = doubling_model(levels);
+            let index = crate::index::ModelIndex::build(&ir);
+            crate::eval::model_curve_point_by_id(EvaluationAdmission::Standard, &index, &curve, 0.5)
+        };
+        assert!(evaluate(2).is_ok());
+        assert_eq!(evaluate(18), Err(EvaluationFailure::WorkExhausted));
+    }
+
+    #[test]
+    fn validation_pass_evaluations_share_one_allowance() {
+        const EVALUATIONS: usize = 1 << 12;
+        let (ir, curve) = doubling_model(18);
+        let index = crate::index::ModelIndex::build(&ir);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let evaluate = |pass: &super::ModelEvaluationPass, index, curve| {
+            pass.evaluate(EvaluationAdmission::Decode(&ctx), |admission| {
+                crate::eval::model_curve_point_by_id(admission, index, curve, 0.5)
+            })
+        };
+        // One evaluation uses up a full slice, the next a slice of one step;
+        // the rest find the allowance empty and stop at their first step.
+        let pass = super::ModelEvaluationPass::with_allowance(super::MAX_MODEL_EVALUATION_WORK + 1);
+        for _ in 0..EVALUATIONS {
+            assert_eq!(
+                evaluate(&pass, &index, &curve),
+                Err(EvaluationFailure::WorkExhausted)
+            );
+        }
+        assert_eq!(pass.allowance.remaining(), 0);
+        let (cheap_ir, cheap_curve) = doubling_model(2);
+        let cheap_index = crate::index::ModelIndex::build(&cheap_ir);
+        assert_eq!(
+            evaluate(&pass, &cheap_index, &cheap_curve),
+            Err(EvaluationFailure::WorkExhausted)
+        );
+        let mut findings = Vec::new();
+        pass.report(&mut findings);
+        let messages: Vec<_> = findings
+            .iter()
+            .map(|finding| (finding.severity, finding.message.as_str()))
+            .collect();
+        assert_eq!(
+            messages,
+            [
+                (
+                    crate::report::Severity::Warning,
+                    "1 model carrier evaluations reached the local work cap \
+                     MAX_MODEL_EVALUATION_WORK (16777216 steps); their geometric consistency \
+                     checks were skipped"
+                ),
+                (
+                    crate::report::Severity::Warning,
+                    "4096 model carrier evaluations reached the local work cap \
+                     MAX_MODEL_PASS_EVALUATION_WORK (1073741824 steps); their geometric \
+                     consistency checks were skipped"
+                ),
+            ]
+        );
+        // A fresh pass evaluates the cheap carrier and reports nothing.
+        let fresh = super::ModelEvaluationPass::new();
+        assert!(evaluate(&fresh, &cheap_index, &cheap_curve).is_ok());
+        let mut findings = Vec::new();
+        fresh.report(&mut findings);
+        assert!(findings.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
+    fn validation_reports_a_capped_endpoint_evaluation_as_skipped() {
+        let (ir, _) = doubling_model(16);
+        let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
+        assert!(report.findings.iter().any(|finding| {
+            finding.severity == crate::report::Severity::Warning
+                && finding.message.contains("MAX_MODEL_EVALUATION_WORK")
+        }));
+        // The capped top intersection is skipped, not reported as a carrier
+        // that does not evaluate.
+        assert!(!report.findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some("test:model:procedural#curve-16")
+                && finding.message.contains("does not evaluate")
+        }));
     }
 
     #[test]

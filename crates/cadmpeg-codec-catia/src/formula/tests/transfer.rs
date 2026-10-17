@@ -1535,3 +1535,78 @@ fn typed_parameter_candidate_carries_source_name_and_entity_ref() {
         Some(entity.id.as_str())
     );
 }
+
+#[test]
+fn formula_output_expression_charges_its_retained_text() {
+    let expression = "#1_-2mm";
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        expression,
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let transfer = |limit: u64| {
+        let mut ir = CadIr::empty();
+        let transferred = crate::test_support::with_retained_limit(limit, |ctx| {
+            crate::formula::transfer_parameters(
+                ctx,
+                &mut ir,
+                &native,
+                &mut cadmpeg_ir::Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        })
+        .map(|_| ());
+        (transferred, ir)
+    };
+    let length = u64::try_from(expression.len()).unwrap();
+
+    let (fits, ir) = transfer(length);
+    fits.expect("the output expression fits its retained text");
+    assert!(ir
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.expression == expression));
+    let (refused, _) = transfer(length - 1);
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = refused else {
+        panic!("the output expression exceeds the retained limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    assert_eq!(limit.operation, "retain CATIA formula output expression");
+}
+
+#[test]
+fn expression_parses_are_shared_by_equal_selections() {
+    let calls = std::cell::Cell::new(0usize);
+    let parse = || {
+        calls.set(calls.get() + 1);
+        Ok(crate::formula::ExpressionParse {
+            type_checked: None,
+            evaluated: None,
+        })
+    };
+    let first = [1_u32, 2];
+    let equal = [1_u32, 2];
+    let other = [3_u32];
+    let mut parses = crate::formula::ExpressionParses::<[u32]>::new();
+    for selection in [&first[..], &equal[..], &first[..]] {
+        parses
+            .get_or_parse("expression", selection, parse)
+            .expect("parse the shared expression");
+    }
+    assert_eq!(calls.get(), 1);
+    parses
+        .get_or_parse("expression", &other, parse)
+        .expect("parse another selection");
+    parses
+        .get_or_parse("other-expression", &first, parse)
+        .expect("parse another expression");
+    assert_eq!(calls.get(), 3);
+}

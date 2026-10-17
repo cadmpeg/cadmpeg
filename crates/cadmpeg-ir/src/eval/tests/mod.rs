@@ -79,6 +79,7 @@ macro_rules! procedural_curve {
 
 mod helix;
 mod law_sweep;
+mod model_index;
 mod overflowing_arms;
 mod overflowing_curve_arms;
 mod pcurves;

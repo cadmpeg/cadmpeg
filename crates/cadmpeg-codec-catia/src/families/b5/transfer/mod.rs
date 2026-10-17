@@ -280,6 +280,7 @@ fn transfer_complete(
             pcurve_uses: &pcurve_uses,
             edge_ids: &edge_id_map,
         },
+        refusal,
         admission,
     )? {
         return Ok(false);

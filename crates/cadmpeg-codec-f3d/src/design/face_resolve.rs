@@ -1057,28 +1057,23 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
-) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+) -> Option<cadmpeg_ir::features::FaceSelection> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
     {
-        return Ok(None);
+        return None;
     }
     if let Some(selection) =
         resolved_historical_split_face_target_group(scope, previous_state_id, group, operands)
     {
-        return Ok(Some(selection));
+        return Some(selection);
     }
-    let Some(faces) = split_face_updated_target_slots(scope, group, operands, updated_face_slots)
-    else {
-        return Ok(None);
-    };
-    let Some(previous_state_id) = previous_state_id else {
-        return Ok(None);
-    };
+    let faces = split_face_updated_target_slots(scope, group, operands, updated_face_slots)?;
+    let previous_state_id = previous_state_id?;
     if faces.is_empty() {
-        return Ok(None);
+        return None;
     }
-    let feature = crate::design::identity::neutral_feature_id(scope)?;
+    let feature = crate::ids::neutral_feature_id(scope);
     let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     let mut historical_faces = Vec::new();
     for face in faces {
@@ -1086,14 +1081,14 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     }
     let native = group.id.clone();
     let fallback_native = native.clone();
-    Ok(Some(
+    Some(
         cadmpeg_ir::features::FaceSelection::historical(
             crate::ids::feature_input_topology_id(&feature, previous_state_id),
             historical_faces,
             native,
         )
         .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(fallback_native)),
-    ))
+    )
 }
 
 fn split_face_updated_target_slots(
@@ -2708,7 +2703,6 @@ mod tests {
             &operands,
             &[10, 20, 30],
         )
-        .expect("resolve the historical split face target group")
         .expect("updated target transition proof");
         let cadmpeg_ir::features::FaceSelection::Historical {
             state,
@@ -2738,7 +2732,6 @@ mod tests {
                 &operands,
                 &[10, 20]
             )
-            .expect("resolve the historical split face target group")
             .is_none()
         );
         assert!(
@@ -2749,7 +2742,6 @@ mod tests {
                 &operands,
                 &[10, 20, 40]
             )
-            .expect("resolve the historical split face target group")
             .is_none()
         );
     }

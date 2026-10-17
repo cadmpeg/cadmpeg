@@ -4113,7 +4113,12 @@ fn t_spl_sur(
     if let EmbeddedTSplineSubtransform::Reference { index, resolved } = &mut subtransform {
         *resolved = propagate_resource!(usize::try_from(*index)
             .ok()
-            .and_then(|index| resolve_t_spline_subtransform(ctx, index, table, &mut Vec::new()))
+            .and_then(|index| resolve_t_spline_subtransform(
+                ctx,
+                index,
+                table,
+                &mut std::collections::HashSet::new()
+            ))
             .transpose());
     }
     if !matches!(cur.peek(), Some(Token::SubtypeClose)) {
@@ -4597,13 +4602,13 @@ fn resolve_t_spline_subtransform(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: usize,
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
 ) -> Option<Result<cadmpeg_ir::geometry::InlineTSplineSubtransform, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM t spline subtransform"));
     if seen.contains(&index) {
         return None;
     }
-    seen.push(index);
+    seen.insert(index);
     let span = table.span(index)?.tokens();
     let start = usize::from(matches!(span.first(), Some(Token::SubtypeOpen)));
     let decoded = propagate_resource!(t_spline_subtransform(&mut Cur::at(span, start))?);
@@ -4627,14 +4632,14 @@ pub fn procedural_surface_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    procedural_resolving_refs(ctx, toks, table, &mut Vec::new())
+    procedural_resolving_refs(ctx, toks, table, &mut std::collections::HashSet::new())
 }
 
 fn procedural_resolving_refs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM procedural surface reference"));
     if let Some(decoded) = defm_spl_sur(toks)
@@ -4692,7 +4697,7 @@ fn procedural_resolving_refs(
         // the stream rather than skipping the reference and reading the one
         // behind it.
         let target = table.span(index)?.tokens();
-        seen.push(index);
+        seen.insert(index);
         if let Some(decoded) = procedural_resolving_refs(ctx, target, table, seen) {
             return Some(decoded);
         }

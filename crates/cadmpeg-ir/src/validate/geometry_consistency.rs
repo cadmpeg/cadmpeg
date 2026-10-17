@@ -3,6 +3,7 @@
 //! topology it supports.
 
 use crate::document::CadIr;
+use crate::eval::admission::{EvaluationAdmission, ModelEvaluationPass};
 use crate::eval::curve_parameter_near_point;
 use crate::eval::model_curve_point_by_id;
 use crate::eval::model_surface_partials_by_id;
@@ -10,7 +11,7 @@ use crate::eval::model_surface_point_by_id;
 use crate::eval::nurbs_pcurve_parameter_domain;
 use crate::eval::pcurve_tangent;
 use crate::eval::EvaluationFailure;
-use crate::features::FinitePoint3;
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::{
     pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -38,6 +39,54 @@ fn measured_point(
     match evaluation {
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
+    }
+}
+
+/// Model evaluations of one validation pass against its model index.
+#[derive(Clone, Copy)]
+struct PassEvaluator<'pass, 'model> {
+    index: &'pass crate::index::ModelIndex<'model>,
+    pass: &'pass ModelEvaluationPass,
+}
+
+impl PassEvaluator<'_, '_> {
+    fn curve_point(
+        self,
+        ctx: &DecodeContext<'_>,
+        curve: &crate::ids::CurveId,
+        parameter: f64,
+    ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+        self.pass
+            .evaluate(EvaluationAdmission::Decode(ctx), |admission| {
+                model_curve_point_by_id(admission, self.index, curve, parameter)
+            })
+    }
+
+    fn surface_point(
+        self,
+        ctx: &DecodeContext<'_>,
+        surface: &crate::ids::SurfaceId,
+        u: f64,
+        v: f64,
+    ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+        self.pass
+            .evaluate(EvaluationAdmission::Decode(ctx), |admission| {
+                model_surface_point_by_id(admission, self.index, surface, u, v)
+            })
+    }
+
+    fn surface_partials(
+        self,
+        ctx: &DecodeContext<'_>,
+        surface: &crate::ids::SurfaceId,
+        u: f64,
+        v: f64,
+    ) -> Result<crate::eval::SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>>
+    {
+        self.pass
+            .evaluate(EvaluationAdmission::Decode(ctx), |admission| {
+                model_surface_partials_by_id(admission, self.index, surface, u, v)
+            })
     }
 }
 
@@ -75,9 +124,14 @@ fn procedural_support_allowance(
 pub(super) fn check_procedural_support_consistency(
     ctx: &DecodeContext<'_>,
     index: &crate::index::ModelIndex<'_>,
+    evaluations: &ModelEvaluationPass,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let ir = index.ir();
+    let model = PassEvaluator {
+        index,
+        pass: evaluations,
+    };
     let curves = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             add(curve.id.as_str(), &curve.geometry)?;
@@ -101,15 +155,16 @@ pub(super) fn check_procedural_support_consistency(
             let evaluated = parameterization
                 .parameter_range()
                 .endpoints()
-                .map(|parameter| {
-                    measured_point(model_curve_point_by_id(
-                        crate::eval::admission::EvaluationAdmission::Decode(ctx),
-                        index,
-                        owner,
-                        parameter,
-                    ))
-                });
-            let [Some(start), Some(end)] = [evaluated[0]?, evaluated[1]?] else {
+                .map(|parameter| model.curve_point(ctx, owner, parameter));
+            // The pass reports an evaluation its work cap skipped.
+            if evaluated
+                .iter()
+                .any(|evaluation| matches!(evaluation, Err(EvaluationFailure::WorkExhausted)))
+            {
+                continue;
+            }
+            let [start, end] = evaluated.map(measured_point);
+            let [Some(start), Some(end)] = [start?, end?] else {
                 super::record_finding(
                     findings,
                     Check::GeometricConsistency,
@@ -178,7 +233,7 @@ pub(super) fn check_procedural_support_consistency(
                         endpoints: [solved_start, solved_end],
                         distance: offset.abs(),
                     },
-                    index,
+                    model,
                     bound,
                     procedural.id.as_str(),
                     findings,
@@ -205,7 +260,7 @@ pub(super) fn check_procedural_support_consistency(
                 ctx,
                 (context, None),
                 SupportEndpointContract::Coincident([base_start, base_end]),
-                index,
+                model,
                 bound,
                 procedural.id.as_str(),
                 findings,
@@ -269,7 +324,7 @@ pub(super) fn check_procedural_support_consistency(
             ctx,
             (&context, third),
             SupportEndpointContract::Coincident([solved_start, solved_end]),
-            index,
+            model,
             bound,
             procedural.id.as_str(),
             findings,
@@ -294,7 +349,7 @@ fn check_support_sides(
         Option<&crate::geometry::IntcurveSupportSide>,
     ),
     contract: SupportEndpointContract,
-    index: &crate::index::ModelIndex<'_>,
+    model: PassEvaluator<'_, '_>,
     bound: f64,
     entity: &str,
     findings: &mut Vec<Finding>,
@@ -329,13 +384,7 @@ fn check_support_sides(
                             uv
                         }
                     };
-                match model_surface_point_by_id(
-                    crate::eval::admission::EvaluationAdmission::Decode(ctx),
-                    index,
-                    surface_id,
-                    uv.u,
-                    uv.v,
-                ) {
+                match model.surface_point(ctx, surface_id, uv.u, uv.v) {
                     Ok(point) => Ok(Some(point.get())),
                     Err(failure) => failure.non_finite(),
                 }
@@ -553,9 +602,14 @@ pub(super) fn check_edge_endpoint_consistency(
 pub(super) fn check_pcurve_surface_consistency(
     ctx: &DecodeContext<'_>,
     index: &crate::index::ModelIndex<'_>,
+    evaluations: &ModelEvaluationPass,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let ir = index.ir();
+    let model = PassEvaluator {
+        index,
+        pass: evaluations,
+    };
     let curves = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             add(curve.id.as_str(), &curve.geometry)?;
@@ -690,7 +744,7 @@ pub(super) fn check_pcurve_surface_consistency(
         // interval. Check the declared interval, then recover a mapped
         // interval when the carrier needs another endpoint witness.
         let surface_context = SurfacePcurveContext {
-            index,
+            model,
             surface_id: &face.surface,
             geometry,
         };
@@ -736,9 +790,8 @@ pub(super) fn check_pcurve_surface_consistency(
                     Ok(uv) => Ok(Some(uv.get())),
                     Err(failure) => failure.non_finite(),
                 };
-                let surface_point = |uv: crate::math::Point2| match model_surface_point_by_id(
-                    crate::eval::admission::EvaluationAdmission::Decode(ctx),
-                    index,
+                let surface_point = |uv: crate::math::Point2| match model.surface_point(
+                    ctx,
                     &face.surface,
                     uv.u,
                     uv.v,
@@ -835,7 +888,7 @@ fn pcurve_parameter_ranges(
 }
 
 struct SurfacePcurveContext<'index, 'model> {
-    index: &'index crate::index::ModelIndex<'model>,
+    model: PassEvaluator<'index, 'model>,
     surface_id: &'index crate::ids::SurfaceId,
     geometry: &'index SurfaceGeometry,
 }
@@ -980,13 +1033,9 @@ fn mapped_pcurve_parameter_near_point(
         let evaluated = if matches!(context.geometry, SurfaceGeometry::Solved(_)) {
             crate::eval::decode::surface_point(ctx, context.geometry, uv.u, uv.v)
         } else {
-            model_surface_point_by_id(
-                crate::eval::admission::EvaluationAdmission::Decode(ctx),
-                context.index,
-                context.surface_id,
-                uv.u,
-                uv.v,
-            )
+            context
+                .model
+                .surface_point(ctx, context.surface_id, uv.u, uv.v)
         };
         match evaluated {
             Ok(point) => Ok(Some(point.get())),
@@ -1010,13 +1059,9 @@ fn mapped_pcurve_parameter_near_point(
         let evaluated = if matches!(context.geometry, SurfaceGeometry::Solved(_)) {
             crate::eval::surface_partials(ctx, context.geometry, uv.u, uv.v)
         } else {
-            model_surface_partials_by_id(
-                crate::eval::admission::EvaluationAdmission::Decode(ctx),
-                context.index,
-                context.surface_id,
-                uv.u,
-                uv.v,
-            )
+            context
+                .model
+                .surface_partials(ctx, context.surface_id, uv.u, uv.v)
         };
         let partials = match evaluated {
             Ok(partials) => partials,

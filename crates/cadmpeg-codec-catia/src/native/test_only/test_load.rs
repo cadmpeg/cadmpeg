@@ -50,7 +50,7 @@ use crate::native::{
     CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
     CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
     CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
-    CatiaZeroEntityVertexIncidence, EntityIncidenceIndex,
+    CatiaZeroEntityVertexIncidence, EntityIncidenceIndex, RelationDependencies,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -255,14 +255,22 @@ impl CatiaNative {
                         let selectors = entity_table::parse_definition_schema_selectors(
                             entity.definition_prefix(),
                         );
-                        entity.definition_schema_selections
-                            != definition_schema_selections(&selectors, catalog)
+                        crate::test_support::with_service_context(|ctx| {
+                            definition_schema_selections(ctx, &selectors, catalog)
+                        })
+                        .ok()
+                        .as_ref()
+                            != Some(&entity.definition_schema_selections)
                     })
                     || graph_entities.iter().any(|entity| {
                         let fields = entity.value_fields();
                         let packets = entity.value_packets(&fields);
-                        entity.value_schema_selections
-                            != entity_value_schema_selections(&fields, catalog, &packets)
+                        crate::test_support::with_service_context(|ctx| {
+                            entity_value_schema_selections(ctx, &fields, catalog, &packets)
+                        })
+                        .ok()
+                        .as_ref()
+                            != Some(&entity.value_schema_selections)
                     })
                     || graph_entities.iter().any(|entity| {
                         let fields = entity.value_fields();
@@ -277,8 +285,12 @@ impl CatiaNative {
                             != entity_suffix_framing(entity.record_suffix()).as_ref()
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.suffix_schema_selection
-                            != entity_suffix_schema_selection(entity.suffix_value(), catalog)
+                        crate::test_support::with_service_context(|ctx| {
+                            entity_suffix_schema_selection(ctx, entity.suffix_value(), catalog)
+                        })
+                        .ok()
+                        .as_ref()
+                            != Some(&entity.suffix_schema_selection)
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.range_interval
@@ -297,18 +309,23 @@ impl CatiaNative {
                             .find(|record| record.id == entity.object_record);
                         entity.object_production
                             != object.and_then(|object| {
-                                object_production(
-                                    entity,
-                                    object,
-                                    &CatiaEntityReferenceIndex {
-                                        entities: &entities_by_graph_identity,
-                                        classes: &entity_classes_by_graph_identity,
-                                        terminal_nulls: &terminal_nulls_by_graph,
-                                    },
-                                    &relation_expressions,
-                                    &relation_expression_entities,
-                                    &parameter_bindings,
-                                )
+                                crate::test_support::with_service_context(|ctx| {
+                                    object_production(
+                                        ctx,
+                                        entity,
+                                        object,
+                                        &CatiaEntityReferenceIndex {
+                                            entities: &entities_by_graph_identity,
+                                            classes: &entity_classes_by_graph_identity,
+                                            terminal_nulls: &terminal_nulls_by_graph,
+                                        },
+                                        &relation_expressions,
+                                        &relation_expression_entities,
+                                        &mut RelationDependencies::new(&parameter_bindings),
+                                    )
+                                })
+                                .ok()
+                                .flatten()
                             })
                     })
                     || graph_entities.windows(2).any(|pair| {
@@ -442,7 +459,14 @@ impl CatiaNative {
                 .schema_selections
                 .sort_by_key(|selection| selection.offset);
         }
-        let design_objects = design_objects(&graphs, &entity_records);
+        let design_objects = crate::test_support::with_service_context(|ctx| {
+            design_objects(ctx, &graphs, &entity_records)
+        })
+        .map_err(|error| {
+            cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "CATIA design objects do not rederive: {error}"
+            ))
+        })?;
         let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
         let stored_by_id = stored
             .iter()

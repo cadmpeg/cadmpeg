@@ -58,7 +58,7 @@ fn parse_extrusion_surface_with_context(
 #[test]
 fn contiguous_object_population_borrows_source_bytes() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let populations = object_stream_populations(&bytes);
+    let populations = object_stream_populations(&bytes, &mut crate::nurbs::LaneRefusals::new());
     assert_eq!(populations.len(), 1);
     assert!(matches!(populations[0], std::borrow::Cow::Borrowed(_)));
     assert_eq!(populations[0].as_ptr(), bytes.as_ptr());
@@ -75,7 +75,7 @@ fn attached_population_bytes_append_the_detached_frame() {
     bytes.drain(isolated.start..isolated.end);
     bytes.push(0xff);
     bytes.extend_from_slice(&original[isolated.start..isolated.end]);
-    let populations = object_stream_populations(&bytes);
+    let populations = object_stream_populations(&bytes, &mut crate::nurbs::LaneRefusals::new());
     assert_eq!(populations.len(), 1);
     assert!(matches!(populations[0], std::borrow::Cow::Owned(_)));
     let expected = original[..isolated.start]
@@ -87,11 +87,87 @@ fn attached_population_bytes_append_the_detached_frame() {
     assert_eq!(&*populations[0], expected);
 }
 
+/// `surfaces` isolated surface frames, then `runs` topology runs whose faces
+/// each reference every surface. Every run is separated from the next.
+fn runs_sharing_isolated_surfaces(surfaces: u32, runs: u32) -> (Vec<u8>, Vec<u8>) {
+    const LOOP: u32 = 9;
+    let mut bytes = Vec::new();
+    let mut surface_frames = Vec::new();
+    for surface in 0..surfaces {
+        let start = bytes.len();
+        crate::test_support::test_b5::append_b5_record(&mut bytes, 0x27, 100 + surface, &[0; 200]);
+        surface_frames.extend_from_slice(&bytes[start..]);
+        bytes.push(0xff);
+    }
+    for run in 0..runs {
+        for surface in 0..surfaces {
+            let mut face = vec![0x82];
+            face.extend_from_slice(&crate::test_support::test_b5::b5_object_ref(100 + surface));
+            face.extend_from_slice(&crate::test_support::test_b5::b5_object_ref(LOOP));
+            face.push(0x05);
+            let id = 1000 + run * surfaces + surface;
+            crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, id, &face);
+        }
+        bytes.push(0xff);
+    }
+    (bytes, surface_frames)
+}
+
+#[test]
+fn shared_isolated_surfaces_attach_until_the_stream_allowance() {
+    const RUNS: usize = 16;
+    let (bytes, surface_frames) = runs_sharing_isolated_surfaces(4, 16);
+    let allowance = bytes.len() * crate::families::b5::graph::MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE;
+    let attached_runs = allowance / surface_frames.len();
+    assert!(attached_runs > 0 && attached_runs < RUNS);
+
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let populations = object_stream_populations(&bytes, &mut refusal);
+    assert_eq!(populations.len(), RUNS);
+    for (index, population) in populations.iter().enumerate() {
+        if index < attached_runs {
+            assert!(matches!(population, std::borrow::Cow::Owned(_)));
+            assert!(population.ends_with(&surface_frames));
+        } else {
+            assert!(matches!(population, std::borrow::Cow::Borrowed(_)));
+        }
+    }
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one bounded stream");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::TopologyB5PopulationBounded.kind()
+    );
+    assert!(note
+        .message
+        .contains(&format!("{} topology runs were read", RUNS - attached_runs)));
+
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    crate::test_support::with_service_context(|ctx| topology_runs(ctx, &bytes, &mut refusal))
+        .expect("resolve topology runs");
+    let notes = refusal.take_notes();
+    assert!(notes
+        .iter()
+        .any(|note| note.code == crate::loss::CatiaLossCode::TopologyB5PopulationBounded.kind()));
+}
+
+#[test]
+fn isolated_surfaces_within_the_allowance_attach_without_a_loss() {
+    let (bytes, surface_frames) = runs_sharing_isolated_surfaces(4, 1);
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let populations = object_stream_populations(&bytes, &mut refusal);
+    assert_eq!(populations.len(), 1);
+    assert!(populations[0].ends_with(&surface_frames));
+    assert_eq!(refusal.note_count(), 0);
+}
+
 #[test]
 fn opaque_object_payload_bytes_form_one_population() {
     let mut bytes = Vec::new();
     crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 7, &[0; 200]);
-    let populations = object_stream_populations(&bytes);
+    let populations = object_stream_populations(&bytes, &mut crate::nurbs::LaneRefusals::new());
     assert_eq!(populations.len(), 1);
     assert_eq!(&*populations[0], bytes);
 }
@@ -462,7 +538,10 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
         .expect("parse the B5 graph"),
         Some(expected)
     );
-    assert_eq!(object_stream_populations(&separated).len(), 1);
+    assert_eq!(
+        object_stream_populations(&separated, &mut crate::nurbs::LaneRefusals::new()).len(),
+        1
+    );
 }
 
 #[test]
@@ -493,7 +572,10 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
         .expect("parse the B5 graph"),
         Some(expected)
     );
-    assert_eq!(object_stream_populations(&separated).len(), 2);
+    assert_eq!(
+        object_stream_populations(&separated, &mut crate::nurbs::LaneRefusals::new()).len(),
+        2
+    );
 }
 
 #[test]
@@ -1419,7 +1501,7 @@ fn populations_split_each_logical_stream_run() {
         bytes.extend_from_slice(&triangle);
         bytes.extend_from_slice(&[0; 16]);
     }
-    let populations = object_stream_populations(&bytes);
+    let populations = object_stream_populations(&bytes, &mut crate::nurbs::LaneRefusals::new());
     assert_eq!(populations.len(), 16);
     assert!(populations.iter().all(|population| *population == triangle));
 }

@@ -1334,7 +1334,7 @@ mod tests {
             }],
             ..F3dNative::default()
         };
-        let attributes = AttributeIndex::new(&target, &native).unwrap();
+        let attributes = AttributeIndex::new(&target, &native);
         let error = validate_source_less_design_links(&target, &native, &attributes)
             .expect_err("unset native evaluation must not coexist with a neutral tolerance");
         assert!(matches!(error, CodecError::InvalidInput(_)));
