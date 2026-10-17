@@ -4933,15 +4933,13 @@ fn attach_standard_topology(
         surface_indices.insert(id, index);
     }
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
-    let face_point_membership =
+    let point_faces =
         standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
             .map_err(StandardTopologyError::Codec)?;
     let point_on_face = |face: usize, point: usize| {
-        face_point_membership
-            .get(face)
-            .and_then(|points| points.get(point))
-            .copied()
-            .unwrap_or(false)
+        point_faces
+            .get(point)
+            .is_some_and(|faces| faces.binary_search(&face).is_ok())
     };
     let limit_curve_bindings = standard_limit_curve_bindings(
         ctx,
@@ -5269,14 +5267,6 @@ fn attach_standard_topology(
             refusal,
         )
         .map_err(StandardTopologyError::Codec)?;
-        let point_faces = if supports
-            .iter()
-            .any(|support| support.faces[0] == support.faces[1])
-        {
-            standard_point_faces(&face_point_membership, &ir.model.points)
-        } else {
-            Vec::new()
-        };
         let mut allowed_faces = Vec::new();
         for (edge, support) in supports.iter().enumerate() {
             let mut faces = Vec::new();
@@ -7719,7 +7709,8 @@ fn face_surface<'a>(
     ir.model.surfaces.get(*surface_indices.get(id)?)
 }
 
-/// Cache the exact face-membership predicate used by endpoint search.
+/// Cache the exact face-membership predicate used by endpoint search: the
+/// faces that hold each point, in ascending face order.
 ///
 /// Face geometry and standard face bounds are immutable while a topology
 /// candidate is searched. The cache changes only lookup cost.
@@ -7729,40 +7720,26 @@ fn standard_face_point_membership(
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
-) -> Result<Vec<Vec<bool>>, cadmpeg_core::CodecError> {
-    let mut memberships =
-        ctx.alloc_filled(bindings.len(), Vec::new(), "catia_face_membership_rows")?;
-    for (face, membership) in memberships.iter_mut().enumerate() {
+) -> Result<Vec<Vec<usize>>, cadmpeg_core::CodecError> {
+    let mut point_faces = ctx.alloc_filled(
+        ir.model.points.len(),
+        Vec::new(),
+        "catia_point_face_membership",
+    )?;
+    for face in 0..bindings.len() {
         let Some(surface) = face_surface(ir, bindings, surface_indices, face) else {
             continue;
         };
         let bounds = face_bounds
             .and_then(|bounds| bounds.get(face).copied())
             .flatten();
-        *membership =
-            ctx.alloc_filled(ir.model.points.len(), false, "catia_face_point_membership")?;
-        for (point, candidate) in ir.model.points.iter().enumerate() {
-            membership[point] =
-                point_on_standard_face(ctx, candidate.position().get(), &surface.geometry, bounds)?;
+        for (faces, candidate) in point_faces.iter_mut().zip(&ir.model.points) {
+            if point_on_standard_face(ctx, candidate.position().get(), &surface.geometry, bounds)? {
+                faces.push(face);
+            }
         }
     }
-    Ok(memberships)
-}
-
-/// Invert the cached face membership: the faces that hold each point, in
-/// ascending face order.
-fn standard_point_faces(memberships: &[Vec<bool>], points: &[Point]) -> Vec<Vec<usize>> {
-    let mut point_faces = vec![Vec::new(); points.len()];
-    for (face, membership) in memberships.iter().enumerate() {
-        for (faces, _) in point_faces
-            .iter_mut()
-            .zip(membership)
-            .filter(|(_, member)| **member)
-        {
-            faces.push(face);
-        }
-    }
-    point_faces
+    Ok(point_faces)
 }
 
 fn point_on_standard_face(
