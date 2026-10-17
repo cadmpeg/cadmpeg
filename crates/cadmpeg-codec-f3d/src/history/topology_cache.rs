@@ -2,6 +2,7 @@
 //! Cache the topology indexes used by historical face and edge recipes.
 use super::cache::SnapshotCache;
 use super::loop_index::LoopIndex;
+use super::selection::EdgeContextIndex;
 use crate::history_records::AsmHistoricalTopology;
 use std::collections::{HashMap, HashSet};
 
@@ -15,6 +16,7 @@ pub(super) struct TopologyQueryCache<'a> {
     pub(super) endpoints: SnapshotCache<'a, AsmHistoricalTopology, EdgeEndpoints>,
     pub(super) boundaries: SnapshotCache<'a, AsmHistoricalTopology, BoundaryEdges>,
     pub(super) loops: SnapshotCache<'a, AsmHistoricalTopology, LoopIndex<'a>>,
+    pub(super) edge_contexts: SnapshotCache<'a, AsmHistoricalTopology, EdgeContextIndex<'a>>,
 }
 
 pub(super) struct VertexBoundaryIndex {

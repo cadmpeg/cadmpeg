@@ -2,9 +2,10 @@
 //! Sorted historical row diffs and lazy chain materialization.
 use super::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalEntityDelta, AsmHistoricalEntityTags,
-    AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistoricalRowsDelta, AsmHistoricalSlotRepeat,
-    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
-    AsmTopologyScope, AsmTransitionError,
+    AsmHistoricalPersistentSubentityTag, AsmHistoricalRow, AsmHistoricalRowDelta,
+    AsmHistoricalRowsDelta, AsmHistoricalSlotRepeat, AsmHistoricalTopology,
+    AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmTopologyScope,
+    AsmTransitionError,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::{BTreeMap, BTreeSet};
@@ -183,17 +184,23 @@ impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
 }
 
 fn entity_tags(topology: &AsmHistoricalTopology) -> Vec<AsmHistoricalEntityTags> {
+    group_entity_tags(topology.persistent_subentity_tags.iter().cloned())
+}
+
+fn group_entity_tags(
+    tags: impl IntoIterator<Item = AsmHistoricalPersistentSubentityTag>,
+) -> Vec<AsmHistoricalEntityTags> {
     let mut groups: Vec<AsmHistoricalEntityTags> = Vec::new();
-    for tag in &topology.persistent_subentity_tags {
+    for tag in tags {
         if let Some(last) = groups
             .last_mut()
             .filter(|last| last.entity_ref == tag.entity_ref)
         {
-            last.tags.push(tag.clone());
+            last.tags.push(tag);
         } else {
             groups.push(AsmHistoricalEntityTags {
                 entity_ref: tag.entity_ref,
-                tags: vec![tag.clone()],
+                tags: vec![tag],
             });
         }
     }
@@ -521,7 +528,6 @@ impl AsmHistoricalTransition {
             .point_positions
             .apply(&mut topology.point_positions)?;
         if !self.rows.persistent_subentity_tags.is_empty() {
-            let mut tags = entity_tags(topology);
             if self.rows.persistent_subentity_tags.set.iter().any(|group| {
                 group.tags.is_empty()
                     || group
@@ -531,6 +537,8 @@ impl AsmHistoricalTransition {
             }) {
                 return Err(AsmTransitionError::UnsortedFamily);
             }
+            let mut tags =
+                group_entity_tags(std::mem::take(&mut topology.persistent_subentity_tags));
             self.rows.persistent_subentity_tags.apply(&mut tags)?;
             topology.persistent_subentity_tags =
                 tags.into_iter().flat_map(|group| group.tags).collect();
