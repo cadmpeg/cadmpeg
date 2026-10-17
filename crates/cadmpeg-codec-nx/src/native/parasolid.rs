@@ -2963,25 +2963,17 @@ impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClas
 }
 
 /// Retain named attribute-class declarations from all Parasolid streams.
-///
-/// Also returns the ordinals of the streams whose definition scan reached its
-/// work bound and contributed no definitions.
 pub(super) fn parasolid_attribute_definitions(
     streams: &[Stream],
-) -> Result<(Vec<ParasolidAttributeDefinition>, Vec<u32>), CodecError> {
+) -> Result<Vec<ParasolidAttributeDefinition>, CodecError> {
     let mut records = Vec::new();
-    let mut bounded_streams = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             continue;
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let Some(scanned) = crate::parasolid::attribute_definitions(&stream.inflated) else {
-            bounded_streams.push(ordinal);
-            continue;
-        };
-        for definition in scanned {
+        for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
             let name = definition.name.as_str().to_owned();
             let name = crate::printable_string::PrintableString::new(name)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
@@ -3009,7 +3001,7 @@ pub(super) fn parasolid_attribute_definitions(
             });
         }
     }
-    Ok((records, bounded_streams))
+    Ok(records)
 }
 
 /// Decode every counted type-99 attribute field-name record.

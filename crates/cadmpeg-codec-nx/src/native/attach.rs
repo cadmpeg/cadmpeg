@@ -390,12 +390,6 @@ fn attach_records(
     #[cfg(test)]
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    for stream in &model.parasolid.attribute_definition_scan_bounded_streams {
-        losses.push(NxLossCode::SourceScanBounded.note(format!(
-            "The attribute-definition scan of Parasolid stream #{stream} reached its work bound; \
-             the stream's attribute definitions were skipped."
-        )));
-    }
     for section in &model.om.object_record_identity_bounded_sections {
         losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
             "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \

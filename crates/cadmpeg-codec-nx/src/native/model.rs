@@ -321,8 +321,6 @@ pub(in crate::native) struct ParasolidRecords {
     pub(super) support_uv_records: Vec<ParasolidSupportUvRecord>,
     pub(super) chart_records: Vec<ParasolidChartRecord>,
     pub(super) attribute_definitions: Vec<ParasolidAttributeDefinition>,
-    /// Streams whose attribute-definition scan reached its work bound.
-    pub(super) attribute_definition_scan_bounded_streams: Vec<u32>,
     pub(super) field_names_records: Vec<ParasolidFieldNamesRecord>,
     pub(super) attribute_field_names: Vec<ParasolidAttributeFieldNames>,
     pub(super) entity_51_records: Vec<ParasolidEntity51Record>,
@@ -742,8 +740,7 @@ impl NativeModel {
         let parasolid_term_use_records = parasolid_term_use_records(streams)?;
         let parasolid_support_uv_records = parasolid_support_uv_records(streams)?;
         let parasolid_chart_records = parasolid_chart_records(streams)?;
-        let (parasolid_attribute_definitions, attribute_definition_scan_bounded_streams) =
-            parasolid_attribute_definitions(streams)?;
+        let parasolid_attribute_definitions = parasolid_attribute_definitions(streams)?;
         let parasolid_entity_51_records = parasolid_entity_51_records(streams)?;
         let value_records = parasolid_entity_value_records(streams, &deltas_events.records)?;
         let parasolid_entity_52_integer_records = value_records.integers;
@@ -1407,7 +1404,6 @@ impl NativeModel {
                 support_uv_records: parasolid_support_uv_records,
                 chart_records: parasolid_chart_records,
                 attribute_definitions: parasolid_attribute_definitions,
-                attribute_definition_scan_bounded_streams,
                 field_names_records: parasolid_field_names_records,
                 attribute_field_names: parasolid_attribute_field_names,
                 entity_51_records: parasolid_entity_51_records,
