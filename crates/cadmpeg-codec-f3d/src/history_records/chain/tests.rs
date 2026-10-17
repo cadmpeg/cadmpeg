@@ -876,6 +876,8 @@ fn key_run_replacement_matches_a_keyed_model() {
             }
         }
         let mut family = model.values().flatten().copied().collect::<Vec<_>>();
+        family.shrink_to_fit();
+        let capacity = family.capacity();
         let mut set = Vec::new();
         let mut removed = Vec::new();
         for key in 0..64 {
@@ -904,6 +906,10 @@ fn key_run_replacement_matches_a_keyed_model() {
             family,
             model.values().flatten().copied().collect::<Vec<_>>(),
             "case {case}"
+        );
+        assert!(
+            family.capacity() <= capacity.max(family.len()),
+            "case {case} grew past its rows"
         );
     }
 }

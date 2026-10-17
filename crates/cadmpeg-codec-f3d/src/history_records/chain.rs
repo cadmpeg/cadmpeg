@@ -198,6 +198,16 @@ fn replace_key_runs<'a, R: Clone + 'a>(
     let Some(first) = resized.first().map(|(run, _)| run.start) else {
         return Ok(());
     };
+    let (kept, replacing) = resized
+        .iter()
+        .fold((0, 0), |(kept, replacing), (run, rows)| {
+            (kept + run.len(), replacing + rows.len())
+        });
+    if let Some(growth) = replacing.checked_sub(kept) {
+        family
+            .try_reserve_exact(growth)
+            .map_err(|_| AsmTransitionError::Allocation)?;
+    }
     let mut tail = family.split_off(first).into_iter();
     let mut position = first;
     for (run, rows) in resized {
