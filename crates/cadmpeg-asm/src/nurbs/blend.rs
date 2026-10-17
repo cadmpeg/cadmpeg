@@ -1078,6 +1078,7 @@ pub(super) fn var_blend_spl_sur(
         cur.take_optional_range_value()?.value(),
         cur.take_optional_range_value()?.value(),
     ];
+    let post_pcurve = nullable_embedded_pcurve(&mut cur)?.value();
     let saved = cur.pos();
     let post_curve = if cur.take_ident() == Some("nullbs") {
         None
@@ -1087,7 +1088,6 @@ pub(super) fn var_blend_spl_sur(
         cur.set_pos(post_end);
         Some(post)
     };
-    let post_pcurve = nullable_embedded_pcurve(&mut cur)?.value();
     cur.at_scope_end().then_some(())?;
     let cache = match cache.into_form()? {
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {

@@ -1286,6 +1286,63 @@ mod tests {
     }
 
     #[test]
+    fn post_curve_follows_the_null_post_pcurve() {
+        use crate::sab::{Record, Token};
+        for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {
+            let mut owner = variable_blend_tokens(name, 1);
+            let post = owner.len() - 2;
+            owner.splice(
+                post..=post,
+                [
+                    Token::Ident("nubs".into()),
+                    Token::Long(1),
+                    Token::Enum(0),
+                    Token::Long(2),
+                    Token::Double(0.0),
+                    Token::Long(1),
+                    Token::Double(1.0),
+                    Token::Long(1),
+                    Token::Double(1.0),
+                    Token::Double(2.0),
+                    Token::Double(3.0),
+                    Token::Double(4.0),
+                    Token::Double(5.0),
+                    Token::Double(6.0),
+                ],
+            );
+            let records = [Record {
+                index: 0,
+                name: "spline".into(),
+                tokens: owner.clone().into(),
+                offset: 0,
+                len: 0,
+            }];
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+            let table = SubtypeTable::from_records(&records);
+            let surface =
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(&ctx, &owner, &table)
+                    .unwrap()
+                    .unwrap();
+            let crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::VariableBlend(
+                construction,
+            ) = surface.definition()
+            else {
+                panic!("{name}: expected a variable blend");
+            };
+            assert!(construction.post_pcurve.is_none(), "{name}");
+            let post_curve = construction.post_curve.as_ref().expect("post curve");
+            assert_eq!(
+                post_curve.control_points()[1].get(),
+                cadmpeg_ir::math::Point3::new(40., 50., 60.),
+                "{name}"
+            );
+            assert!(super::surface_cache_resolving_refs(&ctx, &owner, &table).is_some());
+        }
+    }
+
+    #[test]
     fn untyped_variable_blend_cache_is_rejected_for_owner_and_alias() {
         use crate::sab::{Record, Token};
         for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {

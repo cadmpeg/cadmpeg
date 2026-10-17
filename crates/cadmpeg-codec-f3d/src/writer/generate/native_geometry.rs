@@ -4135,6 +4135,7 @@ fn encode_native_variable_blend(
             native_f64(bytes, value);
         }
     }
+    native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
     if let Some(post_curve) = &construction.post_curve {
         let post_range = match construction.post_range {
             [Some(lower), Some(upper)] => Some([lower, upper]),
@@ -4145,7 +4146,6 @@ fn encode_native_variable_blend(
     } else {
         native_ident(bytes, "nullbs")?;
     }
-    native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
     bytes.push(0x10);
     Ok(())
 }

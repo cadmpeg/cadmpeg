@@ -592,8 +592,8 @@ fn synthetic_variable_blend_smbh_inner(
     t_dbl(&mut surface, 0.0);
     surface.push(0x0a);
     t_dbl(&mut surface, 1.0);
-    surface.extend_from_slice(&generated_curve_block());
     t_ident(&mut surface, "nullbs");
+    surface.extend_from_slice(&generated_curve_block());
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old.offset..old.offset + old.len, surface);
