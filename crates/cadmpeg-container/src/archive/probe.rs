@@ -7,6 +7,7 @@ use cadmpeg_core::{
     decode::{u64_from_index, DecodeContext, View},
     CodecError, ReadSeek,
 };
+use std::collections::{HashMap, HashSet};
 use std::io::SeekFrom;
 
 const FOOTER_WINDOW: usize = end_record::LEN + 65_535 + zip64_locator::LEN;
@@ -33,27 +34,35 @@ fn read_inner(
     let Some(last_end) = tail.len().checked_sub(end_record::LEN) else {
         return Ok(None);
     };
-    for end in (0..=last_end).rev() {
-        if tail.get(end..end + 4) != Some(b"PK\x05\x06".as_slice()) {
-            continue;
-        }
-        let Some(comment) = View::u16_le_at(&tail, end + end_record::COMMENT_LENGTH) else {
-            continue;
-        };
-        if end.checked_add(end_record::LEN + usize::from(comment)) != Some(tail.len()) {
-            continue;
-        }
+    let candidates = (0..=last_end)
+        .rev()
+        .filter(|&end| {
+            tail.get(end..end + 4) == Some(b"PK\x05\x06".as_slice())
+                && View::u16_le_at(&tail, end + end_record::COMMENT_LENGTH).is_some_and(|comment| {
+                    end.checked_add(end_record::LEN + usize::from(comment)) == Some(tail.len())
+                })
+        })
+        .collect::<Vec<_>>();
+    let locator_at = |end: usize| {
+        end.checked_sub(zip64_locator::LEN)
+            .filter(|start| tail.get(*start..*start + 4) == Some(b"PK\x06\x07".as_slice()))
+    };
+    let mut zip64_records = Zip64Records::new(
+        candidates
+            .iter()
+            .filter_map(|&end| locator_at(end))
+            .map(|locator| tail_start + u64_from_index(locator))
+            .collect(),
+    );
+    for end in candidates {
         let directory_end = tail_start + u64_from_index(end);
-        let locator = end
-            .checked_sub(zip64_locator::LEN)
-            .filter(|start| tail.get(*start..*start + 4) == Some(b"PK\x06\x07".as_slice()));
-        let (size, count, directory_end, zip64) = if let Some(locator) = locator {
+        let (size, count, directory_end, zip64) = if let Some(locator) = locator_at(end) {
             let Some(hint) = View::u64_le_at(&tail, locator + zip64_locator::END_RECORD_POSITION)
             else {
                 continue;
             };
             let locator_position = tail_start + u64_from_index(locator);
-            let Some(record) = find_zip64(ctx, source, tail_start, locator, hint)? else {
+            let Some(record) = zip64_records.find(ctx, source, locator_position, hint)? else {
                 continue;
             };
             let header = read_range(ctx, source, record, zip64_end::LEN)?;
@@ -213,32 +222,63 @@ fn directory_is_framed(
         }) == Some(end))
 }
 
-pub(super) fn find_zip64(
-    ctx: &DecodeContext<'_>,
-    source: &mut dyn ReadSeek,
-    tail_start: u64,
-    locator: usize,
-    hint: u64,
-) -> Result<Option<u64>, CodecError> {
-    let end = tail_start + u64_from_index(locator);
-    if hint
-        .checked_add(u64_from_index(zip64_end::LEN))
-        .is_some_and(|offset| offset <= end)
-    {
-        let header = read_range(ctx, source, hint, zip64_end::LEN)?;
-        if header.starts_with(b"PK\x06\x06")
-            && View::u64_le_at(&header, zip64_end::RECORD_SIZE)
-                .filter(|size| *size >= u64_from_index(zip64_end::LEN - 12))
-                .and_then(|size| hint.checked_add(12)?.checked_add(size))
-                == Some(end)
-        {
-            return Ok(Some(hint));
+/// The ZIP64 end records that end at the locator of a candidate end record.
+///
+/// Every candidate locator lies in the footer window, so all of them are
+/// known before the first lookup. Embedded archives can displace the
+/// locator's relative offset; one backward scan of the source, resumed by
+/// each lookup that needs it, proves the declared record boundary for every
+/// candidate.
+pub(super) struct Zip64Records {
+    locators: HashSet<u64>,
+    found: HashMap<u64, u64>,
+    scan_end: Option<u64>,
+}
+
+impl Zip64Records {
+    pub(super) fn new(locators: HashSet<u64>) -> Self {
+        Self {
+            scan_end: locators.iter().max().copied(),
+            locators,
+            found: HashMap::new(),
         }
     }
-    // Embedded archives can displace the locator's relative offset. Search
-    // backwards in bounded windows and prove the declared record boundary.
-    let mut scan_end = end;
-    loop {
+
+    /// The record that ends at the locator at `end`: the one at `hint` when
+    /// it declares that end, else the last record before `end` that does.
+    pub(super) fn find(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: &mut dyn ReadSeek,
+        end: u64,
+        hint: u64,
+    ) -> Result<Option<u64>, CodecError> {
+        if hint
+            .checked_add(u64_from_index(zip64_end::LEN))
+            .is_some_and(|offset| offset <= end)
+        {
+            let header = read_range(ctx, source, hint, zip64_end::LEN)?;
+            if header.starts_with(b"PK\x06\x06") && declared_end(&header, 0, hint) == Some(end) {
+                return Ok(Some(hint));
+            }
+        }
+        while !self.found.contains_key(&end) {
+            let Some(scan_end) = self.scan_end else {
+                break;
+            };
+            self.scan_window(ctx, source, scan_end)?;
+        }
+        Ok(self.found.get(&end).copied())
+    }
+
+    /// Scan the window ending at `scan_end` backwards, keeping the last
+    /// record before each candidate locator that declares it as its end.
+    fn scan_window(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: &mut dyn ReadSeek,
+        scan_end: u64,
+    ) -> Result<(), CodecError> {
         let start = scan_end - scan_end.min(u64_from_index(FOOTER_WINDOW));
         let bytes = read_range(
             ctx,
@@ -249,26 +289,28 @@ pub(super) fn find_zip64(
         )?;
         if let Some(last_record) = bytes.len().checked_sub(12) {
             for offset in (0..=last_record).rev() {
-                if bytes.get(offset..offset + 4) == Some(b"PK\x06\x06".as_slice())
-                    && View::u64_le_at(&bytes, offset + zip64_end::RECORD_SIZE)
-                        .filter(|size| *size >= u64_from_index(zip64_end::LEN - 12))
-                        .and_then(|size| {
-                            (start + u64_from_index(offset))
-                                .checked_add(12)?
-                                .checked_add(size)
-                        })
-                        == Some(end)
+                if bytes.get(offset..offset + 4) != Some(b"PK\x06\x06".as_slice()) {
+                    continue;
+                }
+                let position = start + u64_from_index(offset);
+                if let Some(end) =
+                    declared_end(&bytes, offset, position).filter(|end| self.locators.contains(end))
                 {
-                    return Ok(Some(start + u64_from_index(offset)));
+                    self.found.entry(end).or_insert(position);
                 }
             }
         }
-        if start == 0 {
-            break;
-        }
-        scan_end = start + 11;
+        self.scan_end = (start != 0).then_some(start + 11);
+        Ok(())
     }
-    Ok(None)
+}
+
+/// The end that the ZIP64 record at `offset` of `bytes`, found at source
+/// position `position`, declares through its size field.
+fn declared_end(bytes: &[u8], offset: usize, position: u64) -> Option<u64> {
+    View::u64_le_at(bytes, offset + zip64_end::RECORD_SIZE)
+        .filter(|size| *size >= u64_from_index(zip64_end::LEN - 12))
+        .and_then(|size| position.checked_add(12)?.checked_add(size))
 }
 
 fn read_range(

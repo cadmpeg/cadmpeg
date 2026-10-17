@@ -125,6 +125,36 @@ impl SectorChain {
     }
 }
 
+/// Directory entries already reached from the root storage, and the regular
+/// and mini sectors already owned by a built stream chain.
+#[derive(Default)]
+struct TreeOwnership {
+    entries: BTreeSet<u32>,
+    regular: BTreeSet<u32>,
+    mini: BTreeSet<u32>,
+}
+
+impl TreeOwnership {
+    /// Claim `chain` for one stream. A sector another stream owns refuses
+    /// the file before any later chain is walked.
+    fn claim(
+        &mut self,
+        allocation: CompoundAllocation,
+        chain: &SectorChain,
+    ) -> Result<(), CodecError> {
+        let owned = match allocation {
+            CompoundAllocation::Regular => &mut self.regular,
+            CompoundAllocation::Mini => &mut self.mini,
+        };
+        for &sector in chain.iter() {
+            if !owned.insert(sector) {
+                return malformed("CFB stream sector has duplicate ownership");
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StreamData {
     Empty(EmptyStreamStart),
@@ -341,6 +371,11 @@ impl<'a> CompoundSnapshot<'a> {
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
         for (index, entry) in entries.iter().enumerate() {
+            // A key holds at most two bytes per path byte.
+            let key_bytes = cadmpeg_core::decode::u64_from_index(entry.path().len())
+                .checked_mul(2)
+                .ok_or_else(|| CodecError::malformed("CFB path index size overflows"))?;
+            ctx.retain_bytes(key_bytes, "CFB path index")?;
             let key = path_key(entry.path());
             if by_path.insert(key, index).is_some() {
                 return malformed(format!("duplicate CFB path {}", entry.path()));
@@ -788,13 +823,13 @@ impl CompoundState {
         snapshot_id: u64,
     ) -> Result<Vec<CompoundEntry>, CodecError> {
         let mut output = Vec::new();
-        let mut reached = BTreeSet::new();
+        let mut owned = TreeOwnership::default();
         self.walk_tree(
             ctx,
             snapshot_id,
             directory_root(&self.directory)?.child,
             None,
-            &mut reached,
+            &mut owned,
             &mut output,
         )?;
         if self
@@ -806,7 +841,7 @@ impl CompoundState {
                 matches!(entry, DirectorySlot::Live(_))
                     && u32::try_from(id)
                         .ok()
-                        .is_none_or(|id| !reached.contains(&id))
+                        .is_none_or(|id| !owned.entries.contains(&id))
             })
         {
             return malformed("CFB directory contains an unreachable live entry");
@@ -820,7 +855,7 @@ impl CompoundState {
         snapshot_id: u64,
         root: u32,
         parent: Option<&str>,
-        reached: &mut BTreeSet<u32>,
+        owned: &mut TreeOwnership,
         output: &mut Vec<CompoundEntry>,
     ) -> Result<(), CodecError> {
         if root == NO_STREAM {
@@ -837,12 +872,18 @@ impl CompoundState {
                 .ok_or_else(|| {
                     CodecError::Malformed("CFB directory link is out of range".into())
                 })?;
-            if !reached.insert(id) {
+            if !owned.entries.insert(id) {
                 return malformed("CFB directory entry belongs to more than one storage");
             }
             if entry.right != NO_STREAM {
                 pending.push(entry.right);
             }
+            // Every entry repeats its storage path, so each copy is charged.
+            let path_len = parent.map_or(0, |parent| parent.len() + 1) + entry.name.as_str().len();
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(path_len),
+                "CFB storage path",
+            )?;
             let path = match parent {
                 None => entry.name.as_str().to_string(),
                 Some(parent) => format!("{parent}/{}", entry.name.as_str()),
@@ -859,7 +900,7 @@ impl CompoundState {
                         snapshot_id,
                         entry.child,
                         Some(&parent_path),
-                        reached,
+                        owned,
                         output,
                     )?;
                 }
@@ -908,11 +949,14 @@ impl CompoundState {
                                 role,
                             )?;
                             match sectors {
-                                Some(chain) => StreamData::Allocated {
-                                    allocation,
-                                    logical_size,
-                                    chain,
-                                },
+                                Some(chain) => {
+                                    owned.claim(allocation, &chain)?;
+                                    StreamData::Allocated {
+                                        allocation,
+                                        logical_size,
+                                        chain,
+                                    }
+                                }
                                 None => empty(),
                             }
                         }
@@ -2044,6 +2088,49 @@ mod tests {
             .expect_err("duplicate stream still overlaps");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "CFB stream sector has duplicate ownership"));
+    }
+
+    #[test]
+    fn a_second_stream_on_one_chain_is_refused_while_entries_are_built() {
+        const WIDTH: usize = 4096;
+        const DIRECTORY: usize = 4096 - 1;
+        let mut file = large_regular_fixture();
+        let directory = sector_mut_with_size(&mut file, WIDTH, DIRECTORY);
+        put_u32(&mut directory[128..256], 68, 2);
+        let size = u64::from_le_bytes(directory[128 + 120..256].try_into().expect("size field"));
+        directory_entry(
+            directory, 2, "Second", 2, NO_STREAM, NO_STREAM, NO_STREAM, 4, size,
+        );
+        directory[2 * 128 + 67] = 0;
+        let state = with_context(&file, &DecodePolicy::service(), |ctx| {
+            CompoundState::parse(ctx, &file).expect("allocation tables")
+        });
+        let error = with_context(&[], &DecodePolicy::service(), |ctx| {
+            state.build_entries(ctx, 1)
+        })
+        .expect_err("two streams share one chain");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "CFB stream sector has duplicate ownership"));
+    }
+
+    #[test]
+    fn storage_paths_are_charged_to_the_retained_ceiling() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let file = large_regular_fixture();
+        let state = with_context(&file, &DecodePolicy::service(), |ctx| {
+            CompoundState::parse(ctx, &file).expect("allocation tables")
+        });
+        let build = |retained: u64| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            with_context(&[], &policy, |ctx| state.build_entries(ctx, 1))
+        };
+        let path = cadmpeg_core::decode::u64_from_index("Payload".len());
+        assert_eq!(build(path).expect("the path fits").len(), 1);
+        let Err(CodecError::ResourceLimit(limit)) = build(path - 1) else {
+            panic!("expected a retained-bytes refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     }
 
     #[test]
