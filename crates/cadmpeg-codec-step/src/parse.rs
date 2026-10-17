@@ -10,7 +10,7 @@ use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -92,6 +92,81 @@ fn try_clone_value(value: &Value, budget: &DecodeContext<'_>) -> Result<Value, C
             Value::Typed(name.to_owned(), Box::new(try_clone_value(nested, budget)?))
         }
     })
+}
+
+/// Octets of string, binary and name text that a copy of `value`'s own node
+/// allocates, excluding nested values.
+fn node_payload(value: &Value) -> u64 {
+    let octets = match value {
+        Value::ConstantEntity(text)
+        | Value::ExpressValueConstant(text)
+        | Value::Enumeration(text)
+        | Value::Resource(text)
+        | Value::Typed(text, _) => text.len(),
+        Value::String(bytes) => bytes.len(),
+        Value::Binary(binary) => binary.data().len(),
+        Value::Reference(_)
+        | Value::ExternalReference(_)
+        | Value::Integer(_)
+        | Value::Real(_)
+        | Value::UninterpretedLiteral
+        | Value::Omitted
+        | Value::Derived
+        | Value::List(_) => 0,
+    };
+    u64_from_index(octets)
+}
+
+/// Payload octets that one anchor or REFERENCE expansion pass may copy out
+/// of anchors for each input byte, on top of [`EXPANDED_PAYLOAD_BASE`].
+const MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE: u64 = 16;
+/// Payload octets that one expansion pass may copy out of anchors at any
+/// input size.
+const EXPANDED_PAYLOAD_BASE: u64 = 16 * 1024 * 1024;
+
+/// Payload octets that one expansion pass may still copy out of anchors.
+/// Copies that a bounded item discards stay charged, so the allowance bounds
+/// the copying work as well as the memory the pass holds.
+#[derive(Debug)]
+struct PayloadAllowance {
+    limit: u64,
+    remaining: u64,
+}
+
+impl PayloadAllowance {
+    /// The allowance of an input of `input_len` bytes, or `None` when it
+    /// does not fit in `u64`.
+    fn limit_for_input(input_len: usize) -> Option<u64> {
+        MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE
+            .checked_mul(u64_from_index(input_len))?
+            .checked_add(EXPANDED_PAYLOAD_BASE)
+    }
+
+    fn new(limit: u64) -> Self {
+        Self {
+            limit,
+            remaining: limit,
+        }
+    }
+
+    /// Charges `octets` before they are copied; false leaves the allowance
+    /// unchanged.
+    fn charge(&mut self, octets: u64) -> bool {
+        match self.remaining.checked_sub(octets) {
+            Some(rest) => {
+                self.remaining = rest;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn bound(&self, expansion: &str) -> String {
+        format!(
+            "{expansion} expansion exceeds {} payload bytes (MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE)",
+            self.limit
+        )
+    }
 }
 
 /// One simple entity leaf within an entity instance.
@@ -1030,6 +1105,10 @@ impl Parser<'_, '_, '_> {
         {
             return self.err("external value instance collides with a DATA instance");
         }
+        let Some(payload_limit) = PayloadAllowance::limit_for_input(self.lexer.input().len())
+        else {
+            return self.err("input length overflows the expansion payload allowance");
+        };
         let mut omissions = ExpansionOmissions::default();
         if !anchors.is_empty() {
             let mut anchor_bindings = BTreeMap::new();
@@ -1041,7 +1120,7 @@ impl Parser<'_, '_, '_> {
                 return self.err("duplicate anchor name");
             }
             let mut bounded = BoundedExpansions::default();
-            let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget);
+            let mut resolver = AnchorResolver::new(&anchor_bindings, payload_limit, self.budget);
             for anchor in &mut anchors {
                 if let Some(bound) = resolver
                     .resolve_item(anchor.values_mut())
@@ -1095,6 +1174,7 @@ impl Parser<'_, '_, '_> {
             &mut records,
             &reference_entries,
             &omissions.anchors,
+            payload_limit,
             self.budget,
         )?;
         self.omit_bounded_expansions(
@@ -2343,7 +2423,8 @@ fn is_anchor_item(value: &Value) -> bool {
 #[derive(Debug)]
 enum ResolveError {
     Syntax(String),
-    /// A value-node limit stopped the expansion; the message names the bound.
+    /// A value-node or payload limit stopped the expansion; the message
+    /// names the bound.
     Bounded(String),
     Resource(CodecError),
 }
@@ -2439,13 +2520,15 @@ impl ExpansionBounds {
 
 struct AnchorResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
-    memo: BTreeMap<&'a str, (Value, usize)>,
+    /// Each expanded anchor with its value nodes and payload octets.
+    memo: BTreeMap<&'a str, (Value, usize, u64)>,
     bounds: BTreeMap<&'a str, ExpansionBounds>,
     remaining_nodes: usize,
     /// Value nodes that omitted items may still copy; `None` once spent.
     discard_allowance: Option<usize>,
     /// Value nodes that the current item has copied or counted.
     item_nodes: usize,
+    payload: PayloadAllowance,
     budget: &'ctx DecodeContext<'arena>,
 }
 
@@ -2456,7 +2539,11 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     /// whole exchange before their expansion stopped.
     const MAX_DISCARDED_EXPANDED_NODES: usize = 16 * Self::MAX_EXPANDED_NODES;
 
-    fn new(anchors: &'a BTreeMap<String, Value>, budget: &'ctx DecodeContext<'arena>) -> Self {
+    fn new(
+        anchors: &'a BTreeMap<String, Value>,
+        payload_limit: u64,
+        budget: &'ctx DecodeContext<'arena>,
+    ) -> Self {
         Self {
             anchors,
             memo: BTreeMap::new(),
@@ -2464,6 +2551,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             remaining_nodes: Self::MAX_EXPANDED_NODES,
             discard_allowance: Some(Self::MAX_DISCARDED_EXPANDED_NODES),
             item_nodes: 0,
+            payload: PayloadAllowance::new(payload_limit),
             budget,
         }
     }
@@ -2506,6 +2594,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     fn known_outcome(&self, values: &[&mut Value]) -> KnownOutcome {
         let node_limit = Self::node_limit_bound();
         let mut budget = self.remaining_nodes;
+        let mut payload = self.payload.remaining;
         let mut pending = values
             .iter()
             .rev()
@@ -2520,11 +2609,15 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     else {
                         continue;
                     };
-                    if let Some((_, nodes)) = self.memo.get(name) {
+                    if let Some((_, nodes, octets)) = self.memo.get(name) {
                         let Some(rest) = budget.checked_sub(*nodes) else {
                             return KnownOutcome::Bounded(node_limit);
                         };
+                        let Some(rest_payload) = payload.checked_sub(*octets) else {
+                            return KnownOutcome::Bounded(self.payload.bound("anchor"));
+                        };
                         budget = rest;
+                        payload = rest_payload;
                     } else if let Some(bound) = self
                         .bounds
                         .get(name)
@@ -2579,6 +2672,14 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         Ok(())
     }
 
+    fn charge_payload(&mut self, octets: u64) -> Result<(), ResolveError> {
+        if self.payload.charge(octets) {
+            Ok(())
+        } else {
+            Err(ResolveError::Bounded(self.payload.bound("anchor")))
+        }
+    }
+
     fn resolve(
         &mut self,
         value: &Value,
@@ -2593,9 +2694,12 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 .and_then(|name| self.anchors.get_key_value(name))
             {
                 let name = name.as_str();
-                if let Some((value, nodes)) = self.memo.get(name) {
+                if let Some((value, nodes, octets)) = self.memo.get(name) {
                     if *nodes > budget {
                         return Err(Self::node_limit_error());
+                    }
+                    if !self.payload.charge(*octets) {
+                        return Err(ResolveError::Bounded(self.payload.bound("anchor")));
                     }
                     let (value, nodes) = (try_clone_value(value, self.budget)?, *nodes);
                     self.count_item_nodes(nodes)?;
@@ -2640,8 +2744,11 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 Ok((Value::List(resolved), nodes, expanded_nodes))
             }
-            Value::Typed(name, value) => {
-                let (value, nodes, expanded_nodes) = self.resolve(value, stack, budget)?;
+            Value::Typed(name, nested) => {
+                if !stack.is_empty() {
+                    self.charge_payload(node_payload(value))?;
+                }
+                let (value, nodes, expanded_nodes) = self.resolve(nested, stack, budget)?;
                 let value = Value::Typed(name.to_owned(), Box::new(value));
                 Ok((
                     value,
@@ -2649,7 +2756,12 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     expanded_nodes,
                 ))
             }
-            value => Ok((try_clone_value(value, self.budget)?, 1, 0)),
+            value => {
+                if !stack.is_empty() {
+                    self.charge_payload(node_payload(value))?;
+                }
+                Ok((try_clone_value(value, self.budget)?, 1, 0))
+            }
         }
     }
 
@@ -2668,6 +2780,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 .map_or(Self::MAX_EXPANDED_NODES, |nodes| *nodes),
         )?;
         counted?;
+        let payload_before = self.payload.remaining;
         stack.push(name);
         let resolved = self.resolve(source, stack, budget);
         stack.pop();
@@ -2675,8 +2788,9 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         if nodes > budget {
             return Err(Self::node_limit_error());
         }
+        let octets = payload_before - self.payload.remaining;
         let memo = try_clone_value(&value, self.budget)?;
-        self.memo.insert(name, (memo, nodes));
+        self.memo.insert(name, (memo, nodes, octets));
         Ok((value, nodes, nodes))
     }
 }
@@ -2686,14 +2800,16 @@ struct ReferenceResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
     omitted_anchors: &'a BTreeSet<String>,
     stack: Vec<ReferenceName>,
-    /// Value nodes that each top-level occurrence used when it expanded.
-    used: BTreeMap<ReferenceName, usize>,
+    /// Value nodes and payload octets that each top-level occurrence used
+    /// when it expanded.
+    used: BTreeMap<ReferenceName, (usize, u64)>,
     bounds: BTreeMap<ReferenceName, ExpansionBounds>,
     remaining_nodes: usize,
     /// Value nodes that omitted items may still copy; `None` once spent.
     discard_allowance: Option<usize>,
     /// Value nodes that the current item has copied.
     item_nodes: usize,
+    payload: PayloadAllowance,
     budget: &'ctx DecodeContext<'arena>,
 }
 
@@ -2709,6 +2825,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         references: &'a [ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
         omitted_anchors: &'a BTreeSet<String>,
+        payload_limit: u64,
         budget: &'ctx DecodeContext<'arena>,
     ) -> Self {
         let bindings = references
@@ -2725,6 +2842,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             remaining_nodes: Self::MAX_MATERIALIZED_NODES,
             discard_allowance: Some(Self::MAX_DISCARDED_MATERIALIZED_NODES),
             item_nodes: 0,
+            payload: PayloadAllowance::new(payload_limit),
             budget,
         }
     }
@@ -2789,6 +2907,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     fn known_outcome(&self, values: &[&mut Value]) -> KnownOutcome {
         let node_limit = Self::node_limit_bound();
         let mut budget = self.remaining_nodes;
+        let mut payload = self.payload.remaining;
         let mut pending = values
             .iter()
             .rev()
@@ -2822,11 +2941,15 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             if !self.anchors.contains_key(fragment) {
                 continue;
             }
-            if let Some(used) = self.used.get(&key) {
-                let Some(rest) = budget.checked_sub(*used) else {
+            if let Some((nodes, octets)) = self.used.get(&key) {
+                let Some(rest) = budget.checked_sub(*nodes) else {
                     return KnownOutcome::Bounded(node_limit);
                 };
+                let Some(rest_payload) = payload.checked_sub(*octets) else {
+                    return KnownOutcome::Bounded(self.payload.bound("external reference"));
+                };
                 budget = rest;
+                payload = rest_payload;
             } else if let Some(bound) = self
                 .bounds
                 .get(&key)
@@ -2841,7 +2964,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     }
 
     fn clone_leaf(&mut self, value: &Value) -> Result<Value, ResolveError> {
-        self.consume_materialized_node()?;
+        self.consume_materialized_node(value)?;
         Ok(try_clone_value(value, self.budget)?)
     }
 
@@ -2857,7 +2980,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 self.resolve_occurrence(ReferenceName::Value(*id), value)
             }
             Value::List(values) => {
-                self.consume_materialized_node()?;
+                self.consume_materialized_node(value)?;
                 if !self.stack.is_empty() && values.len() > self.remaining_nodes {
                     return Err(Self::node_limit_error());
                 }
@@ -2867,9 +2990,9 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 }
                 Ok(Value::List(resolved))
             }
-            Value::Typed(name, value) => {
-                self.consume_materialized_node()?;
-                let resolved = self.resolve_value(value)?;
+            Value::Typed(name, nested) => {
+                self.consume_materialized_node(value)?;
+                let resolved = self.resolve_value(nested)?;
                 Ok(Value::Typed(name.to_owned(), Box::new(resolved)))
             }
             _ => self.clone_leaf(value),
@@ -2907,14 +3030,16 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         };
         let top_level = self.stack.is_empty();
         let remaining = self.remaining_nodes;
+        let payload_before = self.payload.remaining;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor);
         self.stack.pop();
         if top_level {
             match &resolved {
                 Ok(_) => {
-                    if let Some(used) = remaining.checked_sub(self.remaining_nodes) {
-                        self.used.insert(key, used);
+                    if let Some(nodes) = remaining.checked_sub(self.remaining_nodes) {
+                        let octets = payload_before - self.payload.remaining;
+                        self.used.insert(key, (nodes, octets));
                     }
                 }
                 Err(ResolveError::Bounded(bound)) => {
@@ -2941,24 +3066,32 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         Ok(resolved)
     }
 
-    fn consume_materialized_node(&mut self) -> Result<(), ResolveError> {
+    /// Charges the node and payload octets that copying `value`'s own node
+    /// out of an anchor costs.
+    fn consume_materialized_node(&mut self, value: &Value) -> Result<(), ResolveError> {
         if !self.stack.is_empty() {
             self.remaining_nodes = self
                 .remaining_nodes
                 .checked_sub(1)
                 .ok_or_else(Self::node_limit_error)?;
+            if !self.payload.charge(node_payload(value)) {
+                return Err(ResolveError::Bounded(
+                    self.payload.bound("external reference"),
+                ));
+            }
         }
         Ok(())
     }
 }
 
 /// Resolves local REFERENCE occurrences and returns the anchors and instances
-/// whose expansion passed the value-node limit.
+/// whose expansion passed the value-node or payload limit.
 fn resolve_local_references(
     anchors: &mut [AnchorEntry],
     records: &mut BTreeMap<u64, RawRecord>,
     references: &[ReferenceEntry],
     omitted_anchors: &BTreeSet<String>,
+    payload_limit: u64,
     budget: &DecodeContext<'_>,
 ) -> Result<BoundedExpansions, ParseError> {
     let mut bounded = BoundedExpansions::default();
@@ -2971,8 +3104,13 @@ fn resolve_local_references(
         let value = try_clone_value(&anchor.value, budget)?;
         anchor_bindings.insert(anchor.name.clone(), value);
     }
-    let mut resolver =
-        ReferenceResolver::new(references, &anchor_bindings, omitted_anchors, budget);
+    let mut resolver = ReferenceResolver::new(
+        references,
+        &anchor_bindings,
+        omitted_anchors,
+        payload_limit,
+        budget,
+    );
     for anchor in anchors {
         if let Some(bound) = resolver
             .resolve_item(anchor.values_mut())

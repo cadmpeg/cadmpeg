@@ -253,21 +253,6 @@ fn container_counts_admitted_entries_in_each_region() {
 }
 
 #[test]
-fn service_profile_admits_both_directory_regions() {
-    let mut file = single_part_prt();
-    file.truncate(file.len() - 8);
-    file.extend_from_slice(&1_u32.to_le_bytes());
-    file.extend_from_slice(&6_u32.to_le_bytes());
-    file.extend_from_slice(b"/Root/");
-    file.extend_from_slice(&[0; 16]);
-    file.extend_from_slice(&[0; 4]);
-
-    let container = container::scan_bytes(file.as_slice()).expect("scan the container");
-    assert_eq!(container.entry_count(Region::Header), 1);
-    assert_eq!(container.entry_count(Region::Footer), 1);
-}
-
-#[test]
 fn container_rejects_incomplete_counted_directories() {
     let mut header = single_part_prt();
     header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());

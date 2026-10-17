@@ -496,6 +496,7 @@ pub fn snapshot_text(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::path::PathBuf;
     use std::sync::{Mutex, MutexGuard};
 
@@ -507,19 +508,29 @@ mod tests {
     /// Serializes tests that mutate an environment key this harness reads, so
     /// parallel workers cannot observe a half-applied environment.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+    thread_local! {
+        static ENV_HOLDERS: Cell<usize> = const { Cell::new(0) };
+    }
 
     /// Sets or clears one environment key for the duration of a test scope.
     struct EnvGuard {
-        _lock: MutexGuard<'static, ()>,
+        _lock: Option<MutexGuard<'static, ()>>,
         key: &'static str,
         previous: Option<std::ffi::OsString>,
     }
 
     impl EnvGuard {
         fn set(key: &'static str, value: Option<&str>) -> Self {
-            let lock = ENV_LOCK
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let lock = if ENV_HOLDERS.get() == 0 {
+                Some(
+                    ENV_LOCK
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner),
+                )
+            } else {
+                None
+            };
+            ENV_HOLDERS.set(ENV_HOLDERS.get() + 1);
             let previous = std::env::var_os(key);
             // SAFETY: exclusive access to this process env key is held via
             // `ENV_LOCK` for the guard lifetime.
@@ -546,6 +557,7 @@ mod tests {
                     None => std::env::remove_var(self.key),
                 }
             }
+            ENV_HOLDERS.set(ENV_HOLDERS.get() - 1);
         }
     }
 
@@ -739,6 +751,7 @@ mod tests {
             "the texts must differ, or this test proves nothing"
         );
 
+        let _strict = EnvGuard::set("GOLDEN_STRICT", None);
         let _update = EnvGuard::set("UPDATE_GOLDEN", Some("1"));
         Harness::new(tree.manifest_dir(), "bin", "regenerate").check_inputs(
             &one_input(),

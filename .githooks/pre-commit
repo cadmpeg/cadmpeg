@@ -64,6 +64,13 @@ if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-source-policy\
   echo "pre-commit: scripts/check-source-policy.py"
   python3 scripts/check-source-policy.py
 fi
+if git diff --cached --name-only | grep -qE '^scripts/(check-resource-caps\.py|test_check_resource_caps\.py)$'; then
+  python3 -m unittest -q scripts/test_check_resource_caps.py
+fi
+if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-resource-caps\.py$|^docs/decode-resource-caps\.md$'; then
+  echo "pre-commit: scripts/check-resource-caps.py"
+  python3 scripts/check-resource-caps.py
+fi
 
 # Every non-test deserializable item in the two wire crates must refuse an
 # unknown key. The property is static, so it is checked over the declarations
