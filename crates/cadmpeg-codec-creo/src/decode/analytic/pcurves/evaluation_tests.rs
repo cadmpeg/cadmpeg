@@ -71,7 +71,7 @@ fn two_chart_mapping_maps_degree_sixteen_endpoints() {
         super::mapped_two_chart_endpoint_sets(
             ctx,
             &scan,
-            &ir,
+            &super::ModelSurfaceIndex::new(&ir.model.surfaces),
             &pcurve,
             &SourceUnitCarriers::default(),
         )
