@@ -473,10 +473,19 @@ pub(super) fn validate_native_links(
                             .map(|entry| (entry.id.as_str(), entry.value.as_str()))
                     })
             });
-            let expected_repeated_selection = repeated_reference_schema_selection(
-                object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
-                catalog,
-            );
+            let expected_repeated_selection = crate::test_support::with_service_context(|ctx| {
+                repeated_reference_schema_selection(
+                    ctx,
+                    object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
+                    catalog,
+                )
+            })
+            .map_err(|error| {
+                cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object record `{}` schema selection does not rederive: {error}",
+                    record.id
+                ))
+            })?;
             if record.class_entry() != expected_class.map(|(entry, _)| entry)
                 || record.class_name() != expected_class.map(|(_, value)| value)
                 || record.repeated_reference_schema_selection != expected_repeated_selection

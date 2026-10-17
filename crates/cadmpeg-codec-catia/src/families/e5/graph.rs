@@ -499,6 +499,7 @@ pub(crate) fn parse_topology(
 
         let mut faces = Vec::new();
         let mut reachable_edges = HashSet::new();
+        let mut closed_supports = HashSet::new();
         for face in raw_faces {
             if !by_id
                 .get(&face.surface)
@@ -555,7 +556,12 @@ pub(crate) fn parse_topology(
                     }
                     let support = curve_supports.get(&edge.support)?;
                     for reference in support.pcurves() {
-                        if !curve_support_reference_closes(*reference, &pcurves, &curve_supports) {
+                        if !curve_support_reference_closes(
+                            *reference,
+                            &pcurves,
+                            &curve_supports,
+                            &mut closed_supports,
+                        ) {
                             return None;
                         }
                     }
@@ -680,12 +686,16 @@ fn is_surface_carrier_class(class: u8) -> bool {
 
 /// Checks that a curve-support side resolves to a direct p-curve or to a
 /// finite, acyclic chain of intersection-support wrappers.
+///
+/// `closed` holds the supports already proven to close. Calls that share it
+/// walk each support once.
 fn curve_support_reference_closes(
     reference: u32,
     pcurves: &BTreeMap<u32, E5Pcurve>,
     supports: &BTreeMap<u32, E5CurveSupport>,
+    closed: &mut HashSet<u32>,
 ) -> bool {
-    if pcurves.contains_key(&reference) {
+    if pcurves.contains_key(&reference) || closed.contains(&reference) {
         return true;
     }
     let mut visiting = HashSet::new();
@@ -703,6 +713,10 @@ fn curve_support_reference_closes(
         };
         if leaving {
             visiting.remove(&reference);
+            closed.insert(reference);
+            continue;
+        }
+        if closed.contains(&reference) {
             continue;
         }
         if !visiting.insert(reference) {
@@ -710,7 +724,7 @@ fn curve_support_reference_closes(
         }
         stack.push((reference, true));
         for child in support.pcurves().iter().rev() {
-            if pcurves.contains_key(child) {
+            if pcurves.contains_key(child) || closed.contains(child) {
                 continue;
             }
             if !supports
@@ -1760,7 +1774,7 @@ mod tests {
     use crate::families::e5::tests::e5_loop_members;
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair};
     use crate::test_support::test_e5::append_e5_record;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashSet};
 
     macro_rules! e5_test_context {
         ($ctx:ident) => {
@@ -1866,7 +1880,71 @@ mod tests {
             tail: Vec::new(),
         };
         let supports = BTreeMap::from([(1, support([2, 3])), (2, support([1, 3]))]);
-        assert!(!curve_support_reference_closes(1, &pcurves, &supports));
+        assert!(!curve_support_reference_closes(
+            1,
+            &pcurves,
+            &supports,
+            &mut HashSet::new()
+        ));
+    }
+
+    #[test]
+    fn doubled_curve_support_chain_walks_each_support_once() {
+        const DEPTH: u32 = 20;
+        let pcurves = BTreeMap::from([(
+            1_000,
+            E5Pcurve::Line {
+                surface: 10,
+                origin: finite_pair([0.0, 0.0]),
+                direction: finite_pair([1.0, 0.0]),
+                range: finite_pair([0.0, 1.0]),
+            },
+        )]);
+        let support = |pcurves: [u32; 2]| E5CurveSupport {
+            kind: E5CurveSupportKind::Intersection(pcurves),
+            mode: 0,
+            range: finite_pair([0.0, 1.0]),
+            tail: Vec::new(),
+        };
+        let chain = |last: [u32; 2]| {
+            let mut supports = BTreeMap::new();
+            for id in 1..DEPTH {
+                supports.insert(id, support([id + 1, id + 1]));
+            }
+            supports.insert(DEPTH, support(last));
+            supports
+        };
+
+        let closing = chain([1_000, 1_000]);
+        let mut closed = HashSet::new();
+        assert!(curve_support_reference_closes(
+            1,
+            &pcurves,
+            &closing,
+            &mut closed
+        ));
+        assert_eq!(closed.len(), closing.len());
+        assert!(curve_support_reference_closes(
+            1,
+            &pcurves,
+            &closing,
+            &mut closed
+        ));
+
+        let cyclic = chain([1_000, DEPTH / 2]);
+        assert!(!curve_support_reference_closes(
+            1,
+            &pcurves,
+            &cyclic,
+            &mut HashSet::new()
+        ));
+        let dangling = chain([1_000, 2_000]);
+        assert!(!curve_support_reference_closes(
+            1,
+            &pcurves,
+            &dangling,
+            &mut HashSet::new()
+        ));
     }
 
     #[test]
@@ -2400,7 +2478,12 @@ mod tests {
                 tail: Vec::new(),
             },
         )]);
-        assert!(curve_support_reference_closes(1, &pcurves, &supports));
+        assert!(curve_support_reference_closes(
+            1,
+            &pcurves,
+            &supports,
+            &mut HashSet::new()
+        ));
     }
 
     #[test]

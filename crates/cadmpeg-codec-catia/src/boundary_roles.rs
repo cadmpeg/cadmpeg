@@ -9,6 +9,10 @@ use cadmpeg_ir::topology::FaceLoops;
 
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
+/// Boundary points one planar face may state before its loops are left
+/// unclassified. Segment intersection and containment are quadratic in them.
+pub(crate) const MAX_PLANAR_BOUNDARY_POINTS: usize = 4096;
+
 fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
     let mut inside = false;
     for (left, right) in polygon
@@ -142,10 +146,12 @@ fn polygon_boundaries_intersect(
 /// invariant. Multiple boundaries are classified only when one unique largest
 /// non-degenerate polygon strictly contains every other polygon. This
 /// deliberately declines disjoint, touching, nested-hole, malformed, and
-/// non-planar arrangements.
+/// non-planar arrangements. A face past [`MAX_PLANAR_BOUNDARY_POINTS`] is
+/// declined with a loss in `refusal`.
 pub(crate) fn classify_planar_boundaries(
     surface: &SurfaceGeometry,
     rows: &[(LoopId, Vec<Point3>)],
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<FaceLoops, CodecError> {
     let unspecified = || -> Result<FaceLoops, CodecError> {
         let mut ids = Vec::new();
@@ -212,6 +218,13 @@ pub(crate) fn classify_planar_boundaries(
         .iter()
         .any(|area| !area.is_finite() || area.abs() <= area_tolerance)
     {
+        return unspecified();
+    }
+    let points = polygons.iter().map(Vec::len).sum::<usize>();
+    if points > MAX_PLANAR_BOUNDARY_POINTS {
+        if let Some((first_loop, _)) = rows.first() {
+            refusal.push_planar_boundary_bounded(first_loop.as_str(), points);
+        }
         return unspecified();
     }
     if polygons.iter().enumerate().any(|(index, polygon)| {
@@ -283,7 +296,8 @@ mod tests {
         surface: &SurfaceGeometry,
         rows: &[(cadmpeg_ir::ids::LoopId, Vec<Point3>)],
     ) -> FaceLoops {
-        super::classify_planar_boundaries(surface, rows).expect("classify planar boundaries")
+        super::classify_planar_boundaries(surface, rows, &mut crate::nurbs::LaneRefusals::new())
+            .expect("classify planar boundaries")
     }
 
     fn plane() -> SurfaceGeometry {
@@ -362,6 +376,50 @@ mod tests {
             ),
             FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
         );
+    }
+
+    #[test]
+    fn a_face_past_the_point_bound_stays_unclassified_with_a_loss() {
+        let hole = square(-1.0, -1.0, 1.0, 1.0);
+        let outer_points = u32::try_from(super::MAX_PLANAR_BOUNDARY_POINTS + 1 - hole.len())
+            .expect("fixture point count");
+        let outer = (0..outer_points)
+            .map(|index| {
+                let angle = std::f64::consts::TAU * f64::from(index) / f64::from(outer_points);
+                Point3::new(10.0 * angle.cos(), 10.0 * angle.sin(), 0.0)
+            })
+            .collect();
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        assert_eq!(
+            super::classify_planar_boundaries(&plane(), &rows(vec![outer, hole]), &mut refusal)
+                .expect("classify planar boundaries"),
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
+        );
+        let notes = refusal.take_notes();
+        let [note] = notes.as_slice() else {
+            panic!("one bounded planar face");
+        };
+        assert_eq!(
+            note.code,
+            crate::loss::CatiaLossCode::TopologyPlanarBoundaryBounded.kind()
+        );
+        assert!(note
+            .message
+            .contains("loop catia:test:loop#0 states 4097 boundary points"));
+        assert!(note.message.contains("bound of 4096 points"));
+    }
+
+    #[test]
+    fn classified_and_declined_faces_within_the_bound_state_no_loss() {
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        for boundaries in [
+            vec![square(1.0, 1.0, 3.0, 3.0), square(0.0, 0.0, 5.0, 5.0)],
+            vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)],
+        ] {
+            super::classify_planar_boundaries(&plane(), &rows(boundaries), &mut refusal)
+                .expect("classify planar boundaries");
+        }
+        assert_eq!(refusal.note_count(), 0);
     }
 
     #[test]

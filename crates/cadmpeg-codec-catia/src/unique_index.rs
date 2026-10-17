@@ -13,10 +13,6 @@ impl<K: Eq + Hash, V> UniqueIndex<K, V> {
         }
     }
 
-    pub(super) fn len(&self) -> usize {
-        self.entries.len()
-    }
-
     pub(super) fn insert(&mut self, key: K, value: V) {
         if let Some(entry) = self.entries.get_mut(&key) {
             *entry = None;

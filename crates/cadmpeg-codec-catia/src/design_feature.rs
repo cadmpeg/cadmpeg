@@ -11,6 +11,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
+use crate::chain_walk::{ChainStep, ChainStops};
 use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
 use crate::ids::neutral_history_id;
 use crate::native::entity_record::CatiaEntityRecord;
@@ -71,6 +72,7 @@ impl DesignFeatureTransfer {
             .map(|object| (object.id.as_str(), object))
             .collect::<std::collections::HashMap<_, _>>();
         let mut exact_feature_owners = HashMap::new();
+        let mut nearest = nearest_features(&design_objects, &self.feature_ids);
 
         for parameter in &mut ir.model.parameters {
             let Some(native_ref) = parameter.native_ref.as_deref() else {
@@ -85,11 +87,7 @@ impl DesignFeatureTransfer {
             let Some(design_object) = object_record.design_object.as_deref() else {
                 continue;
             };
-            let Some(feature_id) = nearest_feature_for_design_object(
-                design_object,
-                &design_objects,
-                &self.feature_ids,
-            ) else {
+            let Some(feature_id) = nearest.of(design_object) else {
                 continue;
             };
             if parameter.owner.is_none() {
@@ -156,6 +154,7 @@ impl DesignFeatureTransfer {
             .map(|feature| (&feature.id, feature.ordinal))
             .collect::<std::collections::HashMap<_, _>>();
         let mut parents = HashMap::new();
+        let mut nearest = nearest_features(&design_objects, &self.feature_ids);
         for feature in &ir.model.features {
             let Some(native_ref) = feature.native_ref.as_deref() else {
                 continue;
@@ -166,11 +165,7 @@ impl DesignFeatureTransfer {
             let Some(parent_object) = object.owner_design_object.as_deref() else {
                 continue;
             };
-            let Some(parent) = nearest_feature_for_design_object(
-                parent_object,
-                &design_objects,
-                &self.feature_ids,
-            ) else {
+            let Some(parent) = nearest.of(parent_object) else {
                 continue;
             };
             let Some(parent_ordinal) = feature_ordinals.get(parent) else {
@@ -183,14 +178,7 @@ impl DesignFeatureTransfer {
             let parent = parent.clone();
             parents.insert(child, parent);
         }
-        let mut cyclic = Vec::new();
-        for feature in parents.keys() {
-            if !feature_parent_chain_is_acyclic(feature, &parents) {
-                let id = feature.clone();
-                cyclic.push(id);
-            }
-        }
-        for feature in cyclic {
+        for feature in cyclic_feature_parents(&parents) {
             parents.remove(&feature);
         }
         parents
@@ -213,6 +201,7 @@ impl DesignFeatureTransfer {
             .map(|feature| (&feature.id, feature.ordinal))
             .collect::<std::collections::HashMap<_, _>>();
         let mut dependencies_by_feature = HashMap::<FeatureId, Vec<FeatureId>>::new();
+        let mut nearest = nearest_features(&design_objects, &self.feature_ids);
 
         for feature in &ir.model.features {
             let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -235,11 +224,7 @@ impl DesignFeatureTransfer {
                 let Some(target_object) = relation.target_design_object.as_deref() else {
                     continue;
                 };
-                let Some(target) = nearest_feature_for_design_object(
-                    target_object,
-                    &design_objects,
-                    &self.feature_ids,
-                ) else {
+                let Some(target) = nearest.of(target_object) else {
                     continue;
                 };
                 if target == &feature.id || seen.contains(target) {
@@ -499,52 +484,75 @@ fn normalize_parameter_names(ir: &mut CadIr) {
     }
 }
 
-fn feature_parent_chain_is_acyclic(
-    feature_id: &FeatureId,
-    parents: &HashMap<FeatureId, FeatureId>,
-) -> bool {
-    let mut current = feature_id;
-    let mut traversed = 0usize;
-    while let Some(parent) = parents.get(current) {
-        traversed += 1;
-        if traversed > parents.len() {
-            return false;
+/// Features whose parent chain reaches a cycle.
+fn cyclic_feature_parents(parents: &HashMap<FeatureId, FeatureId>) -> Vec<FeatureId> {
+    let mut chain_ends = ChainStops::new(|feature: &FeatureId| {
+        parents
+            .get(feature)
+            .map_or(ChainStep::Stop, ChainStep::Next)
+    });
+    let mut cyclic = Vec::new();
+    for feature in parents.keys() {
+        if chain_ends.stop(feature).is_none() {
+            cyclic.push(feature.clone());
         }
-        current = parent;
     }
-    true
+    cyclic
 }
 
-/// Resolve the nearest transferred feature on one exact owner chain.
+/// Walk one exact owner-design-object chain to the first object that
+/// `is_stop` accepts.
+///
+/// A missing object, a chain end or a cycle answers `None`.
+pub(crate) fn owner_chain_step<'a>(
+    id: &'a str,
+    object: Option<&'a CatiaDesignObject>,
+    is_stop: impl FnOnce(&str) -> bool,
+) -> ChainStep<&'a str> {
+    let Some(object) = object else {
+        return ChainStep::End;
+    };
+    if is_stop(id) {
+        return ChainStep::Stop;
+    }
+    object
+        .owner_design_object
+        .as_deref()
+        .filter(|parent| *parent != id)
+        .map_or(ChainStep::End, ChainStep::Next)
+}
+
+/// The nearest transferred feature on each exact owner chain.
 ///
 /// Structural groups may sit between a native feature object and another
 /// feature object. Stop at the first transferred feature so a nested feature
 /// keeps its immediate structural parent. A missing link or a cycle rejects
 /// the chain instead of inferring a relationship from field vocabulary.
-fn nearest_feature_for_design_object<'a>(
-    start: &str,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
+struct NearestFeatures<'a, F> {
+    stops: ChainStops<&'a str, F>,
     feature_ids: &'a HashMap<String, FeatureId>,
-) -> Option<&'a FeatureId> {
-    let mut current = Some(start);
-    let mut traversed = 0usize;
+}
 
-    while let Some(current_id) = current {
-        traversed += 1;
-        if traversed > design_objects.len() {
-            return None;
-        }
-        let object = design_objects.get(current_id).copied()?;
-        if let Some(feature) = feature_ids.get(current_id) {
-            return Some(feature);
-        }
-        current = object
-            .owner_design_object
-            .as_deref()
-            .filter(|parent| *parent != current_id);
+fn nearest_features<'a>(
+    design_objects: &'a HashMap<&'a str, &'a CatiaDesignObject>,
+    feature_ids: &'a HashMap<String, FeatureId>,
+) -> NearestFeatures<'a, impl FnMut(&'a str) -> ChainStep<&'a str>> {
+    NearestFeatures {
+        stops: ChainStops::new(move |id: &'a str| {
+            owner_chain_step(id, design_objects.get(id).copied(), |id| {
+                feature_ids.contains_key(id)
+            })
+        }),
+        feature_ids,
     }
+}
 
-    None
+impl<'a, F: FnMut(&'a str) -> ChainStep<&'a str>> NearestFeatures<'a, F> {
+    fn of(&mut self, design_object: &'a str) -> Option<&'a FeatureId> {
+        self.stops
+            .stop(design_object)
+            .and_then(|object| self.feature_ids.get(object))
+    }
 }
 
 /// Transfer exact owner-bound reference history nodes.
@@ -576,11 +584,12 @@ pub(crate) fn transfer_design_features(
         .filter(|object| native_operation_candidate(object, &records).is_some())
         .map(|object| object.id.as_str())
         .collect::<std::collections::HashSet<_>>();
+    let owned_objects =
+        native_operation_owned_objects(&design_objects, &native_operation_object_ids);
     let operation_sources = NativeOperationSources {
         object_records: &records,
         entities: &entities,
-        design_objects: &design_objects,
-        object_ids: &native_operation_object_ids,
+        owned_objects: &owned_objects,
     };
     let mut transfer = DesignFeatureTransfer::default();
 
@@ -868,8 +877,7 @@ fn is_admitted_native_reference_plane_class(name: &str) -> bool {
 struct NativeOperationSources<'a> {
     object_records: &'a HashMap<&'a str, &'a CatiaObjectRecord>,
     entities: &'a HashMap<&'a str, &'a CatiaEntityRecord>,
-    design_objects: &'a HashMap<&'a str, &'a CatiaDesignObject>,
-    object_ids: &'a HashSet<&'a str>,
+    owned_objects: &'a HashMap<&'a str, Vec<&'a CatiaDesignObject>>,
 }
 
 fn transfer_native_operation(
@@ -893,8 +901,7 @@ fn transfer_native_operation(
         object,
         sources.object_records,
         sources.entities,
-        sources.design_objects,
-        sources.object_ids,
+        sources.owned_objects,
     )?;
     let definition = native_operation_definition(kind, &object.id);
     let feature_id = FeatureId::from(neutral_history_id(
@@ -1015,8 +1022,7 @@ fn native_operation_definition_properties(
     object: &CatiaDesignObject,
     object_records: &HashMap<&str, &CatiaObjectRecord>,
     entities: &HashMap<&str, &CatiaEntityRecord>,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
-    native_operation_object_ids: &HashSet<&str>,
+    owned_objects: &HashMap<&str, Vec<&CatiaDesignObject>>,
 ) -> Result<NativeOperationDefinitionProperties, CodecError> {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
@@ -1026,19 +1032,13 @@ fn native_operation_definition_properties(
     let mut definition_chain_value_records = HashSet::new();
     let mut range_records = HashSet::new();
 
-    let mut owned_objects = Vec::new();
-    for candidate in design_objects.values() {
-        if candidate.parent == object.parent
-            && native_operation_owner_chain_reaches(
-                candidate.id.as_str(),
-                object.id.as_str(),
-                design_objects,
-                native_operation_object_ids,
-            )
-        {
-            owned_objects.push(*candidate);
-        }
-    }
+    let owned_objects = owned_objects
+        .get(object.id.as_str())
+        .into_iter()
+        .flatten()
+        .copied()
+        .filter(|candidate| candidate.parent == object.parent)
+        .collect::<Vec<_>>();
     let mut definition_values = owned_objects
         .iter()
         .flat_map(|owned| owned.definition_values.iter())
@@ -1168,38 +1168,27 @@ fn native_operation_definition_properties(
     })
 }
 
-/// Return whether a design object belongs to one operation's exact structural
-/// owner chain. A nearer admitted operation owns the value instead of an
-/// outer operation. Missing links and non-reflexive cycles reject the whole
-/// chain so a partial owner path cannot invent feature properties.
-fn native_operation_owner_chain_reaches(
-    design_object_id: &str,
-    operation_object_id: &str,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
+/// Group design objects under the operation whose exact structural owner
+/// chain they belong to. The nearest admitted operation on the chain owns the
+/// object instead of an outer operation. Missing links and non-reflexive cycles
+/// reject the whole chain so a partial owner path cannot invent feature
+/// properties.
+fn native_operation_owned_objects<'a>(
+    design_objects: &HashMap<&'a str, &'a CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> bool {
-    let mut current = Some(design_object_id);
-    let mut traversed = 0usize;
-    while let Some(current_id) = current {
-        traversed += 1;
-        if traversed > design_objects.len() {
-            return false;
+) -> HashMap<&'a str, Vec<&'a CatiaDesignObject>> {
+    let mut operations = ChainStops::new(|id: &'a str| {
+        owner_chain_step(id, design_objects.get(id).copied(), |id| {
+            native_operation_object_ids.contains(id)
+        })
+    });
+    let mut owned = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
+    for candidate in design_objects.values().copied() {
+        if let Some(operation) = operations.stop(candidate.id.as_str()) {
+            owned.entry(operation).or_default().push(candidate);
         }
-        if current_id == operation_object_id {
-            return true;
-        }
-        if native_operation_object_ids.contains(current_id) {
-            return false;
-        }
-        let Some(object) = design_objects.get(current_id).copied() else {
-            return false;
-        };
-        current = object
-            .owner_design_object
-            .as_deref()
-            .filter(|parent| *parent != current_id);
     }
-    false
+    owned
 }
 
 fn property_prefix(
