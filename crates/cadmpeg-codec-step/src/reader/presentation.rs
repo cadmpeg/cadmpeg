@@ -244,6 +244,7 @@ pub(super) fn decode(
     styles.sort_by_key(|(_, left)| *left);
     let mut scalar_color_candidates =
         HashMap::<AppearanceTarget, NonemptyGroup<(u64, Color)>>::new();
+    let mut style_domains = BTreeMap::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
             typed.insert(style_id);
@@ -264,7 +265,7 @@ pub(super) fn decode(
             typed.insert(style_id);
             continue;
         }
-        let domain = style_domain(target_step, exchange, ctx)?;
+        let domain = style_domain(target_step, exchange, &mut style_domains, ctx)?;
         let mut active = BTreeSet::new();
         let mut color_cache = ColorCache::default();
         let mut invalid_surface_sides = BTreeSet::new();
@@ -524,33 +525,53 @@ fn invisible_body_ids(
     ctx: &DecodeContext<'_>,
 ) -> Result<(BTreeSet<BodyId>, bool), CodecError> {
     let mut body_ids = BTreeSet::new();
-    let mut active = BTreeSet::new();
+    let mut walked = BTreeMap::new();
     let supported = collect_invisible_body_ids(
         id,
         exchange,
         topology,
         body_indices,
-        &mut active,
+        &mut walked,
         &mut body_ids,
         ctx,
     )?;
     Ok((body_ids, supported))
 }
 
+/// Collects the bodies that `id` hides and reports whether every item on
+/// the way is supported. `walked` maps each record already reached to
+/// `None` while it is on the current path and to its result after. A record
+/// that reaches a cycle is unsupported from any path, so a kept result holds
+/// for every later caller.
 fn collect_invisible_body_ids(
     id: u64,
     exchange: &Exchange,
     topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
-    active: &mut BTreeSet<u64>,
+    walked: &mut BTreeMap<u64, Option<bool>>,
     body_ids: &mut BTreeSet<BodyId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if active.contains(&id) {
-        return Ok(false);
+    if let Some(supported) = walked.get(&id) {
+        return Ok(supported.unwrap_or(false));
     }
     let _nested = ctx.enter_nested("step_presentation_invisible_body_walk")?;
-    active.insert(id);
+    walked.insert(id, None);
+    let supported =
+        collect_record_body_ids(id, exchange, topology, body_indices, walked, body_ids, ctx)?;
+    walked.insert(id, Some(supported));
+    Ok(supported)
+}
+
+fn collect_record_body_ids(
+    id: u64,
+    exchange: &Exchange,
+    topology: &TopologyData,
+    body_indices: &BTreeMap<String, usize>,
+    walked: &mut BTreeMap<u64, Option<bool>>,
+    body_ids: &mut BTreeSet<BodyId>,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     if let Some(ids) = topology.body_by_root.get(&id) {
         for body in ids {
             if !body_ids.contains(body) {
@@ -558,18 +579,14 @@ fn collect_invisible_body_ids(
                 body_ids.insert(body);
             }
         }
-        active.remove(&id);
         return Ok(!ids.is_empty());
     }
     let fallback = BodyId::from(ids::data(kind!("body"), id));
     if body_indices.contains_key(fallback.as_str()) {
         body_ids.insert(fallback);
-        active.remove(&id);
         return Ok(true);
     }
-
     let Some(record) = exchange.records().get(&id) else {
-        active.remove(&id);
         return Ok(false);
     };
     let mut found_reference = false;
@@ -592,7 +609,7 @@ fn collect_invisible_body_ids(
                 exchange,
                 topology,
                 body_indices,
-                active,
+                walked,
                 body_ids,
                 ctx,
             )?;
@@ -610,31 +627,32 @@ fn collect_invisible_body_ids(
                     exchange,
                     topology,
                     body_indices,
-                    active,
+                    walked,
                     body_ids,
                     ctx,
                 )?;
             }
         }
     }
-    active.remove(&id);
     Ok(found_reference && supported)
 }
 
+/// The style targets that `id` stands for, expanding geometric sets in
+/// order. `visited` holds every record already reached, so each target
+/// appears once, at its first occurrence.
 fn expand_style_targets(
     id: u64,
     exchange: &Exchange,
     typed: &mut HashSet<u64>,
-    active: &mut BTreeSet<u64>,
+    visited: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u64>, CodecError> {
-    if active.contains(&id) {
+    if visited.contains(&id) {
         return Ok(Vec::new());
     }
     let _nested = ctx.enter_nested("step_presentation_style_target_walk")?;
-    active.insert(id);
+    visited.insert(id);
     let Some(record) = exchange.records().get(&id) else {
-        active.remove(&id);
         return Ok(vec![id]);
     };
     let Some(set_name) = record.partials.iter().find_map(|partial| {
@@ -644,7 +662,6 @@ fn expand_style_targets(
         )
         .then_some(partial.name.as_str())
     }) else {
-        active.remove(&id);
         return Ok(vec![id]);
     };
     typed.insert(id);
@@ -655,11 +672,8 @@ fn expand_style_targets(
         .flatten()
         .filter_map(ValueExt::reference)
     {
-        for target in expand_style_targets(item, exchange, typed, active, ctx)? {
-            targets.push(target);
-        }
+        targets.extend(expand_style_targets(item, exchange, typed, visited, ctx)?);
     }
-    active.remove(&id);
     Ok(targets)
 }
 
@@ -1588,26 +1602,46 @@ enum StyleDomain {
     Point,
 }
 
+/// The style domain of `id`. `domains` keeps the domain of every record
+/// already resolved; a record that reaches a cycle resolves to
+/// [`StyleDomain::Any`] from any path, so a kept domain holds for every
+/// later caller.
 fn style_domain(
     id: u64,
     exchange: &Exchange,
+    domains: &mut BTreeMap<u64, StyleDomain>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
-    style_domain_at(id, exchange, &mut BTreeSet::new(), ctx)
+    style_domain_at(id, exchange, &mut BTreeSet::new(), domains, ctx)
 }
 
 fn style_domain_at(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
+    domains: &mut BTreeMap<u64, StyleDomain>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
+    if let Some(domain) = domains.get(&id) {
+        return Ok(*domain);
+    }
     if active.contains(&id) {
         return Ok(StyleDomain::Any);
     }
     let _nested = ctx.enter_nested("step_presentation_style_domain_walk")?;
+    let domain = record_style_domain(id, exchange, active, domains, ctx)?;
+    domains.insert(id, domain);
+    Ok(domain)
+}
+
+fn record_style_domain(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    domains: &mut BTreeMap<u64, StyleDomain>,
+    ctx: &DecodeContext<'_>,
+) -> Result<StyleDomain, CodecError> {
     let Some(record) = exchange.records().get(&id) else {
-        active.remove(&id);
         return Ok(StyleDomain::Any);
     };
     let set_name = record.partials.iter().find_map(|partial| {
@@ -1627,7 +1661,7 @@ fn style_domain_at(
             .flatten()
             .filter_map(ValueExt::reference)
         {
-            let domain = style_domain_at(member, exchange, active, ctx)?;
+            let domain = style_domain_at(member, exchange, active, domains, ctx)?;
             if first.is_some_and(|first| first != domain) {
                 same = false;
             }
@@ -1635,8 +1669,8 @@ fn style_domain_at(
                 first = Some(domain);
             }
         }
+        active.remove(&id);
         if let Some(first) = first {
-            active.remove(&id);
             return Ok(if same { first } else { StyleDomain::Any });
         }
     }
@@ -1645,7 +1679,6 @@ fn style_domain_at(
         name.contains("POINT") || name.contains("VERTEX")
     });
     if has_point {
-        active.remove(&id);
         return Ok(StyleDomain::Point);
     }
     let has_curve = record.partials.iter().any(|partial| {
@@ -1659,26 +1692,25 @@ fn style_domain_at(
             )
     });
     if has_curve {
-        active.remove(&id);
         return Ok(StyleDomain::Curve);
     }
-    let result = if record.partials.iter().any(|partial| {
-        let name = partial.name.as_str();
-        name.contains("FACE")
-            || name.contains("SURFACE")
-            || name.contains("SOLID")
-            || name.contains("SHELL")
-            || matches!(
-                name,
-                "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
-            )
-    }) {
-        StyleDomain::Surface
-    } else {
-        StyleDomain::Any
-    };
-    active.remove(&id);
-    Ok(result)
+    Ok(
+        if record.partials.iter().any(|partial| {
+            let name = partial.name.as_str();
+            name.contains("FACE")
+                || name.contains("SURFACE")
+                || name.contains("SOLID")
+                || name.contains("SHELL")
+                || matches!(
+                    name,
+                    "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
+                )
+        }) {
+            StyleDomain::Surface
+        } else {
+            StyleDomain::Any
+        },
+    )
 }
 
 fn style_is_hidden(

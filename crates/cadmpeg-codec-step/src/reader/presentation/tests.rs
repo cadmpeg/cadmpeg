@@ -5,7 +5,8 @@ use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use std::collections::BTreeSet;
 
 mod cache_storage;
-mod collection_limits;
+mod depth_limits;
+mod shared_walks;
 mod surface_styles;
 
 /// A style whose override walk does not terminate states no depth. Its

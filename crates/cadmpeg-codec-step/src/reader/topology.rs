@@ -4726,21 +4726,16 @@ fn pcurve_selection_seeds(
             }
         }
     }
-    let mut kept = 0;
-    for at in 0..seeds.len() {
-        let seed = seeds[at];
-
-        if !seed.is_finite() {
-            continue;
-        }
-
-        if !seeds[..kept].contains(&seed) {
-            seeds[kept] = seed;
-            kept += 1;
-        }
-    }
-    seeds.truncate(kept);
+    retain_distinct_finite(&mut seeds);
     Ok(seeds)
+}
+
+/// Drops non-finite seeds and every seed equal to an earlier one, keeping
+/// first occurrences in order. Finite values compare equal exactly when their
+/// bits match after negative zero folds into zero.
+fn retain_distinct_finite(seeds: &mut Vec<f64>) {
+    let mut seen = HashSet::new();
+    seeds.retain(|seed| seed.is_finite() && seen.insert((seed + 0.0).to_bits()));
 }
 
 fn periodic_seed_coordinate([lower, upper]: [f64; 2], fraction: f64) -> Option<f64> {

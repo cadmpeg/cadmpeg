@@ -19,9 +19,10 @@ pub struct ZstdDecoder<'ctx, 'input> {
 }
 
 impl<'input> DecodeContext<'input> {
-    /// Inspects all frame windows before allocating a decoder. Each frame
-    /// window must fit the per-expansion decompression allowance; a window
-    /// that fits it but not the decoder is
+    /// Inspects all frame windows before allocating a decoder. The output
+    /// each frame's decoder buffers, its window or its declared content size
+    /// when that is smaller, must fit the per-expansion decompression
+    /// allowance. A declared window larger than the decoder's is
     /// [`CodecError::NotImplemented`] and leaves the session open.
     pub fn open_zstd<'ctx>(
         &'ctx self,
@@ -36,23 +37,23 @@ impl<'input> DecodeContext<'input> {
                 .ok_or_else(|| {
                     CodecError::Malformed("Zstandard frame offset escapes input".into())
                 })?;
-            let window = frame_window(frame)?;
-            if window > allowance {
+            let FrameWindow { declared, buffered } = frame_window(frame)?;
+            if buffered > allowance {
                 return Err(self.budget.refuse(
                     ResourceDimension::DecompressedBytes,
                     ResourceFailure::BudgetExceeded,
                     allowance,
                     0,
-                    window,
+                    buffered,
                     "Zstandard window",
                 ));
             }
-            if window > MAX_DECODER_WINDOW {
-                return Err(window_unsupported(window));
+            if declared > MAX_DECODER_WINDOW {
+                return Err(window_unsupported(declared));
             }
-            largest_window = largest_window.max(window);
+            largest_window = largest_window.max(declared);
             let size = zstd_safe::find_frame_compressed_size(frame.window())
-                .map_err(|code| zstd_error(self, code, window))?;
+                .map_err(|code| zstd_error(self, code, declared))?;
             if size == 0 || size > frame.window().len() {
                 return Err(CodecError::Malformed("invalid Zstandard frame size".into()));
             }
@@ -66,8 +67,8 @@ impl<'input> DecodeContext<'input> {
                 .retained_allocation_failed(largest_window, "Zstandard context")
         })?;
         // Round the inspected maximum up to the next permitted log, with the
-        // decoder's format minimum of 1 KiB. Each actual frame was checked
-        // against the exact allowance above before allocation.
+        // decoder's format minimum of 1 KiB. Each frame's buffered output was
+        // checked against the exact allowance above before allocation.
         let minimum_window = largest_window.max(1024);
         let window_log = u64::BITS - (minimum_window - 1).leading_zeros();
         decoder
@@ -140,11 +141,21 @@ fn zstd_error(ctx: &DecodeContext<'_>, code: usize, window: u64) -> CodecError {
     }
 }
 
-fn frame_window(mut frame: View<'_>) -> Result<u64, CodecError> {
+/// One frame's declared window and the output its decoder buffers: the
+/// window, or the declared content size when that is smaller.
+struct FrameWindow {
+    declared: u64,
+    buffered: u64,
+}
+
+fn frame_window(mut frame: View<'_>) -> Result<FrameWindow, CodecError> {
     let magic = frame.req_u32_le()?;
     if (0x184d_2a50..=0x184d_2a5f).contains(&magic) {
         frame.req_u32_le()?;
-        return Ok(0);
+        return Ok(FrameWindow {
+            declared: 0,
+            buffered: 0,
+        });
     }
     if magic != 0xfd2f_b528 {
         return Err(CodecError::Malformed("invalid Zstandard magic".into()));
@@ -157,11 +168,11 @@ fn frame_window(mut frame: View<'_>) -> Result<u64, CodecError> {
     }
     let single_segment = flags & 32 != 0;
     let window = if single_segment {
-        0
+        None
     } else {
         let descriptor = frame.req_u8()?;
         let base = 1_u64 << (10 + u32::from(descriptor >> 3));
-        base + (base / 8) * u64::from(descriptor & 7)
+        Some(base + (base / 8) * u64::from(descriptor & 7))
     };
     let dictionary_bytes = match flags & 3 {
         0 => 0,
@@ -171,13 +182,17 @@ fn frame_window(mut frame: View<'_>) -> Result<u64, CodecError> {
     };
     frame.req_take(dictionary_bytes)?;
     let content_size = match flags >> 6 {
-        0 if single_segment => u64::from(frame.req_u8()?),
-        0 => 0,
-        1 => u64::from(frame.req_u16_le()?) + 256,
-        2 => u64::from(frame.req_u32_le()?),
-        _ => frame.req_u64_le()?,
+        0 if single_segment => Some(u64::from(frame.req_u8()?)),
+        0 => None,
+        1 => Some(u64::from(frame.req_u16_le()?) + 256),
+        2 => Some(u64::from(frame.req_u32_le()?)),
+        _ => Some(frame.req_u64_le()?),
     };
-    Ok(if single_segment { content_size } else { window })
+    let declared = window.or(content_size).unwrap_or(0);
+    Ok(FrameWindow {
+        declared,
+        buffered: content_size.map_or(declared, |size| size.min(declared)),
+    })
 }
 
 #[cfg(test)]
@@ -212,6 +227,44 @@ mod tests {
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(fused)) if fused == limit)
         );
+    }
+
+    #[test]
+    fn zstd_window_is_admitted_by_a_smaller_declared_content_size() {
+        let window = 32 << 20;
+        let content = [7_u8; 256];
+        // A 32 MiB window descriptor, a two-byte content size of 256 bytes,
+        // and one raw last block holding the content.
+        let mut bytes = vec![
+            0x28,
+            0xb5,
+            0x2f,
+            0xfd,
+            0x40,
+            15 << 3,
+            0,
+            0,
+            0x01,
+            0x08,
+            0x00,
+        ];
+        bytes.extend_from_slice(&content);
+        let policy = DecodePolicy::service();
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        assert!(ctx.per_expand_allowance() < window);
+        let mut decoder = ctx.open_zstd(root).expect("the content size fits");
+        let mut output = Vec::new();
+        let mut chunk = [0; 64];
+        loop {
+            let read = decoder.read_chunk(&mut chunk).expect("read");
+            if read == 0 {
+                break;
+            }
+            output.extend_from_slice(&chunk[..read]);
+        }
+        assert_eq!(output, content);
+        assert_eq!(ctx.resource_refusal(), None);
     }
 
     #[test]

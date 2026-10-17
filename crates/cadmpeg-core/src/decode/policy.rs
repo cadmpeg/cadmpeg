@@ -143,7 +143,7 @@ const fn default_max_recursion_depth() -> u64 {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{ResourceLimits, GIB, MIB};
+    use super::{DecodePolicy, ResourceLimits, GIB, MIB};
 
     #[test]
     fn desktop_ceilings_are_explicit() {
@@ -179,5 +179,24 @@ mod tests {
         assert_eq!(limits.max_retained_bytes, desktop.max_retained_bytes);
         assert_eq!(limits.max_entities, desktop.max_entities);
         assert_eq!(limits.max_recursion_depth, desktop.max_recursion_depth);
+    }
+
+    #[test]
+    fn removed_limits_are_rejected_by_name() {
+        for field in [
+            "max_materialized_bytes",
+            "max_collection_items",
+            "max_work_units",
+        ] {
+            let limits = format!(
+                r#"{{"max_input_bytes":1,"max_decompressed_bytes_total":2,"max_decompressed_bytes_per_expand":3,"{field}":4}}"#
+            );
+            let policy = format!(r#"{{"mode":"salvage","limits":{limits}}}"#);
+            let expected = format!("unknown field `{field}`");
+            let error = serde_json::from_str::<ResourceLimits>(&limits).unwrap_err();
+            assert!(error.to_string().contains(&expected), "{error}");
+            let error = serde_json::from_str::<DecodePolicy>(&policy).unwrap_err();
+            assert!(error.to_string().contains(&expected), "{error}");
+        }
     }
 }
