@@ -3,7 +3,7 @@ use cadmpeg_ir::features::PlanarProfileRef;
 
 use super::feature_sources::{FeatureSources, SourcedFeature};
 use super::operations::feature_inline_operation_fields;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
@@ -209,13 +209,13 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         Ambiguous { strength: u8 },
     }
 
-    let mut native_features = HashMap::new();
-    let mut history_features = HashMap::new();
+    let native_features = crate::records::HistoryFeatures::new(histories);
+    let mut history_metadata = HashMap::new();
     for history in histories {
-        history_features.insert(history.id.as_str(), history.features.as_slice());
-        for feature in &history.features {
-            native_features.insert(feature.id.as_str(), feature);
-        }
+        history_metadata.insert(
+            history.id.as_str(),
+            crate::history::classify::HistoryMetadata::new(&history.features),
+        );
     }
     let mut neutral_indices = HashMap::new();
     for (index, feature) in features.iter().enumerate() {
@@ -225,15 +225,14 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     }
     let mut profiles = HashMap::<&str, Vec<ProfileVote<'_>>>::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut objects = native_features
-            .values()
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?, *feature)))
+            .iter()
+            .filter_map(|feature| Some((names.of(feature)?, feature)))
             .filter(|(_, feature)| {
-                !history_features
+                !history_metadata
                     .get(feature.parent.as_str())
-                    .is_some_and(|features| {
-                        crate::history::classify::is_history_metadata_record(feature, features)
-                    })
+                    .is_some_and(|metadata| metadata.contains(feature))
             })
             .enumerate()
             .collect::<Vec<_>>();
@@ -474,10 +473,7 @@ pub(crate) fn project_dissected_sketches(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
 ) {
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut single_profile_sketches = HashSet::new();
     for sketch in sketches.iter().filter(|sketch| sketch.profiles.len() == 1) {
         single_profile_sketches.insert(&sketch.id);
@@ -507,7 +503,7 @@ pub(crate) fn project_dissected_sketches(
             .native_ref
             .as_deref()
             .and_then(|native| native_features.get(native))
-            .is_some_and(|native| is_dissected_profile_feature(native))
+            .is_some_and(is_dissected_profile_feature)
     }) {
         let mut candidates = feature
             .dependencies

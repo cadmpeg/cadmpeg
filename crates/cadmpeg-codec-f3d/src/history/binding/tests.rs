@@ -86,6 +86,85 @@ fn fixture() -> BTreeMap<i64, Record> {
         .collect()
 }
 
+fn ring(base: i64, face: i64, next: i64, partner: i64) -> [Record; 6] {
+    [
+        refs(base, "loop", &[(3, next), (4, base + 1), (5, face)]),
+        refs(
+            base + 1,
+            "coedge",
+            &[
+                (3, base + 1),
+                (4, base + 1),
+                (5, partner),
+                (6, base + 2),
+                (8, base),
+            ],
+        ),
+        refs(
+            base + 2,
+            "edge",
+            &[(3, base + 3), (5, base + 3), (7, base + 1), (8, base + 5)],
+        ),
+        refs(base + 3, "vertex", &[(3, base + 2), (4, base + 4)]),
+        record(
+            base + 4,
+            "point",
+            vec![Token::Ref(-1), Token::Position([0.0, 0.0, 0.0])],
+        ),
+        record(
+            base + 5,
+            "straight-curve",
+            vec![
+                Token::Ref(-1),
+                Token::Position([0.0, 0.0, 0.0]),
+                Token::Vector3([1.0, 0.0, 0.0]),
+            ],
+        ),
+    ]
+}
+
+/// Face 10 gains inner loops 30 and 60, partnered with hole-wall faces 50 and 80.
+fn holed_fixture() -> BTreeMap<i64, Record> {
+    let mut records = fixture();
+    set_ref(&mut records, 12, 3, 30);
+    set_ref(&mut records, 20, 3, 50);
+    for (face, next, partner, wall) in [(50, 80, 31, 30), (80, -1, 61, 60)] {
+        records.extend(
+            [
+                refs(
+                    face,
+                    "face",
+                    &[(3, next), (4, face + 2), (5, 3), (7, face + 1)],
+                ),
+                record(
+                    face + 1,
+                    "plane-surface",
+                    vec![
+                        Token::Ref(-1),
+                        Token::Position([0.0, 0.0, 0.0]),
+                        Token::Vector3([0.0, 0.0, 1.0]),
+                        Token::Vector3([1.0, 0.0, 0.0]),
+                    ],
+                ),
+            ]
+            .into_iter()
+            .chain(ring(face + 2, face, -1, partner))
+            .chain(ring(wall, 10, if wall == 30 { 60 } else { -1 }, face + 3))
+            .map(|record| (i64::try_from(record.index).unwrap(), record)),
+        );
+    }
+    records
+}
+
+fn holed_change(change: impl FnOnce(&mut BTreeMap<i64, Record>) -> Slots) -> Statistics {
+    let a = holed_fixture();
+    let mut b = a.clone();
+    let changed = change(&mut b);
+    let stats = compare_step(&a, &b, &changed, None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+    stats
+}
+
 fn set_ref(records: &mut BTreeMap<i64, Record>, slot: i64, field: usize, reference: i64) {
     std::sync::Arc::make_mut(&mut records.get_mut(&slot).unwrap().tokens)[field] =
         Token::Ref(reference);
@@ -238,6 +317,136 @@ fn carrier_update() {
         .into();
         Slots::from([11])
     });
+}
+
+#[test]
+fn restamped_records_enter_the_transition_without_decoding() {
+    let a = fixture();
+    let stats = compare_step(&a, &a, &Slots::from([11, 13, 14, 16]), None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+    assert_eq!(stats.decoded_records, a.len());
+}
+
+#[test]
+fn signed_zero_is_a_content_change() {
+    let a = fixture();
+    let mut b = a.clone();
+    b.get_mut(&16).unwrap().tokens = vec![Token::Ref(-1), Token::Position([-0.0, 0.0, 0.0])].into();
+    let stats = compare_step(&a, &b, &Slots::from([16]), None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+    assert!(stats.decoded_records > a.len());
+}
+
+#[test]
+fn clean_multi_loop_face_splits_per_loop() {
+    let a = holed_fixture();
+    let archive = a
+        .iter()
+        .map(|(&slot, record)| (slot, record.clone()))
+        .collect();
+    let mut binder = Binder::new(&archive, None);
+    binder
+        .update(
+            &a.keys().copied().collect(),
+            &a.keys().map(|&s| (s, s)).collect(),
+        )
+        .unwrap();
+    binder.rebuild_units();
+    let unit = &binder.units.faces[&10];
+    assert_eq!(unit.chain, vec![12, 30, 60]);
+    assert_eq!(
+        unit.parts.keys().copied().collect::<Vec<_>>(),
+        vec![10, 12, 30, 60]
+    );
+    assert_eq!(unit.context, Slots::from([10, 11, 12, 30, 60]));
+    assert!(!unit.parts[&30].contains(&10));
+    let neighbours = binder.units.neighbours(&super::Parts::from([(10, 30)]));
+    assert_eq!(neighbours, super::Parts::from([(10, 30), (50, 50)]));
+}
+
+#[test]
+fn hole_wall_change_decodes_only_its_loop() {
+    let full = holed_fixture().len();
+    let stats = holed_change(|b| {
+        set_ref(b, 53, 5, -1);
+        Slots::from([53])
+    });
+    assert!(stats.decoded_records - full < full / 2, "{stats:?}");
+}
+
+#[test]
+fn split_face_surface_change() {
+    holed_change(|b| {
+        b.get_mut(&11).unwrap().tokens = vec![
+            Token::Ref(-1),
+            Token::Position([1.0, 2.0, 3.0]),
+            Token::Vector3([0.0, 0.0, 1.0]),
+            Token::Vector3([1.0, 0.0, 0.0]),
+        ]
+        .into();
+        Slots::from([11])
+    });
+}
+
+#[test]
+fn split_face_loops_sharing_a_curve() {
+    holed_change(|b| {
+        set_ref(b, 62, 8, 35);
+        Slots::from([62])
+    });
+}
+
+#[test]
+fn split_face_chain_drops_a_loop() {
+    holed_change(|b| {
+        set_ref(b, 30, 3, -1);
+        Slots::from([30])
+    });
+}
+
+#[test]
+fn split_face_chain_gains_a_loop() {
+    let b = holed_fixture();
+    let mut a = b.clone();
+    set_ref(&mut a, 30, 3, -1);
+    let stats = compare_step(&a, &b, &Slots::from([30]), None);
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+}
+
+#[test]
+fn split_face_loop_changes_owner() {
+    holed_change(|b| {
+        set_ref(b, 60, 5, 80);
+        Slots::from([60])
+    });
+}
+
+#[test]
+fn split_face_deletion() {
+    holed_change(|b| {
+        for slot in (10..18).chain(30..36).chain(60..66) {
+            b.remove(&slot);
+        }
+        set_ref(b, 3, 5, 20);
+        for coedge in [23, 53, 83] {
+            set_ref(b, coedge, 5, -1);
+        }
+        (10..18)
+            .chain(30..36)
+            .chain(60..66)
+            .chain([3, 23, 53, 83])
+            .collect()
+    });
+}
+
+#[test]
+fn loop_shared_with_another_face_chain_falls_back() {
+    let mut a = holed_fixture();
+    set_ref(&mut a, 82, 3, 60);
+    let mut b = a.clone();
+    set_ref(&mut b, 53, 5, -1);
+    let stats = compare_step(&a, &b, &Slots::from([53]), None);
+    assert_eq!(stats.fallbacks.get("shared-loop-chain"), Some(&1));
 }
 
 #[test]

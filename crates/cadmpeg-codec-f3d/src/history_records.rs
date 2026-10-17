@@ -1259,6 +1259,7 @@ pub(crate) enum AsmTransitionError {
     MembershipCoverage,
     RemovedRowAbsent,
     UnsortedFamily,
+    Allocation,
 }
 
 pub(crate) use chain::{AsmStateSnapshot, MaterializedTopologies};

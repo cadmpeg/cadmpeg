@@ -3,7 +3,8 @@
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, WorkBudget};
@@ -552,6 +553,8 @@ pub(crate) fn annotations(
     )?;
     losses.extend(projection.walk_caps.losses());
     let projected = projection.annotations;
+    let positions_by_prefix =
+        positions_by_id_prefix(projected.iter().map(|annotation| annotation.id.as_str()));
     for (reference, entity) in root
         .annotations
         .references
@@ -561,14 +564,12 @@ pub(crate) fn annotations(
         let Some(prefix) = pmi_id(&reference.id).map(PmiId::into_string) else {
             continue;
         };
-        for annotation in projected.iter().filter(|annotation| {
-            annotation.id.as_str() == prefix
-                || annotation
-                    .id
-                    .as_str()
-                    .strip_prefix(&prefix)
-                    .is_some_and(|suffix| suffix.starts_with(':'))
-        }) {
+        for annotation in positions_by_prefix
+            .get(prefix.as_str())
+            .into_iter()
+            .flatten()
+            .filter_map(|&position| projected.get(position))
+        {
             crate::annotations::note(
                 annotations,
                 annotation.id.as_str(),
@@ -582,6 +583,21 @@ pub(crate) fn annotations(
     Ok(projected)
 }
 
+/// Positions of the ids that equal each key or continue it with `:`, in id
+/// order.
+fn positions_by_id_prefix<'a>(ids: impl Iterator<Item = &'a str>) -> HashMap<&'a str, Vec<usize>> {
+    let mut positions = HashMap::<_, Vec<_>>::new();
+    for (position, id) in ids.enumerate() {
+        positions.entry(id).or_default().push(position);
+        for (end, _) in id.match_indices(':') {
+            if let Some(prefix) = id.get(..end) {
+                positions.entry(prefix).or_default().push(position);
+            }
+        }
+    }
+    positions
+}
+
 /// Build the native-history join used when a SWIFT hole-pattern graph omits all
 /// applied members and CAD identifiers. The map is keyed by the SWIFT object
 /// name (`Hole PatternN`) and is populated only by one unambiguous native
@@ -589,6 +605,34 @@ pub(crate) fn annotations(
 pub(crate) fn pattern_hole_nominal_context(
     features: &[cadmpeg_ir::features::Feature],
 ) -> BTreeMap<String, PositiveReal> {
+    let mut first_ordinals = HashMap::<&cadmpeg_ir::features::FeatureId, u64>::new();
+    let mut native_holes = HashMap::<_, Vec<_>>::new();
+    for feature in features {
+        first_ordinals
+            .entry(&feature.id)
+            .and_modify(|ordinal| *ordinal = (*ordinal).min(feature.ordinal))
+            .or_insert(feature.ordinal);
+        if !feature
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
+        {
+            continue;
+        }
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let diameter = shape.diameter().map(PositiveReal::from_assigned_length);
+        for dependency in &feature.dependencies {
+            native_holes
+                .entry(dependency)
+                .or_default()
+                .push((feature.ordinal, diameter));
+        }
+    }
     let mut candidates = BTreeMap::<String, Option<PositiveReal>>::new();
     for pattern in features {
         let Some(name) = pattern.name.as_deref() else {
@@ -615,47 +659,18 @@ pub(crate) fn pattern_hole_nominal_context(
         let [cadmpeg_ir::features::patterns::PatternSeed::Feature(seed)] = seeds.as_slice() else {
             continue;
         };
-        let mut preceding_seed = false;
-        for candidate in features {
-            if candidate.id == *seed && candidate.ordinal < pattern.ordinal {
-                preceding_seed = true;
-                break;
-            }
-        }
-        if !preceding_seed {
+        if first_ordinals
+            .get(seed)
+            .is_none_or(|&ordinal| ordinal >= pattern.ordinal)
+        {
             continue;
         }
-        let mut hole_count = 0u8;
-        let mut diameter = None;
-        for candidate in features {
-            if candidate.ordinal <= pattern.ordinal {
-                continue;
-            }
-            if !candidate
-                .dependencies
-                .iter()
-                .any(|dependency| dependency == seed)
-                || !candidate
-                    .native_ref
-                    .as_deref()
-                    .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-            {
-                continue;
-            }
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
-            ) = candidate.evaluation.definition()
-            else {
-                continue;
-            };
-            if hole_count == 1 {
-                hole_count = 2;
-                break;
-            }
-            hole_count = 1;
-            diameter = shape.diameter().map(PositiveReal::from_assigned_length);
-        }
-        let (1, Some(diameter)) = (hole_count, diameter) else {
+        let mut later_holes = native_holes
+            .get(seed)
+            .into_iter()
+            .flatten()
+            .filter(|(ordinal, _)| *ordinal > pattern.ordinal);
+        let (Some(&(_, Some(diameter))), None) = (later_holes.next(), later_holes.next()) else {
             continue;
         };
         let semantic_name = format!("Hole Pattern{suffix}");
@@ -1164,6 +1179,8 @@ fn project_with_topology(
         };
         record_projection(&mut unsupported, reference, entity, disposition)?;
     }
+    let counterbores = Counterbores::new(root, &feature_index);
+    let mut datum_systems = BTreeMap::<_, PmiId>::new();
     for (reference, entity) in root
         .annotations
         .references
@@ -1201,29 +1218,29 @@ fn project_with_topology(
                 )?;
                 continue;
             };
-            let existing_system = projected.iter().find(|annotation| {
-                matches!(&annotation.definition, PmiDefinition::DatumSystem { references }
-                    if *references == tolerance.references)
-            });
             let datum_system = if tolerance.references.as_slice().is_empty() {
                 None
-            } else if let Some(existing) = existing_system {
-                Some(existing.id.clone())
             } else {
-                let system_id = format!("{}:datum-system", id.as_str());
-                let system_id = PmiId::mint(system_id)
-                    .map_err(|_| CodecError::malformed("invalid SWIFT datum-system ID"))?;
-                let datum_system = system_id.clone();
-                projected.push(PmiAnnotation {
-                    id: system_id,
-                    name: None,
-                    visible: None,
-                    targets: Vec::new(),
-                    definition: PmiDefinition::DatumSystem {
-                        references: tolerance.references,
-                    },
-                });
-                Some(datum_system)
+                match datum_systems.entry(datum_system_key(&tolerance.references)) {
+                    Entry::Occupied(existing) => Some(existing.get().clone()),
+                    Entry::Vacant(entry) => {
+                        let system_id = format!("{}:datum-system", id.as_str());
+                        let system_id = PmiId::mint(system_id)
+                            .map_err(|_| CodecError::malformed("invalid SWIFT datum-system ID"))?;
+                        entry.insert(system_id.clone());
+                        let datum_system = system_id.clone();
+                        projected.push(PmiAnnotation {
+                            id: system_id,
+                            name: None,
+                            visible: None,
+                            targets: Vec::new(),
+                            definition: PmiDefinition::DatumSystem {
+                                references: tolerance.references,
+                            },
+                        });
+                        Some(datum_system)
+                    }
+                }
             };
             let (defined_unit, defined_area_unit, defined_area_second_unit) = defined_area(entity);
             projected.push(PmiAnnotation {
@@ -1252,7 +1269,7 @@ fn project_with_topology(
         } else if let Some(annotation) = project_dimension(
             ctx,
             DimensionSource {
-                root,
+                counterbores: &counterbores,
                 reference,
                 entity,
             },
@@ -1273,6 +1290,48 @@ fn project_with_topology(
         unsupported,
         walk_caps: feature_index.caps(),
     })
+}
+
+/// The equality of `references`, as an ordered key.
+fn datum_system_key(
+    references: &cadmpeg_ir::pmi::DatumReferences,
+) -> Vec<(PmiId, NonZeroU32, Option<u32>, Vec<String>)> {
+    references
+        .as_slice()
+        .iter()
+        .map(|reference| {
+            let DatumReference {
+                datum,
+                precedence,
+                common_group,
+                modifiers,
+            } = reference;
+            (datum.clone(), *precedence, *common_group, modifiers.clone())
+        })
+        .collect()
+}
+
+/// A root's unsuppressed counterbores in source order, keyed by the features
+/// each one applies to other than its cylinder.
+struct Counterbores<'a>(BTreeMap<BTreeSet<&'a str>, Vec<&'a Entity>>);
+
+impl<'a> Counterbores<'a> {
+    fn new(root: &'a Entity, feature_index: &FeatureIndex<'_>) -> Self {
+        let mut by_context = BTreeMap::<_, Vec<_>>::new();
+        for candidate in &root.annotations.entities {
+            if suppressed(candidate) || short_class(&candidate.class) != "GdtCounterBore" {
+                continue;
+            }
+            if let Some(context) = direct_feature_context(candidate, feature_index, "GdtCylinder") {
+                by_context.entry(context).or_default().push(candidate);
+            }
+        }
+        Self(by_context)
+    }
+
+    fn applied_to(&self, context: &BTreeSet<&'a str>) -> &[&'a Entity] {
+        self.0.get(context).map_or(&[], Vec::as_slice)
+    }
 }
 
 fn project_datum(
@@ -1386,7 +1445,7 @@ fn project_lower_profile_tier(
 
 #[derive(Clone, Copy)]
 struct DimensionSource<'a> {
-    root: &'a Entity,
+    counterbores: &'a Counterbores<'a>,
     reference: &'a Reference,
     entity: &'a Entity,
 }
@@ -1400,7 +1459,7 @@ fn project_dimension(
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<PmiAnnotation>, CodecError> {
     let DimensionSource {
-        root,
+        counterbores,
         reference,
         entity,
     } = source;
@@ -1426,7 +1485,7 @@ fn project_dimension(
     let implicit_nominal = if explicit_nominal.is_none() {
         implicit_dimension_nominal(
             ctx,
-            root,
+            counterbores,
             entity,
             feature_index,
             rendered,
@@ -1470,38 +1529,43 @@ fn project_dimension(
 
 fn implicit_dimension_nominal(
     ctx: &DecodeContext<'_>,
-    root: &Entity,
+    counterbores: &Counterbores<'_>,
     entity: &Entity,
     feature_index: &FeatureIndex<'_>,
     rendered: &[RenderedDimension],
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    let source = match short_class(&entity.class) {
-        "GdtDiameter" => diameter_nominal(ctx, root, entity, feature_index, pattern_hole_nominals)?,
-        "GdtDepth" => depth_nominal(ctx, root, entity, feature_index)?,
-        "GdtWidth" => {
-            width_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
-        }
-        "GdtRadius" => {
-            radius_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
-        }
-        "GdtLength" => {
-            length_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
-        }
-        "GdtDistanceBetween" => {
-            directional_distance(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
-        }
-        "GdtCounterBore" => {
-            counterbore_from_direct_geometry(entity, feature_index).map(ImplicitNominal::Exact)
-        }
-        "GdtCounterSinkDiameter" => {
-            countersink_diameter_from_direct_geometry(entity, feature_index)
-                .map(ImplicitNominal::Exact)
-        }
-        "GdtCounterSinkAngle" => countersink_angle_from_direct_geometry(entity, feature_index)
-            .map(ImplicitNominal::Exact),
-        _ => None,
-    };
+    let source =
+        match short_class(&entity.class) {
+            "GdtDiameter" => diameter_nominal(
+                ctx,
+                counterbores,
+                entity,
+                feature_index,
+                pattern_hole_nominals,
+            )?,
+            "GdtDepth" => depth_nominal(ctx, counterbores, entity, feature_index)?,
+            "GdtWidth" => {
+                width_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
+            }
+            "GdtRadius" => radius_from_applied_geometry(ctx, entity, feature_index)?
+                .map(ImplicitNominal::Exact),
+            "GdtLength" => length_from_applied_geometry(ctx, entity, feature_index)?
+                .map(ImplicitNominal::Exact),
+            "GdtDistanceBetween" => {
+                directional_distance(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
+            }
+            "GdtCounterBore" => {
+                counterbore_from_direct_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+            }
+            "GdtCounterSinkDiameter" => {
+                countersink_diameter_from_direct_geometry(entity, feature_index)
+                    .map(ImplicitNominal::Exact)
+            }
+            "GdtCounterSinkAngle" => countersink_angle_from_direct_geometry(entity, feature_index)
+                .map(ImplicitNominal::Exact),
+            _ => None,
+        };
     let Some(source) = source else {
         return Ok(None);
     };
@@ -1893,7 +1957,7 @@ impl<T, F: Fn(&Entity) -> Option<T>> LeafCollector<'_, '_, T, F> {
 
 fn diameter_nominal(
     ctx: &DecodeContext<'_>,
-    root: &Entity,
+    counterbores: &Counterbores<'_>,
     annotation: &Entity,
     feature_index: &FeatureIndex<'_>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
@@ -1902,7 +1966,7 @@ fn diameter_nominal(
     let geometry = if direct.is_some() {
         direct
     } else {
-        hole_diameter_excluding_counterbore(ctx, root, annotation, feature_index)?
+        hole_diameter_excluding_counterbore(ctx, counterbores, annotation, feature_index)?
     };
     if let Some(geometry) = geometry {
         return Ok(Some(ImplicitNominal::RenderedOrExact {
@@ -1967,7 +2031,7 @@ fn empty_pattern_hole_nominal(
 
 fn hole_diameter_excluding_counterbore(
     ctx: &DecodeContext<'_>,
-    root: &Entity,
+    counterbores: &Counterbores<'_>,
     annotation: &Entity,
     feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
@@ -1979,15 +2043,7 @@ fn hole_diameter_excluding_counterbore(
         return Ok(None);
     }
     let mut counterbore_diameter: Option<PositiveReal> = None;
-    for candidate in &root.annotations.entities {
-        if suppressed(candidate) || short_class(&candidate.class) != "GdtCounterBore" {
-            continue;
-        }
-        if direct_feature_context(candidate, feature_index, "GdtCylinder").as_ref()
-            != Some(&context)
-        {
-            continue;
-        }
+    for candidate in counterbores.applied_to(&context) {
         let Some(value) = counterbore_from_direct_geometry(candidate, feature_index) else {
             continue;
         };
@@ -2065,7 +2121,7 @@ fn depth_from_applied_geometry(
 
 fn depth_nominal(
     ctx: &DecodeContext<'_>,
-    root: &Entity,
+    counterbores: &Counterbores<'_>,
     annotation: &Entity,
     feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<ImplicitNominal>, CodecError> {
@@ -2084,7 +2140,7 @@ fn depth_nominal(
             exact,
         }));
     }
-    if let Some(exact) = counterbore_depth_from_sibling(root, annotation, feature_index) {
+    if let Some(exact) = counterbore_depth_from_sibling(counterbores, annotation, feature_index) {
         return Ok(Some(ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Depth,
             geometry: exact,
@@ -2102,22 +2158,14 @@ fn depth_nominal(
 }
 
 fn counterbore_depth_from_sibling(
-    root: &Entity,
+    counterbores: &Counterbores<'_>,
     annotation: &Entity,
     feature_index: &FeatureIndex<'_>,
 ) -> Option<PositiveReal> {
     let plane = unique_direct_feature(annotation, feature_index, "GdtPlane")?;
     let context = direct_feature_context(annotation, feature_index, "GdtPlane")?;
     let mut first: Option<PositiveReal> = None;
-    for candidate in &root.annotations.entities {
-        if suppressed(candidate) || short_class(&candidate.class) != "GdtCounterBore" {
-            continue;
-        }
-        if direct_feature_context(candidate, feature_index, "GdtCylinder").as_ref()
-            != Some(&context)
-        {
-            continue;
-        }
+    for candidate in counterbores.applied_to(&context) {
         let Some(cylinder) = unique_direct_feature(candidate, feature_index, "GdtCylinder") else {
             continue;
         };

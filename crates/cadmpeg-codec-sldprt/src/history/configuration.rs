@@ -397,6 +397,7 @@ fn project_configuration_design_states_within(
             scoped_lanes,
         );
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
+        let native_features = crate::records::HistoryFeatures::new(histories);
         let mut feature_states = BTreeMap::new();
         for mut feature in features {
             if let Some(base_definition) = base_definitions.get(&feature.id).copied() {
@@ -410,7 +411,7 @@ fn project_configuration_design_states_within(
                     let inherit_placements =
                         !crate::resolved_features::holes::hole_position_carrier_present(
                             &feature,
-                            histories,
+                            &native_features,
                             scoped_lanes,
                         );
                     let mut result = Ok(());
@@ -440,6 +441,17 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let slots = ConfigurationSlots::new(&ir.model.configurations);
+    let feature_ids_by_native =
+        crate::resolved_features::projections::compact_edge_feature_ids(&ir.model.features);
+    let mut features_by_native = HashMap::<&str, Vec<usize>>::new();
+    for (index, feature) in ir.model.features.iter().enumerate() {
+        if let Some(native_ref) = feature.native_ref.as_deref() {
+            features_by_native
+                .entry(native_ref)
+                .or_default()
+                .push(index);
+        }
+    }
     for lane in lanes
         .iter()
         .filter(|lane| crate::resolved_features::assembly::is_supplemental_config_lane(lane))
@@ -454,16 +466,27 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         let Some(configuration_index) = slots.index_for_slot(slot_index) else {
             continue;
         };
+        let mut selected = lane
+            .edge_selections
+            .iter()
+            .filter_map(|selection| features_by_native.get(selection.feature_ref.as_str()))
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        selected.sort_unstable();
+        selected.dedup();
         let states = &ir.model.configurations[configuration_index].feature_states;
-        let mut features = copy_configuration_features(&ir.model.features);
-        for feature in &mut features {
-            let Some(state) = states.get(&feature.id) else {
-                continue;
-            };
-            apply_configuration_state(feature, state);
+        let mut features = Vec::with_capacity(selected.len());
+        for index in selected {
+            let mut feature = ir.model.features[index].clone();
+            if let Some(state) = states.get(&feature.id) {
+                apply_configuration_state(&mut feature, state);
+            }
+            features.push(feature);
         }
-        crate::resolved_features::projections::project_compact_edge_selections(
+        crate::resolved_features::projections::project_compact_edge_selections_with_ids(
             &mut features,
+            &feature_ids_by_native,
             &[],
             std::slice::from_ref(lane),
         )?;

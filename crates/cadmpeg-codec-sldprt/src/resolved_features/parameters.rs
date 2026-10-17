@@ -1,10 +1,10 @@
 //! Design parameter enrichment and scalar synchronisation.
 
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::{NAME_MARKER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
-    FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
-    FeatureInputScalarRole,
+    FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
+    FeatureInputScalar, FeatureInputScalarRole,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -15,16 +15,90 @@ enum ScalarUnit {
     Angle,
 }
 
-fn scalar_owned_by_feature(
-    scalar: &FeatureInputScalar,
-    feature: &str,
-    start: u64,
-    end: Option<u64>,
-) -> bool {
-    scalar.feature_ref.as_deref() == Some(feature)
-        || (scalar.feature_ref.is_none()
-            && scalar.offset > start
-            && end.is_none_or(|end| scalar.offset < end))
+/// A lane's scalars by owner. A scalar naming a feature belongs to it; an
+/// unreferenced scalar belongs to the object whose open span holds its offset.
+struct ScalarOwners<'a> {
+    referenced: HashMap<&'a str, Vec<usize>>,
+    unreferenced: Vec<(u64, usize)>,
+}
+
+impl<'a> ScalarOwners<'a> {
+    fn new(scalars: &'a [FeatureInputScalar]) -> Self {
+        let mut referenced = HashMap::<_, Vec<_>>::new();
+        let mut unreferenced = Vec::new();
+        for (index, scalar) in scalars.iter().enumerate() {
+            match scalar.feature_ref.as_deref() {
+                Some(feature) => referenced.entry(feature).or_default().push(index),
+                None => unreferenced.push((scalar.offset, index)),
+            }
+        }
+        unreferenced.sort_unstable();
+        Self {
+            referenced,
+            unreferenced,
+        }
+    }
+
+    /// Indices, in scalar order, of the scalars `feature` owns over the span
+    /// after `start` and before `end`.
+    fn owned(&self, feature: &str, start: u64, end: Option<u64>) -> Vec<usize> {
+        let first = self
+            .unreferenced
+            .partition_point(|&(offset, _)| offset <= start);
+        let last = end.map_or(self.unreferenced.len(), |end| {
+            self.unreferenced
+                .partition_point(|&(offset, _)| offset < end)
+        });
+        let mut owned = self.referenced.get(feature).cloned().unwrap_or_default();
+        owned.extend(
+            self.unreferenced
+                .get(first..last)
+                .into_iter()
+                .flatten()
+                .map(|&(_, index)| index),
+        );
+        owned.sort_unstable();
+        owned
+    }
+}
+
+/// A lane's class declarations and name records in offset order.
+struct DeclaredParameters<'a> {
+    classes: Vec<&'a FeatureInputClass>,
+    name_offsets: Vec<u64>,
+}
+
+impl<'a> DeclaredParameters<'a> {
+    fn new(lane: &'a FeatureInputLane) -> Self {
+        let mut classes = lane.classes.iter().collect::<Vec<_>>();
+        classes.sort_by_key(|class| class.offset);
+        let mut name_offsets = lane
+            .names
+            .iter()
+            .map(|name| name.offset)
+            .collect::<Vec<_>>();
+        name_offsets.sort_unstable();
+        Self {
+            classes,
+            name_offsets,
+        }
+    }
+
+    /// The last class declared before `name`, the later of two at one
+    /// offset, when no other name lies between them.
+    fn class_of(&self, name: &FeatureInputName) -> Option<&'a FeatureInputClass> {
+        let before = self
+            .classes
+            .partition_point(|class| class.offset < name.offset);
+        let class = *self.classes.get(before.checked_sub(1)?)?;
+        let after_class = self
+            .name_offsets
+            .partition_point(|&offset| offset <= class.offset);
+        let before_name = self
+            .name_offsets
+            .partition_point(|&offset| offset < name.offset);
+        (after_class >= before_name).then_some(class)
+    }
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
@@ -49,21 +123,13 @@ pub(crate) fn enrich_history_parameters<'a>(
             | FeatureInputRelationFamily::PointPointVerticalDistance
             | FeatureInputRelationFamily::CircleDiameter => ScalarUnit::Length,
         };
+        let declared = DeclaredParameters::new(lane);
         let units = lane
             .scalars
             .iter()
             .filter_map(|scalar| {
                 let name = names_by_id.get(scalar.name.as_str())?;
-                let parameter_class = lane
-                    .classes
-                    .iter()
-                    .filter(|class| class.offset < name.offset)
-                    .max_by_key(|class| class.offset)?;
-                if lane.names.iter().any(|intervening| {
-                    intervening.offset > parameter_class.offset && intervening.offset < name.offset
-                }) {
-                    return None;
-                }
+                let parameter_class = declared.class_of(name)?;
                 let unit = match parameter_class.name.as_str() {
                     "moLengthParameter_c" => ScalarUnit::Length,
                     "moAngleParameter_c" => ScalarUnit::Angle,
@@ -83,24 +149,26 @@ pub(crate) fn enrich_history_parameters<'a>(
                 scalar_units.insert(scalar.as_str(), unit);
             }
         }
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                let Some(name) = feature_object_name(feature, lane) else {
+                let Some(name) = object_names.of(feature) else {
                     continue;
                 };
                 starts.push((name.offset, history_index, feature_index));
             }
         }
         starts.sort_by_key(|left| left.0);
+        let owners = ScalarOwners::new(&lane.scalars);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|next| next.0);
             let feature = &histories[history_index].features[feature_index];
             let mut owned = BTreeMap::<&str, Vec<&FeatureInputScalar>>::new();
-            for scalar in lane
-                .scalars
-                .iter()
-                .filter(|scalar| scalar_owned_by_feature(scalar, &feature.id, start, end))
+            for scalar in owners
+                .owned(&feature.id, start, end)
+                .into_iter()
+                .filter_map(|index| lane.scalars.get(index))
             {
                 let Some(name) = names_by_id.get(scalar.name.as_str()) else {
                     continue;
@@ -296,26 +364,26 @@ pub(crate) fn sync_changed_feature_scalars(
             .iter()
             .map(|name| (name.id.as_str(), name.value.as_str()))
             .collect::<HashMap<_, _>>();
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter_map(|feature| {
-                feature_object_name(feature, lane).map(|name| (name.offset, feature))
-            })
+            .filter_map(|feature| object_names.of(feature).map(|name| (name.offset, feature)))
             .collect::<Vec<_>>();
         starts.sort_by_key(|(left, _)| *left);
+        let owners = ScalarOwners::new(&lane.scalars);
         let mut updates = Vec::<(usize, f64)>::new();
         for (index, &(start, feature)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map(|(offset, _)| *offset);
+            let mut owned = None;
             for (name, expression) in &feature.parameters {
                 if !changed.contains(&(feature.id.clone(), name.clone())) {
                     continue;
                 }
-                let candidates = lane
-                    .scalars
+                let candidates = owned
+                    .get_or_insert_with(|| owners.owned(&feature.id, start, end))
                     .iter()
-                    .enumerate()
-                    .filter(|(_, scalar)| scalar_owned_by_feature(scalar, &feature.id, start, end))
+                    .filter_map(|&index| Some((index, lane.scalars.get(index)?)))
                     .filter(|(_, scalar)| {
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })

@@ -8,7 +8,7 @@ use super::markers::{
     spatial_vertex_offsets,
 };
 use super::names::{class_declarations, object_names};
-use super::scalars::{feature_object_name, named_scalars};
+use super::scalars::{feature_object_name, named_scalars, FeatureObjectNames, FeatureObjectStarts};
 use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
 use super::transforms::{locus_entity, sketch_entity_locus_points};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
@@ -26,6 +26,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::units::FinitePoint2;
+use std::collections::HashMap;
 
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
@@ -105,10 +106,35 @@ pub(crate) fn prepare_sketches_for_write(
     patch_line_profiles(ir, retained)
 }
 
+/// Each marker id's first offset in every lane holding it, in lane order.
+fn first_marker_offsets_by_id<'a>(
+    lanes: impl IntoIterator<Item = &'a [crate::records::SketchInputEntity]>,
+) -> HashMap<String, Vec<(usize, u64)>> {
+    let mut by_id = HashMap::<String, Vec<(usize, u64)>>::new();
+    for (lane_index, markers) in lanes.into_iter().enumerate() {
+        for marker in markers {
+            let position = (lane_index, marker.offset());
+            match by_id.get_mut(marker.id()) {
+                Some(positions) => {
+                    if positions.last().is_none_or(|&(last, _)| last != lane_index) {
+                        positions.push(position);
+                    }
+                }
+                None => {
+                    by_id.insert(marker.id().to_owned(), vec![position]);
+                }
+            }
+        }
+    }
+    by_id
+}
+
 fn patch_spatial_sketches(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut lane_object_starts = None;
+    let mut marker_offsets = None;
     for sketch in &ir.model.spatial_sketches {
         let owners = ir
             .model
@@ -176,16 +202,21 @@ fn patch_spatial_sketches(
                     entity.id()
                 ))
             })?;
-            let candidates = native
-                .feature_input_lanes
-                .iter()
-                .enumerate()
-                .filter_map(|(lane_index, lane)| {
-                    let marker = lane
-                        .sketch_entities
+            let marker_offsets = marker_offsets.get_or_insert_with(|| {
+                first_marker_offsets_by_id(
+                    native
+                        .feature_input_lanes
                         .iter()
-                        .find(|marker| marker.id() == native_ref)?;
-                    let offset = usize::try_from(marker.offset()).ok()?;
+                        .map(|lane| lane.sketch_entities.as_slice()),
+                )
+            });
+            let candidates = marker_offsets
+                .get(native_ref)
+                .into_iter()
+                .flatten()
+                .filter_map(|&(lane_index, offset)| {
+                    let lane = native.feature_input_lanes.get(lane_index)?;
+                    let offset = usize::try_from(offset).ok()?;
                     let coordinate_offset =
                         marker_spatial_coordinate_offset(&lane.native_payload, offset);
                     if coordinate_offset.is_none()
@@ -235,47 +266,46 @@ fn patch_spatial_sketches(
         if native_line_entities.is_empty() {
             continue;
         }
+        let object_starts = lane_object_starts.get_or_insert_with(|| {
+            native
+                .feature_input_lanes
+                .iter()
+                .map(|lane| {
+                    FeatureObjectStarts::new(
+                        &native.feature_histories,
+                        &FeatureObjectNames::new(&lane.names),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
         let candidates = native
             .feature_input_lanes
             .iter()
+            .zip(object_starts.iter())
             .enumerate()
-            .filter(|(_, lane)| sketch.native_ref.as_deref().is_none_or(|id| id == lane.id))
-            .map(|(lane_index, lane)| -> Result<Option<(usize, Vec<usize>)>, cadmpeg_core::CodecError> {
-                let bounds = (|| {
+            .filter(|(_, (lane, _))| sketch.native_ref.as_deref().is_none_or(|id| id == lane.id))
+            .filter_map(|(lane_index, (lane, starts))| {
                 let name = feature_object_name(record, lane)?;
                 let object_start = usize::try_from(name.offset).ok()?;
-                let object_end = native
-                    .feature_histories
-                    .iter()
-                    .flat_map(|history| &history.features)
-                    .filter_map(|candidate| feature_object_name(candidate, lane))
-                    .filter(|candidate| candidate.offset > name.offset)
-                    .map(|candidate| candidate.offset)
-                    .min()
-                    .and_then(|offset| usize::try_from(offset).ok())
-                    .unwrap_or(lane.native_payload.len());
-                    Some((object_start, object_end))
-                })();
-                let Some((object_start, object_end)) = bounds else { return Ok(None); };
-                let Some(object) = lane.native_payload.get(object_start..object_end) else { return Ok(None); };
+                let object_end = starts.end(name.offset, lane.native_payload.len());
+                let object = lane.native_payload.get(object_start..object_end)?;
                 let offsets = spatial_vertex_offsets(object);
                 if native_line_entities
                     .len()
                     .checked_mul(2)
                     .is_none_or(|expected| offsets.len() != expected)
                 {
-                    return Ok(None);
+                    return None;
                 }
-                Ok(Some((
+                Some((
                     lane_index,
                     offsets
                         .into_iter()
                         .map(|offset| object_start + offset)
                         .collect::<Vec<_>>(),
-                )))
+                ))
             })
-            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?
-            .into_iter().flatten().collect::<Vec<_>>();
+            .collect::<Vec<_>>();
         let [(lane_index, offsets)] = candidates.as_slice() else {
             return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                 "SLDPRT spatial sketch {} does not resolve to one feature object with two vertices per line",

@@ -184,6 +184,14 @@ impl LossPolicy {
     const fn rejects_export(self) -> bool {
         matches!(self, Self::RejectExport | Self::RejectAny)
     }
+
+    /// Whether the conversion decodes the whole source. A refusing policy
+    /// judges the source's design intent too, and a decode cut to the depth
+    /// the output needs reports no loss for the design records it skips.
+    #[must_use]
+    pub(crate) const fn needs_full_decode(self) -> bool {
+        self.rejects_decode() || self.rejects_export()
+    }
 }
 
 /// Destination and overwrite rules for a conversion.

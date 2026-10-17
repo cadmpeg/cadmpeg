@@ -16,8 +16,8 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use crate::history::classify::{
-    feature_family, feature_input_class, is_chamfer, is_extrude, is_fillet,
-    is_history_metadata_record, is_offset_plane, EQUATION_DRIVEN_TOKEN,
+    feature_family, feature_input_class, is_chamfer, is_extrude, is_fillet, is_offset_plane,
+    HistoryMetadata, EQUATION_DRIVEN_TOKEN,
 };
 use crate::history::literals::{
     dimension_display, format_angle_rad, format_f64_literal, format_length_mm,
@@ -47,8 +47,9 @@ pub(crate) fn project_parameters(
     let mut global_owners = HashSet::new();
     let mut parameters = Vec::new();
     for history in histories {
+        let metadata = HistoryMetadata::new(&history.features);
         for feature in &history.features {
-            if is_history_metadata_record(feature, &history.features) {
+            if metadata.contains(feature) {
                 continue;
             }
             if !feature.name.is_empty() {

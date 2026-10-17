@@ -5,22 +5,17 @@ use super::{record_finding, CadIr, Finding};
 use crate::index::identities::BorrowedIdentities;
 use crate::report::check::Check;
 
-pub(super) fn check_spreadsheets(
-    ir: &CadIr,
-    findings: &mut Vec<Finding>,
-) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
     let features = BorrowedIdentities::build(|add| {
         for feature in &ir.model.features {
-            add(feature.id.as_str(), ())?;
+            add(feature.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let parameters = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
-            add(parameter.id.as_str(), parameter)?;
+            add(parameter.id.as_str(), parameter);
         }
-        Ok(())
-    })?;
+    });
     for sheet in &ir.model.spreadsheets {
         if !features.contains(sheet.feature.as_str()) {
             record_finding(
@@ -54,7 +49,6 @@ pub(super) fn check_spreadsheets(
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -88,7 +82,7 @@ mod tests {
         );
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut findings = Vec::new();
-        check_spreadsheets(&ir, &mut findings).unwrap();
+        check_spreadsheets(&ir, &mut findings);
         assert_eq!(
             findings
                 .iter()

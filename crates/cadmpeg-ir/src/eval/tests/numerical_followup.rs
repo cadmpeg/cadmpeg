@@ -152,8 +152,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
                 Some(&[w, w]),
                 Point2::new(0.5, 0.),
                 0.,
-            )
-            .expect("check that the NURBS pcurve contains the point"),
+            ),
             Some(true)
         );
     }
@@ -196,8 +195,7 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
     );
     let controls = [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
     assert_eq!(
-        nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0,)
-            .expect("check that the NURBS pcurve contains the point"),
+        nurbs_pcurve_contains_point(1, &[0.0, 0.0, 1.0, 1.0], &controls, None, controls[0], 0.0,),
         nurbs_pcurve_contains_point(
             1,
             &[0.0, 0.0, 1.0, 1.0],
@@ -206,7 +204,6 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
             controls[0],
             0.0,
         )
-        .expect("check that the NURBS pcurve contains the point")
     );
 }
 

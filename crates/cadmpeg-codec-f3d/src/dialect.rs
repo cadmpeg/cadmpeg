@@ -36,7 +36,7 @@ use cadmpeg_core::dialect::{
     Admission, DialectId, DialectLayers, DialectMatch, Grammar, LayerInstance,
 };
 use cadmpeg_core::target::TargetDescriptor;
-use cadmpeg_core::{decode::DecodeContext, CodecError};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -179,7 +179,6 @@ impl F3dDialect {
 /// identity collision. Returns the layer set and any recoverable
 /// classification loss.
 pub(crate) fn classify_layers(
-    ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
 ) -> Result<(DialectLayers, Vec<LossNote>), CodecError> {
     let primary = scan.kind.dialect().clone();
@@ -213,7 +212,7 @@ pub(crate) fn classify_layers(
     for name in crate::container::text_brep_names(scan) {
         let matched = match scan.text_breps.get(name) {
             Some(crate::container::TextBrepFraming::Parsed(stream)) => {
-                let header = stream.header.as_kernel_header(ctx)?;
+                let header = stream.header.as_kernel_header();
                 let reference = match stream.terminator {
                     cadmpeg_asm::sat::Terminator::Asm => {
                         cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)

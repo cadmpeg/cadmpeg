@@ -685,22 +685,19 @@ pub(super) fn check_references(
             ProceduralSurfaceDefinition::CompoundLoft(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                let check_curve = |curve: &crate::ids::CurveId,
-                                   findings: &mut Vec<Finding>|
-                 -> Result<(), CodecError> {
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
                     if ids
                         .curves(curve.as_str(), crate::index::StandardIndex)
                         .is_none()
                     {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
-                    Ok(())
                 };
                 let mut scales = (construction.scales.as_slice().iter()).collect::<Vec<_>>();
                 match &construction.tail {
                     crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
-                        check_curve(curve, findings)?;
+                        check_curve(curve, findings);
                     }
                     crate::geometry::CompoundLoftTail::Seven {
                         first_scale,
@@ -714,17 +711,17 @@ pub(super) fn check_references(
                         if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
                             direction
                         {
-                            check_curve(curve, findings)?;
+                            check_curve(curve, findings);
                         }
                     }
                 }
                 for scale in scales {
-                    check_curve(&scale.path, findings)?;
+                    check_curve(&scale.path, findings);
                     for curve in &scale.auxiliaries {
-                        check_curve(curve, findings)?;
+                        check_curve(curve, findings);
                     }
                     for member in &scale.members {
-                        check_curve(&member.curve, findings)?;
+                        check_curve(&member.curve, findings);
                         let surface = &member.data.surface;
                         if ids
                             .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -743,16 +740,13 @@ pub(super) fn check_references(
             ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                let check_curve = |curve: &crate::ids::CurveId,
-                                   findings: &mut Vec<Finding>|
-                 -> Result<(), CodecError> {
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
                     if ids
                         .curves(curve.as_str(), crate::index::StandardIndex)
                         .is_none()
                     {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
-                    Ok(())
                 };
                 let mut scales = (construction.scales.as_slice().iter()).collect::<Vec<_>>();
                 match &construction.branch {
@@ -770,24 +764,24 @@ pub(super) fn check_references(
                         ..
                     } => {
                         scales.extend(scale.iter().map(Box::as_ref));
-                        check_curve(curve, findings)?;
+                        check_curve(curve, findings);
                     }
                     crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
                         if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
                             direction
                         {
-                            check_curve(curve, findings)?;
+                            check_curve(curve, findings);
                         }
                     }
                 }
-                check_curve(&construction.tail_curve, findings)?;
+                check_curve(&construction.tail_curve, findings);
                 for scale in scales {
-                    check_curve(&scale.path, findings)?;
+                    check_curve(&scale.path, findings);
                     for curve in &scale.auxiliaries {
-                        check_curve(curve, findings)?;
+                        check_curve(curve, findings);
                     }
                     for member in &scale.members {
-                        check_curve(&member.curve, findings)?;
+                        check_curve(&member.curve, findings);
                         let surface = &member.data.surface;
                         if ids
                             .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -805,22 +799,19 @@ pub(super) fn check_references(
             }
             ProceduralSurfaceDefinition::Skin(definition_payload) => {
                 let construction = definition_payload.construction();
-                let check_curve = |curve: &crate::ids::CurveId,
-                                   findings: &mut Vec<Finding>|
-                 -> Result<(), CodecError> {
+                let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
                     if ids
                         .curves(curve.as_str(), crate::index::StandardIndex)
                         .is_none()
                     {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                     }
-                    Ok(())
                 };
                 match &construction.layout {
                     crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
-                        check_curve(path, findings)?;
+                        check_curve(path, findings);
                         for profile in profiles {
-                            check_curve(&profile.curve, findings)?;
+                            check_curve(&profile.curve, findings);
                             let surface = &profile.data.surface;
                             if ids
                                 .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -840,11 +831,11 @@ pub(super) fn check_references(
                         secondary_curve,
                         ..
                     } => {
-                        check_curve(curve, findings)?;
-                        check_curve(secondary_curve, findings)?;
+                        check_curve(curve, findings);
+                        check_curve(secondary_curve, findings);
                     }
                 }
-                check_curve(&construction.parameter_curve, findings)?;
+                check_curve(&construction.parameter_curve, findings);
                 for variable in construction.formula.variables() {
                     check_law_curves(ctx, variable, ids, procedural, findings)?;
                 }
@@ -1376,45 +1367,40 @@ pub(super) fn check_references(
                     }
                 }
                 if let Some(native) = native {
-                    let check_curve = |curve: &crate::ids::CurveId,
-                                       findings: &mut Vec<Finding>|
-                     -> Result<(), CodecError> {
+                    let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
                         if ids
                             .curves(curve.as_str(), crate::index::StandardIndex)
                             .is_none()
                         {
                             ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
                         }
-                        Ok(())
                     };
-                    let check_surface = |surface: &crate::ids::SurfaceId,
-                                         findings: &mut Vec<Finding>|
-                     -> Result<(), CodecError> {
-                        if ids
-                            .surfaces(surface.as_str(), crate::index::StandardIndex)
-                            .is_none()
-                        {
-                            ref_error(
-                                findings,
-                                procedural.id.as_str(),
-                                "surface",
-                                surface.as_str(),
-                            );
-                        }
-                        Ok(())
-                    };
-                    check_curve(&native.slice, findings)?;
+                    let check_surface =
+                        |surface: &crate::ids::SurfaceId, findings: &mut Vec<Finding>| {
+                            if ids
+                                .surfaces(surface.as_str(), crate::index::StandardIndex)
+                                .is_none()
+                            {
+                                ref_error(
+                                    findings,
+                                    procedural.id.as_str(),
+                                    "surface",
+                                    surface.as_str(),
+                                );
+                            }
+                        };
+                    check_curve(&native.slice, findings);
                     for side in &native.sides {
                         if let Some(curve) = &side.curve {
-                            check_curve(&curve.curve, findings)?;
+                            check_curve(&curve.curve, findings);
                         }
                         if let Some(surface) = &side.surface {
-                            check_surface(&surface.surface, findings)?;
+                            check_surface(&surface.surface, findings);
                         }
                     }
                     if let Some(side) = &native.third {
-                        check_curve(&side.curve, findings)?;
-                        check_surface(&side.surface, findings)?;
+                        check_curve(&side.curve, findings);
+                        check_surface(&side.surface, findings);
                     }
                 }
             }
@@ -1940,27 +1926,24 @@ pub(super) fn check_references(
     }
     let features = BorrowedIdentities::build(|add| {
         for feature in &ir.model.features {
-            add(feature.id.as_str(), ())?;
+            add(feature.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let feature_ordinals = BorrowedIdentities::build(|add| {
         for feature in &ir.model.features {
             let (identity, value) = (feature.id.as_str(), feature.ordinal);
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let parameters = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
             let (identity, value) = (
                 parameter.id.as_str(),
                 (parameter.owner.as_ref(), parameter.ordinal),
             );
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let mut scoped_parameters = Vec::new();
     for parameter in &ir.model.parameters {
         if let Some(owner) = &parameter.owner {
@@ -1968,15 +1951,13 @@ pub(super) fn check_references(
                 ref_error(findings, parameter.id.as_str(), "feature", owner.as_str());
             }
         }
-        if super::scans::any(
-            scoped_parameters.iter(),
-            |previous: &&crate::features::DesignParameter| {
-                Ok(
-                    same_feature_owner(previous.owner.as_ref(), parameter.owner.as_ref())
-                        && (previous.name.as_str() == parameter.name.as_str()),
-                )
-            },
-        )? {
+        if scoped_parameters
+            .iter()
+            .any(|previous: &&crate::features::DesignParameter| {
+                same_feature_owner(previous.owner.as_ref(), parameter.owner.as_ref())
+                    && (previous.name.as_str() == parameter.name.as_str())
+            })
+        {
             super::record_related_finding(
                 findings,
                 Check::Counts,
@@ -1993,15 +1974,13 @@ pub(super) fn check_references(
                 ),
             );
         }
-        if super::scans::any(
-            scoped_parameters.iter(),
-            |previous: &&crate::features::DesignParameter| {
-                Ok(
-                    same_feature_owner(previous.owner.as_ref(), parameter.owner.as_ref())
-                        && previous.ordinal == parameter.ordinal,
-                )
-            },
-        )? {
+        if scoped_parameters
+            .iter()
+            .any(|previous: &&crate::features::DesignParameter| {
+                same_feature_owner(previous.owner.as_ref(), parameter.owner.as_ref())
+                    && previous.ordinal == parameter.ordinal
+            })
+        {
             super::record_related_finding(
                 findings,
                 Check::Counts,
@@ -2060,29 +2039,25 @@ pub(super) fn check_references(
     }
     let sketches = BorrowedIdentities::build(|add| {
         for sketch in &ir.model.sketches {
-            add(sketch.id.as_str(), ())?;
+            add(sketch.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let sketch_entities = BorrowedIdentities::build(|add| {
         for entity in &ir.model.sketch_entities {
-            add(entity.id().as_str(), ())?;
+            add(entity.id().as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let sketch_entity_owners = BorrowedIdentities::build(|add| {
         for entity in &ir.model.sketch_entities {
             let (identity, value) = (entity.id().as_str(), entity.sketch.as_str());
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let parameters = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
-            add(parameter.id.as_str(), ())?;
+            add(parameter.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     for sketch in &ir.model.sketches {
         for entity_use in sketch.profiles.iter().flatten() {
             if !sketch_entities.contains(entity_use.entity.as_str()) {
@@ -2475,7 +2450,7 @@ pub(super) fn check_references(
             }
         }
     }
-    check_feature_sketch_references(ir, &sketches, findings)?;
+    check_feature_sketch_references(ir, &sketches, findings);
     check_feature_references(ctx, ir, ids, findings)?;
     Ok(())
 }
@@ -2519,30 +2494,26 @@ fn check_feature_references(
     let mut active_configurations = 0;
     let parameter_ids = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
-            add(parameter.id.as_str(), ())?;
+            add(parameter.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let asset_ids = BorrowedIdentities::build(|add| {
         for asset in &ir.model.assets {
-            add(asset.id.as_str(), ())?;
+            add(asset.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let parameter_values = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
             let (identity, value) = (parameter.id.as_str(), parameter.value.as_ref());
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let features = BorrowedIdentities::build(|add| {
         for feature in &ir.model.features {
             let (identity, value) = (feature.id.as_str(), feature.ordinal);
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
@@ -2594,21 +2565,15 @@ fn check_feature_references(
         let suppressed_features = BorrowedIdentities::build(|add| {
             for (feature, state) in &configuration.feature_states {
                 if state.evaluation.is_suppressed() {
-                    add(feature.as_str(), ())?;
+                    add(feature.as_str(), ());
                 }
             }
-            Ok(())
-        })?;
+        });
         if configuration.active {
             for feature in &ir.model.features {
-                if feature
-                    .suppressed
-                    .map_or(Ok::<_, CodecError>(false), |suppressed| {
-                        Ok::<_, CodecError>(
-                            suppressed_features.contains(feature.id.as_str()) != suppressed,
-                        )
-                    })?
-                {
+                if feature.suppressed.is_some_and(|suppressed| {
+                    suppressed_features.contains(feature.id.as_str()) != suppressed
+                }) {
                     super::record_finding(
                         findings,
                         Check::ReferentialIntegrity,
@@ -2709,9 +2674,10 @@ fn check_feature_references(
                         );
                     }
                     Some(_)
-                        if !super::scans::any(state.dependencies.iter(), |dependency| {
-                            Ok(dependency.as_str() == reference.as_str())
-                        })? =>
+                        if !state
+                            .dependencies
+                            .iter()
+                            .any(|dependency| dependency.as_str() == reference.as_str()) =>
                     {
                         super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, configuration.id.as_str(), &[feature.as_str(), reference.as_str()], format_args!(
                                 "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
@@ -2735,7 +2701,7 @@ fn check_feature_references(
                 }
             }
         }
-        check_configuration_state_closure(configuration, findings)?;
+        check_configuration_state_closure(configuration, findings);
     }
     if active_configurations > 1 {
         super::record_finding(
@@ -2748,23 +2714,20 @@ fn check_feature_references(
     }
     let feature_records = BorrowedIdentities::build(|add| {
         for feature in &ir.model.features {
-            add(feature.id.as_str(), feature)?;
+            add(feature.id.as_str(), feature);
         }
-        Ok(())
-    })?;
+    });
     let sketch_entities = BorrowedIdentities::build(|add| {
         for entity in &ir.model.sketch_entities {
-            add(entity.id().as_str(), ())?;
+            add(entity.id().as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let spatial_sketch_entity_owners = BorrowedIdentities::build(|add| {
         for entity in &ir.model.spatial_sketch_entities {
             let (identity, value) = (entity.id().as_str(), entity.sketch.as_str());
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let mut reported_plane_cycles = std::collections::HashSet::new();
     for feature in &ir.model.features {
         let mut path: Vec<(&str, cadmpeg_core::decode::DepthGuard<'_>)> = Vec::new();
@@ -2819,17 +2782,15 @@ fn check_feature_references(
     let parameters_by_id = BorrowedIdentities::build(|add| {
         for parameter in &ir.model.parameters {
             let (identity, value) = (parameter.id.as_str(), parameter.owner.as_ref());
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let input_topologies = BorrowedIdentities::build(|add| {
         for state in &ir.model.feature_input_topologies {
             let (identity, value) = (state.id.as_str(), state);
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let mut topology_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_input_topologies {
         if !features.contains(state.input_of.as_str()) {
@@ -2873,10 +2834,9 @@ fn check_feature_references(
     let result_topologies_by_feature = BorrowedIdentities::build(|add| {
         for state in &ir.model.feature_result_topologies {
             let (identity, value) = (state.output_of.as_str(), state);
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let mut occurrence_ids = BorrowedIdentities::new();
     occurrence_ids.extend_unique(
         ir.model
@@ -3100,8 +3060,8 @@ fn check_feature_references(
                     feature.id.as_str(),
                     "Form control cage",
                     cages.iter().map(super::super::ids::SubdId::as_str),
-                    |identity| Ok(ids.subds(identity, crate::index::StandardIndex).is_some()),
-                )?;
+                    |identity| ids.subds(identity, crate::index::StandardIndex).is_some(),
+                );
             }
             FeatureOperation::CosmeticThread { face, .. } => face_selections.push(face),
             FeatureOperation::Extrude {
@@ -3174,11 +3134,10 @@ fn check_feature_references(
                             "loft section vertex",
                             std::iter::once(vertex.as_str()),
                             |identity| {
-                                Ok(ids
-                                    .vertices(identity, crate::index::StandardIndex)
-                                    .is_some())
+                                ids.vertices(identity, crate::index::StandardIndex)
+                                    .is_some()
                             },
-                        )?,
+                        ),
                     }
                 }
                 match guidance {
@@ -3279,7 +3238,7 @@ fn check_feature_references(
                         pull_plane,
                         &feature_records,
                         "draft pull plane",
-                    )?;
+                    );
                 }
             }
             FeatureOperation::BoundaryFill { tools, cells } => {
@@ -3300,7 +3259,7 @@ fn check_feature_references(
                         plane,
                         &feature_records,
                         "split-face tool plane",
-                    )?,
+                    ),
                     SplitFaceTool::Planes { planes } => {
                         for plane in planes {
                             check_plane_feature_reference(
@@ -3309,7 +3268,7 @@ fn check_feature_references(
                                 plane,
                                 &feature_records,
                                 "split-face tool plane",
-                            )?;
+                            );
                         }
                     }
                 }
@@ -3383,10 +3342,10 @@ fn check_feature_references(
                                 );
                             }
                             Some(_)
-                                if !super::scans::any(
-                                    feature.dependencies.iter(),
-                                    |dependency| Ok(dependency.as_str() == seed.as_str()),
-                                )? =>
+                                if !feature
+                                    .dependencies
+                                    .iter()
+                                    .any(|dependency| dependency.as_str() == seed.as_str()) =>
                             {
                                 super::record_related_finding(
                                     findings,
@@ -3610,10 +3569,9 @@ fn check_feature_references(
                                     );
                                 }
                                 Some(_)
-                                    if !super::scans::any(
-                                        feature.dependencies.iter(),
-                                        |dependency| Ok(dependency.as_str() == reference.as_str()),
-                                    )? =>
+                                    if !feature.dependencies.iter().any(|dependency| {
+                                        dependency.as_str() == reference.as_str()
+                                    }) =>
                                 {
                                     super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
                                             "datum point omits plane feature `{}` from its dependencies",
@@ -3657,9 +3615,10 @@ fn check_feature_references(
                             );
                         }
                         Some(_)
-                            if !super::scans::any(feature.dependencies.iter(), |dependency| {
-                                Ok(dependency.as_str() == block.as_str())
-                            })? =>
+                            if !feature
+                                .dependencies
+                                .iter()
+                                .any(|dependency| dependency.as_str() == block.as_str()) =>
                         {
                             super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[block.as_str()], format_args!(
                                     "sketch block instance omits block feature `{}` from its dependencies",
@@ -3689,9 +3648,10 @@ fn check_feature_references(
                     ),
                 ),
                 Some(_)
-                    if !super::scans::any(feature.dependencies.iter(), |dependency| {
-                        Ok(dependency.as_str() == source.as_str())
-                    })? =>
+                    if !feature
+                        .dependencies
+                        .iter()
+                        .any(|dependency| dependency.as_str() == source.as_str()) =>
                 {
                     super::record_related_finding(
                         findings,
@@ -3745,10 +3705,9 @@ fn check_feature_references(
                                         ));
                                 }
                                 Some(_)
-                                    if !super::scans::any(
-                                        feature.dependencies.iter(),
-                                        |dependency| Ok(dependency.as_str() == reference.as_str()),
-                                    )? =>
+                                    if !feature.dependencies.iter().any(|dependency| {
+                                        dependency.as_str() == reference.as_str()
+                                    }) =>
                                 {
                                     super::record_related_finding(findings, Check::ReferentialIntegrity, Severity::Error, feature.id.as_str(), &[reference.as_str()], format_args!(
                                             "offset plane omits reference feature `{}` from its dependencies",
@@ -3771,8 +3730,8 @@ fn check_feature_references(
                     feature.id.as_str(),
                     "profile face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
-                    |identity| Ok(ids.faces(identity, crate::index::StandardIndex).is_some()),
-                )?,
+                    |identity| ids.faces(identity, crate::index::StandardIndex).is_some(),
+                ),
                 PlanarProfileRef::HistoricalFaces { state, faces, .. } => {
                     check_historical_members(
                         findings,
@@ -3784,13 +3743,12 @@ fn check_feature_references(
                         "profile face",
                         &input_topologies,
                         |topology| {
-                            Ok((topology
+                            topology
                                 .faces
                                 .iter()
-                                .map(crate::ids::HistoricalFaceId::as_str))
-                            .collect::<Vec<_>>())
+                                .map(crate::ids::HistoricalFaceId::as_str)
                         },
-                    )?;
+                    );
                 }
                 PlanarProfileRef::Feature(producer) => match features.get(producer.as_str()) {
                     None => ref_error(
@@ -3801,9 +3759,10 @@ fn check_feature_references(
                     ),
                     Some(ordinal)
                         if *ordinal >= feature.ordinal
-                            || !super::scans::any(feature.dependencies.iter(), |dependency| {
-                                Ok(dependency.as_str() == producer.as_str())
-                            })? =>
+                            || !feature
+                                .dependencies
+                                .iter()
+                                .any(|dependency| dependency.as_str() == producer.as_str()) =>
                     {
                         geometry_error(
                             findings,
@@ -3814,16 +3773,15 @@ fn check_feature_references(
                     Some(_) => {}
                 },
                 PlanarProfileRef::Generated { curves, .. }
-                    if super::scans::any(curves.iter(), |curve| {
-                        Ok::<_, CodecError>(
-                            features
-                                .get(curve.feature.as_str())
-                                .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                                || !super::scans::any(feature.dependencies.iter(), |dependency| {
-                                    Ok(dependency.as_str() == curve.feature.as_str())
-                                })?,
-                        )
-                    })? =>
+                    if curves.iter().any(|curve| {
+                        features
+                            .get(curve.feature.as_str())
+                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                            || !feature
+                                .dependencies
+                                .iter()
+                                .any(|dependency| dependency.as_str() == curve.feature.as_str())
+                    }) =>
                 {
                     geometry_error(
                         findings,
@@ -3841,22 +3799,22 @@ fn check_feature_references(
                     feature.id.as_str(),
                     "path edge",
                     edges.iter().map(super::super::ids::EdgeId::as_str),
-                    |identity| Ok(ids.edges(identity, crate::index::StandardIndex).is_some()),
-                )?,
+                    |identity| ids.edges(identity, crate::index::StandardIndex).is_some(),
+                ),
                 PathRef::Curves(curves) => check_ids(
                     findings,
                     feature.id.as_str(),
                     "path curve",
                     curves.iter().map(super::super::ids::CurveId::as_str),
-                    |identity| Ok(ids.curves(identity, crate::index::StandardIndex).is_some()),
-                )?,
+                    |identity| ids.curves(identity, crate::index::StandardIndex).is_some(),
+                ),
                 PathRef::SketchCurves { curves, .. } => check_ids(
                     findings,
                     feature.id.as_str(),
                     "sketch path curve",
                     curves.iter().map(crate::sketches::SketchEntityId::as_str),
-                    |identity| Ok(sketch_entities.contains(identity)),
-                )?,
+                    |identity| sketch_entities.contains(identity),
+                ),
                 PathRef::SpatialSketchCurves { curves, .. } => check_ids(
                     findings,
                     feature.id.as_str(),
@@ -3864,8 +3822,8 @@ fn check_feature_references(
                     curves
                         .iter()
                         .map(crate::sketches::SpatialSketchEntityId::as_str),
-                    |identity| Ok(spatial_sketch_entity_owners.contains(identity)),
-                )?,
+                    |identity| spatial_sketch_entity_owners.contains(identity),
+                ),
                 PathRef::HistoricalEdges { state, edges, .. } => check_historical_members(
                     findings,
                     &feature.id,
@@ -3876,13 +3834,12 @@ fn check_feature_references(
                     "path edge",
                     &input_topologies,
                     |topology| {
-                        Ok((topology
+                        topology
                             .edges
                             .iter()
-                            .map(crate::ids::HistoricalEdgeId::as_str))
-                        .collect::<Vec<_>>())
+                            .map(crate::ids::HistoricalEdgeId::as_str)
                     },
-                )?,
+                ),
                 PathRef::Unresolved(_)
                 | PathRef::Native(_)
                 | PathRef::Sketch(_)
@@ -3898,8 +3855,8 @@ fn check_feature_references(
                     feature.id.as_str(),
                     "termination face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
-                    |identity| Ok(ids.faces(identity, crate::index::StandardIndex).is_some()),
-                )?;
+                    |identity| ids.faces(identity, crate::index::StandardIndex).is_some(),
+                );
             }
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
                 termination.shape()
@@ -3909,8 +3866,8 @@ fn check_feature_references(
                     feature.id.as_str(),
                     "termination shape face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
-                    |identity| Ok(ids.faces(identity, crate::index::StandardIndex).is_some()),
-                )?;
+                    |identity| ids.faces(identity, crate::index::StandardIndex).is_some(),
+                );
             }
             if let Some(vertex) = termination.vertex() {
                 vertex_selections.push((vertex, "termination"));
@@ -3922,19 +3879,18 @@ fn check_feature_references(
                     if features
                         .get(vertex.feature.as_str())
                         .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                        || !super::scans::any(feature.dependencies.iter(), |dependency| {
-                            Ok(dependency.as_str() == vertex.feature.as_str())
-                        })?
+                        || !feature
+                            .dependencies
+                            .iter()
+                            .any(|dependency| dependency.as_str() == vertex.feature.as_str())
                         || result_topologies_by_feature
                             .get(vertex.feature.as_str())
-                            .map_or(Ok::<_, CodecError>(false), |state| {
-                                Ok::<_, CodecError>(!super::scans::any(
-                                    state.vertices().iter(),
-                                    |id| {
-                                        Ok::<_, CodecError>(id.as_str() == vertex.local_id.as_str())
-                                    },
-                                )?)
-                            })?
+                            .is_some_and(|state| {
+                                !state
+                                    .vertices()
+                                    .iter()
+                                    .any(|id| id.as_str() == vertex.local_id.as_str())
+                            })
                     {
                         geometry_error(
                             findings,
@@ -3954,13 +3910,12 @@ fn check_feature_references(
                     "vertex",
                     &input_topologies,
                     |topology| {
-                        Ok((topology
+                        topology
                             .vertices
                             .iter()
-                            .map(crate::ids::HistoricalVertexId::as_str))
-                        .collect::<Vec<_>>())
+                            .map(crate::ids::HistoricalVertexId::as_str)
                     },
-                )?,
+                ),
                 crate::features::VertexSelection::Unresolved
                 | crate::features::VertexSelection::Native(_) => {}
             }
@@ -3984,13 +3939,12 @@ fn check_feature_references(
                     "edge",
                     &input_topologies,
                     |topology| {
-                        Ok((topology
+                        topology
                             .edges
                             .iter()
-                            .map(crate::ids::HistoricalEdgeId::as_str))
-                        .collect::<Vec<_>>())
+                            .map(crate::ids::HistoricalEdgeId::as_str)
                     },
-                )?;
+                );
             }
             match selection {
                 EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(
@@ -3998,28 +3952,24 @@ fn check_feature_references(
                     feature.id.as_str(),
                     "selected edge",
                     edges.iter().map(super::super::ids::EdgeId::as_str),
-                    |identity| Ok(ids.edges(identity, crate::index::StandardIndex).is_some()),
-                )?,
+                    |identity| ids.edges(identity, crate::index::StandardIndex).is_some(),
+                ),
                 EdgeSelection::Historical { .. } | EdgeSelection::HistoricalPartial { .. } => {}
                 EdgeSelection::Generated { edges, .. } => {
-                    if super::scans::any(edges.iter(), |edge| {
-                        Ok::<_, CodecError>(
-                            !super::scans::any(feature.dependencies.iter(), |dependency| {
-                                Ok(dependency.as_str() == edge.feature.as_str())
-                            })? || result_topologies_by_feature
+                    if edges.iter().any(|edge| {
+                        !feature
+                            .dependencies
+                            .iter()
+                            .any(|dependency| dependency.as_str() == edge.feature.as_str())
+                            || result_topologies_by_feature
                                 .get(edge.feature.as_str())
-                                .map_or(Ok::<_, CodecError>(false), |state| {
-                                    Ok::<_, CodecError>(!super::scans::any(
-                                        state.edges().iter(),
-                                        |id| {
-                                            Ok::<_, CodecError>(
-                                                id.as_str() == edge.local_id.as_str(),
-                                            )
-                                        },
-                                    )?)
-                                })?,
-                        )
-                    })? {
+                                .is_some_and(|state| {
+                                    !state
+                                        .edges()
+                                        .iter()
+                                        .any(|id| id.as_str() == edge.local_id.as_str())
+                                })
+                    }) {
                         geometry_error(
                             findings,
                             feature.id.as_str(),
@@ -4049,13 +3999,12 @@ fn check_feature_references(
                     "face",
                     &input_topologies,
                     |topology| {
-                        Ok((topology
+                        topology
                             .faces
                             .iter()
-                            .map(crate::ids::HistoricalFaceId::as_str))
-                        .collect::<Vec<_>>())
+                            .map(crate::ids::HistoricalFaceId::as_str)
                     },
-                )?;
+                );
             }
             match selection {
                 FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => check_ids(
@@ -4063,28 +4012,24 @@ fn check_feature_references(
                     feature.id.as_str(),
                     "selected face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
-                    |identity| Ok(ids.faces(identity, crate::index::StandardIndex).is_some()),
-                )?,
+                    |identity| ids.faces(identity, crate::index::StandardIndex).is_some(),
+                ),
                 FaceSelection::Historical { .. } | FaceSelection::HistoricalPartial { .. } => {}
                 FaceSelection::Generated { faces, .. } => {
-                    if super::scans::any(faces.iter(), |face| {
-                        Ok::<_, CodecError>(
-                            !super::scans::any(feature.dependencies.iter(), |dependency| {
-                                Ok(dependency.as_str() == face.feature.as_str())
-                            })? || result_topologies_by_feature
+                    if faces.iter().any(|face| {
+                        !feature
+                            .dependencies
+                            .iter()
+                            .any(|dependency| dependency.as_str() == face.feature.as_str())
+                            || result_topologies_by_feature
                                 .get(face.feature.as_str())
-                                .map_or(Ok::<_, CodecError>(false), |state| {
-                                    Ok::<_, CodecError>(!super::scans::any(
-                                        state.faces().iter(),
-                                        |id| {
-                                            Ok::<_, CodecError>(
-                                                id.as_str() == face.local_id.as_str(),
-                                            )
-                                        },
-                                    )?)
-                                })?,
-                        )
-                    })? {
+                                .is_some_and(|state| {
+                                    !state
+                                        .faces()
+                                        .iter()
+                                        .any(|id| id.as_str() == face.local_id.as_str())
+                                })
+                    }) {
                         geometry_error(
                             findings,
                             feature.id.as_str(),
@@ -4103,8 +4048,8 @@ fn check_feature_references(
                         feature.id.as_str(),
                         "selected body",
                         bodies.iter().map(super::super::ids::BodyId::as_str),
-                        |identity| Ok(ids.bodies(identity, crate::index::StandardIndex).is_some()),
-                    )?;
+                        |identity| ids.bodies(identity, crate::index::StandardIndex).is_some(),
+                    );
                 }
                 BodySelection::ResolvedSet { members } => {
                     check_ids(
@@ -4112,8 +4057,8 @@ fn check_feature_references(
                         feature.id.as_str(),
                         "selected body",
                         members.bodies().map(super::super::ids::BodyId::as_str),
-                        |identity| Ok(ids.bodies(identity, crate::index::StandardIndex).is_some()),
-                    )?;
+                        |identity| ids.bodies(identity, crate::index::StandardIndex).is_some(),
+                    );
                 }
                 BodySelection::Historical {
                     state,
@@ -4130,13 +4075,12 @@ fn check_feature_references(
                         "body",
                         &input_topologies,
                         |topology| {
-                            Ok((topology
+                            topology
                                 .bodies
                                 .iter()
-                                .map(crate::ids::HistoricalBodyId::as_str))
-                            .collect::<Vec<_>>())
+                                .map(crate::ids::HistoricalBodyId::as_str)
                         },
-                    )?;
+                    );
                 }
                 BodySelection::HistoricalSet { state, members } => {
                     check_historical_members(
@@ -4149,33 +4093,28 @@ fn check_feature_references(
                         "body",
                         &input_topologies,
                         |topology| {
-                            Ok((topology
+                            topology
                                 .bodies
                                 .iter()
-                                .map(crate::ids::HistoricalBodyId::as_str))
-                            .collect::<Vec<_>>())
+                                .map(crate::ids::HistoricalBodyId::as_str)
                         },
-                    )?;
+                    );
                 }
                 BodySelection::Generated { bodies, .. } => {
-                    if super::scans::any(bodies.iter(), |body| {
-                        Ok::<_, CodecError>(
-                            !super::scans::any(feature.dependencies.iter(), |dependency| {
-                                Ok(dependency.as_str() == body.feature.as_str())
-                            })? || result_topologies_by_feature
+                    if bodies.iter().any(|body| {
+                        !feature
+                            .dependencies
+                            .iter()
+                            .any(|dependency| dependency.as_str() == body.feature.as_str())
+                            || result_topologies_by_feature
                                 .get(body.feature.as_str())
-                                .map_or(Ok::<_, CodecError>(false), |state| {
-                                    Ok::<_, CodecError>(!super::scans::any(
-                                        state.bodies().iter(),
-                                        |id| {
-                                            Ok::<_, CodecError>(
-                                                id.as_str() == body.local_id.as_str(),
-                                            )
-                                        },
-                                    )?)
-                                })?,
-                        )
-                    })? {
+                                .is_some_and(|state| {
+                                    !state
+                                        .bodies()
+                                        .iter()
+                                        .any(|id| id.as_str() == body.local_id.as_str())
+                                })
+                    }) {
                         geometry_error(
                             findings,
                             feature.id.as_str(),
@@ -4207,17 +4146,17 @@ impl fmt::Display for PlaneCyclePath<'_, '_> {
     }
 }
 
-fn check_historical_members<'a, I, F>(
+fn check_historical_members<'a, I, F, M>(
     findings: &mut Vec<Finding>,
     feature: &crate::features::FeatureId,
     selection: (&crate::ids::FeatureInputTopologyId, I),
     kind: &str,
     states: &BorrowedIdentities<'a, &'a crate::features::FeatureInputTopology>,
     members: F,
-) -> Result<(), CodecError>
-where
+) where
     I: IntoIterator<Item = &'a str>,
-    F: FnOnce(&'a crate::features::FeatureInputTopology) -> Result<Vec<&'a str>, CodecError>,
+    F: FnOnce(&'a crate::features::FeatureInputTopology) -> M,
+    M: IntoIterator<Item = &'a str>,
 {
     let (state_id, selected) = selection;
     let Some(state) = states.get(state_id.as_str()) else {
@@ -4227,7 +4166,7 @@ where
             "feature input topology",
             state_id.as_str(),
         );
-        return Ok(());
+        return;
     };
     if state.input_of.as_str() != feature.as_str() {
         super::record_finding(
@@ -4239,11 +4178,10 @@ where
         );
     }
     let available = BorrowedIdentities::build(|add| {
-        for id in members(state)? {
-            add(id, ())?;
+        for id in members(state) {
+            add(id, ());
         }
-        Ok(())
-    })?;
+    });
     for id in selected {
         if !available.contains(id) {
             ref_error(
@@ -4254,8 +4192,6 @@ where
             );
         }
     }
-
-    Ok(())
 }
 
 fn regeneration_references(
@@ -4452,16 +4388,15 @@ fn definition_terminations(
 fn check_configuration_state_closure(
     configuration: &crate::features::DesignConfiguration,
     findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+) {
     if configuration.feature_states.is_empty() {
-        return Ok(());
+        return;
     }
     let states = BorrowedIdentities::build(|add| {
         for (feature, state) in &configuration.feature_states {
-            add(feature.as_str(), state)?;
+            add(feature.as_str(), state);
         }
-        Ok(())
-    })?;
+    });
     let mut closure = BorrowedIdentities::new();
     let mut pending = Vec::new();
     for (feature, state) in &configuration.feature_states {
@@ -4496,8 +4431,6 @@ fn check_configuration_state_closure(
             }
         }
     }
-
-    Ok(())
 }
 
 fn check_plane_feature_reference(
@@ -4506,7 +4439,7 @@ fn check_plane_feature_reference(
     reference: &crate::features::FeatureId,
     feature_records: &BorrowedIdentities<'_, &Feature>,
     reference_kind: &str,
-) -> Result<(), CodecError> {
+) {
     match feature_records.get(reference.as_str()) {
         None => ref_error(
             findings,
@@ -4543,9 +4476,10 @@ fn check_plane_feature_reference(
             ),
         ),
         Some(_)
-            if !super::scans::any(feature.dependencies.iter(), |dependency| {
-                Ok(dependency.as_str() == reference.as_str())
-            })? =>
+            if !feature
+                .dependencies
+                .iter()
+                .any(|dependency| dependency.as_str() == reference.as_str()) =>
         {
             super::record_related_finding(
                 findings,
@@ -4561,8 +4495,6 @@ fn check_plane_feature_reference(
         }
         Some(_) => {}
     }
-
-    Ok(())
 }
 
 fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: impl fmt::Display) {
@@ -4580,15 +4512,13 @@ fn check_ids<'a>(
     owner: &str,
     kind: &str,
     values: impl Iterator<Item = &'a str>,
-    valid: impl Fn(&str) -> Result<bool, CodecError>,
-) -> Result<(), CodecError> {
+    valid: impl Fn(&str) -> bool,
+) {
     for value in values {
-        if !valid(value)? {
+        if !valid(value) {
             ref_error(findings, owner, kind, value);
         }
     }
-
-    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -4621,31 +4551,28 @@ fn check_feature_sketch_references(
     ir: &CadIr,
     sketches: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+) {
     use crate::features::{
         FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, SketchPointSelection,
     };
 
     let spatial_sketches = BorrowedIdentities::build(|add| {
         for sketch in &ir.model.spatial_sketches {
-            add(sketch.id.as_str(), ())?;
+            add(sketch.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let sketch_entity_owners = BorrowedIdentities::build(|add| {
         for entity in &ir.model.sketch_entities {
             let (identity, value) = (entity.id().as_str(), entity.sketch.as_str());
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     let spatial_sketch_entity_owners = BorrowedIdentities::build(|add| {
         for entity in &ir.model.spatial_sketch_entities {
             let (identity, value) = (entity.id().as_str(), entity.sketch.as_str());
-            add(identity, value)?;
+            add(identity, value);
         }
-        Ok(())
-    })?;
+    });
     // Every (entity, sketch) pair, so a repeated entity id matches any of
     // its owners.
     let sketch_entity_memberships: std::collections::HashSet<(&str, &str)> = ir
@@ -4736,9 +4663,7 @@ fn check_feature_sketch_references(
                     && sketches.contains(sketch.as_str())
                     && sketch_entity_owners
                         .get(point.as_str())
-                        .map_or(Ok::<_, CodecError>(false), |owner| {
-                            Ok::<_, CodecError>(*owner == sketch.as_str())
-                        })?
+                        .is_some_and(|owner| *owner == sketch.as_str())
                     && sketch_points.contains(&(point.as_str(), sketch.as_str()))
             }
             SketchPointSelection::Spatial {
@@ -4750,9 +4675,7 @@ fn check_feature_sketch_references(
                     && spatial_sketches.contains(sketch.as_str())
                     && spatial_sketch_entity_owners
                         .get(point.as_str())
-                        .map_or(Ok::<_, CodecError>(false), |owner| {
-                            Ok::<_, CodecError>(*owner == sketch.as_str())
-                        })?
+                        .is_some_and(|owner| *owner == sketch.as_str())
                     && spatial_sketch_points.contains(&(point.as_str(), sketch.as_str()))
             }
             SketchPointSelection::Native(native) => non_blank_native_reference(native),
@@ -4886,11 +4809,10 @@ fn check_feature_sketch_references(
                         .get(sketch.as_str())
                         .copied()
                         .unwrap_or(0);
-                    if super::scans::any(profiles.iter(), |index| {
-                        Ok::<_, CodecError>(
-                            cadmpeg_core::decode::index_from_u32(*index) >= profile_count,
-                        )
-                    })? {
+                    if profiles
+                        .iter()
+                        .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= profile_count)
+                    {
                         geometry_error(
                             findings,
                             feature.id.as_str(),
@@ -4903,11 +4825,9 @@ fn check_feature_sketch_references(
                         .get(sketch.as_str())
                         .copied()
                         .unwrap_or(0);
-                    if super::scans::any(profiles.iter(), |index| {
-                        Ok::<_, CodecError>(
-                            cadmpeg_core::decode::index_from_u32(*index) >= sketch_profile_count,
-                        )
-                    })? {
+                    if profiles.iter().any(|index| {
+                        cadmpeg_core::decode::index_from_u32(*index) >= sketch_profile_count
+                    }) {
                         geometry_error(
                             findings,
                             feature.id.as_str(),
@@ -4920,45 +4840,40 @@ fn check_feature_sketch_references(
                         .get(sketch.as_str())
                         .copied()
                         .unwrap_or(0);
-                    let invalid = super::scans::any(regions.iter(), |region| {
-                        Ok::<_, CodecError>(match region {
-                            crate::features::SketchProfileRegion::Loops { loops } => {
-                                cadmpeg_core::decode::index_from_u32(loops.outer())
-                                    >= sketch_profile_count
-                                    || super::scans::any(loops.holes().iter(), |index| {
-                                        Ok::<_, CodecError>(
-                                            cadmpeg_core::decode::index_from_u32(*index)
-                                                >= sketch_profile_count,
-                                        )
-                                    })?
-                            }
-                            crate::features::SketchProfileRegion::Trimmed {
-                                outer_boundary,
-                                hole_boundaries,
-                            } => {
-                                let valid_ring =
-                                |ring: &[crate::features::SketchProfileBoundaryUse]| -> Result<bool, CodecError> {
-                                    super::scans::all(ring.iter(), |use_| Ok::<_, CodecError>(sketch_entity_memberships.contains(&(use_.entity.as_str(), sketch.as_str()))))
+                    let invalid = regions.iter().any(|region| match region {
+                        crate::features::SketchProfileRegion::Loops { loops } => {
+                            cadmpeg_core::decode::index_from_u32(loops.outer())
+                                >= sketch_profile_count
+                                || loops.holes().iter().any(|index| {
+                                    cadmpeg_core::decode::index_from_u32(*index)
+                                        >= sketch_profile_count
+                                })
+                        }
+                        crate::features::SketchProfileRegion::Trimmed {
+                            outer_boundary,
+                            hole_boundaries,
+                        } => {
+                            let valid_ring =
+                                |ring: &[crate::features::SketchProfileBoundaryUse]| {
+                                    ring.iter().all(|use_| {
+                                        sketch_entity_memberships
+                                            .contains(&(use_.entity.as_str(), sketch.as_str()))
+                                    })
                                 };
-                                !valid_ring(outer_boundary)?
-                                    || super::scans::any(hole_boundaries.iter(), |ring| {
-                                        Ok::<_, CodecError>(!valid_ring(ring)?)
-                                    })?
-                            }
-                        })
-                    })?;
+                            !valid_ring(outer_boundary)
+                                || hole_boundaries.iter().any(|ring| !valid_ring(ring))
+                        }
+                    });
                     if invalid {
                         geometry_error(findings, feature.id.as_str(), "sketch regions have empty, repeated, invalid, or out-of-range boundaries");
                     }
                 }
                 ProfileReference::Planar(PlanarProfileRef::SketchEntities { sketch, entities }) => {
-                    if super::scans::any(entities.iter(), |entity| {
+                    if entities.iter().any(|entity| {
                         sketch_entity_owners
                             .get(entity.as_str())
-                            .map_or(Ok::<_, CodecError>(true), |owner| {
-                                Ok::<_, CodecError>(*owner != sketch.as_str())
-                            })
-                    })? {
+                            .is_none_or(|owner| *owner != sketch.as_str())
+                    }) {
                         geometry_error(findings, feature.id.as_str(), "sketch profile entities are empty, repeated, missing, or owned by another sketch");
                     }
                 }
@@ -4977,13 +4892,11 @@ fn check_feature_sketch_references(
         }
         for path in paths {
             if let PathRef::SketchCurves { sketch, curves } = path {
-                let invalid = super::scans::any(curves.iter(), |curve| {
+                let invalid = curves.iter().any(|curve| {
                     sketch_entity_owners
                         .get(curve.as_str())
-                        .map_or(Ok::<_, CodecError>(true), |owner| {
-                            Ok::<_, CodecError>(*owner != sketch.as_str())
-                        })
-                })?;
+                        .is_none_or(|owner| *owner != sketch.as_str())
+                });
                 if invalid {
                     geometry_error(
                         findings,
@@ -4998,13 +4911,11 @@ fn check_feature_sketch_references(
                     (sketch.as_str(), sketches, "sketch curve path")
                 }
                 PathRef::SpatialSketchCurves { sketch, curves } => {
-                    let invalid = super::scans::any(curves.iter(), |curve| {
+                    let invalid = curves.iter().any(|curve| {
                         spatial_sketch_entity_owners
                             .get(curve.as_str())
-                            .map_or(Ok::<_, CodecError>(true), |owner| {
-                                Ok::<_, CodecError>(*owner != sketch.as_str())
-                            })
-                    })?;
+                            .is_none_or(|owner| *owner != sketch.as_str())
+                    });
                     if invalid {
                         geometry_error(findings, feature.id.as_str(), "spatial sketch path curves are empty, repeated, missing, or owned by another sketch");
                     }
@@ -5035,8 +4946,6 @@ fn check_feature_sketch_references(
             }
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

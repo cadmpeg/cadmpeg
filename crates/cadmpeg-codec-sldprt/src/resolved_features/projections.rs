@@ -9,12 +9,12 @@ use super::holes::feature_object_byte_ranges;
 use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
 use super::relation_geometry::{
-    owned_relation_parameters, relation_display_scalar_for_parameter,
+    owned_relation_parameters, relation_display_scalar_for_parameter, LaneIds,
     RELATION_DISPLAY_SCALAR_ID_PROPERTY, RELATION_PARAMETER_ID_PROPERTY,
     RELATION_PARAMETER_ROLE_PROPERTY, RELATION_PARAMETER_ROLE_REFERENCE,
 };
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::selections::{
     cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
     variable_fillet_dimension_index_for_feature,
@@ -55,6 +55,64 @@ fn reference_name(source_name: &str, offset: Option<u64>, suffix: Option<u32>) -
         .map(|suffix| format!(":{suffix}"))
         .unwrap_or_default();
     format!("{source_name}@reference{offset}{suffix}")
+}
+
+/// Design parameter names taken per owner.
+#[derive(Default)]
+struct ReferenceNames {
+    taken: HashMap<cadmpeg_ir::features::FeatureId, HashSet<String>>,
+    /// Where the offset search for an owner, source name and offset resumes.
+    next_suffixes: HashMap<(cadmpeg_ir::features::FeatureId, String, u64), u32>,
+}
+
+impl ReferenceNames {
+    fn insert(&mut self, owner: &cadmpeg_ir::features::FeatureId, name: String) {
+        self.taken.entry(owner.clone()).or_default().insert(name);
+    }
+
+    fn is_taken(&self, owner: &cadmpeg_ir::features::FeatureId, name: &str) -> bool {
+        self.taken
+            .get(owner)
+            .is_some_and(|names| names.contains(name))
+    }
+
+    /// The plain reference name for `source_name` if `owner` has not taken it,
+    /// else the first free name with `offset`, then with `offset` and suffix
+    /// 1, 2, and so on.
+    ///
+    /// Names are never released, so every name a search passed over stays
+    /// taken and the next search for the same key resumes where this one
+    /// stopped.
+    fn free(
+        &mut self,
+        owner: &cadmpeg_ir::features::FeatureId,
+        source_name: &str,
+        offset: u64,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        let plain = reference_name(source_name, None, None);
+        if !self.is_taken(owner, &plain) {
+            return Ok(plain);
+        }
+        let mut suffix = self
+            .next_suffixes
+            .get(&(owner.clone(), source_name.to_owned(), offset))
+            .copied()
+            .unwrap_or(0);
+        loop {
+            let candidate =
+                reference_name(source_name, Some(offset), (suffix != 0).then_some(suffix));
+            if !self.is_taken(owner, &candidate) {
+                self.next_suffixes
+                    .insert((owner.clone(), source_name.to_owned(), offset), suffix);
+                return Ok(candidate);
+            }
+            suffix = suffix.checked_add(1).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "SLDPRT reference parameter name suffix overflows u32",
+                )
+            })?;
+        }
+    }
 }
 
 pub(super) fn bind_circular_profile_by_dimension(
@@ -176,10 +234,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
         };
         neutral_owners.insert(&feature.id, native_ref);
     }
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
         let mut length_scalars = HashSet::new();
         let mut angle_scalars = HashSet::new();
@@ -209,9 +264,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
         for name in &lane.names {
             names_by_id.insert(name.id.as_str(), name);
         }
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(Option<u64>, &crate::records::Feature)>::new();
-        for feature in native_features.values() {
-            let start = feature_object_name(feature, lane).map(|name| name.offset);
+        for feature in native_features.iter() {
+            let start = object_names.of(feature).map(|name| name.offset);
             starts.push((start, feature));
         }
         starts.sort_by_key(|left| (left.0.is_none(), left.0));
@@ -392,7 +448,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
     }
     let mut relation_ids = HashSet::new();
     let mut parameter_ids = HashSet::new();
-    let mut names_by_owner = HashSet::new();
+    let mut names = ReferenceNames::default();
     let mut next_ordinals = HashMap::<cadmpeg_ir::features::FeatureId, u32>::new();
     for parameter in parameters.iter() {
         if let Some(relation_id) = parameter.properties.get(RELATION_PARAMETER_ID_PROPERTY) {
@@ -406,7 +462,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         let Some(owner) = parameter.owner.as_ref() else {
             continue;
         };
-        names_by_owner.insert((owner.clone(), parameter.name.clone()));
+        names.insert(owner, parameter.name.clone());
         let next = if parameter.ordinal == u32::MAX {
             parameter.ordinal
         } else {
@@ -427,6 +483,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .entry(name.id.as_str())
                 .or_insert(name.value.as_str());
         }
+        let ids = LaneIds::new(lane);
         for relation in &lane.relation_instances {
             if relation.parameter_scalar_ref().is_some()
                 || owned.get(&relation.id).is_some_and(Option::is_some)
@@ -434,7 +491,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             {
                 continue;
             }
-            let Some(scalar) = relation_display_scalar_for_parameter(relation, lane) else {
+            let Some(scalar) = relation_display_scalar_for_parameter(relation, &ids) else {
                 continue;
             };
             let Some(feature) = features_by_native_ref.get(relation.feature_ref.as_str()) else {
@@ -462,22 +519,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             } else {
                 next_ordinals.insert(owner.clone(), next_ordinal);
             }
-            let mut candidate = reference_name(source_name, None, None);
-            if names_by_owner.contains(&(owner.clone(), candidate.clone())) {
-                candidate = reference_name(source_name, Some(relation.offset), None);
-                let mut suffix = 0u32;
-                loop {
-                    if !names_by_owner.contains(&(owner.clone(), candidate.clone())) {
-                        break;
-                    }
-                    suffix = suffix.checked_add(1).ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed(
-                            "SLDPRT reference parameter name suffix overflows u32",
-                        )
-                    })?;
-                    candidate = reference_name(source_name, Some(relation.offset), Some(suffix));
-                }
-            }
+            let candidate = names.free(owner, source_name, relation.offset)?;
             let relation_key = relation
                 .id
                 .rsplit_once('#')
@@ -524,7 +566,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 pmi: None,
                 native_ref: None,
             });
-            names_by_owner.insert((owner.clone(), candidate));
+            names.insert(owner, candidate);
             if !relation_ids.contains(relation.id.as_str()) {
                 relation_ids.insert(relation.id.clone());
             }
@@ -722,8 +764,17 @@ pub(crate) fn project_compact_edge_selections(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let feature_ids_by_native = compact_edge_feature_ids(features);
+    project_compact_edge_selections_with_ids(features, &feature_ids_by_native, histories, lanes)
+}
+
+/// Feature ids by native ref, for compact edge selection; a repeated native
+/// ref keeps its last feature.
+pub(crate) fn compact_edge_feature_ids(
+    features: &[cadmpeg_ir::features::Feature],
+) -> HashMap<String, cadmpeg_ir::features::FeatureId> {
     let mut feature_ids_by_native = HashMap::new();
-    for feature in features.iter() {
+    for feature in features {
         let Some(native_ref) = feature.native_ref.as_ref() else {
             continue;
         };
@@ -734,6 +785,18 @@ pub(crate) fn project_compact_edge_selections(
         }
         feature_ids_by_native.insert(native_ref.to_owned(), id);
     }
+    feature_ids_by_native
+}
+
+/// Project the lanes' compact edge selections into `features`, resolving
+/// producer refs through `feature_ids_by_native`, which may cover features
+/// outside `features`.
+pub(crate) fn project_compact_edge_selections_with_ids(
+    features: &mut [cadmpeg_ir::features::Feature],
+    feature_ids_by_native: &HashMap<String, cadmpeg_ir::features::FeatureId>,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut selections = HashMap::<&str, Vec<&FeatureInputEdgeSelection>>::new();
     for selection in lanes.iter().flat_map(|lane| &lane.edge_selections) {
         let group = selections
@@ -741,6 +804,7 @@ pub(crate) fn project_compact_edge_selections(
             .or_default();
         group.push(selection);
     }
+    let mut fillet_objects = None;
     for feature in features {
         let feature_id = &feature.id;
         let dependencies = &mut feature.dependencies;
@@ -759,39 +823,21 @@ pub(crate) fn project_compact_edge_selections(
             };
             let projected_edges = |selections: &[&FeatureInputEdgeSelection]| -> Result<_, cadmpeg_core::CodecError> {
                 let native = compact_edge_selection_set_value(selections);
-                let mut generated = Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new();
-                let mut complete = true;
-                for selection in selections {
-                    let Some(native_feature) = selection.terminal_feature_ref.as_ref() else {
-                        complete = false;
-                        break;
-                    };
-                    let Some(feature_id) = feature_ids_by_native.get(native_feature) else {
-                        complete = false;
-                        break;
-                    };
-                    let feature = feature_id.clone();
-                    let local_id = compact_edge_path_value(selection);
-                    let Ok(edge) = cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id) else {
-                        complete = false;
-                        break;
-                    };
-                    if !generated.contains(&edge) {
-                        generated.push(edge);
+                match compact_generated_edges(selections, feature_ids_by_native) {
+                    Some(generated) if !generated.is_empty() => {
+                        EdgeSelection::generated(generated, native)
+                            .map_err(cadmpeg_core::CodecError::malformed)
                     }
-                }
-                if complete && !generated.is_empty() {
-                    EdgeSelection::generated(generated, native)
-                        .map_err(cadmpeg_core::CodecError::malformed)
-                } else {
-                    Ok(EdgeSelection::Native(native))
+                    _ => Ok(EdgeSelection::Native(native)),
                 }
             };
             if let Some((existing_edges, tangency_weight)) =
                 sole_unresolved_fillet_group(definition)
             {
+                let fillet_objects = fillet_objects
+                    .get_or_insert_with(|| VariableFilletObjects::new(histories, lanes));
                 if let Some(radius_groups) =
-                    variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
+                    variable_fillet_radius_groups(native_ref, fillet_objects, edge_selections)
                 {
                     let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
                     if unresolved_edges || radius_groups.len() == 1 {
@@ -855,24 +901,128 @@ pub(crate) fn project_compact_edge_selections(
     Ok(())
 }
 
+/// The distinct generated edges a compact selection set names, in selection
+/// order, or `None` when a selection names no generated edge.
+fn compact_generated_edges(
+    selections: &[&FeatureInputEdgeSelection],
+    feature_ids_by_native: &HashMap<String, cadmpeg_ir::features::FeatureId>,
+) -> Option<Vec<cadmpeg_ir::features::GeneratedEdgeRef>> {
+    let mut generated = Vec::new();
+    let mut seen = HashSet::new();
+    for selection in selections {
+        let feature_id = feature_ids_by_native.get(selection.terminal_feature_ref.as_ref()?)?;
+        let local_id = compact_edge_path_value(selection);
+        if !seen.insert((feature_id, local_id.clone())) {
+            continue;
+        }
+        generated
+            .push(cadmpeg_ir::features::GeneratedEdgeRef::new(feature_id.clone(), local_id).ok()?);
+    }
+    Some(generated)
+}
+
 #[derive(Debug)]
 struct RadiusSelectionGroup<'a>(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>);
 
+/// Variable fillet records and their histories' lane objects, indexed once
+/// for every fillet a projection pass resolves.
+struct VariableFilletObjects<'a> {
+    histories: &'a [crate::records::FeatureHistory],
+    lanes: &'a [FeatureInputLane],
+    /// The first history holding each record id, and the first variable
+    /// fillet with that id in it.
+    fillets: HashMap<&'a str, (usize, &'a crate::records::Feature)>,
+    /// Each history's named objects in every lane, built on first use.
+    lane_objects: HashMap<usize, Vec<LaneObjects<'a>>>,
+}
+
+/// One lane's named history objects sorted by offset, with each record id's
+/// first position.
+struct LaneObjects<'a> {
+    starts: Vec<(u64, &'a crate::records::Feature)>,
+    first: HashMap<&'a str, usize>,
+}
+
+impl<'a> VariableFilletObjects<'a> {
+    fn new(histories: &'a [crate::records::FeatureHistory], lanes: &'a [FeatureInputLane]) -> Self {
+        let mut first_history = HashMap::new();
+        let mut fillets = HashMap::new();
+        for (history_index, history) in histories.iter().enumerate() {
+            for feature in &history.features {
+                let id = feature.id.as_str();
+                if *first_history.entry(id).or_insert(history_index) == history_index
+                    && feature.kind.eq_ignore_ascii_case("VarFillet")
+                {
+                    fillets.entry(id).or_insert((history_index, feature));
+                }
+            }
+        }
+        Self {
+            histories,
+            lanes,
+            fillets,
+            lane_objects: HashMap::new(),
+        }
+    }
+
+    fn fillet(&self, feature_ref: &str) -> Option<(usize, &'a crate::records::Feature)> {
+        self.fillets.get(feature_ref).copied()
+    }
+
+    /// Each lane that names `feature_ref` among the history's objects, with
+    /// the end of its object: the next object's start, else the payload end.
+    fn object_ends(
+        &mut self,
+        history: usize,
+        feature_ref: &str,
+    ) -> Vec<(&'a FeatureInputLane, usize)> {
+        let lanes = self.lanes;
+        let features = self
+            .histories
+            .get(history)
+            .map_or(&[][..], |history| history.features.as_slice());
+        let lane_objects = self.lane_objects.entry(history).or_insert_with(|| {
+            lanes
+                .iter()
+                .map(|lane| {
+                    let names = FeatureObjectNames::new(&lane.names);
+                    let mut starts = Vec::new();
+                    for candidate in features {
+                        if let Some(name) = names.of(candidate) {
+                            starts.push((name.offset, candidate));
+                        }
+                    }
+                    starts.sort_unstable_by_key(|(left, _)| *left);
+                    let mut first = HashMap::new();
+                    for (index, (_, candidate)) in starts.iter().enumerate() {
+                        first.entry(candidate.id.as_str()).or_insert(index);
+                    }
+                    LaneObjects { starts, first }
+                })
+                .collect()
+        });
+        lanes
+            .iter()
+            .zip(lane_objects.iter())
+            .filter_map(|(lane, objects)| {
+                let index = *objects.first.get(feature_ref)?;
+                let end = objects
+                    .starts
+                    .get(index + 1)
+                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                    .unwrap_or(lane.native_payload.len());
+                Some((lane, end))
+            })
+            .collect()
+    }
+}
+
 fn variable_fillet_radius_groups<'a>(
     feature_ref: &str,
-    histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    objects: &mut VariableFilletObjects<'_>,
     selections: &[&'a FeatureInputEdgeSelection],
 ) -> Option<Vec<RadiusSelectionGroup<'a>>> {
-    let history = histories.iter().find(|history| {
-        history
-            .features
-            .iter()
-            .any(|feature| feature.id == feature_ref)
-    })?;
-    let feature = history.features.iter().find(|feature| {
-        feature.id == feature_ref && feature.kind.eq_ignore_ascii_case("VarFillet")
-    })?;
+    let (history, feature) = objects.fillet(feature_ref)?;
     let mut parameter_names = HashSet::new();
     for name in feature.parameters.keys() {
         if variable_fillet_dimension_index_for_feature(feature, name.as_str()).is_some() {
@@ -944,24 +1094,7 @@ fn variable_fillet_radius_groups<'a>(
     let mut control_names = HashSet::<String>::new();
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
-    for lane in lanes {
-        let mut objects = Vec::new();
-        for candidate in &history.features {
-            if let Some(name) = feature_object_name(candidate, lane) {
-                objects.push((name.offset, candidate));
-            }
-        }
-        objects.sort_unstable_by_key(|(left, _)| *left);
-        let Some(index) = objects
-            .iter()
-            .position(|(_, candidate)| candidate.id == feature_ref)
-        else {
-            continue;
-        };
-        let object_end = objects
-            .get(index + 1)
-            .and_then(|(offset, _)| usize::try_from(*offset).ok())
-            .unwrap_or(lane.native_payload.len());
+    for (lane, object_end) in objects.object_ends(history, feature_ref) {
         let Some(controls) = variable_fillet_control_references(feature, lane, object_end) else {
             continue;
         };
@@ -1273,7 +1406,6 @@ pub(crate) fn project_compact_surface_selections(
                     if let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
                         definition
                     {
-
                         if !matches!(
                             targets,
                             cadmpeg_ir::features::FaceSelection::Unresolved
@@ -2094,10 +2226,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     faces: &[Face],
     surfaces: &[Surface],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut native_features = HashMap::new();
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut history_features = Vec::new();
     for native_feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(native_feature.id.as_str(), native_feature);
         history_features.push(native_feature);
     }
     let mut feature_ids_by_native = HashMap::new();
@@ -2107,6 +2238,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         };
         feature_ids_by_native.insert(native_ref.to_owned(), feature.id.clone());
     }
+    let mut lane_ranges = None;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
@@ -2117,7 +2249,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 let Some(native_ref) = native_ref else {
                     return Ok(());
                 };
-                let Some(native_feature) = native_features.get(native_ref).copied() else {
+                let Some(native_feature) = native_features.get(native_ref) else {
                     return Ok(());
                 };
                 let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -2156,10 +2288,14 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         ));
                     }
                 }
-                for lane in lanes {
-                    let Some((_, start, end)) = feature_object_byte_ranges(histories, lane)
-                        .get(native_feature.id.as_str())
-                        .copied()
+                let lane_ranges = lane_ranges.get_or_insert_with(|| {
+                    lanes
+                        .iter()
+                        .map(|lane| feature_object_byte_ranges(histories, lane))
+                        .collect::<Vec<_>>()
+                });
+                for (lane, ranges) in lanes.iter().zip(lane_ranges.iter()) {
+                    let Some((_, start, end)) = ranges.get(native_feature.id.as_str()).copied()
                     else {
                         continue;
                     };

@@ -270,3 +270,106 @@ fn indexed_feature_names_preserve_precedence_and_ambiguity() {
         assert_eq!(name.id, format!("name#{index}"));
     }
 }
+
+#[test]
+fn indexed_feature_objects_match_the_linear_scans() {
+    use super::{feature_object_name, FeatureObjectNames, FeatureObjectStarts};
+    use crate::records::{
+        Feature, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId,
+    };
+    use std::collections::BTreeMap;
+
+    const PAYLOAD_LEN: usize = 2_100;
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        u32::try_from((state >> 33) % bound).unwrap()
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; PAYLOAD_LEN].into(),
+        classes: Vec::new(),
+        names: (0u32..400)
+            .map(|index| FeatureInputName {
+                id: format!("name#{index}"),
+                parent: "lane".into(),
+                ordinal: index,
+                offset: u64::from(next(2_000)),
+                object_id: if next(4) == 0 {
+                    None
+                } else {
+                    ObjectId::from_value(next(600))
+                },
+                value: format!("F{}", next(400)),
+            })
+            .collect(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let mut features = (0u32..300)
+        .map(|index| Feature {
+            id: format!("feature#{index}"),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: match next(4) {
+                0 => None,
+                1 => Some(FeatureSource::Reserved),
+                _ => FeatureSource::from_value(next(800)),
+            },
+            ordinal: index,
+            name: format!("F{}", next(500)),
+            kind: "Feature".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    let history = |id: &str, features| FeatureHistory {
+        id: id.into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features,
+    };
+    let second = features.split_off(150);
+    let histories = [history("first", features), history("second", second)];
+
+    let names = FeatureObjectNames::new(&lane.names);
+    let starts = FeatureObjectStarts::new(&histories, &names);
+    let mut found = 0;
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        let linear = feature_object_name(feature, &lane).map(|name| name.id.as_str());
+        assert_eq!(names.of(feature).map(|name| name.id.as_str()), linear);
+        found += usize::from(linear.is_some());
+    }
+    assert!(found > 0 && found < 300);
+    let probes = (0..200).map(|_| u64::from(next(2_100))).collect::<Vec<_>>();
+    for start in lane.names.iter().map(|name| name.offset).chain(probes) {
+        let linear = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(|feature| feature_object_name(feature, &lane))
+            .filter(|candidate| candidate.offset > start)
+            .map(|candidate| candidate.offset)
+            .min()
+            .and_then(|offset| usize::try_from(offset).ok())
+            .unwrap_or(PAYLOAD_LEN);
+        assert_eq!(starts.end(start, PAYLOAD_LEN), linear);
+    }
+}

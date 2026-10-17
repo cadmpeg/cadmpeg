@@ -281,8 +281,7 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
                 None,
                 Point2::new(0.5, 0.),
                 CHORD_BOUND_TOLERANCE,
-            )
-            .expect("check that the NURBS pcurve contains the point"),
+            ),
             Some(true)
         );
         assert_eq!(
@@ -293,8 +292,7 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
                 None,
                 Point2::new(0.5, 2.),
                 CHORD_BOUND_TOLERANCE,
-            )
-            .expect("check that the NURBS pcurve contains the point"),
+            ),
             Some(false)
         );
     }

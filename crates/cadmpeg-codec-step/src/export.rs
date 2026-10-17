@@ -104,11 +104,20 @@ pub(crate) fn write_step_outcome(
         )));
     }
     for surface in &ir.model.surfaces {
-        if let Some(reason) = surface.geometry.solved().and_then(unwritable_cone) {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "STEP cannot represent cone surface '{}' with {reason}",
-                surface.id
-            )));
+        match surface.geometry.solved().and_then(unwritable_cone) {
+            Some(UnwritableCone::SemiAngle(half_angle)) => {
+                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                    "STEP conical_surface cannot represent surface '{}' with semi-angle {half_angle} outside (0, pi/2)",
+                    surface.id
+                )));
+            }
+            Some(UnwritableCone::Line) => {
+                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                    "STEP cannot represent surface '{}': a cone of semi-angle 0 with a zero section radius is a line",
+                    surface.id
+                )));
+            }
+            None => {}
         }
     }
     let mut b = Builder::new(ir, schema)?;
@@ -126,16 +135,29 @@ pub(crate) fn write_step_outcome(
     Ok(outcome)
 }
 
-fn unwritable_cone(mut geometry: &SolvedSurfaceGeometry) -> Option<String> {
+/// Why a cone carrier has no STEP surface record.
+enum UnwritableCone {
+    /// A semi-angle of magnitude `pi/2` or more, outside `conical_surface`.
+    SemiAngle(f64),
+    /// A zero semi-angle over a zero section radius: the surface is a line.
+    Line,
+}
+
+/// Why no STEP surface record holds the cone under `geometry`, or `None` when
+/// one does. A semi-angle 0 cone over a positive section is a cylinder, which
+/// [`crate::geometry::surface`] writes.
+fn unwritable_cone(mut geometry: &SolvedSurfaceGeometry) -> Option<UnwritableCone> {
     loop {
         match geometry {
             SolvedSurfaceGeometry::Cone(cone) => {
                 let angle = cone.half_angle().get();
                 if angle.abs() >= std::f64::consts::FRAC_PI_2 {
-                    return Some(format!("semi-angle {angle} outside (0, pi/2)"));
+                    return Some(UnwritableCone::SemiAngle(angle));
                 }
-                return (angle == 0.0 && geometry::zero_angle_cone_semi_axes(cone).is_none())
-                    .then(|| "semi-angle 0 and a zero section semi-axis".to_owned());
+                let radius = cone.radius().get();
+                let minor_radius = radius * cone.ratio().get();
+                return (angle == 0.0 && (radius <= 0.0 || minor_radius <= 0.0))
+                    .then_some(UnwritableCone::Line);
             }
             SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
             _ => return None,

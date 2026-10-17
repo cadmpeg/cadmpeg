@@ -7,28 +7,22 @@ use crate::report::{
     Severity,
 };
 
-pub(super) fn check_tessellations(
-    ir: &CadIr,
-    findings: &mut Vec<Finding>,
-) -> Result<(), cadmpeg_core::CodecError> {
+pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     let bodies = crate::index::identities::BorrowedIdentities::build(|add| {
         for body in &ir.model.bodies {
-            add(body.id.as_str(), ())?;
+            add(body.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let faces = crate::index::identities::BorrowedIdentities::build(|add| {
         for face in &ir.model.faces {
-            add(face.id.as_str(), ())?;
+            add(face.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let assets = crate::index::identities::BorrowedIdentities::build(|add| {
         for asset in &ir.model.assets {
-            add(asset.id.as_str(), ())?;
+            add(asset.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     for mesh in &ir.model.tessellations {
         if let Some(body) = &mesh.body {
             if !bodies.contains(body.as_str()) {
@@ -66,7 +60,6 @@ pub(super) fn check_tessellations(
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

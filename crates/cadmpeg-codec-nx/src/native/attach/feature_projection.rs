@@ -5,13 +5,17 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{BodyId, FaceId, LoopId, RegionId, ShellId, SurfaceId};
+use cadmpeg_ir::ids::{
+    BodyId, CurveId, EdgeId, FaceId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, BodyKind, Face, FaceLoops, Region, Sense, Shell};
+use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, FaceLoops, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferSpec, RadiusSpec},
@@ -37,6 +41,10 @@ pub(super) struct SolidBodyIndex<'a> {
 
 impl<'a> SolidBodyIndex<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
+        Self::of_arenas(ProjectionArenas::of(ir))
+    }
+
+    fn of_arenas(arenas: ProjectionArenas<'a>) -> Self {
         fn first<'a, T, K: Ord>(items: &'a [T], key: impl Fn(&'a T) -> K) -> BTreeMap<K, &'a T> {
             let mut first = BTreeMap::new();
             for item in items {
@@ -45,10 +53,10 @@ impl<'a> SolidBodyIndex<'a> {
             first
         }
         Self {
-            bodies: first(&ir.model.bodies, |body| &body.id),
-            regions: first(&ir.model.regions, |region| (&region.id, &region.body)),
-            shells: first(&ir.model.shells, |shell| (&shell.id, &shell.region)),
-            faces: first(&ir.model.faces, |face| (&face.id, &face.shell)),
+            bodies: first(arenas.bodies, |body| &body.id),
+            regions: first(arenas.regions, |region| (&region.id, &region.body)),
+            shells: first(arenas.shells, |shell| (&shell.id, &shell.region)),
+            faces: first(arenas.faces, |face| (&face.id, &face.shell)),
         }
     }
 
@@ -90,15 +98,193 @@ impl<'a> SolidBodyIndex<'a> {
     }
 }
 
-pub(super) fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
-    SolidBodyIndex::new(ir).body_faces(body_id)
+/// The model arenas the block, sphere, offset, thicken and blend projections
+/// read.
+#[derive(Clone, Copy)]
+pub(super) struct ProjectionArenas<'a> {
+    pub(super) bodies: &'a [Body],
+    pub(super) regions: &'a [Region],
+    pub(super) shells: &'a [Shell],
+    pub(super) faces: &'a [Face],
+    pub(super) surfaces: &'a [Surface],
+    pub(super) procedural_surfaces: &'a [ProceduralSurface],
 }
 
-pub(super) fn connected_solid_body_faces<'a>(
-    ir: &'a CadIr,
-    body_id: &BodyId,
-) -> Option<Vec<&'a Face>> {
-    SolidBodyIndex::new(ir).connected_solid_body_faces(body_id)
+impl<'a> ProjectionArenas<'a> {
+    pub(super) fn of(ir: &'a CadIr) -> Self {
+        Self {
+            bodies: &ir.model.bodies,
+            regions: &ir.model.regions,
+            shells: &ir.model.shells,
+            faces: &ir.model.faces,
+            surfaces: &ir.model.surfaces,
+            procedural_surfaces: &ir.model.procedural_surfaces,
+        }
+    }
+}
+
+/// Lookups for the block, sphere, offset, thicken and blend projections.
+///
+/// It borrows every arena it reads, so a caller that keeps it across features
+/// can only write arenas these projections never read.
+pub(super) struct FeatureProjectionIndex<'a> {
+    bodies: &'a [Body],
+    solid_bodies: SolidBodyIndex<'a>,
+    first_surfaces: BTreeMap<&'a SurfaceId, &'a Surface>,
+    last_surfaces: BTreeMap<&'a SurfaceId, &'a Surface>,
+    sphere_surfaces: BTreeSet<&'a SurfaceId>,
+    sole_faces: BTreeMap<&'a SurfaceId, Option<&'a Face>>,
+    /// Procedural surfaces by their sole carrier, with their model positions.
+    owned_procedurals: BTreeMap<&'a SurfaceId, Vec<(usize, &'a ProceduralSurface)>>,
+}
+
+impl<'a> FeatureProjectionIndex<'a> {
+    pub(super) fn new(arenas: ProjectionArenas<'a>) -> Self {
+        let mut first_surfaces = BTreeMap::new();
+        let mut sphere_surfaces = BTreeSet::new();
+        for surface in arenas.surfaces {
+            first_surfaces.entry(&surface.id).or_insert(surface);
+            if matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Sphere(_))
+            ) {
+                sphere_surfaces.insert(&surface.id);
+            }
+        }
+        let owners = procedural_surface_owners(arenas.surfaces);
+        let mut owned_procedurals = BTreeMap::<_, Vec<_>>::new();
+        for (position, procedural) in arenas.procedural_surfaces.iter().enumerate() {
+            if let Some(owner) = owners.get(&procedural.id).copied().flatten() {
+                owned_procedurals
+                    .entry(owner)
+                    .or_default()
+                    .push((position, procedural));
+            }
+        }
+        let mut sole_faces = BTreeMap::<_, Option<_>>::new();
+        for face in arenas.faces {
+            sole_faces
+                .entry(&face.surface)
+                .and_modify(|sole| *sole = None)
+                .or_insert(Some(face));
+        }
+        Self {
+            bodies: arenas.bodies,
+            solid_bodies: SolidBodyIndex::of_arenas(arenas),
+            first_surfaces,
+            last_surfaces: last_surfaces(arenas.surfaces),
+            sphere_surfaces,
+            sole_faces,
+            owned_procedurals,
+        }
+    }
+
+    fn body_surface_ids(&self, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
+        let faces = self.solid_bodies.body_faces(body_id)?;
+        let mut ids = BTreeSet::new();
+        for face in &faces {
+            if ids.contains(&face.surface) {
+                continue;
+            }
+            let surface = face.surface.clone();
+            ids.insert(surface);
+        }
+        Some(ids)
+    }
+
+    /// The procedural surfaces whose sole carrier is one of `surfaces`, each
+    /// with that carrier, in model order.
+    pub(super) fn owned_procedural_surfaces(
+        &self,
+        surfaces: &BTreeSet<SurfaceId>,
+    ) -> Vec<(&'a SurfaceId, &'a ProceduralSurface)> {
+        let mut owned = Vec::new();
+        for surface in surfaces {
+            if let Some((&owner, procedurals)) = self.owned_procedurals.get_key_value(surface) {
+                owned.extend(
+                    procedurals
+                        .iter()
+                        .map(|&(position, procedural)| (position, owner, procedural)),
+                );
+            }
+        }
+        owned.sort_by_key(|&(position, ..)| position);
+        owned
+            .into_iter()
+            .map(|(_, owner, procedural)| (owner, procedural))
+            .collect()
+    }
+}
+
+/// The last surface, edge and curve of each identity, and each loop's coedges
+/// in model order.
+pub(super) struct CarrierIndex<'a> {
+    surfaces: BTreeMap<&'a SurfaceId, &'a Surface>,
+    edges: BTreeMap<&'a EdgeId, &'a Edge>,
+    curves: BTreeMap<&'a CurveId, &'a Curve>,
+    loop_coedges: BTreeMap<&'a LoopId, Vec<&'a Coedge>>,
+}
+
+impl<'a> CarrierIndex<'a> {
+    pub(super) fn new(ir: &'a CadIr) -> Self {
+        let mut loop_coedges = BTreeMap::<_, Vec<_>>::new();
+        for coedge in &ir.model.coedges {
+            loop_coedges
+                .entry(&coedge.owner_loop)
+                .or_default()
+                .push(coedge);
+        }
+        Self {
+            surfaces: last_surfaces(&ir.model.surfaces),
+            edges: ir.model.edges.iter().map(|edge| (&edge.id, edge)).collect(),
+            curves: ir
+                .model
+                .curves
+                .iter()
+                .map(|curve| (&curve.id, curve))
+                .collect(),
+            loop_coedges,
+        }
+    }
+
+    pub(super) fn surface(&self, id: &SurfaceId) -> Option<&'a Surface> {
+        self.surfaces.get(id).copied()
+    }
+
+    pub(super) fn loop_coedges(&self, loop_id: &LoopId) -> &[&'a Coedge] {
+        self.loop_coedges.get(loop_id).map_or(&[], Vec::as_slice)
+    }
+
+    /// The curve carrying the last edge of `edge_id`.
+    pub(super) fn edge_curve(&self, edge_id: &EdgeId) -> Option<&'a Curve> {
+        let curve_id = self.edges.get(edge_id)?.curve()?;
+        self.curves.get(curve_id).copied()
+    }
+}
+
+/// The last surface of each identity.
+fn last_surfaces(surfaces: &[Surface]) -> BTreeMap<&SurfaceId, &Surface> {
+    surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect()
+}
+
+/// The sole surface carrying each procedural construction, or `None` when
+/// several carry it.
+fn procedural_surface_owners(
+    surfaces: &[Surface],
+) -> BTreeMap<&ProceduralSurfaceId, Option<&SurfaceId>> {
+    let mut owners = BTreeMap::new();
+    for surface in surfaces {
+        if let Some(construction) = surface.geometry.procedural_construction() {
+            owners
+                .entry(construction)
+                .and_modify(|owner| *owner = None)
+                .or_insert(Some(&surface.id));
+        }
+    }
+    owners
 }
 
 pub(super) fn selection_indices_native(indices: impl Iterator<Item = u32>) -> String {
@@ -131,19 +317,6 @@ pub(super) fn insert_parameter_property(
     Ok(())
 }
 
-pub(super) fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
-    let faces = body_faces(ir, body_id)?;
-    let mut ids = BTreeSet::new();
-    for face in &faces {
-        if ids.contains(&face.surface) {
-            continue;
-        }
-        let surface = face.surface.clone();
-        ids.insert(surface);
-    }
-    Some(ids)
-}
-
 /// Neutral operand family named by an NX rolling-ball blend operation.
 #[derive(Clone, Copy)]
 pub(super) enum NxBlendFamily {
@@ -155,14 +328,14 @@ pub(super) enum NxBlendFamily {
 
 /// Project complete owned rolling-ball carriers into their named blend family.
 pub(super) fn blend_feature_definition(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
     family: NxBlendFamily,
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let [body] = outputs else {
         return None;
     };
-    let body_surfaces = body_surface_ids(ir, body)?;
+    let body_surfaces = index.body_surface_ids(body)?;
     let mut surfaces = Vec::new();
     let mut first_radius = None;
     let mut constant_radii = true;
@@ -170,13 +343,7 @@ pub(super) fn blend_feature_definition(
     let mut variable_radii = true;
     let mut pairs = Vec::new();
     let mut complete_pairs = true;
-    for procedural in &ir.model.procedural_surfaces {
-        let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
-            continue;
-        };
-        if !body_surfaces.contains(owner) {
-            continue;
-        }
+    for (owner, procedural) in index.owned_procedural_surfaces(&body_surfaces) {
         let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
             continue;
         };
@@ -248,8 +415,8 @@ pub(super) fn blend_feature_definition(
         if let Some(sides) = blend_support_bipartition(&pairs) {
             let first_native = format!("{body}:blend-first-support-surfaces");
             let second_native = format!("{body}:blend-second-support-surfaces");
-            let (first_faces, _) = support_face_projection(ir, &sides.first, first_native);
-            let (second_faces, _) = support_face_projection(ir, &sides.second, second_native);
+            let (first_faces, _) = support_face_projection(index, &sides.first, first_native);
+            let (second_faces, _) = support_face_projection(index, &sides.second, second_native);
             match (&first_faces, &second_faces) {
                 (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
                     cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces)
@@ -355,16 +522,16 @@ pub(super) fn blend_support_bipartition(pairs: &[[SurfaceId; 2]]) -> Option<Blen
 }
 
 pub(super) fn offset_surface_feature_definition(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let OwnedOffsetSurfaceData {
         body,
         distance,
         supports,
-    } = owned_offset_surface_data(ir, outputs)?;
+    } = owned_offset_surface_data(index, outputs)?;
     let native = format!("{}:offset-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ir, &supports, native);
+    let (faces, senses) = support_face_projection(index, &supports, native);
     let distance = senses
         .as_deref()
         .and_then(uniform_face_sense)
@@ -388,10 +555,10 @@ pub(super) struct OwnedOffsetSurfaceData<'a> {
 }
 
 pub(super) fn owned_offset_surface_data<'a>(
-    ir: &'a CadIr,
+    index: &FeatureProjectionIndex<'a>,
     outputs: &'a [BodyId],
 ) -> Option<OwnedOffsetSurfaceData<'a>> {
-    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
+    let (body, carriers) = owned_offset_carriers(index, outputs)?;
     let distance = carriers[0].1;
     if carriers
         .iter()
@@ -425,21 +592,15 @@ pub(super) fn unique_carrier_supports(carriers: &[(&SurfaceId, FiniteReal)]) -> 
 type OwnedOffsetCarriers<'a> = (&'a BodyId, Vec<(&'a SurfaceId, FiniteReal)>);
 
 pub(super) fn owned_offset_carriers<'a>(
-    ir: &'a CadIr,
+    index: &FeatureProjectionIndex<'a>,
     outputs: &'a [BodyId],
 ) -> Option<OwnedOffsetCarriers<'a>> {
     let [body] = outputs else {
         return None;
     };
-    let body_surfaces = body_surface_ids(ir, body)?;
+    let body_surfaces = index.body_surface_ids(body)?;
     let mut carriers = Vec::new();
-    for procedural in &ir.model.procedural_surfaces {
-        let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
-            continue;
-        };
-        if !body_surfaces.contains(owner) {
-            continue;
-        }
+    for (_, procedural) in index.owned_procedural_surfaces(&body_surfaces) {
         let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
         else {
             continue;
@@ -452,7 +613,7 @@ pub(super) fn owned_offset_carriers<'a>(
 }
 
 pub(super) fn thicken_feature_definition(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let OwnedThickenSurfaceData {
@@ -460,9 +621,9 @@ pub(super) fn thicken_feature_definition(
         thickness,
         supports,
         direction,
-    } = owned_thicken_surface_data(ir, outputs)?;
+    } = owned_thicken_surface_data(index, outputs)?;
     let native = format!("{}:thicken-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ir, &supports, native);
+    let (faces, senses) = support_face_projection(index, &supports, native);
     let side = match direction {
         ThickenDirection::Both => Some(ThickenSide::Both),
         ThickenDirection::Signed(distance) => senses
@@ -493,15 +654,11 @@ pub(super) struct OwnedThickenSurfaceData<'a> {
 }
 
 pub(super) fn owned_thicken_surface_data<'a>(
-    ir: &'a CadIr,
+    index: &FeatureProjectionIndex<'a>,
     outputs: &'a [BodyId],
 ) -> Option<OwnedThickenSurfaceData<'a>> {
-    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
-    let output_body = ir
-        .model
-        .bodies
-        .iter()
-        .find(|candidate| candidate.id == *body)?;
+    let (body, carriers) = owned_offset_carriers(index, outputs)?;
+    let output_body = index.solid_bodies.bodies.get(body)?;
     if output_body.kind != BodyKind::Solid {
         return None;
     }
@@ -559,7 +716,7 @@ pub(super) fn owned_thicken_surface_data<'a>(
 }
 
 pub(super) fn support_face_projection(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     supports: &[SurfaceId],
     native: String,
 ) -> (
@@ -567,20 +724,12 @@ pub(super) fn support_face_projection(
     std::option::Option<std::vec::Vec<cadmpeg_ir::topology::Sense>>,
 ) {
     let mut selected = Vec::new();
+    let mut selected_ids = BTreeSet::new();
     for support in supports {
-        let mut matches = ir
-            .model
-            .faces
-            .iter()
-            .filter(|face| face.surface == *support);
-        let Some(face) = matches.next() else {
+        let Some(&Some(face)) = index.sole_faces.get(support) else {
             return (FaceSelection::Native(native), None);
         };
-        if matches.next().is_some() {
-            return (FaceSelection::Native(native), None);
-        }
-
-        if selected.iter().any(|(id, _)| *id == face.id) {
+        if !selected_ids.insert(&face.id) {
             return (FaceSelection::Native(native), None);
         }
 
@@ -659,7 +808,8 @@ pub(super) fn simple_hole_native_properties(
 }
 
 pub(super) fn block_placement(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
+    tolerances: &Tolerances,
     dimensions: [f64; 3],
     outputs: &[BodyId],
 ) -> Option<(BodyId, Transform)> {
@@ -724,20 +874,20 @@ pub(super) fn block_placement(
         })
     }
 
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
+    let linear_tolerance = tolerances.linear.get();
+    let angular_tolerance = tolerances.angular.get();
     if dimensions
         .iter()
         .any(|dimension| *dimension <= linear_tolerance)
     {
         return None;
     }
-    let solid_bodies = SolidBodyIndex::new(ir);
+    let solid_bodies = &index.solid_bodies;
     let body = match outputs {
         [body] => body,
         [] => {
             let mut unique = None;
-            for candidate in &ir.model.bodies {
+            for candidate in index.bodies {
                 if solid_bodies
                     .connected_solid_body_faces(&candidate.id)
                     .is_some()
@@ -754,12 +904,9 @@ pub(super) fn block_placement(
     let faces = solid_bodies.connected_solid_body_faces(body)?;
     let mut bands = Vec::<PlaneBand>::new();
     for face in faces.iter().copied() {
-        let geometry = ir
-            .model
-            .surfaces
-            .iter()
-            .rev()
-            .find(|surface| surface.id == face.surface)
+        let geometry = index
+            .last_surfaces
+            .get(&face.surface)
             .map(|surface| &surface.geometry)?;
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = geometry else {
             continue;
@@ -871,31 +1018,19 @@ pub(super) fn block_placement(
 /// one face whose surface is a finite positive-radius sphere. With no native
 /// output relation, the candidate must also be unique across the model.
 pub(super) fn sphere_body_projection(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
 ) -> Option<(
     BodyId,
     cadmpeg_ir::features::FinitePoint3,
     cadmpeg_ir::scalar::PositiveLength,
 )> {
-    let solid_bodies = SolidBodyIndex::new(ir);
+    let solid_bodies = &index.solid_bodies;
     let body = match outputs {
         [body] => body,
         [] => {
-            let sphere_surfaces = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| {
-                    matches!(
-                        surface.geometry.solved(),
-                        Some(SolvedSurfaceGeometry::Sphere(_))
-                    )
-                })
-                .map(|surface| &surface.id)
-                .collect::<BTreeSet<_>>();
             let mut unique = None;
-            for candidate in &ir.model.bodies {
+            for candidate in index.bodies {
                 let Some(faces) = solid_bodies.connected_solid_body_faces(&candidate.id) else {
                     continue;
                 };
@@ -903,7 +1038,7 @@ pub(super) fn sphere_body_projection(
                     continue;
                 };
 
-                if !sphere_surfaces.contains(&face.surface) {
+                if !index.sphere_surfaces.contains(&face.surface) {
                     continue;
                 }
                 if unique.replace(&candidate.id).is_some() {
@@ -920,11 +1055,7 @@ pub(super) fn sphere_body_projection(
         return None;
     };
 
-    let surface = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)?;
+    let surface = index.first_surfaces.get(&face.surface)?;
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         return None;
     };
@@ -1536,17 +1667,23 @@ pub(super) fn symbolic_thread_feature_definition() -> FeatureDefinition {
     })
 }
 
+/// The last expression of each identity.
+pub(super) fn expressions_by_id(
+    expressions: &[crate::native::om::ParameterFormula],
+) -> BTreeMap<&str, &crate::native::om::ParameterFormula> {
+    expressions
+        .iter()
+        .map(|expression| (expression.id.as_str(), expression))
+        .collect()
+}
+
 pub(super) fn native_feature_parameters(
     uses: &[&crate::native::features::FeatureParameterUse],
-    expressions: &[crate::native::om::ParameterFormula],
+    expressions_by_id: &BTreeMap<&str, &crate::native::om::ParameterFormula>,
 ) -> BTreeMap<String, String> {
     let mut parameters = BTreeMap::new();
     for parameter_use in uses {
-        let Some(expression) = expressions
-            .iter()
-            .rev()
-            .find(|expression| expression.id == parameter_use.expression)
-        else {
+        let Some(expression) = expressions_by_id.get(parameter_use.expression.as_str()) else {
             return BTreeMap::new();
         };
         if parameters.contains_key(expression.name.as_str()) {
@@ -1765,6 +1902,8 @@ pub(super) fn hole_package_projection(
             .and_modify(|existing| *existing = None)
             .or_insert(Some(template));
     }
+    let solid_bodies = SolidBodyIndex::new(ir);
+    let carriers = CarrierIndex::new(ir);
     let mut axis_placements = BTreeMap::<&BodyId, Vec<HolePlacement>>::new();
     let mut projection = HolePackageProjection::default();
     for use_ in uses {
@@ -1894,7 +2033,7 @@ pub(super) fn hole_package_projection(
         }
         let placements = axis_placements
             .entry(body)
-            .or_insert_with(|| hole_axis_placements_for_body(ir, body));
+            .or_insert_with(|| hole_axis_placements_for_body(ir, &solid_bodies, &carriers, body));
         if placements.len() == group.members.len() {
             projection
                 .placements
@@ -1945,11 +2084,12 @@ pub(super) fn hole_body_projection(
     let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
 
     let solid_bodies = SolidBodyIndex::new(ir);
+    let carriers = CarrierIndex::new(ir);
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let body_faces = solid_bodies.connected_solid_body_faces(&body)?;
-        let bores = cylindrical_face_witnesses(ir, &body_faces)?;
+        let bores = cylindrical_face_witnesses(ir, &carriers, &body_faces)?;
         let radius = bores.first().map(|bore| bore.radius)?;
         if bores.len() != operations.len()
             || bores
@@ -1988,6 +2128,7 @@ pub(super) fn counterbore_body_projection(
     let mut diameters = BTreeMap::new();
     let mut counterbores = BTreeMap::new();
     let solid_bodies = SolidBodyIndex::new(ir);
+    let carriers = CarrierIndex::new(ir);
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             // A counterbore pair has no serialized operation-to-pair relation
@@ -1998,7 +2139,7 @@ pub(super) fn counterbore_body_projection(
         let Some(body_faces) = solid_bodies.connected_solid_body_faces(&body) else {
             return Ok(None);
         };
-        let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
+        let Some(witnesses) = counterbore_cylinders(ctx, ir, &carriers, &body_faces)? else {
             return Ok(None);
         };
         let [witness] = witnesses.as_slice() else {
@@ -2038,12 +2179,13 @@ pub(super) fn blind_hole_body_projection(
     let mut diameters = BTreeMap::new();
     let mut blind_depths = BTreeMap::new();
     let solid_bodies = SolidBodyIndex::new(ir);
+    let carriers = CarrierIndex::new(ir);
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             return None;
         };
         let body_faces = solid_bodies.connected_solid_body_faces(&body)?;
-        let witnesses = blind_bore_cylinders(ir, &body_faces)?;
+        let witnesses = blind_bore_cylinders(ir, &carriers, &body_faces)?;
         let [witness] = witnesses.as_slice() else {
             return None;
         };
@@ -2077,12 +2219,15 @@ pub(super) fn hole_axis_placements_for_operations(
         return BTreeMap::new();
     };
 
+    let solid_bodies = SolidBodyIndex::new(ir);
+    let carriers = CarrierIndex::new(ir);
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             continue;
         };
-        let mut body_placements = hole_axis_placements_for_body(ir, &body);
+        let mut body_placements =
+            hole_axis_placements_for_body(ir, &solid_bodies, &carriers, &body);
         if body_placements.len() != 1 {
             continue;
         }
@@ -2104,6 +2249,7 @@ pub(super) fn counterbore_axis_placements_for_operations(
         return Ok(BTreeMap::new());
     };
     let solid_bodies = SolidBodyIndex::new(ir);
+    let carriers = CarrierIndex::new(ir);
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
@@ -2112,7 +2258,7 @@ pub(super) fn counterbore_axis_placements_for_operations(
         let Some(body_faces) = solid_bodies.connected_solid_body_faces(&body) else {
             return Ok(BTreeMap::new());
         };
-        let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
+        let Some(witnesses) = counterbore_cylinders(ctx, ir, &carriers, &body_faces)? else {
             return Ok(BTreeMap::new());
         };
         let [witness] = witnesses.as_slice() else {
@@ -2147,6 +2293,7 @@ pub(super) fn blind_hole_axis_placements_for_operations(
         return BTreeMap::new();
     };
     let solid_bodies = SolidBodyIndex::new(ir);
+    let carriers = CarrierIndex::new(ir);
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
@@ -2155,7 +2302,7 @@ pub(super) fn blind_hole_axis_placements_for_operations(
         let Some(body_faces) = solid_bodies.connected_solid_body_faces(&body) else {
             return BTreeMap::new();
         };
-        let Some(witnesses) = blind_bore_cylinders(ir, &body_faces) else {
+        let Some(witnesses) = blind_bore_cylinders(ir, &carriers, &body_faces) else {
             return BTreeMap::new();
         };
         let [witness] = witnesses.as_slice() else {
@@ -2178,11 +2325,16 @@ pub(super) fn blind_hole_axis_placements_for_operations(
     placements
 }
 
-pub(super) fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement> {
-    let Some(body_faces) = connected_solid_body_faces(ir, body) else {
+pub(super) fn hole_axis_placements_for_body(
+    ir: &CadIr,
+    solid_bodies: &SolidBodyIndex<'_>,
+    carriers: &CarrierIndex<'_>,
+    body: &BodyId,
+) -> Vec<HolePlacement> {
+    let Some(body_faces) = solid_bodies.connected_solid_body_faces(body) else {
         return Vec::new();
     };
-    let Some(bores) = cylindrical_face_witnesses(ir, &body_faces) else {
+    let Some(bores) = cylindrical_face_witnesses(ir, carriers, &body_faces) else {
         return Vec::new();
     };
     let angular_tolerance = ir.tolerances.angular.get();
@@ -2306,40 +2458,18 @@ pub(super) fn face_one_loop(face: &Face) -> Option<&LoopId> {
 }
 
 pub(super) fn circular_loop_geometry(
-    ir: &CadIr,
+    carriers: &CarrierIndex<'_>,
     loop_id: &LoopId,
     linear_tolerance: f64,
     angular_tolerance: f64,
 ) -> Option<(Point3, Vector3, f64)> {
-    if !ir
-        .model
-        .coedges
-        .iter()
-        .any(|coedge| &coedge.owner_loop == loop_id)
-    {
+    let coedges = carriers.loop_coedges(loop_id);
+    if coedges.is_empty() {
         return None;
     }
     let mut witness: Option<(Point3, Vector3, f64)> = None;
-    for coedge in ir
-        .model
-        .coedges
-        .iter()
-        .filter(|coedge| &coedge.owner_loop == loop_id)
-    {
-        let curve_id = ir
-            .model
-            .edges
-            .iter()
-            .rev()
-            .find(|edge| edge.id == coedge.edge)
-            .and_then(|edge| edge.curve())?;
-
-        let curve = ir
-            .model
-            .curves
-            .iter()
-            .rev()
-            .find(|curve| &curve.id == curve_id)?;
+    for coedge in coedges {
+        let curve = carriers.edge_curve(&coedge.edge)?;
         let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &curve.geometry
         else {
             return None;
@@ -2367,47 +2497,25 @@ pub(super) fn circular_loop_geometry(
     witness
 }
 
-pub(super) fn same_loop_edges(ir: &CadIr, first: &LoopId, second: &LoopId) -> bool {
-    let first_has_edges = ir
-        .model
-        .coedges
-        .iter()
-        .any(|coedge| &coedge.owner_loop == first);
-    let second_has_edges = ir
-        .model
-        .coedges
-        .iter()
-        .any(|coedge| &coedge.owner_loop == second);
-    if first_has_edges != second_has_edges {
-        return false;
-    }
-    let first_in_second = ir
-        .model
-        .coedges
-        .iter()
-        .filter(|coedge| &coedge.owner_loop == first)
-        .all(|coedge| {
-            ir.model
-                .coedges
-                .iter()
-                .any(|other| &other.owner_loop == second && other.edge == coedge.edge)
-        });
-    let second_in_first = ir
-        .model
-        .coedges
-        .iter()
-        .filter(|coedge| &coedge.owner_loop == second)
-        .all(|coedge| {
-            ir.model
-                .coedges
-                .iter()
-                .any(|other| &other.owner_loop == first && other.edge == coedge.edge)
-        });
-    first_in_second && second_in_first
+/// Whether two loops use the same set of edges.
+pub(super) fn same_loop_edges(
+    carriers: &CarrierIndex<'_>,
+    first: &LoopId,
+    second: &LoopId,
+) -> bool {
+    let edges = |loop_id| {
+        carriers
+            .loop_coedges(loop_id)
+            .iter()
+            .map(|coedge| &coedge.edge)
+            .collect::<BTreeSet<_>>()
+    };
+    edges(first) == edges(second)
 }
 
 pub(super) fn cylindrical_face_witnesses(
     ir: &CadIr,
+    carriers: &CarrierIndex<'_>,
     body_faces: &[&Face],
 ) -> Option<Vec<CylindricalFaceWitness>> {
     let linear_tolerance = ir.tolerances.linear.get();
@@ -2419,13 +2527,7 @@ pub(super) fn cylindrical_face_witnesses(
         .copied()
         .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
     {
-        let Some(surface) = ir
-            .model
-            .surfaces
-            .iter()
-            .rev()
-            .find(|surface| surface.id == face.surface)
-        else {
+        let Some(surface) = carriers.surface(&face.surface) else {
             continue;
         };
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
@@ -2447,7 +2549,7 @@ pub(super) fn cylindrical_face_witnesses(
         let mut stations = [0.0; 2];
         for (ordinal, loop_id) in [first_loop, second_loop].into_iter().enumerate() {
             let (center, circle_axis, circle_radius) =
-                circular_loop_geometry(ir, loop_id, linear_tolerance, angular_tolerance)?;
+                circular_loop_geometry(carriers, loop_id, linear_tolerance, angular_tolerance)?;
             if (circle_radius - radius).abs() > linear_tolerance
                 || (1.0 - axis.dot(circle_axis).abs()) > angular_tolerance
                 || Vector3::new(
@@ -2487,6 +2589,7 @@ pub(super) fn cylindrical_face_witnesses(
 
 pub(super) fn plane_annulus_witness(
     ir: &CadIr,
+    carriers: &CarrierIndex<'_>,
     body_faces: &[&Face],
     small: &CylindricalFaceWitness,
     small_station_ordinal: usize,
@@ -2509,13 +2612,7 @@ pub(super) fn plane_annulus_witness(
             continue;
         }
 
-        let Some(surface) = ir
-            .model
-            .surfaces
-            .iter()
-            .rev()
-            .find(|surface| surface.id == face.surface)
-        else {
+        let Some(surface) = carriers.surface(&face.surface) else {
             continue;
         };
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
@@ -2548,7 +2645,7 @@ pub(super) fn plane_annulus_witness(
         let mut valid = true;
         for (ordinal, loop_id) in [first_loop, second_loop].into_iter().enumerate() {
             let Some((center, circle_axis, radius)) =
-                circular_loop_geometry(ir, loop_id, linear_tolerance, angular_tolerance)
+                circular_loop_geometry(carriers, loop_id, linear_tolerance, angular_tolerance)
             else {
                 valid = false;
                 break;
@@ -2587,8 +2684,8 @@ pub(super) fn plane_annulus_witness(
         };
         if (inner - inner_radius).abs() <= linear_tolerance
             && (outer - outer_radius).abs() <= linear_tolerance
-            && same_loop_edges(ir, inner_boundary, inner_loop)
-            && same_loop_edges(ir, outer_boundary, outer_loop)
+            && same_loop_edges(carriers, inner_boundary, inner_loop)
+            && same_loop_edges(carriers, outer_boundary, outer_loop)
         {
             matches += 1;
         }
@@ -2599,9 +2696,10 @@ pub(super) fn plane_annulus_witness(
 pub(super) fn counterbore_cylinders(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
+    carriers: &CarrierIndex<'_>,
     body_faces: &[&Face],
 ) -> Result<Option<Vec<CounterboreCylinderWitness>>, CodecError> {
-    let Some(cylinders) = cylindrical_face_witnesses(ir, body_faces) else {
+    let Some(cylinders) = cylindrical_face_witnesses(ir, carriers, body_faces) else {
         return Ok(None);
     };
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
@@ -2658,7 +2756,15 @@ pub(super) fn counterbore_cylinders(
             let depth = (large_other - shared_station).abs();
             if depth <= linear_tolerance
                 || (small_other - shared_station).abs() <= linear_tolerance
-                || !plane_annulus_witness(ir, body_faces, small, small_shared, large, large_shared)
+                || !plane_annulus_witness(
+                    ir,
+                    carriers,
+                    body_faces,
+                    small,
+                    small_shared,
+                    large,
+                    large_shared,
+                )
             {
                 continue;
             }
@@ -2706,9 +2812,10 @@ pub(super) fn counterbore_cylinders(
 /// station match alone is not a topology relation.
 pub(super) fn blind_bore_cylinders(
     ir: &CadIr,
+    carriers: &CarrierIndex<'_>,
     body_faces: &[&Face],
 ) -> Option<Vec<BlindBoreCylinderWitness>> {
-    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
+    let cylinders = cylindrical_face_witnesses(ir, carriers, body_faces)?;
     let [cylinder] = cylinders.as_slice() else {
         return None;
     };
@@ -2719,29 +2826,18 @@ pub(super) fn blind_bore_cylinders(
     for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
         let cylinder_loop = &cylinder.loop_ids[station_ordinal];
 
-        if !ir
-            .model
-            .coedges
-            .iter()
-            .any(|coedge| &coedge.owner_loop == cylinder_loop)
-        {
+        if carriers.loop_coedges(cylinder_loop).is_empty() {
             return None;
         }
         for face in body_faces {
             let Some(cap_loop) = face_one_loop(face) else {
                 continue;
             };
-            if !same_loop_edges(ir, cap_loop, cylinder_loop) {
+            if !same_loop_edges(carriers, cap_loop, cylinder_loop) {
                 continue;
             }
 
-            let Some(surface) = ir
-                .model
-                .surfaces
-                .iter()
-                .rev()
-                .find(|surface| surface.id == face.surface)
-            else {
+            let Some(surface) = carriers.surface(&face.surface) else {
                 continue;
             };
             let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
@@ -2755,7 +2851,7 @@ pub(super) fn blind_bore_cylinders(
                 continue;
             };
             let Some((center, circle_axis, circle_radius)) =
-                circular_loop_geometry(ir, cap_loop, linear_tolerance, angular_tolerance)
+                circular_loop_geometry(carriers, cap_loop, linear_tolerance, angular_tolerance)
             else {
                 continue;
             };
@@ -2890,11 +2986,12 @@ pub(super) fn simple_hole_chamfers(
     let angular_tolerance = ir.tolerances.angular.get();
     let mut treatments = BTreeMap::new();
     let solid_bodies = SolidBodyIndex::new(ir);
+    let carriers = CarrierIndex::new(ir);
     for (body, operations) in operations_by_body {
         let Some(body_faces) = solid_bodies.connected_solid_body_faces(&body) else {
             return Ok(BTreeMap::new());
         };
-        let Some(bores) = cylindrical_face_witnesses(ir, &body_faces) else {
+        let Some(bores) = cylindrical_face_witnesses(ir, &carriers, &body_faces) else {
             return Ok(BTreeMap::new());
         };
         let [first_bore, ..] = bores.as_slice() else {
@@ -2916,12 +3013,8 @@ pub(super) fn simple_hole_chamfers(
             .iter()
             .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
         {
-            let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) = ir
-                .model
-                .surfaces
-                .iter()
-                .rev()
-                .find(|surface| surface.id == face.surface)
+            let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) = carriers
+                .surface(&face.surface)
                 .map(|surface| &surface.geometry)
             else {
                 continue;
@@ -2967,30 +3060,11 @@ pub(super) fn simple_hole_chamfers(
             };
             let mut radius_count = 0;
             for loop_id in loops {
-                for coedge in ir
-                    .model
-                    .coedges
-                    .iter()
-                    .filter(|coedge| coedge.owner_loop == *loop_id)
-                {
-                    let Some(curve_id) = ir
-                        .model
-                        .edges
-                        .iter()
-                        .rev()
-                        .find(|edge| edge.id == coedge.edge)
-                        .and_then(|edge| edge.curve())
-                    else {
-                        continue;
-                    };
-
-                    let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) = ir
-                        .model
-                        .curves
-                        .iter()
-                        .rev()
-                        .find(|curve| curve.id == *curve_id)
-                        .map(|curve| &curve.geometry)
+                for coedge in carriers.loop_coedges(loop_id) {
+                    let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
+                        carriers
+                            .edge_curve(&coedge.edge)
+                            .map(|curve| &curve.geometry)
                     else {
                         continue;
                     };

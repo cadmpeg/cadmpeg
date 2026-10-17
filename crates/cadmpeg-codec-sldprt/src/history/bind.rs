@@ -10,7 +10,7 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Face;
 use std::collections::{HashMap, HashSet};
 
-use crate::history::classify::is_history_metadata_record;
+use crate::history::classify::HistoryMetadata;
 
 struct SketchBinding {
     index: usize,
@@ -25,10 +25,7 @@ pub(crate) fn bind_unique_sketch_feature(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[FeatureHistory],
 ) {
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut feature_indices = Vec::new();
     for (index, feature) in features.iter().enumerate() {
         if matches!(
@@ -367,8 +364,9 @@ pub(crate) fn derive_feature_outputs(
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in histories {
         let mut ordinal = 0_u32;
+        let metadata = HistoryMetadata::new(&history.features);
         for record in &history.features {
-            if is_history_metadata_record(record, &history.features) {
+            if metadata.contains(record) {
                 continue;
             }
             ordinal = ordinal.checked_add(1).ok_or_else(|| {

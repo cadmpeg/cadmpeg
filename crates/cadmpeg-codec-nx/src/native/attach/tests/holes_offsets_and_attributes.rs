@@ -7,7 +7,6 @@ use crate::native::attach::feature_projection::blend_support_bipartition;
 use crate::native::attach::feature_projection::blind_hole_axis_placements_for_operations;
 use crate::native::attach::feature_projection::blind_hole_body_projection;
 use crate::native::attach::feature_projection::blind_hole_operations;
-use crate::native::attach::feature_projection::connected_solid_body_faces;
 use crate::native::attach::feature_projection::counterbore_axis_placements_for_operations;
 use crate::native::attach::feature_projection::counterbore_body_projection;
 use crate::native::attach::feature_projection::counterbore_cylinders;
@@ -17,9 +16,13 @@ use crate::native::attach::feature_projection::non_boolean_feature_definition_wi
 use crate::native::attach::feature_projection::offset_surface_feature_definition;
 use crate::native::attach::feature_projection::plane_annulus_witness;
 use crate::native::attach::feature_projection::thicken_feature_definition;
+use crate::native::attach::feature_projection::CarrierIndex;
 use crate::native::attach::feature_projection::CounterboreDimensions;
+use crate::native::attach::feature_projection::FeatureProjectionIndex;
 use crate::native::attach::feature_projection::HoleProjection;
 use crate::native::attach::feature_projection::NxBlendFamily;
+use crate::native::attach::feature_projection::ProjectionArenas;
+use crate::native::attach::feature_projection::SolidBodyIndex;
 use crate::native::attach::preceding_operation_dependency;
 use crate::test_support::test_bytes::attach_test_body_surface;
 use cadmpeg_ir::features::EdgeSelection;
@@ -607,21 +610,27 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
         ir.model = model;
         let operations = vec![operation.clone()];
         let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
-        let body_faces = connected_solid_body_faces(&ir, &body).expect("solid body faces");
+        let body_faces = SolidBodyIndex::new(&ir)
+            .connected_solid_body_faces(&body)
+            .expect("solid body faces");
         assert_eq!(body_faces.len(), 3);
-        let cylinders = cylindrical_face_witnesses(&ir, &body_faces).unwrap();
+        let carriers = CarrierIndex::new(&ir);
+        let cylinders = cylindrical_face_witnesses(&ir, &carriers, &body_faces).unwrap();
         assert_eq!(cylinders.len(), 2);
         assert!(plane_annulus_witness(
             &ir,
+            &carriers,
             &body_faces,
             &cylinders[0],
             1,
             &cylinders[1],
             0,
         ));
-        assert!(counterbore_cylinders(default_ctx, &ir, &body_faces)
-            .unwrap()
-            .is_some());
+        assert!(
+            counterbore_cylinders(default_ctx, &ir, &carriers, &body_faces)
+                .unwrap()
+                .is_some()
+        );
         let projection = counterbore_body_projection(default_ctx, &ir, &operations, &outputs)
             .unwrap()
             .expect("coaxial counterbore witness");
@@ -736,7 +745,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
     ({
         let project_offset = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            offset_surface_feature_definition(ir, outputs)
+            offset_surface_feature_definition(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+            )
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -866,7 +878,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     ({
         let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            thicken_feature_definition(ir, outputs)
+            thicken_feature_definition(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+            )
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -986,7 +1001,10 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
 
     ({
         let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            thicken_feature_definition(ir, outputs)
+            thicken_feature_definition(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+            )
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1091,7 +1109,11 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
 
     let project_blend =
         |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId], family: NxBlendFamily| {
-            blend_feature_definition(ir, outputs, family)
+            blend_feature_definition(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+                family,
+            )
         };
     let project_bipartition = |pairs: Vec<[SurfaceId; 2]>| {
         blend_support_bipartition(&pairs).map(|sides| (sides.first, sides.second))
@@ -1348,8 +1370,6 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
 
 #[test]
 fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
-    use crate::native::attach::feature_projection::body_faces;
-    use crate::native::attach::feature_projection::SolidBodyIndex;
     use cadmpeg_ir::ids::{FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{BodyKind, Face, Shell};
 
@@ -1473,13 +1493,278 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
         assert_eq!(project(index.connected_solid_body_faces(body_id)), expected);
         assert_eq!(project(index.body_faces(body_id)), scan(body_id, false));
     }
-    let last = &ir.model.bodies.last().unwrap().id;
-    assert_eq!(
-        project(connected_solid_body_faces(&ir, last)),
-        scan(last, true)
-    );
-    assert_eq!(project(body_faces(&ir, last)), scan(last, false));
     assert!(connected > 200);
+}
+
+#[test]
+fn feature_projection_index_matches_the_owned_procedural_scan() {
+    let surface_id = |ordinal: usize| {
+        SurfaceId::mint(format!("test:model:entity#carrier-{ordinal}")).expect("identity grammar")
+    };
+    let construction_id = |ordinal: usize| {
+        ProceduralSurfaceId::mint(format!("test:model:entity#construction-{ordinal}"))
+            .expect("identity grammar")
+    };
+    let mut state = 0x0b5e_55ed_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from((state >> 33) % bound).unwrap()
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    for _ in 0..40 {
+        let geometry = if next(4) == 0 {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
+        } else {
+            SurfaceGeometry::Procedural {
+                construction: construction_id(next(24)),
+                cache: None,
+            }
+        };
+        ir.model.surfaces.push(Surface {
+            id: surface_id(next(30)),
+            geometry,
+            source_object: None,
+        });
+    }
+    for ordinal in 0..40 {
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            construction_id(next(28)),
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    surface_id(ordinal),
+                    1.0,
+                    Some(1),
+                    Some(1),
+                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
+                )
+                .unwrap(),
+            ),
+            None,
+        ));
+    }
+    let mut owners = BTreeMap::new();
+    for surface in &ir.model.surfaces {
+        if let Some(construction) = surface.geometry.procedural_construction() {
+            owners
+                .entry(construction)
+                .and_modify(|owner| *owner = None)
+                .or_insert(Some(&surface.id));
+        }
+    }
+    let scan = |surfaces: &std::collections::BTreeSet<SurfaceId>| {
+        ir.model
+            .procedural_surfaces
+            .iter()
+            .filter_map(|procedural| {
+                let owner = owners.get(&procedural.id).copied().flatten()?;
+                surfaces
+                    .contains(owner)
+                    .then_some((owner, std::ptr::from_ref(procedural)))
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let index = FeatureProjectionIndex::new(ProjectionArenas::of(&ir));
+    let mut owned = 0;
+    for _ in 0..200 {
+        let surfaces = (0..next(16))
+            .map(|_| surface_id(next(32)))
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = scan(&surfaces);
+        let actual = index
+            .owned_procedural_surfaces(&surfaces)
+            .into_iter()
+            .map(|(owner, procedural)| (owner, std::ptr::from_ref(procedural)))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+        owned += expected.len();
+    }
+    assert!(owned > 100);
+}
+
+/// The loop-edge comparison the edge-set test replaced.
+fn pairwise_same_loop_edges(
+    ir: &cadmpeg_ir::document::CadIr,
+    first: &cadmpeg_ir::ids::LoopId,
+    second: &cadmpeg_ir::ids::LoopId,
+) -> bool {
+    let coedges = |loop_id| {
+        ir.model
+            .coedges
+            .iter()
+            .filter(move |coedge| &coedge.owner_loop == loop_id)
+    };
+    if coedges(first).next().is_some() != coedges(second).next().is_some() {
+        return false;
+    }
+    coedges(first).all(|coedge| coedges(second).any(|other| other.edge == coedge.edge))
+        && coedges(second).all(|coedge| coedges(first).any(|other| other.edge == coedge.edge))
+}
+
+#[test]
+fn carrier_index_matches_the_last_carrier_scans_over_many_copies() {
+    use crate::native::attach::feature_projection::same_loop_edges;
+    use cadmpeg_ir::geometry::Curve;
+    use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId, SurfaceId};
+
+    let cube = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let template = &cube.model;
+    let position = |ids: Vec<&str>, id: &str| ids.iter().position(|candidate| *candidate == id);
+    let curve_ids = || {
+        template
+            .curves
+            .iter()
+            .map(|curve| curve.id.as_str())
+            .collect()
+    };
+    let edge_ids = || template.edges.iter().map(|edge| edge.id.as_str()).collect();
+    let loop_ids = || {
+        template
+            .loops
+            .iter()
+            .map(|loop_| loop_.id.as_str())
+            .collect()
+    };
+    let name =
+        |kind: &str, copy: usize, part: usize| format!("test:model:entity#{kind}-{copy}-{part}");
+    let mut ir = cube.clone();
+    // By copy % 4: a twin loop over the same edges; every surface and curve
+    // repeated with another geometry; every edge repeated without a curve; and
+    // every other coedge moved to the next loop.
+    for copy in 0..16 {
+        for (part, surface) in template.surfaces.iter().enumerate() {
+            let mut surface = surface.clone();
+            surface.id = SurfaceId::mint(name("surface", copy, part)).unwrap();
+            ir.model.surfaces.push(surface.clone());
+            if copy % 4 == 1 {
+                surface.geometry = template.surfaces[(part + 1) % template.surfaces.len()]
+                    .geometry
+                    .clone();
+                ir.model.surfaces.push(surface);
+            }
+        }
+        for (part, curve) in template.curves.iter().enumerate() {
+            let mut curve = curve.clone();
+            curve.id = CurveId::mint(name("curve", copy, part)).unwrap();
+            ir.model.curves.push(curve.clone());
+            if copy % 4 == 1 {
+                curve.geometry = template.curves[(part + 1) % template.curves.len()]
+                    .geometry
+                    .clone();
+                ir.model.curves.push(curve);
+            }
+        }
+        for (part, edge) in template.edges.iter().enumerate() {
+            let mut edge = edge.clone();
+            edge.id = EdgeId::mint(name("edge", copy, part)).unwrap();
+            edge.map_curve(|curve| {
+                let part = position(curve_ids(), curve.as_str()).unwrap();
+                CurveId::mint(name("curve", copy, part)).unwrap()
+            });
+            ir.model.edges.push(edge.clone());
+            if copy % 4 == 2 {
+                edge.set_curve(None).unwrap();
+                ir.model.edges.push(edge);
+            }
+        }
+        for (part, coedge) in template.coedges.iter().enumerate() {
+            let mut coedge = coedge.clone();
+            let loop_part = position(loop_ids(), coedge.owner_loop.as_str()).unwrap();
+            let edge_part = position(edge_ids(), coedge.edge.as_str()).unwrap();
+            let moved = copy % 4 == 3 && part % 2 == 0;
+            coedge.id = CoedgeId::mint(name("coedge", copy, part)).unwrap();
+            coedge.owner_loop = LoopId::mint(name(
+                "loop",
+                copy,
+                (loop_part + usize::from(moved)) % template.loops.len(),
+            ))
+            .unwrap();
+            coedge.edge = EdgeId::mint(name("edge", copy, edge_part)).unwrap();
+            ir.model.coedges.push(coedge.clone());
+            if copy % 4 == 0 {
+                coedge.id = CoedgeId::mint(name("twin-coedge", copy, part)).unwrap();
+                coedge.owner_loop = LoopId::mint(name("twin-loop", copy, loop_part)).unwrap();
+                ir.model.coedges.push(coedge);
+            }
+        }
+    }
+
+    let carriers = CarrierIndex::new(&ir);
+    let address = |curve: &Curve| std::ptr::from_ref(curve);
+    for surface in &ir.model.surfaces {
+        let expected = ir
+            .model
+            .surfaces
+            .iter()
+            .rev()
+            .find(|candidate| candidate.id == surface.id)
+            .unwrap();
+        assert!(std::ptr::eq(
+            carriers.surface(&surface.id).unwrap(),
+            expected
+        ));
+    }
+    let mut curved = 0;
+    for edge in &ir.model.edges {
+        let expected = ir
+            .model
+            .edges
+            .iter()
+            .rev()
+            .find(|candidate| candidate.id == edge.id)
+            .and_then(|edge| edge.curve())
+            .and_then(|curve_id| {
+                ir.model
+                    .curves
+                    .iter()
+                    .rev()
+                    .find(|curve| &curve.id == curve_id)
+            });
+        curved += usize::from(expected.is_some());
+        assert_eq!(
+            carriers.edge_curve(&edge.id).map(address),
+            expected.map(address)
+        );
+    }
+    let mut loops = Vec::new();
+    for coedge in &ir.model.coedges {
+        if !loops.contains(&&coedge.owner_loop) {
+            loops.push(&coedge.owner_loop);
+        }
+    }
+    let missing = LoopId::mint("test:model:entity#missing-loop").unwrap();
+    loops.push(&missing);
+    for loop_id in &loops {
+        let expected = ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| &coedge.owner_loop == *loop_id)
+            .map(std::ptr::from_ref)
+            .collect::<Vec<_>>();
+        let indexed = carriers
+            .loop_coedges(loop_id)
+            .iter()
+            .map(|coedge| std::ptr::from_ref(*coedge))
+            .collect::<Vec<_>>();
+        assert_eq!(indexed, expected);
+    }
+    let mut equal_pairs = 0;
+    for (index, first) in loops.iter().enumerate() {
+        for second in &loops[index.saturating_sub(12)..(index + 12).min(loops.len())] {
+            let expected = pairwise_same_loop_edges(&ir, first, second);
+            equal_pairs += usize::from(expected && first != second);
+            assert_eq!(same_loop_edges(&carriers, first, second), expected);
+        }
+    }
+    assert!(curved > 100);
+    assert!(equal_pairs > 10);
 }
 
 mod topology_attributes;

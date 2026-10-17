@@ -132,16 +132,13 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
             return Ok(target.clone());
         }
         let target = (self.map)(source)?;
-        let target = match crate::ids::Identity::admit_text(target, |_| {
-            Ok::<(), std::convert::Infallible>(())
-        }) {
-            Ok(Ok(target)) => target,
-            Ok(Err(target)) => {
+        let target = match crate::ids::Identity::admit_text(target) {
+            Ok(target) => target,
+            Err(target) => {
                 return self.refuse(format_args!(
                     "identity {source} rewrites to invalid identity {target:?}"
                 ))
             }
-            Err(never) => match never {},
         };
         if !self.occupied.insert(target.as_str().to_owned()) {
             return self.refuse(format_args!(

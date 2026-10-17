@@ -41,6 +41,7 @@ use crate::brep::graph::{decode_bodies, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
 use crate::records::ObjectId;
+use crate::resolved_features::scalars::FeatureObjectNames;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 struct DecodedBrep {
@@ -1716,6 +1717,33 @@ fn configuration_source_needs_update(
         .is_some_and(|value| value.eq_ignore_ascii_case("yes"))
 }
 
+/// The first name record at each offset of a lane.
+fn names_by_offset(
+    names: &[crate::records::FeatureInputName],
+) -> HashMap<u64, &crate::records::FeatureInputName> {
+    let mut by_offset = HashMap::new();
+    for name in names {
+        by_offset.entry(name.offset).or_insert(name);
+    }
+    by_offset
+}
+
+/// History features without an input class by source id, in history order.
+fn unclassed_features_by_source<'a>(
+    features: impl IntoIterator<Item = &'a crate::records::Feature>,
+) -> HashMap<u32, Vec<&'a crate::records::Feature>> {
+    let mut by_source = HashMap::<_, Vec<_>>::new();
+    for feature in features {
+        if feature.input_class.is_some() {
+            continue;
+        }
+        if let Some(source) = feature.source_value() {
+            by_source.entry(source).or_default().push(feature);
+        }
+    }
+    by_source
+}
+
 fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative) -> usize {
     use crate::classification::{classify, native_object_class};
     use crate::records::FeatureInputClassRole;
@@ -1724,6 +1752,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
         .feature_histories
         .iter()
         .flat_map(|history| &history.features);
+    let unclassed_by_source = unclassed_features_by_source(features.clone());
     let source_counts = count_keys(
         features
             .clone()
@@ -1735,13 +1764,12 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
             .filter_map(|feature| feature.source_value().zip(feature.input_class.as_deref())),
     );
     let named_binding_counts = count_keys(native.feature_input_lanes.iter().flat_map(|lane| {
+        let names = FeatureObjectNames::new(&lane.names);
         features.clone().filter_map(move |feature| {
             feature
                 .input_class
                 .as_deref()
-                .zip(crate::resolved_features::scalars::feature_object_name(
-                    feature, lane,
-                ))
+                .zip(names.of(feature))
                 .map(|(class, name)| (lane.id.as_str(), name.id.as_str(), class))
         })
     }));
@@ -1749,15 +1777,13 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
         .feature_input_lanes
         .iter()
         .flat_map(|lane| {
+            let names = names_by_offset(&lane.names);
             lane.classes
                 .iter()
                 .filter(|class| class.role() == FeatureInputClassRole::Feature)
                 .filter_map(move |class| {
                     let name_offset = class.offset + 6 + u64_from_index(class.name.len());
-                    lane.names
-                        .iter()
-                        .find(|name| name.offset == name_offset)
-                        .map(|name| (lane, class, name))
+                    names.get(&name_offset).map(|&name| (lane, class, name))
                 })
         })
         .filter(|(lane, class, name)| {
@@ -1767,15 +1793,11 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
                         || native_object_class(&class.name)
                             .feature()
                             .is_some_and(|expected| {
-                                native
-                                    .feature_histories
-                                    .iter()
-                                    .flat_map(|history| &history.features)
-                                    .any(|feature| {
-                                        feature.source_value() == Some(id)
-                                            && feature.input_class.is_none()
-                                            && classify(feature) == Some(expected)
-                                    })
+                                unclassed_by_source.get(&id).is_some_and(|features| {
+                                    features
+                                        .iter()
+                                        .any(|feature| classify(feature) == Some(expected))
+                                })
                             }))
             });
             let name_bound = named_binding_counts

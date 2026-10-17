@@ -6,18 +6,168 @@
 
 use std::io::Cursor;
 
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::eval::admission::EvaluationAdmission;
+use cadmpeg_ir::eval::decode::{curve_point_solved, surface_point_solved};
+use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::geometry::analytic::ConeSurface;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::CadIr;
 
 use crate::export::write_step;
 use crate::loss::StepLossCode;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 use super::reports::edgeless_doc;
+
+const EPS_ZERO_ANGLE_CONE_POINT: f64 = 1.0e-9;
+const ZERO_ANGLE_CONE_SAMPLES: [(f64, f64); 4] = [(0.0, 0.0), (0.3, 0.7), (-1.2, 1.1), (2.5, -0.4)];
+
+/// A unit cube whose first surface is a semi-angle 0 cone over a section of
+/// `radius` and `ratio`.
+fn zero_angle_cone_cube(radius: f64, ratio: f64) -> (CadIr, SolvedSurfaceGeometry) {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let cone = SolvedSurfaceGeometry::Cone(
+        ConeSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+            ratio,
+            0.0,
+        )
+        .unwrap(),
+    );
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(cone.clone());
+    (ir, cone)
+}
+
+/// Writes `ir` and decodes the file back, with the report and the STEP text.
+fn zero_angle_cone_round_trip(ir: &CadIr) -> (ExportReport, String, CadIr) {
+    let mut output = Vec::new();
+    let report = write_step(
+        ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("a semi-angle 0 cone over a positive section is writable");
+    let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written cone")
+        .into_parts()
+        .0;
+    (report, text, decoded)
+}
+
+fn assert_no_cone_reduction(report: &ExportReport, text: &str) {
+    assert!(!text.contains("CONICAL_SURFACE"), "{text}");
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::EllipticalConeReduced.kind()),
+        "{:?}",
+        report.losses
+    );
+}
+
+fn distance(left: Point3, right: Point3) -> f64 {
+    (left.x - right.x)
+        .hypot(left.y - right.y)
+        .hypot(left.z - right.z)
+}
+
+#[test]
+fn zero_angle_circular_cone_round_trips_as_its_cylinder() {
+    let (ir, source) = zero_angle_cone_cube(2.0, 1.0);
+    let (report, text, decoded) = zero_angle_cone_round_trip(&ir);
+
+    assert!(text.contains("CYLINDRICAL_SURFACE("), "{text}");
+    assert_no_cone_reduction(&report, &text);
+    let written = decoded
+        .model
+        .surfaces
+        .iter()
+        .find_map(|surface| match surface.geometry.solved() {
+            Some(cylinder @ SolvedSurfaceGeometry::Cylinder(_)) => Some(cylinder),
+            _ => None,
+        })
+        .expect("written cylinder surface");
+    for (u, v) in ZERO_ANGLE_CONE_SAMPLES {
+        let source_point = surface_point_solved(EvaluationAdmission::Standard, &source, u, v)
+            .expect("source point")
+            .get();
+        let written_point = surface_point_solved(EvaluationAdmission::Standard, written, u, v)
+            .expect("written point")
+            .get();
+        assert!(distance(source_point, written_point) < EPS_ZERO_ANGLE_CONE_POINT);
+    }
+}
+
+#[test]
+fn zero_angle_elliptical_cone_round_trips_as_an_extruded_ellipse() {
+    let (ir, source) = zero_angle_cone_cube(2.0, 0.4);
+    let (report, text, decoded) = zero_angle_cone_round_trip(&ir);
+
+    assert!(text.contains("SURFACE_OF_LINEAR_EXTRUSION("), "{text}");
+    assert!(text.contains(",2.,0.8)"), "{text}");
+    assert_no_cone_reduction(&report, &text);
+    let sweep = decoded
+        .model
+        .procedural_surfaces
+        .iter()
+        .find_map(|surface| match surface.definition() {
+            ProceduralSurfaceDefinition::LinearSweep(sweep) => Some(sweep),
+            _ => None,
+        })
+        .expect("written linear extrusion");
+    let section = decoded
+        .model
+        .curves
+        .iter()
+        .find(|curve| &curve.id == sweep.directrix())
+        .and_then(|curve| curve.geometry.solved())
+        .expect("extruded section curve");
+    assert!(matches!(section, SolvedCurveGeometry::Ellipse(_)));
+    let extrusion = sweep.direction().get();
+    for (u, v) in ZERO_ANGLE_CONE_SAMPLES {
+        let source_point = surface_point_solved(EvaluationAdmission::Standard, &source, u, v)
+            .expect("source point")
+            .get();
+        let section_point = curve_point_solved(EvaluationAdmission::Standard, section, u)
+            .expect("section point")
+            .get();
+        let written_point = Point3::new(
+            section_point.x + v * extrusion.x,
+            section_point.y + v * extrusion.y,
+            section_point.z + v * extrusion.z,
+        );
+        assert!(distance(source_point, written_point) < EPS_ZERO_ANGLE_CONE_POINT);
+    }
+}
+
+#[test]
+fn zero_angle_cone_of_zero_radius_is_refused_at_planning() {
+    let (ir, _) = zero_angle_cone_cube(0.0, 1.0);
+    let error = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+        )
+        .expect_err("a semi-angle 0 cone of radius 0 is a line");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("is a line"))
+    );
+}
 
 #[test]
 fn point_edge_ring_is_written_as_vertex_loop() {
@@ -173,85 +323,4 @@ fn unmappable_negative_cone_pcurve_loss_names_its_face() {
             && loss.message.contains(face_id.as_str())
             && loss.message.contains(ir.model.pcurves[0].id.as_str())
     }));
-}
-
-/// Writes a document whose single surface is a zero half-angle cone and
-/// returns the report with the STEP text.
-fn zero_angle_cone_report(
-    radius: f64,
-    ratio: f64,
-) -> Result<(cadmpeg_ir::report::export::ExportReport, String), std::io::Error> {
-    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            radius,
-            ratio,
-            0.0,
-        )
-        .unwrap(),
-    ));
-    let mut buf = Vec::new();
-    let report = write_step(
-        &ir,
-        &mut buf,
-        StepSchema::Ap214,
-        &StepWriteOptions::default(),
-    )?;
-    Ok((
-        report,
-        String::from_utf8(buf).expect("STEP output is UTF-8"),
-    ))
-}
-
-#[test]
-fn zero_cone_semi_angle_is_written_as_a_cylinder() {
-    let (_, text) = zero_angle_cone_report(2.0, 1.0).expect("a zero-angle cone is a cylinder");
-    assert!(text.contains("CYLINDRICAL_SURFACE('',#"));
-    assert!(!text.contains("CONICAL_SURFACE"));
-}
-
-#[test]
-fn zero_angle_elliptical_cone_is_written_as_an_exact_extrusion() {
-    let (report, text) =
-        zero_angle_cone_report(2.0, 0.4).expect("a zero-angle elliptical cone is writable");
-    let record = |id: &str| {
-        text.lines()
-            .find(|line| line.starts_with(&format!("{id} = ")))
-            .unwrap_or_else(|| panic!("record {id}"))
-    };
-    let arguments = |line: &str, keyword: &str| -> Vec<String> {
-        line.split_once(&format!(" = {keyword}('',"))
-            .unwrap_or_else(|| panic!("{keyword} in {line}"))
-            .1
-            .trim_end_matches(");")
-            .split(',')
-            .map(str::to_owned)
-            .collect()
-    };
-    let extrusion = text
-        .lines()
-        .find(|line| line.contains(" = SURFACE_OF_LINEAR_EXTRUSION("))
-        .expect("extrusion record");
-    let [section, sweep] =
-        <[String; 2]>::try_from(arguments(extrusion, "SURFACE_OF_LINEAR_EXTRUSION")).unwrap();
-    assert!(record(&section).contains(" = ELLIPSE("));
-    assert!(record(&section).ends_with(",2.,0.8);"));
-    let [direction, magnitude] =
-        <[String; 2]>::try_from(arguments(record(&sweep), "VECTOR")).unwrap();
-    assert_eq!(magnitude, "1.");
-    assert!(record(&direction).ends_with("DIRECTION('',(0.,0.,1.));"));
-    assert!(!text.contains("CONICAL_SURFACE"));
-    assert!(!report
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::EllipticalConeReduced.kind()));
-}
-
-#[test]
-fn zero_angle_cone_with_a_collapsed_section_is_refused() {
-    let error = zero_angle_cone_report(0.0, 1.0).expect_err("a zero-radius cylinder is a line");
-    assert!(error.to_string().contains("zero section semi-axis"));
 }

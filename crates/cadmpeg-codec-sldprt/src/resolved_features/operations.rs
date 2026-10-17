@@ -1,7 +1,7 @@
 //! Boolean operation codes for extrusion, revolution and sweep.
 
 use super::is_class_token;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use crate::classification::{classify, FeatureClass};
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::ObjectId;
@@ -147,11 +147,11 @@ pub(crate) fn bind_revolution_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    let history_features = histories
+    let history_features = crate::records::HistoryFeatures::new(histories);
+    let lane_names = lanes
         .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+        .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
+        .collect::<Vec<_>>();
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -162,12 +162,11 @@ pub(crate) fn bind_revolution_operations(
             if *op != BooleanOp::Unresolved {
                 break 'feature_edit;
             }
-            let Some(history) = native_ref.and_then(|native| history_features.get(native).copied())
-            else {
+            let Some(history) = native_ref.and_then(|native| history_features.get(native)) else {
                 break 'feature_edit;
             };
-            let mut operations = lanes.iter().filter_map(|lane| {
-                let name = feature_object_name(history, lane)?;
+            let mut operations = lane_names.iter().filter_map(|(lane, names)| {
+                let name = names.of(history)?;
                 revolution_operation(
                     history.input_class.as_deref(),
                     feature_operation_code(
@@ -195,11 +194,11 @@ pub(crate) fn bind_sweep_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    let history_features = histories
+    let history_features = crate::records::HistoryFeatures::new(histories);
+    let lane_names = lanes
         .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+        .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
+        .collect::<Vec<_>>();
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -214,13 +213,12 @@ pub(crate) fn bind_sweep_operations(
                 ) {
                     break 'sweep_mode;
                 }
-                let Some(history) =
-                    native_ref.and_then(|native| history_features.get(native).copied())
+                let Some(history) = native_ref.and_then(|native| history_features.get(native))
                 else {
                     break 'sweep_mode;
                 };
-                let mut operations = lanes.iter().filter_map(|lane| {
-                    let name = feature_object_name(history, lane)?;
+                let mut operations = lane_names.iter().filter_map(|(lane, names)| {
+                    let name = names.of(history)?;
                     match (
                         history.input_class.as_deref(),
                         feature_operation_code(
@@ -345,11 +343,11 @@ pub(crate) fn bind_extrusion_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    let history_by_id = histories
+    let history_by_id = crate::records::HistoryFeatures::new(histories);
+    let lane_names = lanes
         .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+        .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
+        .collect::<Vec<_>>();
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -360,12 +358,11 @@ pub(crate) fn bind_extrusion_operations(
             if *op != BooleanOp::Unresolved {
                 break 'feature_edit;
             }
-            let Some(history) = native_ref.and_then(|native| history_by_id.get(native).copied())
-            else {
+            let Some(history) = native_ref.and_then(|native| history_by_id.get(native)) else {
                 break 'feature_edit;
             };
-            let mut operations = lanes.iter().filter_map(|lane| {
-                let name = feature_object_name(history, lane)?;
+            let mut operations = lane_names.iter().filter_map(|(lane, names)| {
+                let name = names.of(history)?;
                 if let Some(operation) = feature_inline_operation(lane, name) {
                     return Some(operation);
                 }
@@ -404,11 +401,7 @@ pub(crate) fn inherit_configuration_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) {
-    let history_by_id = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let history_by_id = crate::records::HistoryFeatures::new(histories);
     let base_definitions = base_features
         .iter()
         .map(|feature| (&feature.id, feature.evaluation.definition()))
@@ -420,8 +413,7 @@ pub(crate) fn inherit_configuration_operations(
             let Some(base_definition) = base_definitions.get(feature_id) else {
                 break 'feature_edit;
             };
-            let Some(history) = native_ref.and_then(|native| history_by_id.get(native).copied())
-            else {
+            let Some(history) = native_ref.and_then(|native| history_by_id.get(native)) else {
                 break 'feature_edit;
             };
             let operation_kind = match (&*definition, *base_definition) {
@@ -516,9 +508,10 @@ pub(crate) fn enrich_history_split_lines(
 ) {
     let mut observations = HashMap::<String, (bool, bool)>::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in histories.iter().flat_map(|history| &history.features) {
-            if let Some(name) = feature_object_name(feature, lane) {
+            if let Some(name) = names.of(feature) {
                 objects.push((name.offset, feature));
             }
         }

@@ -48,7 +48,7 @@ pub(crate) fn bind(
     else {
         return Ok(stats);
     };
-    let saved_limit = cadmpeg_asm::asm_header::parse(ctx, bytes)?
+    let saved_limit = cadmpeg_asm::asm_header::parse(bytes)
         .and_then(|header| header.metadata.entity_count)
         .and_then(|count| i64::try_from(count).ok());
     let mut binder = Binder::new(&archive, saved_limit);
@@ -239,40 +239,105 @@ impl Subtypes {
     }
 }
 
+/// Compare floats by bits so signed zeros and NaN payloads stay distinct.
+fn same_tokens(left: &[Token], right: &[Token]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|pair| match pair {
+            (Token::Float(left), Token::Float(right)) => left.to_bits() == right.to_bits(),
+            (Token::Double(left), Token::Double(right)) => left.to_bits() == right.to_bits(),
+            (Token::Position(left), Token::Position(right))
+            | (Token::Vector3(left), Token::Vector3(right)) => {
+                left.map(f64::to_bits) == right.map(f64::to_bits)
+            }
+            (Token::Vector2(left), Token::Vector2(right)) => {
+                left.map(f64::to_bits) == right.map(f64::to_bits)
+            }
+            (left, right) => left == right,
+        })
+}
+
 type Slots = BTreeSet<i64>;
 type Table<'a> = BTreeMap<i64, &'a Record>;
 
+/// A face and the anchor of one of its parts: the face itself for the head
+/// or an unsplit unit, a loop for a loop part.
+type Part = (i64, i64);
+type Parts = BTreeSet<Part>;
+
+/// The dependencies of one face, split per loop when its chain is clean.
+///
+/// A loop part reads the face, its surface and the loop chain only to decide
+/// whether the walk reaches its loop. Those slots are `context`: they enter
+/// the input of a decode that keys the part, but do not make the part a
+/// neighbour of the head or of its sibling loops. An unchanged `chain` keeps
+/// every loop reachable, so a step can rebuild the parts it touches alone.
 struct FaceUnit {
-    slots: Slots,
+    parts: BTreeMap<i64, Slots>,
+    context: Slots,
+    chain: Vec<i64>,
     reached_edges: Slots,
+}
+
+impl FaceUnit {
+    fn whole(face: i64, slots: Slots, reached_edges: Slots) -> Self {
+        Self {
+            parts: BTreeMap::from([(face, slots)]),
+            context: Slots::new(),
+            chain: Vec::new(),
+            reached_edges,
+        }
+    }
+
+    fn contains(&self, slot: i64) -> bool {
+        self.parts.values().any(|own| own.contains(&slot))
+    }
+
+    fn is_subset(&self, slots: &Slots) -> bool {
+        self.parts.values().all(|own| own.is_subset(slots))
+    }
+
+    /// Both sides must be split over the same chain for untouched parts to
+    /// keep their rows.
+    fn same_split(&self, other: &Self) -> bool {
+        !self.chain.is_empty() && self.chain == other.chain
+    }
+}
+
+fn meets(left: &Slots, right: &Slots) -> bool {
+    let (small, large) = if left.len() <= right.len() {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    small.iter().any(|slot| large.contains(slot))
 }
 
 #[derive(Default)]
 struct Units {
-    faces: BTreeMap<i64, Slots>,
-    reverse: BTreeMap<i64, Slots>,
-    edges_by_face: BTreeMap<i64, Slots>,
+    faces: BTreeMap<i64, FaceUnit>,
+    reverse: BTreeMap<i64, Parts>,
     edge_users: BTreeMap<i64, Slots>,
 }
 
 impl Units {
     fn remove(&mut self, face: i64) {
-        if let Some(edges) = self.edges_by_face.remove(&face) {
-            for edge in edges {
-                if let Some(faces) = self.edge_users.get_mut(&edge) {
-                    faces.remove(&face);
-                    if faces.is_empty() {
-                        self.edge_users.remove(&edge);
-                    }
+        let Some(unit) = self.faces.remove(&face) else {
+            return;
+        };
+        for edge in &unit.reached_edges {
+            if let Some(faces) = self.edge_users.get_mut(edge) {
+                faces.remove(&face);
+                if faces.is_empty() {
+                    self.edge_users.remove(edge);
                 }
             }
         }
-        if let Some(unit) = self.faces.remove(&face) {
-            for slot in unit {
-                if let Some(faces) = self.reverse.get_mut(&slot) {
-                    faces.remove(&face);
-                    if faces.is_empty() {
-                        self.reverse.remove(&slot);
+        for (&anchor, own) in &unit.parts {
+            for slot in own {
+                if let Some(parts) = self.reverse.get_mut(slot) {
+                    parts.remove(&(face, anchor));
+                    if parts.is_empty() {
+                        self.reverse.remove(slot);
                     }
                 }
             }
@@ -281,21 +346,22 @@ impl Units {
 
     fn insert(&mut self, face: i64, unit: FaceUnit) {
         self.remove(face);
-        let FaceUnit {
-            slots,
-            reached_edges,
-        } = unit;
-        for &edge in &reached_edges {
+        for &edge in &unit.reached_edges {
             self.edge_users.entry(edge).or_default().insert(face);
         }
-        self.edges_by_face.insert(face, reached_edges);
-        for &slot in &slots {
-            self.reverse.entry(slot).or_default().insert(face);
+        for (&anchor, own) in &unit.parts {
+            for &slot in own {
+                self.reverse.entry(slot).or_default().insert((face, anchor));
+            }
         }
-        self.faces.insert(face, slots);
+        self.faces.insert(face, unit);
     }
 
-    fn touching(&self, slots: &Slots) -> Slots {
+    fn own(&self, (face, anchor): &Part) -> Option<&Slots> {
+        self.faces.get(face)?.parts.get(anchor)
+    }
+
+    fn touching(&self, slots: &Slots) -> Parts {
         slots
             .iter()
             .filter_map(|slot| self.reverse.get(slot))
@@ -304,17 +370,41 @@ impl Units {
             .collect()
     }
 
-    fn slots(&self, faces: &Slots) -> Slots {
-        faces
+    fn slots(&self, parts: &Parts) -> Slots {
+        parts
             .iter()
-            .filter_map(|face| self.faces.get(face))
+            .filter_map(|part| self.own(part))
             .flatten()
             .copied()
             .collect()
     }
 
-    fn neighbours(&self, faces: &Slots) -> Slots {
-        self.touching(&self.slots(faces))
+    fn context(&self, parts: &Parts) -> Slots {
+        let faces: Slots = parts.iter().map(|&(face, _)| face).collect();
+        faces
+            .iter()
+            .filter_map(|face| self.faces.get(face))
+            .flat_map(|unit| unit.context.iter().copied())
+            .collect()
+    }
+
+    fn neighbours(&self, parts: &Parts) -> Parts {
+        self.touching(&self.slots(parts))
+    }
+
+    /// Another face's walk that reaches a split face's loop competes for it,
+    /// and reaching such a loop records its owner face.
+    fn tangled(&self, parts: &Parts) -> bool {
+        let faces: Slots = parts.iter().map(|&(face, _)| face).collect();
+        faces.iter().any(|face| {
+            self.faces
+                .get(face)
+                .is_some_and(|unit| !unit.chain.is_empty())
+                && self
+                    .reverse
+                    .get(face)
+                    .is_some_and(|users| users.iter().any(|&(user, _)| user != *face))
+        })
     }
 }
 
@@ -400,15 +490,17 @@ fn face_unit(live: &Live<'_>, face: i64) -> FaceUnit {
     let mut unit = Slots::from([face]);
     let mut reached_edges = Slots::new();
     let Some(record) = table.get(&face) else {
-        return FaceUnit {
-            slots: unit,
-            reached_edges,
-        };
+        return FaceUnit::whole(face, unit, reached_edges);
     };
     let mut walking = record.ref_at(5).is_some()
         && record
             .ref_at(7)
             .is_some_and(|surface| table.contains_key(&surface));
+    if walking {
+        if let Some(chain) = owned_chain(table, face, record).filter(|chain| chain.len() > 1) {
+            return split_face_unit(live, face, record, chain);
+        }
+    }
     // keep_faces_and_carriers reads the surface and tests the shell reference.
     // Keeping a superset also tracks children of currently omitted faces.
     let mut carriers = record.ref_at(7).into_iter().collect::<Vec<_>>();
@@ -428,58 +520,128 @@ fn face_unit(live: &Live<'_>, face: i64) -> FaceUnit {
         }
         // emit_loops reads its owner face's kept status.
         unit.extend(lp.ref_at(5));
-        let mut coedges = lp.ref_at(4);
-        let mut guard = Slots::new();
-        while let Some(ci) = coedges {
-            unit.insert(ci);
-            if !guard.insert(ci) {
-                break;
-            }
-            let Some(ce) = table.get(&ci) else { break };
-            if !matches!(ce.head(), "coedge" | "tcoedge") {
-                break;
-            }
-            // emit_coedges tests next, previous, partner, edge and owner loop.
-            for field in [3, 4, 5, 6, 8] {
-                unit.extend(ce.ref_at(field));
-            }
-            coedges = ce.ref_at(3);
-            // History pcurves are placeholders, but retain their carrier refs too.
-            let pcurve_field = if matches!(ce.chunk(9), Some(Token::Long(_))) {
-                10
-            } else {
-                9
-            };
-            carriers.extend(ce.ref_at(pcurve_field));
-            if let Some(edge) = ce.ref_at(6).and_then(|ei| table.get(&ei)) {
-                if matches!(edge.head(), "edge" | "tedge") {
-                    if walking {
-                        reached_edges.extend(ce.ref_at(6));
-                    }
-                    // emit_edges and emit_vertices read both endpoints and points.
-                    for field in [3, 5] {
-                        if let Some(vi) = edge.ref_at(field) {
-                            unit.insert(vi);
-                            if let Some(vertex) = table.get(&vi) {
-                                if matches!(vertex.head(), "vertex" | "tvertex") {
-                                    let point_field =
-                                        if matches!(vertex.chunk(4), Some(Token::Long(_))) {
-                                            5
-                                        } else {
-                                            4
-                                        };
-                                    unit.extend(vertex.ref_at(point_field));
-                                }
+        ring_unit(
+            table,
+            lp,
+            walking,
+            &mut unit,
+            &mut carriers,
+            &mut reached_edges,
+        );
+    }
+    close_carriers(table, &mut unit, carriers);
+    close_attributes(live, &mut unit);
+    FaceUnit::whole(face, unit, reached_edges)
+}
+
+/// The loop chain of a face when every link is a distinct loop owned by the
+/// face and the chain ends with a null reference.
+fn owned_chain(table: &Table<'_>, face: i64, record: &Record) -> Option<Vec<i64>> {
+    let mut chain = Vec::new();
+    let mut seen = Slots::new();
+    let mut next = record.ref_at(4);
+    while let Some(slot) = next {
+        let lp = table
+            .get(&slot)
+            .filter(|lp| lp.head() == "loop" && lp.ref_at(5) == Some(face))?;
+        if !seen.insert(slot) {
+            return None;
+        }
+        chain.push(slot);
+        next = lp.ref_at(3);
+    }
+    Some(chain)
+}
+
+fn split_face_unit(live: &Live<'_>, face: i64, record: &Record, chain: Vec<i64>) -> FaceUnit {
+    let table = &live.table;
+    let mut head = Slots::from([face]);
+    close_carriers(table, &mut head, record.ref_at(7).into_iter().collect());
+    let mut context = head.clone();
+    context.extend(&chain);
+    close_attributes(live, &mut head);
+    let mut parts = BTreeMap::from([(face, head)]);
+    let mut reached_edges = Slots::new();
+    for &slot in &chain {
+        let mut own = Slots::from([slot]);
+        let mut carriers = Vec::new();
+        if let Some(lp) = table.get(&slot) {
+            ring_unit(table, lp, true, &mut own, &mut carriers, &mut reached_edges);
+        }
+        close_carriers(table, &mut own, carriers);
+        close_attributes(live, &mut own);
+        parts.insert(slot, own);
+    }
+    FaceUnit {
+        parts,
+        context,
+        chain,
+        reached_edges,
+    }
+}
+
+fn ring_unit(
+    table: &Table<'_>,
+    lp: &Record,
+    walking: bool,
+    unit: &mut Slots,
+    carriers: &mut Vec<i64>,
+    reached_edges: &mut Slots,
+) {
+    let mut coedges = lp.ref_at(4);
+    let mut guard = Slots::new();
+    while let Some(ci) = coedges {
+        unit.insert(ci);
+        if !guard.insert(ci) {
+            break;
+        }
+        let Some(ce) = table.get(&ci) else { break };
+        if !matches!(ce.head(), "coedge" | "tcoedge") {
+            break;
+        }
+        // emit_coedges tests next, previous, partner, edge and owner loop.
+        for field in [3, 4, 5, 6, 8] {
+            unit.extend(ce.ref_at(field));
+        }
+        coedges = ce.ref_at(3);
+        // History pcurves are placeholders, but retain their carrier refs too.
+        let pcurve_field = if matches!(ce.chunk(9), Some(Token::Long(_))) {
+            10
+        } else {
+            9
+        };
+        carriers.extend(ce.ref_at(pcurve_field));
+        if let Some(edge) = ce.ref_at(6).and_then(|ei| table.get(&ei)) {
+            if matches!(edge.head(), "edge" | "tedge") {
+                if walking {
+                    reached_edges.extend(ce.ref_at(6));
+                }
+                // emit_edges and emit_vertices read both endpoints and points.
+                for field in [3, 5] {
+                    if let Some(vi) = edge.ref_at(field) {
+                        unit.insert(vi);
+                        if let Some(vertex) = table.get(&vi) {
+                            if matches!(vertex.head(), "vertex" | "tvertex") {
+                                let point_field = if matches!(vertex.chunk(4), Some(Token::Long(_)))
+                                {
+                                    5
+                                } else {
+                                    4
+                                };
+                                unit.extend(vertex.ref_at(point_field));
                             }
                         }
                     }
-                    carriers.extend(edge.ref_at(8));
                 }
+                carriers.extend(edge.ref_at(8));
             }
         }
     }
-    // Carrier decoders may read referenced records. Never follow topology owners
-    // from here. A carrier that names topology makes that step unsupported.
+}
+
+/// Carrier decoders may read referenced records. Never follow topology owners
+/// from here. A carrier that names topology makes that step unsupported.
+fn close_carriers(table: &Table<'_>, unit: &mut Slots, mut carriers: Vec<i64>) {
     let mut visited = Slots::new();
     while let Some(slot) = carriers.pop() {
         unit.insert(slot);
@@ -495,8 +657,12 @@ fn face_unit(live: &Live<'_>, face: i64) -> FaceUnit {
             }
         }
     }
-    // emit_attributes follows ref_at(0) and attribute_next, then scans attributes
-    // whose owner chain reaches an emitted entity. The owner index reverses it.
+}
+
+/// `emit_attributes` follows `ref_at(0)` and `attribute_next`, then scans
+/// attributes whose owner chain reaches an emitted entity. The owner index
+/// reverses it.
+fn close_attributes(live: &Live<'_>, unit: &mut Slots) {
     let mut pending = unit
         .iter()
         .copied()
@@ -508,7 +674,7 @@ fn face_unit(live: &Live<'_>, face: i64) -> FaceUnit {
             continue;
         }
         unit.insert(slot);
-        if let Some(record) = table.get(&slot) {
+        if let Some(record) = live.table.get(&slot) {
             let next = if attribute {
                 attribute_next(record)
             } else {
@@ -523,10 +689,6 @@ fn face_unit(live: &Live<'_>, face: i64) -> FaceUnit {
                 .flatten()
                 .map(|&slot| (slot, true)),
         );
-    }
-    FaceUnit {
-        slots: unit,
-        reached_edges,
     }
 }
 
@@ -961,6 +1123,22 @@ impl<'a> Binder<'a> {
         out
     }
 
+    /// Rows depend on record content, so a revision with identical content
+    /// changes only the slot's version.
+    fn same_content(&self, slot: i64, versions: &BTreeMap<i64, i64>) -> bool {
+        match (
+            self.live.table.get(&slot),
+            versions
+                .get(&slot)
+                .and_then(|revision| self.archive.get(revision)),
+        ) {
+            (Some(current), Some(next)) => {
+                current.name == next.name && same_tokens(&current.tokens, &next.tokens)
+            }
+            _ => false,
+        }
+    }
+
     /// Replace keyed rows and return the two sides of this transition.
     fn incremental(
         &mut self,
@@ -972,8 +1150,12 @@ impl<'a> Binder<'a> {
         stats: &mut Statistics,
     ) -> Result<Option<(AsmHistoricalTopology, AsmHistoricalTopology)>, cadmpeg_core::CodecError>
     {
-        let revisions = changed;
-        let expanded = self.resolution_changes(changed, versions);
+        let all = changed;
+        let (revisions, restamped): (Slots, Slots) = changed
+            .iter()
+            .partition(|&&slot| !self.same_content(slot, versions));
+        let revisions = &revisions;
+        let expanded = self.resolution_changes(revisions, versions);
         let changed = &expanded;
         let saved_containers = previous.bodies().any(|slot| {
             self.live
@@ -982,8 +1164,8 @@ impl<'a> Binder<'a> {
                 .is_none_or(|record| record.head() != "body")
         });
         let orphan_containers = !self.orphan_containers.is_empty();
-        let old_targets = self.attribute_targets(changed);
-        let mut dirty = self.units.touching(&old_targets);
+        let mut all_targets = self.attribute_targets(changed);
+        let mut touched = self.units.touching(&all_targets);
         let old_changed_edges: Slots = revisions
             .iter()
             .filter(|slot| {
@@ -1001,12 +1183,13 @@ impl<'a> Binder<'a> {
             .copied()
             .collect();
         let mut wire_changed = !changed.is_disjoint(&self.wires);
-        if self.update(revisions, versions).is_none() {
+        if self.update(all, versions).is_none() {
             return Ok(None);
         }
         let targets = self.attribute_targets(changed);
-        dirty.extend(self.units.touching(&targets));
-        dirty.extend(
+        touched.extend(self.units.touching(&targets));
+        let mut rebuilt: Slots = touched.iter().map(|&(face, _)| face).collect();
+        rebuilt.extend(
             targets
                 .iter()
                 .filter(|slot| {
@@ -1017,15 +1200,29 @@ impl<'a> Binder<'a> {
                 })
                 .copied(),
         );
-        let mut next_units = Vec::new();
-        for &face in &dirty {
+        all_targets.extend(targets);
+        let mut next_units = BTreeMap::new();
+        for &face in &rebuilt {
             if self
                 .live
                 .table
                 .get(&face)
                 .is_some_and(|record| record.head() == "face")
             {
-                next_units.push((face, face_unit(&self.live, face)));
+                next_units.insert(face, face_unit(&self.live, face));
+            }
+        }
+        let mut dirty = Parts::new();
+        for &face in &rebuilt {
+            let old = self.units.faces.get(&face);
+            let new = next_units.get(&face);
+            let whole = !old.zip(new).is_some_and(|(old, new)| old.same_split(new));
+            for unit in old.into_iter().chain(new) {
+                for (&anchor, own) in &unit.parts {
+                    if whole || meets(own, &all_targets) {
+                        dirty.insert((face, anchor));
+                    }
+                }
             }
         }
         affected_bodies.extend(self.container_targets(changed));
@@ -1064,19 +1261,14 @@ impl<'a> Binder<'a> {
             self.units.reverse.contains_key(slot)
                 || old_container_covered.contains(slot)
                 || self.container_reverse.contains_key(slot)
-                || next_units.iter().any(|(_, unit)| unit.slots.contains(slot))
+                || next_units.values().any(|unit| unit.contains(*slot))
         });
         // Only a rebuilt face unit can change an edge's face ownership.
-        let old_edge_ownership: BTreeMap<_, _> = dirty
+        let old_edge_ownership: BTreeMap<_, _> = rebuilt
             .iter()
-            .filter_map(|face| self.units.edges_by_face.get(face))
-            .flatten()
-            .copied()
-            .chain(
-                next_units
-                    .iter()
-                    .flat_map(|(_, unit)| unit.reached_edges.iter().copied()),
-            )
+            .filter_map(|face| self.units.faces.get(face))
+            .chain(next_units.values())
+            .flat_map(|unit| unit.reached_edges.iter().copied())
             .filter(|slot| {
                 self.saved_limit
                     .is_some_and(|limit| (1..limit).contains(slot))
@@ -1096,8 +1288,10 @@ impl<'a> Binder<'a> {
         let mut first = dirty.clone();
         first.extend(self.units.neighbours(&dirty));
         let old_first = self.units.slots(&first);
-        let mut old_second = self.units.neighbours(&first);
-        for &face in &dirty {
+        let mut second = self.units.neighbours(&first);
+        second.extend(&first);
+        let mut tangled = self.units.tangled(&second);
+        for &face in &rebuilt {
             self.units.remove(face);
         }
         for (face, unit) in next_units {
@@ -1108,9 +1302,11 @@ impl<'a> Binder<'a> {
         // expansion. Its unchanged unit is already present in both indexes.
         let mut keys = old_first;
         keys.extend(self.units.slots(&first));
-        old_second.extend(self.units.neighbours(&first));
-        old_second.extend(first);
-        let input = self.units.slots(&old_second);
+        second.extend(self.units.neighbours(&first));
+        second.extend(first);
+        tangled |= self.units.tangled(&second);
+        let mut input = self.units.slots(&second);
+        input.extend(self.units.context(&second));
         let saved_ownership_changed = old_edge_ownership.iter().any(|(slot, was_reached)| {
             self.live
                 .table
@@ -1129,6 +1325,8 @@ impl<'a> Binder<'a> {
             Some("wire-change")
         } else if !old_covered {
             Some("uncovered-change")
+        } else if tangled {
+            Some("shared-loop-chain")
         } else if input.iter().any(|slot| {
             self.live.table.get(slot).is_some_and(|record| {
                 matches!(
@@ -1177,8 +1375,8 @@ impl<'a> Binder<'a> {
                 .iter()
                 .map(|definition| (definition.tokens.clone(), definition.position))
                 .collect();
-            let version = cadmpeg_asm::asm_header::parse(ctx, bytes)?
-                .and_then(|h| h.metadata.save_format_version);
+            let version =
+                cadmpeg_asm::asm_header::parse(bytes).and_then(|h| h.metadata.save_format_version);
             self.subtype_table = Some(
                 cadmpeg_asm::nurbs::toks::SubtypeTable::from_definitions(definitions)
                     .with_save_format_version(version),
@@ -1250,15 +1448,20 @@ impl<'a> Binder<'a> {
             };
             Some(part)
         };
-        let mut prior = previous.project(&keys, false);
-        let containers = previous.project(&container_keys, true);
+        // Restamped rows are unchanged, but their versions still enter the transition.
+        let mut shown = keys.clone();
+        shown.extend(&restamped);
+        let mut shown_containers = container_keys.clone();
+        shown_containers.extend(&restamped);
+        let mut prior = previous.project(&shown, false);
+        let containers = previous.project(&shown_containers, true);
         append_containers(&mut prior, containers);
         previous.replace(part, &keys, false);
         if let Some(part) = container_part {
             previous.replace(part, &container_keys, true);
         }
-        let mut older = previous.project(&keys, false);
-        append_containers(&mut older, previous.project(&container_keys, true));
+        let mut older = previous.project(&shown, false);
+        append_containers(&mut older, previous.project(&shown_containers, true));
         Ok(Some((older, prior)))
     }
 

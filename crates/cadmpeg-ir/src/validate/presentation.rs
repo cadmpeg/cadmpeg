@@ -14,7 +14,7 @@ pub(super) fn check_presentation(
     ir: &CadIr,
     all_ids: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     if ir.model.presentation_documents.len() > 1 {
         record_finding(
             findings,
@@ -73,70 +73,59 @@ pub(super) fn check_presentation(
 
     let bodies = BorrowedIdentities::build(|add| {
         for item in &ir.model.bodies {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let faces = BorrowedIdentities::build(|add| {
         for item in &ir.model.faces {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let edges = BorrowedIdentities::build(|add| {
         for item in &ir.model.edges {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let vertices = BorrowedIdentities::build(|add| {
         for item in &ir.model.vertices {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let points = BorrowedIdentities::build(|add| {
         for item in &ir.model.points {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let curves = BorrowedIdentities::build(|add| {
         for item in &ir.model.curves {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let surfaces = BorrowedIdentities::build(|add| {
         for item in &ir.model.surfaces {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let products = BorrowedIdentities::build(|add| {
         for item in &ir.model.product_definitions {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let occurrences = BorrowedIdentities::build(|add| {
         for item in &ir.model.occurrences {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let pmi = BorrowedIdentities::build(|add| {
         for item in &ir.model.pmi {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     let tessellations = BorrowedIdentities::build(|add| {
         for item in &ir.model.tessellations {
-            add(item.id.as_str(), ())?;
+            add(item.id.as_str(), ());
         }
-        Ok(())
-    })?;
+    });
     for layer in &ir.model.presentation_layers {
         for item in &layer.items {
             let resolved = match item {
@@ -168,5 +157,4 @@ pub(super) fn check_presentation(
             }
         }
     }
-    Ok(())
 }

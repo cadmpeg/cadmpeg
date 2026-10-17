@@ -17,7 +17,7 @@ use super::markers::{
 use super::operands::resolve_scalar_operand_markers;
 use super::reference_geometry::explicit_reference_plane_frame;
 use super::relation_records::{feature_intervals, relation_instances};
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::selections::{
     compact_body_selections, compact_edge_selections, compact_surface_selections,
     coordinate_marker_local_links, generated_surface_identities, marker_local_links,
@@ -26,7 +26,7 @@ use super::selections::{
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::classify::is_history_metadata_record;
+use crate::history::classify::HistoryMetadata;
 use crate::history::literals::parse_positive_angle_rad;
 use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
@@ -50,8 +50,9 @@ const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1e-9;
 pub(super) fn history_metadata_ids(histories: &[crate::records::FeatureHistory]) -> HashSet<&str> {
     let mut ids = HashSet::new();
     for history in histories {
+        let metadata = HistoryMetadata::new(&history.features);
         for feature in &history.features {
-            if is_history_metadata_record(feature, &history.features) {
+            if metadata.contains(feature) {
                 ids.insert(feature.id.as_str());
             }
         }
@@ -108,11 +109,12 @@ pub(crate) fn bind_pattern_inputs(
         // `object_names` read out of `native_payload`, so an admitted name
         // offset is an index of that payload. It is narrowed once here, where
         // that proof holds, and the objects below carry `usize` offsets.
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = history_features
             .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
-                let offset = usize::try_from(feature_object_name(feature, lane)?.offset).ok()?;
+                let offset = usize::try_from(names.of(feature)?.offset).ok()?;
                 Some((offset, *feature))
             })
             .collect::<Vec<_>>();
@@ -952,10 +954,11 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         )>,
     >::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = history_features
             .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .filter_map(|feature| Some((names.of(feature)?.offset, *feature)))
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|(left, _)| *left);
         for (index, (_, feature)) in starts.iter().enumerate() {
@@ -1065,21 +1068,18 @@ pub(crate) fn bind_scalar_operands(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let represented_sketches = represented_sketch_features(histories, lanes);
     let metadata_ids = history_metadata_ids(histories);
+    let features_by_id = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
             entity.links = None;
         }
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-            .filter_map(|feature| {
-                Some((
-                    feature_object_name(feature, lane)?.offset,
-                    feature.id.as_str(),
-                ))
-            })
+            .filter_map(|feature| Some((names.of(feature)?.offset, feature.id.as_str())))
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|left| left.0);
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
@@ -1103,18 +1103,13 @@ pub(crate) fn bind_scalar_operands(
             }
         }
         bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
-        let mut features_by_id = HashMap::new();
-        for feature in histories.iter().flat_map(|history| &history.features) {
-            features_by_id.insert(feature.id.as_str(), feature);
-        }
         for pair in starts.windows(2) {
             let [(_, parent_id), (child_start, child_id)] = pair else {
                 continue;
             };
-            let (Some(parent), Some(child)) = (
-                features_by_id.get(parent_id).copied(),
-                features_by_id.get(child_id).copied(),
-            ) else {
+            let (Some(parent), Some(child)) =
+                (features_by_id.get(parent_id), features_by_id.get(child_id))
+            else {
                 continue;
             };
             if native_object_class(parent.input_class.as_deref().unwrap_or_default())
@@ -1253,10 +1248,11 @@ fn represented_sketch_features(
         if is_supplemental_config_lane(lane) {
             continue;
         }
+        let names = FeatureObjectNames::new(&lane.names);
         let mut objects = features
             .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .filter_map(|feature| Some((names.of(feature)?.offset, *feature)))
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|(left, _)| *left);
         for (index, &(start, feature)) in objects.iter().enumerate() {

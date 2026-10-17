@@ -1649,7 +1649,7 @@ fn cone_semi_angle_inside_wr2_is_planned() {
 }
 
 #[test]
-fn zero_cone_semi_angle_is_planned() {
+fn zero_cone_semi_angle_is_planned_as_a_cylinder() {
     assert!(circular_cone_plan(0.0).is_ok());
 }
 

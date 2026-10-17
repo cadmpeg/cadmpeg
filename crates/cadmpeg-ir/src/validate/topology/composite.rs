@@ -28,11 +28,10 @@ pub(super) fn check(
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
             {
-                add(curve.id.as_str(), &segments[..])?;
+                add(curve.id.as_str(), &segments[..]);
             }
         }
-        Ok(())
-    })?;
+    });
     let mut complete = BorrowedIdentities::new();
     let mut active = BorrowedIdentities::new();
     let mut roots = BorrowedIdentities::new();

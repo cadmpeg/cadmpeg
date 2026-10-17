@@ -8,7 +8,7 @@ use crate::brep::feature_source::FeatureSourceId;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
 pub(crate) mod operand_tag;
@@ -435,6 +435,43 @@ pub(crate) struct FeatureHistory {
     /// Ordered construction-history features, in regeneration order.
     #[serde(default)]
     pub(crate) features: Vec<Feature>,
+}
+
+/// Every history's features by record id, and in history order.
+///
+/// Record ids are unique in decoded and written histories. When a native
+/// record set repeats one, the first feature with it is kept, as a history
+/// order search would find it.
+pub(crate) struct HistoryFeatures<'a> {
+    by_id: HashMap<&'a str, &'a Feature>,
+    in_order: Vec<&'a Feature>,
+}
+
+impl<'a> HistoryFeatures<'a> {
+    pub(crate) fn new(histories: &'a [FeatureHistory]) -> Self {
+        let features = || histories.iter().flat_map(|history| &history.features);
+        let mut by_id = HashMap::new();
+        for feature in features() {
+            by_id.entry(feature.id.as_str()).or_insert(feature);
+        }
+        let in_order = features()
+            .filter(|feature| {
+                by_id
+                    .get(feature.id.as_str())
+                    .is_some_and(|kept| std::ptr::eq(*kept, *feature))
+            })
+            .collect();
+        Self { by_id, in_order }
+    }
+
+    pub(crate) fn get(&self, id: &str) -> Option<&'a Feature> {
+        self.by_id.get(id).copied()
+    }
+
+    /// The kept features, in history order.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &'a Feature> + '_ {
+        self.in_order.iter().copied()
+    }
 }
 
 /// Native feature-input stream retained for parametric replay and rewrite.
@@ -2117,6 +2154,71 @@ impl SketchRelationKind {
 mod tests {
     use super::PmiDimension;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn history_features_keep_the_first_repeated_id_in_history_order() {
+        let history = |id: &str, features: &[&str]| super::FeatureHistory {
+            id: id.into(),
+            part_name: None,
+            properties: std::collections::BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: features
+                .iter()
+                .zip(0..)
+                .map(|(feature, ordinal)| super::Feature {
+                    id: (*feature).into(),
+                    parent: id.into(),
+                    xml_tag: "Feature".into(),
+                    tree_parent: None,
+                    source_id: None,
+                    ordinal,
+                    name: String::new(),
+                    kind: "Feature".into(),
+                    input_class: None,
+                    suppressed: false,
+                    parameters: std::collections::BTreeMap::new(),
+                    dimension_properties: std::collections::BTreeMap::new(),
+                    properties: std::collections::BTreeMap::new(),
+                    text: None,
+                    content: Vec::new(),
+                })
+                .collect(),
+        };
+        let histories = [
+            history("first", &["x", "repeated", "z"]),
+            history("second", &["w", "repeated"]),
+        ];
+        for _ in 0..32 {
+            let features = super::HistoryFeatures::new(&histories);
+            assert_eq!(
+                features
+                    .iter()
+                    .map(|feature| (feature.parent.as_str(), feature.id.as_str()))
+                    .collect::<Vec<_>>(),
+                [
+                    ("first", "x"),
+                    ("first", "repeated"),
+                    ("first", "z"),
+                    ("second", "w")
+                ]
+            );
+            assert_eq!(
+                features
+                    .get("repeated")
+                    .map(|feature| feature.parent.as_str()),
+                Some("first")
+            );
+            let searched = histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|feature| feature.id == "repeated");
+            assert!(features
+                .get("repeated")
+                .zip(searched)
+                .is_some_and(|(kept, searched)| std::ptr::eq(kept, searched)));
+        }
+    }
 
     #[test]
     fn feature_source_borrowed_json_matches_owned_string_bytes() {

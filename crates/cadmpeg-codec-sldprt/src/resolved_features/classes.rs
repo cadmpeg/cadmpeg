@@ -2,10 +2,11 @@
 
 use super::is_class_token;
 use super::operations::repeated_class_token;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
 use cadmpeg_core::decode::u64_from_index;
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 use crate::records::ObjectId;
@@ -41,10 +42,12 @@ fn idless_legacy_startup_shape(records: &[crate::records::Feature]) -> bool {
 }
 
 /// Bind Keywords history records to their serialized feature-input object classes.
-pub(crate) fn bind_history_classes(
+pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
     histories: &mut [crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    lanes: &[L],
 ) {
+    let lanes = lanes.iter().map(Borrow::borrow).collect::<Vec<_>>();
+    let lanes = lanes.as_slice();
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -154,13 +157,14 @@ pub(crate) fn bind_history_classes(
             .iter()
             .map(|class| class.offset + 6 + u64_from_index(class.name.len()))
             .collect::<HashSet<_>>();
+        let names = FeatureObjectNames::new(&lane.names);
         let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
         for feature in histories
             .iter()
             .flat_map(|history| &history.features)
             .filter(|feature| feature.input_class.is_none())
         {
-            let Some(name) = feature_object_name(feature, lane).filter(|name| {
+            let Some(name) = names.of(feature).filter(|name| {
                 !direct_name_offsets.contains(&name.offset)
                     && name.object_id.and_then(ObjectId::value).is_some()
                     && name.value == feature.name
@@ -399,7 +403,7 @@ pub(crate) fn bind_history_classes(
 
 fn legacy_repeated_hole_wizard_classes(
     histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    lanes: &[&FeatureInputLane],
 ) -> HashMap<String, String> {
     let mut by_name = HashMap::<&str, Option<&crate::records::Feature>>::new();
     let mut hole_shapes = HashSet::<&str>::new();
@@ -683,8 +687,15 @@ mod idless_history_binding_tests {
         assert!(!is_profile_feature_object(&sketch));
     }
 
-    #[test]
-    fn history_metadata_does_not_interrupt_an_extrusion_profile_pair() {
+    fn extrusion_profile_pair(
+        dissectable: bool,
+        extrusion_offset: u64,
+    ) -> (
+        FeatureHistory,
+        FeatureInputLane,
+        Vec<cadmpeg_ir::features::Feature>,
+        cadmpeg_ir::features::FeatureId,
+    ) {
         let mut profile = feature(1, "sketch");
         profile.id = "profile-native".into();
         profile.xml_tag = "Sketch".into();
@@ -698,10 +709,12 @@ mod idless_history_binding_tests {
         extrusion.id = "extrusion-native".into();
         extrusion.xml_tag = "Extrusion".into();
         extrusion.source_id = FeatureSource::from_value(43);
-        extrusion.properties.insert(
-            cadmpeg_core::nonblank_literal!("Dissectable"),
-            "true".into(),
-        );
+        if dissectable {
+            extrusion.properties.insert(
+                cadmpeg_core::nonblank_literal!("Dissectable"),
+                "true".into(),
+            );
+        }
         let history = FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -736,7 +749,7 @@ mod idless_history_binding_tests {
                     id: "extrusion-name".into(),
                     parent: "lane".into(),
                     ordinal: 2,
-                    offset: 200,
+                    offset: extrusion_offset,
                     object_id: ObjectId::from_value(43),
                     value: "name-2".into(),
                 },
@@ -753,7 +766,7 @@ mod idless_history_binding_tests {
         };
         let profile_id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#profile")
             .expect("identity grammar");
-        let mut features = vec![
+        let features = vec![
             cadmpeg_ir::features::Feature {
                 id: profile_id.clone(),
                 ordinal: 0,
@@ -810,6 +823,29 @@ mod idless_history_binding_tests {
                 native_ref: Some("extrusion-native".into()),
             },
         ];
+        (history, lane, features, profile_id)
+    }
+
+    fn assert_extrusion_uses_profile(
+        features: &[cadmpeg_ir::features::Feature],
+        profile_id: &cadmpeg_ir::features::FeatureId,
+    ) {
+        assert!(matches!(
+            features[1].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(actual)),
+                ..
+            }) if actual == profile_id
+        ));
+        assert_eq!(
+            features[1].dependencies.as_slice(),
+            std::slice::from_ref(profile_id)
+        );
+    }
+
+    #[test]
+    fn history_metadata_does_not_interrupt_an_extrusion_profile_pair() {
+        let (history, lane, mut features, profile_id) = extrusion_profile_pair(true, 200);
 
         project_adjacent_extrusion_profiles(
             &mut features,
@@ -817,14 +853,22 @@ mod idless_history_binding_tests {
             std::slice::from_ref(&lane),
         );
 
-        assert!(matches!(
-            features[1].evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(actual)),
-                ..
-            }) if actual == &profile_id
-        ));
-        assert_eq!(features[1].dependencies.as_slice(), [profile_id]);
+        assert_extrusion_uses_profile(&features, &profile_id);
+    }
+
+    #[test]
+    fn tied_object_names_pair_the_profile_with_the_later_history_extrusion() {
+        for _ in 0..32 {
+            let (history, lane, mut features, profile_id) = extrusion_profile_pair(false, 100);
+
+            project_adjacent_extrusion_profiles(
+                &mut features,
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
+            );
+
+            assert_extrusion_uses_profile(&features, &profile_id);
+        }
     }
 
     #[test]
@@ -948,7 +992,7 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        let bindings = legacy_repeated_hole_wizard_classes(&[history], &[lane]);
+        let bindings = legacy_repeated_hole_wizard_classes(&[history], &[&lane]);
         assert_eq!(
             bindings.get("feature-10").map(String::as_str),
             Some("moHoleWzd_c")
@@ -1132,9 +1176,12 @@ mod idless_history_binding_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
+        let mut borrowed = histories.clone();
 
-        bind_history_classes(&mut histories, &[lane]);
+        bind_history_classes(&mut histories, std::slice::from_ref(&lane));
+        bind_history_classes(&mut borrowed, &[&lane]);
 
+        assert_eq!(borrowed, histories);
         assert_eq!(
             histories[0]
                 .features

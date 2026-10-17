@@ -52,13 +52,14 @@ use feature_projection::{
     blind_hole_body_projection, blind_hole_operations, block_placement,
     body_writing_unresolved_feature_definition, brep_feature_definition,
     counterbore_axis_placements_for_operations, counterbore_body_projection,
-    counterbore_operations, feature_source_content, hole_axis_placements_for_operations,
-    hole_body_projection, hole_package_projection, native_feature_parameters, new_body_boolean_op,
-    non_boolean_feature_definition_with_parameters, non_modeling_history_definition,
-    offset_surface_feature_definition, primary_hole_outputs, selection_indices_native,
-    simple_hole_chamfers, simple_hole_native_properties, simple_hole_operations,
-    sphere_body_projection, thicken_feature_definition, HolePackageSources, HoleProjection,
-    NewBodyEvidence, NxBlendFamily,
+    counterbore_operations, expressions_by_id, feature_source_content,
+    hole_axis_placements_for_operations, hole_body_projection, hole_package_projection,
+    native_feature_parameters, new_body_boolean_op, non_boolean_feature_definition_with_parameters,
+    non_modeling_history_definition, offset_surface_feature_definition, primary_hole_outputs,
+    selection_indices_native, simple_hole_chamfers, simple_hole_native_properties,
+    simple_hole_operations, sphere_body_projection, thicken_feature_definition,
+    FeatureProjectionIndex, HolePackageSources, HoleProjection, NewBodyEvidence, NxBlendFamily,
+    ProjectionArenas,
 };
 
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
@@ -390,12 +391,6 @@ fn attach_records(
     #[cfg(test)]
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    for stream in &model.parasolid.attribute_definition_scan_bounded_streams {
-        losses.push(NxLossCode::SourceScanBounded.note(format!(
-            "The attribute-definition scan of Parasolid stream #{stream} reached its work bound; \
-             the stream's attribute definitions were skipped."
-        )));
-    }
     for section in &model.om.object_record_identity_bounded_sections {
         losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
             "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
@@ -720,15 +715,18 @@ fn attach_rm_face_colors(
         &model.parasolid.deltas_records,
         &super::substrate::paired_delta_streams(scan),
     )?;
-    for (face_id, color) in bindings {
-        let Some(index) = ir
-            .model
-            .faces
-            .iter()
-            .rposition(|face| face.id.as_str() == face_id)
-        else {
-            continue;
-        };
+    let last_face_positions = ir
+        .model
+        .faces
+        .iter()
+        .enumerate()
+        .map(|(index, face)| (face.id.as_str(), index))
+        .collect::<BTreeMap<_, _>>();
+    let targets = bindings
+        .into_iter()
+        .filter_map(|(face_id, color)| Some((*last_face_positions.get(face_id.as_str())?, color)))
+        .collect::<Vec<_>>();
+    for (index, color) in targets {
         let face = &mut ir.model.faces[index];
         if face.color.is_none() || face.color == Some(color) {
             face.color = Some(color);
@@ -778,14 +776,9 @@ fn attach_rm_appearances(
     }
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let mut appearances = BTreeMap::<String, AppearanceId>::new();
+    let definitions = last_color_definitions(&model.om.part_color_definitions);
     for binding in source_bindings {
-        let Some(definition) = model
-            .om
-            .part_color_definitions
-            .iter()
-            .rev()
-            .find(|definition| definition.id == binding.color_definition)
-        else {
+        let Some(&definition) = definitions.get(binding.color_definition.as_str()) else {
             continue;
         };
         let appearance_id = ensure_rm_color_appearance(
@@ -828,26 +821,21 @@ fn attach_rm_appearances(
             channels: BTreeMap::new(),
         });
     }
-    for binding in face_bindings {
-        let Some(definition) = model
-            .om
-            .part_color_definitions
-            .iter()
-            .rev()
-            .find(|definition| definition.id == binding.color_definition)
-        else {
+    let mut first_faces = BTreeMap::new();
+    for face in &ir.model.faces {
+        first_faces.entry(face.id.as_str()).or_insert(face);
+    }
+    let face_targets = face_bindings
+        .into_iter()
+        .filter_map(|binding| {
+            let face = first_faces.get(binding.face_id.as_str())?;
+            Some((binding, face.id.clone(), face.color))
+        })
+        .collect::<Vec<_>>();
+    for (binding, face_id, existing_color) in face_targets {
+        let Some(&definition) = definitions.get(binding.color_definition.as_str()) else {
             continue;
         };
-
-        let Some(face) = ir
-            .model
-            .faces
-            .iter()
-            .find(|face| face.id.as_str() == binding.face_id)
-        else {
-            continue;
-        };
-        let existing_color = face.color;
         let color = Color::new(
             definition.components[0].0.value(),
             definition.components[1].0.value(),
@@ -858,7 +846,6 @@ fn attach_rm_appearances(
         if existing_color.is_some_and(|existing| existing != color) {
             continue;
         }
-        let face_id = face.id.clone();
         let appearance_id = ensure_rm_color_appearance(
             ir,
             annotations,
@@ -1023,6 +1010,16 @@ fn resolve_rm_source_color_bindings(
     bindings
 }
 
+/// The last palette definition of each identity.
+fn last_color_definitions(
+    definitions: &[super::om::PartColorDefinition],
+) -> BTreeMap<&str, &super::om::PartColorDefinition> {
+    definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect()
+}
+
 fn resolve_rm_face_colors(
     face_ids: &BTreeSet<String>,
     assignments: &[RmDisplayColorAssignment],
@@ -1032,13 +1029,10 @@ fn resolve_rm_face_colors(
 ) -> Result<Vec<(String, Color)>, CodecError> {
     let bindings =
         resolve_rm_face_color_bindings(face_ids, assignments, definitions, records, delta_pairs);
+    let definitions = last_color_definitions(definitions);
     let mut colors = Vec::new();
     for binding in bindings {
-        let Some(definition) = definitions
-            .iter()
-            .rev()
-            .find(|definition| definition.id.as_str() == binding.color_definition.as_str())
-        else {
+        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
             continue;
         };
         let color = Color::new(
@@ -1061,33 +1055,56 @@ fn resolve_rm_face_color_bindings(
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
 ) -> Vec<RmFaceColorBinding> {
-    let mut bindings = Vec::new();
-    for (position, assignment) in assignments.iter().enumerate() {
+    // Linked assignments grouped by object index in first-occurrence order.
+    let mut objects = Vec::<(u32, RmColorChoice<'_>)>::new();
+    let mut object_positions = BTreeMap::new();
+    for assignment in assignments {
         let RmDisplayColorAssignmentEncoding::Linked(row) = assignment.frame.encoding() else {
             continue;
         };
         let object_index = row.first_index().atom.value();
-
-        if assignments[..position].iter().any(|earlier| {
-            matches!(
-                earlier.frame.encoding(),
-                RmDisplayColorAssignmentEncoding::Linked(previous)
-                    if previous.first_index().atom.value() == object_index
-            )
-        }) {
-            continue;
-        }
-        let mut choice = RmColorChoice::new(assignment);
-
-        for later in assignments.iter().skip(position + 1) {
-            if matches!(
-                later.frame.encoding(),
-                RmDisplayColorAssignmentEncoding::Linked(next)
-                    if next.first_index().atom.value() == object_index
-            ) {
-                choice.observe(later);
+        match object_positions.entry(object_index) {
+            Entry::Vacant(entry) => {
+                entry.insert(objects.len());
+                objects.push((object_index, RmColorChoice::new(assignment)));
             }
+            Entry::Occupied(entry) => objects[*entry.get()].1.observe(assignment),
         }
+    }
+    let definition_ids = definitions
+        .iter()
+        .map(|definition| definition.id.as_str())
+        .collect::<BTreeSet<_>>();
+    // The partition of each paired delta stream, or `None` when several pair it.
+    let mut delta_partitions = BTreeMap::<u32, Option<u32>>::new();
+    for (raw_partition, deltas) in delta_pairs {
+        let Ok(partition) = u32::try_from(*raw_partition) else {
+            continue;
+        };
+        for delta in deltas {
+            let Ok(delta) = u32::try_from(*delta) else {
+                continue;
+            };
+            delta_partitions
+                .entry(delta)
+                .and_modify(|existing| {
+                    if *existing != Some(partition) {
+                        *existing = None;
+                    }
+                })
+                .or_insert(Some(partition));
+        }
+    }
+    let face_records = group_pairs(records.iter().filter_map(|record| {
+        let crate::deltas::record_family::RecordFamily::Face { node_id, .. } = &record.family
+        else {
+            return None;
+        };
+        Some((*node_id, record))
+    }));
+
+    let mut bindings = Vec::new();
+    for (object_index, choice) in objects {
         let RmColorChoice::Unique {
             definition,
             source_offset,
@@ -1096,49 +1113,15 @@ fn resolve_rm_face_color_bindings(
             continue;
         };
 
-        if !definitions
-            .iter()
-            .any(|candidate| candidate.id.as_str() == definition)
-        {
+        if !definition_ids.contains(definition) {
             continue;
         }
 
         let mut candidate = None::<String>;
         let mut ambiguous = false;
 
-        for record in records {
-            let crate::deltas::record_family::RecordFamily::Face { node_id, .. } = &record.family
-            else {
-                continue;
-            };
-            if *node_id != object_index {
-                continue;
-            }
-            let mut partition = None;
-            let mut multiple_partitions = false;
-            for (raw_partition, deltas) in delta_pairs {
-                let Ok(partition_id) = u32::try_from(*raw_partition) else {
-                    continue;
-                };
-                if !deltas
-                    .iter()
-                    .any(|delta| u32::try_from(*delta).ok() == Some(record.stream_ordinal))
-                {
-                    continue;
-                }
-                match partition {
-                    None => partition = Some(partition_id),
-                    Some(existing) if existing == partition_id => {}
-                    Some(_) => {
-                        multiple_partitions = true;
-                        break;
-                    }
-                }
-            }
-            if multiple_partitions {
-                continue;
-            }
-            let Some(partition) = partition else {
+        for record in face_records.get(&object_index).into_iter().flatten() {
+            let Some(&Some(partition)) = delta_partitions.get(&record.stream_ordinal) else {
                 continue;
             };
             let face_id = format!("nx:s{partition}:face#{}", record.xmt);
@@ -1605,7 +1588,7 @@ fn attach_feature_operations(
     let features = &model.features;
     let parasolid_group_members = model.parasolid.group_members.as_slice();
     let data_blocks = model.om.data_blocks.as_slice();
-    let expressions = model.om.expressions.as_slice();
+    let expressions_by_id = expressions_by_id(&model.om.expressions);
     let body_bindings = model.segments.body_bindings.as_slice();
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
@@ -2404,6 +2387,14 @@ fn attach_feature_operations(
 
         ir.model.semantic_annotations.push(annotation);
     }
+    let projection_index = FeatureProjectionIndex::new(ProjectionArenas {
+        bodies: &ir.model.bodies,
+        regions: &ir.model.regions,
+        shells: &ir.model.shells,
+        faces: &ir.model.faces,
+        surfaces: &ir.model.surfaces,
+        procedural_surfaces: &ir.model.procedural_surfaces,
+    });
     for (ordinal, label) in chronological_labels.into_iter().enumerate() {
         if !projects_neutral_feature(&label.value)
             || hole_packages.internal_operations.contains(&label.id)
@@ -3908,7 +3899,9 @@ fn attach_feature_operations(
                 });
         let block_projection = if label.value == "BLOCK" {
             match block_dimension_values {
-                Some(dimensions) => block_placement(ir, dimensions, &outputs),
+                Some(dimensions) => {
+                    block_placement(&projection_index, &ir.tolerances, dimensions, &outputs)
+                }
                 None => None,
             }
         } else {
@@ -3920,7 +3913,7 @@ fn attach_feature_operations(
             }
         }
         let sphere_projection = if label.value == "SPHERE" {
-            sphere_body_projection(ir, &outputs)
+            sphere_body_projection(&projection_index, &outputs)
         } else {
             None
         };
@@ -4052,7 +4045,7 @@ fn attach_feature_operations(
             None
         };
         let offset_projection = if label.value == "OFFSET" {
-            offset_surface_feature_definition(ir, &outputs)
+            offset_surface_feature_definition(&projection_index, &outputs)
         } else {
             None
         };
@@ -4066,7 +4059,7 @@ fn attach_feature_operations(
             }
         }
         let thicken_projection = if label.value == "THICKEN_SHEET" {
-            thicken_feature_definition(ir, &outputs)
+            thicken_feature_definition(&projection_index, &outputs)
         } else {
             None
         };
@@ -4085,7 +4078,7 @@ fn attach_feature_operations(
             _ => None,
         };
         let blend_projection = if let Some(family) = blend_family {
-            blend_feature_definition(ir, &outputs, family)
+            blend_feature_definition(&projection_index, &outputs, family)
         } else {
             None
         };
@@ -4165,10 +4158,12 @@ fn attach_feature_operations(
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
+        let native_parameters =
+            native_feature_parameters(operation_parameter_uses, &expressions_by_id);
         let sketch = if label.value == "SKETCH" {
             attach_sketch_graph(
-                ir,
+                &mut ir.model.sketches,
+                &mut ir.model.sketch_entities,
                 label,
                 &SketchSources {
                     point_uses: sketch_point_uses_by_operation
@@ -4371,7 +4366,7 @@ fn attach_feature_operations(
                 ))
                 .ok_or_else(|| CodecError::malformed("NX feature result body identity is blank"))?;
                 append_feature_result_topology(
-                    ir,
+                    &mut ir.model.feature_result_topologies,
                     PendingFeatureResult {
                         result_id: result_topology_id(key, Some(write.ordinal))?,
                         output_of: &id,
@@ -4395,7 +4390,7 @@ fn attach_feature_operations(
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
                 append_feature_result_topology(
-                    ir,
+                    &mut ir.model.feature_result_topologies,
                     PendingFeatureResult {
                         result_id: result_topology_id(key, None)?,
                         output_of: &id,
@@ -4485,7 +4480,7 @@ struct PendingFeatureResult<'feature> {
 }
 
 fn append_feature_result_topology(
-    ir: &mut CadIr,
+    feature_result_topologies: &mut Vec<FeatureResultTopology>,
     pending: PendingFeatureResult<'_>,
     losses: &mut Vec<LossNote>,
 ) {
@@ -4513,7 +4508,7 @@ fn append_feature_result_topology(
 
     let result =
         FeatureResultTopology::new(result_id, output_of.clone(), members, Some(native_ref));
-    ir.model.feature_result_topologies.push(result);
+    feature_result_topologies.push(result);
 }
 
 fn operation_body_write_result_group_members(
@@ -4659,7 +4654,8 @@ fn native_primary_body_references<'a>(
 }
 
 fn attach_sketch_graph(
-    ir: &mut CadIr,
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
     label: &crate::native::features::FeatureOperationLabel,
     sources: &SketchSources<'_>,
     annotations: &mut AnnotationBuilder,
@@ -4769,7 +4765,7 @@ fn attach_sketch_graph(
             Some("SKETCH"),
         );
         annotations.exactness(sketch_id.as_str(), Exactness::Derived);
-        emit_sketch(ir, label, &sketch_id, entities);
+        emit_sketch(sketches, sketch_entities, label, &sketch_id, entities);
         return Some(sketch_id);
     }
     let mut groups_by_id =
@@ -4879,7 +4875,7 @@ fn attach_sketch_graph(
         Some("SKETCH"),
     );
     annotations.exactness(sketch_id.as_str(), Exactness::Derived);
-    emit_sketch(ir, label, &sketch_id, entities);
+    emit_sketch(sketches, sketch_entities, label, &sketch_id, entities);
     Some(sketch_id)
 }
 
@@ -4945,17 +4941,16 @@ fn sketch_entity_identity(prefix: &str, key: &str) -> Option<SketchEntityId> {
 }
 
 fn emit_sketch(
-    ir: &mut CadIr,
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
     label: &crate::native::features::FeatureOperationLabel,
     sketch_id: &SketchId,
     entities: Vec<(u64, SketchEntity)>,
 ) {
     let name = label.value.clone();
     let native_ref = label.id.clone();
-    ir.model
-        .sketch_entities
-        .extend(entities.into_iter().map(|(_, entity)| entity));
-    ir.model.sketches.push(Sketch {
+    sketch_entities.extend(entities.into_iter().map(|(_, entity)| entity));
+    sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some(name),
         configuration: None,

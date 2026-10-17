@@ -4,15 +4,19 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PrintableString<S>(S);
 
+const NOT_PRINTABLE: &str = "value: must be nonempty printable ASCII";
+
+fn printable(bytes: &[u8]) -> bool {
+    !bytes.is_empty()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+}
+
 impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
-        let text = value.as_ref();
-        if text.is_empty()
-            || !text
-                .bytes()
-                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-        {
-            return Err("value: must be nonempty printable ASCII");
+        if !printable(value.as_ref().as_bytes()) {
+            return Err(NOT_PRINTABLE);
         }
         Ok(Self(value))
     }
@@ -27,7 +31,18 @@ impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
     }
 }
 
-impl PrintableString<&str> {
+impl<'a> PrintableString<&'a str> {
+    /// Admit raw bytes. The check stops at the first byte that is not
+    /// printable ASCII, so it never reads past the end of a printable run.
+    pub(crate) fn from_bytes(bytes: &'a [u8]) -> Result<Self, &'static str> {
+        if !printable(bytes) {
+            return Err(NOT_PRINTABLE);
+        }
+        std::str::from_utf8(bytes)
+            .map(Self)
+            .map_err(|_| NOT_PRINTABLE)
+    }
+
     pub(crate) fn into_owned(self) -> PrintableString<String> {
         PrintableString(self.0.to_owned())
     }
@@ -69,6 +84,32 @@ mod tests {
             let json = serde_json::to_string(text).unwrap();
             let error = serde_json::from_str::<PrintableString<String>>(&json).unwrap_err();
             assert!(error.to_string().contains("value"));
+        }
+    }
+
+    #[test]
+    fn byte_admission_matches_decoding_then_admitting_text() {
+        let alphabet = [
+            0x00, 0x09, 0x1f, b' ', b'A', b'~', 0x7f, 0x80, 0xc2, 0xb5, 0xff,
+        ];
+        let mut inputs = vec![Vec::new()];
+        let mut frontier = vec![Vec::new()];
+        for _ in 0..3 {
+            frontier = frontier
+                .iter()
+                .flat_map(|prefix: &Vec<u8>| {
+                    alphabet
+                        .iter()
+                        .map(move |byte| [prefix.as_slice(), &[*byte]].concat())
+                })
+                .collect();
+            inputs.extend(frontier.iter().cloned());
+        }
+        for input in &inputs {
+            let decoded = std::str::from_utf8(input)
+                .ok()
+                .and_then(|text| PrintableString::new(text).ok());
+            assert_eq!(PrintableString::from_bytes(input).ok(), decoded);
         }
     }
     #[test]

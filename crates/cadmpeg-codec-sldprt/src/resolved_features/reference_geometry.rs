@@ -5,7 +5,7 @@ use super::curves::{
     sketch_plane_frames, SketchPlaneUAxisSource, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
     REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::selections::{
     compact_component_path_end_at, component_face_reference_in_record, COMPACT_EDGE_VECTOR_MARKER,
 };
@@ -124,10 +124,11 @@ pub(crate) fn enrich_history_reference_planes(
         known_reference_plane_sources.push(reference_sources);
     }
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(feature) {
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -518,10 +519,11 @@ pub(crate) fn enrich_history_reference_points(
 ) {
     let mut candidates = BTreeMap::<(usize, usize), Option<Point3>>::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(feature) {
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -534,7 +536,7 @@ pub(crate) fn enrich_history_reference_points(
             {
                 continue;
             }
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = names.of(feature) else {
                 continue;
             };
             let record_end = starts
@@ -652,10 +654,11 @@ pub(crate) fn enrich_history_coordinate_systems(
     let mut candidates =
         BTreeMap::<(usize, usize), Option<(Point3, Vector3, Vector3, Vector3)>>::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(feature) {
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -1427,7 +1430,9 @@ pub(crate) fn enrich_history_sketch_block_references(
             }
             let mut definitions_by_local_id = HashMap::<u16, Option<u32>>::new();
             for (position, (name, _)) in instance_names.iter().enumerate() {
-                let Some(next) = names.iter().find(|next| next.offset > name.offset) else {
+                let Some(next) =
+                    names.get(names.partition_point(|next| next.offset <= name.offset))
+                else {
                     continue;
                 };
                 let Some(definition_source) =
@@ -1677,10 +1682,11 @@ pub(crate) fn enrich_history_reference_axes(
         known_sources.insert(source);
     }
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(feature) {
                     starts.push((name.offset, history_index, feature_index));
                 }
             }

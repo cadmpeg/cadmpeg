@@ -2,7 +2,6 @@
 //! Document locations named by validation finding entities and related ids.
 
 use std::collections::{HashMap, HashSet};
-use std::convert::Infallible;
 
 use crate::document::CadIr;
 use crate::native::view::NativeView;
@@ -57,15 +56,11 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
         }
         crate::document::arena_registry!(walk_model);
 
-        match NativeView::new(ir, None).visit(|format, _, arena| {
+        NativeView::new(ir, None).for_each(|format, _, arena| {
             for entity in arena.records() {
                 record(entity.id(), EntityLocation::Native(format));
             }
-            Ok::<(), Infallible>(())
-        }) {
-            Ok(()) => {}
-            Err(never) => match never {},
-        }
+        });
         Self { locations }
     }
 

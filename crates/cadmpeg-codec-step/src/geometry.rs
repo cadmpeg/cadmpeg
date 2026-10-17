@@ -435,14 +435,6 @@ pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry
     basis
 }
 
-/// The major and minor semi-axes of a zero half-angle cone's section, or
-/// `None` when either is not positive.
-pub(crate) fn zero_angle_cone_semi_axes(cone: &ConeSurface) -> Option<(f64, f64)> {
-    let major = cone.radius().get();
-    let minor = major * cone.ratio().get();
-    (major > 0.0 && minor > 0.0).then_some((major, minor))
-}
-
 /// Emit an analytic or NURBS surface carrier.
 pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     let (placements, basis) = placed_surface(g);
@@ -477,32 +469,8 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
                 &format!("'',{pl},{}", e.real(radius)),
             )
         }
-        // A zero half-angle cone is the cylinder over its section, which
-        // `conical_surface` cannot hold. Sweeping the section along the unit
-        // axis keeps the cone's `(u, v)` chart.
         SolvedSurfaceGeometry::Cone(cone_surface) if cone_surface.half_angle().get() == 0.0 => {
-            let (major, minor) = zero_angle_cone_semi_axes(cone_surface)?;
-            let axis = *cone_surface.frame().axis();
-            let pl = placement(
-                e,
-                cone_surface.origin().get(),
-                axis,
-                *cone_surface.frame().reference(),
-            );
-            if cone_surface.ratio().get() == 1.0 {
-                e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", e.real(major)))
-            } else {
-                let section = e.emit(
-                    "ELLIPSE",
-                    &format!("'',{pl},{},{}", e.real(major), e.real(minor)),
-                );
-                let direction = direction(e, axis.into());
-                let sweep = e.emit("VECTOR", &format!("'',{direction},{}", e.real(1.0)));
-                e.emit(
-                    "SURFACE_OF_LINEAR_EXTRUSION",
-                    &format!("'',{section},{sweep}"),
-                )
-            }
+            zero_angle_cone(e, cone_surface)?
         }
         // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
         // Reversing the axis and angle maps a negative-angle cone exactly under
@@ -560,6 +528,40 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => return None,
     })
+}
+
+/// Emit a cone of semi-angle 0, which `conical_surface` cannot hold.
+///
+/// The cone is a cylinder over its origin section, in the same `(u, v)` chart:
+/// a circular section is a `CYLINDRICAL_SURFACE`, and an elliptical one the
+/// `SURFACE_OF_LINEAR_EXTRUSION` of its `ELLIPSE` along the unit axis vector.
+/// A zero section radius is a line, which no surface record holds.
+fn zero_angle_cone(e: &mut Emitter, cone: &ConeSurface) -> Option<Ref> {
+    let origin = cone.origin().get();
+    let axis = *cone.frame().axis();
+    let ref_direction = *cone.frame().reference();
+    let radius = cone.radius().get();
+    let minor_radius = radius * cone.ratio().get();
+    if radius <= 0.0 || minor_radius <= 0.0 {
+        return None;
+    }
+    let pl = placement(e, origin, axis, ref_direction);
+    if cone.ratio().get() == 1.0 {
+        return Some(e.emit(
+            "CYLINDRICAL_SURFACE",
+            &format!("'',{pl},{}", e.real(radius)),
+        ));
+    }
+    let section = e.emit(
+        "ELLIPSE",
+        &format!("'',{pl},{},{}", e.real(radius), e.real(minor_radius)),
+    );
+    let extrusion = direction(e, axis.into());
+    let vector = e.emit("VECTOR", &format!("'',{extrusion},{}", e.real(1.0)));
+    Some(e.emit(
+        "SURFACE_OF_LINEAR_EXTRUSION",
+        &format!("'',{section},{vector}"),
+    ))
 }
 
 /// Emit an analytic or NURBS 3D curve carrier.

@@ -33,9 +33,17 @@ pub(crate) fn native_stream(id: &str) -> Option<&str> {
 pub(crate) fn same_native_occurrence(left: &str, right: &str) -> bool {
     const OCCURRENCE_SEGMENT: &str = "/occurrence-";
 
+    /// The segment holds no other `/`, so its matches are exactly the
+    /// separators it starts at.
+    fn segments(id: &str) -> impl Iterator<Item = usize> + '_ {
+        id.match_indices('/')
+            .map(|(at, _)| at)
+            .filter(|&at| id[at..].starts_with(OCCURRENCE_SEGMENT))
+    }
+
     fn occurrence(id: &str) -> Option<&str> {
         let mut occurrence_end = None;
-        for (at, _) in id.match_indices(OCCURRENCE_SEGMENT) {
+        for at in segments(id) {
             let digits_at = at + OCCURRENCE_SEGMENT.len();
             let end = id[digits_at..]
                 .find('/')
@@ -49,7 +57,7 @@ pub(crate) fn same_native_occurrence(left: &str, right: &str) -> bool {
 
     match (occurrence(left), occurrence(right)) {
         (Some(left), Some(right)) => left == right,
-        (None, None) => !left.contains(OCCURRENCE_SEGMENT) && !right.contains(OCCURRENCE_SEGMENT),
+        (None, None) => segments(left).next().is_none() && segments(right).next().is_none(),
         _ => false,
     }
 }
@@ -64,6 +72,10 @@ pub(crate) fn design_segment(id: &str) -> Option<&str> {
 
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
+
+/// The fixed key of the single design-intent failure record a contained
+/// decode carries.
+pub(crate) const DESIGN_INTENT_FAILURE_ID: &str = "f3d:design:intent-failure#0";
 
 /// The fixed identity of the retained source image record.
 pub(crate) fn file_source_image_id() -> cadmpeg_ir::ids::UnknownId {
@@ -1136,6 +1148,18 @@ mod tests {
         assert!(!same_native_occurrence(
             "f3d:xref/root/occurrence-invalid/design:record#1",
             "f3d:design:persistent-subentity-tag#1",
+        ));
+    }
+
+    #[test]
+    fn native_occurrence_scope_ends_at_the_last_numbered_segment() {
+        assert!(same_native_occurrence(
+            "f3d:xref/root/occurrence-1/xref/child/occurrence-/design:record#1",
+            "f3d:xref/root/occurrence-1/design:persistent-subentity-tag#1",
+        ));
+        assert!(!same_native_occurrence(
+            "f3d:xref/root/occurrence-1/xref/child/occurrence-2/design:record#1",
+            "f3d:xref/root/occurrence-1/design:persistent-subentity-tag#1",
         ));
     }
 

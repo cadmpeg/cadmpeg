@@ -828,7 +828,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             {
                 match &mut state {
                     Some(admitted) if is_local => admitted.accept(combined)?,
-                    _ => state = Some(AdmittedState::build(combined, format, unknowns)?),
+                    _ => state = Some(AdmittedState::build(combined, format, unknowns)),
                 }
             }
             Ok(accepted)
@@ -918,7 +918,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                         self.state.base.borrow(),
                         format,
                         &self.state.unknowns,
-                    )?);
+                    ));
                 }
             }
             if let Some(admitted) = &mut state {

@@ -83,11 +83,9 @@ mod tests {
         let index = ModelIndex::build(&ir);
         let identities = super::BorrowedIdentities::build(|add| {
             for id in index.identities(crate::index::StandardIndex) {
-                add(id, ())?;
+                add(id, ());
             }
-            Ok(())
-        })
-        .unwrap();
+        });
         check_typed_references(&ctx, &ir, &identities, &mut findings).unwrap();
         assert!(findings.iter().any(|finding| {
             finding.check == Check::ReferentialIntegrity

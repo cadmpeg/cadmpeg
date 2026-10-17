@@ -1769,6 +1769,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
 
 mod direct_circle_carrier;
 mod duplicate_link_arc;
+mod marker_circle_inputs;
 mod point_identity;
 mod point_projection;
 mod radial_geometry_tests;

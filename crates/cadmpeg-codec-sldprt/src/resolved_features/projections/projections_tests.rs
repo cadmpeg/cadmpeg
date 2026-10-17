@@ -4,7 +4,7 @@ use super::{
     full_round_fillet_selection_triple, project_compact_surface_selections,
     project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
     unique_cylindrical_face, unique_planar_face, unique_topological_cylindrical_face,
-    variable_fillet_radius_groups,
+    variable_fillet_radius_groups, VariableFilletObjects,
 };
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -426,7 +426,12 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "7".into(),
+                )
+                .unwrap()]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
     assert_eq!(
@@ -771,7 +776,12 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     assert!(matches!(
         group.center_faces(),
         FaceSelection::Generated { faces, .. }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "2".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "2".into(),
+                )
+                .unwrap()]
     ));
     assert!(matches!(
         group.side_one_faces(),
@@ -1138,7 +1148,12 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "7".into(),
+                )
+                .unwrap()]
                 && native == "sldprt:feature-input:surface-component-ids:7"
     ));
 
@@ -1454,8 +1469,10 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
 
     let groups = variable_fillet_radius_groups(
         "variable",
-        std::slice::from_ref(&history),
-        std::slice::from_ref(&lane),
+        &mut VariableFilletObjects::new(
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        ),
         &[&selection],
     )
     .expect("vertex join");
@@ -1643,8 +1660,12 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups = variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection])
-        .expect("legacy edge-control join");
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        &mut VariableFilletObjects::new(&[history], &[lane]),
+        &[&selection],
+    )
+    .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
         [super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
@@ -1713,8 +1734,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let groups = variable_fillet_radius_groups(
         "variable",
-        std::slice::from_ref(&history),
-        &[],
+        &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
         &[&selection],
     )
     .expect("endpoint-less two-control roster");
@@ -1732,7 +1752,12 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
-    assert!((variable_fillet_radius_groups("variable", &[history], &[], &[&collision])).is_none());
+    assert!(variable_fillet_radius_groups(
+        "variable",
+        &mut VariableFilletObjects::new(&[history], &[]),
+        &[&collision]
+    )
+    .is_none());
 }
 
 #[test]
@@ -1788,4 +1813,67 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
     assert!(full_round_fillet_selection_triple(&over_long).is_none());
 }
 
+#[test]
+fn resumed_reference_name_search_matches_the_linear_search() {
+    use super::{reference_name, ReferenceNames};
+    use std::collections::HashSet;
+
+    fn linear(
+        taken: &HashSet<(FeatureId, String)>,
+        owner: &FeatureId,
+        source_name: &str,
+        offset: u64,
+    ) -> String {
+        let mut candidate = reference_name(source_name, None, None);
+        if taken.contains(&(owner.clone(), candidate.clone())) {
+            candidate = reference_name(source_name, Some(offset), None);
+            let mut suffix = 0;
+            while taken.contains(&(owner.clone(), candidate.clone())) {
+                suffix += 1;
+                candidate = reference_name(source_name, Some(offset), Some(suffix));
+            }
+        }
+        candidate
+    }
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let owners = [
+        FeatureId::mint("synthetic:test:id#owner-a").unwrap(),
+        FeatureId::mint("synthetic:test:id#owner-b").unwrap(),
+    ];
+    let mut names = ReferenceNames::default();
+    let mut taken = HashSet::new();
+    let mut suffixed = 0;
+    for _ in 0..400 {
+        let owner = &owners[usize::from(next(2) == 1)];
+        let source_name = if next(2) == 0 { "D1" } else { "D2" };
+        let offset = 10 * (1 + next(2));
+        let name = if next(5) == 0 {
+            reference_name(
+                source_name,
+                Some(offset),
+                Some(1 + u32::try_from(next(6)).unwrap()),
+            )
+        } else {
+            let expected = linear(&taken, owner, source_name, offset);
+            assert_eq!(names.free(owner, source_name, offset).unwrap(), expected);
+            suffixed += usize::from(expected.matches(':').count() == 2);
+            if next(4) == 0 {
+                continue;
+            }
+            expected
+        };
+        names.insert(owner, name.clone());
+        taken.insert((owner.clone(), name));
+    }
+    assert!(suffixed > 0);
+}
+
 mod unresolved_fillet_groups;
+mod variable_fillet_objects;
