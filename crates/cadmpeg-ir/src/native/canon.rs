@@ -82,16 +82,8 @@ impl Members {
     /// arrived in another order.
     fn close(self, out: &mut Vec<u8>) {
         if !self.in_order {
-            let body_start = self.start + 1;
-            let body = out.split_off(body_start);
-            for (index, member) in self.entries.values().enumerate() {
-                if index > 0 {
-                    out.push(b',');
-                }
-                out.extend_from_slice(
-                    &body[member.text.start - body_start..member.text.end - body_start],
-                );
-            }
+            let body = self.start + 1..out.len();
+            reorder(out, body, self.entries.values().map(|member| &member.text));
         }
         out.push(b'}');
     }
@@ -115,25 +107,61 @@ impl Members {
         let id = serde_json::from_slice::<String>(&out[member.value..member.text.end])
             .map_err(|_| NativeConvertError::MissingId)?;
         let id = crate::ids::Identity::new(id)?;
-        let json = if id_first {
-            let mut json = out;
-            json.push(b'}');
-            json
-        } else {
-            let mut json = Vec::new();
-            json.push(b'{');
-            json.extend_from_slice(&out[member.text]);
-            for member in self.entries.values() {
-                json.push(b',');
-                json.extend_from_slice(&out[member.text.clone()]);
-            }
-            json.push(b'}');
-            json
-        };
+        let mut json = out;
+        if !id_first {
+            let body = self.start + 1..json.len();
+            let order = std::iter::once(&member.text)
+                .chain(self.entries.values().map(|member| &member.text));
+            reorder(&mut json, body, order);
+            json.drain(..self.start);
+        }
+        json.push(b'}');
         let json = String::from_utf8(json).map_err(|_| {
             NativeConvertError::ConversionMessage("canonical native text is not UTF-8".to_owned())
         })?;
         Ok((id, json.into_boxed_str()))
+    }
+}
+
+/// Rewrite the member texts in `body` of `out` in the sequence `order` names.
+///
+/// `order` names every member text in `body` once, and in `body` the texts
+/// follow each other with one comma between neighbours, so the rewritten body
+/// has the same length. The longest text moves within `out`; only the others
+/// are copied aside, so a large payload member is never held twice.
+fn reorder<'m>(
+    out: &mut [u8],
+    body: Range<usize>,
+    order: impl Iterator<Item = &'m Range<usize>> + Clone,
+) {
+    let Some((longest, longest_text)) =
+        order.clone().enumerate().max_by_key(|(_, text)| text.len())
+    else {
+        return;
+    };
+    let mut aside = Vec::with_capacity(body.len() - longest_text.len());
+    let mut target = body.start;
+    for (index, text) in order.clone().enumerate() {
+        if index != longest {
+            aside.extend_from_slice(&out[text.clone()]);
+        }
+        if index < longest {
+            target += text.len() + 1;
+        }
+    }
+    out.copy_within(longest_text.clone(), target);
+    let mut at = body.start;
+    let mut read = 0;
+    for (index, text) in order.enumerate() {
+        if index > 0 {
+            out[at] = b',';
+            at += 1;
+        }
+        if index != longest {
+            out[at..at + text.len()].copy_from_slice(&aside[read..read + text.len()]);
+            read += text.len();
+        }
+        at += text.len();
     }
 }
 
@@ -595,9 +623,44 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
         })
     }
 
+    /// The text goes straight into the output, so a long payload such as a
+    /// byte string's hexadecimal text is never held twice.
     fn collect_str<T: Display + ?Sized>(self, value: &T) -> Result<Written, Error> {
-        let text = collect_display_text(value)?;
-        self.scalar(text.as_str())
+        let start = self.out.len();
+        self.out.push(b'"');
+        let mut content = StringContent {
+            out: &mut *self.out,
+        };
+        if write!(content, "{value}").is_err() {
+            self.out.truncate(start);
+            return Err(ser::Error::custom("a formatting error occurred"));
+        }
+        self.out.push(b'"');
+        Ok(Written::Text)
+    }
+}
+
+/// Writes text as the content of a JSON string, escaped as `serde_json`
+/// escapes it.
+struct StringContent<'o> {
+    out: &'o mut Vec<u8>,
+}
+
+impl std::fmt::Write for StringContent<'_> {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        // `serde_json` escapes exactly the control characters, `"` and `\`.
+        if text
+            .bytes()
+            .all(|byte| byte >= 0x20 && byte != b'"' && byte != b'\\')
+        {
+            self.out.extend_from_slice(text.as_bytes());
+            return Ok(());
+        }
+        let start = self.out.len();
+        serde_json::to_writer(&mut *self.out, text).map_err(|_| std::fmt::Error)?;
+        self.out.pop();
+        self.out.remove(start);
+        Ok(())
     }
 }
 
