@@ -1879,4 +1879,44 @@ fn display_jt_lane_above_the_arithmetic_work_bound_reports_its_loss() {
     assert_eq!(bounded, 1);
 }
 
+#[test]
+fn element_coordinates_follow_only_the_first_header_of_each_element() {
+    let header = |id: &str, element: &str| super::DisplayJtVertexCoordinateArrayHeader {
+        id: id.into(),
+        element: element.into(),
+        unique_vertex_count: 0,
+        component_count: 3,
+        component_ranges: [super::QuantizedRange::ZERO; 3],
+        component_quantization_bits: [0; 3].into(),
+        compressed_components_byte_len: 0,
+        compressed_components_sha256: "00".repeat(32).try_into().unwrap(),
+        source_offset: 0,
+    };
+    let coordinates = |id: &str, header: &str| super::DisplayJtVertexCoordinates {
+        id: id.into(),
+        header: header.into(),
+        points_m: Vec::new(),
+        coordinate_hash: 0,
+        byte_len: 0,
+        source_offset: 0,
+    };
+    let headers = [
+        header("header#0", "element#0"),
+        header("header#1", "element#0"),
+        header("header#2", "element#1"),
+        header("header#3", "element#1"),
+    ];
+    let arrays = [
+        coordinates("coordinates#0", "header#1"),
+        coordinates("coordinates#1", "header#2"),
+        coordinates("coordinates#2", "header#2"),
+        coordinates("coordinates#3", "header#3"),
+    ];
+
+    let by_element = super::element_coordinates(&headers, &arrays);
+
+    assert_eq!(by_element.len(), 1);
+    assert_eq!(by_element["element#1"].id, "coordinates#1");
+}
+
 mod scene_admission;
