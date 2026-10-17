@@ -863,6 +863,11 @@ pub(crate) fn bind_feature_outputs(
     histories: &mut [AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let output_states = features
+        .iter()
+        .filter_map(|feature| feature_history_states(feature, scopes))
+        .map(|(state_id, _)| state_id)
+        .collect::<HashSet<_>>();
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
     for history in histories.iter_mut() {
         let mut by_node = HashMap::new();
@@ -875,9 +880,30 @@ pub(crate) fn bind_feature_outputs(
         let order = history
             .states_oldest_first()
             .unwrap_or_else(|| (0..history.states().len()).collect());
-        let mut body_closures: Option<(usize, Option<HistoricalBodyIncidence>)> = None;
-        for index in order {
-            let mut next_body_closures = None;
+        let mut walked_deletions: Option<(usize, Option<BTreeSet<i64>>)> = None;
+        for (position, &index) in order.iter().enumerate() {
+            let state = &history.states()[index];
+            let walked = walked_deletions.take();
+            let deleted_bodies = match state.next_ref.map(|node| by_node.get(&node)) {
+                Some(Some(&previous)) if output_states.contains(&state.state_id) => {
+                    match walked.filter(|(walked, _)| *walked == previous) {
+                        Some((_, bodies)) => bodies,
+                        None => state
+                            .transition
+                            .as_ref()
+                            .and_then(|transition| {
+                                bodies_touching(
+                                    history.topology(&history.states()[previous])?,
+                                    &[&changed_family_refs(&transition.topology, true)],
+                                )
+                            })
+                            .and_then(|touched| touched.into_iter().next()),
+                    }
+                }
+                _ => None,
+            };
+            history.advance_topology(index);
+            let mut next_deletions = None;
             let outputs = (|| {
                 let state = &history.states()[index];
                 let previous = match state.next_ref {
@@ -890,28 +916,37 @@ pub(crate) fn bind_feature_outputs(
                 {
                     return None;
                 }
-                next_body_closures =
-                    Some((index, historical_body_incidence(history.topology(state)?)));
-                let current = next_body_closures.as_ref()?.1.as_ref()?;
-                let previous = match previous {
-                    Some(index) => {
-                        let closures =
-                            match body_closures.take().filter(|(cached, _)| *cached == index) {
-                                Some((_, closures)) => closures,
-                                None => history
-                                    .topology(&history.states()[index])
-                                    .and_then(historical_body_incidence),
-                            };
-                        Some(closures?)
-                    }
-                    None => None,
+                let topology = history.topology(state)?;
+                if !output_states.contains(&state.state_id) {
+                    return None;
+                }
+                let successor_deleted = order
+                    .get(position + 1)
+                    .map(|&next| &history.states()[next])
+                    .filter(|next| {
+                        next.next_ref.and_then(|node| by_node.get(&node).copied()) == Some(index)
+                    })
+                    .and_then(|next| next.transition.as_ref())
+                    .map(|next| changed_family_refs(&next.topology, true))
+                    .unwrap_or_default();
+                let Some([mut affected, successor_bodies]) = bodies_touching(
+                    topology,
+                    &[
+                        &changed_family_refs(&transition.topology, false),
+                        &successor_deleted,
+                    ],
+                )
+                .and_then(|touched| <[_; 2]>::try_from(touched).ok()) else {
+                    next_deletions = Some((index, None));
+                    return None;
                 };
-                Some((
-                    state.state_id,
-                    affected_body_refs(transition, current, previous.as_ref()),
-                ))
+                next_deletions = Some((index, Some(successor_bodies)));
+                if previous.is_some() {
+                    affected.extend(deleted_bodies?);
+                }
+                Some((state.state_id, affected.into_iter().collect::<Vec<_>>()))
             })();
-            body_closures = next_body_closures;
+            walked_deletions = next_deletions;
             history.retain_topology(index);
             let Some((state_id, outputs)) = outputs else {
                 continue;
@@ -931,16 +966,7 @@ pub(crate) fn bind_feature_outputs(
         active.insert(slot, id);
     }
     for feature in features {
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|id| scopes.iter().find(|scope| scope.id == id))
-        else {
-            continue;
-        };
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id(), scope.previous_history_state_id())
-        else {
+        let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
             continue;
         };
         let Some(Some(outputs)) = state_outputs.get(&state_id) else {
@@ -974,6 +1000,21 @@ pub(crate) fn bind_feature_outputs(
         }
     }
     Ok(())
+}
+
+/// The history state a feature's scope produces and the state it follows.
+fn feature_history_states(
+    feature: &cadmpeg_ir::features::Feature,
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> Option<(i64, i64)> {
+    let scope = feature
+        .native_ref
+        .as_deref()
+        .and_then(|id| scopes.iter().find(|scope| scope.id == id))?;
+    Some((
+        scope.history_state_id()?,
+        scope.previous_history_state_id()?,
+    ))
 }
 
 fn bind_base_feature_output_selection(
@@ -2870,7 +2911,9 @@ fn bind_entity_selection_path(
 
 /// History access for a pass that visits states oldest first.
 pub(crate) enum BindingHistories<'a> {
-    /// Keep only the visited state materialized between visits.
+    /// Keep only the visited state materialized between visits, advancing the
+    /// previous visit's materialization to it. A visit reads the visited
+    /// state or newer ones.
     Release(&'a mut [AsmHistory]),
     /// Leave materializations in place for a caller that holds the histories
     /// shared.
@@ -2889,6 +2932,14 @@ impl BindingHistories<'_> {
         match self {
             Self::Release(histories) => BindingHistories::Release(histories),
             Self::Shared(histories) => BindingHistories::Shared(histories),
+        }
+    }
+
+    fn advance(&mut self, history_index: usize, state_index: usize) {
+        if let Self::Release(histories) = self {
+            if let Some(history) = histories.get_mut(history_index) {
+                history.advance_topology(state_index);
+            }
         }
     }
 
@@ -2928,6 +2979,7 @@ fn visit_state_groups_oldest_first<J>(
         {
             group.push(job);
         }
+        histories.advance(history_index, state_index);
         visit(histories.get(), history_index, state_index, group);
         histories.retain(history_index, state_index);
     }
@@ -5256,8 +5308,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 return;
             };
             let states = history_state_index(history);
-            let mut body_closures = HistoricalBodyClosureCache::default();
-            let mut complete_bodies = None;
+            let mut bound = Vec::new();
             for (position, state_index) in group {
                 let (Some(operand), Some(state)) = (
                     operands.get_mut(position),
@@ -5268,12 +5319,40 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 if face_changes_across_state_chain(state, previous.state_id, &states).is_none() {
                     continue;
                 }
-                bind_body_recipe_operand_preceding_bodies(
-                    operand,
-                    topology,
-                    source,
-                    &mut body_closures,
-                );
+                bind_body_recipe_operand_preceding_faces(operand, topology, source);
+                bound.push(position);
+            }
+            let face_slots = bound
+                .iter()
+                .filter_map(|&position| operands.get(position))
+                .flat_map(
+                    crate::records::topology::body_recipe::DesignBodyRecipeOperand::references,
+                )
+                .map(|reference| {
+                    reference
+                        .preceding_candidate_faces
+                        .iter()
+                        .filter_map(|face| stable_ref(face.as_str()))
+                        .collect::<BTreeSet<_>>()
+                })
+                .collect::<Vec<_>>();
+            let mut body_slots = if face_slots.is_empty() {
+                None
+            } else {
+                bodies_touching(topology, &face_slots.iter().collect::<Vec<_>>())
+            }
+            .map(Vec::into_iter);
+            let mut complete_bodies = None;
+            for position in bound {
+                let Some(operand) = operands.get_mut(position) else {
+                    continue;
+                };
+                for reference in operand.reference_bindings_mut() {
+                    if let Some(bodies) = body_slots.as_mut().and_then(Iterator::next) {
+                        *reference.preceding_body_slots = bodies.into_iter().collect();
+                    }
+                }
+                resolve_body_recipe_operand_preceding_body(operand);
                 let Some(body_slot) = operand.resolved_body_slot else {
                     continue;
                 };
@@ -5373,13 +5452,12 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
     Ok(())
 }
 
-/// Bind each reference's preceding faces and bodies in the previous-state
-/// topology, then the operand's unique face and body when they exist.
-fn bind_body_recipe_operand_preceding_bodies<'a>(
+/// Bind each reference's candidate faces present in the previous-state
+/// topology.
+fn bind_body_recipe_operand_preceding_faces(
     operand: &mut crate::records::topology::body_recipe::DesignBodyRecipeOperand,
-    topology: &'a AsmHistoricalTopology,
+    topology: &AsmHistoricalTopology,
     source: &str,
-    body_closures: &mut HistoricalBodyClosureCache<'a>,
 ) {
     for reference in operand.reference_bindings_mut() {
         *reference.preceding_candidate_faces = selection::faces_in_topology(
@@ -5389,19 +5467,14 @@ fn bind_body_recipe_operand_preceding_bodies<'a>(
                 .filter(|face| active_brep_face_matches_source(face, source)),
             topology,
         );
-        let mut face_slots = BTreeSet::new();
-        for face in reference
-            .preceding_candidate_faces
-            .iter()
-            .filter_map(|face| stable_ref(face.as_str()))
-        {
-            face_slots.insert(face);
-        }
-        let Some(body_slots) = body_closures.intersecting(topology, &face_slots) else {
-            continue;
-        };
-        *reference.preceding_body_slots = body_slots.into_iter().collect::<Vec<_>>();
     }
+}
+
+/// Resolve the operand's unique face and body from its references'
+/// preceding faces and bodies, when they exist.
+fn resolve_body_recipe_operand_preceding_body(
+    operand: &mut crate::records::topology::body_recipe::DesignBodyRecipeOperand,
+) {
     if let [reference] = operand.references().as_slice() {
         if let [face] = reference.preceding_candidate_faces.as_slice() {
             operand.resolved_face_slot = stable_ref(face.as_str());
@@ -7314,25 +7387,6 @@ pub(crate) fn same_axis_line(
     distance.is_finite() && distance <= EPS_HISTORY_SAME_AXIS_LINE_E8
 }
 
-fn affected_body_refs(
-    transition: &AsmHistoricalTransition,
-    current: &HistoricalBodyIncidence,
-    previous: Option<&HistoricalBodyIncidence>,
-) -> Vec<i64> {
-    let mut affected = BTreeSet::new();
-    current.insert_bodies_touching(
-        &changed_family_refs(&transition.topology, false),
-        &mut affected,
-    );
-    if let Some(previous) = previous {
-        previous.insert_bodies_touching(
-            &changed_family_refs(&transition.topology, true),
-            &mut affected,
-        );
-    }
-    affected.into_iter().collect()
-}
-
 fn changed_family_refs(delta: &AsmHistoricalTopologyDelta, deleted: bool) -> BTreeSet<i64> {
     let families = [
         &delta.bodies,
@@ -7362,177 +7416,199 @@ fn changed_family_refs(delta: &AsmHistoricalTopologyDelta, deleted: bool) -> BTr
     changed
 }
 
-/// The bodies whose topological closure contains each entity of one historical
-/// snapshot.
-#[derive(Default)]
-struct HistoricalBodyIncidence {
-    /// The first body whose closure reaches each entity.
-    first_body: HashMap<i64, i64>,
-    /// Later bodies, in closure order, for entities that several bodies reach.
-    later_bodies: HashMap<i64, Vec<i64>>,
-}
-
-impl HistoricalBodyIncidence {
-    /// Record that `body`'s closure reaches `entity`. One body's entities are
-    /// added before the next body's.
-    fn add(&mut self, body: i64, entity: i64) {
-        match self.first_body.entry(entity) {
-            std::collections::hash_map::Entry::Vacant(first) => {
-                first.insert(body);
-            }
-            std::collections::hash_map::Entry::Occupied(first) => {
-                if *first.get() != body {
-                    let later = self.later_bodies.entry(entity).or_default();
-                    if later.last() != Some(&body) {
-                        later.push(body);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Insert into `affected` every body whose closure contains one of
-    /// `entities`.
-    fn insert_bodies_touching(&self, entities: &BTreeSet<i64>, affected: &mut BTreeSet<i64>) {
-        for entity in entities {
-            if let Some(&body) = self.first_body.get(entity) {
-                affected.insert(body);
-                if let Some(later) = self.later_bodies.get(entity) {
-                    affected.extend(later.iter().copied());
-                }
-            }
-        }
-    }
-}
-
-/// Reuse body incidence for queries over immutable historical snapshots.
-#[derive(Default)]
-struct HistoricalBodyClosureCache<'a> {
-    entries: HashMap<*const AsmHistoricalTopology, Option<HistoricalBodyIncidence>>,
-    snapshots: std::marker::PhantomData<&'a AsmHistoricalTopology>,
-}
-
-impl<'a> HistoricalBodyClosureCache<'a> {
-    fn intersecting(
-        &mut self,
-        topology: &'a AsmHistoricalTopology,
-        changed: &BTreeSet<i64>,
-    ) -> Option<BTreeSet<i64>> {
-        let key = std::ptr::from_ref(topology);
-        self.entries
-            .entry(key)
-            .or_insert_with(|| historical_body_incidence(topology));
-        let incidence = self.entries.get(&key).and_then(Option::as_ref)?;
-        let mut affected = BTreeSet::new();
-        incidence.insert_bodies_touching(changed, &mut affected);
-        Some(affected)
-    }
-}
-
 #[cfg(test)]
 fn bodies_intersecting(
     topology: &AsmHistoricalTopology,
     changed: &BTreeSet<i64>,
 ) -> Option<BTreeSet<i64>> {
-    HistoricalBodyClosureCache::default().intersecting(topology, changed)
+    bodies_touching(topology, &[changed]).and_then(|touched| touched.into_iter().next())
 }
 
-fn historical_body_incidence(topology: &AsmHistoricalTopology) -> Option<HistoricalBodyIncidence> {
-    macro_rules! history_some {
-        ($value:expr) => {
-            match $value {
-                Some(value) => value,
-                None => return None,
-            }
-        };
-    }
-    // The relation, carrier, and per-shell indexes are scratch; only the
-    // body incidence is cached.
-    let body_regions = relation_map(&topology.body_regions);
-    let region_shells = relation_map(&topology.region_shells);
-    let shell_faces = relation_map(&topology.shell_faces);
-    let shell_wire_edges = relation_map(&topology.shell_wire_edges);
-    let shell_free_vertices = relation_map(&topology.shell_free_vertices);
-    let face_loops = relation_map(&topology.face_loops);
-    let loop_coedges = relation_map(&topology.loop_coedges);
-    let coedges = topology
-        .coedge_topology
+/// The bodies whose topological closure contains an entity of each query,
+/// from one walk of the closures.
+fn bodies_touching(
+    topology: &AsmHistoricalTopology,
+    queries: &[&BTreeSet<i64>],
+) -> Option<Vec<BTreeSet<i64>>> {
+    let mut queried = queries
         .iter()
-        .map(|coedge| (coedge.coedge, coedge))
-        .collect::<HashMap<_, _>>();
-    let edges = topology
-        .edge_vertices
-        .iter()
-        .map(|edge| (edge.edge, edge))
-        .collect::<HashMap<_, _>>();
-    let carrier = |items: &[AsmHistoricalCarrierBinding]| {
-        items
+        .enumerate()
+        .flat_map(|(query, entities)| entities.iter().map(move |&entity| (entity, query)))
+        .collect::<Vec<_>>();
+    queried.sort_unstable();
+    let mut touched = vec![BTreeSet::new(); queries.len()];
+    walk_body_closures(topology, |body, entity| {
+        let start = queried.partition_point(|&(queried, _)| queried < entity);
+        for &(_, query) in queried[start..]
             .iter()
-            .map(|binding| (binding.entity, binding.carrier))
-            .collect::<HashMap<_, _>>()
-    };
-    let optional_carrier = |items: &[AsmHistoricalOptionalCarrierBinding]| {
-        items
-            .iter()
-            .map(|binding| (binding.entity, binding.carrier))
-            .collect::<HashMap<_, _>>()
-    };
-    let face_surfaces = carrier(&topology.face_surfaces);
-    let edge_curves = optional_carrier(&topology.edge_curves);
-    let coedge_pcurves = optional_carrier(&topology.coedge_pcurves);
-    let vertex_points = carrier(&topology.vertex_points);
-    let mut incidence = HistoricalBodyIncidence::default();
-    for &body in &topology.bodies {
-        incidence.add(body, body);
-        for &region in *history_some!(body_regions.get(&body)) {
-            incidence.add(body, region);
-            for &shell in *history_some!(region_shells.get(&region)) {
-                incidence.add(body, shell);
-                let wire_edges = *history_some!(shell_wire_edges.get(&shell));
-                let free_vertices = *history_some!(shell_free_vertices.get(&shell));
-                let mut shell_edges = wire_edges.iter().copied().collect::<HashSet<_>>();
-                let mut shell_vertices = free_vertices.iter().copied().collect::<HashSet<_>>();
-                for &face in *history_some!(shell_faces.get(&shell)) {
-                    incidence.add(body, face);
-                    incidence.add(body, *history_some!(face_surfaces.get(&face)));
-                    for &loop_ in *history_some!(face_loops.get(&face)) {
-                        incidence.add(body, loop_);
-                        for &coedge in *history_some!(loop_coedges.get(&loop_)) {
-                            incidence.add(body, coedge);
-                            let coedge_topology = history_some!(coedges.get(&coedge));
+            .take_while(|&&(queried, _)| queried == entity)
+        {
+            touched[query].insert(body);
+        }
+    })?;
+    Some(touched)
+}
 
-                            shell_edges.insert(coedge_topology.edge);
-                            if let Some(pcurve) = coedge_pcurves.get(&coedge).copied().flatten() {
-                                incidence.add(body, pcurve);
+/// Visit every entity of each body's topological closure, one body after
+/// another. `None` when the closure reads a relation or carrier the topology
+/// lacks.
+fn walk_body_closures(
+    topology: &AsmHistoricalTopology,
+    mut reach: impl FnMut(i64, i64),
+) -> Option<()> {
+    let body_regions = KeyedRows::relations(&topology.body_regions);
+    let region_shells = KeyedRows::relations(&topology.region_shells);
+    let shell_faces = KeyedRows::relations(&topology.shell_faces);
+    let shell_wire_edges = KeyedRows::relations(&topology.shell_wire_edges);
+    let shell_free_vertices = KeyedRows::relations(&topology.shell_free_vertices);
+    let face_loops = KeyedRows::relations(&topology.face_loops);
+    let loop_coedges = KeyedRows::relations(&topology.loop_coedges);
+    let coedges = KeyedRows::new(&topology.coedge_topology, |coedge| coedge.coedge);
+    let edges = KeyedRows::new(&topology.edge_vertices, |edge| edge.edge);
+    let face_surfaces = KeyedRows::new(&topology.face_surfaces, |binding| binding.entity);
+    let edge_curves = KeyedRows::new(&topology.edge_curves, |binding| binding.entity);
+    let coedge_pcurves = KeyedRows::new(&topology.coedge_pcurves, |binding| binding.entity);
+    let vertex_points = KeyedRows::new(&topology.vertex_points, |binding| binding.entity);
+    let mut shell_edges = ShellRanks::new(&edges);
+    let mut shell_vertices = ShellRanks::new(&vertex_points);
+    for &body in &topology.bodies {
+        reach(body, body);
+        for &region in body_regions.members(body)? {
+            reach(body, region);
+            for &shell in region_shells.members(region)? {
+                reach(body, shell);
+                shell_edges.start_shell();
+                shell_vertices.start_shell();
+                for &edge in shell_wire_edges.members(shell)? {
+                    shell_edges.visit(edges.rank(edge)?);
+                }
+                for &vertex in shell_free_vertices.members(shell)? {
+                    shell_vertices.visit(vertex_points.rank(vertex)?);
+                }
+                for &face in shell_faces.members(shell)? {
+                    reach(body, face);
+                    reach(body, face_surfaces.get(face)?.carrier);
+                    for &loop_ in face_loops.members(face)? {
+                        reach(body, loop_);
+                        for &coedge in loop_coedges.members(loop_)? {
+                            reach(body, coedge);
+                            shell_edges.visit(edges.rank(coedges.get(coedge)?.edge)?);
+                            if let Some(pcurve) = coedge_pcurves
+                                .get(coedge)
+                                .and_then(|binding| binding.carrier)
+                            {
+                                reach(body, pcurve);
                             }
                         }
                     }
                 }
-                for edge in shell_edges {
-                    incidence.add(body, edge);
-                    let edge_topology = history_some!(edges.get(&edge));
-                    for vertex in [edge_topology.start_vertex, edge_topology.end_vertex] {
-                        shell_vertices.insert(vertex);
+                for &rank in &shell_edges.ranks {
+                    let edge = edges.at(rank);
+                    reach(body, edge.edge);
+                    for vertex in [edge.start_vertex, edge.end_vertex] {
+                        shell_vertices.visit(vertex_points.rank(vertex)?);
                     }
-                    if let Some(curve) = edge_curves.get(&edge).copied().flatten() {
-                        incidence.add(body, curve);
+                    if let Some(curve) = edge_curves
+                        .get(edge.edge)
+                        .and_then(|binding| binding.carrier)
+                    {
+                        reach(body, curve);
                     }
                 }
-                for vertex in shell_vertices {
-                    incidence.add(body, vertex);
-                    incidence.add(body, *history_some!(vertex_points.get(&vertex)));
+                for &rank in &shell_vertices.ranks {
+                    let point = vertex_points.at(rank);
+                    reach(body, point.entity);
+                    reach(body, point.carrier);
                 }
             }
         }
     }
-    Some(incidence)
+    Some(())
 }
 
-fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
-    items
-        .iter()
-        .map(|relation| (relation.owner_ref, relation.member_refs.as_slice()))
-        .collect::<HashMap<_, _>>()
+/// One topology family's rows found by key in logarithmic time. Among rows
+/// that share a key the last one wins.
+struct KeyedRows<'a, T> {
+    rows: &'a [T],
+    /// Row positions in key order, when the rows are not already in key order.
+    order: Option<Vec<usize>>,
+    key: fn(&T) -> i64,
+}
+
+impl<'a, T> KeyedRows<'a, T> {
+    fn new(rows: &'a [T], key: fn(&T) -> i64) -> Self {
+        let order = (!rows.is_sorted_by_key(key)).then(|| {
+            let mut order = (0..rows.len()).collect::<Vec<_>>();
+            order.sort_by_key(|&row| key(&rows[row]));
+            order
+        });
+        Self { rows, order, key }
+    }
+
+    fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// The row at `rank` in key order.
+    fn at(&self, rank: usize) -> &'a T {
+        &self.rows[self.order.as_ref().map_or(rank, |order| order[rank])]
+    }
+
+    /// The key-order rank of the row with `key`; distinct keys have distinct
+    /// ranks below `len`.
+    fn rank(&self, key: i64) -> Option<usize> {
+        let after = match &self.order {
+            Some(order) => order.partition_point(|&row| (self.key)(&self.rows[row]) <= key),
+            None => self.rows.partition_point(|row| (self.key)(row) <= key),
+        };
+        let rank = after.checked_sub(1)?;
+        ((self.key)(self.at(rank)) == key).then_some(rank)
+    }
+
+    fn get(&self, key: i64) -> Option<&'a T> {
+        self.rank(key).map(|rank| self.at(rank))
+    }
+}
+
+impl<'a> KeyedRows<'a, AsmHistoricalRelation> {
+    fn relations(rows: &'a [AsmHistoricalRelation]) -> Self {
+        Self::new(rows, |relation| relation.owner_ref)
+    }
+
+    fn members(&self, owner: i64) -> Option<&'a [i64]> {
+        self.get(owner)
+            .map(|relation| relation.member_refs.as_slice())
+    }
+}
+
+/// The distinct row ranks one shell reaches, in first-visit order.
+struct ShellRanks {
+    /// The shell visit that last reached each rank.
+    visits: Vec<usize>,
+    shell: usize,
+    ranks: Vec<usize>,
+}
+
+impl ShellRanks {
+    fn new<T>(rows: &KeyedRows<'_, T>) -> Self {
+        Self {
+            visits: vec![0; rows.len()],
+            shell: 0,
+            ranks: Vec::new(),
+        }
+    }
+
+    fn start_shell(&mut self) {
+        self.shell += 1;
+        self.ranks.clear();
+    }
+
+    fn visit(&mut self, rank: usize) {
+        if self.visits[rank] != self.shell {
+            self.visits[rank] = self.shell;
+            self.ranks.push(rank);
+        }
+    }
 }
 
 fn historical_topology(
