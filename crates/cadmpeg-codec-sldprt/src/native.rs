@@ -1067,7 +1067,6 @@ impl SldprtNative {
             .feature_input_lanes
             .iter()
             .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane))
-            .cloned()
             .collect::<Vec<_>>();
         crate::resolved_features::classes::bind_history_classes(
             &mut expected_histories,

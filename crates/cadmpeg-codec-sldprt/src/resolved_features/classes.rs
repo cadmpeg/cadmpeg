@@ -6,6 +6,7 @@ use super::scalars::FeatureObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
 use cadmpeg_core::decode::u64_from_index;
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 use crate::records::ObjectId;
@@ -41,10 +42,12 @@ fn idless_legacy_startup_shape(records: &[crate::records::Feature]) -> bool {
 }
 
 /// Bind Keywords history records to their serialized feature-input object classes.
-pub(crate) fn bind_history_classes(
+pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
     histories: &mut [crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    lanes: &[L],
 ) {
+    let lanes = lanes.iter().map(Borrow::borrow).collect::<Vec<_>>();
+    let lanes = lanes.as_slice();
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -400,7 +403,7 @@ pub(crate) fn bind_history_classes(
 
 fn legacy_repeated_hole_wizard_classes(
     histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    lanes: &[&FeatureInputLane],
 ) -> HashMap<String, String> {
     let mut by_name = HashMap::<&str, Option<&crate::records::Feature>>::new();
     let mut hole_shapes = HashSet::<&str>::new();
@@ -989,7 +992,7 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        let bindings = legacy_repeated_hole_wizard_classes(&[history], &[lane]);
+        let bindings = legacy_repeated_hole_wizard_classes(&[history], &[&lane]);
         assert_eq!(
             bindings.get("feature-10").map(String::as_str),
             Some("moHoleWzd_c")
@@ -1173,9 +1176,12 @@ mod idless_history_binding_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
+        let mut borrowed = histories.clone();
 
-        bind_history_classes(&mut histories, &[lane]);
+        bind_history_classes(&mut histories, std::slice::from_ref(&lane));
+        bind_history_classes(&mut borrowed, &[&lane]);
 
+        assert_eq!(borrowed, histories);
         assert_eq!(
             histories[0]
                 .features
