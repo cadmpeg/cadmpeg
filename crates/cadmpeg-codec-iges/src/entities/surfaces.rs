@@ -892,6 +892,21 @@ fn ruled_surface_carrier(
     ))
 }
 
+/// The ruled carrier, the text of the geometry loss when the rails state
+/// none, or the decode resource refusal that stopped the projection.
+fn ruled_carrier_or_loss(
+    carrier: Result<Option<NurbsSurface>, CodecError>,
+) -> Result<Result<NurbsSurface, String>, CodecError> {
+    Ok(match carrier {
+        Ok(Some(surface)) => Ok(surface),
+        Ok(None) => Err("ruled rails do not have a finite exact NURBS carrier".to_owned()),
+        Err(error) => Err(format!(
+            "ruled rails state no NURBS carrier: {}",
+            super::non_resource_error(error)?
+        )),
+    })
+}
+
 type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal>>);
 
 /// The span lanes of a ruled carrier, or `None` when the rails state none.
@@ -1324,7 +1339,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1338,7 +1353,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "plane coefficients are not numeric"),
+                format_args!("plane coefficients are not numeric"),
             );
             continue;
         };
@@ -1346,7 +1361,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "plane coefficients are not finite"),
+                format_args!("plane coefficients are not finite"),
             );
             continue;
         };
@@ -1356,7 +1371,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "plane boundary pointer is not an integer"),
+                format_args!("plane boundary pointer is not an integer"),
             );
             continue;
         };
@@ -1365,7 +1380,7 @@ pub(super) fn project(
             .filter(|sequence| sequence % 2 == 1)
             .filter(|sequence| entries.contains_key(sequence));
         if (entry.form == 0 && boundary != 0) || (entry.form != 0 && boundary_sequence.is_none()) {
-            super::push_geometry_loss(&mut losses, entry, format_args!("{}", "plane form and boundary pointer are inconsistent or the boundary target is missing"));
+            super::push_geometry_loss(&mut losses, entry, format_args!("plane form and boundary pointer are inconsistent or the boundary target is missing"));
             continue;
         }
         let local_normal = Vector3::new(a, b, c);
@@ -1374,7 +1389,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "plane normal is degenerate"),
+                format_args!("plane normal is degenerate"),
             );
             continue;
         }
@@ -1382,7 +1397,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "plane normal cannot be normalized"),
+                format_args!("plane normal cannot be normalized"),
             );
             continue;
         };
@@ -1416,7 +1431,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "plane placement collapses its u direction"),
+                format_args!("plane placement collapses its u direction"),
             );
             continue;
         };
@@ -1427,7 +1442,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "plane placement collapses its v direction"),
+                format_args!("plane placement collapses its v direction"),
             );
             continue;
         };
@@ -1437,7 +1452,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "plane placement collapses its normal"),
+                format_args!("plane placement collapses its normal"),
             );
             continue;
         };
@@ -1471,7 +1486,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1482,7 +1497,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "first rail pointer is invalid"),
+                format_args!("first rail pointer is invalid"),
             );
             continue;
         };
@@ -1493,7 +1508,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "second rail pointer is invalid"),
+                format_args!("second rail pointer is invalid"),
             );
             continue;
         };
@@ -1512,10 +1527,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "placed ruled surfaces require transformed child-carrier projection"
-                ),
+                format_args!("placed ruled surfaces require transformed child-carrier projection"),
             );
             continue;
         }
@@ -1567,10 +1579,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "rail curves do not have bounded polynomial or NURBS carriers"
-                ),
+                format_args!("rail curves do not have bounded polynomial or NURBS carriers"),
             );
             continue;
         };
@@ -1588,7 +1597,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "equal-arc-length ruled projection has no exact normalized arc-length carrier"
                 ),
             );
@@ -1609,27 +1617,15 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     IgesLossCode::NurbsTransformNonFinite,
-                    format_args!("{}", "IGES reversed second rail knots are non-finite"),
+                    format_args!("IGES reversed second rail knots are non-finite"),
                 );
                 continue;
             }
         }
-        let surface = match ruled_surface_carrier(&first, &second, ctx) {
-            Ok(Some(surface)) => surface,
-            Ok(None) => {
-                super::push_geometry_loss(
-                    &mut losses,
-                    entry,
-                    format_args!("{}", "ruled rails do not have a finite exact NURBS carrier"),
-                );
-                continue;
-            }
-            Err(error) => {
-                super::push_geometry_loss(
-                    &mut losses,
-                    entry,
-                    format_args!("ruled rails state no NURBS carrier: {error}"),
-                );
+        let surface = match ruled_carrier_or_loss(ruled_surface_carrier(&first, &second, ctx))? {
+            Ok(surface) => surface,
+            Err(message) => {
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
@@ -1694,7 +1690,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1705,7 +1701,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "directrix pointer is invalid"),
+                format_args!("directrix pointer is invalid"),
             );
             continue;
         };
@@ -1713,7 +1709,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "directrix entity is missing"),
+                format_args!("directrix entity is missing"),
             );
             continue;
         };
@@ -1725,10 +1721,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "directrix entity is outside the effective specification family"
-                ),
+                format_args!("directrix entity is outside the effective specification family"),
             );
             continue;
         }
@@ -1737,7 +1730,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "generatrix endpoint is not numeric"),
+                format_args!("generatrix endpoint is not numeric"),
             );
             continue;
         };
@@ -1761,7 +1754,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "directrix model-space carrier pointer is invalid"),
+                format_args!("directrix model-space carrier pointer is invalid"),
             );
             continue;
         };
@@ -1790,7 +1783,6 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     format_args!(
-                        "{}",
                         "directrix has no bounded polynomial, NURBS, or exact evaluable carrier"
                     ),
                 );
@@ -1807,7 +1799,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "directrix start cannot be evaluated"),
+                    format_args!("directrix start cannot be evaluated"),
                 );
                 continue;
             };
@@ -1815,7 +1807,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "placement produces a non-finite point"),
+                    format_args!("placement produces a non-finite point"),
                 );
                 continue;
             };
@@ -1825,7 +1817,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "placement produces a non-finite point"),
+                    format_args!("placement produces a non-finite point"),
                 );
                 continue;
             };
@@ -1838,7 +1830,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "tabulated direction is zero or non-finite"),
+                    format_args!("tabulated direction is zero or non-finite"),
                 );
                 continue;
             };
@@ -1940,7 +1932,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         IgesLossCode::NurbsTransformNonFinite,
-                        format_args!("{}", "IGES placement produces non-finite directrix poles"),
+                        format_args!("IGES placement produces non-finite directrix poles"),
                     );
                     continue;
                 }
@@ -1957,7 +1949,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "directrix start cannot be evaluated"),
+                format_args!("directrix start cannot be evaluated"),
             );
             continue;
         };
@@ -1966,7 +1958,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite point"),
+                format_args!("placement produces a non-finite point"),
             );
             continue;
         };
@@ -1979,7 +1971,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "tabulated direction is zero or non-finite"),
+                format_args!("tabulated direction is zero or non-finite"),
             );
             continue;
         };
@@ -1988,7 +1980,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "directrix pole count exceeds u32"),
+                format_args!("directrix pole count exceeds u32"),
             );
             continue;
         };
@@ -2139,7 +2131,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2150,7 +2142,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "revolution axis pointer is invalid"),
+                format_args!("revolution axis pointer is invalid"),
             );
             continue;
         };
@@ -2161,7 +2153,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "revolution generatrix pointer is invalid"),
+                format_args!("revolution generatrix pointer is invalid"),
             );
             continue;
         };
@@ -2169,7 +2161,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "revolution angles are not numeric"),
+                format_args!("revolution angles are not numeric"),
             );
             continue;
         };
@@ -2181,7 +2173,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "revolution angular interval is not in (0, 2*pi]"),
+                format_args!("revolution angular interval is not in (0, 2*pi]"),
             );
             continue;
         };
@@ -2206,7 +2198,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "revolution axis carrier is missing"),
+                format_args!("revolution axis carrier is missing"),
             );
             continue;
         };
@@ -2214,7 +2206,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "revolution axis is not a Line Entity carrier"),
+                format_args!("revolution axis is not a Line Entity carrier"),
             );
             continue;
         };
@@ -2225,7 +2217,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "revolution model-space carrier pointer is invalid"),
+                format_args!("revolution model-space carrier pointer is invalid"),
             );
             continue;
         };
@@ -2254,7 +2246,6 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     format_args!(
-                        "{}",
                         "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier"
                     ),
                 );
@@ -2273,7 +2264,6 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         format_args!(
-                            "{}",
                             "placement cannot preserve the exact revolution parameterization"
                         ),
                     );
@@ -2314,7 +2304,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!("{}", "placement collapses the revolution axis"),
+                        format_args!("placement collapses the revolution axis"),
                     );
                     continue;
                 };
@@ -2389,7 +2379,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "generatrix pole count exceeds u32"),
+                format_args!("generatrix pole count exceeds u32"),
             );
             continue;
         };
@@ -2397,7 +2387,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "angular pole count exceeds u32"),
+                format_args!("angular pole count exceeds u32"),
             );
             continue;
         };
@@ -2498,7 +2488,7 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     IgesLossCode::NurbsTransformNonFinite,
-                    format_args!("{}", "IGES placement produces non-finite generatrix poles"),
+                    format_args!("IGES placement produces non-finite generatrix poles"),
                 );
                 continue;
             };
@@ -2528,7 +2518,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "placement collapses the revolution axis"),
+                    format_args!("placement collapses the revolution axis"),
                 );
                 continue;
             };
@@ -2584,7 +2574,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2594,7 +2584,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface upper indices K1 or K2 are invalid"),
+                format_args!("surface upper indices K1 or K2 are invalid"),
             );
             continue;
         };
@@ -2602,7 +2592,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface upper indices K1 or K2 are invalid"),
+                format_args!("surface upper indices K1 or K2 are invalid"),
             );
             continue;
         };
@@ -2612,7 +2602,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface degrees M1 or M2 are invalid"),
+                format_args!("surface degrees M1 or M2 are invalid"),
             );
             continue;
         };
@@ -2622,10 +2612,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "surface pole counts are smaller than their degrees plus one"
-                ),
+                format_args!("surface pole counts are smaller than their degrees plus one"),
             );
             continue;
         }
@@ -2635,14 +2622,14 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
-                format_args!("{}", "one or more surface flags are not 0 or 1"),
+                format_args!("one or more surface flags are not 0 or 1"),
             );
         }
         let (Some(u_count), Some(v_count)) = (k1.checked_add(1), k2.checked_add(1)) else {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface pole count overflows"),
+                format_args!("surface pole count overflows"),
             );
             continue;
         };
@@ -2650,7 +2637,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface pole dimensions exceed u32"),
+                format_args!("surface pole dimensions exceed u32"),
             );
             continue;
         };
@@ -2658,7 +2645,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface pole grid size overflows"),
+                format_args!("surface pole grid size overflows"),
             );
             continue;
         };
@@ -2674,38 +2661,26 @@ pub(super) fn project(
             .checked_add(u_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("{}", "u-knot count overflows"),
-            );
+            super::push_geometry_loss(&mut losses, entry, format_args!("u-knot count overflows"));
             continue;
         };
         let Some(v_knot_count) = v_count
             .checked_add(v_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("{}", "v-knot count overflows"),
-            );
+            super::push_geometry_loss(&mut losses, entry, format_args!("v-knot count overflows"));
             continue;
         };
         let u_knot_start = 10_usize;
         let Some(v_knot_start) = u_knot_start.checked_add(u_knot_count) else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("{}", "v-knot offset overflows"),
-            );
+            super::push_geometry_loss(&mut losses, entry, format_args!("v-knot offset overflows"));
             continue;
         };
         let Some(weight_start) = v_knot_start.checked_add(v_knot_count) else {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface weight offset overflows"),
+                format_args!("surface weight offset overflows"),
             );
             continue;
         };
@@ -2713,7 +2688,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface pole offset overflows"),
+                format_args!("surface pole offset overflows"),
             );
             continue;
         };
@@ -2721,7 +2696,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface pole value count overflows"),
+                format_args!("surface pole value count overflows"),
             );
             continue;
         };
@@ -2729,7 +2704,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface parameter-range offset overflows"),
+                format_args!("surface parameter-range offset overflows"),
             );
             continue;
         };
@@ -2743,7 +2718,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "u-knot vector is truncated or non-finite"),
+                format_args!("u-knot vector is truncated or non-finite"),
             );
             continue;
         };
@@ -2751,7 +2726,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "v-knot vector is truncated or non-finite"),
+                format_args!("v-knot vector is truncated or non-finite"),
             );
             continue;
         };
@@ -2765,7 +2740,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface knot vector is decreasing"),
+                format_args!("surface knot vector is decreasing"),
             );
             continue;
         };
@@ -2773,7 +2748,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface weight vector is truncated or non-finite"),
+                format_args!("surface weight vector is truncated or non-finite"),
             );
             continue;
         };
@@ -2785,7 +2760,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface weights are not strictly positive"),
+                format_args!("surface weights are not strictly positive"),
             );
             continue;
         };
@@ -2813,7 +2788,7 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
-                format_args!("{}", "polynomial surface has unequal weights"),
+                format_args!("polynomial surface has unequal weights"),
             );
         }
         if !declared_polynomial && equal_weights {
@@ -2821,10 +2796,7 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
-                format_args!(
-                    "{}",
-                    "rational surface has equal weights but PROP3 declares rational"
-                ),
+                format_args!("rational surface has equal weights but PROP3 declares rational"),
             );
         }
         let polynomial = native_weights.first().is_some_and(|first| {
@@ -2836,7 +2808,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface poles are truncated or non-finite"),
+                format_args!("surface poles are truncated or non-finite"),
             );
             continue;
         };
@@ -2844,7 +2816,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "surface parameter ranges are missing"),
+                format_args!("surface parameter ranges are missing"),
             );
             continue;
         };
@@ -2876,10 +2848,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "u parameter range is empty or lies outside its knot domain"
-                ),
+                format_args!("u parameter range is empty or lies outside its knot domain"),
             );
             continue;
         };
@@ -2887,10 +2856,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "v parameter range is empty or lies outside its knot domain"
-                ),
+                format_args!("v parameter range is empty or lies outside its knot domain"),
             );
             continue;
         };
@@ -3049,7 +3015,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3058,7 +3024,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "offset indicator is not numeric"),
+                format_args!("offset indicator is not numeric"),
             );
             continue;
         };
@@ -3068,7 +3034,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "offset indicator is not a unit vector"),
+                format_args!("offset indicator is not a unit vector"),
             );
             continue;
         };
@@ -3079,7 +3045,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "offset distance is zero or non-finite"),
+                format_args!("offset distance is zero or non-finite"),
             );
             continue;
         };
@@ -3090,7 +3056,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "offset support pointer is invalid"),
+                format_args!("offset support pointer is invalid"),
             );
             continue;
         };
@@ -3098,10 +3064,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "placed offset surfaces require transformed support projection"
-                ),
+                format_args!("placed offset surfaces require transformed support projection"),
             );
             continue;
         }
@@ -3115,7 +3078,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "offset support surface is missing"),
+                format_args!("offset support surface is missing"),
             );
             continue;
         };
@@ -3125,7 +3088,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "support normal cannot be evaluated at the offset-indicator parameters"
                 ),
             );
@@ -3136,7 +3098,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "offset indicator is not the support normal at the designated parameters"
                 ),
             );
@@ -3147,7 +3108,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "support surface has no exact analytic offset carrier"),
+                format_args!("support surface has no exact analytic offset carrier"),
             );
             continue;
         };
@@ -3177,7 +3138,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "offset collapses or reverses the analytic carrier"),
+                format_args!("offset collapses or reverses the analytic carrier"),
             );
             continue;
         }

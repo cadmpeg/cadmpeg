@@ -3050,7 +3050,7 @@ mod curve_expression_projection_tests {
                 }],
                 offset: 8,
                 for_offset: 9,
-                work_cap: None,
+                work_caps: std::collections::BTreeSet::new(),
             }],
             unresolved_solve_control: false,
             prohibited_constructs: vec!["bad".into()],

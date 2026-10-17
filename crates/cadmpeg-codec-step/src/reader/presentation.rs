@@ -2,7 +2,7 @@
 //! STEP presentation style and topology color decoding.
 
 use crate::ids::{key_word, kind};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use super::reference::references;
 use super::{named_parameter, RecordExt, ValueExt};
@@ -243,7 +243,7 @@ pub(super) fn decode(
     }
     styles.sort_by_key(|(_, left)| *left);
     let mut scalar_color_candidates =
-        HashMap::<AppearanceTarget, NonemptyGroup<(u64, Color)>>::new();
+        BTreeMap::<AppearanceTarget, NonemptyGroup<(u64, Color)>>::new();
     let mut style_domains = BTreeMap::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
@@ -924,7 +924,7 @@ struct PresentationIndices<'a> {
 }
 
 fn push_scalar_candidate(
-    candidates: &mut HashMap<AppearanceTarget, NonemptyGroup<(u64, Color)>>,
+    candidates: &mut BTreeMap<AppearanceTarget, NonemptyGroup<(u64, Color)>>,
     target: &AppearanceTarget,
     style_id: u64,
     color: Color,

@@ -1441,11 +1441,9 @@ fn branching_instance_member_limit_retains_the_wide_reference() {
             "{:?}",
             result.ir().model.points
         );
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("instance member budget exceeded")));
+        assert!(result.report().losses.iter().any(|loss| loss
+            .message
+            .contains("instance member budget exceeded (MAX_INSTANCE_MEMBERS)")));
     });
 }
 
@@ -1682,11 +1680,9 @@ fn instance_reference_limit_retains_the_reference() {
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
         assert!(result.ir().model.bodies.is_empty());
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("instance reference budget exceeded")));
+        assert!(result.report().losses.iter().any(|loss| loss
+            .message
+            .contains("instance reference budget exceeded (MAX_INSTANCE_REFERENCES)")));
     });
 }
 

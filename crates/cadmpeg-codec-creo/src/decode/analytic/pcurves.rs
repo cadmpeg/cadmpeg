@@ -86,13 +86,7 @@ impl<'a> ModelSurfaceIndex<'a> {
         for surface in surfaces {
             let id = surface.id.as_str();
             for (namespace, prefix) in MODEL_SURFACE_PREFIXES.into_iter().enumerate() {
-                let Some(face_id) = id
-                    .strip_prefix(prefix)
-                    .and_then(|suffix| suffix.parse::<u32>().ok())
-                    .filter(|face_id| {
-                        crate::identity::matches_numbered_identity(id, prefix, *face_id)
-                    })
-                else {
+                let Some(face_id) = crate::identity::numbered_identity(id, prefix) else {
                     continue;
                 };
                 match indexed.entry((face_id, namespace)) {
@@ -114,6 +108,34 @@ impl<'a> ModelSurfaceIndex<'a> {
             .find_map(|namespace| self.surfaces.get(&(face_id, namespace)))
             .copied()
             .flatten()
+    }
+
+    /// Return the surfaces whose canonical identity is `prefix` followed by
+    /// `face_id`, or `None` when no surface carries it.
+    pub(in crate::decode) fn named(&self, prefix: &str, face_id: u32) -> Option<NamedSurfaces<'a>> {
+        let namespace = MODEL_SURFACE_PREFIXES
+            .iter()
+            .position(|candidate| *candidate == prefix)?;
+        Some(match self.surfaces.get(&(face_id, namespace))? {
+            Some(surface) => NamedSurfaces::Unique(surface),
+            None => NamedSurfaces::Duplicate,
+        })
+    }
+}
+
+/// The model surfaces that carry one canonical identity.
+#[derive(Debug, Clone, Copy)]
+pub(in crate::decode) enum NamedSurfaces<'a> {
+    Unique(&'a Surface),
+    Duplicate,
+}
+
+impl<'a> NamedSurfaces<'a> {
+    pub(in crate::decode) fn unique(self) -> Option<&'a Surface> {
+        match self {
+            Self::Unique(surface) => Some(surface),
+            Self::Duplicate => None,
+        }
     }
 }
 

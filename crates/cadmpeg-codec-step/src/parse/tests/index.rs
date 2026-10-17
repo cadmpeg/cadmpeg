@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{AnchorResolver, BTreeMap, Value};
+use super::super::{AnchorResolver, BTreeMap, Value, EXPANDED_PAYLOAD_BASE};
 
 #[test]
 fn entity_index_is_not_part_of_exchange_equality() {
@@ -87,7 +87,7 @@ fn entity_union_queries_remain_ordered_across_repeated_queries() {
 fn anchor_node_limit_counts_only_resource_expansion() {
     crate::test_support::with_service_context(b"", |_, ctx| {
         let anchors = BTreeMap::new();
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 0;
 
         let ordinary = Value::List((0..1024).map(Value::Integer).collect());
@@ -106,7 +106,7 @@ fn anchor_node_limit_bounds_resource_expansion() {
             "a".to_string(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors, ctx);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
         resolver.remaining_nodes = 2;
 
         assert!(resolver

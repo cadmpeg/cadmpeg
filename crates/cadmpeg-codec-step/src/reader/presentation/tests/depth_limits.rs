@@ -136,7 +136,7 @@ fn presentation_invisible_body_walk_refuses_depth_limit() {
 
 #[test]
 fn scalar_color_singletons_keep_one_color_per_target() {
-    let mut candidates = std::collections::HashMap::new();
+    let mut candidates = std::collections::BTreeMap::new();
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
     for id in 0..1000 {
         let body = cadmpeg_ir::ids::BodyId::mint(format!("step:model:body#{id}")).expect("body ID");

@@ -132,8 +132,8 @@ pub(crate) struct CurveExpressionSolveBlock {
     pub(crate) offset: usize,
     /// Byte offset of the terminating `FOR` line.
     pub(crate) for_offset: usize,
-    /// Local work cap that left this block unsolved, when one applied.
-    pub(crate) work_cap: Option<&'static str>,
+    /// Local work caps that fired while the block stayed unsolved.
+    pub(crate) work_caps: BTreeSet<&'static str>,
 }
 
 /// One declared solve unknown and its optional solution.
@@ -1149,7 +1149,7 @@ fn synchronize_solve_blocks(
     blocks: &mut [CurveExpressionSolveBlock],
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
-    work_caps: &BTreeMap<usize, &'static str>,
+    work_caps: &BTreeMap<usize, BTreeSet<&'static str>>,
 ) {
     for block in blocks {
         for assignment in &mut block.assignments {
@@ -1167,7 +1167,7 @@ fn synchronize_solve_blocks(
                 .and_then(|values| values.get(index))
                 .map(copy_expression_value);
         }
-        block.work_cap = work_caps.get(&block.offset).copied();
+        block.work_caps = work_caps.get(&block.offset).cloned().unwrap_or_default();
     }
 }
 
@@ -1480,7 +1480,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                     unknowns,
                     offset: block.offset,
                     for_offset: line.offset,
-                    work_cap: None,
+                    work_caps: BTreeSet::new(),
                 });
             } else {
                 program.unresolved_control = true;
@@ -1899,7 +1899,7 @@ fn branch_activation(
 struct CurveExpressionEvaluation {
     assignments: Vec<CurveExpressionAssignment>,
     solve_solutions: BTreeMap<usize, Vec<CurveExpressionValue>>,
-    solve_work_caps: BTreeMap<usize, &'static str>,
+    solve_work_caps: BTreeMap<usize, BTreeSet<&'static str>>,
     text_work_caps: BTreeMap<&'static str, usize>,
 }
 
@@ -2033,7 +2033,7 @@ fn evaluate_expression_program_details(
             .iter()
             .find(|block| block.for_offset == line.offset)
         {
-            let mut block_work_cap = None;
+            let mut block_work_caps = BTreeSet::new();
             let affine_solution = match solve_block_dimensions.get(&block.offset) {
                 Some(dimensions) => match infer_solve_variable_dimensions(
                     ctx,
@@ -2041,7 +2041,7 @@ fn evaluate_expression_program_details(
                     &values,
                     dimensions,
                     context,
-                    &mut block_work_cap,
+                    &mut block_work_caps,
                 )? {
                     Some(dimensions) => {
                         solve_affine_expression_block(ctx, block, &values, &dimensions, context)?
@@ -2063,13 +2063,13 @@ fn evaluate_expression_program_details(
                         dimensions,
                         initial_values,
                         context,
-                        &mut block_work_cap,
+                        &mut block_work_caps,
                     )?,
                     _ => None,
                 },
             };
-            if let Some(bound) = block_work_cap {
-                solve_work_caps.insert(block.offset, bound);
+            if solution.is_none() && !block_work_caps.is_empty() {
+                solve_work_caps.insert(block.offset, block_work_caps);
             }
             if let Some(solution) = solution {
                 for (variable, value) in block
@@ -5697,7 +5697,7 @@ fn infer_solve_variable_dimensions(
     values: &BTreeMap<String, CurveExpressionValue>,
     known_dimensions: &[Option<RelationDimension>],
     context: RelationEvaluationContext<'_>,
-    work_cap: &mut Option<&'static str>,
+    work_caps: &mut BTreeSet<&'static str>,
 ) -> Result<Option<Vec<RelationDimension>>, cadmpeg_core::CodecError> {
     if known_dimensions.len() != block.unknowns.len() {
         return Ok(None);
@@ -5749,7 +5749,7 @@ fn infer_solve_variable_dimensions(
         )?
         else {
             if text_capped {
-                *work_cap = Some("MAX_RELATION_EXPRESSION_TEXT_BYTES");
+                work_caps.insert("MAX_RELATION_EXPRESSION_TEXT_BYTES");
             }
             return Ok(None);
         };
@@ -5762,7 +5762,7 @@ fn infer_solve_variable_dimensions(
         )?
         else {
             if text_capped {
-                *work_cap = Some("MAX_RELATION_EXPRESSION_TEXT_BYTES");
+                work_caps.insert("MAX_RELATION_EXPRESSION_TEXT_BYTES");
             }
             return Ok(None);
         };
@@ -6057,13 +6057,13 @@ fn solve_nonlinear_expression_block(
     known_dimensions: &[Option<RelationDimension>],
     initial_values: &[Option<CurveExpressionValue>],
     context: RelationEvaluationContext<'_>,
-    work_cap: &mut Option<&'static str>,
+    work_caps: &mut BTreeSet<&'static str>,
 ) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
     if !nonlinear_equations_are_smooth(block) {
         return Ok(None);
     }
     let Some(variable_dimensions) =
-        infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context, work_cap)?
+        infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context, work_caps)?
     else {
         return Ok(None);
     };
@@ -6072,7 +6072,7 @@ fn solve_nonlinear_expression_block(
         return Ok(None);
     }
     if variable_count > MAX_NONLINEAR_SOLVE_VARIABLES {
-        *work_cap = Some("MAX_NONLINEAR_SOLVE_VARIABLES");
+        work_caps.insert("MAX_NONLINEAR_SOLVE_VARIABLES");
         return Ok(None);
     }
     let Some(seeds) = nonlinear_initial_guesses(ctx, initial_values, &variable_dimensions)? else {
@@ -6089,7 +6089,7 @@ fn solve_nonlinear_expression_block(
         &variable_dimensions,
         &initial_seed,
         context,
-        work_cap,
+        work_caps,
     )?
     else {
         return Ok(None);
@@ -6102,7 +6102,7 @@ fn solve_nonlinear_expression_block(
             &variable_dimensions,
             &seed,
             context,
-            work_cap,
+            work_caps,
         )?
         else {
             continue;
@@ -6236,7 +6236,7 @@ fn refine_nonlinear_solution(
     variable_dimensions: &[RelationDimension],
     seed: &[f64],
     context: RelationEvaluationContext<'_>,
-    work_cap: &mut Option<&'static str>,
+    work_caps: &mut BTreeSet<&'static str>,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
     let mut point = ctx.alloc_filled(seed.len(), 0.0, "creo nonlinear initial point")?;
@@ -6248,7 +6248,7 @@ fn refine_nonlinear_solution(
         variable_dimensions,
         &point,
         context,
-        work_cap,
+        work_caps,
     )?
     else {
         return Ok(None);
@@ -6264,7 +6264,7 @@ fn refine_nonlinear_solution(
                         variable_dimensions,
                         probe,
                         context,
-                        work_cap,
+                        work_caps,
                     )
                 })?
             else {
@@ -6284,7 +6284,7 @@ fn refine_nonlinear_solution(
                     variable_dimensions,
                     probe,
                     context,
-                    work_cap,
+                    work_caps,
                 )
             })?
         else {
@@ -6318,7 +6318,7 @@ fn refine_nonlinear_solution(
                     variable_dimensions,
                     &candidate,
                     context,
-                    work_cap,
+                    work_caps,
                 )? {
                     let candidate_norm = nonlinear_residual_norm(&candidate_residuals, &residuals);
                     if nonlinear_residuals_converged(&candidate_residuals)
@@ -6333,7 +6333,7 @@ fn refine_nonlinear_solution(
         }
         // A line search that finds no improving step leaves the block unsolved.
         let Some((candidate, candidate_residuals)) = accepted else {
-            *work_cap = Some("MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS");
+            work_caps.insert("MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS");
             return Ok(None);
         };
         point = candidate;
@@ -6346,7 +6346,7 @@ fn refine_nonlinear_solution(
     }
     // A block that has not converged at the iteration ceiling stays unsolved.
     if !nonlinear_residuals_converged(&residuals) {
-        *work_cap = Some("MAX_NONLINEAR_SOLVE_ITERATIONS");
+        work_caps.insert("MAX_NONLINEAR_SOLVE_ITERATIONS");
         return Ok(None);
     }
     let Some(mut rank_rows) =
@@ -6358,7 +6358,7 @@ fn refine_nonlinear_solution(
                 variable_dimensions,
                 probe,
                 context,
-                work_cap,
+                work_caps,
             )
         })?
     else {
@@ -6428,7 +6428,7 @@ fn evaluate_nonlinear_residuals(
     variable_dimensions: &[RelationDimension],
     point: &[f64],
     context: RelationEvaluationContext<'_>,
-    work_cap: &mut Option<&'static str>,
+    work_caps: &mut BTreeSet<&'static str>,
 ) -> Result<Option<Vec<SolveResidual>>, cadmpeg_core::CodecError> {
     if variable_dimensions.len() != block.unknowns.len() || point.len() != variable_dimensions.len()
     {
@@ -6467,7 +6467,7 @@ fn evaluate_nonlinear_residuals(
         )?
         else {
             if text_capped {
-                *work_cap = Some("MAX_RELATION_EXPRESSION_TEXT_BYTES");
+                work_caps.insert("MAX_RELATION_EXPRESSION_TEXT_BYTES");
             }
             return Ok(None);
         };
@@ -6480,7 +6480,7 @@ fn evaluate_nonlinear_residuals(
         )?
         else {
             if text_capped {
-                *work_cap = Some("MAX_RELATION_EXPRESSION_TEXT_BYTES");
+                work_caps.insert("MAX_RELATION_EXPRESSION_TEXT_BYTES");
             }
             return Ok(None);
         };

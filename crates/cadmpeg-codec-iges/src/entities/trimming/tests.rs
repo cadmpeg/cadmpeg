@@ -63,6 +63,7 @@ use crate::test_support::test_drawing_and_trimming::parameter_domain_trimmed_sur
 use crate::test_support::test_drawing_and_trimming::subrange_nurbs_surface_boundary_file;
 use crate::test_support::test_drawing_and_trimming::subrange_nurbs_surface_boundary_file_with_pcurve;
 use crate::test_support::test_drawing_and_trimming::subrange_nurbs_surface_boundary_file_with_source_precision;
+use crate::test_support::test_drawing_and_trimming::subrange_nurbs_surfaces_sharing_pcurve_file;
 use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_boundaries;
 use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_boundaries_and_inner;
 use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_and_outer_pcurve;
@@ -248,6 +249,76 @@ fn decode_reports_a_pcurve_support_check_over_the_blend_limit() {
                 .expect("trimmed boundary coedge");
             assert!(coedge.pcurves.is_empty());
         }
+    }
+}
+
+#[test]
+fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
+    // 256 spans of degree 63 need 2^20 blends; repeating the support check
+    // per face would cost that once for each of the 256 faces.
+    let last = 63 + 256 - 1;
+    let pcurve = planar_nurbs_parameters(63, 256, true, |index| {
+        if index == 0 || index == last {
+            [0.2, 0.2]
+        } else {
+            [0.5, 0.5]
+        }
+    });
+    let decode = |faces| {
+        IgesCodec
+            .decode(
+                &mut Cursor::new(subrange_nurbs_surfaces_sharing_pcurve_file(
+                    2, &pcurve, faces,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    let face_losses = |result: &cadmpeg_ir::codec::DecodeResult, sequence: usize| {
+        let tag = format!("directory_entry:D{sequence}");
+        let mut messages = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some(tag.as_str())
+            })
+            .map(|loss| format!("{:?} {}", loss.code, loss.message))
+            .collect::<Vec<_>>();
+        messages.sort();
+        messages
+    };
+    let single = decode(1);
+    let expected = face_losses(&single, 9);
+    assert!(
+        single
+            .ir()
+            .model
+            .faces
+            .iter()
+            .any(|face| face.id.as_str() == "iges:model:face#D9"),
+        "{:#?}",
+        single.report().losses
+    );
+
+    let faces = 256;
+    let shared = decode(faces);
+    for face in 0..faces {
+        let sequence = 9 + 2 * face;
+        assert!(
+            shared
+                .ir()
+                .model
+                .faces
+                .iter()
+                .any(|candidate| candidate.id.as_str() == format!("iges:model:face#D{sequence}")),
+            "face D{sequence}: {:#?}",
+            shared.report().losses
+        );
+        assert_eq!(face_losses(&shared, sequence), expected);
     }
 }
 

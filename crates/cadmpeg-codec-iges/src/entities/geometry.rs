@@ -729,18 +729,60 @@ impl fmt::Display for TransformFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Literal(message) => formatter.write_str(message),
-            Self::Depth => write!(formatter, "transformation chain exceeds {MAX_TRANSFORM_DEPTH} entities"),
-            Self::MissingEntry(sequence) => write!(formatter, "transformation D{sequence} is missing"),
-            Self::WrongTypeForm { sequence, entity_type, form } => write!(formatter, "transformation D{sequence} is type {entity_type} form {form}, expected defining type 124 form 0 or 1"),
-            Self::MissingParameters(sequence) => write!(formatter, "transformation D{sequence} parameters are missing"),
-            Self::NonNumericCoefficient { sequence, index } => write!(formatter, "transformation D{sequence} coefficient {index} is not numeric"),
-            Self::NonFiniteCoefficient(sequence) => write!(formatter, "transformation D{sequence} has a non-finite coefficient"),
-            Self::NotOrthonormal(sequence) => write!(formatter, "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"),
-            Self::WrongDeterminant { sequence, form } => write!(formatter, "transformation D{sequence} determinant disagrees with form {form} within its declared numeric precision"),
-            Self::FirstAxis(sequence) => write!(formatter, "transformation D{sequence} first axis cannot be normalized"),
-            Self::SecondAxis(sequence) => write!(formatter, "transformation D{sequence} second axis cannot be normalized"),
-            Self::NonFiniteScaled(sequence) => write!(formatter, "transformation D{sequence} has non-finite coefficients after length scaling"),
-            Self::NonFiniteComposed(sequence) => write!(formatter, "transformation D{sequence} has non-finite coefficients after composition"),
+            Self::Depth => write!(
+                formatter,
+                "transformation chain exceeds {MAX_TRANSFORM_DEPTH} entities"
+            ),
+            Self::MissingEntry(sequence) => {
+                write!(formatter, "transformation D{sequence} is missing")
+            }
+            Self::WrongTypeForm {
+                sequence,
+                entity_type,
+                form,
+            } => write!(
+                formatter,
+                "transformation D{sequence} is type {entity_type} form {form}, expected \
+                 defining type 124 form 0 or 1"
+            ),
+            Self::MissingParameters(sequence) => write!(
+                formatter,
+                "transformation D{sequence} parameters are missing"
+            ),
+            Self::NonNumericCoefficient { sequence, index } => write!(
+                formatter,
+                "transformation D{sequence} coefficient {index} is not numeric"
+            ),
+            Self::NonFiniteCoefficient(sequence) => write!(
+                formatter,
+                "transformation D{sequence} has a non-finite coefficient"
+            ),
+            Self::NotOrthonormal(sequence) => write!(
+                formatter,
+                "transformation D{sequence} linear part is not orthonormal within its \
+                 declared numeric precision"
+            ),
+            Self::WrongDeterminant { sequence, form } => write!(
+                formatter,
+                "transformation D{sequence} determinant disagrees with form {form} \
+                 within its declared numeric precision"
+            ),
+            Self::FirstAxis(sequence) => write!(
+                formatter,
+                "transformation D{sequence} first axis cannot be normalized"
+            ),
+            Self::SecondAxis(sequence) => write!(
+                formatter,
+                "transformation D{sequence} second axis cannot be normalized"
+            ),
+            Self::NonFiniteScaled(sequence) => write!(
+                formatter,
+                "transformation D{sequence} has non-finite coefficients after length scaling"
+            ),
+            Self::NonFiniteComposed(sequence) => write!(
+                formatter,
+                "transformation D{sequence} has non-finite coefficients after composition"
+            ),
         }
     }
 }
@@ -1467,7 +1509,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1476,7 +1518,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "direction components are not numeric"),
+                format_args!("direction components are not numeric"),
             );
             continue;
         };
@@ -1485,7 +1527,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "direction is zero or non-finite"),
+                format_args!("direction is zero or non-finite"),
             );
             continue;
         }
@@ -1493,7 +1535,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Direction Entity is not marked physically dependent"),
+                format_args!("Direction Entity is not marked physically dependent"),
             );
             continue;
         }
@@ -1501,10 +1543,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "Direction Entity references a prohibited transformation"
-                ),
+                format_args!("Direction Entity references a prohibited transformation"),
             );
         }
     }
@@ -1517,7 +1556,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1561,7 +1600,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite vector"),
+                format_args!("placement produces a non-finite vector"),
             );
             continue;
         };
@@ -1572,7 +1611,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite vector"),
+                format_args!("placement produces a non-finite vector"),
             );
             continue;
         };
@@ -1587,7 +1626,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "affine placement does not preserve circular geometry"),
+                format_args!("affine placement does not preserve circular geometry"),
             );
             continue;
         }
@@ -1596,7 +1635,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite point"),
+                format_args!("placement produces a non-finite point"),
             );
             continue;
         };
@@ -1605,7 +1644,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite point"),
+                format_args!("placement produces a non-finite point"),
             );
             continue;
         };
@@ -1613,7 +1652,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite point"),
+                format_args!("placement produces a non-finite point"),
             );
             continue;
         };
@@ -1628,7 +1667,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "arc start point equals its center"),
+                format_args!("arc start point equals its center"),
             );
             continue;
         };
@@ -1642,7 +1681,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "arc placement collapses its plane"),
+                format_args!("arc placement collapses its plane"),
             );
             continue;
         };
@@ -1655,7 +1694,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "arc start and terminate points have different radii"),
+                format_args!("arc start and terminate points have different radii"),
             );
             continue;
         }
@@ -1666,7 +1705,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "arc terminate point equals its center"),
+                format_args!("arc terminate point equals its center"),
             );
             continue;
         };
@@ -1756,7 +1795,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1765,7 +1804,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "X, Y, or Z is not numeric"),
+                format_args!("X, Y, or Z is not numeric"),
             );
             continue;
         };
@@ -1794,7 +1833,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite point"),
+                format_args!("placement produces a non-finite point"),
             );
             continue;
         };
@@ -1833,7 +1872,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1842,7 +1881,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "X or Y reference coordinate is not numeric"),
+                format_args!("X or Y reference coordinate is not numeric"),
             );
             continue;
         };
@@ -1850,7 +1889,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "X or Y reference coordinate is not finite"),
+                format_args!("X or Y reference coordinate is not finite"),
             );
             continue;
         };
@@ -1858,7 +1897,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "X or Y reference coordinate is not finite"),
+                format_args!("X or Y reference coordinate is not finite"),
             );
             continue;
         };
@@ -1910,7 +1949,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite point"),
+                format_args!("placement produces a non-finite point"),
             );
             continue;
         };
@@ -1949,7 +1988,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1992,7 +2031,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite point"),
+                format_args!("placement produces a non-finite point"),
             );
             continue;
         };
@@ -2002,7 +2041,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "placement produces a non-finite point"),
+                format_args!("placement produces a non-finite point"),
             );
             continue;
         };
@@ -2012,7 +2051,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "transformed endpoints are coincident or non-finite"),
+                format_args!("transformed endpoints are coincident or non-finite"),
             );
             continue;
         }
@@ -2086,7 +2125,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2094,7 +2133,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "upper control-point index K is invalid"),
+                format_args!("upper control-point index K is invalid"),
             );
             continue;
         };
@@ -2105,7 +2144,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "basis degree M is invalid"),
+                format_args!("basis degree M is invalid"),
             );
             continue;
         };
@@ -2114,7 +2153,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "control-point count is smaller than degree plus one"),
+                format_args!("control-point count is smaller than degree plus one"),
             );
             continue;
         }
@@ -2129,14 +2168,14 @@ pub(crate) fn project_geometry(
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
-                format_args!("{}", "one or more spline flags are not 0 or 1"),
+                format_args!("one or more spline flags are not 0 or 1"),
             );
         }
         let Some(control_count) = k.checked_add(1) else {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "control-point count overflows"),
+                format_args!("control-point count overflows"),
             );
             continue;
         };
@@ -2144,27 +2183,19 @@ pub(crate) fn project_geometry(
             .checked_add(degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("{}", "knot count overflows"),
-            );
+            super::push_geometry_loss(&mut losses, entry, format_args!("knot count overflows"));
             continue;
         };
         let knot_start = 7_usize;
         let Some(weight_start) = knot_start.checked_add(knot_count) else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("{}", "weight offset overflows"),
-            );
+            super::push_geometry_loss(&mut losses, entry, format_args!("weight offset overflows"));
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(control_count) else {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "control-point offset overflows"),
+                format_args!("control-point offset overflows"),
             );
             continue;
         };
@@ -2172,7 +2203,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "control-point value count overflows"),
+                format_args!("control-point value count overflows"),
             );
             continue;
         };
@@ -2180,7 +2211,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "parameter-range offset overflows"),
+                format_args!("parameter-range offset overflows"),
             );
             continue;
         };
@@ -2194,7 +2225,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "knot vector is truncated or non-finite"),
+                format_args!("knot vector is truncated or non-finite"),
             );
             continue;
         };
@@ -2205,7 +2236,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "knot vector is decreasing"),
+                format_args!("knot vector is decreasing"),
             );
             continue;
         };
@@ -2213,7 +2244,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "weight vector is truncated or non-finite"),
+                format_args!("weight vector is truncated or non-finite"),
             );
             continue;
         };
@@ -2225,7 +2256,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "weights are not strictly positive"),
+                format_args!("weights are not strictly positive"),
             );
             continue;
         };
@@ -2253,7 +2284,7 @@ pub(crate) fn project_geometry(
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
-                format_args!("{}", "polynomial spline has unequal weights"),
+                format_args!("polynomial spline has unequal weights"),
             );
         }
         if !declared_polynomial && equal_weights {
@@ -2261,10 +2292,7 @@ pub(crate) fn project_geometry(
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
-                format_args!(
-                    "{}",
-                    "rational spline has equal weights but PROP3 declares rational"
-                ),
+                format_args!("rational spline has equal weights but PROP3 declares rational"),
             );
         }
         let polynomial = native_weights.first().is_some_and(|first| {
@@ -2276,7 +2304,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "control-point vector is truncated or non-finite"),
+                format_args!("control-point vector is truncated or non-finite"),
             );
             continue;
         };
@@ -2284,7 +2312,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "parameter range is missing or non-finite"),
+                format_args!("parameter range is missing or non-finite"),
             );
             continue;
         };
@@ -2319,7 +2347,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "parameter range lies outside the spline knot domain"),
+                format_args!("parameter range lies outside the spline knot domain"),
             );
             continue;
         };
@@ -2353,7 +2381,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "transformed control-point vector is non-finite"),
+                format_args!("transformed control-point vector is non-finite"),
             );
             continue;
         };
@@ -2433,7 +2461,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline start point cannot be evaluated"),
+                format_args!("spline start point cannot be evaluated"),
             );
             continue;
         };
@@ -2444,7 +2472,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline end point cannot be evaluated"),
+                format_args!("spline end point cannot be evaluated"),
             );
             continue;
         };
@@ -2456,10 +2484,7 @@ pub(crate) fn project_geometry(
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
-                format_args!(
-                    "{}",
-                    "closed spline flag disagrees with evaluated endpoints"
-                ),
+                format_args!("closed spline flag disagrees with evaluated endpoints"),
             );
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
