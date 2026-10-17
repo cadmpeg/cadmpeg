@@ -4,7 +4,7 @@
 use crate::kernel_header::RefWidth;
 use crate::nurbs::blend::{
     compact_rb_blend_spl_sur, cyl_spl_sur, full_rb_blend_spl_sur, rolling_ball_side,
-    var_blend_spl_sur, vertex_blend_spl_sur,
+    var_blend_spl_sur, vertex_blend_spl_sur, SupportCaches,
 };
 use crate::nurbs::core::{curve_block, surface_block};
 use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end};
@@ -4664,7 +4664,7 @@ fn procedural_resolving_refs(
         .or_else(|| off_spl_sur(ctx, toks, Some(table)))
         .or_else(|| cyl_spl_sur(toks, Some(table)).map(Ok))
         .or_else(|| {
-            var_blend_spl_sur(ctx, toks, Some(table))
+            var_blend_spl_sur(ctx, toks, Some(table), SupportCaches::Resolve)
                 .and_then(|result| result.map(|parsed| parsed.surface).transpose())
         })
         .or_else(|| vertex_blend_spl_sur(ctx, toks, Some(table)))

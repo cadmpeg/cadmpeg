@@ -409,7 +409,12 @@ pub(super) fn rolling_ball_side(
 ) -> Option<
     Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::CodecError>,
 > {
-    match propagate_resource!(read_rolling_ball_side(ctx, cur, reference_context)?) {
+    match propagate_resource!(read_rolling_ball_side(
+        ctx,
+        cur,
+        reference_context,
+        SupportCaches::Resolve
+    )?) {
         SideRead::Carried(side) => Some(Ok(*side)),
         SideRead::UncachedSupport => None,
     }
@@ -424,10 +429,22 @@ enum SideRead {
     UncachedSupport,
 }
 
+/// Whether reading a rolling-ball support resolves the solved cache of a
+/// `spline` support whose cache is not inline. A variable blend's own cache
+/// does not depend on its supports, so a parse for that cache skips them; a
+/// support that is itself a variable blend would otherwise resolve its own
+/// supports in turn.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SupportCaches {
+    Resolve,
+    Skip,
+}
+
 fn read_rolling_ball_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
+    supports: SupportCaches,
 ) -> Option<Result<SideRead, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match cur.take_str()? {
@@ -441,7 +458,8 @@ fn read_rolling_ball_side(
     let (surface, chart) = match propagate_resource!(read_optional_rolling_ball_surface(
         ctx,
         cur,
-        reference_context
+        reference_context,
+        supports
     )?) {
         SupportRead::Charted(support) => {
             let (surface, chart) = *support;
@@ -516,7 +534,8 @@ pub(super) fn optional_rolling_ball_surface(
     match propagate_resource!(read_optional_rolling_ball_surface(
         ctx,
         cur,
-        reference_context
+        reference_context,
+        SupportCaches::Resolve
     )?) {
         SupportRead::Charted(support) => Some(Ok(Nullable::Value(*support))),
         SupportRead::Null => Some(Ok(Nullable::Null)),
@@ -539,13 +558,14 @@ fn read_optional_rolling_ball_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
+    supports: SupportCaches,
 ) -> Option<Result<SupportRead, cadmpeg_core::CodecError>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
         return Some(Ok(SupportRead::Null));
     }
     cur.set_pos(saved);
-    rolling_ball_surface(ctx, cur, reference_context)
+    rolling_ball_surface(ctx, cur, reference_context, supports)
 }
 
 /// Decode one rolling-ball support surface and the native chart of the
@@ -554,6 +574,7 @@ fn rolling_ball_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
+    supports: SupportCaches,
 ) -> Option<Result<SupportRead, cadmpeg_core::CodecError>> {
     let toks = cur.toks();
     let saved = cur.pos();
@@ -573,11 +594,14 @@ fn rolling_ball_surface(
         }
         cur.take_bool()?;
         let scope = toks::subtype_span(toks, cur.pos())?;
-        let surface = match reference_context {
-            Some(table) => {
+        let surface = match (supports, reference_context) {
+            (SupportCaches::Skip, _) => None,
+            (SupportCaches::Resolve, Some(table)) => {
                 crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table)
             }
-            None => crate::nurbs::core::owned_surface_cache(ctx, scope, None),
+            (SupportCaches::Resolve, None) => {
+                crate::nurbs::core::owned_surface_cache(ctx, scope, None)
+            }
         }
         .transpose();
         let surface = propagate_resource!(surface);
@@ -946,6 +970,7 @@ pub(super) fn var_blend_spl_sur(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     reference_context: Option<&SubtypeTable>,
+    supports: SupportCaches,
 ) -> Option<Result<ParsedVariableBlend, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
     let (start, name) = toks::find_owned_subtype_marker(toks, VARIABLE_BLEND_NAMES)?;
@@ -970,8 +995,18 @@ pub(super) fn var_blend_spl_sur(
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
-    let first = propagate_resource!(read_rolling_ball_side(ctx, &mut cur, reference_context)?);
-    let second = propagate_resource!(read_rolling_ball_side(ctx, &mut cur, reference_context)?);
+    let first = propagate_resource!(read_rolling_ball_side(
+        ctx,
+        &mut cur,
+        reference_context,
+        supports
+    )?);
+    let second = propagate_resource!(read_rolling_ball_side(
+        ctx,
+        &mut cur,
+        reference_context,
+        supports
+    )?);
     let sides = match (first, second) {
         (SideRead::Carried(first), SideRead::Carried(second)) => Some(Box::new([*first, *second])),
         _ => None,

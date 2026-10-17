@@ -174,10 +174,14 @@ pub(super) fn owned_surface_cache(
         if crate::nurbs::blend::VARIABLE_BLEND_NAMES.contains(&name.as_str()))
     {
         let _depth = propagate_resource!(ctx.enter_nested("admit ASM variable-blend cache"));
-        let cache_marker =
-            propagate_resource!(crate::nurbs::blend::var_blend_spl_sur(ctx, tokens, table)
-                .transpose()
-                .map(|decoded| decoded.and_then(|decoded| decoded.current_cache_marker)));
+        let cache_marker = propagate_resource!(crate::nurbs::blend::var_blend_spl_sur(
+            ctx,
+            tokens,
+            table,
+            crate::nurbs::blend::SupportCaches::Skip,
+        )
+        .transpose()
+        .map(|decoded| decoded.and_then(|decoded| decoded.current_cache_marker)));
         return surface_block(tokens, cache_marker?).map(|(surface, _)| Ok(surface));
     }
     scope
@@ -1461,35 +1465,68 @@ mod tests {
     }
 
     #[test]
-    fn variable_blend_cache_reference_cycles_preserve_depth_refusal() {
+    fn variable_blend_cache_reference_cycles_do_not_recurse() {
         use crate::sab::{Record, Token};
-        let mut tokens = variable_blend_tokens("var_blend_spl_sur", 1);
-        tokens.splice(
-            4..5,
-            [
-                Token::Ident("spline".into()),
-                Token::False,
-                Token::SubtypeOpen,
-                Token::Ident("ref".into()),
-                Token::Long(0),
-                Token::SubtypeClose,
-                Token::False,
-                Token::False,
-                Token::False,
-                Token::False,
-            ],
-        );
-        let records = [Record {
-            index: 0,
-            name: "spline".into(),
-            tokens: tokens.into(),
-            offset: 0,
-            len: 0,
-        }];
+        fn records(name: &str, side: usize) -> [Record; 1] {
+            let mut tokens = variable_blend_tokens(name, 1);
+            tokens.splice(
+                side + 1..side + 2,
+                [
+                    Token::Ident("spline".into()),
+                    Token::False,
+                    Token::SubtypeOpen,
+                    Token::Ident("ref".into()),
+                    Token::Long(0),
+                    Token::SubtypeClose,
+                    Token::False,
+                    Token::False,
+                    Token::False,
+                    Token::False,
+                ],
+            );
+            [Record {
+                index: 0,
+                name: "spline".into(),
+                tokens: tokens.into(),
+                offset: 0,
+                len: 0,
+            }]
+        }
+        let mut policy = DecodePolicy::service();
+        // One procedural reference, one cache admission and one blend value;
+        // the cycle adds no depth.
+        policy.limits.max_recursion_depth = 3;
+        for name in crate::nurbs::blend::VARIABLE_BLEND_NAMES {
+            for side in [3, 9] {
+                let records = records(name, side);
+                let table = SubtypeTable::from_records(&records);
+                let scope = table.span(0).unwrap();
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let surface = super::owned_surface_cache_resolving_refs(&ctx, scope, &table)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    surface.poles()[0].get(),
+                    cadmpeg_ir::math::Point3::new(70., 0., 0.),
+                    "{name}, side token {side}"
+                );
+                if let Some(Err(error)) =
+                    crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                        &ctx,
+                        &records[0].tokens,
+                        &table,
+                    )
+                {
+                    panic!("{name}, side token {side}: {error:?}");
+                }
+            }
+        }
+
+        let records = records("var_blend_spl_sur", 3);
         let table = SubtypeTable::from_records(&records);
         let scope = table.span(0).unwrap();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = 2;
+        policy.limits.max_recursion_depth = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = super::owned_surface_cache_resolving_refs(&ctx, scope, &table)
