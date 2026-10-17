@@ -140,29 +140,30 @@ pub(crate) fn validate_native(
             }
         }
     }
-    let mut expected_histories = native.feature_histories.clone();
     let history_lanes = native
         .feature_input_lanes
         .iter()
         .filter(|lane| !is_supplemental_config_lane(lane))
         .collect::<Vec<_>>();
-    crate::resolved_features::classes::bind_history_classes(
-        &mut expected_histories,
+    let expected_classes = crate::resolved_features::classes::history_classes(
+        &native.feature_histories,
         &history_lanes,
     );
-    for (history, expected_history) in native.feature_histories.iter().zip(&expected_histories) {
-        for (feature, expected_feature) in history.features.iter().zip(&expected_history.features) {
-            if feature.input_class != expected_feature.input_class {
-                findings.push(Finding {
-                    related: Vec::new(),
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message:
-                        "SolidWorks history feature class does not match its feature-input index"
-                            .into(),
-                    entity: Some(feature.id.clone()),
-                });
-            }
+    for (feature, expected_class) in native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .zip(expected_classes)
+    {
+        if feature.input_class.as_deref() != expected_class {
+            findings.push(Finding {
+                related: Vec::new(),
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "SolidWorks history feature class does not match its feature-input index"
+                    .into(),
+                entity: Some(feature.id.clone()),
+            });
         }
     }
     for (lane, expected_lane) in crate::native::lanes::expected_lanes(ctx, &native)? {

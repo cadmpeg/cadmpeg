@@ -816,7 +816,26 @@ struct SurfaceCandidate<'a> {
     surface: &'a SurfaceGeometry,
     tolerance: f64,
     inverse: cadmpeg_ir::transform::Transform,
+    /// Whether `inverse` is the identity.
+    identity_inverse: bool,
     trim: Option<AnalyticTrim>,
+}
+
+impl SurfaceCandidate<'_> {
+    /// `point` in the candidate's body frame, as `inverse.apply_point` maps it.
+    fn local_point(&self, point: FinitePoint3) -> Option<Point3> {
+        if self.identity_inverse {
+            return Some(identity_point(point));
+        }
+        Some(self.inverse.apply_point(point.get())?.get())
+    }
+}
+
+/// The identity transform's image of a finite point: the point, with each
+/// negative zero made positive, which is what adding zero does.
+fn identity_point(point: FinitePoint3) -> Point3 {
+    let point = point.get();
+    Point3::new(point.x + 0.0, point.y + 0.0, point.z + 0.0)
 }
 
 /// A mesh's positions, shading normals and triangles, which its accessors
@@ -957,6 +976,7 @@ fn assign_unique_surface_owners_within(
                     .tolerance
                     .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
                 inverse,
+                identity_inverse: inverse == cadmpeg_ir::transform::Transform::identity(),
                 trim: None,
             })
         })();
@@ -1002,16 +1022,15 @@ fn assign_unique_surface_owners_within(
                     fits = false;
                     break;
                 }
-                let Some(local) = candidate.inverse.apply_point(point.get()) else {
+                let Some(local) = candidate.local_point(*point) else {
                     fits = false;
                     break;
                 };
-                let Some(measure) = surface_measure(ctx, surface, local.get(), Some(tolerance))?
-                else {
+                let Some(residual) = surface_residual(ctx, surface, local, tolerance)? else {
                     fits = false;
                     break;
                 };
-                if measure.residual > tolerance {
+                if residual > tolerance {
                     fits = false;
                     break;
                 }
@@ -1096,7 +1115,7 @@ fn approximate_surface_owner(
                 if !work.charge() {
                     return None;
                 }
-                let local_point = candidate.inverse.apply_point(point.get())?.get();
+                let local_point = candidate.local_point(*point)?;
                 let measure =
                     match surface_measure(ctx, candidate.surface.solved()?, local_point, None) {
                         Ok(Some(measure)) => measure,
@@ -1174,17 +1193,18 @@ fn approximate_trimmed_surface_owner(
                 if !work.charge() {
                     return None;
                 }
-                let measure = match surface_measure(
+                let residual = match surface_measure_with(
                     ctx,
                     candidate.surface.solved()?,
-                    candidate.inverse.apply_point(point.get())?.get(),
+                    candidate.local_point(*point)?,
                     None,
+                    false,
                 ) {
-                    Ok(Some(measure)) => measure,
+                    Ok(Some(measure)) => measure.residual,
                     Ok(None) => return None,
                     Err(limit) => return Some(Err(limit)),
                 };
-                max_residual = max_residual.max(measure.residual);
+                max_residual = max_residual.max(residual);
             }
             if is_planar_surface(candidate.surface.solved()?)
                 && max_residual > quantization_tolerance
@@ -2686,16 +2706,47 @@ fn triangulate_polygon(
     Some(triangles)
 }
 
-fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
-    // A point or edge end that is not finite has no distance to measure.
-    if polygon.iter().enumerate().any(|(index, start)| {
-        match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
-            [Some(point), Some(start), Some(end)] => {
-                point_segment_distance(point, start, end) <= tolerance
+/// The margin, relative to the largest coordinate, by which a point outside an
+/// edge's box must clear the tolerance before the edge is not measured. It is
+/// millions of times the few ulps by which [`point_segment_distance`] can fall
+/// below the true distance.
+const SEGMENT_BOX_MARGIN: f64 = 1.0e-9;
+
+/// Whether `point` lies within `tolerance` of an edge of `polygon`, as
+/// [`point_segment_distance`] measures it. A point or edge end that is not
+/// finite has no distance to measure.
+///
+/// A point outside an edge's box, widened by the tolerance and the margin, is
+/// farther from the edge than the tolerance by more than the measure's
+/// rounding, so the measure would refuse it too and the edge is not measured.
+fn polygon_boundary_within(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
+    polygon.iter().enumerate().any(|(index, start)| {
+        let end = polygon[(index + 1) % polygon.len()];
+        match [point, *start, end].map(FinitePoint2::new) {
+            [Some(finite_point), Some(finite_start), Some(finite_end)] => {
+                !segment_box_excludes(point, *start, end, tolerance)
+                    && point_segment_distance(finite_point, finite_start, finite_end) <= tolerance
             }
             _ => false,
         }
-    }) {
+    })
+}
+
+/// Whether finite `point` lies beyond the box of the finite segment
+/// `start`-`end` on some axis by more than `tolerance` and the margin.
+fn segment_box_excludes(point: Point2, start: Point2, end: Point2, tolerance: f64) -> bool {
+    let scale = [point.u, point.v, start.u, start.v, end.u, end.v]
+        .into_iter()
+        .fold(tolerance.abs(), |scale, value| scale.max(value.abs()));
+    let reach = tolerance + SEGMENT_BOX_MARGIN * scale;
+    point.u - start.u.max(end.u) > reach
+        || start.u.min(end.u) - point.u > reach
+        || point.v - start.v.max(end.v) > reach
+        || start.v.min(end.v) - point.v > reach
+}
+
+fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
+    if polygon_boundary_within(polygon, point, tolerance) {
         return true;
     }
     let mut inside = false;
@@ -2827,14 +2878,7 @@ fn polygon_contains_triangle(boundary: &[Point2], triangle: [Point2; 3], toleran
 
 fn polygon_strictly_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
     polygon_contains(polygon, point, tolerance)
-        && !polygon.iter().enumerate().any(|(index, start)| {
-            match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
-                [Some(point), Some(start), Some(end)] => {
-                    point_segment_distance(point, start, end) <= tolerance
-                }
-                _ => false,
-            }
-        })
+        && !polygon_boundary_within(polygon, point, tolerance)
 }
 
 /// Convexity of an already simple polygon.
@@ -3388,6 +3432,32 @@ fn surface_measure(
     point: Point3,
     fit_tolerance: Option<f64>,
 ) -> Result<Option<SurfaceMeasure>, cadmpeg_core::CodecError> {
+    surface_measure_with(ctx, surface, point, fit_tolerance, true)
+}
+
+/// The residual [`surface_measure`] states, without its normal.
+fn surface_residual(
+    ctx: &DecodeContext<'_>,
+    surface: &SolvedSurfaceGeometry,
+    point: Point3,
+    fit_tolerance: f64,
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+    Ok(
+        surface_measure_with(ctx, surface, point, Some(fit_tolerance), false)?
+            .map(|measure| measure.residual),
+    )
+}
+
+/// The measure of `point` against `surface`; its normal is absent unless
+/// `with_normal` is set. Whether a measure exists, and its residual, do not
+/// depend on `with_normal`.
+fn surface_measure_with(
+    ctx: &DecodeContext<'_>,
+    surface: &SolvedSurfaceGeometry,
+    point: Point3,
+    fit_tolerance: Option<f64>,
+    with_normal: bool,
+) -> Result<Option<SurfaceMeasure>, cadmpeg_core::CodecError> {
     if let SolvedSurfaceGeometry::Nurbs(nurbs) = surface {
         let Some(tolerance) = fit_tolerance else {
             return Ok(None);
@@ -3415,7 +3485,9 @@ fn surface_measure(
         }
         return Ok(Some(SurfaceMeasure {
             residual,
-            normal: partials.du.cross(partials.dv.get()).unit(),
+            normal: with_normal
+                .then(|| partials.du.cross(partials.dv.get()).unit())
+                .flatten(),
         })
         .filter(|measure| measure.residual.is_finite()));
     }
@@ -3429,8 +3501,13 @@ fn surface_measure(
             let Some(local_point) = inverse.apply_point(point) else {
                 return Ok(None);
             };
-            let Some(mut measure) =
-                surface_measure(ctx, placed.basis(), local_point.get(), fit_tolerance)?
+            let Some(mut measure) = surface_measure_with(
+                ctx,
+                placed.basis(),
+                local_point.get(),
+                fit_tolerance,
+                with_normal,
+            )?
             else {
                 return Ok(None);
             };
@@ -3445,7 +3522,9 @@ fn surface_measure(
     };
     Ok(Some(SurfaceMeasure {
         residual,
-        normal: analytic_surface_normal(surface, point),
+        normal: with_normal
+            .then(|| analytic_surface_normal(surface, point))
+            .flatten(),
     }))
 }
 

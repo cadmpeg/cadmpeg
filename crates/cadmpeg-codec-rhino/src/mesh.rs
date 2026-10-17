@@ -974,7 +974,7 @@ fn read_buffer<'a>(
     let Some(admitted_document_bytes) = document_budget.admit(declared) else {
         return Err(error(
             reader.position() - 4,
-            "document mesh buffer budget exceeded",
+            "document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)",
         ));
     };
     let crc = reader.u32()?;
@@ -2534,7 +2534,7 @@ mod tests {
             assert!(matches!(error, GeometryError::Malformed(_)));
             assert!(error
                 .to_string()
-                .contains("document mesh buffer budget exceeded"));
+                .contains("document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)"));
             assert_eq!(document_budget.used(), MAX_BUFFER_OUTPUT);
             assert_eq!(expand.ctx().resource_refusal(), None);
         });
@@ -2611,7 +2611,7 @@ mod tests {
             assert!(matches!(error, GeometryError::Malformed(_)));
             assert!(error
                 .to_string()
-                .contains("document mesh buffer budget exceeded"));
+                .contains("document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)"));
             assert_eq!(expand.ctx().resource_refusal(), None);
         });
     }

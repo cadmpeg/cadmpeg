@@ -91,7 +91,7 @@ mod tests {
                 Point2::new(0.5, 0.),
                 0.2 * domain,
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .unwrap();
             assert!((result / domain - 0.5).abs() < 16. * f64::EPSILON);
             let coarse = super::closest_pcurve_parameter_from_coarse_grid(
@@ -99,7 +99,7 @@ mod tests {
                 &line,
                 Point2::new(0.5, 1e200),
             )
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .unwrap();
             assert!((coarse / domain - 0.5).abs() < 16. * f64::EPSILON);
         }

@@ -144,28 +144,26 @@ pub(crate) fn decode_kernel_carrier(
 pub(crate) fn select_active_carrier<'a>(
     segments: &[SegmentDescriptor<'a>],
     document_kind: &DocumentKind,
-) -> Result<ActiveCarrierState<'a>, CodecError> {
+) -> ActiveCarrierState<'a> {
     if !matches!(document_kind, DocumentKind::Part) {
-        return Ok(ActiveCarrierState::NotApplicable);
+        return ActiveCarrierState::NotApplicable;
     }
     let is_brep = |segment: &&SegmentDescriptor<'a>| matches!(segment.kind, SegmentKind::PmBRep);
     let brep_count = segments.iter().filter(is_brep).count();
     let Some(segment) = segments.iter().rfind(is_brep).filter(|_| brep_count == 1) else {
-        return Ok(ActiveCarrierState::Unavailable(format!(
+        return ActiveCarrierState::Unavailable(format!(
             "part document has {brep_count} PmBRep segments; expected one"
-        )));
+        ));
     };
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-        return Ok(ActiveCarrierState::Unavailable(
-            "PmBRep bulk stream is unavailable".to_owned(),
-        ));
+        return ActiveCarrierState::Unavailable("PmBRep bulk stream is unavailable".to_owned());
     };
     let table = match &bulk.records {
         RecordFrameState::Framed(table) => table,
         RecordFrameState::Unavailable(_) => {
-            return Ok(ActiveCarrierState::Unavailable(
+            return ActiveCarrierState::Unavailable(
                 "PmBRep record table is unavailable".to_owned(),
-            ));
+            );
         }
     };
     let is_carrier = |record: &&RseRecordFrame<'a>| record.type_id == KERNEL_RECORD_TYPE_ID;
@@ -176,14 +174,14 @@ pub(crate) fn select_active_carrier<'a>(
         .rfind(is_carrier)
         .filter(|_| carrier_count == 1)
     else {
-        return Ok(ActiveCarrierState::Unavailable(format!(
+        return ActiveCarrierState::Unavailable(format!(
             "PmBRep contains {carrier_count} typed kernel-carrier records; expected one"
-        )));
+        ));
     };
     let Some(version) = segment.registry.map(|join| join.version_major) else {
-        return Ok(ActiveCarrierState::Unavailable(
+        return ActiveCarrierState::Unavailable(
             "PmBRep segment version is unavailable from the registry".to_owned(),
-        ));
+        );
     };
     match parse_carrier(
         record.payload,
@@ -192,9 +190,8 @@ pub(crate) fn select_active_carrier<'a>(
         record.payload_offset,
         version,
     ) {
-        Ok(carrier) => Ok(ActiveCarrierState::Selected(carrier)),
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => Ok(ActiveCarrierState::Unavailable(error.to_string())),
+        Ok(carrier) => ActiveCarrierState::Selected(carrier),
+        Err(error) => ActiveCarrierState::Unavailable(error.to_string()),
     }
 }
 
@@ -364,8 +361,7 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
         let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
         assert!(matches!(
-            select_active_carrier(&inventory.segments, &DocumentKind::Part)
-                .expect("select the active carrier"),
+            select_active_carrier(&inventory.segments, &DocumentKind::Part),
             ActiveCarrierState::Selected(_)
         ));
     }

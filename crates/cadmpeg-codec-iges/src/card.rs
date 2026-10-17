@@ -257,15 +257,19 @@ impl FramingRecoveries {
     pub(crate) fn notes(&self) -> Vec<LossNote> {
         let mut notes = Vec::new();
         for ((section, defect), recovery) in &self.0 {
-            let message = format!("IGES {} section recovered {} from the card census: the first offending {} is at position {} in the section, which declared {}, and the decoder used {}; {} {} in this section required the same recovery",
-            section.name(),
-            defect.description(),
-            defect.unit(),
-            recovery.position,
-            recovery.declared,
-            recovery.used,
-            recovery.count,
-            defect.unit());
+            let message = format!(
+                "IGES {} section recovered {} from the card census: the first offending \
+                 {} is at position {} in the section, which declared {}, and the decoder \
+                 used {}; {} {} in this section required the same recovery",
+                section.name(),
+                defect.description(),
+                defect.unit(),
+                recovery.position,
+                recovery.declared,
+                recovery.used,
+                recovery.count,
+                defect.unit()
+            );
             let tag = format!("{}:framing", section.name());
             let code = IgesLossCode::CardFramingRecovered;
 

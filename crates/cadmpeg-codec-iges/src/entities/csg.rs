@@ -156,7 +156,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -174,7 +174,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "primitive placement is invalid"),
+                format_args!("primitive placement is invalid"),
             );
             continue;
         }
@@ -204,7 +204,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "primitive dimensions are not numeric"),
+                format_args!("primitive dimensions are not numeric"),
             );
             continue;
         }
@@ -247,7 +247,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "primitive dimension invariant is violated"),
+                format_args!("primitive dimension invariant is violated"),
             );
             continue;
         }
@@ -263,7 +263,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "primitive solid type is unsupported"),
+                    format_args!("primitive solid type is unsupported"),
                 );
                 continue;
             }
@@ -272,7 +272,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "primitive origin is invalid"),
+                format_args!("primitive origin is invalid"),
             );
             continue;
         };
@@ -280,7 +280,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "primitive origin is non-finite"),
+                format_args!("primitive origin is non-finite"),
             );
             continue;
         }
@@ -309,7 +309,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "primitive axes are not orthonormal"),
+                format_args!("primitive axes are not orthonormal"),
             );
             continue;
         }
@@ -324,7 +324,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -333,7 +333,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid profile curve pointer is invalid"),
+                format_args!("solid profile curve pointer is invalid"),
             );
             continue;
         };
@@ -349,7 +349,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid profile curve pointer is invalid"),
+                format_args!("solid profile curve pointer is invalid"),
             );
             continue;
         }
@@ -360,7 +360,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid sweep amount is invalid"),
+                format_args!("solid sweep amount is invalid"),
             );
             continue;
         };
@@ -368,7 +368,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid revolution fraction is greater than one"),
+                format_args!("solid revolution fraction is greater than one"),
             );
             continue;
         }
@@ -387,7 +387,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid sweep axis is invalid"),
+                format_args!("solid sweep axis is invalid"),
             );
             continue;
         }
@@ -395,7 +395,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid profile endpoints are unavailable"),
+                format_args!("solid profile endpoints are unavailable"),
             );
             continue;
         };
@@ -405,7 +405,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid sweep form disagrees with profile closure"),
+                format_args!("solid sweep form disagrees with profile closure"),
             );
             continue;
         }
@@ -422,7 +422,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid sweep placement is invalid"),
+                format_args!("solid sweep placement is invalid"),
             );
             continue;
         }
@@ -438,7 +438,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -446,7 +446,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Boolean postfix length is not greater than two"),
+                format_args!("Boolean postfix length is not greater than two"),
             );
             continue;
         };
@@ -475,7 +475,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Boolean postfix term is invalid"),
+                format_args!("Boolean postfix term is invalid"),
             );
             continue;
         }
@@ -495,7 +495,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Boolean postfix stack is unbalanced"),
+                format_args!("Boolean postfix stack is unbalanced"),
             );
             continue;
         }
@@ -529,10 +529,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "Boolean operands, form, or reference acyclicity is invalid"
-                ),
+                format_args!("Boolean operands, form, or reference acyclicity is invalid"),
             );
             continue;
         }
@@ -550,7 +547,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Boolean result placement is invalid"),
+                format_args!("Boolean result placement is invalid"),
             );
             continue;
         }
@@ -565,7 +562,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -578,7 +575,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "selected-component Boolean tree pointer is invalid"),
+                format_args!("selected-component Boolean tree pointer is invalid"),
             );
             continue;
         };
@@ -587,10 +584,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "selected-component point or entity-use flag is invalid"
-                ),
+                format_args!("selected-component point or entity-use flag is invalid"),
             );
             continue;
         }
@@ -608,7 +602,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "selected-component placement is invalid"),
+                format_args!("selected-component placement is invalid"),
             );
             continue;
         }

@@ -216,7 +216,7 @@ fn solve_synchronization_copies_assignment_and_solve_values() {
             }],
             offset: 0,
             for_offset: 2,
-            work_cap: None,
+            work_caps: std::collections::BTreeSet::new(),
         }];
         super::super::synchronize_solve_blocks(
             &mut blocks,

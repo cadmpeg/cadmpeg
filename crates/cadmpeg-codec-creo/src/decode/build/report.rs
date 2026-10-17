@@ -185,7 +185,7 @@ pub(in super::super) fn build_report(
         .expressions
         .iter()
         .flat_map(|record| &record.solve_blocks)
-        .filter_map(|block| block.work_cap)
+        .flat_map(|block| block.work_caps.iter().copied())
     {
         if !solve_work_caps.contains(&bound) {
             solve_work_caps.push(bound);

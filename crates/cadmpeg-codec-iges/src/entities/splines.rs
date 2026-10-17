@@ -267,7 +267,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -283,7 +283,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline header segment count is invalid"),
+                format_args!("spline header segment count is invalid"),
             );
             continue;
         };
@@ -302,7 +302,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "breakpoint count overflows"),
+                format_args!("breakpoint count overflows"),
             );
             continue;
         };
@@ -313,7 +313,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "breakpoint array is truncated or non-finite"),
+                format_args!("breakpoint array is truncated or non-finite"),
             );
             continue;
         };
@@ -324,7 +324,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "breakpoints are not strictly increasing"),
+                format_args!("breakpoints are not strictly increasing"),
             );
             continue;
         }
@@ -333,7 +333,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "coefficient count overflows"),
+                format_args!("coefficient count overflows"),
             );
             continue;
         };
@@ -344,7 +344,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "coefficient array is truncated or non-finite"),
+                format_args!("coefficient array is truncated or non-finite"),
             );
             continue;
         };
@@ -537,7 +537,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "spline segments are positionally discontinuous, degenerate, or non-finite"
                 ),
             );
@@ -615,7 +614,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "converted spline endpoints cannot be evaluated"),
+                format_args!("converted spline endpoints cannot be evaluated"),
             );
             continue;
         };
@@ -651,7 +650,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -659,7 +658,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface type fields are not integers"),
+                format_args!("spline-surface type fields are not integers"),
             );
             continue;
         };
@@ -667,7 +666,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface type enum is out of range"),
+                format_args!("spline-surface type enum is out of range"),
             );
             continue;
         }
@@ -676,7 +675,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface dimensions are invalid"),
+                format_args!("spline-surface dimensions are invalid"),
             );
             continue;
         };
@@ -686,7 +685,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface dimensions are invalid"),
+                format_args!("spline-surface dimensions are invalid"),
             );
             continue;
         };
@@ -701,7 +700,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface pole dimensions overflow"),
+                format_args!("spline-surface pole dimensions overflow"),
             );
             continue;
         };
@@ -720,7 +719,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "u-breakpoint count overflows"),
+                format_args!("u-breakpoint count overflows"),
             );
             continue;
         };
@@ -728,7 +727,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "v-breakpoint count overflows"),
+                format_args!("v-breakpoint count overflows"),
             );
             continue;
         };
@@ -739,7 +738,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "u-breakpoints are truncated or non-finite"),
+                format_args!("u-breakpoints are truncated or non-finite"),
             );
             continue;
         };
@@ -751,7 +750,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "v-breakpoints are truncated or non-finite"),
+                format_args!("v-breakpoints are truncated or non-finite"),
             );
             continue;
         };
@@ -765,7 +764,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface breakpoints are not increasing"),
+                format_args!("spline-surface breakpoints are not increasing"),
             );
             continue;
         }
@@ -790,7 +789,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface block stride overflows"),
+                format_args!("spline-surface block stride overflows"),
             );
             continue;
         };
@@ -801,7 +800,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface placeholder grid overflows"),
+                format_args!("spline-surface placeholder grid overflows"),
             );
             continue;
         };
@@ -812,7 +811,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface parameter count overflows"),
+                format_args!("spline-surface parameter count overflows"),
             );
             continue;
         };
@@ -881,10 +880,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "spline-surface patch indexing or continuity is invalid"
-                ),
+                format_args!("spline-surface patch indexing or continuity is invalid"),
             );
             continue;
         }
@@ -904,7 +900,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface pole dimensions exceed u32"),
+                format_args!("spline-surface pole dimensions exceed u32"),
             );
             continue;
         };
@@ -924,7 +920,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "spline-surface patch grid is incomplete"),
+                format_args!("spline-surface patch grid is incomplete"),
             );
             continue;
         }

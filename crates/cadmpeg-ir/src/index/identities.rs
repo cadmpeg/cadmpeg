@@ -3,6 +3,23 @@
 
 use std::collections::{hash_map::Entry, HashMap};
 
+/// Membership query over a set of identities.
+pub(crate) trait IdentitySet {
+    fn contains(&self, id: &str) -> bool;
+}
+
+impl<T> IdentitySet for BorrowedIdentities<'_, T> {
+    fn contains(&self, id: &str) -> bool {
+        self.slots.contains_key(id)
+    }
+}
+
+impl IdentitySet for super::ModelIndex<'_> {
+    fn contains(&self, id: &str) -> bool {
+        super::ModelIndex::contains(self, id, super::StandardIndex)
+    }
+}
+
 pub(crate) struct BorrowedIdentities<'ir, T = ()> {
     slots: HashMap<&'ir str, Slots<T>>,
     /// Number of slots, counting every duplicate of an identity.

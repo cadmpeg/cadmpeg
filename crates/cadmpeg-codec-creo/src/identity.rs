@@ -93,6 +93,15 @@ pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32)
     suffix.len() == digits && suffix.parse::<u32>().ok() == Some(number)
 }
 
+/// Return the number a canonical numbered identity carries after `prefix`.
+///
+/// `matches_numbered_identity(actual, prefix, n)` holds exactly for the `n`
+/// this returns.
+pub(crate) fn numbered_identity(actual: &str, prefix: &str) -> Option<u32> {
+    let number = actual.strip_prefix(prefix)?.parse::<u32>().ok()?;
+    matches_numbered_identity(actual, prefix, number).then_some(number)
+}
+
 pub(crate) const VISIBGEOM_BODY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "visibgeom", "body");
 pub(crate) const VISIBGEOM_COEDGE: IdentityNamespace =
@@ -190,7 +199,7 @@ pub(crate) const VISIBGEOM_TABULATED_EXTRUSION: IdentityNamespace =
 
 #[cfg(test)]
 mod tests {
-    use super::{compose_checked, copy_checked_id, matches_numbered_identity};
+    use super::{compose_checked, copy_checked_id, matches_numbered_identity, numbered_identity};
 
     use cadmpeg_ir::ids::ShellId;
 
@@ -238,5 +247,36 @@ mod tests {
             prefix,
             1
         ));
+    }
+
+    #[test]
+    fn numbered_identity_returns_exactly_the_matching_number() {
+        let prefix = "creo:visibgeom:surface#";
+        for actual in [
+            "creo:visibgeom:surface#0",
+            "creo:visibgeom:surface#7",
+            "creo:visibgeom:surface#4294967295",
+            "creo:visibgeom:surface#4294967296",
+            "creo:visibgeom:surface#01",
+            "creo:visibgeom:surface#+1",
+            "creo:visibgeom:surface#",
+            "creo:visibgeom:surface#1x",
+            "creo:visibgeom:face#1",
+        ] {
+            let number = numbered_identity(actual, prefix);
+            if let Some(number) = number {
+                assert!(
+                    matches_numbered_identity(actual, prefix, number),
+                    "{actual}"
+                );
+            }
+            for candidate in [0, 1, 7, u32::MAX] {
+                assert_eq!(
+                    matches_numbered_identity(actual, prefix, candidate),
+                    number == Some(candidate),
+                    "{actual} {candidate}"
+                );
+            }
+        }
     }
 }

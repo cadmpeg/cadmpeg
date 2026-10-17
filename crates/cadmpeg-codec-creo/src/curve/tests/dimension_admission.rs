@@ -47,7 +47,7 @@ fn dimension_conversion_result(
         }],
         offset: 0,
         for_offset: 1,
-        work_cap: None,
+        work_caps: std::collections::BTreeSet::new(),
     };
     let values = BTreeMap::from([(
         "length".to_owned(),
@@ -62,7 +62,7 @@ fn dimension_conversion_result(
             &values,
             &[None],
             RelationEvaluationContext::default(),
-            &mut None,
+            &mut std::collections::BTreeSet::new(),
         )
     })
 }

@@ -9,7 +9,7 @@
 //! closure.
 
 use crate::document::CadIr;
-use crate::index::identities::BorrowedIdentities;
+use crate::index::identities::IdentitySet;
 use crate::report::{
     check::{Check, Finding, ValidationReport},
     loss::LossNote,
@@ -175,7 +175,7 @@ fn validate_model_with_index<'ir>(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ids.native_view(), &mut findings)?;
+    check_identity_and_order(ids, &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
@@ -196,15 +196,10 @@ fn validate_model_with_index<'ir>(
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
-    let reference_ids = BorrowedIdentities::build(|add| {
-        for id in ids.identities(crate::index::StandardIndex) {
-            add(id, ());
-        }
-    });
-    check_presentation(ir, &reference_ids, &mut findings);
-    check_drawings(ir, &reference_ids, &mut findings);
-    check_semantic_annotations(ir, &reference_ids, &mut findings);
-    check_typed_references(ctx, ir, &reference_ids, &mut findings)?;
+    check_presentation(ids, &mut findings);
+    check_drawings(ir, ids, &mut findings);
+    check_semantic_annotations(ir, ids, &mut findings);
+    check_typed_references(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
@@ -231,15 +226,22 @@ fn validate_annotations<'a>(
     additional: impl IntoIterator<Item = &'a str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let all_ids = BorrowedIdentities::build(|add| {
-        for id in ids.identities(crate::index::StandardIndex) {
-            add(id, ());
-        }
-        for id in additional {
-            add(id, ());
-        }
-    });
+    let mut staged: Vec<&str> = additional.into_iter().collect();
+    staged.sort_unstable();
+    let all_ids = IndexWithStaged { index: ids, staged };
     check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)
+}
+
+/// A model index together with identities staged outside the document, sorted.
+struct IndexWithStaged<'i, 'a> {
+    index: &'i crate::index::ModelIndex<'a>,
+    staged: Vec<&'a str>,
+}
+
+impl IdentitySet for IndexWithStaged<'_, '_> {
+    fn contains(&self, id: &str) -> bool {
+        IdentitySet::contains(self.index, id) || self.staged.binary_search(&id).is_ok()
+    }
 }
 
 fn validate_model_with_annotations(

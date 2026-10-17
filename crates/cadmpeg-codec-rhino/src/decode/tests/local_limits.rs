@@ -47,7 +47,8 @@ fn top_level_objects_do_not_count_toward_the_instance_entity_limit() {
                 .report
                 .phase_warnings
                 .messages()
-                .any(|message| message.contains("document instance entity budget exceeded")));
+                .any(|message| message
+                    .contains("document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)")));
             assert_eq!(context.expansion_budget.entities, 0);
             context.session.document().model.clone()
         })
@@ -79,7 +80,8 @@ fn point_commit_skips_the_instance_member_at_the_local_entity_limit() {
             .report
             .phase_warnings
             .messages()
-            .any(|message| message.contains("document instance entity budget exceeded")));
+            .any(|message| message
+                .contains("document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)")));
         assert_eq!(expand.ctx().resource_refusal(), None);
     });
 }
@@ -112,7 +114,7 @@ fn instance_member_candidate_is_rejected_at_the_local_entity_limit() {
             })
             .expect_err("candidate exceeds zero entities");
         assert!(matches!(&error, CandidateError::Admission(message)
-            if message == "document instance entity budget exceeded"));
+            if message == "document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)"));
         assert!(context.session.document().model.points.is_empty());
         assert_eq!(expand.ctx().resource_refusal(), None);
     });
@@ -141,7 +143,7 @@ fn brep_commit_skips_the_instance_member_at_the_local_entity_limit() {
             .phase_warnings
             .messages()
             .any(|message| message.contains(
-                "Brep draft rejected before commit: document instance entity budget exceeded"
+                "Brep draft rejected before commit: document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)"
             )));
         assert_eq!(expand.ctx().resource_refusal(), None);
     });
@@ -205,7 +207,8 @@ fn point_cloud_commit_skips_the_instance_member_at_the_local_entity_limit() {
             .report
             .phase_warnings
             .messages()
-            .any(|message| message.contains("document instance entity budget exceeded")));
+            .any(|message| message
+                .contains("document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)")));
         assert_eq!(expand.ctx().resource_refusal(), None);
     });
 }

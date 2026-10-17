@@ -81,7 +81,12 @@ directly.
 
 `begin_expand` checks a declared expansion size against the per-expansion
 allowance and the remaining total allowance, and `ExpandWriter::write`
-charges each chunk. Processing of an input that is already loaded starts
+charges each chunk. `open_zstd` checks each frame's window before it
+allocates a decoder: a window above the per-expansion allowance is a
+per-input bound, so the stream is `NotImplemented`, the session is not
+fused, and the caller skips that member and reports a loss. The bytes a
+member actually expands still go through `begin_expand` and `write`.
+Processing of an input that is already loaded starts
 with `DecodeContext::for_loaded_input`, which takes the measured input
 length; a format-declared count is not an input length. A codec limit that
 takes `min` with a session dimension takes it with the allowance, not with
@@ -103,7 +108,11 @@ Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
 storage are not retained bytes; per-input bounds, entity charges, and local
 work caps bound them. A new copy of bytes that the decoded document keeps
-must call `retain_bytes` before the copy.
+must call `retain_bytes` before the copy. A native record's text may be
+counted twice toward retained bytes, once by the codec before attach and
+once by the IR at attach (Rhino link bytes and `from_typed_for_decode`
+JSON copies), so the retained ceiling is conservative by at most that
+text.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
 parse it, charge its depth to the session, and bound the tree's storage by
@@ -151,14 +160,16 @@ functions, and test files. Four constants are excluded for that reason:
 CATIA `MAX_PAIR_SOLUTIONS` (`solve/incidence.rs`) and `MAX_ORIENTED_OPTIONS`
 (`solve/mesh_quotient.rs`) are in test functions, F3D `MAX_INDEX_FLOAT`
 (`writer/generate/native_geometry.rs`) is in a test module, and
-`MAX_MUTATION_BYTES` is in a fuzz target outside `src`. Where a constant is
+`MAX_MUTATION_BYTES` is in a fuzz target outside `src`.
+`python3 scripts/check-resource-caps.py` checks the table, the totals, and
+the production constants against each other. Where a constant is
 ambiguous, the kind follows the code at exhaustion and the note says so.
 "No loss at this site" means the code that detects exhaustion does not
 report a loss; a caller may report a general failure for the same item.
 
 | Crate                    | File                                               | Constant                                  | Value                                                   | Kind | Enforcement                                                                                                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first refuses a frame whose buffered output (its window, or its declared content size when that is smaller) is above the per-expansion allowance through `DecompressedBytes`. A declared window above this constant is `NotImplemented` and does not set the fuse. |
+| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first checks each frame's buffered output (its window, or its declared content size when that is smaller) against the per-expansion allowance as a per-input bound: excess is `NotImplemented` for that stream, names the allowance, and does not set the fuse. A declared window above this constant is also `NotImplemented` and does not set the fuse. |
 | `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess is `NotImplemented` for that text and does not set the fuse.                                                                  |
 | `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess is `NotImplemented` and does not set the fuse.                                  |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |
@@ -185,6 +196,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_DISCARDED_EXPANDED_NODES`            | `16 * MAX_EXPANDED_NODES`                               | 4    | Value nodes that anchor expansions omitted at `MAX_EXPANDED_NODES` may copy before they stop. Once it is spent, an instance whose outcome is not already recorded is omitted without expansion and reported with `parse.expansion-bounded`, naming this bound.            |
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_MATERIALIZED_NODES`                  | `1_000_000`                                             | 4    | REFERENCE expansion node count across the exchange (`ReferenceResolver`). An anchor or instance that passes the count, or that names an omitted anchor, is omitted with its exact source and `parse.expansion-bounded`. Each top-level reference records its node use or the count at which it failed, as for anchors. |
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_DISCARDED_MATERIALIZED_NODES`        | `16 * MAX_MATERIALIZED_NODES`                           | 4    | Value nodes that REFERENCE expansions omitted at `MAX_MATERIALIZED_NODES` may copy before they stop. Once it is spent, an instance whose outcome is not already recorded is omitted without expansion and reported with `parse.expansion-bounded`, naming this bound.     |
+| `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`     | `16`, plus `EXPANDED_PAYLOAD_BASE` (16 MiB)             | 4    | String, binary and name octets that the anchor pass, and separately the REFERENCE pass, may copy out of anchors, per input byte. Copies that an omitted item discards stay charged. An item whose copy does not fit is omitted with its exact source and `parse.expansion-bounded`, naming this constant. Recorded anchor and reference outcomes carry their octets, so a later item that cannot fit is decided before anything is copied. Working storage, not `retain_bytes`. |
 | `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCES`                 | `100_000`                                               | 4    | Occurrence expansion output (`OccurrenceExpansion::expand`). At the limit expansion stops and `reader.rs` reports `occurrence.expansion-output-truncated`.                                                                                                                   |
@@ -207,7 +219,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-inventor` | `src/property_set.rs`                              | `MAX_STREAM_SIZE`                         | `2_097_152`                                             | 2    | OLE property-set stream size and the string, BLOB and clipboard size fields. A larger stream is skipped when property sets are listed and `Malformed` when parsed; a larger size field is `Malformed`. Payload reads go through `take`.                                      |
 | `cadmpeg-codec-inventor` | `src/property_set.rs`                              | `MAX_PROPERTIES`                          | `65_536`                                                | 2    | Section property count, dictionary entry count and vector element count. Excess is `Malformed`; entries are read one at a time against the section window.                                                                                                                   |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_SKETCH_RECORDS`                      | `1_000_000`                                             | 2    | Declared sketch, spreadsheet, dimension and record counts (excess is `Malformed`); spline pole, knot and multiplicity counts, binary point and value lists checked with `View::counted`, and pattern occurrence counts (excess returns `None` and the item is not built).    |
-| `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_PROFILE_ENDPOINT_CANDIDATES`         | `1 << 24`                                               | 4    | Document-wide `WorkBudget` for the endpoint candidates sketch profile chaining examines. Exhaustion keeps the sketch, its entities and constraints, with no profiles, and reports `sketch.profile-matching-bounded`.                                                         |
+| `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_PROFILE_ENDPOINT_CANDIDATES`         | `1 << 24`                                               | 4    | Per-sketch `WorkBudget` for the endpoint candidates sketch profile chaining examines. Exhaustion keeps the sketch, its entities and constraints, with no profiles, and reports `sketch.profile-matching-bounded`.                                                            |
 | `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_LINK_ARRAY_ELEMENTS`                 | `1_000_000`                                             | 2    | Stated or inferred element count of one link array. Excess is `Malformed`. The link occurrences the arrays project are admitted against `max_entities` before any is built.                                                                                                  |
 | `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_OBJECTS`                             | `1_000_000`                                             | 2    | Object elements in `Document.xml`, counted in the parsed tree. Excess returns `NotImplemented`. Entities are charged separately in `container.rs`.                                                                                                                           |
 | `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_PROPERTY_VALUE_XML_BYTES`            | `16 * 1024 * 1024`                                      | 2    | Total of the overlapping value-XML ranges one property would copy. Excess keeps the exact XML, builds no value records and reports `PersistencePayloadUnresolved`.                                                                                                           |
@@ -228,7 +240,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_SCALARS`                             | `1 << 24`                                               | 2    | Cage scalar count, also checked against `remaining / 8` and `View::counted`.                                                                                                                                                                                                 |
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_REFERENCES`                 | `1 << 20`                                               | 4    | `ExpansionBudget` reference counter for instance expansion. At the limit the reference is kept unexpanded and the expansion is rolled back with a phase warning, which becomes a loss.                                                                                       |
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_MEMBERS`                    | `1 << 20`                                               | 4    | `ExpansionBudget` member counter. Same skip and warning.                                                                                                                                                                                                                     |
-| `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_ENTITIES`                   | `1 << 20`                                               | 4    | `ExpansionBudget` count of entities emitted by expansion. At the limit the object is skipped with `document instance entity budget exceeded`.                                                                                                                                |
+| `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_ENTITIES`                   | `1 << 20`                                               | 4    | `ExpansionBudget` count of entities emitted by expansion. At the limit the object is skipped with `document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)`.                                                                                                        |
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_DEPTH`                      | `64`                                                    | 4    | Instance nesting; each level also charges `enter_nested`. At the limit the reference is retained unexpanded with a warning.                                                                                                                                                  |
 | `cadmpeg-codec-rhino`    | `src/decode.rs`                                    | `MAX_INSTANCE_COPY_ELEMENTS`              | `1 << 26`                                               | 4    | `ExpansionBudget` count of member visits, copied entities, points, control points, mesh vertices and triangles, and cage vertices across the document. Rejected expansions stay charged; at the limit the expansion is rolled back with a warning naming the constant, which becomes a loss. |
 | `cadmpeg-codec-rhino`    | `src/chunks.rs`                                    | `MAX_HEADER_SEARCH`                       | `33_554_432 + MAGIC.len()`                              | 1    | Window in which the 3DM file header must start.                                                                                                                                                                                                                              |
@@ -248,7 +260,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_MESH_NGON_CORNERS`                   | `100_000`                                               | 2    | Corners of one n-gon. Excess drops the n-gon userdata (`Ok(None)`).                                                                                                                                                                                                          |
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_MESH_FACE_SOURCE_IDS`                | `1 << 24`                                               | 2    | Face-source correspondence count. Excess fails the userdata.                                                                                                                                                                                                                 |
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_BUFFER_OUTPUT`                       | `256 * 1024 * 1024`                                     | 2    | Declared size of one mesh buffer, before the copy or `inflate`. Excess fails the mesh; the decode continues. Inflation also charges the session decompression ceilings.                                                                                                      |
-| `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_DOCUMENT_BUFFER_OUTPUT`              | `256 * 1024 * 1024`                                     | 4    | `MeshBudget`: stored plus inflated mesh-buffer bytes across the document. At the limit the mesh fails with `document mesh buffer budget exceeded`, the session is not fused, and later meshes still decode.                                                                  |
+| `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_DOCUMENT_BUFFER_OUTPUT`              | `256 * 1024 * 1024`                                     | 4    | `MeshBudget`: stored plus inflated mesh-buffer bytes across the document. At the limit the mesh fails with `document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)`, the session is not fused, and later meshes still decode.                                     |
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                                  | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`                                      | 2    | Declared byte count of one paramesh stream, checked before `begin_expand`. Excess returns `NotImplemented` without fusing; the container is recorded as failed and the decode continues. The expansion also charges the session.                                             |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_MANIFEST_STRING_UNITS`               | `4 * 1024`                                              | 2    | Manifest ASCII and UTF-16 string length and locator length, read with `take`; the encoder checks the same limit.                                                                                                                                                             |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_REGISTRY_ENTRIES`                    | `64`                                                    | 2    | Top-level registry, capability and revision-10 link counts. Excess is `Malformed`.                                                                                                                                                                                           |
@@ -404,7 +416,7 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 213.
+Production `MAX_*` constants: 214.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -419,7 +431,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
-`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 7,
+`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 17,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
@@ -452,9 +464,11 @@ Current codec routes:
   a visited set or a result per record, so one walk visits each shared
   record once. The tessellation association walk follows a record
   once per distinct inherited placement, up to `MAX_ITEM_PLACEMENTS` per
-  item. The anchor and REFERENCE node counts omit the anchor or instance
-  that passes them and report `parse.expansion-bounded`; recorded outcomes
-  and the `MAX_DISCARDED_*` allowances bound the work of repeated misses.
+  item. The anchor and REFERENCE node counts, and the payload octets
+  allowed by `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`, omit the anchor or
+  instance that passes them and report `parse.expansion-bounded`; recorded
+  outcomes and the `MAX_DISCARDED_*` allowances bound the work of repeated
+  misses.
   Assembly occurrence expansion stops at `MAX_OCCURRENCES` or at a path of
   `max_recursion_depth` usages and reports a loss. Occurrence paths are
   parent links, so their storage is linear in the occurrences.
@@ -486,9 +500,9 @@ Current codec routes:
   The local work cap losses name the constant. History binding uses
   `retained_bytes_available()`.
 - FreeCAD link-array occurrences are admitted against `max_entities` before
-  any is built. Sketch profile chaining shares one document-wide
-  `WorkBudget`; a sketch that exhausts it keeps no profiles and reports
-  `sketch.profile-matching-bounded`.
+  any is built. Sketch profile chaining has one `WorkBudget` per sketch; a
+  sketch that exhausts it keeps no profiles and reports
+  `sketch.profile-matching-bounded`, and later sketches still chain.
 - Creo relation string text is working storage, not retained bytes: native
   record text is charged when it is serialized. Relation evaluation bounds it
   with local text caps that drop the value and report

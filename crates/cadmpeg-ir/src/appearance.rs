@@ -176,7 +176,7 @@ pub struct BumpMap {
 }
 
 /// A topology entity which receives an appearance.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

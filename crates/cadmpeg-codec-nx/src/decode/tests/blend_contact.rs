@@ -146,7 +146,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
         let grid = crate::decode::blend::blend_surface_parameter_grid_with_index_and_budget(
             &index, &surface, 0, &budget,
         )
-        .expect("evaluator allocation succeeds")
+        .expect("evaluation stays within session limits")
         .expect("finite wide blend grid");
         assert!(grid
             .iter()
@@ -1316,7 +1316,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             &mut contact_seeds,
             &geometry_budget,
         )
-        .expect("evaluator allocation succeeds")
+        .expect("evaluation stays within session limits")
         .expect("reverse contact relation transfers the certified boundary");
         assert!((actual.u - expected.u).abs() <= FIT_TOLERANCE);
         assert!((actual.v - expected.v).abs() <= FIT_TOLERANCE);

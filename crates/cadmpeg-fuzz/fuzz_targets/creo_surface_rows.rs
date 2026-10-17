@@ -6,6 +6,4 @@
 
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data| {
-    let _result = cadmpeg_codec_creo::fuzz::surface_rows(data);
-});
+fuzz_target!(|data| cadmpeg_codec_creo::fuzz::surface_rows(data));

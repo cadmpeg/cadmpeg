@@ -95,7 +95,7 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
 }
 
 #[test]
-fn inspect_summary_preserves_preview_attributes_under_service_profile() {
+fn inspect_summary_preserves_preview_attributes() {
     let mut scan = one_preview_summary_scan();
     scan.streams[0].file_offset = 123_456_789;
     let summary = crate::inspect::summarize(&scan).expect("summarize the inspection");

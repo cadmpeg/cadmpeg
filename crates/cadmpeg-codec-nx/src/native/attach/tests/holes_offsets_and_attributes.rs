@@ -376,7 +376,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
 }
 
 #[test]
-fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_allocation_limits() {
+fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     use crate::native::features::holes::FeatureSimpleHoleTemplate;
     use crate::native::features::holes::SimpleHoleEndTreatment;
     use crate::native::features::holes::SimpleHoleExtent;

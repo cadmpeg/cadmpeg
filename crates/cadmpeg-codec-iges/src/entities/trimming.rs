@@ -36,6 +36,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::CadIr;
 use std::cmp::Ordering;
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Endpoint clustering compares every endpoint pair of one boundary. A boundary
@@ -1453,6 +1454,23 @@ enum PcurveBounds {
     Unchecked,
 }
 
+/// A boundary pcurve resolved on its support, or the text of the
+/// non-resource refusal.
+type SharedPcurveGeometry = Result<Option<(PcurveGeometry, [f64; 2])>, String>;
+
+/// Boundary pcurve results keyed by (pcurve sequence, support surface
+/// sequence).
+///
+/// Both results depend only on the key, so a pcurve that many boundaries
+/// share is resolved and checked against the support parameter bounds once,
+/// and its [`MAX_BEZIER_BLENDS`] work is not repeated per reference.
+#[derive(Default)]
+struct SharedPcurves {
+    geometry: BTreeMap<(u32, u32), SharedPcurveGeometry>,
+    /// The support-bounds verdict after the source control-polygon fallback.
+    bounds: BTreeMap<(u32, u32), PcurveBounds>,
+}
+
 fn pcurve_declared_interval_bounds(
     geometry: &PcurveGeometry,
     range: [f64; 2],
@@ -1899,6 +1917,7 @@ pub(super) fn project(
     let carrier_index = ModelIndex::new_model_only(ir);
 
     let mut composite_index: Option<CompositeIndex> = None;
+    let mut shared_pcurves = SharedPcurves::default();
     let mut edges_by_curve = BTreeMap::<&CurveId, Vec<&Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = edge.curve() {
@@ -1914,7 +1933,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -1925,10 +1944,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "curve-on-surface creation or preference flag is invalid"
-                ),
+                format_args!("curve-on-surface creation or preference flag is invalid"),
             );
             continue;
         };
@@ -1936,7 +1952,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "curve-on-surface surface pointer is invalid"),
+                format_args!("curve-on-surface surface pointer is invalid"),
             );
             continue;
         };
@@ -1954,7 +1970,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "curve-on-surface parameter curve pointer is invalid"),
+                format_args!("curve-on-surface parameter curve pointer is invalid"),
             );
             continue;
         }
@@ -1962,7 +1978,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "curve-on-surface model curve pointer is invalid"),
+                format_args!("curve-on-surface model curve pointer is invalid"),
             );
             continue;
         };
@@ -1974,7 +1990,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "parameter curve does not have entity-use flag 05"),
+                format_args!("parameter curve does not have entity-use flag 05"),
             );
             continue;
         }
@@ -1999,7 +2015,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2007,7 +2023,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "boundary representation type is not 0 or 1"),
+                format_args!("boundary representation type is not 0 or 1"),
             );
             continue;
         };
@@ -2015,7 +2031,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "boundary preference flag is invalid"),
+                format_args!("boundary preference flag is invalid"),
             );
             continue;
         };
@@ -2023,7 +2039,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "boundary support pointer is invalid"),
+                format_args!("boundary support pointer is invalid"),
             );
             continue;
         };
@@ -2031,7 +2047,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "boundary segment count is not positive"),
+                format_args!("boundary segment count is not positive"),
             );
             continue;
         };
@@ -2043,7 +2059,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "boundary model-curve pointer is invalid"),
+                    format_args!("boundary model-curve pointer is invalid"),
                 );
                 valid = false;
                 break;
@@ -2055,7 +2071,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!("{}", "boundary segment sense is not 1 or 2"),
+                        format_args!("boundary segment sense is not 1 or 2"),
                     );
                     valid = false;
                     break;
@@ -2065,7 +2081,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "boundary pcurve count is invalid"),
+                    format_args!("boundary pcurve count is invalid"),
                 );
                 valid = false;
                 break;
@@ -2073,7 +2089,7 @@ pub(super) fn project(
             if (boundary_type == 0 && pcurve_count != 0)
                 || (boundary_type == 1 && pcurve_count == 0)
             {
-                super::push_geometry_loss(&mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"));
+                super::push_geometry_loss(&mut losses, entry, format_args!("boundary pcurve collection cardinality disagrees with its representation type"));
                 valid = false;
                 break;
             }
@@ -2089,7 +2105,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!("{}", "boundary pcurve does not have entity-use flag 05"),
+                        format_args!("boundary pcurve does not have entity-use flag 05"),
                     );
                     pcurves.clear();
                     break;
@@ -2100,7 +2116,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "boundary pcurve pointer is invalid"),
+                    format_args!("boundary pcurve pointer is invalid"),
                 );
                 valid = false;
                 break;
@@ -2128,7 +2144,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2148,7 +2164,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "trimmed-surface support pointer is invalid"),
+                    format_args!("trimmed-surface support pointer is invalid"),
                 );
                 continue;
             };
@@ -2160,7 +2176,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "trimmed-surface outer-boundary flag is not 0 or 1"),
+                    format_args!("trimmed-surface outer-boundary flag is not 0 or 1"),
                 );
                 continue;
             };
@@ -2168,7 +2184,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "trimmed-surface inner-boundary count is invalid"),
+                    format_args!("trimmed-surface inner-boundary count is invalid"),
                 );
                 continue;
             };
@@ -2181,7 +2197,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!("{}", "trimmed-surface outer-boundary pointer is invalid"),
+                        format_args!("trimmed-surface outer-boundary pointer is invalid"),
                     );
                     continue;
                 };
@@ -2189,7 +2205,14 @@ pub(super) fn project(
                     .get(&outer)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"));
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "trimmed-surface outer-boundary pointer does not target a Type 142 \
+                             Form 0 entity"
+                        ),
+                    );
                     continue;
                 }
                 sequences.push(outer);
@@ -2198,7 +2221,14 @@ pub(super) fn project(
                 record.value(4),
                 None | Some(TokenValue::Omitted | TokenValue::Integer(0))
             ) {
-                super::push_geometry_loss(&mut losses, entry, format_args!("{}", "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted"));
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    format_args!(
+                        "trimmed-surface parameter-domain outer-boundary pointer is neither zero \
+                         nor omitted"
+                    ),
+                );
                 continue;
             }
             let mut valid = true;
@@ -2207,7 +2237,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!("{}", "trimmed-surface inner-boundary pointer is invalid"),
+                        format_args!("trimmed-surface inner-boundary pointer is invalid"),
                     );
                     valid = false;
                     break;
@@ -2216,7 +2246,14 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"));
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "trimmed-surface inner-boundary pointer does not target a Type 142 \
+                             Form 0 entity"
+                        ),
+                    );
                     valid = false;
                     break;
                 }
@@ -2235,7 +2272,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "bounded-surface representation type is not 0 or 1"),
+                    format_args!("bounded-surface representation type is not 0 or 1"),
                 );
                 continue;
             };
@@ -2243,7 +2280,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "bounded-surface support pointer is invalid"),
+                    format_args!("bounded-surface support pointer is invalid"),
                 );
                 continue;
             };
@@ -2251,7 +2288,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "bounded-surface boundary count is not positive"),
+                    format_args!("bounded-surface boundary count is not positive"),
                 );
                 continue;
             };
@@ -2262,7 +2299,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!("{}", "bounded-surface boundary pointer is invalid"),
+                        format_args!("bounded-surface boundary pointer is invalid"),
                     );
                     valid = false;
                     break;
@@ -2271,7 +2308,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 141 || target.form != 0)
                 {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"));
+                    super::push_geometry_loss(&mut losses, entry, format_args!("bounded-surface boundary pointer does not target a Type 141 Form 0 entity"));
                     valid = false;
                     break;
                 }
@@ -2292,10 +2329,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!(
-                            "{}",
-                            "bounded-surface representation disagrees with its boundary"
-                        ),
+                        format_args!("bounded-surface representation disagrees with its boundary"),
                     );
                     valid = false;
                     break;
@@ -2330,7 +2364,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "trimmed-surface support carrier is missing"),
+                format_args!("trimmed-surface support carrier is missing"),
             );
             continue;
         };
@@ -2366,7 +2400,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "trimmed-surface boundary definition is missing"),
+                    format_args!("trimmed-surface boundary definition is missing"),
                 );
                 valid = false;
                 break;
@@ -2375,10 +2409,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!(
-                        "{}",
-                        "boundary definition names a different support surface"
-                    ),
+                    format_args!("boundary definition names a different support surface"),
                 );
                 valid = false;
                 break;
@@ -2391,7 +2422,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!("{}", "boundary model curve has no bounded edge"),
+                        format_args!("boundary model curve has no bounded edge"),
                     );
                     valid = false;
                     break;
@@ -2399,24 +2430,37 @@ pub(super) fn project(
                 let mut pcurves = Some(Vec::new());
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
-                    if composite_index.is_none() {
-                        composite_index = Some(CompositeIndex::from_ir(ir));
-                    }
-                    let index = composite_index.as_ref().ok_or_else(|| {
-                        CodecError::Malformed("IGES trimming composite index is absent".into())
-                    })?;
-                    match pcurve_geometry(
-                        &carrier_index,
-                        *sequence,
-                        &PcurveSupport {
-                            surface_id: &surface_id,
-                            geometry: &support_geometry,
-                            factor,
-                        },
-                        Some(carrier_agreement_tolerance),
-                        ctx,
-                        Some(index),
-                    ) {
+                    let resolved =
+                        match shared_pcurves.geometry.entry((*sequence, surface_sequence)) {
+                            Entry::Occupied(resolved) => resolved.get().clone(),
+                            Entry::Vacant(slot) => {
+                                if composite_index.is_none() {
+                                    composite_index = Some(CompositeIndex::from_ir(ir));
+                                }
+                                let index = composite_index.as_ref().ok_or_else(|| {
+                                    CodecError::Malformed(
+                                        "IGES trimming composite index is absent".into(),
+                                    )
+                                })?;
+                                let resolved = match pcurve_geometry(
+                                    &carrier_index,
+                                    *sequence,
+                                    &PcurveSupport {
+                                        surface_id: &surface_id,
+                                        geometry: &support_geometry,
+                                        factor,
+                                    },
+                                    Some(carrier_agreement_tolerance),
+                                    ctx,
+                                    Some(index),
+                                ) {
+                                    Ok(resolved) => Ok(resolved),
+                                    Err(error) => Err(error.non_resource()?.to_string()),
+                                };
+                                slot.insert(resolved).clone()
+                            }
+                        };
+                    match resolved {
                         Ok(Some(resolved)) => {
                             if let Some(pcurves) = pcurves.as_mut() {
                                 pcurves.push(resolved);
@@ -2434,7 +2478,6 @@ pub(super) fn project(
                     }
                 }
                 if let Some(error) = pcurve_refusal {
-                    let error = error.non_resource()?;
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
@@ -2449,7 +2492,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
-                            format_args!("{}", "boundary parameter curve has no NURBS carrier"),
+                            format_args!("boundary parameter curve has no NURBS carrier"),
                         );
                         valid = false;
                         break;
@@ -2459,28 +2502,38 @@ pub(super) fn project(
                 let mut pcurve_outside_support = false;
                 let mut pcurve_unchecked = false;
                 for ((geometry, range), sequence) in pcurves.iter().zip(&segment.pcurves) {
-                    let bounds = pcurve_declared_interval_bounds(
-                        geometry,
-                        *range,
-                        support_parameter_intervals,
-                        periodic_parameters,
-                        ctx,
-                    )?;
-                    if bounds != PcurveBounds::Within
-                        && !source_curve_control_polygon_within_bounds(
-                            &carrier_index,
-                            &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
-                            &PcurveSupport {
-                                surface_id: &surface_id,
-                                geometry: &support_geometry,
-                                factor,
-                            },
-                            support_parameter_intervals,
-                            (&entries, &records),
-                            global.real_precision(),
-                            ctx,
-                        )?
-                    {
+                    let bounds = match shared_pcurves.bounds.entry((*sequence, surface_sequence)) {
+                        Entry::Occupied(bounds) => *bounds.get(),
+                        Entry::Vacant(slot) => {
+                            let bounds = pcurve_declared_interval_bounds(
+                                geometry,
+                                *range,
+                                support_parameter_intervals,
+                                periodic_parameters,
+                                ctx,
+                            )?;
+                            let polygon_within = bounds != PcurveBounds::Within
+                                && source_curve_control_polygon_within_bounds(
+                                    &carrier_index,
+                                    &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
+                                    &PcurveSupport {
+                                        surface_id: &surface_id,
+                                        geometry: &support_geometry,
+                                        factor,
+                                    },
+                                    support_parameter_intervals,
+                                    (&entries, &records),
+                                    global.real_precision(),
+                                    ctx,
+                                )?;
+                            *slot.insert(if polygon_within {
+                                PcurveBounds::Within
+                            } else {
+                                bounds
+                            })
+                        }
+                    };
+                    if bounds != PcurveBounds::Within {
                         pcurve_unchecked = bounds == PcurveBounds::Unchecked;
                         pcurve_outside_support = !pcurve_unchecked;
                         break;
@@ -2499,15 +2552,24 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
-                        format_args!("checking the alternate boundary parameter curve against the support parameter bounds exceeds MAX_BEZIER_BLENDS; model-space curve retained"),
+                        format_args!(
+                            "checking the alternate boundary parameter curve against the support \
+                             parameter bounds exceeds MAX_BEZIER_BLENDS; model-space curve retained"
+                        ),
                     );
                     pcurves.clear();
                 }
                 if pcurve_outside_support {
                     if segment.parameter_curves_authoritative {
-                        super::push_attributed_loss(&mut losses, entry,
+                        super::push_attributed_loss(
+                            &mut losses,
+                            entry,
                             IgesLossCode::BoundaryPcurveOutsideSupportDomain,
-                            format_args!("IGES entity type {} form {}: boundary parameter curve leaves the declared support parameter bounds", entry.entity_type, entry.form),
+                            format_args!(
+                                "IGES entity type {} form {}: boundary parameter curve leaves the \
+                                 declared support parameter bounds",
+                                entry.entity_type, entry.form
+                            ),
                         );
                         valid = false;
                         break;
@@ -2544,7 +2606,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
-                            format_args!("{}", "boundary model-curve endpoints are missing"),
+                            format_args!("boundary model-curve endpoints are missing"),
                         );
                         valid = false;
                         break;
@@ -2554,7 +2616,6 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             format_args!(
-                                "{}",
                                 "boundary model-curve edge range does not evaluate to its vertices"
                             ),
                         );
@@ -2566,7 +2627,6 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             format_args!(
-                                "{}",
                                 "boundary model curve maps to multiple ambiguous edge occurrences"
                             ),
                         );
@@ -2578,7 +2638,6 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             format_args!(
-                                "{}",
                                 "curve-on-surface carriers disagree beyond the minimum resolution"
                             ),
                         );
@@ -2630,7 +2689,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "ordered boundary segments do not form a closed ring"),
+                    format_args!("ordered boundary segments do not form a closed ring"),
                 );
                 valid = false;
                 break;
@@ -2666,7 +2725,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "boundary sewing tolerance is invalid"),
+                    format_args!("boundary sewing tolerance is invalid"),
                 );
                 valid = false;
                 break;
@@ -2703,7 +2762,6 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         format_args!(
-                            "{}",
                             "boundary endpoint tolerance neighborhoods are non-transitive"
                         ),
                     );
@@ -2798,7 +2856,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "boundary loop contains no coedges"),
+                    format_args!("boundary loop contains no coedges"),
                 );
                 valid = false;
                 break;
@@ -2922,7 +2980,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
-                    format_args!("{}", "face tolerance is invalid"),
+                    format_args!("face tolerance is invalid"),
                 );
                 continue;
             };
@@ -2988,7 +3046,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "trimmed sheet candidate failed neutral validation"),
+                format_args!("trimmed sheet candidate failed neutral validation"),
             );
             continue;
         }
