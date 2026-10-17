@@ -141,8 +141,7 @@ pub(super) fn classify_members<'a>(
                 continue;
             }
         };
-        let (member_layers, mut member_losses) =
-            crate::dialect::classify_layers(ctx, &member_scan)?;
+        let (member_layers, mut member_losses) = crate::dialect::classify_layers(&member_scan)?;
         for loss in &mut member_losses {
             loss.message = format!("archive member {member_path}: {}", loss.message);
         }

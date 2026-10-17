@@ -69,22 +69,18 @@ pub(crate) struct DecodedKernelCarrier {
     pub(crate) brep: AsmBrep,
 }
 
-fn parse_kernel_header(
-    ctx: &DecodeContext<'_>,
-    family: KernelFamily,
-    bytes: &[u8],
-) -> Result<Result<BinaryHeader, String>, CodecError> {
+fn parse_kernel_header(family: KernelFamily, bytes: &[u8]) -> Result<BinaryHeader, String> {
     let (parsed, absent) = match family {
         KernelFamily::Asm => (
-            asm_header::parse(ctx, bytes)?,
+            asm_header::parse(bytes),
             "Inventor ASM carrier has no parseable header",
         ),
         KernelFamily::Acis => (
-            acis_header::parse(ctx, bytes)?,
+            acis_header::parse(bytes),
             "Inventor ACIS carrier has no parseable header",
         ),
     };
-    Ok(parsed.ok_or_else(|| absent.to_owned()))
+    parsed.ok_or_else(|| absent.to_owned())
 }
 
 pub(crate) fn decode_kernel_carrier(
@@ -98,7 +94,7 @@ pub(crate) fn decode_kernel_carrier(
             asm_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
                 CodecError::Malformed("Inventor ASM carrier has no record stream".into())
             })?,
-            asm_header::solved_record_limit_with_header(ctx, bytes, header)?,
+            asm_header::solved_record_limit_with_header(bytes, header),
         ),
         KernelFamily::Acis => {
             // Every save-format band frames and decodes the same way. The band
@@ -109,7 +105,7 @@ pub(crate) fn decode_kernel_carrier(
                 acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
                     CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
                 })?,
-                acis_header::solved_record_limit_with_header(ctx, bytes, header)?,
+                acis_header::solved_record_limit_with_header(bytes, header),
             )
         }
     };
@@ -146,7 +142,6 @@ pub(crate) fn decode_kernel_carrier(
 }
 
 pub(crate) fn select_active_carrier<'a>(
-    ctx: &DecodeContext<'_>,
     segments: &[SegmentDescriptor<'a>],
     document_kind: &DocumentKind,
 ) -> Result<ActiveCarrierState<'a>, CodecError> {
@@ -191,7 +186,6 @@ pub(crate) fn select_active_carrier<'a>(
         ));
     };
     match parse_carrier(
-        ctx,
         record.payload,
         segment.pair.token.key(),
         record.ordinal,
@@ -205,7 +199,6 @@ pub(crate) fn select_active_carrier<'a>(
 }
 
 fn parse_carrier<'a>(
-    ctx: &DecodeContext<'_>,
     payload: View<'a>,
     segment_token: &cadmpeg_ir::ids::IdentityKey,
     record_ordinal: u32,
@@ -252,10 +245,7 @@ fn parse_carrier<'a>(
             "Inventor kernel-carrier record holds no carrier bytes".into(),
         ));
     };
-    let header = match parse_kernel_header(ctx, family, carrier.window())? {
-        Ok(header) => Ok(Box::new(header)),
-        Err(detail) => Err(detail),
-    };
+    let header = parse_kernel_header(family, carrier.window()).map(Box::new);
     let mut offset = carrier_end;
     let selected_key = read_u32(bytes, offset, "carrier selected key")?;
     offset += 4;
@@ -343,36 +333,19 @@ mod tests {
     fn parsed_kernel_header_carrier_parses() {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
-        let (service, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("build the decode context");
-        assert!(parse_carrier(
-            &service,
-            view,
-            &cadmpeg_ir::identity_key!("token"),
-            7,
-            100,
-            23
-        )
-        .is_ok());
+        let (_, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("build the decode context");
+        assert!(parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23).is_ok());
     }
 
     #[test]
     fn absent_kernel_header_detail_is_retained() {
         let bytes = carrier_fixture(b"ASM BinaryFile9", 23);
         let arena = DecodeArena::new();
-        let (service, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("build the decode context");
-        let carrier = parse_carrier(
-            &service,
-            view,
-            &cadmpeg_ir::identity_key!("token"),
-            7,
-            100,
-            23,
-        )
-        .expect("carrier selection retains absent header");
+        let (_, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("build the decode context");
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
+            .expect("carrier selection retains absent header");
         assert_eq!(
             carrier
                 .header
@@ -391,7 +364,7 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
         let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
         assert!(matches!(
-            select_active_carrier(&setup_ctx, &inventory.segments, &DocumentKind::Part)
+            select_active_carrier(&inventory.segments, &DocumentKind::Part)
                 .expect("select the active carrier"),
             ActiveCarrierState::Selected(_)
         ));
@@ -411,7 +384,7 @@ mod tests {
     #[test]
     fn typed_carrier_envelope_selects_family_and_exact_footer() {
         let bytes = carrier_fixture(b"ASM BinaryFile4 synthetic", 18);
-        with_view(&bytes, |ctx, view| {
+        with_view(&bytes, |view| {
             assert_eq!(
                 u32::from_le_bytes(bytes[0..4].try_into().expect("planted header state")),
                 1
@@ -428,7 +401,7 @@ mod tests {
                 u32::from_le_bytes(bytes[10..14].try_into().expect("planted schema")),
                 4
             );
-            let carrier = parse_carrier(ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18)
+            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18)
                 .expect("carrier parses");
             assert_eq!(carrier.header_state, 1);
             assert_eq!(carrier.header_kind, 2);
@@ -441,10 +414,8 @@ mod tests {
         });
         let mut malformed = bytes;
         *malformed.last_mut().expect("footer byte") = 0;
-        with_view(&malformed, |ctx, view| {
-            assert!(
-                parse_carrier(ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18).is_err()
-            );
+        with_view(&malformed, |view| {
+            assert!(parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18).is_err());
         });
     }
 
@@ -455,7 +426,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
             .expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
@@ -476,7 +447,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
             .expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
 
@@ -502,9 +473,8 @@ mod tests {
             let (ctx, view) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic carrier fits policy");
-            let carrier =
-                parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
-                    .expect("carrier parses");
+            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+                .expect("carrier parses");
             assert_eq!(carrier.family, KernelFamily::Acis);
             decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
         };
@@ -537,7 +507,6 @@ mod tests {
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic carrier fits policy");
             let carrier = parse_carrier(
-                &ctx,
                 view,
                 &cadmpeg_ir::identity_key!("token"),
                 7,
@@ -558,9 +527,9 @@ mod tests {
     #[test]
     fn pre_15_segment_version_over_garbage_is_malformed() {
         let bytes = carrier_fixture(b"not a kernel carrier", 14);
-        with_view(&bytes, |ctx, view| {
+        with_view(&bytes, |view| {
             assert!(matches!(
-                parse_carrier(ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 14),
+                parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 14),
                 Err(CodecError::Malformed(_))
             ));
         });
@@ -576,7 +545,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(&ctx, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
             .expect("carrier parses");
         assert!(matches!(
             decode_test_carrier(&ctx, &carrier),
@@ -643,10 +612,10 @@ mod tests {
         bytes
     }
 
-    fn with_view(bytes: &[u8], test: impl FnOnce(&DecodeContext<'_>, View<'_>)) {
+    fn with_view(bytes: &[u8], test: impl FnOnce(View<'_>)) {
         let arena = DecodeArena::new();
-        let (ctx, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
+        let (_, view) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        test(&ctx, view);
+        test(view);
     }
 }

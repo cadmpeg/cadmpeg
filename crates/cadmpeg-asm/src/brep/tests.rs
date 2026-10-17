@@ -557,7 +557,7 @@ fn null_curve_apex_edge_is_a_point_edge_of_a_solid() {
     let source = CONE_WITH_POINT_APEX_SAT;
     crate::test_support::with_service_context(source, |ctx| {
         let parsed = crate::sat::parse(ctx, source).expect("synthetic SAT stream");
-        let header = parsed.header.as_kernel_header(ctx).expect("SAT header");
+        let header = parsed.header.as_kernel_header();
         let brep = super::decode_with_header(
             ctx,
             &parsed.records,
@@ -605,7 +605,7 @@ fn null_curve_edge_between_distinct_vertices_stays_curveless() {
     let source = source.as_bytes();
     crate::test_support::with_service_context(source, |ctx| {
         let parsed = crate::sat::parse(ctx, source).expect("synthetic SAT stream");
-        let header = parsed.header.as_kernel_header(ctx).expect("SAT header");
+        let header = parsed.header.as_kernel_header();
         let brep = super::decode_with_header(
             ctx,
             &parsed.records,

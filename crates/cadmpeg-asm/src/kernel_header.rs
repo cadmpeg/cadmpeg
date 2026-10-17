@@ -211,13 +211,11 @@ mod tests {
                 let mut bytes = original.clone();
                 bytes[*position] = 0xff;
                 assert_eq!(start(&bytes), Some(record_start));
-                let ctx = cadmpeg_test_support::service_decode_context();
                 let header = if magic.starts_with(b"ASM") {
-                    crate::asm_header::parse(&ctx, &bytes)
+                    crate::asm_header::parse(&bytes)
                 } else {
-                    crate::acis_header::parse(&ctx, &bytes)
+                    crate::acis_header::parse(&bytes)
                 }
-                .unwrap()
                 .unwrap();
                 assert_eq!(header.metadata.linear, Some(0.125));
                 assert_eq!(header.metadata.angular, Some(0.25));
@@ -268,16 +266,12 @@ mod tests {
             } else {
                 crate::acis_header::parse
             };
-            let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-                .expect("parse the binary header")
-                .expect("recognized partial header");
+            let header = parse(&bytes).expect("recognized partial header");
             assert_eq!(header.metadata.linear, Some(0.125));
             assert_eq!(header.metadata.angular, None);
             bytes.push(6);
             bytes.extend_from_slice(&0.25_f64.to_le_bytes());
-            let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-                .expect("parse the binary header")
-                .expect("recognized complete header");
+            let header = parse(&bytes).expect("recognized complete header");
             assert_eq!(header.metadata.linear, Some(0.125));
             assert_eq!(header.metadata.angular, Some(0.25));
         }

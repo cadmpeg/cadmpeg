@@ -24,7 +24,7 @@ macro_rules! define_model_entity_projection {
             ctx: &DecodeContext<'_>,
             ir: &'ir CadIr,
             wanted: &BorrowedIdentities<'_, bool>,
-            add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ir>) -> Result<(), CodecError>,
+            add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ir>),
         ) -> Result<(), CodecError> {
             $(for entity in &ir.model.$field {
                 let id = crate::schema::EntitySchema::identity(entity);
@@ -34,7 +34,7 @@ macro_rules! define_model_entity_projection {
                         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                         Err(_) => continue,
                     };
-                    add(id, AnnotatedEntity::Projected(value))?;
+                    add(id, AnnotatedEntity::Projected(value));
                 }
             })*
             Ok(())
@@ -53,40 +53,36 @@ pub(super) fn check_annotations(
     let mut wanted = BorrowedIdentities::build(|add| {
         for (id, note) in annotations.exactness() {
             if !note.fields().is_empty() {
-                add(id, false)?;
+                add(id, false);
             }
         }
-        Ok(())
-    })?;
+    });
     let mut values = Vec::new();
-    let entities = BorrowedIdentities::build(|add_identity| {
-        // Sort small identity slots rather than moving projected payloads.
-        let mut add = |id, value| {
-            let position = values.len();
-            values.push(value);
-            add_identity(id, position)
-        };
-        view.visit::<cadmpeg_core::CodecError>(|_, _, records| {
-            for record in records.records() {
-                let Some(seen) = wanted.get_mut(record.id()) else {
-                    continue;
-                };
-                if *seen {
-                    continue;
-                }
-                *seen = true;
-                let value = match record {
-                    NativeEntity::Product(product) => AnnotatedEntity::Product(product),
-                    NativeEntity::Source(source) => AnnotatedEntity::Source(source),
-                };
-                add(record.id(), value)?;
+    let mut entities = BorrowedIdentities::new();
+    // Sort small identity slots rather than moving projected payloads.
+    let mut add = |id, value| {
+        entities.insert(id, values.len());
+        values.push(value);
+    };
+    view.for_each(|_, _, records| {
+        for record in records.records() {
+            let Some(seen) = wanted.get_mut(record.id()) else {
+                continue;
+            };
+            if *seen {
+                continue;
             }
-            Ok(())
-        })?;
-        // Model entities take precedence over native records with the same id.
-        // The identity index keeps the last inserted matching value.
-        model_entity_projection(ctx, view.ir, &wanted, &mut add)
-    })?;
+            *seen = true;
+            let value = match record {
+                NativeEntity::Product(product) => AnnotatedEntity::Product(product),
+                NativeEntity::Source(source) => AnnotatedEntity::Source(source),
+            };
+            add(record.id(), value);
+        }
+    });
+    // Model entities take precedence over native records with the same id.
+    // The identity index keeps the last inserted matching value.
+    model_entity_projection(ctx, view.ir, &wanted, &mut add)?;
     for id in annotations.provenance.keys() {
         if !all_ids.contains(id) {
             super::record_finding(
@@ -254,22 +250,20 @@ pub(super) fn check_native_links(
     view: NativeView<'_>,
     all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+) {
     let ir = view.ir;
     let all_targets = BorrowedIdentities::build(|add| {
         for id in all_ids.identities(crate::index::StandardIndex) {
-            add(id, ())?;
+            add(id, ());
         }
-        Ok(())
-    })?;
+    });
     let native_ids = BorrowedIdentities::build(|add| {
-        view.visit::<cadmpeg_core::CodecError>(|_, _, records| {
+        view.for_each(|_, _, records| {
             for record in records.records() {
-                add(record.id(), ())?;
+                add(record.id(), ());
             }
-            Ok(())
-        })
-    })?;
+        });
+    });
     for feature in &ir.model.features {
         if let Some(target) = &feature.native_ref {
             if !native_ids.contains(target.as_str()) {
@@ -428,7 +422,7 @@ pub(super) fn check_native_links(
     // `unknowns` has a shared identity-link contract. Other arenas own their
     // field shapes; only an array made entirely of strings follows the generic
     // identity-link convention.
-    view.visit::<cadmpeg_core::CodecError>(|_, arena, records| {
+    view.for_each(|_, arena, records| {
         for entity in records.records() {
             let NativeEntity::Product(record) = entity else {
                 for target in entity.links() {
@@ -488,9 +482,7 @@ pub(super) fn check_native_links(
                 }
             }
         }
-        Ok(())
-    })?;
-    Ok(())
+    });
 }
 
 #[cfg(test)]

@@ -36,7 +36,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let mut scan = crate::container::scan(&ctx, root).unwrap();
     scan.breps.push(scan.breps[0].clone());
 
-    let (layers, losses) = classify_layers(&ctx, &scan).unwrap();
+    let (layers, losses) = classify_layers(&scan).unwrap();
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, F3dLossCode::DialectLayerCollision.kind());
     assert_eq!(
