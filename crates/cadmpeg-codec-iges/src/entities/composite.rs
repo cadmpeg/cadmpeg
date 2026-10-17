@@ -713,7 +713,7 @@ pub(super) enum CompositeCurveError {
     },
     /// A decode resource refusal.
     #[error(transparent)]
-    Budget(#[from] cadmpeg_core::CodecError),
+    Resource(#[from] cadmpeg_core::CodecError),
     /// A child's degree does not fit the platform's index width.
     #[error("a reversed child states the degree {degree}, which is not a usize")]
     ReversedChildDegree {
@@ -803,7 +803,7 @@ pub(super) enum CompositeCurveError {
 
 impl From<cadmpeg_core::decode::ResourceLimit> for CompositeCurveError {
     fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
-        Self::Budget(limit.into())
+        Self::Resource(limit.into())
     }
 }
 
@@ -811,7 +811,7 @@ impl CompositeCurveError {
     /// Return a decode resource refusal before a caller considers geometric fallback.
     pub(super) fn non_resource(self) -> Result<Self, CodecError> {
         match self {
-            Self::Budget(error) | Self::ChildWeightAllocation(error) => Err(error),
+            Self::Resource(error) | Self::ChildWeightAllocation(error) => Err(error),
             Self::Elevation(DegreeElevationError::Allocation(error)) => Err(error),
             error => Ok(error),
         }
