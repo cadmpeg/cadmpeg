@@ -1091,15 +1091,12 @@ fn legacy_relation_evaluation<'a>(
     } else {
         crate::native::relation_symbols(&relation.expression)
     };
-    let symbol_inputs = symbols
-        .iter()
-        .flat_map(|(_, symbol)| legacy_symbol_input_forms(symbol))
-        .collect::<HashSet<_>>();
+    let symbol_heads = LegacySymbolHeads::new(symbols.iter().map(|(_, symbol)| symbol.as_str()));
     let mut bindings = BTreeMap::new();
     let mut dependencies = Vec::new();
     let mut dependency_set = HashSet::new();
     for input in &relation.inputs {
-        if !symbol_inputs.contains(input.parameter.as_str()) {
+        if !symbol_heads.binds(&input.parameter) {
             return Ok(None);
         }
         let [parameter_id] = parameters_by_name
@@ -1147,28 +1144,56 @@ fn legacy_relation_evaluation<'a>(
         }))
 }
 
-/// Every relation input name that `symbol` binds.
+/// The relation input names that a set of relation symbols binds.
 ///
 /// An input binds a symbol that is the input followed by optional ASCII
 /// whitespace and an optional `/<digits>` ordinal.
-fn legacy_symbol_input_forms(symbol: &str) -> Vec<&str> {
-    let mut forms = Vec::new();
-    let mut push_whitespace_prefixes = |end: usize| {
-        let start = symbol[..end]
-            .trim_end_matches(|character: char| character.is_ascii_whitespace())
-            .len();
-        for form_end in start..=end {
-            forms.push(&symbol[..form_end]);
+struct LegacySymbolHeads<'a> {
+    /// Trailing ASCII whitespace of each symbol head, sorted and distinct,
+    /// keyed by the head without it.
+    spaces_by_head: HashMap<&'a str, Vec<&'a str>>,
+}
+
+impl<'a> LegacySymbolHeads<'a> {
+    fn new(symbols: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut spaces_by_head = HashMap::<&str, Vec<&str>>::new();
+        for symbol in symbols {
+            let before_ordinal = symbol
+                .rfind('/')
+                .filter(|&slash| {
+                    let ordinal = &symbol[slash + 1..];
+                    !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+                })
+                .map(|slash| &symbol[..slash]);
+            for spaced_head in std::iter::once(symbol).chain(before_ordinal) {
+                let head = spaced_head.trim_ascii_end();
+                spaces_by_head
+                    .entry(head)
+                    .or_default()
+                    .push(&spaced_head[head.len()..]);
+            }
         }
-    };
-    push_whitespace_prefixes(symbol.len());
-    if let Some(slash) = symbol.rfind('/') {
-        let ordinal = &symbol[slash + 1..];
-        if !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit()) {
-            push_whitespace_prefixes(slash);
+        for spaces in spaces_by_head.values_mut() {
+            spaces.sort_unstable();
+            spaces.dedup();
         }
+        Self { spaces_by_head }
     }
-    forms
+
+    /// Whether `input` is a symbol head followed by a prefix of its trailing
+    /// whitespace.
+    fn binds(&self, input: &str) -> bool {
+        let head = input.trim_ascii_end();
+        let space = &input[head.len()..];
+        self.spaces_by_head.get(head).is_some_and(|spaces| {
+            // The spaces that start with `space` sort first among those not
+            // below it.
+            let at = spaces.partition_point(|candidate| *candidate < space);
+            spaces
+                .get(at)
+                .is_some_and(|candidate| candidate.starts_with(space))
+        })
+    }
 }
 
 fn legacy_output_assignment_expression<'a>(
