@@ -48,13 +48,16 @@ const EPS_NEAR_ZERO: f64 = 1.0e-12;
 const PCURVE_MISMATCH_SAMPLE_LIMIT: usize = 4;
 const PCURVE_CARRIER_PARALLEL_EPS_SQUARED: f64 = 1e-18;
 const PCURVE_CARRIER_SAMPLE_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
+/// Surface identity namespaces a native face identifier selects, in the
+/// order a lookup tries them.
+const MODEL_SURFACE_PREFIXES: [&str; 3] = [
+    "creo:visibgeom:surface#",
+    "creo:novisgeom:surface#",
+    "creo:actdatums:surface#",
+];
 
 fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
-    for prefix in [
-        "creo:visibgeom:surface#",
-        "creo:novisgeom:surface#",
-        "creo:actdatums:surface#",
-    ] {
+    for prefix in MODEL_SURFACE_PREFIXES {
         let mut matches = surfaces.iter().filter(|surface| {
             crate::identity::matches_numbered_identity(surface.id.as_str(), prefix, face_id)
         });
@@ -64,6 +67,54 @@ fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> 
         return matches.next().is_none().then_some(surface);
     }
     None
+}
+
+/// Model surfaces keyed by the native face identifier and namespace that
+/// their canonical identity names.
+///
+/// [`ModelSurfaceIndex::unique`] returns what `unique_model_surface` returns
+/// for the indexed slice. A pass that looks up a surface for every pcurve
+/// path builds one index instead of scanning every surface per path.
+pub(in crate::decode) struct ModelSurfaceIndex<'a> {
+    /// `None` marks an identity that two or more surfaces carry.
+    surfaces: BTreeMap<(u32, usize), Option<&'a Surface>>,
+}
+
+impl<'a> ModelSurfaceIndex<'a> {
+    pub(in crate::decode) fn new(surfaces: &'a [Surface]) -> Self {
+        let mut indexed = BTreeMap::new();
+        for surface in surfaces {
+            let id = surface.id.as_str();
+            for (namespace, prefix) in MODEL_SURFACE_PREFIXES.into_iter().enumerate() {
+                let Some(face_id) = id
+                    .strip_prefix(prefix)
+                    .and_then(|suffix| suffix.parse::<u32>().ok())
+                    .filter(|face_id| {
+                        crate::identity::matches_numbered_identity(id, prefix, *face_id)
+                    })
+                else {
+                    continue;
+                };
+                match indexed.entry((face_id, namespace)) {
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        entry.insert(None);
+                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(Some(surface));
+                    }
+                }
+            }
+        }
+        Self { surfaces: indexed }
+    }
+
+    /// Return the only surface in the first namespace that names `face_id`.
+    pub(in crate::decode) fn unique(&self, face_id: u32) -> Option<&'a Surface> {
+        (0..MODEL_SURFACE_PREFIXES.len())
+            .find_map(|namespace| self.surfaces.get(&(face_id, namespace)))
+            .copied()
+            .flatten()
+    }
 }
 
 fn topology_ignored_surface_ids(
@@ -139,16 +190,14 @@ enum TwoChartMapping {
 fn map_two_chart_endpoint_sets(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    ir: &CadIr,
+    model_surfaces: &ModelSurfaceIndex<'_>,
     pcurve: &crate::curve::TwoChartPcurveSamples,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<TwoChartMapping, cadmpeg_core::CodecError> {
     let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
         return Ok(TwoChartMapping::NoSamples);
     };
-    let surfaces = pcurve
-        .faces
-        .map(|face_id| unique_model_surface(&ir.model.surfaces, face_id));
+    let surfaces = pcurve.faces.map(|face_id| model_surfaces.unique(face_id));
     let mut mapped = surfaces.map(|surface| surface.is_some());
     let missing_surface_paths = usize::from(!mapped[0]) + usize::from(!mapped[1]);
     let mut unevaluable_paths = 0;
@@ -212,12 +261,12 @@ fn map_two_chart_endpoint_sets(
 pub(in crate::decode) fn mapped_two_chart_endpoint_sets(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    ir: &CadIr,
+    model_surfaces: &ModelSurfaceIndex<'_>,
     pcurve: &crate::curve::TwoChartPcurveSamples,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<Option<TwoChartEndpointSets>, cadmpeg_core::CodecError> {
     Ok(
-        match map_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)? {
+        match map_two_chart_endpoint_sets(ctx, scan, model_surfaces, pcurve, source_carriers)? {
             TwoChartMapping::Mapped {
                 endpoint_sets,
                 surface_mismatch: false,
@@ -241,7 +290,7 @@ pub(in crate::decode) fn mapped_pcurve_endpoints(
     let mapped = crate::decode::with_service_context(|ctx| {
         map_pcurve_paths(
             ctx,
-            ir,
+            &ModelSurfaceIndex::new(&ir.model.surfaces),
             faces.into_iter().map(NonZeroU32::new).zip(endpoint_sets),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
@@ -470,7 +519,7 @@ fn pcurve_plane_carrier_status(
 
 fn pcurve_path_carrier_status(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
+    model_surfaces: &ModelSurfaceIndex<'_>,
     carriers: &BTreeMap<u32, CarrierEquation>,
     faces: [Option<NonZeroU32>; 2],
     face_index: usize,
@@ -479,8 +528,7 @@ fn pcurve_path_carrier_status(
 ) -> Result<PcurveCarrierStatus, cadmpeg_core::CodecError> {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
-    let Some(surface) = face_id.and_then(|id| unique_model_surface(&ir.model.surfaces, id.get()))
-    else {
+    let Some(surface) = face_id.and_then(|id| model_surfaces.unique(id.get())) else {
         return Ok(PcurveCarrierStatus::Unknown(
             PcurveCarrierUnknownReason::MissingSurface,
         ));
@@ -506,7 +554,7 @@ fn pcurve_path_carrier_status(
 
 fn pcurve_endpoint_carrier_status(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
+    model_surfaces: &ModelSurfaceIndex<'_>,
     carriers: &BTreeMap<u32, CarrierEquation>,
     faces: [Option<NonZeroU32>; 2],
     face_index: usize,
@@ -515,8 +563,7 @@ fn pcurve_endpoint_carrier_status(
 ) -> Result<PcurveCarrierStatus, cadmpeg_core::CodecError> {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
-    let Some(surface) = face_id.and_then(|id| unique_model_surface(&ir.model.surfaces, id.get()))
-    else {
+    let Some(surface) = face_id.and_then(|id| model_surfaces.unique(id.get())) else {
         return Ok(PcurveCarrierStatus::Unknown(
             PcurveCarrierUnknownReason::MissingSurface,
         ));
@@ -645,11 +692,7 @@ fn collect_support_cone_plane_witness(
 }
 
 fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&mut Surface> {
-    for prefix in [
-        "creo:visibgeom:surface#",
-        "creo:novisgeom:surface#",
-        "creo:actdatums:surface#",
-    ] {
+    for prefix in MODEL_SURFACE_PREFIXES {
         let mut matches = surfaces.iter().enumerate().filter_map(|(index, surface)| {
             crate::identity::matches_numbered_identity(surface.id.as_str(), prefix, face_id)
                 .then_some(index)
@@ -707,9 +750,11 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
             endpoint_sets.map(Some),
         );
     }
+    let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
     for pcurve in &scan.curves.two_chart_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
-        let mapping = map_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)?;
+        let mapping =
+            map_two_chart_endpoint_sets(ctx, scan, &model_surfaces, pcurve, source_carriers)?;
         let TwoChartMapping::Mapped {
             endpoint_sets: Some(endpoint_sets),
             ..
@@ -764,7 +809,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
 
 fn map_pcurve_paths(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
+    model_surfaces: &ModelSurfaceIndex<'_>,
     paths: impl IntoIterator<Item = (Option<NonZeroU32>, [[f64; 2]; 2])>,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<MappedPcurvePaths, cadmpeg_core::CodecError> {
@@ -779,7 +824,7 @@ fn map_pcurve_paths(
             continue;
         };
         let face_id = face_id.get();
-        let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+        let Some(surface) = model_surfaces.unique(face_id) else {
             result.missing_surfaces += 1;
             continue;
         };
@@ -927,6 +972,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     let ignored_surface_ids =
         topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
     let path_activity = PcurvePathActivity::from_scan(scan);
+    let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
     let mut process_paths = |curve_id: u32,
@@ -939,7 +985,12 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let mut carrier_mapped_paths = Vec::new();
         let mut carrier_proof_available = false;
         for (face_index, (face_id, endpoints)) in paths {
-            let mapped = map_pcurve_paths(ctx, ir, [(face_id, endpoints)], source_carriers)?;
+            let mapped = map_pcurve_paths(
+                ctx,
+                &model_surfaces,
+                [(face_id, endpoints)],
+                source_carriers,
+            )?;
             diagnostics.missing_surfaces += mapped.missing_surfaces;
             diagnostics.unevaluable_paths += mapped.unevaluable_paths;
             diagnostics.mapped_paths += mapped.mapped.len();
@@ -947,7 +998,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             let carrier_status = if endpoint_carrier_proof {
                 pcurve_endpoint_carrier_status(
                     ctx,
-                    ir,
+                    &model_surfaces,
                     carriers,
                     faces,
                     face_index,
@@ -957,7 +1008,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             } else {
                 pcurve_path_carrier_status(
                     ctx,
-                    ir,
+                    &model_surfaces,
                     carriers,
                     faces,
                     face_index,
@@ -1083,7 +1134,8 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let faces = pcurve.faces.map(NonZeroU32::new);
         diagnostics.records += 1;
         diagnostics.two_chart_records += 1;
-        let mapping = map_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)?;
+        let mapping =
+            map_two_chart_endpoint_sets(ctx, scan, &model_surfaces, pcurve, source_carriers)?;
         let (endpoint_sets, surface_mismatch) = match mapping {
             TwoChartMapping::NoSamples => {
                 diagnostics.two_chart_no_sample_records += 1;
@@ -1498,6 +1550,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
     let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
     {
+        let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
         let mut retain_path = |curve_id: u32,
                                face_id: Option<NonZeroU32>,
                                endpoints: [[f64; 2]; 2],
@@ -1509,7 +1562,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             if ignored_surface_ids.contains(&face_id) {
                 return Ok(());
             }
-            let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+            let Some(surface) = model_surfaces.unique(face_id) else {
                 return Ok(());
             };
             let geometry = source_carriers.surface_geometry(surface);
@@ -1580,8 +1633,13 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         }
         for pcurve in &scan.curves.two_chart_pcurves {
             let faces = pcurve.faces.map(NonZeroU32::new);
-            let Some(endpoint_sets) =
-                mapped_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)?
+            let Some(endpoint_sets) = mapped_two_chart_endpoint_sets(
+                ctx,
+                scan,
+                &model_surfaces,
+                pcurve,
+                source_carriers,
+            )?
             else {
                 continue;
             };
@@ -2220,8 +2278,9 @@ mod tests {
         mirrored_support_apex_cone, pcurve_edge_endpoint_evidence_with_carriers,
         pcurve_edge_endpoint_evidence_with_diagnostics, pcurve_mismatch_detail,
         pcurve_plane_carrier_status, point_coordinate_error, support_cone_witness_matches,
-        topology_ignored_surface_ids, transfer_analytic_pcurve_carriers, MappedPcurvePath,
-        PcurveCarrierStatus, PcurveCarrierUnknownReason, TwoChartEndpointSets, TwoChartMapping,
+        topology_ignored_surface_ids, transfer_analytic_pcurve_carriers, unique_model_surface,
+        MappedPcurvePath, ModelSurfaceIndex, PcurveCarrierStatus, PcurveCarrierUnknownReason,
+        TwoChartEndpointSets, TwoChartMapping,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
@@ -2420,7 +2479,7 @@ mod tests {
         let mapped = crate::decode::with_service_context(|ctx| {
             super::map_pcurve_paths(
                 ctx,
-                &ir,
+                &ModelSurfaceIndex::new(&ir.model.surfaces),
                 [(std::num::NonZeroU32::new(7), [[0.0, 0.0], [1.0, 0.0]])],
                 &source_carriers,
             )
@@ -2491,6 +2550,7 @@ mod tests {
                 source_object: None,
             },
         ]);
+        let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
         let mut pcurve = crate::curve::TwoChartPcurveSamples {
             curve_id: 9,
             faces: [7, 8],
@@ -2506,7 +2566,7 @@ mod tests {
             mapped_two_chart_endpoint_sets(
                 &evaluation_ctx,
                 &scan,
-                &ir,
+                &model_surfaces,
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
             )
@@ -2521,7 +2581,7 @@ mod tests {
         let mapping = map_two_chart_endpoint_sets(
             &evaluation_ctx,
             &scan,
-            &ir,
+            &model_surfaces,
             &pcurve,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
@@ -2537,7 +2597,7 @@ mod tests {
         assert!(mapped_two_chart_endpoint_sets(
             &evaluation_ctx,
             &scan,
-            &ir,
+            &model_surfaces,
             &pcurve,
             &crate::decode::source_carriers::SourceUnitCarriers::default()
         )
@@ -3211,7 +3271,7 @@ mod tests {
             map_two_chart_endpoint_sets(
                 &evaluation_ctx,
                 &scan,
-                &ir,
+                &ModelSurfaceIndex::new(&ir.model.surfaces),
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
             )
@@ -3226,13 +3286,53 @@ mod tests {
     }
 
     #[test]
+    fn model_surface_index_selects_the_surface_a_scan_selects() {
+        let surface = |id: &str| Surface {
+            id: SurfaceId::mint(id.to_string()).expect("identity grammar"),
+            ..unit_plane_surface(1)
+        };
+        let surfaces = [
+            surface("creo:visibgeom:surface#7"),
+            surface("creo:visibgeom:surface#7"),
+            surface("creo:novisgeom:surface#7"),
+            surface("creo:novisgeom:surface#8"),
+            surface("creo:actdatums:surface#8"),
+            surface("creo:actdatums:surface#9"),
+            surface("creo:visibgeom:surface#05"),
+            surface("creo:visibgeom:surface#+5"),
+            surface("creo:visibgeom:surface#10"),
+            surface("creo:visibgeom:surface#010"),
+            surface("creo:visibgeom:curve#11"),
+            surface("creo:visibgeom:surface#4294967295"),
+            surface("creo:visibgeom:surface#4294967296"),
+        ];
+        let index = ModelSurfaceIndex::new(&surfaces);
+        let selected = |face_id| index.unique(face_id).map(std::ptr::from_ref);
+
+        assert_eq!(selected(7), None);
+        assert_eq!(selected(8), Some(std::ptr::from_ref(&surfaces[3])));
+        assert_eq!(selected(9), Some(std::ptr::from_ref(&surfaces[5])));
+        assert_eq!(selected(5), None);
+        assert_eq!(selected(10), Some(std::ptr::from_ref(&surfaces[8])));
+        assert_eq!(selected(11), None);
+        assert_eq!(selected(u32::MAX), Some(std::ptr::from_ref(&surfaces[11])));
+        for face_id in (0..=12).chain([u32::MAX]) {
+            assert_eq!(
+                selected(face_id),
+                unique_model_surface(&surfaces, face_id).map(std::ptr::from_ref),
+                "face {face_id}"
+            );
+        }
+    }
+
+    #[test]
     fn a_pcurve_path_with_an_overflowing_endpoint_is_mapped() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(overflowing_plane_surface(7));
         let mapped = crate::decode::with_service_context(|ctx| {
             super::map_pcurve_paths(
                 ctx,
-                &ir,
+                &ModelSurfaceIndex::new(&ir.model.surfaces),
                 [(
                     std::num::NonZeroU32::new(7),
                     [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
@@ -3428,7 +3528,7 @@ mod tests {
             map_two_chart_endpoint_sets(
                 &evaluation_ctx,
                 &scan,
-                &ir,
+                &ModelSurfaceIndex::new(&ir.model.surfaces),
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
             )
@@ -3449,7 +3549,7 @@ mod tests {
         let mapped = crate::decode::with_service_context(|ctx| {
             super::map_pcurve_paths(
                 ctx,
-                &ir,
+                &ModelSurfaceIndex::new(&ir.model.surfaces),
                 [(
                     std::num::NonZeroU32::new(7),
                     [[f64::MAX, 0.0], [-f64::MAX, 5.0]],

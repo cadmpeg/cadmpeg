@@ -808,7 +808,7 @@ fn validate_loaded(
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.construction_recipes,
-        &native.asm_histories,
+        history::BindingHistories::Shared(&native.asm_histories),
         &scope_histories,
     )?;
     let decoded_profile_face_groups = native
@@ -5796,7 +5796,7 @@ fn validate_edge_identity_operands<'a>(
         &mut expected_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
-        &native.asm_histories,
+        history::BindingHistories::Shared(&native.asm_histories),
         &scope_histories,
     );
     history::selection::bind_edge_identity_bounded_face_rules(
@@ -5869,7 +5869,7 @@ fn validate_body_recipe_operands<'a>(
         &mut expected_operands,
         &native.construction_recipes,
         &native.design_parameter_scopes,
-        &native.asm_histories,
+        history::BindingHistories::Shared(&native.asm_histories),
     )?;
     let expected_operands = expected_operands
         .iter()
@@ -6442,7 +6442,7 @@ fn validate_edge_operands<'a>(
         &mut expected_edge_operands,
         &native.design_parameter_scopes,
         &native.construction_recipes,
-        &native.asm_histories,
+        history::BindingHistories::Shared(&native.asm_histories),
         &scope_histories,
     )?;
     validate_face_boundaries(

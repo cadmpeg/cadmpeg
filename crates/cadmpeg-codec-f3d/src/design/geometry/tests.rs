@@ -807,7 +807,7 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
     assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
-    assert!(boundary.strictly_contains(&hole, &local_profile_work()));
+    assert!(boundary.strictly_contains(&hole));
 }
 
 #[test]
@@ -831,9 +831,8 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         },
     ]);
 
-    let work = local_profile_work();
-    assert!(polygon.strictly_contains(&arc_loop, &work));
-    assert!(!arc_loop.strictly_contains(&polygon, &work));
+    assert!(polygon.strictly_contains(&arc_loop));
+    assert!(!arc_loop.strictly_contains(&polygon));
 
     let crossing = ProfileBoundary::CircularArcLoop(vec![
         ProfileBoundarySegment::Line {
@@ -847,8 +846,8 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
             end_angle: std::f64::consts::PI,
         },
     ]);
-    assert!(!polygon.strictly_contains(&crossing, &work));
-    assert!(!crossing.strictly_contains(&polygon, &work));
+    assert!(!polygon.strictly_contains(&crossing));
+    assert!(!crossing.strictly_contains(&polygon));
 }
 
 #[test]
@@ -872,11 +871,10 @@ fn arc_loop_containment_rejects_crossing_and_touching_segments() {
     let crossing = d_loop(-1.5, 1.0);
     let touching = d_loop(-1.0, 1.0);
 
-    let work = local_profile_work();
-    assert!(outer.strictly_contains(&inner, &work));
-    assert!(!inner.strictly_contains(&outer, &work));
-    assert!(!outer.strictly_contains(&crossing, &work));
-    assert!(!outer.strictly_contains(&touching, &work));
+    assert!(outer.strictly_contains(&inner));
+    assert!(!inner.strictly_contains(&outer));
+    assert!(!outer.strictly_contains(&crossing));
+    assert!(!outer.strictly_contains(&touching));
 }
 
 #[test]
@@ -1529,6 +1527,7 @@ fn numerical_0922b_wide_segment_incidence() {
 mod arrangement_routes;
 mod certified_boundaries;
 mod circular_regions;
+mod exact_arc_containment;
 mod predicates;
 mod profile_work;
 const EPS_CONTAINMENT_LINEAR: f64 = 1.0e-6;

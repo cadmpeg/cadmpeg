@@ -49,7 +49,7 @@ use crate::decode::analytic::vertices::{
 };
 
 use super::{
-    fc05_cap_pair_model_frame, fc05_model_frame, matches_native_surface_id, native_surface_id,
+    fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id, native_surface_id_matcher,
     native_surface_namespace,
 };
 
@@ -1689,11 +1689,13 @@ pub(in super::super) fn transfer_native_brep(
             }
         }
     }
+    let model_surfaces =
+        crate::decode::analytic::pcurves::ModelSurfaceIndex::new(&ir.model.surfaces);
     for pcurve in &scan.curves.two_chart_pcurves {
         let Some(endpoint_sets) = crate::decode::analytic::pcurves::mapped_two_chart_endpoint_sets(
             ctx,
             scan,
-            ir,
+            &model_surfaces,
             pcurve,
             source_carriers,
         )?
@@ -1817,13 +1819,14 @@ pub(in super::super) fn transfer_native_brep(
             diagnostics.reject_face(FaceAdmissionRejection::AmbiguousBoundaryCurve, face_id);
             continue;
         }
+        let is_face_surface = native_surface_id_matcher(scan, face_id);
         let mut two_edge_loops_are_proven = true;
         for lp in loops.iter().filter(|lp| lp.half_edges().len() == 2) {
             let Some(surface) = exactly_one(
                 ir.model
                     .surfaces
                     .iter()
-                    .filter(|candidate| matches_native_surface_id(scan, face_id, &candidate.id)),
+                    .filter(|candidate| is_face_surface(&candidate.id)),
             ) else {
                 two_edge_loops_are_proven = false;
                 break;
@@ -1853,32 +1856,33 @@ pub(in super::super) fn transfer_native_brep(
             &incidence,
             solved_vertices,
         );
-        let ordered =
-            if ordered.is_some() {
-                ordered
+        let ordered = if ordered.is_some() {
+            ordered
+        } else {
+            let surface = exactly_one(
+                ir.model
+                    .surfaces
+                    .iter()
+                    .filter(|candidate| is_face_surface(&candidate.id)),
+            );
+            if let Some(surface) = surface {
+                ordered_native_parameter_face_loops(
+                    ctx,
+                    loops,
+                    (face_id, source_carriers.surface_geometry(surface)),
+                    &incidence,
+                    solved_vertices,
+                    &native_pcurves,
+                    NativeCurveEvidence {
+                        typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+                        model_curves: &ir.model.curves,
+                        source_carriers,
+                    },
+                )?
             } else {
-                let surface =
-                    exactly_one(ir.model.surfaces.iter().filter(|candidate| {
-                        matches_native_surface_id(scan, face_id, &candidate.id)
-                    }));
-                if let Some(surface) = surface {
-                    ordered_native_parameter_face_loops(
-                        ctx,
-                        loops,
-                        (face_id, source_carriers.surface_geometry(surface)),
-                        &incidence,
-                        solved_vertices,
-                        &native_pcurves,
-                        NativeCurveEvidence {
-                            typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
-                            model_curves: &ir.model.curves,
-                            source_carriers,
-                        },
-                    )?
-                } else {
-                    None
-                }
-            };
+                None
+            }
+        };
         let Some(ordered) = ordered else {
             diagnostics.reject_face(FaceAdmissionRejection::LoopOrdering, face_id);
             continue;
@@ -2388,6 +2392,7 @@ pub(in super::super) fn transfer_native_brep(
                     tolerance: None,
                 },
             )?;
+            let is_face_surface = native_surface_id_matcher(scan, *face_id);
             for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
                 let ring = native_loop_ring(native_loop, *face_id)?;
                 ctx.charge_entities(1, "admit Creo model loops")?;
@@ -2434,10 +2439,12 @@ pub(in super::super) fn transfer_native_brep(
                                 solved_vertices[&binding.start_vertex_id.get()],
                                 solved_vertices[&end.get()],
                             ];
-                            let surface =
-                                exactly_one(ir.model.surfaces.iter().filter(|candidate| {
-                                    matches_native_surface_id(scan, *face_id, &candidate.id)
-                                }))?;
+                            let surface = exactly_one(
+                                ir.model
+                                    .surfaces
+                                    .iter()
+                                    .filter(|candidate| is_face_surface(&candidate.id)),
+                            )?;
                             Some((source_carriers.surface_geometry(surface), traversal))
                         })();
                         match inputs {
@@ -2465,10 +2472,12 @@ pub(in super::super) fn transfer_native_brep(
                         )
                         .or_else(|| {
                             native_candidates.is_none().then_some(())?;
-                            let surface =
-                                exactly_one(ir.model.surfaces.iter().filter(|candidate| {
-                                    matches_native_surface_id(scan, *face_id, &candidate.id)
-                                }))?;
+                            let surface = exactly_one(
+                                ir.model
+                                    .surfaces
+                                    .iter()
+                                    .filter(|candidate| is_face_surface(&candidate.id)),
+                            )?;
                             let curve = exactly_one(ir.model.curves.iter().filter(|candidate| {
                                 crate::identity::matches_numbered_identity(
                                     candidate.id.as_str(),

@@ -1067,6 +1067,14 @@ impl AsmHistory {
         Vec::new()
     }
 
+    /// Number of member states whose topology is currently materialized.
+    #[cfg(test)]
+    pub(crate) fn materialized_state_count(&self) -> usize {
+        self.materialized.states.get().map_or(0, |cache| {
+            cache.iter().filter(|entry| entry.get().is_some()).count()
+        })
+    }
+
     /// Drop all cached materializations.
     pub(crate) fn release_topologies(&mut self) {
         self.materialized = MaterializedTopologies::default();
