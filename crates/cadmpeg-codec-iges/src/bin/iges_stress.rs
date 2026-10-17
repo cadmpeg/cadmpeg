@@ -29,7 +29,9 @@ const PARAMETER_COLUMNS: usize = 64;
 const DIRECTORY_FIELD_COLUMNS: usize = 8;
 const SEQUENCE_COLUMNS: usize = 7;
 
-const GLOBAL: &str = "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+const GLOBAL: &str =
+    "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,\
+     15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
 
 const RIGHT_ANGLE: &str = "1.5707963267948966";
 

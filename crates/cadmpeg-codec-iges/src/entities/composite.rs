@@ -1759,8 +1759,14 @@ fn project_degraded_composite(
     )?;
     if edge.is_some() {
         super::push_attributed_loss(
-            losses, carrier.entry, IgesLossCode::CompositeCarrierDegraded,
-            format_args!("IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained", carrier.entry.sequence),
+            losses,
+            carrier.entry,
+            IgesLossCode::CompositeCarrierDegraded,
+            format_args!(
+                "IGES Type 102 entity D{} has no admitted concatenated carrier because \
+                 {reason}; the ordered native composite carrier was retained",
+                carrier.entry.sequence
+            ),
         );
     } else {
         super::push_geometry_loss(
@@ -1868,7 +1874,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Type 102 Entity Use Flag must be 00 in IGES 4.0"),
+                format_args!("Type 102 Entity Use Flag must be 00 in IGES 4.0"),
             );
             continue;
         };
@@ -1884,16 +1890,12 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
         let Some(raw_child_count) = record.integer(1) else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("{}", "child count is invalid"),
-            );
+            super::push_geometry_loss(&mut losses, entry, format_args!("child count is invalid"));
             continue;
         };
         let minimum_child_count = composite_minimum_child_count(global.global_table());
@@ -1926,7 +1928,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "child pointer list is invalid"),
+                format_args!("child pointer list is invalid"),
             );
             continue;
         }
@@ -1941,7 +1943,14 @@ fn project_with_type_130_policy(
             is_logical_connector,
             global.global_table(),
         ) {
-            super::push_geometry_loss(&mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"));
+            super::push_geometry_loss(
+                &mut losses,
+                entry,
+                format_args!(
+                    "Type 102 logical connectors made of exactly two Type 132 Connect Points \
+                     require Entity Use Flag 04 in IGES 5.0 and later"
+                ),
+            );
             continue;
         }
         if entry.transform != 0 {
@@ -1949,7 +1958,6 @@ fn project_with_type_130_policy(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "placed composite curves require transformed child-carrier projection"
                 ),
             );
@@ -1961,7 +1969,14 @@ fn project_with_type_130_policy(
                     || !child.status.is_physically_dependent()
             })
         }) {
-            super::push_geometry_loss(&mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"));
+            super::push_geometry_loss(
+                &mut losses,
+                entry,
+                format_args!(
+                    "composite child is missing, outside the effective specification family, \
+                     or is not physically dependent"
+                ),
+            );
             continue;
         }
         let point_context = CompositePointContext {
@@ -1993,7 +2008,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "point or connect-point adjacency is invalid"),
+                format_args!("point or connect-point adjacency is invalid"),
             );
             continue;
         }
@@ -2006,7 +2021,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "composite has no parameterized curve constituent"),
+                format_args!("composite has no parameterized curve constituent"),
             );
             continue;
         }
@@ -2023,10 +2038,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "a Type 142 constituent has no valid model-space curve pointer"
-                ),
+                format_args!("a Type 142 constituent has no valid model-space curve pointer"),
             );
             continue;
         }

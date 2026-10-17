@@ -51,10 +51,24 @@ pub(crate) fn dialect_loss(global: &ResolvedGlobal) -> Option<LossNote> {
     let version = global.version_name();
     let names = VerifiedVersionNames;
     let message = match recovery {
-        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => format!("IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}"),
-        UnverifiedDialectRecovery::Clamped => format!("IGES Global version flag {declared} names effective specification version {version} after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions {names}",
-        global.effective_version_flag()),
-        UnverifiedDialectRecovery::UnverifiedVersion => format!("IGES Global version flag {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}"),
+        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => format!(
+            "IGES Global field 23 (version flag) is malformed: the declaration \
+             {declaration} does not read as an integer, so the specification default \
+             {declared} names effective specification version {version}; this decode \
+             interpreted the file with the semantics verified for versions {names}"
+        ),
+        UnverifiedDialectRecovery::Clamped => format!(
+            "IGES Global version flag {declared} names effective specification \
+             version {version} after the clamp to {} that IGES 5.3 section \
+             2.2.4.3.23 requires of a postprocessor; this decode interpreted the \
+             file with the semantics verified for versions {names}",
+            global.effective_version_flag()
+        ),
+        UnverifiedDialectRecovery::UnverifiedVersion => format!(
+            "IGES Global version flag {declared} names effective specification \
+             version {version}; this decode interpreted the file with the semantics \
+             verified for versions {names}"
+        ),
     };
     let code = IgesLossCode::SourceDialectUnverified;
 
