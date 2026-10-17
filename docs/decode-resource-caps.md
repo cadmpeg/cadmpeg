@@ -81,7 +81,12 @@ directly.
 
 `begin_expand` checks a declared expansion size against the per-expansion
 allowance and the remaining total allowance, and `ExpandWriter::write`
-charges each chunk. Processing of an input that is already loaded starts
+charges each chunk. `open_zstd` checks each frame's window before it
+allocates a decoder: a window above the per-expansion allowance is a
+per-input bound, so the stream is `NotImplemented`, the session is not
+fused, and the caller skips that member and reports a loss. The bytes a
+member actually expands still go through `begin_expand` and `write`.
+Processing of an input that is already loaded starts
 with `DecodeContext::for_loaded_input`, which takes the measured input
 length; a format-declared count is not an input length. A codec limit that
 takes `min` with a session dimension takes it with the allowance, not with
@@ -154,7 +159,7 @@ report a loss; a caller may report a general failure for the same item.
 
 | Crate                    | File                                               | Constant                                  | Value                                                   | Kind | Enforcement                                                                                                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first refuses a frame whose buffered output (its window, or its declared content size when that is smaller) is above the per-expansion allowance through `DecompressedBytes`. A declared window above this constant is `NotImplemented` and does not set the fuse. |
+| `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first checks each frame's buffered output (its window, or its declared content size when that is smaller) against the per-expansion allowance as a per-input bound: excess is `NotImplemented` for that stream, names the allowance, and does not set the fuse. A declared window above this constant is also `NotImplemented` and does not set the fuse. |
 | `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess is `NotImplemented` for that text and does not set the fuse.                                                                  |
 | `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess is `NotImplemented` and does not set the fuse.                                  |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |
