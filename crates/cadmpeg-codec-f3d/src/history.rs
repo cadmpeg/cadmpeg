@@ -866,7 +866,7 @@ pub(crate) fn bind_feature_outputs(
         let order = history
             .states_oldest_first()
             .unwrap_or_else(|| (0..history.states().len()).collect());
-        let mut body_closures: Option<(usize, Option<HistoricalBodyClosures>)> = None;
+        let mut body_closures: Option<(usize, Option<HistoricalBodyIncidence>)> = None;
         for index in order {
             let mut next_body_closures = None;
             let outputs = (|| {
@@ -882,7 +882,7 @@ pub(crate) fn bind_feature_outputs(
                     return None;
                 }
                 next_body_closures =
-                    Some((index, historical_body_closures(history.topology(state)?)));
+                    Some((index, historical_body_incidence(history.topology(state)?)));
                 let current = next_body_closures.as_ref()?.1.as_ref()?;
                 let previous = match previous {
                     Some(index) => {
@@ -891,7 +891,7 @@ pub(crate) fn bind_feature_outputs(
                                 Some((_, closures)) => closures,
                                 None => history
                                     .topology(&history.states()[index])
-                                    .and_then(historical_body_closures),
+                                    .and_then(historical_body_incidence),
                             };
                         Some(closures?)
                     }
@@ -7317,26 +7317,19 @@ pub(crate) fn same_axis_line(
 
 fn affected_body_refs(
     transition: &AsmHistoricalTransition,
-    current: &HistoricalBodyClosures,
-    previous: Option<&HistoricalBodyClosures>,
+    current: &HistoricalBodyIncidence,
+    previous: Option<&HistoricalBodyIncidence>,
 ) -> Vec<i64> {
-    let current_changes = changed_family_refs(&transition.topology, false);
     let mut affected = BTreeSet::new();
-    for (body, closure) in current {
-        if current_changes
-            .iter()
-            .any(|entity| closure.contains(entity))
-        {
-            affected.insert(*body);
-        }
-    }
+    current.insert_bodies_touching(
+        &changed_family_refs(&transition.topology, false),
+        &mut affected,
+    );
     if let Some(previous) = previous {
-        let deleted = changed_family_refs(&transition.topology, true);
-        for (body, closure) in previous {
-            if deleted.iter().any(|entity| closure.contains(entity)) {
-                affected.insert(*body);
-            }
-        }
+        previous.insert_bodies_touching(
+            &changed_family_refs(&transition.topology, true),
+            &mut affected,
+        );
     }
     affected.into_iter().collect()
 }
@@ -7370,12 +7363,28 @@ fn changed_family_refs(delta: &AsmHistoricalTopologyDelta, deleted: bool) -> BTr
     changed
 }
 
-type HistoricalBodyClosures = Vec<(i64, HashSet<i64>)>;
+/// The bodies whose topological closure contains each entity of one historical
+/// snapshot.
+struct HistoricalBodyIncidence {
+    bodies_by_entity: HashMap<i64, Vec<i64>>,
+}
+
+impl HistoricalBodyIncidence {
+    /// Insert into `affected` every body whose closure contains one of
+    /// `entities`.
+    fn insert_bodies_touching(&self, entities: &BTreeSet<i64>, affected: &mut BTreeSet<i64>) {
+        for entity in entities {
+            if let Some(bodies) = self.bodies_by_entity.get(entity) {
+                affected.extend(bodies.iter().copied());
+            }
+        }
+    }
+}
 
 /// Reuse body incidence for queries over immutable historical snapshots.
 #[derive(Default)]
 struct HistoricalBodyClosureCache<'a> {
-    entries: HashMap<*const AsmHistoricalTopology, Option<HistoricalBodyClosures>>,
+    entries: HashMap<*const AsmHistoricalTopology, Option<HistoricalBodyIncidence>>,
     snapshots: std::marker::PhantomData<&'a AsmHistoricalTopology>,
 }
 
@@ -7388,14 +7397,10 @@ impl<'a> HistoricalBodyClosureCache<'a> {
         let key = std::ptr::from_ref(topology);
         self.entries
             .entry(key)
-            .or_insert_with(|| historical_body_closures(topology));
-        let closures = self.entries.get(&key).and_then(Option::as_ref)?;
+            .or_insert_with(|| historical_body_incidence(topology));
+        let incidence = self.entries.get(&key).and_then(Option::as_ref)?;
         let mut affected = BTreeSet::new();
-        for (body, closure) in closures {
-            if changed.iter().any(|entity| closure.contains(entity)) {
-                affected.insert(*body);
-            }
-        }
+        incidence.insert_bodies_touching(changed, &mut affected);
         Some(affected)
     }
 }
@@ -7408,7 +7413,7 @@ fn bodies_intersecting(
     HistoricalBodyClosureCache::default().intersecting(topology, changed)
 }
 
-fn historical_body_closures(topology: &AsmHistoricalTopology) -> Option<HistoricalBodyClosures> {
+fn historical_body_incidence(topology: &AsmHistoricalTopology) -> Option<HistoricalBodyIncidence> {
     macro_rules! history_some {
         ($value:expr) => {
             match $value {
@@ -7418,7 +7423,7 @@ fn historical_body_closures(topology: &AsmHistoricalTopology) -> Option<Historic
         };
     }
     // The relation, carrier, and per-shell indexes are scratch; only the
-    // body closures are cached.
+    // body incidence is cached.
     let body_regions = relation_map(&topology.body_regions);
     let region_shells = relation_map(&topology.region_shells);
     let shell_faces = relation_map(&topology.shell_faces);
@@ -7452,7 +7457,7 @@ fn historical_body_closures(topology: &AsmHistoricalTopology) -> Option<Historic
     let edge_curves = optional_carrier(&topology.edge_curves);
     let coedge_pcurves = optional_carrier(&topology.coedge_pcurves);
     let vertex_points = carrier(&topology.vertex_points);
-    let mut closures = Vec::new();
+    let mut bodies_by_entity = HashMap::<i64, Vec<i64>>::new();
     for &body in &topology.bodies {
         let mut closure = HashSet::new();
         closure.insert(body);
@@ -7496,9 +7501,11 @@ fn historical_body_closures(topology: &AsmHistoricalTopology) -> Option<Historic
                 }
             }
         }
-        closures.push((body, closure));
+        for entity in closure {
+            bodies_by_entity.entry(entity).or_default().push(body);
+        }
     }
-    Some(closures)
+    Some(HistoricalBodyIncidence { bodies_by_entity })
 }
 
 fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
