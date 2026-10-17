@@ -4,6 +4,7 @@ use super::super::{declared_solver_rows, synchronize_segment_count};
 use super::fixtures::base_definition;
 use crate::decode::sketch::radii::resolved_section_radii;
 use crate::decode::sketch_transfer::constraints::section_dimension_constraints;
+use crate::decode::with_service_context;
 use crate::feature::definitions::test_support::with_points;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
@@ -43,11 +44,8 @@ fn section_solver_equal_radius_requires_active_agreeing_sources() {
         ],
     ));
     assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(
-            ctx,
-            &equal_radius_definition
-        ))
-        .expect("test section solve"),
+        with_service_context(|ctx| resolved_section_radii(ctx, &equal_radius_definition))
+            .expect("test section solve"),
         BTreeMap::from([(101, 3.0), (102, 3.0)])
     );
     let mut disabled_equal_radius = equal_radius_definition.clone();
@@ -64,11 +62,8 @@ fn section_solver_equal_radius_requires_active_agreeing_sources() {
         .expect("equal-radius incidence")
         .status = 34;
     assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(
-            ctx,
-            &disabled_equal_radius
-        ))
-        .expect("test section solve"),
+        with_service_context(|ctx| resolved_section_radii(ctx, &disabled_equal_radius))
+            .expect("test section solve"),
         BTreeMap::from([(101, 3.0)])
     );
     equal_radius_definition
@@ -96,12 +91,9 @@ fn section_solver_equal_radius_requires_active_agreeing_sources() {
         .expect("variables")
         .declared_count += 1;
     assert!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(
-            ctx,
-            &equal_radius_definition
-        ))
-        .expect("test section solve")
-        .is_empty()
+        with_service_context(|ctx| resolved_section_radii(ctx, &equal_radius_definition))
+            .expect("test section solve")
+            .is_empty()
     );
     let mut saved_radius_definition = definition.clone();
     saved_radius_definition
@@ -168,11 +160,8 @@ fn section_solver_equal_radius_requires_active_agreeing_sources() {
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(
-            ctx,
-            &saved_radius_definition
-        ))
-        .expect("test section solve"),
+        with_service_context(|ctx| resolved_section_radii(ctx, &saved_radius_definition))
+            .expect("test section solve"),
         BTreeMap::from([(101, 4.0)])
     );
 }
@@ -214,7 +203,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .rows[0]
         .dimension_type = 3;
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &legacy_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -231,11 +220,8 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         }
     );
     assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(
-            ctx,
-            &legacy_radius_definition
-        ))
-        .expect("test section solve"),
+        with_service_context(|ctx| resolved_section_radii(ctx, &legacy_radius_definition))
+            .expect("test section solve"),
         BTreeMap::from([(0, 3.0)])
     );
     legacy_radius_definition
@@ -245,7 +231,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &legacy_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -262,11 +248,8 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         }
     );
     assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(
-            ctx,
-            &legacy_radius_definition
-        ))
-        .expect("test section solve"),
+        with_service_context(|ctx| resolved_section_radii(ctx, &legacy_radius_definition))
+            .expect("test section solve"),
         BTreeMap::from([(0, 1.5)])
     );
     for dimension_type in [1, 2, 5] {
@@ -277,7 +260,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
             .rows[0]
             .dimension_type = dimension_type;
         assert_eq!(
-            *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+            *(with_service_context(|ctx| section_dimension_constraints(
                 ctx,
                 &legacy_radius_definition,
                 &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -294,11 +277,8 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
             }
         );
         assert_eq!(
-            crate::decode::with_service_context(|ctx| resolved_section_radii(
-                ctx,
-                &legacy_radius_definition
-            ))
-            .expect("test section solve"),
+            with_service_context(|ctx| resolved_section_radii(ctx, &legacy_radius_definition))
+                .expect("test section solve"),
             BTreeMap::from([(0, 3.0)])
         );
     }
@@ -313,7 +293,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         [Some(16), Some(15), Some(0), Some(1)],
     ]);
     assert!(matches!(
-        crate::decode::with_service_context(|ctx| section_dimension_constraints(ctx,
+        with_service_context(|ctx| section_dimension_constraints(ctx,
             &legacy_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
         )).expect("test section solve")[0]
@@ -364,7 +344,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .rows[0]
         .dimension_type = 3;
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &type6_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -381,11 +361,8 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         }
     );
     assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(
-            ctx,
-            &type6_radius_definition
-        ))
-        .expect("test section solve"),
+        with_service_context(|ctx| resolved_section_radii(ctx, &type6_radius_definition))
+            .expect("test section solve"),
         BTreeMap::from([(0, 3.0)])
     );
     type6_radius_definition
@@ -404,7 +381,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &type6_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -427,7 +404,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &type6_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -444,11 +421,8 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         }
     );
     assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(
-            ctx,
-            &type6_radius_definition
-        ))
-        .expect("test section solve"),
+        with_service_context(|ctx| resolved_section_radii(ctx, &type6_radius_definition))
+            .expect("test section solve"),
         BTreeMap::from([(0, 1.5)])
     );
     let mut incomplete_type6 = type6_radius_definition.clone();
@@ -463,7 +437,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         [Some(15), Some(16), Some(15), None],
     ]);
     assert!(matches!(
-        crate::decode::with_service_context(|ctx| section_dimension_constraints(ctx,
+        with_service_context(|ctx| section_dimension_constraints(ctx,
             &incomplete_type6,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
         )).expect("test section solve")[0]
@@ -494,7 +468,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
             duplicate_type6_arc,
         ));
     assert!(matches!(
-        crate::decode::with_service_context(|ctx| section_dimension_constraints(ctx,
+        with_service_context(|ctx| section_dimension_constraints(ctx,
             &ambiguous_type6,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
         )).expect("test section solve")[0]
@@ -533,7 +507,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         [Some(15), Some(0), Some(0), Some(0)],
     ]);
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -558,7 +532,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
             .rows[0]
             .dimension_type = dimension_type;
         assert_eq!(
-            *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+            *(with_service_context(|ctx| section_dimension_constraints(
                 ctx,
                 &noncircular_dimension,
                 &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -575,11 +549,8 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
             }
         );
         assert_eq!(
-            crate::decode::with_service_context(|ctx| resolved_section_radii(
-                ctx,
-                &noncircular_dimension
-            ))
-            .expect("test section solve"),
+            with_service_context(|ctx| resolved_section_radii(ctx, &noncircular_dimension))
+                .expect("test section solve"),
             BTreeMap::from([(101, 3.0)])
         );
     }
@@ -600,7 +571,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
             },
         ));
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &opaque_circle_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -623,7 +594,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .expect("segments")
         .declared_count += 1;
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &incomplete_radius_segments,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -680,7 +651,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
     });
 
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &relation_orientation,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -701,7 +672,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .expect("segments")
         .declared_count += 1;
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &incomplete_relation_orientation,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -722,7 +693,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
+        *(with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -763,9 +734,15 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         ));
     synchronize_segment_count(&mut radius_definition);
     assert!(matches!(
-        crate::decode::with_service_context(|ctx| section_dimension_constraints(ctx, &radius_definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve")[0]
+        with_service_context(|ctx| section_dimension_constraints(
+            ctx,
+            &radius_definition,
+            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
+        ))
+        .expect("test section solve")[0]
             .0
-            .definition.kind(),
+            .definition
+            .kind(),
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
@@ -785,16 +762,22 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .rows[0]
         .dimension_type = 10;
     assert!(matches!(
-        crate::decode::with_service_context(|ctx| section_dimension_constraints(ctx, &radius_definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve")[0]
+        with_service_context(|ctx| section_dimension_constraints(
+            ctx,
+            &radius_definition,
+            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
+        ))
+        .expect("test section solve")[0]
             .0
-            .definition.kind(),
+            .definition
+            .kind(),
         SketchConstraintDefinitionInput::Native {
             ref native_kind,
             ..
         } if native_kind == "creo:relation:14"
     ));
     assert!(
-        !crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &radius_definition))
+        !with_service_context(|ctx| resolved_section_radii(ctx, &radius_definition))
             .expect("test section solve")
             .contains_key(&101)
     );

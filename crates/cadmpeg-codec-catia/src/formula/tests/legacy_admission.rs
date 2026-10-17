@@ -164,14 +164,102 @@ fn legacy_types_follow_unique_selector_chains() {
     assert!(!types.descriptors.contains_key(&9));
 }
 
+/// Every input name `symbol` binds, listed one whitespace prefix at a time.
+fn materialised_symbol_input_forms(symbol: &str) -> Vec<&str> {
+    let mut forms = Vec::new();
+    let mut push_whitespace_prefixes = |end: usize| {
+        let start = symbol[..end]
+            .trim_end_matches(|character: char| character.is_ascii_whitespace())
+            .len();
+        for form_end in start..=end {
+            forms.push(&symbol[..form_end]);
+        }
+    };
+    push_whitespace_prefixes(symbol.len());
+    if let Some(slash) = symbol.rfind('/') {
+        let ordinal = &symbol[slash + 1..];
+        if !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit()) {
+            push_whitespace_prefixes(slash);
+        }
+    }
+    forms
+}
+
 #[test]
 fn relation_symbol_binds_inputs_up_to_its_ordinal() {
-    let forms = |symbol| super::super::legacy_symbol_input_forms(symbol);
+    for (symbol, forms) in [
+        ("#1_", &["#1_"][..]),
+        ("#1_/2", &["#1_/2", "#1_"]),
+        ("#1_  /23", &["#1_  /23", "#1_", "#1_ ", "#1_  "]),
+        ("#1_ ", &["#1_", "#1_ "]),
+        ("#1_ /", &["#1_ /"]),
+        ("#1_ /2a", &["#1_ /2a"]),
+    ] {
+        let heads = super::super::LegacySymbolHeads::new([symbol]);
+        let extended = format!("{symbol} ");
+        for end in 0..=extended.len() {
+            let input = &extended[..end];
+            assert_eq!(
+                heads.binds(input),
+                forms.contains(&input),
+                "{symbol:?} binding {input:?}"
+            );
+        }
+    }
+}
 
-    assert_eq!(forms("#1_"), ["#1_"]);
-    assert_eq!(forms("#1_/2"), ["#1_/2", "#1_"]);
-    assert_eq!(forms("#1_  /23"), ["#1_  /23", "#1_", "#1_ ", "#1_  "]);
-    assert_eq!(forms("#1_ "), ["#1_", "#1_ "]);
-    assert_eq!(forms("#1_ /"), ["#1_ /"]);
-    assert_eq!(forms("#1_ /2a"), ["#1_ /2a"]);
+#[test]
+fn symbol_heads_bind_across_a_long_whitespace_run() {
+    const SPACES: usize = 1 << 20;
+    let spaces = " ".repeat(SPACES);
+    let symbol = format!("#1_{spaces}/1");
+    let heads = super::super::LegacySymbolHeads::new([symbol.as_str()]);
+    assert!(heads.binds("#1_"));
+    assert!(heads.binds("#1_ "));
+    assert!(heads.binds(&format!("#1_{spaces}")));
+    assert!(heads.binds(&symbol));
+    assert!(!heads.binds("#1_\t"));
+    assert!(!heads.binds(&format!("#1_{spaces} ")));
+    assert!(!heads.binds("#2_"));
+}
+
+#[test]
+fn symbol_heads_bind_exactly_the_materialised_input_forms() {
+    let words = |max_len: usize| {
+        let mut words = vec![String::new()];
+        let mut layer = vec![String::new()];
+        for _ in 0..max_len {
+            layer = layer
+                .iter()
+                .flat_map(|word| ['a', ' ', '\t', '/', '1'].map(|next| format!("{word}{next}")))
+                .collect();
+            words.extend(layer.iter().cloned());
+        }
+        words
+    };
+    let inputs = words(4);
+    for symbol in &inputs {
+        let heads = super::super::LegacySymbolHeads::new([symbol.as_str()]);
+        let forms = materialised_symbol_input_forms(symbol);
+        for input in &inputs {
+            assert_eq!(
+                heads.binds(input),
+                forms.contains(&input.as_str()),
+                "{symbol:?} binding {input:?}"
+            );
+        }
+    }
+    let symbols = words(3);
+    let heads = super::super::LegacySymbolHeads::new(symbols.iter().map(String::as_str));
+    let forms = symbols
+        .iter()
+        .flat_map(|symbol| materialised_symbol_input_forms(symbol))
+        .collect::<std::collections::HashSet<_>>();
+    for input in &inputs {
+        assert_eq!(
+            heads.binds(input),
+            forms.contains(input.as_str()),
+            "binding {input:?}"
+        );
+    }
 }
