@@ -4,7 +4,7 @@
 //! definition, converts the pcurve, and requires the decoded neutral surface
 //! evaluated at the converted pcurve endpoints to reach those vertices.
 
-use super::{NativeChart, SupportChart};
+use super::{FrameMap, NativeChart, SupportChart};
 use crate::brep::geometry::decode_surface;
 use crate::nurbs::proc_curve::embedded_support;
 use crate::nurbs::toks::Cur;
@@ -226,11 +226,10 @@ fn reverse_v_sphere_negates_the_longitude() {
 
 /// A torus record and its native point at minor angle `first` and major
 /// angle `second`, negated by `reverse_v`.
-fn torus_case(minor: f64, reverse_v: bool) {
+fn torus_case(major: f64, minor: f64, reverse_v: bool) {
     let center = [-1.0, 0.5, 2.0];
     let axis = [0.0, 1.0, 0.0];
     let reference = [1.0, 0.0, 0.0];
-    let major = 4.0;
     let surface = record(
         "torus",
         vec![
@@ -262,13 +261,22 @@ fn torus_case(minor: f64, reverse_v: bool) {
 
 #[test]
 fn torus_pcurve_is_latitude_first() {
-    torus_case(1.5, false);
-    torus_case(-1.5, false);
+    torus_case(4.0, 1.5, false);
+    torus_case(4.0, -1.5, false);
 }
 
 #[test]
 fn reverse_v_torus_negates_the_major_angle() {
-    torus_case(1.5, true);
+    torus_case(4.0, 1.5, true);
+}
+
+#[test]
+fn negative_major_torus_decodes_as_its_magnitude_in_a_turned_chart() {
+    for (major, minor) in [(-1.0, 3.0), (-1.0, -3.0), (-4.0, 1.5)] {
+        for reverse_v in [false, true] {
+            torus_case(major, minor, reverse_v);
+        }
+    }
 }
 
 #[test]
@@ -298,7 +306,7 @@ fn embedded_support_chart_reads_the_same_fields_as_the_record() {
         support.chart,
         SupportChart::Native {
             chart: NativeChart::cone(0.75_f64.sqrt(), 1.5, false).expect("nonzero scale"),
-            axis_reversed: true,
+            map: FrameMap::Negated,
         }
     );
     assert_eq!(
@@ -331,7 +339,7 @@ fn native_point_inverts_frame_point() {
 fn chart_overflow_refuses_conversion_without_changing_the_pcurve() {
     let chart = SupportChart::Native {
         chart: NativeChart::Plane { reverse_v: false },
-        axis_reversed: false,
+        map: FrameMap::Frame,
     };
     let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);
     let original = pcurve.clone();

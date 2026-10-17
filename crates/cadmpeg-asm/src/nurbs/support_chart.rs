@@ -105,6 +105,34 @@ pub(crate) fn cone_axis_reversed(sine: f64, cosine: f64, ratio: f64) -> bool {
     !cone_is_circular_cylinder(sine, ratio) && sine * cosine < 0.0
 }
 
+/// The map from frame coordinates to the neutral chart of the decoded
+/// surface.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum FrameMap {
+    /// The neutral chart is the frame chart.
+    Frame,
+    /// A decoded cone axis opposite the native axis negates both frame
+    /// coordinates.
+    Negated,
+    /// A decoded torus major radius opposite the native one maps the
+    /// longitude `u` and latitude `v` to `(u + pi, pi - v)`, which reaches
+    /// the same point with the same tube-outward normal.
+    OppositeMajor,
+}
+
+impl FrameMap {
+    fn apply(self, frame: Point2) -> Point2 {
+        match self {
+            Self::Frame => frame,
+            Self::Negated => Point2::new(-frame.u, -frame.v),
+            Self::OppositeMajor => Point2::new(
+                frame.u + std::f64::consts::PI,
+                std::f64::consts::PI - frame.v,
+            ),
+        }
+    }
+}
+
 /// The map from a support's native pcurve chart to the neutral chart of its
 /// decoded surface.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -112,12 +140,9 @@ pub(crate) enum SupportChart {
     /// A spline, procedural, or absent support whose chart is already
     /// neutral.
     Canonical,
-    /// An analytic support. `axis_reversed` states a decoded cone axis
-    /// opposite the native axis, which negates both frame coordinates.
-    Native {
-        chart: NativeChart,
-        axis_reversed: bool,
-    },
+    /// An analytic support: its native chart in the carrier frame and the
+    /// map from that frame to the decoded surface's chart.
+    Native { chart: NativeChart, map: FrameMap },
 }
 
 impl SupportChart {
@@ -125,15 +150,30 @@ impl SupportChart {
     pub(crate) fn plane(reverse_v: bool) -> Self {
         Self::Native {
             chart: NativeChart::Plane { reverse_v },
-            axis_reversed: false,
+            map: FrameMap::Frame,
         }
     }
 
-    /// The chart of a sphere or torus with v-sense slot `reverse_v`.
-    pub(crate) fn latitude_first(reverse_v: bool) -> Self {
+    /// The chart of a sphere with v-sense slot `reverse_v`.
+    pub(crate) fn sphere(reverse_v: bool) -> Self {
         Self::Native {
             chart: NativeChart::LatitudeFirst { reverse_v },
-            axis_reversed: false,
+            map: FrameMap::Frame,
+        }
+    }
+
+    /// The chart of a torus with stored major radius `major` and v-sense slot
+    /// `reverse_v`. A negative major radius places each tube center on the
+    /// far side of the axis; the torus decodes with its magnitude, the same
+    /// tube circle.
+    pub(crate) fn torus(major: f64, reverse_v: bool) -> Self {
+        Self::Native {
+            chart: NativeChart::LatitudeFirst { reverse_v },
+            map: if major < 0.0 {
+                FrameMap::OppositeMajor
+            } else {
+                FrameMap::Frame
+            },
         }
     }
 
@@ -149,7 +189,11 @@ impl SupportChart {
     ) -> Option<Self> {
         Some(Self::Native {
             chart: NativeChart::cone(cosine, u_scale, reverse_u)?,
-            axis_reversed: cone_axis_reversed(sine, cosine, ratio),
+            map: if cone_axis_reversed(sine, cosine, ratio) {
+                FrameMap::Negated
+            } else {
+                FrameMap::Frame
+            },
         })
     }
 
@@ -171,17 +215,7 @@ impl SupportChart {
     fn neutral_point(self, native: Point2) -> Point2 {
         match self {
             Self::Canonical => native,
-            Self::Native {
-                chart,
-                axis_reversed,
-            } => {
-                let frame = chart.frame_point(native);
-                if axis_reversed {
-                    Point2::new(-frame.u, -frame.v)
-                } else {
-                    frame
-                }
-            }
+            Self::Native { chart, map } => map.apply(chart.frame_point(native)),
         }
     }
 
