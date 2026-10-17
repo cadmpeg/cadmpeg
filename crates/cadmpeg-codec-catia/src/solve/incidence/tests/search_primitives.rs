@@ -334,22 +334,23 @@ fn compact_boundary_domain_viable_by_dense_points(
     }
 }
 
+struct SplitMix(u64);
+
+impl SplitMix {
+    fn below(&mut self, bound: usize) -> usize {
+        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut value = self.0;
+        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        value ^= value >> 31;
+        usize::try_from(value % u64::try_from(bound).expect("bound fits u64"))
+            .expect("value below bound fits usize")
+    }
+}
+
 #[test]
 fn compact_boundary_domain_viability_matches_a_dense_point_table() {
     use crate::solve::missing_edge::{MeshDeferredBoundaryCycle, MeshDeferredFaceBoundary};
-
-    struct SplitMix(u64);
-    impl SplitMix {
-        fn below(&mut self, bound: usize) -> usize {
-            self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-            let mut value = self.0;
-            value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-            value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-            value ^= value >> 31;
-            usize::try_from(value % u64::try_from(bound).expect("bound fits u64"))
-                .expect("value below bound fits usize")
-        }
-    }
 
     let mut random = SplitMix(0xc0de);
     let mut outcomes = [0usize; 2];
@@ -409,4 +410,63 @@ fn compact_boundary_domain_viability_matches_a_dense_point_table() {
         outcomes.iter().all(|count| *count > 2_000),
         "outcomes {outcomes:?}"
     );
+}
+
+#[test]
+fn dead_incidence_states_match_a_set_of_endpoint_pair_vectors() {
+    use super::super::{DeadIncidenceKey, DeadIncidenceStates};
+    use std::collections::HashSet;
+
+    let narrow_limit = usize::try_from(u32::MAX).expect("u32 fits in usize");
+    let points = [0, 1, 2, narrow_limit - 1, narrow_limit, narrow_limit + 1];
+    let pair = |random: &mut SplitMix| {
+        (random.below(4) != 0).then(|| {
+            [
+                points[random.below(points.len())],
+                points[random.below(points.len())],
+            ]
+        })
+    };
+    let mut random = SplitMix(0xdead);
+    let mut outcomes = [0usize; 2];
+    let mut wide_keys = 0usize;
+    for _ in 0..2_000 {
+        let assignment_len = 1 + random.below(3);
+        let edges = (0..random.below(assignment_len + 1))
+            .map(|_| random.below(assignment_len))
+            .collect::<Vec<_>>();
+        let mut assignment = (0..assignment_len)
+            .map(|_| pair(&mut random))
+            .collect::<Vec<_>>();
+        let mut states = DeadIncidenceStates::default();
+        let mut expected_states = HashSet::new();
+        for _ in 0..20 {
+            let edge = random.below(assignment_len);
+            assignment[edge] = pair(&mut random);
+            let expected_state = edges
+                .iter()
+                .map(|&edge| assignment[edge])
+                .collect::<Vec<_>>();
+            let expected_live = !expected_states.contains(&expected_state);
+            let key = states.live_key(&edges, &assignment);
+            outcomes[usize::from(expected_live)] += 1;
+            assert_eq!(
+                key.is_some(),
+                expected_live,
+                "{expected_state:?} against {expected_states:?}"
+            );
+            if let Some(key) = key {
+                wide_keys += usize::from(matches!(key, DeadIncidenceKey::Wide(_)));
+                if random.below(2) == 0 {
+                    states.insert(key);
+                    expected_states.insert(expected_state);
+                }
+            }
+        }
+    }
+    assert!(
+        outcomes.iter().all(|count| *count > 2_000),
+        "outcomes {outcomes:?}"
+    );
+    assert!(wide_keys > 2_000, "only {wide_keys} wide keys");
 }

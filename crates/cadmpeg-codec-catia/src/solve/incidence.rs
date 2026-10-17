@@ -747,12 +747,67 @@ struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) solution_filter: Option<MeshEndpointSolutionFilter<'a>>,
     pub(crate) solution_visitor: Option<MeshEndpointSolutionVisitor<'v>>,
     pub(crate) partial_solution_filter: Option<MeshPartialEndpointConstraint<'a>>,
-    pub(crate) dead_states: HashSet<Vec<Option<[usize; 2]>>>,
+    pub(crate) dead_states: DeadIncidenceStates,
     pub(crate) budget: &'a WorkBudget,
     pub(crate) degree_support_budget: &'a WorkBudget,
     pub(crate) coordinate_propagation_budget: &'a WorkBudget,
     pub(crate) boundary_propagation_budget: &'a WorkBudget,
     pub(crate) state: IncidenceSearchState,
+}
+
+/// The states of a search that led to no solution, each keyed by the endpoint
+/// pairs of the search's edges in edge order.
+#[derive(Debug, Default)]
+pub(crate) struct DeadIncidenceStates {
+    /// States whose points are all below `u32::MAX`, as each edge's start and
+    /// end point; an unassigned edge is `u32::MAX` twice.
+    narrow: HashSet<Box<[u32]>>,
+    wide: HashSet<Box<[Option<[usize; 2]>]>>,
+    scratch: Vec<u32>,
+}
+
+#[derive(Debug)]
+pub(crate) enum DeadIncidenceKey {
+    Narrow(Box<[u32]>),
+    Wide(Box<[Option<[usize; 2]>]>),
+}
+
+impl DeadIncidenceStates {
+    /// The key of the state, or `None` when the state is already dead.
+    pub(crate) fn live_key(
+        &mut self,
+        edges: &[usize],
+        assignment: &[Option<[usize; 2]>],
+    ) -> Option<DeadIncidenceKey> {
+        let narrow = |point: usize| u32::try_from(point).ok().filter(|&point| point != u32::MAX);
+        self.scratch.clear();
+        for &edge in edges {
+            let pair = match assignment[edge] {
+                None => [u32::MAX; 2],
+                Some([start, end]) => match (narrow(start), narrow(end)) {
+                    (Some(start), Some(end)) => [start, end],
+                    _ => {
+                        let state = edges
+                            .iter()
+                            .map(|&edge| assignment[edge])
+                            .collect::<Box<[_]>>();
+                        return (!self.wide.contains(&state))
+                            .then_some(DeadIncidenceKey::Wide(state));
+                    }
+                },
+            };
+            self.scratch.extend(pair);
+        }
+        (!self.narrow.contains(self.scratch.as_slice()))
+            .then(|| DeadIncidenceKey::Narrow(self.scratch.as_slice().into()))
+    }
+
+    pub(crate) fn insert(&mut self, key: DeadIncidenceKey) {
+        match key {
+            DeadIncidenceKey::Narrow(state) => self.narrow.insert(state),
+            DeadIncidenceKey::Wide(state) => self.wide.insert(state),
+        };
+    }
 }
 
 enum IncidenceBranch {
@@ -3082,15 +3137,13 @@ impl IncidenceComponentSearch<'_, '_> {
             self.state = IncidenceSearchState::Exhausted;
             return Ok(());
         }
-        let mut state = Vec::new();
-        state.extend(self.edges.iter().map(|&edge| self.assignment[edge]));
-        if self.dead_states.contains(&state) {
+        let Some(key) = self.dead_states.live_key(self.edges, &self.assignment) else {
             return Ok(());
-        }
+        };
         let solutions_before = self.solutions.len();
         self.search_state(quotient_states, coordinate_domains, component_faces)?;
         if self.state == IncidenceSearchState::Open && self.solutions.len() == solutions_before {
-            self.dead_states.insert(state);
+            self.dead_states.insert(key);
         }
         Ok(())
     }
@@ -4081,7 +4134,7 @@ where
             solution_filter: Some(&filter),
             solution_visitor,
             partial_solution_filter: partial_solution_valid,
-            dead_states: HashSet::new(),
+            dead_states: DeadIncidenceStates::default(),
             budget,
             degree_support_budget: &degree_support_budget,
             coordinate_propagation_budget,
