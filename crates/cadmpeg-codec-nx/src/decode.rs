@@ -163,9 +163,10 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
     }
     for entry in scan.container.bounded_indexed_om_entries() {
         body.losses.push(NxLossCode::SourceScanBounded.note(format!(
-            "The indexed object-model section search in {} reached its work bound; \
+            "The indexed object-model section search in {} reached its work bound of {}; \
              its remaining sections were skipped.",
-            entry.name
+            entry.name,
+            crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
         )));
     }
     for (index, stream) in scan.streams.iter().enumerate() {

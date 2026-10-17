@@ -357,6 +357,9 @@ fn jt_tessellations_report_the_visit_bound_as_a_scan_loss() {
         losses[0].code,
         crate::loss::NxLossCode::SourceScanBounded.kind()
     );
+    assert!(losses[0]
+        .message
+        .contains(&crate::native::display_jt::MAX_JT_NODE_PATH_VISITS.to_string()));
 }
 
 #[test]

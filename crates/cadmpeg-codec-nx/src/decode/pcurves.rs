@@ -2302,7 +2302,7 @@ pub(super) fn exact_analytic_isocurve_pcurve(
         tolerance,
         &geometry_budget,
     )
-    .expect("evaluator allocation succeeds")
+    .expect("evaluation stays within session limits")
 }
 
 fn exact_analytic_isocurve_pcurve_with_index_and_budget(
@@ -4388,7 +4388,7 @@ fn pcurve_matches_edge_range(
         fit_tolerance,
         &geometry_budget,
     )
-    .expect("evaluator allocation succeeds")
+    .expect("evaluation stays within session limits")
 }
 
 // Keep the index, edge identity, p-curve, and shared budget explicit: this

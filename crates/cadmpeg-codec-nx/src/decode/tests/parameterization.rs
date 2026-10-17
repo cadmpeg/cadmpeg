@@ -232,7 +232,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
                 return;
             }
             let local = local
-                .expect("evaluator allocation succeeds")
+                .expect("evaluation stays within session limits")
                 .expect("a local fit inside the relation tolerance is admissible");
             assert!((local.u - seed.u).abs() <= 0.02);
             assert!((local.v - seed.v).abs() <= 0.02);
@@ -1547,7 +1547,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             .iter()
             .map(|parameter| {
                 blend_surface_point(geometry_ctx, result.ir(), &blend, *parameter, 0.5)
-                    .expect("evaluator allocation succeeds")
+                    .expect("evaluation stays within session limits")
                     .unwrap()
             })
             .collect::<Vec<_>>();
