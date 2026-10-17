@@ -14,7 +14,7 @@ use super::relation_geometry::{
     RELATION_PARAMETER_ROLE_PROPERTY, RELATION_PARAMETER_ROLE_REFERENCE,
 };
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::selections::{
     cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
     variable_fillet_dimension_index_for_feature,
@@ -209,9 +209,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
         for name in &lane.names {
             names_by_id.insert(name.id.as_str(), name);
         }
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(Option<u64>, &crate::records::Feature)>::new();
         for feature in native_features.values() {
-            let start = feature_object_name(feature, lane).map(|name| name.offset);
+            let start = object_names.of(feature).map(|name| name.offset);
             starts.push((start, feature));
         }
         starts.sort_by_key(|left| (left.0.is_none(), left.0));
@@ -945,9 +946,10 @@ fn variable_fillet_radius_groups<'a>(
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for candidate in &history.features {
-            if let Some(name) = feature_object_name(candidate, lane) {
+            if let Some(name) = names.of(candidate) {
                 objects.push((name.offset, candidate));
             }
         }
@@ -2107,6 +2109,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         };
         feature_ids_by_native.insert(native_ref.to_owned(), feature.id.clone());
     }
+    let mut lane_ranges = None;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
@@ -2156,10 +2159,14 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         ));
                     }
                 }
-                for lane in lanes {
-                    let Some((_, start, end)) = feature_object_byte_ranges(histories, lane)
-                        .get(native_feature.id.as_str())
-                        .copied()
+                let lane_ranges = lane_ranges.get_or_insert_with(|| {
+                    lanes
+                        .iter()
+                        .map(|lane| feature_object_byte_ranges(histories, lane))
+                        .collect::<Vec<_>>()
+                });
+                for (lane, ranges) in lanes.iter().zip(lane_ranges.iter()) {
+                    let Some((_, start, end)) = ranges.get(native_feature.id.as_str()).copied()
                     else {
                         continue;
                     };

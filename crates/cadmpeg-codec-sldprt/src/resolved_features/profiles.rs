@@ -43,7 +43,7 @@ use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use super::transforms::sketch_frame_marker_transform;
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -105,12 +105,13 @@ pub(crate) fn bind_sketch_profiles(
         native_features.insert(feature.id.as_str(), feature);
     }
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::<(u64, usize, &crate::records::Feature)>::new();
         for feature in native_features.values() {
             if metadata_ids.contains(feature.id.as_str()) {
                 continue;
             }
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = names.of(feature) else {
                 continue;
             };
             let ordinal = starts.len();
@@ -342,21 +343,18 @@ pub(crate) fn project_compact_sketch_profiles(
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        let names = FeatureObjectNames::new(&lane.names);
         let mut objects = native_features
             .values()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
-                let start = feature_object_name(feature, lane)
-                    .map(|name| name.offset)
-                    .or_else(|| {
-                        lane.sketch_entities
-                            .iter()
-                            .filter(|marker| {
-                                marker.feature_ref.as_deref() == Some(feature.id.as_str())
-                            })
-                            .map(crate::records::SketchInputEntity::offset)
-                            .min()
-                    })?;
+                let start = names.of(feature).map(|name| name.offset).or_else(|| {
+                    lane.sketch_entities
+                        .iter()
+                        .filter(|marker| marker.feature_ref.as_deref() == Some(feature.id.as_str()))
+                        .map(crate::records::SketchInputEntity::offset)
+                        .min()
+                })?;
                 Some((start, *feature))
             })
             .enumerate()
@@ -948,23 +946,20 @@ pub(crate) fn project_marker_backed_sketches(
         for marker in &lane.sketch_entities {
             markers_by_id.insert(marker.id(), marker);
         }
+        let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in native_features
             .values()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
         {
             let Some((start, feature)) = (|| {
-                let start = feature_object_name(feature, lane)
-                    .map(|name| name.offset)
-                    .or_else(|| {
-                        lane.sketch_entities
-                            .iter()
-                            .filter(|marker| {
-                                marker.feature_ref.as_deref() == Some(feature.id.as_str())
-                            })
-                            .map(crate::records::SketchInputEntity::offset)
-                            .min()
-                    })?;
+                let start = names.of(feature).map(|name| name.offset).or_else(|| {
+                    lane.sketch_entities
+                        .iter()
+                        .filter(|marker| marker.feature_ref.as_deref() == Some(feature.id.as_str()))
+                        .map(crate::records::SketchInputEntity::offset)
+                        .min()
+                })?;
                 Some((start, *feature))
             })() else {
                 continue;
@@ -2123,10 +2118,11 @@ pub(crate) fn project_sketch_block_profiles(
     lanes: &[FeatureInputLane],
 ) {
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         for history in histories {
             let mut objects = Vec::new();
             for (ordinal, feature) in history.features.iter().enumerate() {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(feature) {
                     if !crate::history::classify::is_history_metadata_record(
                         feature,
                         &history.features,

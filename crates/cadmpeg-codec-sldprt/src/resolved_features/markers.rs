@@ -16,7 +16,7 @@ use super::endpoints::{
 };
 use super::relation_loci::same_dimension_length;
 use super::relation_records::unique_relation_declaration_candidates;
-use super::scalars::{feature_object_name, operand_kind};
+use super::scalars::{operand_kind, FeatureObjectNames, FeatureObjectStarts};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
     is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
@@ -61,6 +61,14 @@ pub(crate) fn spatial_sketches(
     for record in histories.iter().flat_map(|history| &history.features) {
         records.insert(record.id.as_str(), record);
     }
+    let lane_objects = lanes
+        .iter()
+        .map(|lane| {
+            let names = FeatureObjectNames::new(&lane.names);
+            let starts = FeatureObjectStarts::new(histories, &names);
+            (names, starts)
+        })
+        .collect::<Vec<_>>();
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     for feature in model_features {
@@ -83,7 +91,7 @@ pub(crate) fn spatial_sketches(
             continue;
         };
         let mut point_candidates = Vec::new();
-        for lane in lanes {
+        for (lane, objects) in lanes.iter().zip(&lane_objects) {
             let mut relation_ranges = Vec::new();
             for (start, end) in spatial_relation_manager_ranges(lane) {
                 if lane.scalars.iter().any(|scalar| {
@@ -131,11 +139,11 @@ pub(crate) fn spatial_sketches(
                 }
             }
             if !points.is_empty() {
-                point_candidates.push((lane, points));
+                point_candidates.push((lane, objects, points));
             }
         }
-        if let Some((lane, points)) = point_candidates.first().filter(|(_, points)| {
-            point_candidates.iter().all(|(_, candidate)| {
+        if let Some((lane, objects, points)) = point_candidates.first().filter(|(_, _, points)| {
+            point_candidates.iter().all(|(_, _, candidate)| {
                 candidate
                     .iter()
                     .map(|(_, point, _)| point)
@@ -161,7 +169,7 @@ pub(crate) fn spatial_sketches(
             if !valid_points {
                 continue;
             }
-            let lines = spatial_line_vertices(histories, record, lane).unwrap_or_default();
+            let lines = spatial_line_vertices(record, lane, objects).unwrap_or_default();
             let mut projected_lines = Vec::new();
             let mut valid_lines = true;
             for (offsets, vertices) in lines.1.chunks_exact(2).zip(lines.2.chunks_exact(2)) {
@@ -218,22 +226,14 @@ pub(crate) fn spatial_sketches(
             continue;
         }
         let mut candidates = Vec::new();
-        for lane in lanes {
-            let Some(name) = feature_object_name(record, lane) else {
+        for (lane, (names, starts)) in lanes.iter().zip(&lane_objects) {
+            let Some(name) = names.of(record) else {
                 continue;
             };
             let Some(start) = usize::try_from(name.offset).ok() else {
                 continue;
             };
-            let end = histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .filter_map(|candidate| feature_object_name(candidate, lane))
-                .filter(|candidate| candidate.offset > name.offset)
-                .map(|candidate| candidate.offset)
-                .min()
-                .and_then(|offset| usize::try_from(offset).ok())
-                .unwrap_or(lane.native_payload.len());
+            let end = starts.end(name.offset, lane.native_payload.len());
             let Some(object) = lane.native_payload.get(start..end) else {
                 continue;
             };
@@ -313,23 +313,15 @@ fn spatial_sketch_id(feature_id: &str) -> Option<SpatialSketchId> {
 struct SpatialLineVertices(usize, Vec<usize>, Vec<FinitePoint3>);
 
 fn spatial_line_vertices(
-    histories: &[crate::records::FeatureHistory],
     record: &crate::records::Feature,
     lane: &FeatureInputLane,
+    (names, starts): &(FeatureObjectNames<'_>, FeatureObjectStarts),
 ) -> Option<SpatialLineVertices> {
-    let name = feature_object_name(record, lane)?;
+    let name = names.of(record)?;
     let Ok(start) = usize::try_from(name.offset) else {
         return None;
     };
-    let end = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|candidate| feature_object_name(candidate, lane))
-        .filter(|candidate| candidate.offset > name.offset)
-        .map(|candidate| candidate.offset)
-        .min()
-        .and_then(|offset| usize::try_from(offset).ok())
-        .unwrap_or(lane.native_payload.len());
+    let end = starts.end(name.offset, lane.native_payload.len());
     let object = lane.native_payload.get(start..end)?;
     let offsets = spatial_vertex_offsets(object);
     let vertices = spatial_vertex_coordinates(object);

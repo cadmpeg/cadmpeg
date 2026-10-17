@@ -7,6 +7,7 @@ use crate::resolved_features::component_paths::{
     component_path_input_features, component_path_terminal_feature,
     surface_selection_producer_features,
 };
+use crate::resolved_features::scalars::FeatureObjectNames;
 use crate::resolved_features::selections::enrich_feature_object_sources;
 use std::collections::BTreeMap;
 
@@ -142,6 +143,7 @@ fn lane_sources_match_single_lane_enrichment_and_selection_resolution() {
 #[test]
 fn lane_source_rule_preserves_identity_and_requires_a_unique_named_object() {
     let named = lane(&[("producer", Some(42))]);
+    let named = FeatureObjectNames::new(&named.names);
     assert_eq!(
         lane_added_source(&feature("producer", None, 0), &named),
         FeatureSource::from_value(42)
@@ -157,8 +159,12 @@ fn lane_source_rule_preserves_identity_and_requires_a_unique_named_object() {
         vec![("producer", None)],
         vec![("producer", Some(42)), ("producer", Some(42))],
     ] {
+        let lane = lane(&names);
         assert_eq!(
-            lane_added_source(&feature("producer", None, 0), &lane(&names)),
+            lane_added_source(
+                &feature("producer", None, 0),
+                &FeatureObjectNames::new(&lane.names)
+            ),
             None
         );
     }
