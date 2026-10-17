@@ -6665,11 +6665,13 @@ fn bind_historical_edge_operand<'a>(
         &deleted_edges,
         treatment_cache,
     );
+    let edge_contexts = topology_queries
+        .edge_contexts
+        .get(topology, selection::EdgeContextIndex::new);
     operand.changed_boundary_edge_contexts = operand
         .changed_boundary_edge_slots
         .iter()
-        .copied()
-        .map(|edge| selection::historical_edge_context(edge, topology))
+        .map(|&edge| edge_contexts.context(edge))
         .collect::<Vec<_>>();
     let mut reference_contexts = Vec::new();
     for (ordinal, reference) in operand.recipe_references.iter().enumerate() {
@@ -6769,12 +6771,15 @@ fn bind_historical_edge_operand<'a>(
         }
         return Ok(());
     }
+    let edge_contexts = topology_queries
+        .edge_contexts
+        .get(topology, selection::EdgeContextIndex::new);
     let changed_edge_contexts = topology
         .edges
         .iter()
         .copied()
         .filter(|edge| changed_edges.contains(edge))
-        .map(|edge| selection::historical_edge_context(edge, topology))
+        .map(|edge| edge_contexts.context(edge))
         .collect::<Vec<_>>();
     operand.recipe_selectors = selection::recipe_selector_candidates(
         operand.recipe_structure.as_ref(),

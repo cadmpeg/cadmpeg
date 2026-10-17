@@ -1318,8 +1318,8 @@ pub(crate) fn bind_face_operand_candidates(
         };
         operand.candidate_faces.clear();
         for tag in tags.iter().filter(|tag| {
-            crate::ids::same_native_occurrence(&tag.id, &operand.id)
-                && tag.design_references.contains(&design_reference)
+            tag.design_references.contains(&design_reference)
+                && crate::ids::same_native_occurrence(&tag.id, &operand.id)
         }) {
             if let AttributeTarget::Face(face) = &tag.target {
                 operand.candidate_faces.push(face.clone());
@@ -1374,8 +1374,8 @@ pub(crate) fn bind_edge_operand_candidates(
             continue;
         };
         for tag in tags.iter().filter(|tag| {
-            crate::ids::same_native_occurrence(&tag.id, &operand.id)
-                && tag.design_references.contains(&design_reference)
+            tag.design_references.contains(&design_reference)
+                && crate::ids::same_native_occurrence(&tag.id, &operand.id)
         }) {
             if let cadmpeg_ir::attributes::AttributeTarget::Face(face) = &tag.target {
                 operand.candidate_faces.push(face.clone());
@@ -1398,8 +1398,9 @@ pub(crate) fn edge_operand_candidate_faces(
     let mut faces = tags
         .iter()
         .filter(|tag| {
-            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
-                && tag.design_references.contains(&design_reference)
+            tag.design_references.contains(&design_reference)
+                && owner_id
+                    .is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
         })
         .filter_map(|tag| match &tag.target {
             AttributeTarget::Face(id) => Some(id.clone()),
@@ -4188,8 +4189,8 @@ pub(crate) fn bind_body_recipe_operand_candidates(
                 continue;
             };
             for tag in tags.iter().filter(|tag| {
-                crate::ids::same_native_occurrence(&tag.id, &operand_id)
-                    && tag.design_references.contains(&design_reference)
+                tag.design_references.contains(&design_reference)
+                    && crate::ids::same_native_occurrence(&tag.id, &operand_id)
                     && (reference.form != 3
                         || !form_three_uses_recipe_selector
                         || tag_selector == Some(tag.selector))
