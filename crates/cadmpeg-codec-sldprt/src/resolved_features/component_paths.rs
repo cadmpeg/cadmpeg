@@ -472,10 +472,7 @@ pub(crate) fn project_dissected_sketches(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
 ) {
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut single_profile_sketches = HashSet::new();
     for sketch in sketches.iter().filter(|sketch| sketch.profiles.len() == 1) {
         single_profile_sketches.insert(&sketch.id);
@@ -505,7 +502,7 @@ pub(crate) fn project_dissected_sketches(
             .native_ref
             .as_deref()
             .and_then(|native| native_features.get(native))
-            .is_some_and(|native| is_dissected_profile_feature(native))
+            .is_some_and(is_dissected_profile_feature)
     }) {
         let mut candidates = feature
             .dependencies

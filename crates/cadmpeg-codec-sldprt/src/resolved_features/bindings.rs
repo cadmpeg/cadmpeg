@@ -1067,6 +1067,7 @@ pub(crate) fn bind_scalar_operands(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let represented_sketches = represented_sketch_features(histories, lanes);
     let metadata_ids = history_metadata_ids(histories);
+    let features_by_id = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
@@ -1101,18 +1102,13 @@ pub(crate) fn bind_scalar_operands(
             }
         }
         bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
-        let mut features_by_id = HashMap::new();
-        for feature in histories.iter().flat_map(|history| &history.features) {
-            features_by_id.insert(feature.id.as_str(), feature);
-        }
         for pair in starts.windows(2) {
             let [(_, parent_id), (child_start, child_id)] = pair else {
                 continue;
             };
-            let (Some(parent), Some(child)) = (
-                features_by_id.get(parent_id).copied(),
-                features_by_id.get(child_id).copied(),
-            ) else {
+            let (Some(parent), Some(child)) =
+                (features_by_id.get(parent_id), features_by_id.get(child_id))
+            else {
                 continue;
             };
             if native_object_class(parent.input_class.as_deref().unwrap_or_default())

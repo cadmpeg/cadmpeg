@@ -2157,10 +2157,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     faces: &[Face],
     surfaces: &[Surface],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut native_features = HashMap::new();
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut history_features = Vec::new();
     for native_feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(native_feature.id.as_str(), native_feature);
         history_features.push(native_feature);
     }
     let mut feature_ids_by_native = HashMap::new();
@@ -2181,7 +2180,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 let Some(native_ref) = native_ref else {
                     return Ok(());
                 };
-                let Some(native_feature) = native_features.get(native_ref).copied() else {
+                let Some(native_feature) = native_features.get(native_ref) else {
                     return Ok(());
                 };
                 let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {

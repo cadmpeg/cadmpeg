@@ -1277,7 +1277,7 @@ pub(super) fn sketch_plane_frames(
         else {
             continue;
         };
-        source_by_feature.insert(neutral_id, source);
+        source_by_feature.entry(neutral_id).or_insert(source);
     }
     let mut frames_by_feature = HashMap::new();
     for feature in features {

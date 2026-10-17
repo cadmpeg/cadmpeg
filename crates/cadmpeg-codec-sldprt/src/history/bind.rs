@@ -25,10 +25,7 @@ pub(crate) fn bind_unique_sketch_feature(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[FeatureHistory],
 ) {
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut feature_indices = Vec::new();
     for (index, feature) in features.iter().enumerate() {
         if matches!(

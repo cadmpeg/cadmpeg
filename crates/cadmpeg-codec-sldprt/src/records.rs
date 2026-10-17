@@ -440,7 +440,8 @@ pub(crate) struct FeatureHistory {
 /// Every history's features by record id, and in history order.
 ///
 /// Record ids are unique in decoded and written histories. When a native
-/// record set repeats one, the last feature with it is kept.
+/// record set repeats one, the first feature with it is kept, as a history
+/// order search would find it.
 pub(crate) struct HistoryFeatures<'a> {
     by_id: HashMap<&'a str, &'a Feature>,
     in_order: Vec<&'a Feature>,
@@ -451,7 +452,7 @@ impl<'a> HistoryFeatures<'a> {
         let features = || histories.iter().flat_map(|history| &history.features);
         let mut by_id = HashMap::new();
         for feature in features() {
-            by_id.insert(feature.id.as_str(), feature);
+            by_id.entry(feature.id.as_str()).or_insert(feature);
         }
         let in_order = features()
             .filter(|feature| {
@@ -2155,7 +2156,7 @@ mod tests {
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
-    fn history_features_keep_history_order_under_any_hash_seed() {
+    fn history_features_keep_the_first_repeated_id_in_history_order() {
         let history = |id: &str, features: &[&str]| super::FeatureHistory {
             id: id.into(),
             part_name: None,
@@ -2197,17 +2198,25 @@ mod tests {
                     .collect::<Vec<_>>(),
                 [
                     ("first", "x"),
+                    ("first", "repeated"),
                     ("first", "z"),
-                    ("second", "w"),
-                    ("second", "repeated")
+                    ("second", "w")
                 ]
             );
             assert_eq!(
                 features
                     .get("repeated")
                     .map(|feature| feature.parent.as_str()),
-                Some("second")
+                Some("first")
             );
+            let searched = histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|feature| feature.id == "repeated");
+            assert!(features
+                .get("repeated")
+                .zip(searched)
+                .is_some_and(|(kept, searched)| std::ptr::eq(kept, searched)));
         }
     }
 

@@ -51,10 +51,7 @@ pub(crate) fn project_helix_axes(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut records = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        records.insert(feature.id.as_str(), feature);
-    }
+    let records = crate::records::HistoryFeatures::new(histories);
     let mut lane_objects = None;
     for model_feature in model_features {
         let FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
@@ -70,7 +67,7 @@ pub(crate) fn project_helix_axes(
         let Some(native_ref) = model_feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(record) = records.get(native_ref).copied() else {
+        let Some(record) = records.get(native_ref) else {
             continue;
         };
         let lane_objects = lane_objects.get_or_insert_with(|| {
@@ -554,7 +551,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
         let mut features_by_id = HashMap::new();
         let mut features_by_source = HashMap::new();
         for feature in &history.features {
-            features_by_id.insert(feature.id.as_str(), feature);
+            features_by_id.entry(feature.id.as_str()).or_insert(feature);
             if let Some(source) = feature.source_id {
                 features_by_source.insert(source, feature);
             }
@@ -645,7 +642,9 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
         let Some(diameter) = feature.parameters.get("D2") else {
             continue;
         };
-        fallback_parameters.insert(feature.id.as_str(), diameter);
+        fallback_parameters
+            .entry(feature.id.as_str())
+            .or_insert(diameter);
     }
     for feature in histories
         .iter_mut()
@@ -1245,7 +1244,9 @@ pub(crate) fn project_profiled_hole_constructions(
     let mut native_histories = HashMap::new();
     for (history_index, history) in histories.iter().enumerate() {
         for feature in &history.features {
-            native_histories.insert(feature.id.as_str(), history_index);
+            native_histories
+                .entry(feature.id.as_str())
+                .or_insert(history_index);
         }
     }
     let mut unowned_incomplete_holes = ctx.alloc_filled(
@@ -1459,10 +1460,7 @@ pub(crate) fn project_hole_position_sketches(
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut model_sketch_features = HashMap::new();
     for feature in features.iter() {
         let FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -1496,7 +1494,7 @@ pub(crate) fn project_hole_position_sketches(
             let Some(native) = feature
                 .native_ref
                 .as_deref()
-                .and_then(|native| native_features.get(native).copied())
+                .and_then(|native| native_features.get(native))
             else {
                 break 'feature_edit;
             };
@@ -1803,11 +1801,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        let key = feature.id.as_str();
-        native_features.insert(key, feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     for index in 0..features.len() {
         let feature = &features[index];
         if feature.suppressed == Some(true) {
@@ -1829,7 +1823,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
         let Some(native) = feature
             .native_ref
             .as_deref()
-            .and_then(|native| native_features.get(native).copied())
+            .and_then(|native| native_features.get(native))
         else {
             continue;
         };
@@ -2076,11 +2070,7 @@ pub(crate) fn project_generated_hole_axes(
 ) {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        let key = feature.id.as_str();
-        native_features.insert(key, feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut faces_by_id = HashMap::new();
     for face in faces {
         let key = face.id.as_str();
@@ -3603,10 +3593,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         sketch: Sketch,
         entities: Vec<SketchEntity>,
     }
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut model_features = HashMap::new();
     for feature in features.iter() {
         let Some(native) = feature.native_ref.as_deref() else {
@@ -3636,7 +3623,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         let Some(native_hole) = hole
             .native_ref
             .as_deref()
-            .and_then(|native| native_features.get(native).copied())
+            .and_then(|native| native_features.get(native))
         else {
             continue;
         };
