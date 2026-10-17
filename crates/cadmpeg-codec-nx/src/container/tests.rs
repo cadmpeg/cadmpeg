@@ -491,45 +491,155 @@ fn overlapping_extref_candidates_are_rejected() {
             .copy_from_slice(&u16::try_from(32_768 - marker).unwrap().to_le_bytes());
     }
     *bytes.last_mut().unwrap() = 0;
-    assert_eq!(
-        super::locate_extref_string_table(&bytes),
-        super::ExtrefStringTableSearch::Absent
-    );
+    assert_eq!(super::locate_extref_string_table(&bytes), None);
 }
 
 #[test]
-fn overlapping_extref_candidates_skip_the_search_at_its_work_bound() {
+fn overlapping_extref_candidates_resolve_in_one_pass() {
     // Every eighth byte starts a one-entry table whose string runs to the
     // payload end, so the candidates declare about 2^28 string bytes.
     let mut bytes = vec![b'A'; 65_543];
+    let mut last_marker = 0;
     for marker in (8..bytes.len() - 8).step_by(8) {
         bytes[marker] = 1;
         bytes[marker + 1..marker + 5].copy_from_slice(&1_u32.to_le_bytes());
         let length = u16::try_from(bytes.len() - marker - 7).unwrap();
         bytes[marker + 5..marker + 7].copy_from_slice(&length.to_le_bytes());
+        last_marker = marker;
     }
-    *bytes.last_mut().unwrap() = 0;
     assert_eq!(
         super::locate_extref_string_table(&bytes),
-        super::ExtrefStringTableSearch::Bounded
+        Some((last_marker, 1, last_marker + 5))
     );
+    *bytes.last_mut().unwrap() = 0;
+    assert_eq!(super::locate_extref_string_table(&bytes), None);
 
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", bytes)]);
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let bounded = result
+    assert!(!result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(bounded.len(), 1);
-    assert!(bounded[0].message.contains("/Root/ExternalReferences"));
-    assert!(result.ir().source.as_ref().is_some_and(|source| !source
-        .attributes
-        .keys()
-        .any(|key| key.as_str().starts_with("external_reference"))));
+        .any(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind()));
+}
+
+/// The search the one-pass entry count replaced: walk the entries after each
+/// marker, last marker first.
+fn per_marker_extref_string_table(payload: &[u8]) -> Option<(usize, usize, usize)> {
+    use cadmpeg_core::decode::{bounded_len, View};
+
+    let last_marker = payload.len().checked_sub(4)?;
+    for marker in (0..last_marker).rev() {
+        if payload[marker] != 1 {
+            continue;
+        }
+        let Some(count) = View::u32_le_at(payload, marker + 1) else {
+            continue;
+        };
+        let start = marker + 5;
+        let Some(count) = bounded_len(u64::from(count), 3, payload.len() - start) else {
+            continue;
+        };
+        let mut pos = start;
+        let valid = (0..count).all(|_| {
+            let end = (|| {
+                let length = usize::from(View::u16_le_at(payload, pos)?);
+                let end = (pos + 2).checked_add(length)?;
+                let value = std::str::from_utf8(payload.get(pos + 2..end)?).ok()?;
+                (!value.is_empty() && !value.chars().any(char::is_control)).then_some(end)
+            })();
+            end.map(|end| pos = end).is_some()
+        });
+        if valid && pos == payload.len() {
+            return Some((marker, count, start));
+        }
+    }
+    None
+}
+
+#[test]
+fn extref_string_table_search_matches_the_per_marker_walk() {
+    let valid: [&[u8]; 5] = [
+        b"A",
+        b"child.prt",
+        b"\xc2\xb5",
+        b"\xe2\x82\xac",
+        b"\xf0\x9f\x98\x80",
+    ];
+    let invalid: [&[u8]; 9] = [
+        b"\x00",
+        b"\x01",
+        b"\x1f",
+        b"\x7f",
+        b"\xc2\x85",
+        b"\xff",
+        b"\x80",
+        b"\xed\xa0\x80",
+        b"\xc0\x80",
+    ];
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut next = move |bound: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        usize::try_from(state % u64::try_from(bound).unwrap()).unwrap()
+    };
+    let piece = move |next: &mut dyn FnMut(usize) -> usize| {
+        if next(4) == 0 {
+            invalid[next(invalid.len())]
+        } else {
+            valid[next(valid.len())]
+        }
+    };
+    let table = |payload: &mut Vec<u8>, next: &mut dyn FnMut(usize) -> usize, long: bool| {
+        let entries = next(4);
+        payload.push(1);
+        let declared = entries + usize::from(next(6) == 0);
+        payload.extend_from_slice(&u32::try_from(declared).unwrap().to_le_bytes());
+        for _ in 0..entries {
+            let mut text = Vec::new();
+            for _ in 0..next(4) {
+                text.extend_from_slice(piece(next));
+            }
+            if long {
+                text.resize(text.len() + 60_000 + next(5_000), b'A');
+            }
+            payload.extend_from_slice(&u16::try_from(text.len()).unwrap().to_le_bytes());
+            payload.extend_from_slice(&text);
+        }
+    };
+
+    let mut payloads = Vec::new();
+    for case in 0..2_000 {
+        let long = case % 250 == 0;
+        let mut payload = Vec::new();
+        if long {
+            payload.resize(70_000, b'A');
+        }
+        for _ in 0..next(3) {
+            for _ in 0..next(6) {
+                payload.extend_from_slice(piece(&mut next));
+            }
+            table(&mut payload, &mut next, long);
+        }
+        if next(4) == 0 {
+            payload.extend_from_slice(piece(&mut next));
+        }
+        payloads.push(payload);
+    }
+    let mut found = 0;
+    for payload in &payloads {
+        let expected = per_marker_extref_string_table(payload);
+        found += usize::from(expected.is_some());
+        assert_eq!(super::locate_extref_string_table(payload), expected);
+    }
+    assert!(found > 200 && found < payloads.len() - 200);
+    assert!(payloads
+        .iter()
+        .any(|payload| payload.len() > super::EXTREF_ENTRY_REACH
+            && per_marker_extref_string_table(payload).is_some()));
 }
 
 #[test]
