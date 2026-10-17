@@ -605,6 +605,34 @@ fn positions_by_id_prefix<'a>(ids: impl Iterator<Item = &'a str>) -> HashMap<&'a
 pub(crate) fn pattern_hole_nominal_context(
     features: &[cadmpeg_ir::features::Feature],
 ) -> BTreeMap<String, PositiveReal> {
+    let mut first_ordinals = HashMap::<&cadmpeg_ir::features::FeatureId, u64>::new();
+    let mut native_holes = HashMap::<_, Vec<_>>::new();
+    for feature in features {
+        first_ordinals
+            .entry(&feature.id)
+            .and_modify(|ordinal| *ordinal = (*ordinal).min(feature.ordinal))
+            .or_insert(feature.ordinal);
+        if !feature
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
+        {
+            continue;
+        }
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
+        ) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let diameter = shape.diameter().map(PositiveReal::from_assigned_length);
+        for dependency in &feature.dependencies {
+            native_holes
+                .entry(dependency)
+                .or_default()
+                .push((feature.ordinal, diameter));
+        }
+    }
     let mut candidates = BTreeMap::<String, Option<PositiveReal>>::new();
     for pattern in features {
         let Some(name) = pattern.name.as_deref() else {
@@ -631,47 +659,18 @@ pub(crate) fn pattern_hole_nominal_context(
         let [cadmpeg_ir::features::patterns::PatternSeed::Feature(seed)] = seeds.as_slice() else {
             continue;
         };
-        let mut preceding_seed = false;
-        for candidate in features {
-            if candidate.id == *seed && candidate.ordinal < pattern.ordinal {
-                preceding_seed = true;
-                break;
-            }
-        }
-        if !preceding_seed {
+        if first_ordinals
+            .get(seed)
+            .is_none_or(|&ordinal| ordinal >= pattern.ordinal)
+        {
             continue;
         }
-        let mut hole_count = 0u8;
-        let mut diameter = None;
-        for candidate in features {
-            if candidate.ordinal <= pattern.ordinal {
-                continue;
-            }
-            if !candidate
-                .dependencies
-                .iter()
-                .any(|dependency| dependency == seed)
-                || !candidate
-                    .native_ref
-                    .as_deref()
-                    .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-            {
-                continue;
-            }
-            let cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
-            ) = candidate.evaluation.definition()
-            else {
-                continue;
-            };
-            if hole_count == 1 {
-                hole_count = 2;
-                break;
-            }
-            hole_count = 1;
-            diameter = shape.diameter().map(PositiveReal::from_assigned_length);
-        }
-        let (1, Some(diameter)) = (hole_count, diameter) else {
+        let mut later_holes = native_holes
+            .get(seed)
+            .into_iter()
+            .flatten()
+            .filter(|(ordinal, _)| *ordinal > pattern.ordinal);
+        let (Some(&(_, Some(diameter))), None) = (later_holes.next(), later_holes.next()) else {
             continue;
         };
         let semantic_name = format!("Hole Pattern{suffix}");
