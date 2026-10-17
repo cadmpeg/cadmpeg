@@ -1346,4 +1346,140 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
     );
 }
 
+#[test]
+fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
+    use crate::native::attach::feature_projection::body_faces;
+    use crate::native::attach::feature_projection::SolidBodyIndex;
+    use cadmpeg_ir::ids::{FaceId, RegionId, ShellId};
+    use cadmpeg_ir::topology::{BodyKind, Face, Shell};
+
+    let cube = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let template_faces = &cube.model.faces;
+    let mut ir = cube.clone();
+    let name =
+        |kind: &str, copy: usize, part: usize| format!("test:model:entity#{kind}-{copy}-{part}");
+    // By copy % 5: plain solid (every tenth shadowed by a later sheet record
+    // with the same id), sheet, missing face, two regions, and a repeated face
+    // record carrying another surface.
+    for copy in 0..512 {
+        let body_id = BodyId::mint(name("body", copy, 0)).unwrap();
+        let region_ids = (0..=usize::from(copy % 5 == 3))
+            .map(|part| RegionId::mint(name("region", copy, part)).unwrap())
+            .collect::<Vec<_>>();
+        let shell_id = ShellId::mint(name("shell", copy, 0)).unwrap();
+        let face_ids = (0..template_faces.len())
+            .map(|part| FaceId::mint(name("face", copy, part)).unwrap())
+            .collect::<Vec<_>>();
+        let mut body = cube.model.bodies[0].clone();
+        body.id = body_id.clone();
+        body.kind = if copy % 5 == 1 {
+            BodyKind::Sheet
+        } else {
+            BodyKind::Solid
+        };
+        body.regions = region_ids.clone();
+        ir.model.bodies.push(body.clone());
+        if copy.is_multiple_of(10) {
+            body.kind = BodyKind::Sheet;
+            ir.model.bodies.push(body);
+        }
+        for region_id in &region_ids {
+            let mut region = cube.model.regions[0].clone();
+            region.id = region_id.clone();
+            region.body = body_id.clone();
+            region.shells = vec![shell_id.clone()];
+            ir.model.regions.push(region);
+        }
+        ir.model.shells.push(
+            Shell::new(
+                shell_id.clone(),
+                region_ids[0].clone(),
+                face_ids.clone(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        for (part, (face_id, template)) in face_ids.iter().zip(template_faces).enumerate() {
+            if copy % 5 == 2 && part == 0 {
+                continue;
+            }
+            let mut face = template.clone();
+            face.id = face_id.clone();
+            face.shell = shell_id.clone();
+            ir.model.faces.push(face.clone());
+            if copy % 5 == 4 {
+                face.surface = template_faces[(part + 1) % template_faces.len()]
+                    .surface
+                    .clone();
+                ir.model.faces.push(face);
+            }
+        }
+    }
+    let scan = |body_id: &BodyId, connected_solid: bool| {
+        let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
+        if connected_solid && (body.kind != BodyKind::Solid || body.regions.len() != 1) {
+            return None;
+        }
+        let mut faces = Vec::new();
+        for region_id in &body.regions {
+            let region = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == *region_id && region.body == body.id)?;
+            if connected_solid && region.shells.len() != 1 {
+                return None;
+            }
+            for shell_id in &region.shells {
+                let shell = ir
+                    .model
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
+                for face_id in shell.faces() {
+                    let face = ir
+                        .model
+                        .faces
+                        .iter()
+                        .find(|face| face.id == *face_id && face.shell == shell.id)?;
+                    faces.push((face.id.clone(), face.surface.clone()));
+                }
+            }
+        }
+        Some(faces)
+    };
+    let project = |faces: Option<Vec<&Face>>| {
+        faces.map(|faces| {
+            faces
+                .into_iter()
+                .map(|face| (face.id.clone(), face.surface.clone()))
+                .collect::<Vec<_>>()
+        })
+    };
+
+    let index = SolidBodyIndex::new(&ir);
+    let missing = BodyId::mint("test:model:entity#missing").unwrap();
+    let mut connected = 0;
+    for body_id in ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .chain([&missing])
+    {
+        let expected = scan(body_id, true);
+        connected += usize::from(expected.is_some());
+        assert_eq!(project(index.connected_solid_body_faces(body_id)), expected);
+        assert_eq!(project(index.body_faces(body_id)), scan(body_id, false));
+    }
+    let last = &ir.model.bodies.last().unwrap().id;
+    assert_eq!(
+        project(connected_solid_body_faces(&ir, last)),
+        scan(last, true)
+    );
+    assert_eq!(project(body_faces(&ir, last)), scan(last, false));
+    assert!(connected > 200);
+}
+
 mod topology_attributes;

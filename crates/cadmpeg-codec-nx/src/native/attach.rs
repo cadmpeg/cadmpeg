@@ -1367,22 +1367,15 @@ fn attach_active_configuration_parameter_values(
     {
         return Ok(());
     }
-    for (index, parameter) in ir.model.parameters.iter().enumerate() {
-        if ir.model.parameters[..index]
-            .iter()
-            .any(|previous| previous.id == parameter.id)
-        {
+    let mut parameters_by_id = BTreeMap::new();
+    for parameter in &ir.model.parameters {
+        if parameters_by_id.insert(&parameter.id, parameter).is_some() {
             return Ok(());
         }
     }
     for parameter in &ir.model.parameters {
         for dependency in &parameter.dependencies {
-            let Some(preceding) = ir
-                .model
-                .parameters
-                .iter()
-                .find(|candidate| candidate.id == *dependency)
-            else {
+            let Some(preceding) = parameters_by_id.get(dependency) else {
                 return Ok(());
             };
             if preceding.owner != parameter.owner || preceding.ordinal >= parameter.ordinal {
