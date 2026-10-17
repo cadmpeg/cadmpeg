@@ -4441,9 +4441,10 @@ pub(crate) struct CatiaDesignObject {
 }
 
 fn design_objects(
+    ctx: &DecodeContext<'_>,
     graphs: &[CatiaObjectGraph],
     entity_records: &[CatiaEntityRecord],
-) -> Vec<CatiaDesignObject> {
+) -> Result<Vec<CatiaDesignObject>, CodecError> {
     let definition_value_entities = entity_records
         .iter()
         .filter(|entity| entity.definition_value().is_some())
@@ -4492,7 +4493,7 @@ fn design_objects(
                 .map(|owner| design_object_id(graph.byte_offset, owner));
             let owner_class = match owner_record.filter(|record| record_has_separator_roles(record))
             {
-                Some(record) => design_class(record),
+                Some(record) => design_class(ctx, record)?,
                 None => None,
             };
             let mut field_ids = Vec::new();
@@ -4503,7 +4504,7 @@ fn design_objects(
             let mut relations = Vec::new();
             for record in &records {
                 field_ids.push(record.id.clone());
-                if let Some(class) = design_class(record) {
+                if let Some(class) = design_class(ctx, record)? {
                     if distinct_field_classes.insert(class.clone()) {
                         field_classes.push(class);
                     }
@@ -4525,11 +4526,11 @@ fn design_objects(
                     {
                         let relation = CatiaDesignObjectRelation {
                             source_field: record.id.clone(),
-                            source_class: design_class(record),
+                            source_class: design_class(ctx, record)?,
                             source: CatiaDesignObjectRelationSource::Storage,
                             target_entity_id: storage_ref,
                             target_field: target_field.to_owned(),
-                            target_class: design_class(target_record),
+                            target_class: design_class(ctx, target_record)?,
                             target_design_object: record
                                 .storage_design_object()
                                 .map(std::borrow::ToOwned::to_owned),
@@ -4549,14 +4550,14 @@ fn design_objects(
                     };
                     let relation = CatiaDesignObjectRelation {
                         source_field: record.id.clone(),
-                        source_class: design_class(record),
+                        source_class: design_class(ctx, record)?,
                         source: CatiaDesignObjectRelationSource::Payload {
                             payload_offset: reference.payload_offset(),
                             container: reference.source().clone(),
                         },
                         target_entity_id: reference.entity_id(),
                         target_field: target_field.to_owned(),
-                        target_class: design_class(target_record),
+                        target_class: design_class(ctx, target_record)?,
                         target_design_object: reference
                             .design_object()
                             .map(std::borrow::ToOwned::to_owned),
@@ -4565,11 +4566,12 @@ fn design_objects(
                 }
             }
             let parallel_reference_table = design_parallel_reference_table(
+                ctx,
                 &records,
                 graph,
                 &record_indices,
                 terminal_null_entity_id,
-            );
+            )?;
             let object = CatiaDesignObject {
                 id,
                 parent: graph.id.clone(),
@@ -4592,17 +4594,18 @@ fn design_objects(
             objects.push(object);
         }
     }
-    objects
+    Ok(objects)
 }
 
 fn design_parallel_reference_table(
+    ctx: &DecodeContext<'_>,
     records: &[&CatiaObjectRecord],
     graph: &CatiaObjectGraph,
     record_indices: &HashMap<u32, usize>,
     terminal_null_entity_id: Option<u32>,
-) -> Option<CatiaDesignParallelReferenceTable> {
+) -> Result<Option<CatiaDesignParallelReferenceTable>, CodecError> {
     if records.len() < 2 {
-        return None;
+        return Ok(None);
     }
     let mut columns = Vec::new();
     for record in records {
@@ -4612,7 +4615,7 @@ fn design_parallel_reference_table(
             offset: list_offset,
         }, middle @ .., PayloadField::Terminator] = record.payload.fields.as_slice()
         else {
-            return None;
+            return Ok(None);
         };
         if *declared_count < 2
             || usize::try_from(*declared_count).ok() != Some(items.len())
@@ -4623,25 +4626,27 @@ fn design_parallel_reference_table(
                 .iter()
                 .all(|item| matches!(item, ListItem::Reference { .. }))
         {
-            return None;
+            return Ok(None);
         }
         let column = (
             CatiaDesignReferenceColumn {
                 field: record.id.clone(),
-                field_class: design_class(record),
+                field_class: design_class(ctx, record)?,
                 list_payload_offset: u64_from_index(*list_offset),
             },
             items.as_slice(),
         );
         columns.push(column);
     }
-    let (_, first_items) = columns.first()?;
+    let Some((_, first_items)) = columns.first() else {
+        return Ok(None);
+    };
     let row_count = first_items.len();
     if columns
         .iter()
         .any(|(_, references)| references.len() != row_count)
     {
-        return None;
+        return Ok(None);
     }
     let mut rows = Vec::new();
     for row in 0..row_count {
@@ -4652,17 +4657,21 @@ fn design_parallel_reference_table(
                 offset: payload_offset,
             } = &references[row]
             else {
-                return None;
+                return Ok(None);
             };
             let target = record_indices
                 .get(target_entity_id)
                 .and_then(|index| graph.records.get(*index));
+            let target_class = match target {
+                Some(record) => design_class(ctx, record)?,
+                None => None,
+            };
             let cell = CatiaDesignReferenceCell::from_parts(
                 u64_from_index(*payload_offset),
                 *target_entity_id,
                 Some(*target_entity_id) == terminal_null_entity_id,
                 target.map(|record| record.id.clone()),
-                target.and_then(design_class),
+                target_class,
                 target
                     .and_then(|record| record.design_object.as_deref())
                     .map(std::borrow::ToOwned::to_owned),
@@ -4694,17 +4703,33 @@ fn design_parallel_reference_table(
         .into_iter()
         .map(|(column, _)| column)
         .collect::<Vec<_>>();
-    CatiaDesignParallelReferenceTable::new(columns, rows)
+    Ok(CatiaDesignParallelReferenceTable::new(columns, rows))
 }
 
-fn design_class(record: &CatiaObjectRecord) -> Option<CatiaDesignClass> {
+const CLASS_TEXT_OPERATION: &str = "retain CATIA schema class text";
+
+/// Charge one retained copy of a schema class's entry identity and name. A
+/// catalog entry is shared by every record, reference and selector that names
+/// its ordinal, so each copy is charged before it is made.
+fn charge_class_text(ctx: &DecodeContext<'_>, entry: &str, name: &str) -> Result<(), CodecError> {
+    ctx.retain_bytes(
+        u64_from_index(entry.len() + name.len()),
+        CLASS_TEXT_OPERATION,
+    )
+}
+
+fn design_class(
+    ctx: &DecodeContext<'_>,
+    record: &CatiaObjectRecord,
+) -> Result<Option<CatiaDesignClass>, CodecError> {
     let (Some(entry), Some(name)) = (record.class_entry(), record.class_name()) else {
-        return None;
+        return Ok(None);
     };
-    Some(CatiaDesignClass {
+    charge_class_text(ctx, entry, name)?;
+    Ok(Some(CatiaDesignClass {
         entry: entry.to_owned(),
         name: name.to_owned(),
-    })
+    }))
 }
 
 fn record_has_separator_roles(record: &CatiaObjectRecord) -> bool {
@@ -4805,14 +4830,18 @@ fn resolved_storage_link(
 }
 
 fn definition_schema_selections(
+    ctx: &DecodeContext<'_>,
     selectors: &[entity_table::DefinitionSchemaSelector],
     catalog: Option<&CatiaCatalog>,
-) -> Vec<CatiaDefinitionSchemaSelection> {
+) -> Result<Vec<CatiaDefinitionSchemaSelection>, CodecError> {
     let mut selections = Vec::new();
     for selector in selectors {
         let catalog_entry = usize::try_from(selector.value)
             .ok()
             .and_then(|ordinal| catalog?.entries.get(ordinal));
+        if let Some(entry) = catalog_entry {
+            charge_class_text(ctx, &entry.id, &entry.value)?;
+        }
         let selection = CatiaDefinitionSchemaSelection {
             offset: u64_from_index(selector.offset),
             ordinal: selector.value,
@@ -4821,16 +4850,17 @@ fn definition_schema_selections(
         };
         selections.push(selection);
     }
-    selections
+    Ok(selections)
 }
 
 fn entity_value_schema_selections(
+    ctx: &DecodeContext<'_>,
     fields: &[value_block::ValueField],
     catalog: Option<&CatiaCatalog>,
     packets: &[entity_table::EntityValuePacket],
-) -> Vec<CatiaEntityValueSchemaSelection> {
+) -> Result<Vec<CatiaEntityValueSchemaSelection>, CodecError> {
     let Some(catalog) = catalog else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let selector_indices = fields
         .iter()
@@ -4871,6 +4901,7 @@ fn entity_value_schema_selections(
         }) {
             selected_packets.push(packet.clone());
         }
+        charge_class_text(ctx, &catalog_entry.id, &catalog_entry.value)?;
         let selection = CatiaEntityValueSchemaSelection {
             offset: u64_from_index(*offset),
             ordinal: *ordinal,
@@ -4881,25 +4912,31 @@ fn entity_value_schema_selections(
         };
         selections.push(selection);
     }
-    selections
+    Ok(selections)
 }
 
 fn entity_suffix_schema_selection(
+    ctx: &DecodeContext<'_>,
     suffix_value: Option<&CatiaEntitySuffixValue>,
     catalog: Option<&CatiaCatalog>,
-) -> Option<CatiaEntitySuffixSchemaSelection> {
-    let suffix_value = suffix_value?;
+) -> Result<Option<CatiaEntitySuffixSchemaSelection>, CodecError> {
+    let Some(suffix_value) = suffix_value else {
+        return Ok(None);
+    };
     let CatiaEntitySuffixPayload::SchemaSelected {
         selector_offset,
         selector,
         value,
     } = &suffix_value.payload
     else {
-        return None;
+        return Ok(None);
     };
-    let entry = usize::try_from(*selector)
+    let Some(entry) = usize::try_from(*selector)
         .ok()
-        .and_then(|ordinal| catalog.and_then(|catalog| catalog.entries.get(ordinal)))?;
+        .and_then(|ordinal| catalog.and_then(|catalog| catalog.entries.get(ordinal)))
+    else {
+        return Ok(None);
+    };
     let value = match value {
         CatiaEntitySuffixSchemaValue::Atom { value } => {
             CatiaEntitySuffixSchemaValue::Atom { value: *value }
@@ -4919,6 +4956,9 @@ fn entity_suffix_schema_selection(
             let selected = usize::try_from(*ordinal)
                 .ok()
                 .and_then(|ordinal| catalog.and_then(|catalog| catalog.entries.get(ordinal)));
+            if let Some(selected) = selected {
+                charge_class_text(ctx, &selected.id, &selected.value)?;
+            }
             CatiaEntitySuffixSchemaValue::SchemaSelector {
                 offset: *offset,
                 ordinal: *ordinal,
@@ -4929,13 +4969,14 @@ fn entity_suffix_schema_selection(
             }
         }
     };
-    Some(CatiaEntitySuffixSchemaSelection {
+    charge_class_text(ctx, &entry.id, &entry.value)?;
+    Ok(Some(CatiaEntitySuffixSchemaSelection {
         offset: *selector_offset,
         ordinal: *selector,
         entry: entry.id.clone(),
         name: entry.value.clone(),
         value,
-    })
+    }))
 }
 
 fn copy_value_schema(selection: &CatiaEntityValueSchemaSelection) -> CatiaEntitySchemaValue {
@@ -6594,10 +6635,13 @@ fn value_field_offset(field: &value_block::ValueField) -> usize {
 }
 
 fn repeated_reference_schema_selection(
+    ctx: &DecodeContext<'_>,
     preamble: Option<&object_graph::ReferenceSchemaPreamble>,
     catalog: Option<&CatiaCatalog>,
-) -> Option<CatiaRepeatedReferenceSchemaSelection> {
-    let preamble = preamble?;
+) -> Result<Option<CatiaRepeatedReferenceSchemaSelection>, CodecError> {
+    let Some(preamble) = preamble else {
+        return Ok(None);
+    };
     let (order, ordinal, offset) = match preamble {
         object_graph::ReferenceSchemaPreamble::BlobThenSchema { schema_ref, offset } => (
             CatiaRepeatedReferenceSchemaOrder::BlobThenSchema,
@@ -6613,13 +6657,16 @@ fn repeated_reference_schema_selection(
     let catalog_entry = usize::try_from(ordinal)
         .ok()
         .and_then(|ordinal| catalog?.entries.get(ordinal));
-    Some(CatiaRepeatedReferenceSchemaSelection {
+    if let Some(entry) = catalog_entry {
+        charge_class_text(ctx, &entry.id, &entry.value)?;
+    }
+    Ok(Some(CatiaRepeatedReferenceSchemaSelection {
         order,
         offset: u64_from_index(offset),
         ordinal,
         entry: catalog_entry.map(|entry| entry.id.clone()),
         name: catalog_entry.map(|entry| entry.value.clone()),
-    })
+    }))
 }
 
 /// One stored entity identity in a pre-`7C05` design stream.
@@ -8840,34 +8887,36 @@ impl CatiaNative {
             graph.catalog = catalog.map(|catalog| catalog.id.clone());
             for record in &mut graph.records {
                 if let Some(class) = &mut record.class {
-                    class.entry = usize::try_from(class.ordinal)
+                    let entry = usize::try_from(class.ordinal)
                         .ok()
-                        .and_then(|ordinal| catalog?.entries.get(ordinal))
-                        .map(|entry| entry.id.clone());
-                    class.name = usize::try_from(class.ordinal)
-                        .ok()
-                        .and_then(|ordinal| catalog?.entries.get(ordinal))
-                        .map(|entry| entry.value.clone());
+                        .and_then(|ordinal| catalog?.entries.get(ordinal));
+                    if let Some(entry) = entry {
+                        charge_class_text(ctx, &entry.id, &entry.value)?;
+                    }
+                    class.entry = entry.map(|entry| entry.id.clone());
+                    class.name = entry.map(|entry| entry.value.clone());
                 }
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
+                    ctx,
                     object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
                     catalog,
-                );
+                )?;
             }
             let incidences = EntityIncidenceIndex::new(&graph.records, &graph.id);
             for &index in entities_by_graph.get(&graph.id).into_iter().flatten() {
                 let entity = &mut entity_records[index];
                 entity.definition_schema_selections = definition_schema_selections(
+                    ctx,
                     &entity_table::parse_definition_schema_selectors(entity.definition_prefix()),
                     catalog,
-                );
+                )?;
                 let value_fields = entity.value_fields();
                 let value_packets = entity.value_packets(&value_fields);
                 entity.value_schema_selections =
-                    entity_value_schema_selections(&value_fields, catalog, &value_packets);
+                    entity_value_schema_selections(ctx, &value_fields, catalog, &value_packets)?;
                 entity.parse_suffix();
                 entity.suffix_schema_selection =
-                    entity_suffix_schema_selection(entity.suffix_value(), catalog);
+                    entity_suffix_schema_selection(ctx, entity.suffix_value(), catalog)?;
                 entity.value_production = value_production(entity, &incidences, &value_fields);
                 entity.range_interval = range_interval(
                     entity.value_payload(),
@@ -8960,7 +9009,7 @@ impl CatiaNative {
                 })
         });
         resolve_alias_surface_tags(&mut alias_rows);
-        let design_objects = design_objects(&object_graphs, &entity_records);
+        let design_objects = design_objects(ctx, &object_graphs, &entity_records)?;
         let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
                 graph
