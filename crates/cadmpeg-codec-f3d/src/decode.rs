@@ -2291,8 +2291,9 @@ enum DesignState {
     /// Phase 2 ran. Its native records wait for finalization.
     Projected(Box<design_intent::DesignNative>),
     /// No phase-2 output: the request is below [`DecodeDepth::Full`], or
-    /// phase 2 failed and the containment loss says so. The design reports
-    /// read phase-2 records, so they do not run.
+    /// phase 2 failed and the containment loss and a native
+    /// [`design_intent::DesignIntentFailure`] say so. The design reports read
+    /// phase-2 records, so they do not run.
     Absent,
 }
 
@@ -2494,6 +2495,12 @@ impl<'a> F3dDecodeSession<'a> {
             F3dLossCode::DesignIntentUndecoded,
             format_args!("Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"),
         );
+        self.native
+            .design_intent_failures
+            .push(design_intent::DesignIntentFailure {
+                id: crate::ids::DESIGN_INTENT_FAILURE_ID.to_owned(),
+                reason: failure,
+            });
         Ok(DesignState::Absent)
     }
 

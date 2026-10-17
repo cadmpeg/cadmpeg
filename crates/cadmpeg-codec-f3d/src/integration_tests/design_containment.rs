@@ -14,7 +14,7 @@ use super::{assert_valid, decode};
 use crate::decode::design_intent::inject_failure;
 use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
-use crate::test_support::native_test::f3d_native;
+use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
@@ -187,6 +187,48 @@ fn a_bodyless_design_intent_failure_keeps_the_xref_product_structure() {
         1
     );
     assert_valid(&contained);
+}
+
+fn native_findings(ir: &cadmpeg_ir::document::CadIr) -> Vec<String> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, ir).expect("validate the native namespace")
+    })
+    .into_iter()
+    .map(|finding| finding.message)
+    .collect()
+}
+
+/// A full decode whose design intent fails keeps the product scopes and
+/// owners that design intent binds. Its failure record tells native
+/// validation that the bindings are absent rather than broken.
+#[test]
+fn native_validation_skips_design_intent_links_after_a_contained_failure() {
+    let source =
+        include_bytes!("../../tests/golden/fixtures/design_sketch_constraints.f3d").to_vec();
+    inject_failure(malformed_design);
+    let contained = decode(source.clone());
+
+    let failures = f3d_native(contained.ir()).design_intent_failures;
+    assert_eq!(failures.len(), 1);
+    assert!(failures[0]
+        .reason
+        .contains("injected design-intent failure"));
+    assert_eq!(native_findings(contained.ir()), Vec::<String>::new());
+
+    let mut unmarked = contained.ir().clone();
+    f3d_native_mut(&mut unmarked).design_intent_failures.clear();
+    assert!(native_findings(&unmarked)
+        .iter()
+        .any(|message| message == "Fusion Design parameter scope has an invalid paired frame"));
+
+    let full = decode(source);
+    assert_eq!(native_findings(full.ir()), Vec::<String>::new());
+    let mut marked = full.ir().clone();
+    f3d_native_mut(&mut marked).design_intent_failures = failures;
+    assert_eq!(
+        native_findings(&marked),
+        ["Fusion design-intent failure record accompanies decoded design records"]
+    );
 }
 
 #[test]
