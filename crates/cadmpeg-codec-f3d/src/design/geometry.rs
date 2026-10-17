@@ -2362,8 +2362,13 @@ fn chord_boundary_segment_distance(
         let (start, end) = boundary_segment_endpoints(segment);
         return segment_distance(chord, (start, end));
     };
-    if line_arc_intersection_points(chord, segment)
-        .is_some_and(|points| points.iter().any(Option::is_some))
+    // A chord wholly outside or wholly inside the circle cannot meet the arc;
+    // only a chord across it needs the exact intersection test.
+    let farthest = point_distance(center, chord.0).max(point_distance(center, chord.1));
+    if point_segment_distance(center, chord) <= radius.get()
+        && radius.get() <= farthest
+        && line_arc_intersection_points(chord, segment)
+            .is_some_and(|points| points.iter().any(Option::is_some))
     {
         return 0.0;
     }
