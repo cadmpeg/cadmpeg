@@ -13,7 +13,7 @@ use super::markers::{
     linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_native_code,
 };
 use super::operations::repeated_class_token;
-use super::scalars::{feature_object_name, operand_kind};
+use super::scalars::{feature_object_name, operand_kind, FeatureObjectNames};
 use super::terminations::{
     compact_extrusion_offset_from_face_at, compact_extrusion_to_face_at,
     compact_extrusion_to_vertex_at, compact_single_face_reference_record_at,
@@ -57,13 +57,14 @@ fn selection_objects<'history, 'lane>(
     &'history crate::records::Feature,
     usize,
 )> {
+    let names = FeatureObjectNames::new(&lane.names);
     let mut objects = Vec::new();
     for (input_index, feature) in histories
         .iter()
         .flat_map(|history| &history.features)
         .enumerate()
     {
-        let Some(name) = feature_object_name(feature, lane) else {
+        let Some(name) = names.of(feature) else {
             continue;
         };
         objects.push((name, feature, input_index));
@@ -1192,14 +1193,18 @@ pub(crate) fn enrich_feature_object_sources(
     features: &mut [crate::records::Feature],
     lanes: &[FeatureInputLane],
 ) {
+    let lane_names = lanes
+        .iter()
+        .map(|lane| FeatureObjectNames::new(&lane.names))
+        .collect::<Vec<_>>();
     for feature in features {
         if feature.source_id.is_some() {
             continue;
         }
         let mut source = None;
         let mut ambiguous = false;
-        for lane in lanes {
-            let Some(candidate) = lane_added_source(feature, lane) else {
+        for names in &lane_names {
+            let Some(candidate) = lane_added_source(feature, names) else {
                 continue;
             };
             match source {

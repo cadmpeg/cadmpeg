@@ -426,7 +426,12 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "7".into(),
+                )
+                .unwrap()]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
     assert_eq!(
@@ -771,7 +776,12 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     assert!(matches!(
         group.center_faces(),
         FaceSelection::Generated { faces, .. }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "2".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "2".into(),
+                )
+                .unwrap()]
     ));
     assert!(matches!(
         group.side_one_faces(),
@@ -1138,7 +1148,12 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     assert!(matches!(
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
-            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"), "7".into()).unwrap()]
+            if faces.as_slice()
+                == [cadmpeg_ir::features::GeneratedFaceRef::new(
+                    FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
+                    "7".into(),
+                )
+                .unwrap()]
                 && native == "sldprt:feature-input:surface-component-ids:7"
     ));
 
@@ -1786,6 +1801,68 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
     let fourth = [selection("lane-one", 80, 4)];
     let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
     assert!(full_round_fillet_selection_triple(&over_long).is_none());
+}
+
+#[test]
+fn resumed_reference_name_search_matches_the_linear_search() {
+    use super::{reference_name, ReferenceNames};
+    use std::collections::HashSet;
+
+    fn linear(
+        taken: &HashSet<(FeatureId, String)>,
+        owner: &FeatureId,
+        source_name: &str,
+        offset: u64,
+    ) -> String {
+        let mut candidate = reference_name(source_name, None, None);
+        if taken.contains(&(owner.clone(), candidate.clone())) {
+            candidate = reference_name(source_name, Some(offset), None);
+            let mut suffix = 0;
+            while taken.contains(&(owner.clone(), candidate.clone())) {
+                suffix += 1;
+                candidate = reference_name(source_name, Some(offset), Some(suffix));
+            }
+        }
+        candidate
+    }
+
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let owners = [
+        FeatureId::mint("synthetic:test:id#owner-a").unwrap(),
+        FeatureId::mint("synthetic:test:id#owner-b").unwrap(),
+    ];
+    let mut names = ReferenceNames::default();
+    let mut taken = HashSet::new();
+    let mut suffixed = 0;
+    for _ in 0..400 {
+        let owner = &owners[usize::from(next(2) == 1)];
+        let source_name = if next(2) == 0 { "D1" } else { "D2" };
+        let offset = 10 * (1 + next(2));
+        let name = if next(5) == 0 {
+            reference_name(
+                source_name,
+                Some(offset),
+                Some(1 + u32::try_from(next(6)).unwrap()),
+            )
+        } else {
+            let expected = linear(&taken, owner, source_name, offset);
+            assert_eq!(names.free(owner, source_name, offset).unwrap(), expected);
+            suffixed += usize::from(expected.matches(':').count() == 2);
+            if next(4) == 0 {
+                continue;
+            }
+            expected
+        };
+        names.insert(owner, name.clone());
+        taken.insert((owner.clone(), name));
+    }
+    assert!(suffixed > 0);
 }
 
 mod unresolved_fillet_groups;
