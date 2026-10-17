@@ -1253,6 +1253,70 @@ impl RecordPayload for PmDcUnitPayload {
     const KIND: &'static str = "unit";
 }
 
+/// The `(type id, payload)` records of one dimensionless parameter `ratio = 1`
+/// at record ordinals 0 through 3: base unit, unit definition, literal
+/// formula, parameter.
+#[cfg(test)]
+pub(crate) fn ratio_parameter_records() -> [([u8; 16], Vec<u8>); 4] {
+    use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
+
+    let header = |bytes: &mut Vec<u8>| {
+        push_u32(bytes, 0);
+        push_u16(bytes, 0);
+    };
+    let mut base = Vec::new();
+    header(&mut base);
+    base.extend_from_slice(&1.0_f64.to_le_bytes());
+    base.extend_from_slice(&1.0_f64.to_le_bytes());
+
+    let mut unit = Vec::new();
+    header(&mut unit);
+    for (metadata, references) in [(Some([0_u16, 0]), [1_u32].as_slice()), (None, &[])] {
+        push_u16(&mut unit, 3);
+        push_u16(&mut unit, 0x3000);
+        push_u32(
+            &mut unit,
+            u32::try_from(references.len()).expect("fixture value fits u32"),
+        );
+        for value in metadata.into_iter().flatten() {
+            push_u16(&mut unit, value);
+        }
+        for reference in references {
+            push_u32(&mut unit, *reference);
+        }
+    }
+    unit.push(1);
+    push_u32(&mut unit, 0);
+
+    let mut literal = Vec::new();
+    header(&mut literal);
+    push_u32(&mut literal, 2);
+    literal.extend_from_slice(&1.0_f64.to_le_bytes());
+    push_u16(&mut literal, 0);
+    push_u32(&mut literal, 0);
+
+    let mut parameter = Vec::new();
+    header(&mut parameter);
+    for value in [0, 0, 0, 0] {
+        push_u32(&mut parameter, value);
+    }
+    push_utf16(&mut parameter, "ratio");
+    for value in [0, 2, 3] {
+        push_u32(&mut parameter, value);
+    }
+    parameter.extend_from_slice(&1.0_f64.to_le_bytes());
+    parameter.extend_from_slice(&1.0_f64.to_le_bytes());
+    push_u16(&mut parameter, 0);
+    parameter.extend_from_slice(&(-1_i16).to_le_bytes());
+
+    [
+        (DIMENSIONLESS_TYPE, base),
+        (UNIT_TYPE, unit),
+        (EXPRESSION_VALUE_TYPE, literal),
+        (PARAMETER_FULL_TYPE, parameter),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

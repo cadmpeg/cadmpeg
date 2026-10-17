@@ -36,7 +36,7 @@ fn rational_pcurve_incidence_isolates_close_branches() {
         };
         let roots =
             closest_pcurve_parameters(geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(0.11))
-                .expect("evaluator allocation succeeds")
+                .expect("evaluation stays within session limits")
                 .expect("complete homogeneous root isolation");
 
         assert_eq!(roots.len(), 4);
@@ -73,7 +73,7 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
         };
         let parameters =
             closest_pcurve_parameters(geometry_ctx, &pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
-                .expect("evaluator allocation succeeds")
+                .expect("evaluation stays within session limits")
                 .expect("complete global closest-point search");
 
         assert_eq!(parameters.len(), 4, "{parameters:?}");
@@ -178,7 +178,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
         assert_eq!(
             closest_pcurve_parameters(geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(4.1))
-                .expect("evaluator allocation succeeds")
+                .expect("evaluation stays within session limits")
                 .expect("periodic pcurve phase"),
             [4.0]
         );
@@ -223,7 +223,7 @@ fn coincident_pcurve_interval_retains_seed_and_boundaries() {
         };
         let roots =
             closest_pcurve_parameters(geometry_ctx, &pcurve, Point2::new(2.0, -3.0), Some(0.3))
-                .expect("evaluator allocation succeeds")
+                .expect("evaluation stays within session limits")
                 .expect("coincident interval");
 
         assert_eq!(roots, [0.3, 0.0, 1.0]);
