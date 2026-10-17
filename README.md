@@ -52,7 +52,7 @@ cadmpeg convert part.f3d -o part.step
 ```
 
 ```text
-decode report (f3d): depth=full, geometry_transferred=true
+decode report (f3d): depth=geometry, geometry_transferred=true
 ...
 check: OK (0 error(s), 0 warning(s))
 wrote part.step (... entities)

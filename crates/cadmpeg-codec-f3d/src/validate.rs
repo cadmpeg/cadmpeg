@@ -38,6 +38,7 @@ use crate::{design, history, ids, native, records};
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{
@@ -754,6 +755,14 @@ impl<'a, 'd> Ctx<'a, 'd> {
             sketch_owner_ids,
         }
     }
+
+    /// Whether the document holds the design-intent records and the record
+    /// headers they read. A decode below full depth stops before them, and a
+    /// contained design-intent failure drops them, so in either case the
+    /// stored scopes and owners carry no design-intent bindings.
+    fn holds_design_intent(&self) -> bool {
+        self.ir.decode_depth() == DecodeDepth::Full && self.native.design_intent_failures.is_empty()
+    }
 }
 
 /// Validate the `f3d` native namespace of `ir` against its decoded IR.
@@ -839,6 +848,7 @@ fn validate_loaded(
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
     validate_configurations(&ctx, &mut findings);
+    validate_design_intent_failures(&ctx, &mut findings);
     validate_feature_timelines(&ctx, &mut findings)?;
     validate_parameter_scopes(&ctx, &mut findings)?;
     validate_extrude_selection_groups(&ctx, &mut findings);
@@ -1097,7 +1107,41 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     }
 }
 
+/// Report a contained design-intent failure beside features or sketches of the
+/// same document. A failure record turns off the checks that resolve design
+/// intent, so it must not sit beside the records those checks read. An F3Z
+/// member's failure is scoped to its occurrence; the other documents of the
+/// archive keep their design records.
+fn validate_design_intent_failures(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    for failure in &ctx.native.design_intent_failures {
+        let beside_design = ctx
+            .ir
+            .model
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str())
+            .chain(
+                ctx.ir
+                    .model
+                    .sketches
+                    .iter()
+                    .map(|sketch| sketch.id.as_str()),
+            )
+            .any(|id| crate::ids::same_native_occurrence(id, &failure.id));
+        if beside_design {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion design-intent failure record accompanies decoded design records",
+                Some(failure.id.clone()),
+            );
+        }
+    }
+}
+
 /// Validate authored Design timeline order and its exact type and scope joins.
+/// Scope history order is checked only in a document that holds the ASM
+/// histories qualifying each history state.
 fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let mut type_ordinals = HashMap::<&str, u32>::new();
@@ -1249,6 +1293,9 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         }
     }
 
+    if !ctx.holds_design_intent() {
+        return Ok(());
+    }
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
@@ -1301,6 +1348,7 @@ fn mesh_record_offset_is(
 }
 
 /// Validate complete `Base Mesh Feature` record graphs and their neutral links.
+/// The neutral feature link is checked only in a document that holds features.
 fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut feature_ids = HashSet::new();
     let mut scope_records = HashSet::new();
@@ -1413,7 +1461,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .iter()
                 .filter_map(|body| body.tessellation_id.as_deref())
         };
-        if projected().next().is_some() {
+        if ctx.holds_design_intent() && projected().next().is_some() {
             valid &= scope.is_some_and(|scope| {
                 ctx.ir.model.features.iter().any(|neutral| {
                     neutral.native_ref.as_deref() == Some(scope.id.as_str())
@@ -1741,7 +1789,12 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 }
 
 /// Validate feature parameter scopes and their paired feature-operation frames.
+/// The links resolve into design-intent records, so a document without them
+/// has nothing to check.
 fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+    if !ctx.holds_design_intent() {
+        return Ok(());
+    }
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
@@ -4741,7 +4794,12 @@ pub(crate) fn loft_operand_roles_are_valid(
     false
 }
 
+/// Validate the operand-group roles of path-feature scopes. The groups are
+/// design-intent records, so a document without them has nothing to check.
 fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    if !ctx.holds_design_intent() {
+        return;
+    }
     let native = ctx.native;
     for scope in native
         .design_parameter_scopes
@@ -4897,6 +4955,8 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Validate Extrude profile, operation, start, and extent operand agreement.
+/// The body operands are design-intent records, so the operation is checked
+/// against them only in a document that holds them.
 fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
@@ -5009,7 +5069,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ) => has_body_operands,
                 None => true,
             };
-            if !operation_matches_operands {
+            if ctx.holds_design_intent() && !operation_matches_operands {
                 push_constant_finding(
                     findings,
                     Check::NativeLinks,
@@ -6730,7 +6790,9 @@ fn validate_edge_treatment_vertex_operands<'a>(
     Ok(records)
 }
 
-/// Report Fillet/Chamfer edge groups with incomplete selection operands.
+/// Report Fillet/Chamfer edge groups with incomplete selection operands. The
+/// groups are design-intent records, so a document without them has nothing
+/// to check.
 fn validate_edge_treatment_groups<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
@@ -6738,6 +6800,9 @@ fn validate_edge_treatment_groups<'a>(
     edge_identity_records: &HashSet<(&'a str, u32)>,
     edge_treatment_vertex_records: &HashSet<(&'a str, u32)>,
 ) {
+    if !ctx.holds_design_intent() {
+        return;
+    }
     let native = ctx.native;
     for scope in native.design_parameter_scopes.iter().filter(|scope| {
         matches!(
@@ -7394,8 +7459,13 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     }
 }
 
-/// Validate parameter owner frames and their indexed parameter links.
+/// Validate parameter owner frames and their indexed parameter links. The
+/// companion links resolve into design-intent records, so a document without
+/// them has nothing to check.
 fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
+    if !ctx.holds_design_intent() {
+        return;
+    }
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let parameters_by_index = &ctx.parameters_by_index;

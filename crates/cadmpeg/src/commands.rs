@@ -479,7 +479,7 @@ pub(crate) fn convert(
             }
         }
 
-        let depth = if conversion.full_decode {
+        let depth = if conversion.full_decode || conversion.losses.needs_full_decode() {
             DecodeDepth::Full
         } else {
             target.needs().request()

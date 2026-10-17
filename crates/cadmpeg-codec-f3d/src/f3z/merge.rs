@@ -226,7 +226,10 @@ impl MergeSession<'_, '_> {
             parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
-                parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+                parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
+                    parent_report.transfer.depth(),
+                    true,
+                );
             }
             for loss in &mut component_report.losses {
                 loss.message = format!("xref {label}: {}", loss.message);

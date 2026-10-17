@@ -160,7 +160,8 @@ enum Command {
         full_decode: bool,
         /// Do not write if a loss was reported. `--reject-lossy=decode` refuses
         /// only on decode loss, `=export` only on export loss, and the bare
-        /// flag on either.
+        /// flag on either. Every scope decodes the whole source, as
+        /// `--full-decode` does, so a loss in its design intent counts.
         #[arg(
             long,
             value_enum,
