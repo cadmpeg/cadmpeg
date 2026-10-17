@@ -788,56 +788,100 @@ fn refine_consolidated_analytic_surfaces(
     records: &[ConsolidatedRecord],
     surfaces: &mut [Option<SurfaceGeometry>],
 ) -> HashMap<usize, usize> {
-    fn exactly_one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
-        let value = values.next()?;
-        values.next().is_none().then_some(value)
+    /// Key each candidate; a key two candidates share maps to `None`.
+    fn unique_by_key<K: Eq + std::hash::Hash, T>(
+        candidates: impl Iterator<Item = T>,
+        key: impl Fn(&T) -> Option<K>,
+    ) -> HashMap<K, Option<T>> {
+        let mut unique = HashMap::new();
+        for candidate in candidates {
+            if let Some(key) = key(&candidate) {
+                unique
+                    .entry(key)
+                    .and_modify(|slot: &mut Option<T>| *slot = None)
+                    .or_insert(Some(candidate));
+            }
+        }
+        unique
+    }
+    fn exactly_one<'a, K: Eq + std::hash::Hash, T>(
+        unique: &'a HashMap<K, Option<T>>,
+        key: &K,
+    ) -> Option<&'a T> {
+        unique.get(key)?.as_ref()
     }
 
-    let cylinders =
-        crate::families::b2::records::b2_cylinders_from_records(bytes, records).collect::<Vec<_>>();
-    let cones =
-        crate::families::b2::records::b2_cones_from_records(bytes, records).collect::<Vec<_>>();
-    let spheres =
-        crate::families::b2::records::b2_spheres_from_records(bytes, records).collect::<Vec<_>>();
-    let tori =
-        crate::families::b2::records::b2_tori_from_records(bytes, records).collect::<Vec<_>>();
-    let quantized = |value: f64| f32_from_f64(value).map(f64::from);
-    let same_point = |point: Point3, stored: [f64; 3]| {
-        quantized(stored[0]).is_some_and(|value| point.x.to_bits() == value.to_bits())
-            && quantized(stored[1]).is_some_and(|value| point.y.to_bits() == value.to_bits())
-            && quantized(stored[2]).is_some_and(|value| point.z.to_bits() == value.to_bits())
+    let bits = |vector: Vector3| [vector.x.to_bits(), vector.y.to_bits(), vector.z.to_bits()];
+    let point_bits = |point: Point3| [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()];
+    let quantized = |value: f64| f32_from_f64(value).map(|value| f64::from(value).to_bits());
+    let quantized_point = |stored: [f64; 3]| {
+        Some([
+            quantized(stored[0])?,
+            quantized(stored[1])?,
+            quantized(stored[2])?,
+        ])
     };
-    let same_axis = |axis: Vector3, stored: [f64; 3]| {
-        let Some(x) = f32_from_f64(stored[0]) else {
-            return false;
-        };
-        let Some(y) = f32_from_f64(stored[1]) else {
-            return false;
-        };
+    let quantized_axis = |stored: [f64; 3]| {
+        let x = f32_from_f64(stored[0])?;
+        let y = f32_from_f64(stored[1])?;
         let z = (1.0 - f64::from(x * x + y * y))
             .max(0.0)
             .sqrt()
             .copysign(stored[2]);
-        unit_vector(Vector3::new(f64::from(x), f64::from(y), z)).is_some_and(|reconstructed| {
-            axis.x.to_bits() == reconstructed.as_raw().x.to_bits()
-                && axis.y.to_bits() == reconstructed.as_raw().y.to_bits()
-                && axis.z.to_bits() == reconstructed.as_raw().z.to_bits()
-        })
+        unit_vector(Vector3::new(f64::from(x), f64::from(y), z))
+            .map(|reconstructed| bits(*reconstructed.as_raw()))
     };
+    let cylinders = unique_by_key(
+        crate::families::b2::records::b2_cylinders_from_records(bytes, records),
+        |cylinder| {
+            Some((
+                quantized_point(cylinder.origin.get().into())?,
+                quantized_axis(cylinder.frame.axis().get())?,
+                quantized(cylinder.radius.get())?,
+            ))
+        },
+    );
+    let cones = unique_by_key(
+        crate::families::b2::records::b2_cones_from_records(bytes, records),
+        |cone| {
+            Some((
+                quantized_point(cone.apex.get().into())?,
+                quantized_axis(cone.frame.axis().get())?,
+                quantized(cone.half_angle.get())?,
+            ))
+        },
+    );
+    let spheres = unique_by_key(
+        crate::families::b2::records::b2_spheres_from_records(bytes, records),
+        |sphere| {
+            Some((
+                quantized_point(sphere.center.get().into())?,
+                quantized(sphere.radius.get())?,
+            ))
+        },
+    );
+    let tori = unique_by_key(
+        crate::families::b2::records::b2_tori_from_records(bytes, records),
+        |torus| {
+            Some((
+                quantized_point(torus.center.get().into())?,
+                quantized_axis(torus.frame.axis().get())?,
+                quantized(torus.major_radius.get())?,
+                quantized(torus.minor_radius.get())?,
+            ))
+        },
+    );
     let mut refined = HashMap::new();
     for (index, surface) in surfaces.iter_mut().enumerate() {
         let replacement = match surface.as_ref() {
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) => {
-                let origin = cylinder_surface.origin().get();
-                let axis = cylinder_surface.frame().axis().as_raw();
-                let radius = cylinder_surface.radius().get();
-                exactly_one(cylinders.iter().filter(|cylinder| {
-                    same_point(origin, cylinder.origin.get().into())
-                        && same_axis(*axis, cylinder.frame.axis().get())
-                        && quantized(cylinder.radius.get())
-                            .is_some_and(|value| radius.to_bits() == value.to_bits())
-                }))
-                .map(|cylinder| (cylinder.surface_geometry(), cylinder.pos))
+                let key = (
+                    point_bits(cylinder_surface.origin().get()),
+                    bits(*cylinder_surface.frame().axis().as_raw()),
+                    cylinder_surface.radius().get().to_bits(),
+                );
+                exactly_one(&cylinders, &key)
+                    .map(|cylinder| (cylinder.surface_geometry(), cylinder.pos))
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
@@ -846,16 +890,12 @@ fn refine_consolidated_analytic_surfaces(
                     radius == 0.0 && ratio == 1.0
                 } =>
             {
-                let origin = cone_surface.origin().get();
-                let axis = cone_surface.frame().axis().as_raw();
-                let half_angle = cone_surface.half_angle().get();
-                exactly_one(cones.iter().filter(|cone| {
-                    same_point(origin, cone.apex.get().into())
-                        && same_axis(*axis, cone.frame.axis().get())
-                        && quantized(cone.half_angle.get())
-                            .is_some_and(|value| half_angle.to_bits() == value.to_bits())
-                }))
-                .map(|cone| {
+                let key = (
+                    point_bits(cone_surface.origin().get()),
+                    bits(*cone_surface.frame().axis().as_raw()),
+                    cone_surface.half_angle().get().to_bits(),
+                );
+                exactly_one(&cones, &key).map(|cone| {
                     (
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                             cadmpeg_ir::geometry::analytic::ConeSurface::new(
@@ -871,14 +911,11 @@ fn refine_consolidated_analytic_surfaces(
                 })
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) => {
-                let center = sphere_surface.center().get();
-                let radius = sphere_surface.radius().get();
-                exactly_one(spheres.iter().filter(|sphere| {
-                    same_point(center, sphere.center.get().into())
-                        && quantized(sphere.radius.get())
-                            .is_some_and(|value| radius.to_bits() == value.to_bits())
-                }))
-                .map(|sphere| {
+                let key = (
+                    point_bits(sphere_surface.center().get()),
+                    sphere_surface.radius().get().to_bits(),
+                );
+                exactly_one(&spheres, &key).map(|sphere| {
                     (
                         crate::families::b2::records::b2_sphere_geometry(sphere),
                         sphere.pos,
@@ -886,19 +923,13 @@ fn refine_consolidated_analytic_surfaces(
                 })
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))) => {
-                let center = torus_surface.center().get();
-                let axis = torus_surface.frame().axis().as_raw();
-                let major_radius = torus_surface.major_radius().get();
-                let minor_radius = torus_surface.minor_radius().get();
-                exactly_one(tori.iter().filter(|torus| {
-                    same_point(center, torus.center.get().into())
-                        && same_axis(*axis, torus.frame.axis().get())
-                        && quantized(torus.major_radius.get())
-                            .is_some_and(|value| major_radius.to_bits() == value.to_bits())
-                        && quantized(torus.minor_radius.get())
-                            .is_some_and(|value| minor_radius.to_bits() == value.to_bits())
-                }))
-                .map(|torus| {
+                let key = (
+                    point_bits(torus_surface.center().get()),
+                    bits(*torus_surface.frame().axis().as_raw()),
+                    torus_surface.major_radius().get().to_bits(),
+                    torus_surface.minor_radius().get().to_bits(),
+                );
+                exactly_one(&tori, &key).map(|torus| {
                     (
                         crate::families::b2::records::b2_torus_geometry(torus),
                         torus.pos,
@@ -4905,6 +4936,13 @@ fn attach_standard_topology(
     let face_point_membership =
         standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
             .map_err(StandardTopologyError::Codec)?;
+    let point_on_face = |face: usize, point: usize| {
+        face_point_membership
+            .get(face)
+            .and_then(|points| points.get(point))
+            .copied()
+            .unwrap_or(false)
+    };
     let limit_curve_bindings = standard_limit_curve_bindings(
         ctx,
         ir,
@@ -5231,57 +5269,48 @@ fn attach_standard_topology(
             refusal,
         )
         .map_err(StandardTopologyError::Codec)?;
+        let point_faces = if supports
+            .iter()
+            .any(|support| support.faces[0] == support.faces[1])
+        {
+            standard_point_faces(&face_point_membership, &ir.model.points)
+        } else {
+            Vec::new()
+        };
         let mut allowed_faces = Vec::new();
         for (edge, support) in supports.iter().enumerate() {
             let mut faces = Vec::new();
             if support.faces[0] == support.faces[1] {
-                for face in (0..face_count).filter(|face| *face != support.faces[0]) {
-                    let res = {
-                        let Some(surface) = face_surface(ir, bindings, &surface_indices, face)
-                        else {
-                            continue;
-                        };
-                        let mut any_pair = false;
-                        for pair in &options[edge] {
-                            let mut all_points = true;
-                            for point in pair {
-                                let Some(point) = ir.model.points.get(*point) else {
-                                    all_points = false;
-                                    break;
-                                };
-                                if !point_on_standard_face(
-                                    ctx,
-                                    point.position().get(),
-                                    &surface.geometry,
-                                    face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                                )
-                                .map_err(CodecError::from)
-                                .map_err(StandardTopologyError::Codec)?
-                                {
-                                    all_points = false;
-                                    break;
-                                }
-                            }
-                            if all_points
-                                && standard_nurbs_line_pair_on_face(
-                                    ctx,
-                                    &surface.geometry,
-                                    support,
-                                    pair,
-                                    &ir.model.points,
-                                    face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                                )
-                                .map_err(CodecError::from)
-                                .map_err(StandardTopologyError::Codec)?
-                            {
-                                any_pair = true;
-                                break;
-                            }
-                        }
-                        any_pair
+                let mut candidates = options[edge]
+                    .iter()
+                    .filter_map(|pair| point_faces.get(pair[0]))
+                    .flatten()
+                    .copied()
+                    .filter(|face| *face < face_count && *face != support.faces[0])
+                    .collect::<Vec<_>>();
+                candidates.sort_unstable();
+                candidates.dedup();
+                for face in candidates {
+                    let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
+                        continue;
                     };
-                    if res {
-                        faces.push(face);
+                    let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
+                    for pair in &options[edge] {
+                        if pair.iter().all(|point| point_on_face(face, *point))
+                            && standard_nurbs_line_pair_on_face(
+                                ctx,
+                                &surface.geometry,
+                                support,
+                                pair,
+                                &ir.model.points,
+                                bounds,
+                            )
+                            .map_err(CodecError::from)
+                            .map_err(StandardTopologyError::Codec)?
+                        {
+                            faces.push(face);
+                            break;
+                        }
                     }
                 }
             }
@@ -5949,13 +5978,6 @@ fn attach_standard_topology(
                 false,
                 "catia_standard_missing_direction_evidence",
             )?,
-        };
-        let point_on_face = |face: usize, point: usize| {
-            face_point_membership
-                .get(face)
-                .and_then(|points| points.get(point))
-                .copied()
-                .unwrap_or(false)
         };
         let mut point_positions = Vec::new();
         for point in &ir.model.points {
@@ -7725,6 +7747,22 @@ fn standard_face_point_membership(
         }
     }
     Ok(memberships)
+}
+
+/// Invert the cached face membership: the faces that hold each point, in
+/// ascending face order.
+fn standard_point_faces(memberships: &[Vec<bool>], points: &[Point]) -> Vec<Vec<usize>> {
+    let mut point_faces = vec![Vec::new(); points.len()];
+    for (face, membership) in memberships.iter().enumerate() {
+        for (faces, _) in point_faces
+            .iter_mut()
+            .zip(membership)
+            .filter(|(_, member)| **member)
+        {
+            faces.push(face);
+        }
+    }
+    point_faces
 }
 
 fn point_on_standard_face(
