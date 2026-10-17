@@ -13,7 +13,7 @@ pub(super) mod transfer_curves;
 
 use crate::axis::{Axis, Sign};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -59,17 +59,24 @@ fn native_surface_namespace(
     scan: &ContainerScan,
     surface_id: u32,
 ) -> (cadmpeg_ir::ids::IdentityNamespace, &'static str) {
-    let visible_present = scan.surfaces.rows.iter().any(|row| row.id == surface_id);
-    let nonvisible_present = scan
-        .surfaces
-        .nonvisible_rows
-        .iter()
-        .any(|row| row.id == surface_id);
-    let active_datum_present = scan
-        .planes
-        .datum_cylinders
-        .iter()
-        .any(|cylinder| cylinder.id == surface_id);
+    select_native_surface_namespace(
+        scan.surfaces.rows.iter().any(|row| row.id == surface_id),
+        scan.surfaces
+            .nonvisible_rows
+            .iter()
+            .any(|row| row.id == surface_id),
+        scan.planes
+            .datum_cylinders
+            .iter()
+            .any(|cylinder| cylinder.id == surface_id),
+    )
+}
+
+fn select_native_surface_namespace(
+    visible_present: bool,
+    nonvisible_present: bool,
+    active_datum_present: bool,
+) -> (cadmpeg_ir::ids::IdentityNamespace, &'static str) {
     if visible_present {
         (
             crate::identity::VISIBGEOM_SURFACE,
@@ -87,6 +94,46 @@ fn native_surface_namespace(
             crate::identity::VISIBGEOM_SURFACE,
             "creo:visibgeom:surface#",
         )
+    }
+}
+
+/// The native surface namespaces of a scan, indexed once.
+///
+/// [`NativeSurfaceNamespaces::prefix`] returns the prefix
+/// `native_surface_namespace` selects, without scanning the rows per lookup.
+pub(super) struct NativeSurfaceNamespaces {
+    visible: BTreeSet<u32>,
+    nonvisible: BTreeSet<u32>,
+    active_datum: BTreeSet<u32>,
+}
+
+impl NativeSurfaceNamespaces {
+    pub(super) fn new(scan: &ContainerScan) -> Self {
+        Self {
+            visible: scan.surfaces.rows.iter().map(|row| row.id).collect(),
+            nonvisible: scan
+                .surfaces
+                .nonvisible_rows
+                .iter()
+                .map(|row| row.id)
+                .collect(),
+            active_datum: scan
+                .planes
+                .datum_cylinders
+                .iter()
+                .map(|cylinder| cylinder.id)
+                .collect(),
+        }
+    }
+
+    /// Return the canonical identity prefix selected for a native identifier.
+    pub(super) fn prefix(&self, surface_id: u32) -> &'static str {
+        select_native_surface_namespace(
+            self.visible.contains(&surface_id),
+            self.nonvisible.contains(&surface_id),
+            self.active_datum.contains(&surface_id),
+        )
+        .1
     }
 }
 

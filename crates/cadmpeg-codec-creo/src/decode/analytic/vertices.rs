@@ -15,7 +15,6 @@ use crate::decode::quadratic::{real_roots, Coefficient};
 
 use super::super::surfaces::intersection_resolve::curve_contains_points;
 
-use super::super::uniqueness::exactly_one;
 use super::edges::{nonperiodic_nurbs_endpoint_points, planar_conic_equation, PlanarConicEquation};
 use super::equations::{
     common_plane_conic_parameters, plane_intersection_line, CarrierEquation, PlaneConicEquation,
@@ -32,8 +31,41 @@ const EPS_AGREE: f64 = 1.0e-9;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 const CARRIER_VERTEX_SAMPLE_LIMIT: usize = 8;
 
-fn unique_model_curve<'a>(ir: &'a CadIr, id: &CurveId) -> Option<&'a Curve> {
-    exactly_one(ir.model.curves.iter().filter(|curve| &curve.id == id))
+/// Model curves keyed by the native curve identifier their canonical
+/// visible-geometry identity names.
+///
+/// [`VisibleModelCurves::unique`] returns the curve a scan for the identity
+/// `creo:visibgeom:curve#{id}` finds when exactly one curve carries it.
+/// Lookups take the curve slice the index was built from.
+pub(super) struct VisibleModelCurves {
+    /// `None` marks an identity that two or more curves carry.
+    indices: BTreeMap<u32, Option<usize>>,
+}
+
+impl VisibleModelCurves {
+    pub(super) fn new(curves: &[Curve]) -> Self {
+        let mut indices = BTreeMap::new();
+        for (index, curve) in curves.iter().enumerate() {
+            let Some(curve_id) =
+                crate::identity::numbered_identity(curve.id.as_str(), "creo:visibgeom:curve#")
+            else {
+                continue;
+            };
+            match indices.entry(curve_id) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(index));
+                }
+            }
+        }
+        Self { indices }
+    }
+
+    pub(super) fn unique<'a>(&self, curves: &'a [Curve], curve_id: u32) -> Option<&'a Curve> {
+        curves.get((*self.indices.get(&curve_id)?)?)
+    }
 }
 
 /// Admit a model point for the agreement test. A point outside the finite
@@ -565,6 +597,7 @@ pub(in crate::decode) fn solve_topological_vertices(
     }
     let topology_rows =
         crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id);
+    let model_curves = VisibleModelCurves::new(&ir.model.curves);
     let mut pcurve_constraints = Vec::new();
     let mut pcurve_endpoint_candidates = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for row in &topology_rows {
@@ -650,7 +683,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         if !nurbs_endpoint_witnesses.contains(&id) {
             continue;
         }
-        let Some(geometry) = unique_model_curve(ir, &id) else {
+        let Some(geometry) = model_curves.unique(&ir.model.curves, row.id) else {
             continue;
         };
         let Some(points) =
@@ -666,9 +699,7 @@ pub(in crate::decode) fn solve_topological_vertices(
     // carrier equations for the vertex-domain solver.
     let mut analytic_curves = BTreeMap::new();
     for row in topology_rows {
-        let id =
-            crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, row.id)?;
-        let Some(curve) = unique_model_curve(ir, &id) else {
+        let Some(curve) = model_curves.unique(&ir.model.curves, row.id) else {
             continue;
         };
         let geometry = source_carriers.curve_geometry(curve);
@@ -749,7 +780,7 @@ mod tests {
     use super::super::planes::CarrierSolveDiagnostics;
     use super::{
         carrier_failure_kind, line_conic_intersections, pcurve_endpoint_is_ambiguous,
-        restrict_planar_conic_to_chart, unique_model_curve, CarrierFailureKind,
+        restrict_planar_conic_to_chart, CarrierFailureKind, VisibleModelCurves,
     };
     use crate::vecmath::normalize;
     use cadmpeg_ir::document::CadIr;
@@ -1044,7 +1075,7 @@ mod tests {
     }
 
     #[test]
-    fn unique_model_curve_rejects_duplicate_ids() {
+    fn visible_model_curves_reject_duplicate_ids() {
         let id = CurveId::mint("creo:visibgeom:curve#7".to_string()).expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.extend([
@@ -1074,7 +1105,61 @@ mod tests {
             },
         ]);
 
-        assert!(unique_model_curve(&ir, &id).is_none());
+        assert!(VisibleModelCurves::new(&ir.model.curves)
+            .unique(&ir.model.curves, 7)
+            .is_none());
+    }
+
+    #[test]
+    fn visible_model_curves_match_a_scan_for_each_identity() {
+        let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid LineCurve fixture"),
+        ));
+        let mut ir = CadIr::empty();
+        for id in [
+            "creo:visibgeom:curve#1",
+            "creo:visibgeom:curve#2",
+            "creo:visibgeom:curve#02",
+            "creo:visibgeom:curve#3",
+            "creo:novisgeom:curve#3",
+            "creo:visibgeom:curve#2",
+            "creo:visibgeom:curve#4",
+            "creo:visibgeom:edge#5",
+            "creo:visibgeom:curve#4294967295",
+        ] {
+            ir.model.curves.push(Curve {
+                parameter_range: None,
+                id: CurveId::mint(id.to_owned()).expect("identity grammar"),
+                geometry: line.clone(),
+                source_object: None,
+            });
+        }
+        let index = VisibleModelCurves::new(&ir.model.curves);
+        let position = |curve: &Curve| {
+            ir.model
+                .curves
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, curve))
+        };
+        for curve_id in [0, 1, 2, 3, 4, 5, 6, u32::MAX] {
+            let id = crate::identity::compose_checked::<CurveId>(
+                &crate::identity::VISIBGEOM_CURVE,
+                curve_id,
+            )
+            .expect("compose the identity");
+            let scanned = crate::decode::uniqueness::exactly_one(
+                ir.model.curves.iter().filter(|curve| curve.id == id),
+            );
+            assert_eq!(
+                index.unique(&ir.model.curves, curve_id).and_then(position),
+                scanned.and_then(position),
+                "{curve_id}"
+            );
+        }
     }
 
     #[test]

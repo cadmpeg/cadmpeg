@@ -52,14 +52,130 @@ fn carrier_row(id: u32, kind: crate::surface::SurfaceKind) -> crate::surface::Su
 }
 
 #[test]
+fn topology_bound_face_points_match_a_per_face_scan() {
+    let solved_vertices = BTreeMap::from([
+        (0, [0.0, 0.0, 0.0]),
+        (1, [1.0, 0.0, 0.0]),
+        (2, [2.0, 0.0, 0.0]),
+        (3, [3.0, 0.0, 0.0]),
+        (5, [5.0, 0.0, 0.0]),
+    ]);
+    let vertex = |id| std::num::NonZeroU32::new(id).expect("one-based vertex fixture");
+    let vertex_faces = BTreeMap::from([
+        (vertex(1), BTreeSet::from([5, 6])),
+        (vertex(2), BTreeSet::from([6])),
+        (vertex(3), BTreeSet::from([0, 5, 7])),
+        (vertex(4), BTreeSet::from([5])),
+    ]);
+    let points = topology_bound_face_points(&solved_vertices, &vertex_faces);
+    for face_id in 0..=8 {
+        let mut scanned = Vec::new();
+        for (vertex_id, point) in &solved_vertices {
+            if std::num::NonZeroU32::new(*vertex_id)
+                .and_then(|id| vertex_faces.get(&id))
+                .is_some_and(|faces| faces.contains(&face_id))
+            {
+                scanned.push(*point);
+            }
+        }
+        assert_eq!(
+            points.get(&face_id).cloned().unwrap_or_default(),
+            scanned,
+            "{face_id}"
+        );
+    }
+}
+
+#[test]
+fn native_surface_lookups_match_the_identity_matcher_scan() {
+    use super::super::super::surfaces::{native_surface_id_matcher, NativeSurfaceNamespaces};
+    use super::super::pcurves::{ModelSurfaceIndex, NamedSurfaces};
+    use crate::surface::SurfaceKind;
+
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.surfaces
+        .rows
+        .extend([1, 2, 2, 5].map(|id| carrier_row(id, SurfaceKind::Plane)));
+    scan.surfaces
+        .nonvisible_rows
+        .extend([2, 3, 4].map(|id| carrier_row(id, SurfaceKind::Plane)));
+    for id in [4, 6] {
+        scan.planes
+            .datum_cylinders
+            .push(crate::datum::DatumCylinder {
+                id,
+                feature_id: 1,
+                reversed: false,
+                frame: crate::surface::PositionalCylinderFrame::new(
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0],
+                    1.0,
+                    None,
+                )
+                .expect("valid positional cylinder frame"),
+                offset_in_payload: 0,
+            });
+    }
+    let mut ir = CadIr::empty();
+    for id in [
+        "creo:visibgeom:surface#1",
+        "creo:visibgeom:surface#2",
+        "creo:novisgeom:surface#2",
+        "creo:visibgeom:surface#02",
+        "creo:novisgeom:surface#3",
+        "creo:novisgeom:surface#4",
+        "creo:actdatums:surface#4",
+        "creo:visibgeom:surface#5",
+        "creo:visibgeom:surface#5",
+        "creo:actdatums:surface#6",
+        "creo:visibgeom:surface#6",
+        "creo:visibgeom:surface#7",
+        "creo:novisgeom:surface#8",
+    ] {
+        let mut surface = cylinder_surface(0, 1.0);
+        surface.id = SurfaceId::mint(id.to_owned()).expect("identity grammar");
+        ir.model.surfaces.push(surface);
+    }
+    let namespaces = NativeSurfaceNamespaces::new(&scan);
+    let index = ModelSurfaceIndex::new(&ir.model.surfaces);
+    let position = |surface: &Surface| {
+        ir.model
+            .surfaces
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, surface))
+    };
+    for id in 0..=9 {
+        let matches = native_surface_id_matcher(&scan, id);
+        let mut scanned = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| matches(&surface.id));
+        let expected = match (scanned.next(), scanned.next()) {
+            (None, _) => None,
+            (Some(surface), None) => Some(position(surface)),
+            (Some(_), Some(_)) => Some(None),
+        };
+        let indexed = index
+            .named(namespaces.prefix(id), id)
+            .map(|named| match named {
+                NamedSurfaces::Unique(surface) => position(surface),
+                NamedSurfaces::Duplicate => None,
+            });
+        assert_eq!(indexed, expected, "{id}");
+    }
+}
+
+#[test]
 fn topology_bound_face_points_collect_face_vertices() {
     let solved_vertices = BTreeMap::from([(1, [2.0, 3.0, 4.0])]);
     let vertex_faces = BTreeMap::from([(
         std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
         BTreeSet::from([5]),
     )]);
-    let points = topology_bound_face_points(&solved_vertices, &vertex_faces, 5);
-    assert_eq!(points, [[2.0, 3.0, 4.0]]);
+    let points = topology_bound_face_points(&solved_vertices, &vertex_faces);
+    assert_eq!(points, BTreeMap::from([(5, vec![[2.0, 3.0, 4.0]])]));
 }
 
 fn topology_plane() -> PlaneEquation {
