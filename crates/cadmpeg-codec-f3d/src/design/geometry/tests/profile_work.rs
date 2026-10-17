@@ -42,35 +42,12 @@ fn subdivision_count_skips_a_span_past_max_subdivisions() {
     assert_one_densification_loss(&work);
 }
 
-#[test]
-fn certified_arc_tubes_skip_an_arc_past_max_subdivisions() {
-    let work = super::local_profile_work();
-    let radius = positive_radius(1.0);
-    let within = super::super::certified_arc_tubes(
-        Point2::new(0.0, 0.0),
-        radius,
-        0.0,
-        MAX_SUBDIVISIONS,
-        1.0,
-        &work,
-    );
-    assert_eq!(within.map(|tubes| tubes.len()), Some(100_000));
-    let past = super::super::certified_arc_tubes(
-        Point2::new(0.0, 0.0),
-        radius,
-        0.0,
-        MAX_SUBDIVISIONS + 1.0,
-        1.0,
-        &work,
-    );
-    assert!(past.is_none());
-    work.finish_selection();
-    assert_one_densification_loss(&work);
-}
-
-/// A triangle bounded by a NURBS and a line, so its boundary is a certified
-/// loop, and optionally a circle inside it.
-fn spline_triangle_sketch(with_circle: bool) -> (Sketch, Vec<SketchEntity>) {
+/// A triangle bounded by a NURBS with optional `weights` and a line, so its
+/// boundary is a certified loop, and optionally a circle inside it.
+fn spline_triangle_sketch(
+    weights: Option<Vec<f64>>,
+    with_circle: bool,
+) -> (Sketch, Vec<SketchEntity>) {
     let sketch_id = SketchId::mint("synthetic:test:id#densification").unwrap();
     let spline_id = SketchEntityId::mint("synthetic:test:id#densification-spline").unwrap();
     let closing_id = SketchEntityId::mint("synthetic:test:id#densification-closing").unwrap();
@@ -83,7 +60,7 @@ fn spline_triangle_sketch(with_circle: bool) -> (Sketch, Vec<SketchEntity>) {
             Point2::new(4.0, 0.0),
             Point2::new(4.0, 4.0),
         ],
-        None,
+        weights,
         false,
     )
     .unwrap();
@@ -147,7 +124,7 @@ fn spline_triangle_sketch(with_circle: bool) -> (Sketch, Vec<SketchEntity>) {
 
 #[test]
 fn region_containing_points_resolves_a_certified_loop_within_max_subdivisions() {
-    let (sketch, entities) = spline_triangle_sketch(false);
+    let (sketch, entities) = spline_triangle_sketch(None, false);
     let work = super::local_profile_work();
     let region = crate::test_support::with_decode_context(|decode_ctx| {
         super::region_containing_points(
@@ -169,8 +146,34 @@ fn region_containing_points_resolves_a_certified_loop_within_max_subdivisions() 
 }
 
 #[test]
-fn region_containing_points_skips_when_a_containment_test_passes_max_subdivisions() {
-    let (sketch, entities) = spline_triangle_sketch(true);
+fn region_containing_points_resolves_a_circle_inside_a_certified_loop() {
+    let (sketch, entities) = spline_triangle_sketch(None, true);
+    let work = super::local_profile_work();
+    let region = crate::test_support::with_decode_context(|decode_ctx| {
+        super::region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(1.0, 0.5, 0.0)],
+            EPS_DENSIFICATION_REGION,
+            &work,
+            decode_ctx,
+        )
+    })
+    .unwrap();
+    assert_eq!(
+        region,
+        Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
+    );
+    work.finish_selection();
+    assert!(work.losses().is_empty());
+}
+
+/// A near-zero interior weight leaves the triangle unchanged but makes the
+/// rational speed bound so large that a span needs more than
+/// `MAX_SUBDIVISIONS` tubes.
+#[test]
+fn region_containing_points_skips_a_near_degenerate_nurbs_past_max_subdivisions() {
+    let (sketch, entities) = spline_triangle_sketch(Some(vec![1.0, 1.0e-9, 1.0]), true);
     let work = super::local_profile_work();
     let region = crate::test_support::with_decode_context(|decode_ctx| {
         super::region_containing_points(
