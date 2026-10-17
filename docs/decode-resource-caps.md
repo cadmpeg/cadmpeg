@@ -258,11 +258,9 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/sheet_metal.rs`          | `MAX_EDGE_WIDTH_DISTANCE_OWNERS`          | `2`                                                     | 1    | Width-distance owners in the single-edge flange frame. A frame with more is not recognized.                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/design/decode/presentation.rs`                | `MAX_ENVELOPE_GAP`                        | `8`                                                     | 1    | Zero padding admitted while a presentation envelope is located.                                                                                                                                                                                                              |
 | `cadmpeg-codec-f3d`      | `src/writer/generate/native_geometry.rs`           | `MAX_GENERATED_CONIC_SPANS`               | `1 << 16`                                               | N    | Encode path: spans generated for a source-less conic. Excess returns `NotImplemented`.                                                                                                                                                                                       |
-| `cadmpeg-codec-nx`       | `src/container.rs`                                 | `MAX_EXTREF_STRING_TABLE_SEARCH_WORK`     | `1 << 24`                                               | 4    | `WorkBudget` for the backward external-reference string-table search. Exhaustion skips the entry's strings and records; `decode.rs` reports `source.scan-bounded`.                                                                                                           |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_VALUES`                   | `1_000_000`                                             | 2    | Value count of one JT integer packet or arithmetic lane. Symbols can use zero bits, so there is no byte floor; excess leaves the lane undecoded (`None`).                                                                                                                    |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_WORK`                     | `64_000_000`                                            | 4    | Probability-entry × value lookup work of one arithmetic lane. Above it the lane is left undecoded (`None`) and the shared `ArithmeticWorkBound` is marked; `native/attach.rs` reports `container.display-jt-arithmetic-lane-bounded`.                                        |
 | `cadmpeg-codec-nx`       | `src/om.rs`                                        | `MAX_INDEXED_SECTION_REGISTRY_WORK`       | `1 << 28`                                               | 4    | `WorkBudget` per directory entry for the indexed object-model section search (`container.rs`). Exhaustion skips the remaining sections; `decode.rs` reports `source.scan-bounded`.                                                                                           |
-| `cadmpeg-codec-nx`       | `src/parasolid.rs`                                 | `MAX_ATTRIBUTE_DEFINITION_SCAN_WORK`      | `1 << 26`                                               | 4    | `WorkBudget` for the type-80 attribute-definition scan. Exhaustion returns `None` and the stream gets no definitions; `native/attach.rs` reports `source.scan-bounded`.                                                                                                      |
 | `cadmpeg-codec-nx`       | `src/native/om.rs`                                 | `MAX_STABLE_GRAPH_WORK`                   | `8 * 1024 * 1024`                                       | 4    | Hand-rolled work counter for canonical object-record graph identities, shared by one section. A record whose graph passes the remainder keeps no stable identity and smaller graphs still run; `native/attach.rs` reports `native.record-identity-bounded`.                  |
 | `cadmpeg-codec-nx`       | `src/parasolid/entity_references.rs`               | `MAX_TRAILING_REFERENCE_COUNT`            | `32`                                                    | 1    | Trailing entity references in one record, `1..=32`.                                                                                                                                                                                                                          |
 | `cadmpeg-codec-nx`       | `src/decode/emit.rs`                               | `MAX_CURVE_POINT_CACHE_ENTRIES`           | `131_072`                                               | N    | Curve-point cache capacity. When full, results are not cached; output is unchanged.                                                                                                                                                                                          |
@@ -398,16 +396,16 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 212.
+Production `MAX_*` constants: 210.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 67    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 98    |
+| 4    | Local work cap             | 96    |
 | N    | Not a decode bound         | 19    |
-|      | Total                      | 212   |
+|      | Total                      | 210   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -416,7 +414,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 7,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 16,
-`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
 and `cadmpeg-codec-catia` 49.
 
 ## Routing

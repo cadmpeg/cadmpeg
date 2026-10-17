@@ -9,7 +9,9 @@ use super::{
     EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
     HOLE_SUPPORT_NORMAL_TOLERANCE, HOLE_SUPPORT_POINT_TOLERANCE,
 };
-use crate::history_records::{AsmHistoricalTopology, AsmHistory, AsmTopologyScope};
+use crate::history_records::{
+    AsmHistoricalCoedge, AsmHistoricalTopology, AsmHistory, AsmTopologyScope,
+};
 use crate::records::{
     bodies::DesignBodyBinding,
     recipes::DesignComponentNamingSpace,
@@ -132,39 +134,125 @@ pub(super) fn historical_edge_context(
     edge: i64,
     topology: &AsmHistoricalTopology,
 ) -> crate::records::topology::historical_context::DesignHistoricalEdgeContext {
-    let mut incident_loops = topology
-        .coedge_topology
-        .iter()
-        .filter(|coedge| coedge.edge == edge)
+    edge_context(edge, topology)
+}
+
+/// The rows an edge context reads. Each lookup returns the row a forward
+/// scan of the topology finds first.
+trait EdgeContextRows {
+    fn incident_coedges(&self, edge: i64) -> impl Iterator<Item = &AsmHistoricalCoedge>;
+    fn loop_members(&self, loop_slot: i64) -> Option<&[i64]>;
+    fn coedge_edge(&self, coedge: i64) -> Option<i64>;
+    fn loop_face(&self, loop_slot: i64) -> Option<i64>;
+}
+
+impl EdgeContextRows for AsmHistoricalTopology {
+    fn incident_coedges(&self, edge: i64) -> impl Iterator<Item = &AsmHistoricalCoedge> {
+        self.coedge_topology
+            .iter()
+            .filter(move |coedge| coedge.edge == edge)
+    }
+
+    fn loop_members(&self, loop_slot: i64) -> Option<&[i64]> {
+        self.loop_coedges
+            .iter()
+            .find(|relation| relation.owner_ref == loop_slot)
+            .map(|relation| relation.member_refs.as_slice())
+    }
+
+    fn coedge_edge(&self, coedge: i64) -> Option<i64> {
+        self.coedge_topology
+            .iter()
+            .find(|candidate| candidate.coedge == coedge)
+            .map(|candidate| candidate.edge)
+    }
+
+    fn loop_face(&self, loop_slot: i64) -> Option<i64> {
+        self.face_loops
+            .iter()
+            .find(|relation| relation.member_refs.contains(&loop_slot))
+            .map(|relation| relation.owner_ref)
+    }
+}
+
+/// Edge contexts of one topology, indexed for passes that query many edges.
+pub(super) struct EdgeContextIndex<'a> {
+    incident: HashMap<i64, Vec<&'a AsmHistoricalCoedge>>,
+    loops: HashMap<i64, &'a [i64]>,
+    edges: HashMap<i64, i64>,
+    faces: HashMap<i64, i64>,
+}
+
+impl<'a> EdgeContextIndex<'a> {
+    pub(super) fn new(topology: &'a AsmHistoricalTopology) -> Self {
+        let mut incident = HashMap::<_, Vec<_>>::new();
+        let mut edges = HashMap::new();
+        for coedge in &topology.coedge_topology {
+            incident.entry(coedge.edge).or_default().push(coedge);
+            edges.entry(coedge.coedge).or_insert(coedge.edge);
+        }
+        let mut loops = HashMap::new();
+        for relation in &topology.loop_coedges {
+            loops
+                .entry(relation.owner_ref)
+                .or_insert(relation.member_refs.as_slice());
+        }
+        let mut faces = HashMap::new();
+        for relation in &topology.face_loops {
+            for &loop_slot in &relation.member_refs {
+                faces.entry(loop_slot).or_insert(relation.owner_ref);
+            }
+        }
+        Self {
+            incident,
+            loops,
+            edges,
+            faces,
+        }
+    }
+
+    pub(super) fn context(
+        &self,
+        edge: i64,
+    ) -> crate::records::topology::historical_context::DesignHistoricalEdgeContext {
+        edge_context(edge, self)
+    }
+}
+
+impl EdgeContextRows for EdgeContextIndex<'_> {
+    fn incident_coedges(&self, edge: i64) -> impl Iterator<Item = &AsmHistoricalCoedge> {
+        self.incident.get(&edge).into_iter().flatten().copied()
+    }
+
+    fn loop_members(&self, loop_slot: i64) -> Option<&[i64]> {
+        self.loops.get(&loop_slot).copied()
+    }
+
+    fn coedge_edge(&self, coedge: i64) -> Option<i64> {
+        self.edges.get(&coedge).copied()
+    }
+
+    fn loop_face(&self, loop_slot: i64) -> Option<i64> {
+        self.faces.get(&loop_slot).copied()
+    }
+}
+
+fn edge_context(
+    edge: i64,
+    rows: &impl EdgeContextRows,
+) -> crate::records::topology::historical_context::DesignHistoricalEdgeContext {
+    let mut incident_loops = rows
+        .incident_coedges(edge)
         .filter_map(|coedge| {
-            let loop_relation = topology
-                .loop_coedges
-                .iter()
-                .find(|relation| relation.owner_ref == coedge.owner_loop)?;
-            let ordinal = loop_relation
-                .member_refs
+            let members = rows.loop_members(coedge.owner_loop)?;
+            let ordinal = members
                 .iter()
                 .position(|candidate| *candidate == coedge.coedge)?;
-            let boundary_edge_count = u32::try_from(loop_relation.member_refs.len()).ok()?;
+            let boundary_edge_count = u32::try_from(members.len()).ok()?;
             let coedge_ordinal = u32::try_from(ordinal).ok()?;
-            let previous_coedge = loop_relation.member_refs.get(
-                (ordinal + loop_relation.member_refs.len() - 1) % loop_relation.member_refs.len(),
-            )?;
-            let next_coedge = loop_relation
-                .member_refs
-                .get((ordinal + 1) % loop_relation.member_refs.len())?;
-            let edge_for_coedge = |slot| {
-                topology
-                    .coedge_topology
-                    .iter()
-                    .find(|candidate| candidate.coedge == slot)
-                    .map(|candidate| candidate.edge)
-            };
-            let face_slot = topology
-                .face_loops
-                .iter()
-                .find(|relation| relation.member_refs.contains(&coedge.owner_loop))?
-                .owner_ref;
+            let previous_coedge = members.get((ordinal + members.len() - 1) % members.len())?;
+            let next_coedge = members.get((ordinal + 1) % members.len())?;
+            let face_slot = rows.loop_face(coedge.owner_loop)?;
             Some(
                 crate::records::topology::historical_context::DesignHistoricalEdgeLoopContext {
                     coedge_slot: coedge.coedge,
@@ -172,8 +260,8 @@ pub(super) fn historical_edge_context(
                     face_slot,
                     boundary_edge_count,
                     coedge_ordinal,
-                    previous_edge_slot: edge_for_coedge(*previous_coedge)?,
-                    next_edge_slot: edge_for_coedge(*next_coedge)?,
+                    previous_edge_slot: rows.coedge_edge(*previous_coedge)?,
+                    next_edge_slot: rows.coedge_edge(*next_coedge)?,
                 },
             )
         })

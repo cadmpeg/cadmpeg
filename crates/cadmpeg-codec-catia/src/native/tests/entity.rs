@@ -1531,6 +1531,78 @@ fn derived_entity_value_selections_match_decoded_record() {
 }
 
 #[test]
+fn entity_value_selection_packets_match_a_pairwise_window_filter() {
+    use crate::entity_table::EntityValuePacket;
+    use crate::value_block::ValueField;
+
+    let catalog = super::super::CatiaCatalog {
+        id: "catia:catalog#0".to_string(),
+        byte_offset: 0,
+        byte_len: 1,
+        entries: (0..2)
+            .map(|ordinal| super::super::CatiaCatalogEntry {
+                id: format!("catia:catalog-entry#{ordinal}"),
+                parent: "catia:catalog#0".to_string(),
+                ordinal,
+                byte_offset: 0,
+                value: format!("Schema{ordinal}"),
+            })
+            .collect(),
+    };
+    // One field per byte. The selector at 24 names no catalog entry, so the
+    // window opened at 12 runs on to the selector at 36.
+    let fields = (0..48)
+        .map(|offset| match offset {
+            0 | 12 | 36 => ValueField::SchemaSelector { ordinal: 1, offset },
+            24 => ValueField::SchemaSelector { ordinal: 9, offset },
+            _ => ValueField::Opcode { code: 0xe6, offset },
+        })
+        .collect::<Vec<_>>();
+    let mut packets = (0..48)
+        .rev()
+        .map(|offset| EntityValuePacket::Compact {
+            offset,
+            value_selector: 0,
+        })
+        .collect::<Vec<_>>();
+    packets.extend(
+        (0..48)
+            .step_by(5)
+            .map(|offset| EntityValuePacket::E9Scalar {
+                offset,
+                scalar_offset: offset + 6,
+                bits: 0,
+            }),
+    );
+    let selections = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_value_schema_selections(ctx, &fields, Some(&catalog), &packets)
+    })
+    .expect("derive the synthetic entity value schema selections");
+
+    let windows = [(1, Some(12)), (13, Some(36)), (37, None)];
+    assert_eq!(
+        selections
+            .iter()
+            .map(|selection| selection.offset)
+            .collect::<Vec<_>>(),
+        [0, 12, 36]
+    );
+    for (selection, (start, end)) in selections.iter().zip(windows) {
+        let pairwise = packets
+            .iter()
+            .filter(|packet| {
+                packet.byte_range().is_some_and(|range| {
+                    range.start >= start && end.is_none_or(|end| range.end <= end)
+                })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(!pairwise.is_empty());
+        assert_eq!(selection.packets, pairwise);
+    }
+}
+
+#[test]
 fn derived_repeated_reference_selection_matches_decoded_record() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_repeated_reference_schema_selection(),

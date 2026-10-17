@@ -38,7 +38,7 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     bytes.extend_from_slice(&0x0030u16.to_be_bytes());
     bytes.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
     bytes.push(2);
-    let definitions = crate::parasolid::attribute_definitions(&bytes).unwrap();
+    let definitions = crate::parasolid::attribute_definitions(&bytes);
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].offset, 26);
     assert_eq!(u32::from(definitions[0].xmt), 0x12b);
@@ -68,32 +68,20 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     );
 
     let truncated = &bytes[..bytes.len() - 1];
-    assert!(crate::parasolid::attribute_definitions(truncated)
-        .unwrap()
-        .is_empty());
+    assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
 
     let mut duplicate_identifier = bytes.clone();
     duplicate_identifier.splice(26..26, bytes[1..26].iter().copied());
-    assert!(
-        crate::parasolid::attribute_definitions(&duplicate_identifier)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(crate::parasolid::attribute_definitions(&duplicate_identifier).is_empty());
 
     bytes[42] = 7;
-    assert!(crate::parasolid::attribute_definitions(&bytes)
-        .unwrap()
-        .is_empty());
+    assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
     bytes[42] = 0;
     bytes[52] = 2;
-    assert!(crate::parasolid::attribute_definitions(&bytes)
-        .unwrap()
-        .is_empty());
+    assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
     bytes[52] = 0;
     bytes[20] = 0;
-    assert!(crate::parasolid::attribute_definitions(&bytes)
-        .unwrap()
-        .is_empty());
+    assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
 }
 
 #[test]
@@ -114,7 +102,7 @@ fn parasolid_attribute_definition_accepts_fourteen_legal_owner_flags() {
     bytes.extend_from_slice(&[2, 3]);
     bytes.extend_from_slice(&[0, 0x4f]);
 
-    let definitions = crate::parasolid::attribute_definitions(&bytes).unwrap();
+    let definitions = crate::parasolid::attribute_definitions(&bytes);
     assert_eq!(definitions.len(), 1);
     assert_eq!(u32::from(definitions[0].xmt), 20);
     assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 14);
