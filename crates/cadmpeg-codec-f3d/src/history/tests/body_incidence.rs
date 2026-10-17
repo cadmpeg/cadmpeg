@@ -131,86 +131,150 @@ fn body_queries_over_many_bodies_find_every_owner_of_each_entity() {
 
     const BODIES: i64 = 1_500;
     let topology = wire_row_topology(BODIES);
-    let mut cache = super::super::HistoricalBodyClosureCache::default();
+    let mut queries = Vec::new();
+    let mut expected = Vec::new();
     for body in 0..BODIES {
         let base = 100 * body;
-        let owned = BTreeSet::from([base, base + 1, base + 2, base + 3]);
-        assert_eq!(
-            cache.intersecting(&topology, &owned),
-            Some(BTreeSet::from([base]))
-        );
+        queries.push(BTreeSet::from([base, base + 1, base + 2, base + 3]));
+        expected.push(BTreeSet::from([base]));
         let mut sharing = BTreeSet::from([base]);
         if body > 0 {
             sharing.insert(base - 100);
         }
-        assert_eq!(
-            cache.intersecting(&topology, &BTreeSet::from([base + 4])),
-            Some(sharing.clone()),
-            "start vertex of body {body}"
-        );
-        assert_eq!(
-            cache.intersecting(&topology, &BTreeSet::from([base + 5])),
-            Some(sharing),
-            "start point of body {body}"
-        );
+        queries.push(BTreeSet::from([base + 4]));
+        expected.push(sharing.clone());
+        queries.push(BTreeSet::from([base + 5]));
+        expected.push(sharing);
     }
-    let every_entity = (0..=BODIES)
-        .flat_map(|body| 100 * body..100 * body + 6)
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        cache.intersecting(&topology, &every_entity),
-        Some((0..BODIES).map(|body| 100 * body).collect())
+    queries.push(
+        (0..=BODIES)
+            .flat_map(|body| 100 * body..100 * body + 6)
+            .collect(),
     );
-    assert_eq!(
-        cache.intersecting(&topology, &BTreeSet::from([-1, 6, 100 * BODIES + 50])),
-        Some(BTreeSet::new())
-    );
+    expected.push((0..BODIES).map(|body| 100 * body).collect());
+    queries.push(BTreeSet::from([-1, 6, 100 * BODIES + 50]));
+    expected.push(BTreeSet::new());
+    let touched =
+        super::super::bodies_touching(&topology, &queries.iter().collect::<Vec<_>>()).unwrap();
+    assert_eq!(touched.len(), expected.len());
+    for ((query, bodies), expected) in queries.iter().zip(&touched).zip(&expected) {
+        assert_eq!(bodies, expected, "query {query:?}");
+    }
+}
+
+/// `wire_row_topology(bodies)` with the last body's end vertex on the point
+/// of its start vertex, which the previous body's end vertex also reaches.
+fn shared_point_topology(bodies: i64) -> crate::history_records::AsmHistoricalTopology {
+    let mut topology = wire_row_topology(bodies);
+    let start = 100 * bodies - 96;
+    let binding = topology
+        .vertex_points
+        .iter_mut()
+        .find(|binding| binding.entity == start + 100)
+        .unwrap();
+    binding.carrier = start + 1;
+    topology
 }
 
 #[test]
 fn an_entity_one_body_reaches_twice_after_another_body_lists_each_body_once() {
     use std::collections::BTreeSet;
 
-    let mut topology = wire_row_topology(3);
-    // Body 200's end vertex sits on the point of its start vertex, which body
-    // 100's end vertex also reaches.
-    let end = topology
-        .vertex_points
-        .iter_mut()
-        .find(|binding| binding.entity == 304)
-        .unwrap();
-    end.carrier = 205;
-    let incidence = super::super::historical_body_incidence(&topology).unwrap();
-    assert_eq!(incidence.first_body.get(&205), Some(&100));
-    assert_eq!(incidence.later_bodies.get(&205), Some(&vec![200]));
-    let mut affected = BTreeSet::new();
-    incidence.insert_bodies_touching(&BTreeSet::from([205, 304]), &mut affected);
-    assert_eq!(affected, BTreeSet::from([100, 200]));
+    let topology = shared_point_topology(3);
+    assert_eq!(
+        super::super::bodies_intersecting(&topology, &BTreeSet::from([205, 304])),
+        Some(BTreeSet::from([100, 200]))
+    );
 }
 
 #[test]
-fn repeated_body_queries_reuse_incidence_and_validate_each_snapshot() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn one_closure_walk_answers_every_query() {
+    use std::collections::BTreeSet;
+
+    let queries = [
+        BTreeSet::from([205, 304]),
+        BTreeSet::from([4, 104, 403]),
+        BTreeSet::new(),
+        (0..=500).collect(),
+        BTreeSet::from([-1, 6]),
+        BTreeSet::from([304]),
+    ];
+    let expected = [
+        BTreeSet::from([100, 200, 300]),
+        BTreeSet::from([0, 100]),
+        BTreeSet::new(),
+        BTreeSet::from([0, 100, 200, 300]),
+        BTreeSet::new(),
+        BTreeSet::from([200, 300]),
+    ];
+    let queries = queries.iter().collect::<Vec<_>>();
+    let topology = shared_point_topology(4);
+    assert_eq!(
+        super::super::bodies_touching(&topology, &queries),
+        Some(expected.to_vec())
+    );
+
+    let mut reversed = topology.clone();
+    reversed.bodies.reverse();
+    reversed.body_regions.reverse();
+    reversed.region_shells.reverse();
+    reversed.shell_faces.reverse();
+    reversed.shell_wire_edges.reverse();
+    reversed.shell_free_vertices.reverse();
+    reversed.edge_vertices.reverse();
+    reversed.vertex_points.reverse();
+    assert_eq!(
+        super::super::bodies_touching(&reversed, &queries),
+        Some(expected.to_vec())
+    );
+
+    let incomplete = crate::history_records::AsmHistoricalTopology {
+        bodies: vec![1],
+        ..Default::default()
+    };
+    assert_eq!(super::super::bodies_touching(&incomplete, &[]), None);
+}
+
+#[test]
+fn the_last_row_of_a_repeated_key_binds_the_closure() {
+    use crate::history_records::AsmHistoricalCarrierBinding;
+    use std::collections::BTreeSet;
+
+    let mut topology = wire_topology(false);
+    topology.vertex_points.insert(
+        1,
+        AsmHistoricalCarrierBinding {
+            entity: 8,
+            carrier: 30,
+        },
+    );
+    let touched =
+        super::super::bodies_touching(&topology, &[&BTreeSet::from([28]), &BTreeSet::from([30])]);
+    assert_eq!(touched, Some(vec![BTreeSet::new(), BTreeSet::from([1])]));
+    topology.vertex_points.reverse();
+    let touched =
+        super::super::bodies_touching(&topology, &[&BTreeSet::from([28]), &BTreeSet::from([30])]);
+    assert_eq!(touched, Some(vec![BTreeSet::from([1]), BTreeSet::new()]));
+}
+
+#[test]
+fn body_queries_validate_each_snapshot() {
     use std::collections::BTreeSet;
     let topology = simple_topology();
     let incomplete = crate::history_records::AsmHistoricalTopology {
         bodies: vec![1],
         ..Default::default()
     };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut cache = super::super::HistoricalBodyClosureCache::default();
-    for _ in 0..20 {
-        assert_eq!(
-            cache.intersecting(&topology, &BTreeSet::from([1])),
-            Some(BTreeSet::from([1]))
-        );
-        assert_eq!(
-            cache.intersecting(&topology, &BTreeSet::from([2])),
-            Some(BTreeSet::new())
-        );
-        assert_eq!(cache.intersecting(&incomplete, &BTreeSet::from([1])), None);
-    }
-    ctx.finish_session().unwrap();
+    assert_eq!(
+        super::super::bodies_intersecting(&topology, &BTreeSet::from([1])),
+        Some(BTreeSet::from([1]))
+    );
+    assert_eq!(
+        super::super::bodies_intersecting(&topology, &BTreeSet::from([2])),
+        Some(BTreeSet::new())
+    );
+    assert_eq!(
+        super::super::bodies_intersecting(&incomplete, &BTreeSet::from([1])),
+        None
+    );
 }
