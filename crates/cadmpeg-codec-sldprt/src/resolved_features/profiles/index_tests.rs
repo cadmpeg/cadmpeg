@@ -1,4 +1,5 @@
-use super::{only_enclosed, FeaturePositions};
+use super::{markers_by_owner, only_enclosed, FeaturePositions};
+use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::features::{
     DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
     FeatureOperation, SketchFeatureBinding,
@@ -79,6 +80,62 @@ fn profile_indexes_match_the_feature_and_sketch_scans() {
                 };
                 assert_eq!(only_enclosed(&offsets, start, end), scanned);
             }
+        }
+    }
+}
+
+#[test]
+fn owned_markers_match_the_lane_scans() {
+    let mut state = 0x2545_f491_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let base = SketchInputEntity::new("entity", "lane", 0, 0, SketchInputKind::Point);
+    let owners = ["sketch-0", "sketch-1", "sketch-2", "absent"];
+    for _ in 0..32 {
+        let markers = (0..next(120))
+            .map(|_| {
+                let mut marker =
+                    base.with_test_position(u32::try_from(next(40)).unwrap(), next(80));
+                marker.feature_ref =
+                    (next(5) != 0).then(|| owners[usize::try_from(next(3)).unwrap()].to_owned());
+                marker
+            })
+            .collect::<Vec<_>>();
+        let owned = markers_by_owner(&markers);
+        for owner in owners {
+            let scanned = markers
+                .iter()
+                .filter(|marker| marker.feature_ref.as_deref() == Some(owner))
+                .collect::<Vec<_>>();
+            let indexed = owned.get(owner).cloned().unwrap_or_default();
+            assert_eq!(scanned.len(), indexed.len());
+            assert!(scanned
+                .iter()
+                .zip(&indexed)
+                .all(|(scanned, indexed)| std::ptr::eq(*scanned, *indexed)));
+            assert_eq!(
+                owned
+                    .get(owner)
+                    .and_then(|markers| markers.iter().map(|marker| marker.offset()).min()),
+                scanned.iter().map(|marker| marker.offset()).min()
+            );
+            let end = next(90);
+            assert_eq!(
+                indexed
+                    .iter()
+                    .filter(|marker| marker.offset() < end)
+                    .count(),
+                markers
+                    .iter()
+                    .filter(|marker| {
+                        marker.feature_ref.as_deref() == Some(owner) && marker.offset() < end
+                    })
+                    .count()
+            );
         }
     }
 }

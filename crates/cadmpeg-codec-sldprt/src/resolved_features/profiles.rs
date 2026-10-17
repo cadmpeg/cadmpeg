@@ -116,6 +116,17 @@ fn only_enclosed(offsets: &[(u64, usize)], start: u64, end: Option<u64>) -> Opti
         _ => None,
     }
 }
+
+/// Lane markers grouped by owning feature, in lane order.
+fn markers_by_owner(markers: &[SketchInputEntity]) -> HashMap<&str, Vec<&SketchInputEntity>> {
+    let mut owned = HashMap::<_, Vec<_>>::new();
+    for marker in markers {
+        if let Some(owner) = marker.feature_ref.as_deref() {
+            owned.entry(owner).or_default().push(marker);
+        }
+    }
+    owned
+}
 /// Reconcile profile streams with uniquely enclosing sketch feature records.
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -374,15 +385,16 @@ pub(crate) fn project_compact_sketch_profiles(
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
         let names = FeatureObjectNames::new(&lane.names);
+        let markers_by_feature = markers_by_owner(&lane.sketch_entities);
         let mut objects = native_features
             .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
                 let start = names.of(feature).map(|name| name.offset).or_else(|| {
-                    lane.sketch_entities
+                    markers_by_feature
+                        .get(feature.id.as_str())?
                         .iter()
-                        .filter(|marker| marker.feature_ref.as_deref() == Some(feature.id.as_str()))
-                        .map(crate::records::SketchInputEntity::offset)
+                        .map(|marker| marker.offset())
                         .min()
                 })?;
                 Some((start, feature))
@@ -428,11 +440,10 @@ pub(crate) fn project_compact_sketch_profiles(
             let region_addresses = compact_line_region_addresses(ctx, interval)?;
             let chain_addresses = compact_line_chain_addresses(ctx, interval)?;
             let addresses = region_addresses.as_ref().or(chain_addresses.as_ref());
-            let owned_markers = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| marker.feature_ref.as_deref() == Some(native_feature.id.as_str()))
-                .collect::<Vec<_>>();
+            let owned_markers = markers_by_feature
+                .get(native_feature.id.as_str())
+                .cloned()
+                .unwrap_or_default();
             let dimensions = lane
                 .relation_instances
                 .iter()
@@ -979,6 +990,7 @@ pub(crate) fn project_marker_backed_sketches(
             markers_by_id.insert(marker.id(), marker);
         }
         let names = FeatureObjectNames::new(&lane.names);
+        let markers_by_feature = markers_by_owner(&lane.sketch_entities);
         let mut objects = Vec::new();
         for feature in native_features
             .iter()
@@ -986,10 +998,10 @@ pub(crate) fn project_marker_backed_sketches(
         {
             let Some((start, feature)) = (|| {
                 let start = names.of(feature).map(|name| name.offset).or_else(|| {
-                    lane.sketch_entities
+                    markers_by_feature
+                        .get(feature.id.as_str())?
                         .iter()
-                        .filter(|marker| marker.feature_ref.as_deref() == Some(feature.id.as_str()))
-                        .map(crate::records::SketchInputEntity::offset)
+                        .map(|marker| marker.offset())
                         .min()
                 })?;
                 Some((start, feature))
@@ -1022,10 +1034,12 @@ pub(crate) fn project_marker_backed_sketches(
                     *offset
                 });
             let mut object_markers = Vec::new();
-            for marker in &lane.sketch_entities {
-                if marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
-                    && marker.offset() < end
-                {
+            for &marker in markers_by_feature
+                .get(native_feature.id.as_str())
+                .into_iter()
+                .flatten()
+            {
+                if marker.offset() < end {
                     object_markers.push(marker);
                 }
             }
@@ -2760,6 +2774,7 @@ fn project_detached_legacy_config_sketches(
             };
             *frame
         };
+        let markers_by_feature = markers_by_owner(&lane.sketch_entities);
         for feature in features.iter_mut() {
             'feature_edit: {
                 let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -2778,14 +2793,9 @@ fn project_detached_legacy_config_sketches(
                 let Some(native_feature) = native_features.get(native_ref) else {
                     break 'feature_edit;
                 };
-                let markers = lane
-                    .sketch_entities
-                    .iter()
-                    .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                    .collect::<Vec<_>>();
-                if markers.is_empty() {
+                let Some(markers) = markers_by_feature.get(native_ref) else {
                     break 'feature_edit;
-                }
+                };
                 let (origin, normal, u_axis) = feature_frames
                     .get(native_ref)
                     .copied()
@@ -2826,13 +2836,13 @@ fn project_detached_legacy_config_sketches(
                 };
 
                 let projected =
-                    match legacy_config_hex_sketch(native_feature, &sketch, &markers, &project) {
+                    match legacy_config_hex_sketch(native_feature, &sketch, markers, &project) {
                         Some(projected) => Some(projected),
                         None => legacy_config_collinear_sketch(
                             lane,
                             native_feature,
                             &sketch,
-                            &markers,
+                            markers,
                             &project,
                         ),
                     };
