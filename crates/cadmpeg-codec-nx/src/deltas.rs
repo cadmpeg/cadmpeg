@@ -30,10 +30,8 @@ use partition_prefix::PartitionPrefixState;
 use pmark_packets::PmarkPacket;
 pub(crate) mod transmit_state;
 use crate::framing::xmt_reference::NonNullXmt;
+use packet_marker::ReferenceMarker;
 use transmit_state::TransmitState;
-pub(crate) mod type150_state;
-use packet_marker::{ReferenceMarker, Type150Marker};
-use type150_state::Type150State;
 pub(crate) mod group;
 mod intersection;
 pub(crate) mod tails;
@@ -148,17 +146,6 @@ pub(crate) struct ReferenceMarkerPacket {
     pub(crate) reference: NonNullXmt,
     /// Serialized marker byte.
     pub(crate) marker: ReferenceMarker,
-    /// First byte of the packet.
-    pub(crate) offset: usize,
-    /// First byte following the packet.
-    pub(crate) end: usize,
-}
-
-/// One single-byte type-150 deltas state packet.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Type150StatePacket {
-    /// Validated references, marker, and finite state values.
-    pub(crate) state: Type150State,
     /// First byte of the packet.
     pub(crate) offset: usize,
     /// First byte following the packet.
@@ -764,49 +751,6 @@ fn reference_marker_packet(
     })
 }
 
-fn type_150_state_packets(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-    covered: &[(usize, usize)],
-) -> Result<Vec<Type150StatePacket>, CodecError> {
-    let mut packets = Vec::new();
-    for (offset, end) in uncovered_spans(ctx, stream.len(), covered)? {
-        if let Some(packet) = type_150_state_packet(stream, offset, end) {
-            ctx.push_vec(&mut packets, packet, "NX type 150 state packets")?;
-        }
-    }
-    Ok(packets)
-}
-
-fn type_150_state_packet(
-    stream: &[u8],
-    offset: usize,
-    expected_end: usize,
-) -> Option<Type150StatePacket> {
-    (stream.get(offset) == Some(&150)).then_some(())?;
-    let mut at = offset.checked_add(1)?;
-    let mut references = [0; 5];
-    for (reference, required_status) in references.iter_mut().zip([1, 1, 0, 1, 0]) {
-        let (value, consumed) = read_xmt(stream, at)?;
-        at = at.checked_add(consumed)?;
-        (stream.get(at) == Some(&required_status)).then_some(())?;
-        at = at.checked_add(1)?;
-        *reference = value;
-    }
-    let marker = Type150Marker::try_from(*stream.get(at)?).ok()?;
-    at = at.checked_add(1)?;
-    let mut values = [0.0; 9];
-    for value in &mut values {
-        *value = View::f64_be_at(stream, at)?;
-        at = at.checked_add(8)?;
-    }
-    (at == expected_end).then_some(Type150StatePacket {
-        state: Type150State::new(references, marker, values).ok()?,
-        offset,
-        end: at,
-    })
-}
-
 fn uncovered_spans(
     ctx: &DecodeContext<'_>,
     stream_len: usize,
@@ -847,7 +791,6 @@ fn merged_event_spans(
         census.tagged_reference_lanes.len(),
         census.reference_type_maps.len(),
         census.reference_marker_packets.len(),
-        census.type_150_state_packets.len(),
         census.schema_nodes.len(),
     ];
     let count = event_counts
@@ -920,12 +863,6 @@ fn merged_event_spans(
     covered.extend(
         census
             .reference_marker_packets
-            .iter()
-            .map(|packet| (packet.offset, packet.end)),
-    );
-    covered.extend(
-        census
-            .type_150_state_packets
             .iter()
             .map(|packet| (packet.offset, packet.end)),
     );
@@ -2810,56 +2747,55 @@ mod type_45_record_tests {
 }
 
 #[cfg(test)]
-mod type_150_state_packet_tests {
+mod plane_boundary_tests {
     use super::census::walk;
-
-    fn packet() -> Vec<u8> {
-        let mut bytes = vec![150];
-        for (reference, status) in [(1u16, 1), (3, 1), (6_192, 0), (6_193, 1), (6_194, 0)] {
-            bytes.extend_from_slice(&reference.to_be_bytes());
-            bytes.push(status);
-        }
-        bytes.push(0x2b);
-        for value in [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0] {
-            bytes.extend_from_slice(&f64::to_be_bytes(value));
-        }
-        bytes
-    }
+    use crate::test_support::test_bytes::encoded_xmt;
 
     #[test]
-    fn retains_complete_type_150_state() {
-        let bytes = packet();
-        let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
+    fn plane_node_id_low_byte_is_not_an_independent_record() {
+        for node_id in [150u32, 406, 662, 2_454, 36_246, 36_502] {
+            let mut bytes = 50u16.to_be_bytes().to_vec();
+            bytes.extend(encoded_xmt(66_706));
+            bytes.extend(node_id.to_be_bytes());
+            let mut canonical = bytes.clone();
+            for (reference, status) in [(1, 1), (3, 1), (6_192, 0), (66_545, 1), (66_707, 0)] {
+                bytes.extend(encoded_xmt(reference));
+                bytes.push(status);
+                canonical.extend(encoded_xmt(reference));
+            }
+            bytes.push(b'+');
+            canonical.push(b'+');
+            for value in [-0.025f64, -0.05, 0.213_334, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0] {
+                bytes.extend(value.to_be_bytes());
+                canonical.extend(value.to_be_bytes());
+            }
+            let plane_end = bytes.len();
+            bytes.extend(141u16.to_be_bytes());
+            bytes.extend(encoded_xmt(66_707));
+            for (reference, status) in [(3, 1), (1, 0), (1, 0), (66_706, 0)] {
+                bytes.extend(encoded_xmt(reference));
+                bytes.push(status);
+            }
 
-        assert_eq!(census.type_150_state_packets.len(), 1);
-        let packet = &census.type_150_state_packets[0];
-        assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
-        assert_eq!(u8::from(packet.state.marker), 0x2b);
-        assert_eq!(
-            packet.state.values(),
-            [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0]
-        );
-        assert_eq!((packet.offset, packet.end), (0, bytes.len()));
-        assert_eq!(census.bytes_decoded(), bytes.len());
+            let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
 
-        let mut malformed = bytes.clone();
-        malformed[6] = 0;
-        assert!(
-            crate::test_support::with_decode_context(|ctx| walk(ctx, &malformed))
-                .unwrap()
-                .type_150_state_packets
-                .is_empty()
-        );
-
-        let mut nonfinite = bytes;
-        let value_offset = nonfinite.len() - 9 * 8;
-        nonfinite[value_offset..value_offset + 8].copy_from_slice(&f64::NAN.to_be_bytes());
-        assert!(
-            crate::test_support::with_decode_context(|ctx| walk(ctx, &nonfinite))
-                .unwrap()
-                .type_150_state_packets
-                .is_empty()
-        );
+            assert_eq!(bytes[9], 150);
+            assert_eq!(plane_end, 102);
+            assert_eq!(census.records.len(), 2);
+            let plane = &census.records[0];
+            assert_eq!(
+                (plane.kind(), plane.xmt, plane.offset, plane.end),
+                (50, 66_706, 0, plane_end)
+            );
+            assert_eq!(plane.canonical_bytes, canonical);
+            let owner = &census.records[1];
+            assert_eq!(
+                (owner.kind(), owner.xmt, owner.offset, owner.end),
+                (141, 66_707, plane_end, bytes.len())
+            );
+            assert!(census.tombstones.is_empty());
+            assert_eq!(census.bytes_decoded(), bytes.len());
+        }
     }
 }
 

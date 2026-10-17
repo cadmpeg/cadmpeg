@@ -621,7 +621,7 @@ fn deltas_events_subtract_schema_nodes_from_residuals() {
 }
 
 #[test]
-fn deltas_events_subtract_type_150_state_packets_from_residuals() {
+fn unowned_byte_150_shape_stays_in_fidelity_residuals() {
     let mut bytes = [0xaa, 0xbb].to_vec();
     bytes.extend(deltas_type_45(10));
     let packet_offset = bytes.len();
@@ -651,28 +651,37 @@ fn deltas_events_subtract_type_150_state_packets_from_residuals() {
 
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
 
-    assert_eq!(events.type_150_state_packets.len(), 1);
-    let packet = &events.type_150_state_packets[0];
-    assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
-    assert_eq!(u8::from(packet.state.marker), 0x2b);
-    assert_eq!(packet.state.values(), values);
+    assert_eq!(events.residual_spans.len(), 3);
+    let residual = events
+        .residual_spans
+        .iter()
+        .find(|span| span.inflated_offset == cadmpeg_core::decode::u64_from_index(packet_offset))
+        .expect("the entire unowned shape is one retained residual");
     assert_eq!(
-        packet.inflated_offset,
+        residual.inflated_offset,
         cadmpeg_core::decode::u64_from_index(packet_offset)
     );
     assert_eq!(
-        packet.byte_len,
+        residual.byte_len,
         cadmpeg_core::decode::u64_from_index(packet_end - packet_offset)
     );
     assert_eq!(
-        packet.sha256,
+        residual.sha256,
         cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[packet_offset..packet_end])
     );
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].byte_len, 2);
     assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(suffix_offset)
+        events
+            .residual_spans
+            .iter()
+            .map(|span| (span.inflated_offset, span.byte_len))
+            .collect::<std::collections::BTreeMap<_, _>>(),
+        std::collections::BTreeMap::from([
+            (0, 2),
+            (
+                cadmpeg_core::decode::u64_from_index(packet_offset),
+                cadmpeg_core::decode::u64_from_index(packet_end - packet_offset),
+            ),
+            (cadmpeg_core::decode::u64_from_index(suffix_offset), 2),
+        ])
     );
-    assert_eq!(events.residual_spans[1].byte_len, 2);
 }

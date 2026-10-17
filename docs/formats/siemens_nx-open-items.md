@@ -122,14 +122,6 @@ relation to the owning pmark edge before assigning body change-state roles.
 
 **Need.** We must know ownership and marker semantics to attach the packet to typed state.
 
-### PS-23. Deltas type-150 state packets
-
-**Question.** What does each field and marker in a deltas type-150 state packet mean?
-
-**Known.** `siemens_nx.md` §4.2 "A type-150 state packet is" defines the packet grammar, marker values, and boundary.
-
-**Need.** We must know the roles to transfer the packet as typed type-150 state.
-
 ### PS-25. Inline type-12 `BODY` instance state
 
 **Question.** What are the dynamic roles and constraints of the BODY fields `attributes_features`, `lattice`, `mesh`, `polyline`, `boundary_lattice`, `boundary_mesh`, `boundary_polyline`, `child`, `lowest_node_id`, and `mesh_offset_data`?

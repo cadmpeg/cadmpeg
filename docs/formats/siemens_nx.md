@@ -1130,10 +1130,11 @@ The leading reference is non-null and uses compact or extended XMT encoding.
 `marker` is `53` or `56`. The two remaining references are the null XMT value
 `1`. The packet ends after the final status byte.
 
-A type-150 state packet is `96, ref_status[5], marker:u8, value[9]:f64 BE`.
-The reference statuses are `01, 01, 00, 01, 00`. The first reference is the
-null XMT value `1`; the remaining references are non-null. `marker` is `2b` or
-`2d`, every numeric value is finite, and the packet ends after the ninth value.
+A PLANE record starts with the two-byte node type `0032`. Its `node_id` is
+one four-byte field. A low identifier byte `96` does not begin a separate
+record. The following five reference/status fields, surface sense, and
+`pvec`, `normal`, and `x_axis` vectors belong to that PLANE. Surface sense is
+`2b` (`+`) or `2d` (`-`).
 
 The first node of each declared type inserts the schema information from
 section 3.2 between its type tag and its ordinary instance. The edit program

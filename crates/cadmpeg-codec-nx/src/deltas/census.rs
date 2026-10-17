@@ -8,9 +8,9 @@ use super::{
     consume_shared_record, consume_variable, first_complete_record, fixed_signature,
     inline_schema_node, is_value_family, merged_event_spans, reference_marker_packets,
     reference_type_map, reference_type_maps, tagged_reference_lanes, transmit_header,
-    type_150_state_packets, uncovered_spans, BodyRevision, PartitionPrefix, PartitionPrefixState,
-    PmarkPacket, Record, ReferenceMarkerPacket, ReferenceTypeMap, ReferenceTypeMapLimit,
-    SchemaNodeEvent, TaggedReferenceLane, Tombstone, TransmitHeader, Type150StatePacket,
+    uncovered_spans, BodyRevision, PartitionPrefix, PartitionPrefixState, PmarkPacket, Record,
+    ReferenceMarkerPacket, ReferenceTypeMap, ReferenceTypeMapLimit, SchemaNodeEvent,
+    TaggedReferenceLane, Tombstone, TransmitHeader,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -46,8 +46,6 @@ pub(crate) struct CensusEvents {
     pub(crate) partition_prefix: Option<PartitionPrefix>,
     /// Complete reference-marker packets in source order.
     pub(crate) reference_marker_packets: Vec<ReferenceMarkerPacket>,
-    /// Complete single-byte type-150 state packets in source order.
-    pub(crate) type_150_state_packets: Vec<Type150StatePacket>,
     /// Complete inline schema declarations in source order.
     pub(crate) schema_nodes: Vec<SchemaNodeEvent>,
 }
@@ -453,20 +451,6 @@ fn populate_gap_events(
             "NX reference marker packets",
         )?;
 
-        let type_150_packets = type_150_state_packets(ctx, stream, &covered)?;
-        extend_covered_spans(
-            ctx,
-            &mut covered,
-            type_150_packets
-                .iter()
-                .map(|event| (event.offset, event.end)),
-        )?;
-        ctx.extend_vec(
-            &mut census.events.type_150_state_packets,
-            type_150_packets,
-            "NX type 150 state packets",
-        )?;
-
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(covered.len()),
             "count NX deltas covered bytes",
@@ -506,12 +490,6 @@ fn populate_gap_events(
         |left, right| left.offset.cmp(&right.offset),
         |_| 0,
         "NX deltas reference marker packets",
-    )?;
-    ctx.sort_unstable_by(
-        &mut census.events.type_150_state_packets,
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "NX deltas type 150 state packets",
     )?;
     Ok(admitted_bytes)
 }

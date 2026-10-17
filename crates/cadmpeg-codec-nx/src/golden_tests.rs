@@ -343,7 +343,6 @@ const KNOWN_ARENAS: &[&str] = &[
     "parasolid_deltas_pmark_packets",
     "parasolid_deltas_partition_prefixes",
     "parasolid_deltas_reference_marker_packets",
-    "parasolid_deltas_type_150_state_packets",
     "parasolid_deltas_schema_nodes",
     "parasolid_deltas_tombstones",
     "parasolid_entity_51_numeric_uses",
@@ -1107,14 +1106,14 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    // One schema-node family replaces the declaration and BODY-state families.
-    assert_eq!(CATALOGUE.len(), 259, "one catalogue row per model field");
+    // The removed byte-150 arena has no independent record ownership.
+    assert_eq!(CATALOGUE.len(), 258, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
             .count(),
-        115,
+        114,
         "group A family count"
     );
     assert_eq!(
