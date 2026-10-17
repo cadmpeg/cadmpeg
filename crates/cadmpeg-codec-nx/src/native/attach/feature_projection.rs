@@ -5,8 +5,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, FaceId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,
@@ -14,6 +15,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, FaceLoops, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferSpec, RadiusSpec},
@@ -39,6 +41,10 @@ pub(super) struct SolidBodyIndex<'a> {
 
 impl<'a> SolidBodyIndex<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
+        Self::of_arenas(ProjectionArenas::of(ir))
+    }
+
+    fn of_arenas(arenas: ProjectionArenas<'a>) -> Self {
         fn first<'a, T, K: Ord>(items: &'a [T], key: impl Fn(&'a T) -> K) -> BTreeMap<K, &'a T> {
             let mut first = BTreeMap::new();
             for item in items {
@@ -47,10 +53,10 @@ impl<'a> SolidBodyIndex<'a> {
             first
         }
         Self {
-            bodies: first(&ir.model.bodies, |body| &body.id),
-            regions: first(&ir.model.regions, |region| (&region.id, &region.body)),
-            shells: first(&ir.model.shells, |shell| (&shell.id, &shell.region)),
-            faces: first(&ir.model.faces, |face| (&face.id, &face.shell)),
+            bodies: first(arenas.bodies, |body| &body.id),
+            regions: first(arenas.regions, |region| (&region.id, &region.body)),
+            shells: first(arenas.shells, |shell| (&shell.id, &shell.region)),
+            faces: first(arenas.faces, |face| (&face.id, &face.shell)),
         }
     }
 
@@ -92,8 +98,122 @@ impl<'a> SolidBodyIndex<'a> {
     }
 }
 
-pub(super) fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
-    SolidBodyIndex::new(ir).body_faces(body_id)
+/// The model arenas the block, sphere, offset, thicken and blend projections
+/// read.
+#[derive(Clone, Copy)]
+pub(super) struct ProjectionArenas<'a> {
+    pub(super) bodies: &'a [Body],
+    pub(super) regions: &'a [Region],
+    pub(super) shells: &'a [Shell],
+    pub(super) faces: &'a [Face],
+    pub(super) surfaces: &'a [Surface],
+    pub(super) procedural_surfaces: &'a [ProceduralSurface],
+}
+
+impl<'a> ProjectionArenas<'a> {
+    pub(super) fn of(ir: &'a CadIr) -> Self {
+        Self {
+            bodies: &ir.model.bodies,
+            regions: &ir.model.regions,
+            shells: &ir.model.shells,
+            faces: &ir.model.faces,
+            surfaces: &ir.model.surfaces,
+            procedural_surfaces: &ir.model.procedural_surfaces,
+        }
+    }
+}
+
+/// Lookups for the block, sphere, offset, thicken and blend projections.
+///
+/// It borrows every arena it reads, so a caller that keeps it across features
+/// can only write arenas these projections never read.
+pub(super) struct FeatureProjectionIndex<'a> {
+    bodies: &'a [Body],
+    solid_bodies: SolidBodyIndex<'a>,
+    first_surfaces: BTreeMap<&'a SurfaceId, &'a Surface>,
+    last_surfaces: BTreeMap<&'a SurfaceId, &'a Surface>,
+    sphere_surfaces: BTreeSet<&'a SurfaceId>,
+    sole_faces: BTreeMap<&'a SurfaceId, Option<&'a Face>>,
+    /// Procedural surfaces by their sole carrier, with their model positions.
+    owned_procedurals: BTreeMap<&'a SurfaceId, Vec<(usize, &'a ProceduralSurface)>>,
+}
+
+impl<'a> FeatureProjectionIndex<'a> {
+    pub(super) fn new(arenas: ProjectionArenas<'a>) -> Self {
+        let mut first_surfaces = BTreeMap::new();
+        let mut sphere_surfaces = BTreeSet::new();
+        for surface in arenas.surfaces {
+            first_surfaces.entry(&surface.id).or_insert(surface);
+            if matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Sphere(_))
+            ) {
+                sphere_surfaces.insert(&surface.id);
+            }
+        }
+        let owners = procedural_surface_owners(arenas.surfaces);
+        let mut owned_procedurals = BTreeMap::<_, Vec<_>>::new();
+        for (position, procedural) in arenas.procedural_surfaces.iter().enumerate() {
+            if let Some(owner) = owners.get(&procedural.id).copied().flatten() {
+                owned_procedurals
+                    .entry(owner)
+                    .or_default()
+                    .push((position, procedural));
+            }
+        }
+        let mut sole_faces = BTreeMap::<_, Option<_>>::new();
+        for face in arenas.faces {
+            sole_faces
+                .entry(&face.surface)
+                .and_modify(|sole| *sole = None)
+                .or_insert(Some(face));
+        }
+        Self {
+            bodies: arenas.bodies,
+            solid_bodies: SolidBodyIndex::of_arenas(arenas),
+            first_surfaces,
+            last_surfaces: last_surfaces(arenas.surfaces),
+            sphere_surfaces,
+            sole_faces,
+            owned_procedurals,
+        }
+    }
+
+    fn body_surface_ids(&self, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
+        let faces = self.solid_bodies.body_faces(body_id)?;
+        let mut ids = BTreeSet::new();
+        for face in &faces {
+            if ids.contains(&face.surface) {
+                continue;
+            }
+            let surface = face.surface.clone();
+            ids.insert(surface);
+        }
+        Some(ids)
+    }
+
+    /// The procedural surfaces whose sole carrier is one of `surfaces`, each
+    /// with that carrier, in model order.
+    pub(super) fn owned_procedural_surfaces(
+        &self,
+        surfaces: &BTreeSet<SurfaceId>,
+    ) -> Vec<(&'a SurfaceId, &'a ProceduralSurface)> {
+        let mut owned = Vec::new();
+        for surface in surfaces {
+            if let Some((&owner, procedurals)) = self.owned_procedurals.get_key_value(surface) {
+                owned.extend(
+                    procedurals
+                        .iter()
+                        .map(|&(position, procedural)| (position, owner, procedural)),
+                );
+            }
+        }
+        owned.sort_by_key(|&(position, ..)| position);
+        owned
+            .into_iter()
+            .map(|(_, owner, procedural)| (owner, procedural))
+            .collect()
+    }
 }
 
 /// The last surface, edge and curve of each identity, and each loop's coedges
@@ -115,7 +235,7 @@ impl<'a> CarrierIndex<'a> {
                 .push(coedge);
         }
         Self {
-            surfaces: last_surfaces(ir),
+            surfaces: last_surfaces(&ir.model.surfaces),
             edges: ir.model.edges.iter().map(|edge| (&edge.id, edge)).collect(),
             curves: ir
                 .model
@@ -143,9 +263,8 @@ impl<'a> CarrierIndex<'a> {
 }
 
 /// The last surface of each identity.
-fn last_surfaces(ir: &CadIr) -> BTreeMap<&SurfaceId, &Surface> {
-    ir.model
-        .surfaces
+fn last_surfaces(surfaces: &[Surface]) -> BTreeMap<&SurfaceId, &Surface> {
+    surfaces
         .iter()
         .map(|surface| (&surface.id, surface))
         .collect()
@@ -153,9 +272,11 @@ fn last_surfaces(ir: &CadIr) -> BTreeMap<&SurfaceId, &Surface> {
 
 /// The sole surface carrying each procedural construction, or `None` when
 /// several carry it.
-fn procedural_surface_owners(ir: &CadIr) -> BTreeMap<&ProceduralSurfaceId, Option<&SurfaceId>> {
+fn procedural_surface_owners(
+    surfaces: &[Surface],
+) -> BTreeMap<&ProceduralSurfaceId, Option<&SurfaceId>> {
     let mut owners = BTreeMap::new();
-    for surface in &ir.model.surfaces {
+    for surface in surfaces {
         if let Some(construction) = surface.geometry.procedural_construction() {
             owners
                 .entry(construction)
@@ -196,19 +317,6 @@ pub(super) fn insert_parameter_property(
     Ok(())
 }
 
-pub(super) fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
-    let faces = body_faces(ir, body_id)?;
-    let mut ids = BTreeSet::new();
-    for face in &faces {
-        if ids.contains(&face.surface) {
-            continue;
-        }
-        let surface = face.surface.clone();
-        ids.insert(surface);
-    }
-    Some(ids)
-}
-
 /// Neutral operand family named by an NX rolling-ball blend operation.
 #[derive(Clone, Copy)]
 pub(super) enum NxBlendFamily {
@@ -220,14 +328,14 @@ pub(super) enum NxBlendFamily {
 
 /// Project complete owned rolling-ball carriers into their named blend family.
 pub(super) fn blend_feature_definition(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
     family: NxBlendFamily,
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let [body] = outputs else {
         return None;
     };
-    let body_surfaces = body_surface_ids(ir, body)?;
+    let body_surfaces = index.body_surface_ids(body)?;
     let mut surfaces = Vec::new();
     let mut first_radius = None;
     let mut constant_radii = true;
@@ -235,14 +343,7 @@ pub(super) fn blend_feature_definition(
     let mut variable_radii = true;
     let mut pairs = Vec::new();
     let mut complete_pairs = true;
-    let owners = procedural_surface_owners(ir);
-    for procedural in &ir.model.procedural_surfaces {
-        let Some(owner) = owners.get(&procedural.id).copied().flatten() else {
-            continue;
-        };
-        if !body_surfaces.contains(owner) {
-            continue;
-        }
+    for (owner, procedural) in index.owned_procedural_surfaces(&body_surfaces) {
         let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
             continue;
         };
@@ -314,8 +415,8 @@ pub(super) fn blend_feature_definition(
         if let Some(sides) = blend_support_bipartition(&pairs) {
             let first_native = format!("{body}:blend-first-support-surfaces");
             let second_native = format!("{body}:blend-second-support-surfaces");
-            let (first_faces, _) = support_face_projection(ir, &sides.first, first_native);
-            let (second_faces, _) = support_face_projection(ir, &sides.second, second_native);
+            let (first_faces, _) = support_face_projection(index, &sides.first, first_native);
+            let (second_faces, _) = support_face_projection(index, &sides.second, second_native);
             match (&first_faces, &second_faces) {
                 (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
                     cadmpeg_ir::features::FaceBlendOperands::new(first_faces, second_faces)
@@ -421,16 +522,16 @@ pub(super) fn blend_support_bipartition(pairs: &[[SurfaceId; 2]]) -> Option<Blen
 }
 
 pub(super) fn offset_surface_feature_definition(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let OwnedOffsetSurfaceData {
         body,
         distance,
         supports,
-    } = owned_offset_surface_data(ir, outputs)?;
+    } = owned_offset_surface_data(index, outputs)?;
     let native = format!("{}:offset-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ir, &supports, native);
+    let (faces, senses) = support_face_projection(index, &supports, native);
     let distance = senses
         .as_deref()
         .and_then(uniform_face_sense)
@@ -454,10 +555,10 @@ pub(super) struct OwnedOffsetSurfaceData<'a> {
 }
 
 pub(super) fn owned_offset_surface_data<'a>(
-    ir: &'a CadIr,
+    index: &FeatureProjectionIndex<'a>,
     outputs: &'a [BodyId],
 ) -> Option<OwnedOffsetSurfaceData<'a>> {
-    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
+    let (body, carriers) = owned_offset_carriers(index, outputs)?;
     let distance = carriers[0].1;
     if carriers
         .iter()
@@ -491,22 +592,15 @@ pub(super) fn unique_carrier_supports(carriers: &[(&SurfaceId, FiniteReal)]) -> 
 type OwnedOffsetCarriers<'a> = (&'a BodyId, Vec<(&'a SurfaceId, FiniteReal)>);
 
 pub(super) fn owned_offset_carriers<'a>(
-    ir: &'a CadIr,
+    index: &FeatureProjectionIndex<'a>,
     outputs: &'a [BodyId],
 ) -> Option<OwnedOffsetCarriers<'a>> {
     let [body] = outputs else {
         return None;
     };
-    let body_surfaces = body_surface_ids(ir, body)?;
+    let body_surfaces = index.body_surface_ids(body)?;
     let mut carriers = Vec::new();
-    let owners = procedural_surface_owners(ir);
-    for procedural in &ir.model.procedural_surfaces {
-        let Some(owner) = owners.get(&procedural.id).copied().flatten() else {
-            continue;
-        };
-        if !body_surfaces.contains(owner) {
-            continue;
-        }
+    for (_, procedural) in index.owned_procedural_surfaces(&body_surfaces) {
         let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
         else {
             continue;
@@ -519,7 +613,7 @@ pub(super) fn owned_offset_carriers<'a>(
 }
 
 pub(super) fn thicken_feature_definition(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let OwnedThickenSurfaceData {
@@ -527,9 +621,9 @@ pub(super) fn thicken_feature_definition(
         thickness,
         supports,
         direction,
-    } = owned_thicken_surface_data(ir, outputs)?;
+    } = owned_thicken_surface_data(index, outputs)?;
     let native = format!("{}:thicken-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ir, &supports, native);
+    let (faces, senses) = support_face_projection(index, &supports, native);
     let side = match direction {
         ThickenDirection::Both => Some(ThickenSide::Both),
         ThickenDirection::Signed(distance) => senses
@@ -560,15 +654,11 @@ pub(super) struct OwnedThickenSurfaceData<'a> {
 }
 
 pub(super) fn owned_thicken_surface_data<'a>(
-    ir: &'a CadIr,
+    index: &FeatureProjectionIndex<'a>,
     outputs: &'a [BodyId],
 ) -> Option<OwnedThickenSurfaceData<'a>> {
-    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
-    let output_body = ir
-        .model
-        .bodies
-        .iter()
-        .find(|candidate| candidate.id == *body)?;
+    let (body, carriers) = owned_offset_carriers(index, outputs)?;
+    let output_body = index.solid_bodies.bodies.get(body)?;
     if output_body.kind != BodyKind::Solid {
         return None;
     }
@@ -626,24 +716,17 @@ pub(super) fn owned_thicken_surface_data<'a>(
 }
 
 pub(super) fn support_face_projection(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     supports: &[SurfaceId],
     native: String,
 ) -> (
     cadmpeg_ir::features::FaceSelection,
     std::option::Option<std::vec::Vec<cadmpeg_ir::topology::Sense>>,
 ) {
-    let mut sole_faces = BTreeMap::<&SurfaceId, Option<&Face>>::new();
-    for face in &ir.model.faces {
-        sole_faces
-            .entry(&face.surface)
-            .and_modify(|sole| *sole = None)
-            .or_insert(Some(face));
-    }
     let mut selected = Vec::new();
     let mut selected_ids = BTreeSet::new();
     for support in supports {
-        let Some(&Some(face)) = sole_faces.get(support) else {
+        let Some(&Some(face)) = index.sole_faces.get(support) else {
             return (FaceSelection::Native(native), None);
         };
         if !selected_ids.insert(&face.id) {
@@ -725,7 +808,8 @@ pub(super) fn simple_hole_native_properties(
 }
 
 pub(super) fn block_placement(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
+    tolerances: &Tolerances,
     dimensions: [f64; 3],
     outputs: &[BodyId],
 ) -> Option<(BodyId, Transform)> {
@@ -790,20 +874,20 @@ pub(super) fn block_placement(
         })
     }
 
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
+    let linear_tolerance = tolerances.linear.get();
+    let angular_tolerance = tolerances.angular.get();
     if dimensions
         .iter()
         .any(|dimension| *dimension <= linear_tolerance)
     {
         return None;
     }
-    let solid_bodies = SolidBodyIndex::new(ir);
+    let solid_bodies = &index.solid_bodies;
     let body = match outputs {
         [body] => body,
         [] => {
             let mut unique = None;
-            for candidate in &ir.model.bodies {
+            for candidate in index.bodies {
                 if solid_bodies
                     .connected_solid_body_faces(&candidate.id)
                     .is_some()
@@ -818,10 +902,10 @@ pub(super) fn block_placement(
         _ => return None,
     };
     let faces = solid_bodies.connected_solid_body_faces(body)?;
-    let surfaces = last_surfaces(ir);
     let mut bands = Vec::<PlaneBand>::new();
     for face in faces.iter().copied() {
-        let geometry = surfaces
+        let geometry = index
+            .last_surfaces
             .get(&face.surface)
             .map(|surface| &surface.geometry)?;
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = geometry else {
@@ -934,31 +1018,19 @@ pub(super) fn block_placement(
 /// one face whose surface is a finite positive-radius sphere. With no native
 /// output relation, the candidate must also be unique across the model.
 pub(super) fn sphere_body_projection(
-    ir: &CadIr,
+    index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
 ) -> Option<(
     BodyId,
     cadmpeg_ir::features::FinitePoint3,
     cadmpeg_ir::scalar::PositiveLength,
 )> {
-    let solid_bodies = SolidBodyIndex::new(ir);
+    let solid_bodies = &index.solid_bodies;
     let body = match outputs {
         [body] => body,
         [] => {
-            let sphere_surfaces = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| {
-                    matches!(
-                        surface.geometry.solved(),
-                        Some(SolvedSurfaceGeometry::Sphere(_))
-                    )
-                })
-                .map(|surface| &surface.id)
-                .collect::<BTreeSet<_>>();
             let mut unique = None;
-            for candidate in &ir.model.bodies {
+            for candidate in index.bodies {
                 let Some(faces) = solid_bodies.connected_solid_body_faces(&candidate.id) else {
                     continue;
                 };
@@ -966,7 +1038,7 @@ pub(super) fn sphere_body_projection(
                     continue;
                 };
 
-                if !sphere_surfaces.contains(&face.surface) {
+                if !index.sphere_surfaces.contains(&face.surface) {
                     continue;
                 }
                 if unique.replace(&candidate.id).is_some() {
@@ -983,11 +1055,7 @@ pub(super) fn sphere_body_projection(
         return None;
     };
 
-    let surface = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)?;
+    let surface = index.first_surfaces.get(&face.surface)?;
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         return None;
     };
@@ -1599,17 +1667,23 @@ pub(super) fn symbolic_thread_feature_definition() -> FeatureDefinition {
     })
 }
 
+/// The last expression of each identity.
+pub(super) fn expressions_by_id(
+    expressions: &[crate::native::om::ParameterFormula],
+) -> BTreeMap<&str, &crate::native::om::ParameterFormula> {
+    expressions
+        .iter()
+        .map(|expression| (expression.id.as_str(), expression))
+        .collect()
+}
+
 pub(super) fn native_feature_parameters(
     uses: &[&crate::native::features::FeatureParameterUse],
-    expressions: &[crate::native::om::ParameterFormula],
+    expressions_by_id: &BTreeMap<&str, &crate::native::om::ParameterFormula>,
 ) -> BTreeMap<String, String> {
     let mut parameters = BTreeMap::new();
     for parameter_use in uses {
-        let Some(expression) = expressions
-            .iter()
-            .rev()
-            .find(|expression| expression.id == parameter_use.expression)
-        else {
+        let Some(expression) = expressions_by_id.get(parameter_use.expression.as_str()) else {
             return BTreeMap::new();
         };
         if parameters.contains_key(expression.name.as_str()) {

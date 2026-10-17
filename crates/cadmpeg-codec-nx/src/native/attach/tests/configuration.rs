@@ -8,6 +8,7 @@ use crate::native::attach::body_selection::boolean_target_output;
 use crate::native::attach::extrude_boolean_op;
 use crate::native::attach::extrude_feature_definition;
 use crate::native::attach::feature_projection::blind_hole_operations;
+use crate::native::attach::feature_projection::expressions_by_id;
 use crate::native::attach::feature_projection::hole_package_projection;
 use crate::native::attach::feature_projection::native_feature_parameters;
 use crate::native::attach::feature_projection::non_boolean_feature_definition_with_parameters;
@@ -1010,7 +1011,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
 
     ({
         let sketch = attach_sketch_graph(
-            &mut ir,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
             &label,
             &SketchSources {
                 point_uses: &[&point_use],
@@ -1035,7 +1037,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         let mut rejected_annotations = AnnotationBuilder::new();
         let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         assert!(attach_sketch_graph(
-            &mut rejected_ir,
+            &mut rejected_ir.model.sketches,
+            &mut rejected_ir.model.sketch_entities,
             &label,
             &SketchSources {
                 point_uses: &[&point_use, &point_use],
@@ -1109,7 +1112,8 @@ fn named_sketch_points_project_without_an_external_named_point() {
 
     ({
         let sketch = attach_sketch_graph(
-            &mut ir,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
             &label,
             &SketchSources {
                 point_uses: &[],
@@ -1170,7 +1174,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         parameter_use("use-b", "expression-b"),
     ];
     let use_refs = uses.iter().collect::<Vec<_>>();
-    let parameters = native_feature_parameters(&use_refs, &expressions);
+    let parameters = native_feature_parameters(&use_refs, &expressions_by_id(&expressions));
     assert_eq!(
         parameters,
         std::collections::BTreeMap::from([
@@ -1249,11 +1253,83 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),
     ];
-    assert!(native_feature_parameters(&use_refs, &duplicate_expressions,).is_empty());
-    let unresolved = [parameter_use("use-c", "missing")];
     assert!(
-        native_feature_parameters(&unresolved.iter().collect::<Vec<_>>(), &expressions,).is_empty()
+        native_feature_parameters(&use_refs, &expressions_by_id(&duplicate_expressions)).is_empty()
     );
+    let unresolved = [parameter_use("use-c", "missing")];
+    assert!(native_feature_parameters(
+        &unresolved.iter().collect::<Vec<_>>(),
+        &expressions_by_id(&expressions)
+    )
+    .is_empty());
+}
+
+#[test]
+fn nx_native_feature_parameters_match_the_backward_expression_scan() {
+    fn backward_scan(
+        uses: &[&crate::native::features::FeatureParameterUse],
+        expressions: &[crate::native::om::ParameterFormula],
+    ) -> std::collections::BTreeMap<String, String> {
+        let mut parameters = std::collections::BTreeMap::new();
+        for parameter_use in uses {
+            let Some(expression) = expressions
+                .iter()
+                .rev()
+                .find(|expression| expression.id == parameter_use.expression)
+            else {
+                return std::collections::BTreeMap::new();
+            };
+            if parameters.contains_key(expression.name.as_str()) {
+                return std::collections::BTreeMap::new();
+            }
+            parameters.insert(
+                expression.name.as_str().to_owned(),
+                expression.expression.clone(),
+            );
+        }
+        parameters
+    }
+    let expression = |id: usize, name: usize, text: usize| crate::native::om::ParameterFormula {
+        id: format!("expression-{id}"),
+        owner: None,
+        declaration: None,
+        name: crate::om::parameter_name::ParameterName::new(format!("p{name}")),
+        unit: crate::native::om::ExpressionUnit::Millimeter,
+        expression: format!("{text}"),
+        value: None,
+        source_entry: "entry".to_string(),
+        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+            .unwrap(),
+        source_offset: 0,
+    };
+    let parameter_use =
+        |id: usize, expression: usize| crate::native::features::FeatureParameterUse {
+            id: format!("use-{id}"),
+            operation_label: "operation".to_string(),
+            expression: format!("expression-{expression}"),
+            bindings: Vec::new(),
+        };
+    let mut state = 0x5eed_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from((state >> 33) % bound).unwrap()
+    };
+    let mut nonempty = 0;
+    for _ in 0..500 {
+        let expressions = (0..next(8))
+            .map(|text| expression(next(5), next(6), text))
+            .collect::<Vec<_>>();
+        let uses = (0..next(4))
+            .map(|id| parameter_use(id, next(6)))
+            .collect::<Vec<_>>();
+        let use_refs = uses.iter().collect::<Vec<_>>();
+        let parameters = native_feature_parameters(&use_refs, &expressions_by_id(&expressions));
+        assert_eq!(parameters, backward_scan(&use_refs, &expressions));
+        nonempty += usize::from(!parameters.is_empty());
+    }
+    assert!(nonempty > 50);
 }
 
 #[test]

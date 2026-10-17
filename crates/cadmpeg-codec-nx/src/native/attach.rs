@@ -52,13 +52,14 @@ use feature_projection::{
     blind_hole_body_projection, blind_hole_operations, block_placement,
     body_writing_unresolved_feature_definition, brep_feature_definition,
     counterbore_axis_placements_for_operations, counterbore_body_projection,
-    counterbore_operations, feature_source_content, hole_axis_placements_for_operations,
-    hole_body_projection, hole_package_projection, native_feature_parameters, new_body_boolean_op,
-    non_boolean_feature_definition_with_parameters, non_modeling_history_definition,
-    offset_surface_feature_definition, primary_hole_outputs, selection_indices_native,
-    simple_hole_chamfers, simple_hole_native_properties, simple_hole_operations,
-    sphere_body_projection, thicken_feature_definition, HolePackageSources, HoleProjection,
-    NewBodyEvidence, NxBlendFamily,
+    counterbore_operations, expressions_by_id, feature_source_content,
+    hole_axis_placements_for_operations, hole_body_projection, hole_package_projection,
+    native_feature_parameters, new_body_boolean_op, non_boolean_feature_definition_with_parameters,
+    non_modeling_history_definition, offset_surface_feature_definition, primary_hole_outputs,
+    selection_indices_native, simple_hole_chamfers, simple_hole_native_properties,
+    simple_hole_operations, sphere_body_projection, thicken_feature_definition,
+    FeatureProjectionIndex, HolePackageSources, HoleProjection, NewBodyEvidence, NxBlendFamily,
+    ProjectionArenas,
 };
 
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
@@ -1587,7 +1588,7 @@ fn attach_feature_operations(
     let features = &model.features;
     let parasolid_group_members = model.parasolid.group_members.as_slice();
     let data_blocks = model.om.data_blocks.as_slice();
-    let expressions = model.om.expressions.as_slice();
+    let expressions_by_id = expressions_by_id(&model.om.expressions);
     let body_bindings = model.segments.body_bindings.as_slice();
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
@@ -2386,6 +2387,14 @@ fn attach_feature_operations(
 
         ir.model.semantic_annotations.push(annotation);
     }
+    let projection_index = FeatureProjectionIndex::new(ProjectionArenas {
+        bodies: &ir.model.bodies,
+        regions: &ir.model.regions,
+        shells: &ir.model.shells,
+        faces: &ir.model.faces,
+        surfaces: &ir.model.surfaces,
+        procedural_surfaces: &ir.model.procedural_surfaces,
+    });
     for (ordinal, label) in chronological_labels.into_iter().enumerate() {
         if !projects_neutral_feature(&label.value)
             || hole_packages.internal_operations.contains(&label.id)
@@ -3890,7 +3899,9 @@ fn attach_feature_operations(
                 });
         let block_projection = if label.value == "BLOCK" {
             match block_dimension_values {
-                Some(dimensions) => block_placement(ir, dimensions, &outputs),
+                Some(dimensions) => {
+                    block_placement(&projection_index, &ir.tolerances, dimensions, &outputs)
+                }
                 None => None,
             }
         } else {
@@ -3902,7 +3913,7 @@ fn attach_feature_operations(
             }
         }
         let sphere_projection = if label.value == "SPHERE" {
-            sphere_body_projection(ir, &outputs)
+            sphere_body_projection(&projection_index, &outputs)
         } else {
             None
         };
@@ -4034,7 +4045,7 @@ fn attach_feature_operations(
             None
         };
         let offset_projection = if label.value == "OFFSET" {
-            offset_surface_feature_definition(ir, &outputs)
+            offset_surface_feature_definition(&projection_index, &outputs)
         } else {
             None
         };
@@ -4048,7 +4059,7 @@ fn attach_feature_operations(
             }
         }
         let thicken_projection = if label.value == "THICKEN_SHEET" {
-            thicken_feature_definition(ir, &outputs)
+            thicken_feature_definition(&projection_index, &outputs)
         } else {
             None
         };
@@ -4067,7 +4078,7 @@ fn attach_feature_operations(
             _ => None,
         };
         let blend_projection = if let Some(family) = blend_family {
-            blend_feature_definition(ir, &outputs, family)
+            blend_feature_definition(&projection_index, &outputs, family)
         } else {
             None
         };
@@ -4147,10 +4158,12 @@ fn attach_feature_operations(
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
+        let native_parameters =
+            native_feature_parameters(operation_parameter_uses, &expressions_by_id);
         let sketch = if label.value == "SKETCH" {
             attach_sketch_graph(
-                ir,
+                &mut ir.model.sketches,
+                &mut ir.model.sketch_entities,
                 label,
                 &SketchSources {
                     point_uses: sketch_point_uses_by_operation
@@ -4353,7 +4366,7 @@ fn attach_feature_operations(
                 ))
                 .ok_or_else(|| CodecError::malformed("NX feature result body identity is blank"))?;
                 append_feature_result_topology(
-                    ir,
+                    &mut ir.model.feature_result_topologies,
                     PendingFeatureResult {
                         result_id: result_topology_id(key, Some(write.ordinal))?,
                         output_of: &id,
@@ -4377,7 +4390,7 @@ fn attach_feature_operations(
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
                 append_feature_result_topology(
-                    ir,
+                    &mut ir.model.feature_result_topologies,
                     PendingFeatureResult {
                         result_id: result_topology_id(key, None)?,
                         output_of: &id,
@@ -4467,7 +4480,7 @@ struct PendingFeatureResult<'feature> {
 }
 
 fn append_feature_result_topology(
-    ir: &mut CadIr,
+    feature_result_topologies: &mut Vec<FeatureResultTopology>,
     pending: PendingFeatureResult<'_>,
     losses: &mut Vec<LossNote>,
 ) {
@@ -4495,7 +4508,7 @@ fn append_feature_result_topology(
 
     let result =
         FeatureResultTopology::new(result_id, output_of.clone(), members, Some(native_ref));
-    ir.model.feature_result_topologies.push(result);
+    feature_result_topologies.push(result);
 }
 
 fn operation_body_write_result_group_members(
@@ -4641,7 +4654,8 @@ fn native_primary_body_references<'a>(
 }
 
 fn attach_sketch_graph(
-    ir: &mut CadIr,
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
     label: &crate::native::features::FeatureOperationLabel,
     sources: &SketchSources<'_>,
     annotations: &mut AnnotationBuilder,
@@ -4751,7 +4765,7 @@ fn attach_sketch_graph(
             Some("SKETCH"),
         );
         annotations.exactness(sketch_id.as_str(), Exactness::Derived);
-        emit_sketch(ir, label, &sketch_id, entities);
+        emit_sketch(sketches, sketch_entities, label, &sketch_id, entities);
         return Some(sketch_id);
     }
     let mut groups_by_id =
@@ -4861,7 +4875,7 @@ fn attach_sketch_graph(
         Some("SKETCH"),
     );
     annotations.exactness(sketch_id.as_str(), Exactness::Derived);
-    emit_sketch(ir, label, &sketch_id, entities);
+    emit_sketch(sketches, sketch_entities, label, &sketch_id, entities);
     Some(sketch_id)
 }
 
@@ -4927,17 +4941,16 @@ fn sketch_entity_identity(prefix: &str, key: &str) -> Option<SketchEntityId> {
 }
 
 fn emit_sketch(
-    ir: &mut CadIr,
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
     label: &crate::native::features::FeatureOperationLabel,
     sketch_id: &SketchId,
     entities: Vec<(u64, SketchEntity)>,
 ) {
     let name = label.value.clone();
     let native_ref = label.id.clone();
-    ir.model
-        .sketch_entities
-        .extend(entities.into_iter().map(|(_, entity)| entity));
-    ir.model.sketches.push(Sketch {
+    sketch_entities.extend(entities.into_iter().map(|(_, entity)| entity));
+    sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some(name),
         configuration: None,

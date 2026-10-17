@@ -18,8 +18,10 @@ use crate::native::attach::feature_projection::plane_annulus_witness;
 use crate::native::attach::feature_projection::thicken_feature_definition;
 use crate::native::attach::feature_projection::CarrierIndex;
 use crate::native::attach::feature_projection::CounterboreDimensions;
+use crate::native::attach::feature_projection::FeatureProjectionIndex;
 use crate::native::attach::feature_projection::HoleProjection;
 use crate::native::attach::feature_projection::NxBlendFamily;
+use crate::native::attach::feature_projection::ProjectionArenas;
 use crate::native::attach::feature_projection::SolidBodyIndex;
 use crate::native::attach::preceding_operation_dependency;
 use crate::test_support::test_bytes::attach_test_body_surface;
@@ -743,7 +745,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
     ({
         let project_offset = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            offset_surface_feature_definition(ir, outputs)
+            offset_surface_feature_definition(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+            )
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -873,7 +878,10 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     ({
         let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            thicken_feature_definition(ir, outputs)
+            thicken_feature_definition(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+            )
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -993,7 +1001,10 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
 
     ({
         let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-            thicken_feature_definition(ir, outputs)
+            thicken_feature_definition(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+            )
         };
 
         let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1098,7 +1109,11 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
 
     let project_blend =
         |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId], family: NxBlendFamily| {
-            blend_feature_definition(ir, outputs, family)
+            blend_feature_definition(
+                &FeatureProjectionIndex::new(ProjectionArenas::of(ir)),
+                outputs,
+                family,
+            )
         };
     let project_bipartition = |pairs: Vec<[SurfaceId; 2]>| {
         blend_support_bipartition(&pairs).map(|sides| (sides.first, sides.second))
@@ -1355,7 +1370,6 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
 
 #[test]
 fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
-    use crate::native::attach::feature_projection::body_faces;
     use cadmpeg_ir::ids::{FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{BodyKind, Face, Shell};
 
@@ -1479,9 +1493,99 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
         assert_eq!(project(index.connected_solid_body_faces(body_id)), expected);
         assert_eq!(project(index.body_faces(body_id)), scan(body_id, false));
     }
-    let last = &ir.model.bodies.last().unwrap().id;
-    assert_eq!(project(body_faces(&ir, last)), scan(last, false));
     assert!(connected > 200);
+}
+
+#[test]
+fn feature_projection_index_matches_the_owned_procedural_scan() {
+    let surface_id = |ordinal: usize| {
+        SurfaceId::mint(format!("test:model:entity#carrier-{ordinal}")).expect("identity grammar")
+    };
+    let construction_id = |ordinal: usize| {
+        ProceduralSurfaceId::mint(format!("test:model:entity#construction-{ordinal}"))
+            .expect("identity grammar")
+    };
+    let mut state = 0x0b5e_55ed_u64;
+    let mut next = |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        usize::try_from((state >> 33) % bound).unwrap()
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    for _ in 0..40 {
+        let geometry = if next(4) == 0 {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
+        } else {
+            SurfaceGeometry::Procedural {
+                construction: construction_id(next(24)),
+                cache: None,
+            }
+        };
+        ir.model.surfaces.push(Surface {
+            id: surface_id(next(30)),
+            geometry,
+            source_object: None,
+        });
+    }
+    for ordinal in 0..40 {
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            construction_id(next(28)),
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    surface_id(ordinal),
+                    1.0,
+                    Some(1),
+                    Some(1),
+                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
+                )
+                .unwrap(),
+            ),
+            None,
+        ));
+    }
+    let mut owners = BTreeMap::new();
+    for surface in &ir.model.surfaces {
+        if let Some(construction) = surface.geometry.procedural_construction() {
+            owners
+                .entry(construction)
+                .and_modify(|owner| *owner = None)
+                .or_insert(Some(&surface.id));
+        }
+    }
+    let scan = |surfaces: &std::collections::BTreeSet<SurfaceId>| {
+        ir.model
+            .procedural_surfaces
+            .iter()
+            .filter_map(|procedural| {
+                let owner = owners.get(&procedural.id).copied().flatten()?;
+                surfaces
+                    .contains(owner)
+                    .then_some((owner, std::ptr::from_ref(procedural)))
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let index = FeatureProjectionIndex::new(ProjectionArenas::of(&ir));
+    let mut owned = 0;
+    for _ in 0..200 {
+        let surfaces = (0..next(16))
+            .map(|_| surface_id(next(32)))
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = scan(&surfaces);
+        let actual = index
+            .owned_procedural_surfaces(&surfaces)
+            .into_iter()
+            .map(|(owner, procedural)| (owner, std::ptr::from_ref(procedural)))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+        owned += expected.len();
+    }
+    assert!(owned > 100);
 }
 
 /// The loop-edge comparison the edge-set test replaced.

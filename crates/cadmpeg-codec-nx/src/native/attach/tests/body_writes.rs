@@ -474,7 +474,7 @@ fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
     let original = ir.model.clone();
     let mut losses = Vec::new();
     crate::native::attach::append_feature_result_topology(
-        &mut ir,
+        &mut ir.model.feature_result_topologies,
         crate::native::attach::PendingFeatureResult {
             result_id: "nx:history:result#1".try_into().unwrap(),
             output_of: &"nx:history:feature#1".try_into().unwrap(),
