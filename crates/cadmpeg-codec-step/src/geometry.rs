@@ -7,6 +7,7 @@
 //! rational geometry.
 
 use cadmpeg_ir::geometry::{
+    analytic::ConeSurface,
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::PcurveGeometry,
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -468,6 +469,9 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
                 &format!("'',{pl},{}", e.real(radius)),
             )
         }
+        SolvedSurfaceGeometry::Cone(cone_surface) if cone_surface.half_angle().get() == 0.0 => {
+            zero_angle_cone(e, cone_surface)?
+        }
         // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
         // Reversing the axis and angle maps a negative-angle cone exactly under
         // the parameter change `(u, v) -> (-u, -v)`.
@@ -524,6 +528,40 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => return None,
     })
+}
+
+/// Emit a cone of semi-angle 0, which `conical_surface` cannot hold.
+///
+/// The cone is a cylinder over its origin section, in the same `(u, v)` chart:
+/// a circular section is a `CYLINDRICAL_SURFACE`, and an elliptical one the
+/// `SURFACE_OF_LINEAR_EXTRUSION` of its `ELLIPSE` along the unit axis vector.
+/// A zero section radius is a line, which no surface record holds.
+fn zero_angle_cone(e: &mut Emitter, cone: &ConeSurface) -> Option<Ref> {
+    let origin = cone.origin().get();
+    let axis = *cone.frame().axis();
+    let ref_direction = *cone.frame().reference();
+    let radius = cone.radius().get();
+    let minor_radius = radius * cone.ratio().get();
+    if radius <= 0.0 || minor_radius <= 0.0 {
+        return None;
+    }
+    let pl = placement(e, origin, axis, ref_direction);
+    if cone.ratio().get() == 1.0 {
+        return Some(e.emit(
+            "CYLINDRICAL_SURFACE",
+            &format!("'',{pl},{}", e.real(radius)),
+        ));
+    }
+    let section = e.emit(
+        "ELLIPSE",
+        &format!("'',{pl},{},{}", e.real(radius), e.real(minor_radius)),
+    );
+    let extrusion = direction(e, axis.into());
+    let vector = e.emit("VECTOR", &format!("'',{extrusion},{}", e.real(1.0)));
+    Some(e.emit(
+        "SURFACE_OF_LINEAR_EXTRUSION",
+        &format!("'',{section},{vector}"),
+    ))
 }
 
 /// Emit an analytic or NURBS 3D curve carrier.

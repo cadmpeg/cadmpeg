@@ -264,7 +264,7 @@ fn partition_values_require_a_unique_entity_reference() {
 fn partition_character_values_can_be_owned_by_a_field_name_list() {
     {
         let mut bytes = parasolid_entity_records_stream();
-        let definition_offset = crate::parasolid::attribute_definitions(&bytes).unwrap()[0].offset;
+        let definition_offset = crate::parasolid::attribute_definitions(&bytes)[0].offset;
         bytes[definition_offset + 24..definition_offset + 26].copy_from_slice(&34u16.to_be_bytes());
         bytes.extend_from_slice(&[0, 0x63]);
         bytes.extend_from_slice(&1u32.to_be_bytes());
@@ -566,14 +566,14 @@ fn attribute_owner_grouping_retains_trailing_references() {
 }
 
 #[test]
-fn overlapping_attribute_identifiers_skip_the_definition_scan_at_its_work_bound() {
+fn overlapping_attribute_identifiers_are_rejected_in_one_pass() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     // Every sixteenth byte starts a type-79 identifier whose name runs to the
-    // stream end, so the candidates declare about 2^27 name bytes.
+    // stream end, so the candidates declare about 2^31 name bytes.
     let header = b"PS\0\0 (partition) SCH_TEST_1_9999";
     let first = header.len();
-    let mut stream = vec![b'.'; 1 << 16];
+    let mut stream = vec![b'.'; 1 << 18];
     stream[..first].copy_from_slice(header);
     for offset in (first..stream.len() - 8).step_by(16) {
         let name_len = u32::try_from(stream.len() - offset - 8).unwrap();
@@ -581,18 +581,32 @@ fn overlapping_attribute_identifiers_skip_the_definition_scan_at_its_work_bound(
         stream[offset + 2..offset + 6].copy_from_slice(&name_len.to_be_bytes());
         stream[offset + 6..offset + 8].copy_from_slice(&2_u16.to_be_bytes());
     }
-    assert!(parasolid::attribute_definitions(&stream).is_none());
+    stream.extend_from_slice(&[0, 0x4f]);
+    stream.extend_from_slice(&5u32.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(b"CLASS");
+    stream.extend_from_slice(&[0, 0x50]);
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&20u16.to_be_bytes());
+    stream.extend_from_slice(&1u16.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&8000u32.to_be_bytes());
+    stream.extend_from_slice(&[0; 8]);
+    stream.extend_from_slice(&1u16.to_be_bytes());
+    stream.extend_from_slice(&[0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
+    stream.extend_from_slice(&[2, 3]);
+    stream.extend_from_slice(&[0, 0x4f]);
+    let definitions = parasolid::attribute_definitions(&stream);
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].name.as_str(), "CLASS");
 
     let file = crate::test_support::test_prt::prt_with_partition(&stream);
     let result = crate::NxCodec
         .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let bounded = result
+    assert!(!result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(bounded.len(), 1);
-    assert!(bounded[0].message.contains("Parasolid stream #0"));
+        .any(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind()));
 }

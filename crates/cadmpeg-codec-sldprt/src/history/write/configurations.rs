@@ -22,6 +22,7 @@ use crate::history::parameters::{
 };
 use crate::history::project::project_configurations;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
+use crate::resolved_features::scalars::FeatureObjectNames;
 
 /// Resolve neutral/native configuration edit authority before writing.
 ///
@@ -359,14 +360,12 @@ fn patch_configuration_parameter_scalars(
             .iter()
             .map(|name| (name.id.as_str(), name.value.as_str()))
             .collect::<HashMap<_, _>>();
+        let object_names = FeatureObjectNames::new(&lane.names);
         let mut starts = native
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
-            .filter_map(|record| {
-                crate::resolved_features::scalars::feature_object_name(record, lane)
-                    .map(|name| (name.offset, record))
-            })
+            .filter_map(|record| object_names.of(record).map(|name| (name.offset, record)))
             .collect::<Vec<_>>();
         starts.sort_by_key(|(offset, _)| *offset);
         for (parameter_id, value) in &configuration.parameter_values {

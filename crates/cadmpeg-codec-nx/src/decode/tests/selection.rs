@@ -1956,3 +1956,5 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
     );
     assert!(!output_free_local_body_construction(&feature));
 }
+
+mod body_membership;

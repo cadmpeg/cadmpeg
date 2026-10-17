@@ -476,12 +476,14 @@ impl ExactSignedSum {
         }
         let mut units = 0_u64;
         if highest_bit >= SUBNORMAL_UNIT_BIT {
-            for bit in (SUBNORMAL_UNIT_BIT..=highest_bit).rev() {
-                units = (units << 1) | u64::from(bit_is_set(&magnitude, bit));
-            }
+            units = bit_field(
+                &magnitude,
+                SUBNORMAL_UNIT_BIT,
+                highest_bit + 1 - SUBNORMAL_UNIT_BIT,
+            );
         }
         let guard = bit_is_set(&magnitude, SUBNORMAL_UNIT_BIT - 1);
-        let sticky = (0..SUBNORMAL_UNIT_BIT - 1).any(|bit| bit_is_set(&magnitude, bit));
+        let sticky = any_bit_below(&magnitude, SUBNORMAL_UNIT_BIT - 1);
         if guard && (sticky || units & 1 != 0) {
             units += 1;
         }
@@ -528,6 +530,27 @@ fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
     words[bit / 64] & (1_u64 << (bit % 64)) != 0
 }
 
+/// The `count` bits of `words` from bit `low` upwards, `count` at most 64,
+/// with bit `low` as the least significant.
+fn bit_field(words: &[u64; EXACT_SUM_WORDS], low: usize, count: usize) -> u64 {
+    let (word, offset) = (low / 64, low % 64);
+    let mut field = words[word] >> offset;
+    if offset != 0 && word + 1 < EXACT_SUM_WORDS {
+        field |= words[word + 1] << (64 - offset);
+    }
+    if count < 64 {
+        field & ((1_u64 << count) - 1)
+    } else {
+        field
+    }
+}
+
+/// Whether any bit of `words` below `bit` is set.
+fn any_bit_below(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
+    let (word, offset) = (bit / 64, bit % 64);
+    words[..word].iter().any(|value| *value != 0) || words[word] & ((1_u64 << offset) - 1) != 0
+}
+
 /// The scaled form of an accumulator magnitude whose highest set bit is
 /// `highest_bit`, rounded to 53 bits, half to even, with `negative` as its
 /// sign.
@@ -537,17 +560,18 @@ fn rounded_magnitude(
     highest_bit: u16,
 ) -> Option<ScaledValue> {
     let keep = (highest_bit + 1).min(53);
-    let mut significand = 0_u64;
-    for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
-        significand = (significand << 1) | u64::from(bit_is_set(magnitude, usize::from(bit)));
-    }
+    let mut significand = bit_field(
+        magnitude,
+        usize::from(highest_bit + 1 - keep),
+        usize::from(keep),
+    );
     if keep == 53 {
         let guard_bit = highest_bit
             .checked_sub(keep)
             .is_some_and(|bit| bit_is_set(magnitude, usize::from(bit)));
-        let sticky = highest_bit.checked_sub(keep).is_some_and(|bit| {
-            (0..bit).any(|candidate| bit_is_set(magnitude, usize::from(candidate)))
-        });
+        let sticky = highest_bit
+            .checked_sub(keep)
+            .is_some_and(|bit| any_bit_below(magnitude, usize::from(bit)));
         if guard_bit && (sticky || significand & 1 != 0) {
             significand += 1;
             if significand == 1_u64 << 53 {
