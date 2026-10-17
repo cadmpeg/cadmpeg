@@ -724,8 +724,17 @@ pub(crate) fn project_compact_edge_selections(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let feature_ids_by_native = compact_edge_feature_ids(features);
+    project_compact_edge_selections_with_ids(features, &feature_ids_by_native, histories, lanes)
+}
+
+/// Feature ids by native ref, for compact edge selection; a repeated native
+/// ref keeps its last feature.
+pub(crate) fn compact_edge_feature_ids(
+    features: &[cadmpeg_ir::features::Feature],
+) -> HashMap<String, cadmpeg_ir::features::FeatureId> {
     let mut feature_ids_by_native = HashMap::new();
-    for feature in features.iter() {
+    for feature in features {
         let Some(native_ref) = feature.native_ref.as_ref() else {
             continue;
         };
@@ -736,6 +745,18 @@ pub(crate) fn project_compact_edge_selections(
         }
         feature_ids_by_native.insert(native_ref.to_owned(), id);
     }
+    feature_ids_by_native
+}
+
+/// Project the lanes' compact edge selections into `features`, resolving
+/// producer refs through `feature_ids_by_native`, which may cover features
+/// outside `features`.
+pub(crate) fn project_compact_edge_selections_with_ids(
+    features: &mut [cadmpeg_ir::features::Feature],
+    feature_ids_by_native: &HashMap<String, cadmpeg_ir::features::FeatureId>,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut selections = HashMap::<&str, Vec<&FeatureInputEdgeSelection>>::new();
     for selection in lanes.iter().flat_map(|lane| &lane.edge_selections) {
         let group = selections

@@ -875,6 +875,148 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
 }
 
 #[test]
+fn supplemental_edge_paths_match_projecting_every_configured_feature() {
+    use cadmpeg_ir::features::{
+        edge_treatments::{ChamferGroup, ChamferSpec},
+        ConfigurationEvaluation, ConfigurationFeatureState, EdgeSelection,
+        Feature as NeutralFeature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
+
+    let id = |name: &str| FeatureId::mint(format!("synthetic:test:id#{name}")).unwrap();
+    let unresolved = FeatureDefinition::Operation(FeatureOperation::Chamfer {
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+            edges: EdgeSelection::Unresolved,
+            spec: ChamferSpec::Distance {
+                distance: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            },
+        }),
+        flip_direction: false,
+    });
+    let neutral_feature = |name: &str, ordinal, native_ref: &str, definition| NeutralFeature {
+        id: id(name),
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        native_ref: Some(native_ref.into()),
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features = vec![
+        neutral_feature(
+            "producer",
+            0,
+            "producer-native",
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        neutral_feature("consumer-a", 1, "consumer-native", unresolved.clone()),
+        neutral_feature("consumer-b", 2, "consumer-native", unresolved.clone()),
+        neutral_feature("second", 3, "second-native", unresolved.clone()),
+        neutral_feature("unselected", 4, "unselected-native", unresolved.clone()),
+    ];
+    for ordinal in [1, 2] {
+        let mut configuration = design_configuration(
+            &format!("configuration-{ordinal}"),
+            ordinal,
+            Some(ordinal),
+            None,
+        );
+        for feature in &ir.model.features {
+            if ordinal == 1 && feature.id == id("consumer-b") {
+                continue;
+            }
+            let evaluation = if ordinal == 2 && feature.id == id("second") {
+                ConfigurationEvaluation::Suppressed {}
+            } else {
+                ConfigurationEvaluation::Active {
+                    outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                }
+            };
+            configuration.feature_states.insert(
+                feature.id.clone(),
+                ConfigurationFeatureState {
+                    evaluation,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    definition: feature.evaluation.definition().clone(),
+                },
+            );
+        }
+        ir.model.configurations.push(configuration);
+    }
+    let mut lanes = Vec::new();
+    for slot in ["1", "2"] {
+        let mut lane = feature_input_lane(
+            &format!("sldprt:feature-input:config-objects#{slot}"),
+            Some(slot),
+        );
+        for (ordinal, (feature_ref, terminal)) in [
+            ("consumer-native", "producer-native"),
+            ("second-native", "consumer-native"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            lane.edge_selections
+                .push(crate::records::FeatureInputEdgeSelection {
+                    id: format!("selection-{ordinal}"),
+                    parent: lane.id.clone(),
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                    offset: 100,
+                    object_name_ref: "name".into(),
+                    feature_ref: feature_ref.into(),
+                    local_edge_ids: vec![7],
+                    components: Vec::new(),
+                    references: Vec::new(),
+                    producer_feature_refs: vec![terminal.into()],
+                    terminal_feature_ref: Some(terminal.into()),
+                });
+        }
+        lanes.push(lane);
+    }
+
+    let mut expected = ir.clone();
+    for (configuration_index, lane) in lanes.iter().enumerate() {
+        let states = &expected.model.configurations[configuration_index].feature_states;
+        let mut features = expected.model.features.clone();
+        for feature in &mut features {
+            if let Some(state) = states.get(&feature.id) {
+                super::apply_configuration_state(feature, state);
+            }
+        }
+        crate::resolved_features::projections::project_compact_edge_selections(
+            &mut features,
+            &[],
+            std::slice::from_ref(lane),
+        )
+        .unwrap();
+        let states = &mut expected.model.configurations[configuration_index].feature_states;
+        for feature in features {
+            if let Some(state) = states.get_mut(&feature.id) {
+                state.dependencies = feature.dependencies;
+                state.definition = feature.evaluation.into_parts().0;
+            }
+        }
+    }
+    project_configuration_supplemental_edge_selections(&mut ir, &lanes).unwrap();
+
+    assert_eq!(ir, expected);
+    for configuration in &ir.model.configurations {
+        assert_ne!(
+            configuration.feature_states[&id("second")].definition,
+            unresolved
+        );
+        assert_eq!(
+            configuration.feature_states[&id("unselected")].definition,
+            unresolved
+        );
+    }
+}
+
+#[test]
 fn configuration_offset_plane_inherits_shared_reference() {
     use cadmpeg_ir::{
         features::{DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureOperation},
