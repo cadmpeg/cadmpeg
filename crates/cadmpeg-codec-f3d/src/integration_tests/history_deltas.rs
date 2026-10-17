@@ -180,8 +180,11 @@ fn history_deltas_match_snapshots() {
                     header.width
                 });
             let bytes = scan.entry_bytes(&brep.name).unwrap();
+            // The oracle compares bound topology, so binding runs without its work cap.
+            let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
             if let Some(mut history) =
-                crate::history::decode(&ctx, bytes, &brep.name, width, &mut allowance).unwrap()
+                crate::history::decode(&ctx, bytes, &brep.name, width, &mut allowance, &work)
+                    .unwrap()
             {
                 assert!(
                     history
@@ -191,8 +194,9 @@ fn history_deltas_match_snapshots() {
                     "{path}: unbound history {}",
                     history.id
                 );
-                let stats = crate::history::binding::bind(&ctx, history.states_mut(), bytes, width)
-                    .unwrap();
+                let stats =
+                    crate::history::binding::bind(&ctx, history.states_mut(), bytes, width, &work)
+                        .unwrap();
                 history.release_topologies();
                 let full_started = std::time::Instant::now();
                 let decoded = full_decode(&ctx, &history, bytes, width);

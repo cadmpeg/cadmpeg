@@ -19,9 +19,16 @@ fn decoded_histories() -> Vec<AsmHistory> {
         ["BREP.first.smbh", "BREP.second.smbh"]
             .into_iter()
             .map(|stream| {
-                crate::history::decode(ctx, &SCALE.history_smbh(), stream, RefWidth::Eight, &mut {
-                    u64::MAX
-                })
+                crate::history::decode(
+                    ctx,
+                    &SCALE.history_smbh(),
+                    stream,
+                    RefWidth::Eight,
+                    &mut { u64::MAX },
+                    &cadmpeg_core::decode::WorkBudget::new(
+                        crate::history::binding::MAX_HISTORY_BINDING_WORK,
+                    ),
+                )
                 .unwrap()
                 .unwrap()
             })

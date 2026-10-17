@@ -9,11 +9,20 @@ use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistorical
 use cadmpeg_asm::brep::attributes::{attribute_next, attribute_owner};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
+use cadmpeg_core::decode::{work_units, WorkBudget};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
 mod indexed;
 use indexed::IndexedTopology;
+
+/// Local work cap for historical topology binding, in history records
+/// decoded, shared by the history streams of one decode. A delta that the
+/// incremental path cannot rebind decodes every live record again, so the
+/// work grows with the state count times the live record count. A stream
+/// that reaches the cap keeps its bulletin boards and history records
+/// without historical topology.
+pub(crate) const MAX_HISTORY_BINDING_WORK: usize = 1 << 23;
 
 #[derive(Debug, Default)]
 pub(crate) struct Statistics {
@@ -29,6 +38,7 @@ pub(crate) fn bind(
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: RefWidth,
+    work: &WorkBudget,
 ) -> Result<Statistics, cadmpeg_core::CodecError> {
     let started = Instant::now();
     let mut stats = Statistics::default();
@@ -51,7 +61,7 @@ pub(crate) fn bind(
     let saved_limit = cadmpeg_asm::asm_header::parse(bytes)
         .and_then(|header| header.metadata.entity_count)
         .and_then(|count| i64::try_from(count).ok());
-    let mut binder = Binder::new(&archive, saved_limit);
+    let mut binder = Binder::new(&archive, saved_limit, work);
     let mut newer_index: Option<usize> = None;
     let mut current = IndexedTopology::default();
     let mut newer_versions = BTreeMap::new();
@@ -829,12 +839,16 @@ fn decode_slots(
     slots: &Slots,
     bytes: &[u8],
     stats: &mut Statistics,
+    work: &WorkBudget,
     subtypes: Option<&cadmpeg_asm::nurbs::toks::SubtypeTable>,
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
     let records = slots
         .iter()
         .filter_map(|slot| live.table.get(slot).map(|record| (*record).clone()))
         .collect::<Vec<_>>();
+    if !work.charge_by(work_units(records.len())) {
+        return Ok(None);
+    }
     stats.decoded_records += records.len();
     let result = match subtypes {
         Some(table) => crate::brep::decode_history_with_subtypes(ctx, &records, bytes, table),
@@ -866,12 +880,18 @@ struct Binder<'a> {
     saved_limit: Option<i64>,
     subtype_table: Option<cadmpeg_asm::nurbs::toks::SubtypeTable>,
     definitions: Vec<Definition>,
+    work: &'a WorkBudget,
 }
 
 impl<'a> Binder<'a> {
-    fn new(archive: &'a HistoricalRecordArchive, saved_limit: Option<i64>) -> Self {
+    fn new(
+        archive: &'a HistoricalRecordArchive,
+        saved_limit: Option<i64>,
+        work: &'a WorkBudget,
+    ) -> Self {
         Self {
             saved_limit,
+            work,
             subtype_table: None,
             definitions: Vec::new(),
             archive,
@@ -1388,6 +1408,7 @@ impl<'a> Binder<'a> {
             &input,
             bytes,
             stats,
+            self.work,
             self.subtype_table.as_ref(),
         )?
         else {
@@ -1440,6 +1461,7 @@ impl<'a> Binder<'a> {
                 &container_input,
                 bytes,
                 stats,
+                self.work,
                 self.subtype_table.as_ref(),
             )?
             else {
@@ -1544,6 +1566,7 @@ impl<'a> Binder<'a> {
             &self.live.table.keys().copied().collect(),
             bytes,
             stats,
+            self.work,
             None,
         )
     }

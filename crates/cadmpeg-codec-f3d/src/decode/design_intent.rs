@@ -5,7 +5,7 @@
 //! not write the session; the caller merges [`DesignOutputs`].
 
 use cadmpeg_core::container::ContainerRole;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     assets::Asset,
@@ -28,6 +28,7 @@ use super::prereqs::{
 };
 use super::{push_loss_vec, F3dLossCode, MeshProjection};
 use crate::container::{self, ContainerScan};
+use crate::history::binding::MAX_HISTORY_BINDING_WORK;
 use crate::history_records::AsmHistory;
 use crate::native::F3dNative;
 use crate::records::{
@@ -335,6 +336,7 @@ fn decode_asm_history(
     scan: &ContainerScan,
     history_brep: &container::BrepFacts,
     remaining_retained_bytes: &mut u64,
+    binding_work: &WorkBudget,
 ) -> Result<Option<AsmHistory>, CodecError> {
     let bytes = scan.entry_bytes(&history_brep.name)?;
     crate::history::decode(
@@ -343,6 +345,7 @@ fn decode_asm_history(
         &history_brep.name,
         history_ref_width(history_brep),
         remaining_retained_bytes,
+        binding_work,
     )
 }
 
@@ -380,12 +383,31 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let mut model = DesignModel::default();
     let mut losses = Vec::new();
     let mut remaining_retained_bytes = prereqs.history_retained_allowance;
+    let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;
+    let mut unbound_histories = 0_usize;
     for history_brep in container::history_breps(scan) {
-        if let Some(history) =
-            decode_asm_history(ctx, scan, history_brep, &mut remaining_retained_bytes)?
-        {
+        let binding_work = WorkBudget::new(remaining_binding_work);
+        let history = decode_asm_history(
+            ctx,
+            scan,
+            history_brep,
+            &mut remaining_retained_bytes,
+            &binding_work,
+        )?;
+        unbound_histories += usize::from(binding_work.exhausted());
+        remaining_binding_work = binding_work.remaining();
+        if let Some(history) = history {
             design.asm_histories.push(history);
         }
+    }
+    if unbound_histories != 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::HistoryBindingWorkExceeded,
+            format_args!(
+                "{unbound_histories} ASM history stream(s) keep their bulletin boards and history records without historical topology because binding exceeded the local work cap MAX_HISTORY_BINDING_WORK ({MAX_HISTORY_BINDING_WORK} decoded history records)."
+            ),
+        );
     }
     design.persistent_references =
         crate::design::decode::sketch::decode_persistent_references(scan)?;

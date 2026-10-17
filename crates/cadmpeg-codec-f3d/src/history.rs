@@ -147,13 +147,16 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
 /// `remaining_retained_bytes` is the session's remaining retained-byte allowance,
 /// less the estimates reserved for earlier history streams. A history whose
-/// estimate does not fit keeps only its state headers.
+/// estimate does not fit keeps only its state headers. `binding_work` bounds
+/// the topology binding of the history; a history that exhausts it has no
+/// historical topology.
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     width: RefWidth,
     remaining_retained_bytes: &mut u64,
+    binding_work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let framing = HistoryFraming::scan(bytes, stream);
     let mut states = Vec::new();
@@ -199,7 +202,7 @@ pub(crate) fn decode(
             state.records = Vec::new();
         }
     } else {
-        bind_complete_record_tables(ctx, &mut states, bytes, width)?;
+        bind_complete_record_tables(ctx, &mut states, bytes, width, binding_work)?;
     }
     if states.is_empty() {
         return Ok(None);
@@ -658,8 +661,9 @@ fn bind_complete_record_tables(
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: RefWidth,
+    work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    binding::bind(ctx, states, bytes, width).map(|_| ())
+    binding::bind(ctx, states, bytes, width, work).map(|_| ())
 }
 
 pub(crate) fn decode_record_archive(
