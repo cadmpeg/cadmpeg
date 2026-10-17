@@ -7,7 +7,7 @@ use cadmpeg_ir::units::FinitePoint2;
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -33,6 +33,30 @@ const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
 const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
 const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
+/// Work one surface-owner pass may spend on trims, containment tests and
+/// vertex measures. Tables left when it runs out stay unassigned.
+const TESSELLATION_OWNER_WORK: usize = 1 << 30;
+
+/// Charges a step over `left` × `right` items. A product past `usize` cannot
+/// be paid, so it exhausts the budget.
+fn charge_product(work: &WorkBudget, left: usize, right: usize) -> bool {
+    let Some(units) = left.checked_mul(right) else {
+        work.exhaust();
+        return false;
+    };
+    work.charge_by(units)
+}
+
+fn owner_work_capped_loss(skipped: usize, work_limit: usize) -> LossNote {
+    crate::loss::SldprtLossCode::TessellationOwnerWorkCapped.note(format!(
+        "{skipped} DisplayLists tessellation table(s) were left without a surface owner because \
+         owner assignment exceeded the local work cap TESSELLATION_OWNER_WORK ({work_limit})."
+    ))
+}
+
+fn needs_surface_owner(mesh: &cadmpeg_ir::tessellation::Tessellation) -> bool {
+    mesh.body.is_none() && mesh.faces.is_empty() && mesh.vertex_count() != 0
+}
 
 #[cfg(test)]
 thread_local! {
@@ -802,10 +826,22 @@ struct SurfaceCandidate<'a> {
 /// must provide a forward-evaluated parameter witness within the face or
 /// display quantization tolerance; an unconstrained nearest-support fit is
 /// not an ownership witness.
+///
+/// The pass spends at most [`TESSELLATION_OWNER_WORK`]. Once spent, the
+/// remaining tables stay unassigned and one loss counts them.
 pub(crate) fn assign_unique_surface_owners(
     ctx: &DecodeContext<'_>,
     model: &mut cadmpeg_ir::document::Model,
     losses: &mut Vec<LossNote>,
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    assign_unique_surface_owners_within(ctx, model, losses, TESSELLATION_OWNER_WORK)
+}
+
+fn assign_unique_surface_owners_within(
+    ctx: &DecodeContext<'_>,
+    model: &mut cadmpeg_ir::document::Model,
+    losses: &mut Vec<LossNote>,
+    work_limit: usize,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     for face in &model.faces {
         if let Some(stated) = face.tolerance {
@@ -818,6 +854,9 @@ pub(crate) fn assign_unique_surface_owners(
                 )));
             }
         }
+    }
+    if !model.tessellations.iter().any(needs_surface_owner) {
+        return Ok(Vec::new());
     }
     let surfaces = model
         .surfaces
@@ -876,7 +915,9 @@ pub(crate) fn assign_unique_surface_owners(
         vertices: &vertices,
         points: &points,
         curves: &curves,
+        coordinate_scale: trim_coordinate_scale(&points),
     };
+    let work = WorkBudget::new(work_limit);
     let mut candidates = Vec::new();
     for face in &model.faces {
         let candidate = (|| {
@@ -900,14 +941,21 @@ pub(crate) fn assign_unique_surface_owners(
             })
         })();
         if let Some(mut candidate) = candidate {
-            candidate.trim = analytic_trim(face, candidate.surface, &topology, losses);
+            candidate.trim = analytic_trim(face, candidate.surface, &topology, &work);
             candidates.push(candidate);
         }
     }
 
     let mut assigned = Vec::new();
+    let mut capped = 0usize;
     for mesh in &mut model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertex_count() == 0 {
+        if !needs_surface_owner(mesh) {
+            continue;
+        }
+        // A trim or containment test cut short by the budget is not an
+        // ownership answer, so an exhausted pass assigns nothing further.
+        if work.exhausted() {
+            capped += 1;
             continue;
         }
         let coordinate_scale = mesh
@@ -920,12 +968,19 @@ pub(crate) fn assign_unique_surface_owners(
                 + EPS_DISPLAY_QUANTIZATION;
         let mut owners = Vec::new();
         for candidate in &candidates {
+            if !work.charge() {
+                break;
+            }
             let tolerance = candidate.tolerance.max(quantization_tolerance);
             let Some(surface) = candidate.surface.solved() else {
                 continue;
             };
             let mut fits = true;
             for point in mesh.vertices() {
+                if !work.charge() {
+                    fits = false;
+                    break;
+                }
                 let Some(local) = candidate.inverse.apply_point(point.get()) else {
                     fits = false;
                     break;
@@ -941,13 +996,16 @@ pub(crate) fn assign_unique_surface_owners(
                 }
             }
             if fits
-                && candidate
-                    .trim
-                    .as_ref()
-                    .is_none_or(|trim| trim.contains_mesh(mesh, candidate.inverse, tolerance))
+                && candidate.trim.as_ref().is_none_or(|trim| {
+                    trim.contains_mesh(mesh, candidate.inverse, tolerance, &work)
+                })
             {
                 owners.push(candidate);
             }
+        }
+        if work.exhausted() {
+            capped += 1;
+            continue;
         }
         let (face, body, chordal_deflection) = match owners.as_slice() {
             [owner] => (owner.face, owner.body, None),
@@ -960,9 +1018,18 @@ pub(crate) fn assign_unique_surface_owners(
                 }) {
                     continue;
                 }
-                let Some((index, deflection)) =
-                    approximate_surface_owner(ctx, mesh, &candidates, quantization_tolerance)?
-                else {
+                let approximate = approximate_surface_owner(
+                    ctx,
+                    mesh,
+                    &candidates,
+                    quantization_tolerance,
+                    &work,
+                )?;
+                if work.exhausted() {
+                    capped += 1;
+                    continue;
+                }
+                let Some((index, deflection)) = approximate else {
                     continue;
                 };
                 let owner = &candidates[index];
@@ -982,6 +1049,9 @@ pub(crate) fn assign_unique_surface_owners(
         }
         assigned.push(assigned_id);
     }
+    if capped > 0 {
+        losses.push(owner_work_capped_loss(capped, work_limit));
+    }
     Ok(assigned)
 }
 
@@ -990,6 +1060,7 @@ fn approximate_surface_owner(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
+    work: &WorkBudget,
 ) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
     if mesh.vertex_normals().len() != mesh.vertex_count() || mesh.vertex_normals().is_empty() {
         return Ok(None);
@@ -1001,6 +1072,9 @@ fn approximate_surface_owner(
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
+                if !work.charge() {
+                    return None;
+                }
                 let local_point = candidate.inverse.apply_point(point.get())?.get();
                 let measure =
                     match surface_measure(ctx, candidate.surface.solved()?, local_point, None) {
@@ -1028,17 +1102,22 @@ fn approximate_surface_owner(
         fits.push(fit);
     }
     if fits.is_empty() {
-        return approximate_trimmed_surface_owner(ctx, mesh, candidates, quantization_tolerance);
+        return approximate_trimmed_surface_owner(
+            ctx,
+            mesh,
+            candidates,
+            quantization_tolerance,
+            work,
+        );
     }
     fits.sort_by(|left, right| left.1.total_cmp(&right.1));
     let best_deflection = fits[0].1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
     fits.retain(|(index, _)| {
         let candidate = &candidates[*index];
-        candidate
-            .trim
-            .as_ref()
-            .is_none_or(|trim| trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance))
+        candidate.trim.as_ref().is_none_or(|trim| {
+            trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance, work)
+        })
     });
     let [(index, deflection), rest @ ..] = fits.as_slice() else {
         return Ok(None);
@@ -1061,6 +1140,7 @@ fn approximate_trimmed_surface_owner(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
+    work: &WorkBudget,
 ) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
     let mut fits = Vec::new();
     for outcome in candidates
@@ -1070,6 +1150,9 @@ fn approximate_trimmed_surface_owner(
             let trim = candidate.trim.as_ref()?;
             let mut max_residual = 0.0_f64;
             for point in mesh.vertices() {
+                if !work.charge() {
+                    return None;
+                }
                 let measure = match surface_measure(
                     ctx,
                     candidate.surface.solved()?,
@@ -1087,7 +1170,7 @@ fn approximate_trimmed_surface_owner(
             {
                 return None;
             }
-            trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance)
+            trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance, work)
                 .then_some(Ok((index, max_residual)))
         })
     {
@@ -1249,11 +1332,18 @@ impl AnalyticTrim {
         mesh: &cadmpeg_ir::tessellation::Tessellation,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
+        work: &WorkBudget,
     ) -> bool {
         match self {
-            Self::Planar(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
-            Self::Cylindrical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
-            Self::Conical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
+            Self::Planar(trim) => trim.contains_mesh(mesh, inverse_body, tolerance, work),
+            Self::Cylindrical(trim) => {
+                work.charge_by(mesh.vertex_count())
+                    && trim.contains_mesh(mesh, inverse_body, tolerance)
+            }
+            Self::Conical(trim) => {
+                work.charge_by(mesh.vertex_count())
+                    && trim.contains_mesh(mesh, inverse_body, tolerance)
+            }
         }
     }
 }
@@ -1274,8 +1364,8 @@ enum PlanarHole {
 }
 
 impl PlanarHole {
-    fn polygon(boundary: Vec<Point2>, tolerance: f64) -> Option<Self> {
-        let triangles = triangulate_polygon(&boundary, tolerance)?;
+    fn polygon(boundary: Vec<Point2>, tolerance: f64, work: &WorkBudget) -> Option<Self> {
+        let triangles = triangulate_polygon(&boundary, tolerance, work)?;
         Some(Self::Polygon {
             boundary,
             triangles,
@@ -1400,8 +1490,26 @@ impl PlanarTrim {
         mesh: &cadmpeg_ir::tessellation::Tessellation,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
+        work: &WorkBudget,
     ) -> bool {
         let tolerance = tolerance + self.boundary_tolerance;
+        let outer_edges = match &self.outer {
+            Some(PlanarOuter::Polygon(boundary)) => boundary.len(),
+            Some(PlanarOuter::Circle(_)) | None => 1,
+        };
+        let point_edges = self.holes.iter().try_fold(outer_edges, |total, hole| {
+            total.checked_add(match hole {
+                PlanarHole::Polygon { boundary, .. } => boundary.len(),
+                PlanarHole::Circle(_) => 1,
+            })
+        });
+        let Some(point_edges) = point_edges else {
+            work.exhaust();
+            return false;
+        };
+        if !charge_product(work, mesh.vertex_count(), point_edges) {
+            return false;
+        }
         let mut projected = Vec::new();
         for point in mesh.vertices() {
             let Some(point) = inverse_body.apply_point(point.get()) else {
@@ -1448,13 +1556,26 @@ impl PlanarTrim {
         let outer_polygon = if mesh.triangle_count() == 0 {
             None
         } else if let Some(PlanarOuter::Polygon(boundary)) = &self.outer {
-            let Some(polygon) = CheckedPlanarPolygon::new(boundary, tolerance) else {
+            let Some(polygon) = CheckedPlanarPolygon::new(boundary, tolerance, work) else {
                 return false;
             };
             Some(polygon)
         } else {
             None
         };
+        let hole_triangles = self.holes.iter().try_fold(0usize, |total, hole| {
+            total.checked_add(match hole {
+                PlanarHole::Polygon { triangles, .. } => triangles.len(),
+                PlanarHole::Circle(_) => 1,
+            })
+        });
+        let Some(hole_triangles) = hole_triangles else {
+            work.exhaust();
+            return false;
+        };
+        if !charge_product(work, mesh.triangle_count(), hole_triangles) {
+            return false;
+        }
         for triangle in mesh.triangles() {
             let [Some(a), Some(b), Some(c)] = triangle.map(|index| {
                 projected
@@ -1511,6 +1632,15 @@ struct TrimTopology<'a> {
     vertices: &'a HashMap<&'a cadmpeg_ir::ids::VertexId, &'a cadmpeg_ir::topology::Vertex>,
     points: &'a HashMap<&'a cadmpeg_ir::ids::PointId, Point3>,
     curves: &'a HashMap<&'a cadmpeg_ir::ids::CurveId, &'a CurveGeometry>,
+    /// Largest absolute coordinate over `points`, at least one.
+    coordinate_scale: f64,
+}
+
+fn trim_coordinate_scale(points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>) -> f64 {
+    points
+        .values()
+        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+        .fold(1.0_f64, f64::max)
 }
 
 fn closed_planar_circle(
@@ -1571,7 +1701,6 @@ fn planar_boundary_samples(
     surface: &SurfaceGeometry,
     frame: PlaneFrame,
     limits: BoundaryTolerance,
-    losses: &mut Vec<LossNote>,
 ) -> Option<(Vec<Point2>, f64)> {
     let BoundaryTolerance {
         tolerance,
@@ -1630,7 +1759,6 @@ fn planar_boundary_samples(
                     tolerance,
                     sampling_tolerance,
                 },
-                losses,
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
@@ -1685,7 +1813,6 @@ fn planar_boundary_samples(
                     tolerance,
                     sampling_tolerance,
                 },
-                losses,
             )
         }
         _ => None,
@@ -1709,22 +1836,13 @@ impl PlanarArc {
         surface: &SurfaceGeometry,
         frame: PlaneFrame,
         limits: BoundaryTolerance,
-        losses: &mut Vec<LossNote>,
     ) -> Option<(Vec<Point2>, f64)> {
         let BoundaryTolerance {
             tolerance,
             sampling_tolerance,
         } = limits;
         let radius = self.first_radius.max(self.second_radius);
-        let (segments, boundary_tolerance) =
-            match planar_arc_segments(span, radius, sampling_tolerance) {
-                Ok(Some(pair)) => pair,
-                Ok(None) => return None,
-                Err(limit) => {
-                    losses.push(planar_arc_segment_cap_loss(limit));
-                    return None;
-                }
-            };
+        let (segments, boundary_tolerance) = planar_arc_segments(span, radius, sampling_tolerance)?;
         let solved_surface = surface.solved()?;
         let mut points = Vec::new();
         for index in 0..segments {
@@ -1779,23 +1897,6 @@ fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
         .then_some(span)
 }
 
-#[derive(Clone, Copy)]
-enum PlanarArcSegmentCap {
-    Unrepresentable,
-    Requested(usize),
-}
-
-fn planar_arc_segment_cap_loss(limit: PlanarArcSegmentCap) -> LossNote {
-    let bound = MAX_PLANAR_TRIM_ARC_SEGMENTS;
-    let detail = match limit {
-        PlanarArcSegmentCap::Requested(count) => format!("requested {count} segments"),
-        PlanarArcSegmentCap::Unrepresentable => "segment count is not representable".to_owned(),
-    };
-    crate::loss::SldprtLossCode::TessellationPlanarArcSegmentCap.note(format!(
-        "planar trim arc {detail}, above MAX_PLANAR_TRIM_ARC_SEGMENTS ({bound}); the arc is skipped."
-    ))
-}
-
 /// Answer the segment count and the sagitta the chords leave.
 ///
 /// A chord whose sagitta is `tolerance` subtends `2 * asin(half_chord)` with
@@ -1806,46 +1907,35 @@ fn planar_arc_segment_cap_loss(limit: PlanarArcSegmentCap) -> LossNote {
 /// circle is the diameter, so a tolerance at or beyond it admits the whole
 /// circle in one segment, and the sine of the quarter span stays at one.
 ///
-/// `Ok(None)` when the span is not finite or has no exact floating-point
-/// segment count in `(0, MAX_PLANAR_TRIM_ARC_SEGMENTS]`. `Err` when meeting
-/// the sampling tolerance would exceed the local segment cap.
-fn planar_arc_segments(
-    span: f64,
-    radius: f64,
-    tolerance: f64,
-) -> Result<Option<(usize, f64)>, PlanarArcSegmentCap> {
+/// A request above `MAX_PLANAR_TRIM_ARC_SEGMENTS` gets that many segments, and
+/// the returned sagitta is the larger error those coarser chords leave, so the
+/// trim keeps an honest boundary tolerance.
+///
+/// `None` when the span is not finite or the segment count has no exact
+/// floating-point value.
+fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> Option<(usize, f64)> {
     if !span.is_finite() {
-        return Ok(None);
+        return None;
     }
     let half_chord = (0.5 * (tolerance / radius)).min(1.0).sqrt();
     let maximum_span = 4.0 * half_chord.asin();
     let requested = if maximum_span.is_finite() && maximum_span > EPS_CYLINDER_ANGLE {
         cadmpeg_core::convert::truncate_f64_to_usize((span.abs() / maximum_span).ceil())
+            .unwrap_or(MAX_PLANAR_TRIM_ARC_SEGMENTS)
     } else {
-        None
+        MAX_PLANAR_TRIM_ARC_SEGMENTS
     };
-    let Some(requested) = requested else {
-        return Err(PlanarArcSegmentCap::Unrepresentable);
-    };
-    if requested == 0 {
-        return Ok(None);
-    }
-    if requested > MAX_PLANAR_TRIM_ARC_SEGMENTS {
-        return Err(PlanarArcSegmentCap::Requested(requested));
-    }
-    let Some(segment_value) = cadmpeg_core::convert::f64_from_index(requested) else {
-        return Ok(None);
-    };
-    let actual_span = span.abs() / segment_value;
+    let segments = requested.clamp(1, MAX_PLANAR_TRIM_ARC_SEGMENTS);
+    let actual_span = span.abs() / cadmpeg_core::convert::f64_from_index(segments)?;
     let sine = (actual_span / 4.0).sin();
-    Ok(Some((requested, (radius * sine) * (2.0 * sine))))
+    Some((segments, (radius * sine) * (2.0 * sine)))
 }
 
 fn planar_trim(
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     topology: &TrimTopology<'_>,
-    losses: &mut Vec<LossNote>,
+    work: &WorkBudget,
 ) -> Option<PlanarTrim> {
     let TrimTopology {
         loops,
@@ -1854,13 +1944,10 @@ fn planar_trim(
         vertices,
         points,
         curves,
+        coordinate_scale,
     } = *topology;
     let frame = plane_frame(surface.solved()?)?;
     let tolerance = FaceEvaluationTolerance::of(face)?.get();
-    let coordinate_scale = points
-        .values()
-        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
-        .fold(1.0_f64, f64::max);
     let sampling_tolerance = tolerance.max(
         coordinate_scale * f64::from(f32::EPSILON) * DISPLAY_QUANTIZATION_ULPS
             + EPS_DISPLAY_QUANTIZATION,
@@ -1911,7 +1998,6 @@ fn planar_trim(
                     tolerance,
                     sampling_tolerance,
                 },
-                losses,
             )?;
             polygon.extend(samples);
             boundary_tolerance = boundary_tolerance.max(sample_tolerance);
@@ -1927,6 +2013,9 @@ fn planar_trim(
         if circles.is_empty() {
             return None;
         }
+        if !charge_product(work, circles.len(), circles.len()) {
+            return None;
+        }
         let (outer, holes) = circular_outer_and_holes(&circles, tolerance)?;
         let mut planar_holes = Vec::new();
         for hole in holes {
@@ -1937,9 +2026,10 @@ fn planar_trim(
         // Every polygon participates in a containment pair when more than
         // one is present. Establish simplicity once before testing pairs.
         if polygons.len() > 1
-            && !polygons
-                .iter()
-                .all(|polygon| is_simple_polygon(polygon, sampling_tolerance))
+            && !polygons.iter().all(|polygon| {
+                charge_product(work, polygon.len(), polygon.len())
+                    && is_simple_polygon(polygon, sampling_tolerance)
+            })
         {
             return None;
         }
@@ -1950,6 +2040,9 @@ fn planar_trim(
                 if index == inner_index {
                     continue;
                 }
+                if !charge_product(work, inner.len(), outer.len()) {
+                    return None;
+                }
                 if !polygon_inside_polygon(inner, outer, sampling_tolerance) {
                     contains_all = false;
                     break;
@@ -1957,6 +2050,9 @@ fn planar_trim(
             }
             if contains_all {
                 for circle in &circles {
+                    if !work.charge_by(outer.len()) {
+                        return None;
+                    }
                     if !circle_inside_polygon(outer, *circle, sampling_tolerance) {
                         contains_all = false;
                         break;
@@ -1977,17 +2073,24 @@ fn planar_trim(
         }
         for (index, left) in polygon_holes.iter().enumerate() {
             for right in &polygon_holes[index + 1..] {
-                if polygons_overlap(left, right, sampling_tolerance) {
+                if !charge_product(work, left.len(), right.len())
+                    || polygons_overlap(left, right, sampling_tolerance)
+                {
                     return None;
                 }
             }
             for circle in &circles {
-                if circle_overlaps_polygon(*circle, left, sampling_tolerance) {
+                if !work.charge_by(left.len())
+                    || circle_overlaps_polygon(*circle, left, sampling_tolerance)
+                {
                     return None;
                 }
             }
         }
         for (index, left) in circles.iter().enumerate() {
+            if !work.charge_by(circles.len()) {
+                return None;
+            }
             for right in &circles[index + 1..] {
                 if point_distance(left.center, right.center)
                     < left.radius + right.radius - sampling_tolerance
@@ -2003,7 +2106,7 @@ fn planar_trim(
         for polygon in polygon_holes {
             let mut boundary = Vec::new();
             boundary.extend_from_slice(polygon);
-            let hole = PlanarHole::polygon(boundary, sampling_tolerance)?;
+            let hole = PlanarHole::polygon(boundary, sampling_tolerance, work)?;
             holes.push(hole);
         }
         let mut outer = Vec::new();
@@ -2064,6 +2167,7 @@ fn cylindrical_trim(
         vertices,
         points,
         curves,
+        ..
     } = *topology;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
         return None;
@@ -2162,6 +2266,7 @@ fn conical_trim(
         vertices,
         points,
         curves,
+        ..
     } = *topology;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface else {
         return None;
@@ -2379,11 +2484,11 @@ fn analytic_trim(
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     topology: &TrimTopology<'_>,
-    losses: &mut Vec<LossNote>,
+    work: &WorkBudget,
 ) -> Option<AnalyticTrim> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            planar_trim(face, surface, topology, losses)
+            planar_trim(face, surface, topology, work)
                 .or_else(|| planar_hole_trim(face, surface, topology))
                 .map(AnalyticTrim::Planar)
         }
@@ -2464,7 +2569,14 @@ fn simple_polygon_area_twice(
     Some(area)
 }
 
-fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2; 3]>> {
+fn triangulate_polygon(
+    polygon: &[Point2],
+    tolerance: f64,
+    work: &WorkBudget,
+) -> Option<Vec<[Point2; 3]>> {
+    if !charge_product(work, polygon.len(), polygon.len()) {
+        return None;
+    }
     // The area admits only a polygon of finite vertices.
     let orientation = simple_polygon_area_twice(polygon, tolerance)?
         .get()
@@ -2475,6 +2587,9 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
     while remaining.len() > 3 {
         let mut ear_position = None;
         'ears: for position in 0..remaining.len() {
+            if !work.charge() {
+                return None;
+            }
             let previous_position = (position + remaining.len() - 1) % remaining.len();
             let next_position = (position + 1) % remaining.len();
             let previous = polygon[remaining[previous_position]];
@@ -2484,6 +2599,9 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
             let cross = signed_area_twice(previous, current, next);
             if !cross.is_finite() || orientation * cross <= tolerance * scale {
                 continue;
+            }
+            if !charge_product(work, 2, remaining.len()) {
+                return None;
             }
             for edge_position in 0..remaining.len() {
                 let edge_next_position = (edge_position + 1) % remaining.len();
@@ -2575,18 +2693,24 @@ fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
 
 /// Checks each triangle edge interval between polygon boundary intersections.
 /// A simple polygon that contains the complete triangle boundary contains its interior.
+/// A test the work budget cuts short answers false.
 struct CheckedPlanarPolygon<'a> {
     boundary: &'a [Point2],
     tolerance: f64,
     convex: bool,
+    work: &'a WorkBudget,
 }
 
 impl<'a> CheckedPlanarPolygon<'a> {
-    fn new(boundary: &'a [Point2], tolerance: f64) -> Option<Self> {
+    fn new(boundary: &'a [Point2], tolerance: f64, work: &'a WorkBudget) -> Option<Self> {
+        if !charge_product(work, boundary.len(), boundary.len()) {
+            return None;
+        }
         is_simple_polygon(boundary, tolerance).then(|| Self {
             boundary,
             tolerance,
             convex: polygon_is_convex(boundary),
+            work,
         })
     }
 
@@ -2595,6 +2719,7 @@ impl<'a> CheckedPlanarPolygon<'a> {
             boundary,
             tolerance,
             convex,
+            work,
         } = *self;
         if triangle
             .iter()
@@ -2603,9 +2728,10 @@ impl<'a> CheckedPlanarPolygon<'a> {
             return false;
         }
         if convex {
-            return triangle
-                .iter()
-                .all(|point| polygon_contains(boundary, *point, tolerance));
+            return charge_product(work, 3, boundary.len())
+                && triangle
+                    .iter()
+                    .all(|point| polygon_contains(boundary, *point, tolerance));
         }
         for edge in 0..3 {
             let start = triangle[edge];
@@ -2618,6 +2744,9 @@ impl<'a> CheckedPlanarPolygon<'a> {
             }
             if length_squared == 0.0 {
                 continue;
+            }
+            if !work.charge_by(boundary.len()) {
+                return false;
             }
             let mut cuts = vec![0.0_f64, 1.0];
             for (index, point) in boundary.iter().enumerate() {
@@ -2650,6 +2779,9 @@ impl<'a> CheckedPlanarPolygon<'a> {
                 }
             }
             cuts.sort_by(f64::total_cmp);
+            if !charge_product(work, cuts.len(), boundary.len()) {
+                return false;
+            }
             for interval in cuts.windows(2) {
                 let parameter = interval[0] + (interval[1] - interval[0]) / 2.0;
                 if !polygon_contains(
@@ -2667,7 +2799,8 @@ impl<'a> CheckedPlanarPolygon<'a> {
 
 #[cfg(test)]
 fn polygon_contains_triangle(boundary: &[Point2], triangle: [Point2; 3], tolerance: f64) -> bool {
-    CheckedPlanarPolygon::new(boundary, tolerance)
+    let work = WorkBudget::new(usize::MAX);
+    CheckedPlanarPolygon::new(boundary, tolerance, &work)
         .is_some_and(|polygon| polygon.contains_triangle(triangle))
 }
 

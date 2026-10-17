@@ -14,6 +14,7 @@ use crate::test_support::container::sldprt_with_body;
 use crate::test_support::container::sldprt_with_partition_and_deltas;
 use crate::test_support::container::synthetic_sldprt;
 use crate::test_support::history::resolved_features_payload_with_names;
+use crate::test_support::parasolid::legacy_probe_payload;
 use crate::test_support::parasolid::owned_triangle;
 use crate::test_support::parasolid::parasolid_with_body;
 use crate::test_support::parasolid::triangle_body;
@@ -141,6 +142,34 @@ fn decode_without_geometry_falls_back_to_metadata() {
             .get("parasolid_schema")
             .map(String::as_str),
         Some("SCH_SW_33103_11000")
+    );
+}
+
+#[test]
+fn capped_parasolid_probe_reports_the_section() {
+    let stream = parasolid_with_body("partition body", "SCH_SW_33103_11000", &[0x31; 5000]);
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &legacy_probe_payload(&stream, crate::parasolid::PROBE_WORK_PER_PAYLOAD_BYTE + 1),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    let capped = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "container.parasolid-probe-capped")
+        .collect::<Vec<_>>();
+    assert_eq!(capped.len(), 1);
+    assert_eq!(
+        capped[0].message,
+        "1 section(s) stopped the legacy Parasolid zlib probe at PROBE_WORK_PER_PAYLOAD_BYTE \
+         (16) times the payload length; later zlib members in those sections were not tried: \
+         Contents/Config-0-Partition."
     );
 }
 

@@ -153,6 +153,8 @@ pub(crate) struct Block {
     pub(crate) payload: Vec<u8>,
     /// Every located and header-validated Parasolid stream carried by this block.
     pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
+    /// The legacy zlib probe stopped at its work limit in this block.
+    pub(crate) ps_probe_capped: bool,
 }
 
 impl Block {
@@ -205,6 +207,8 @@ pub(crate) struct CompoundStream {
     pub(crate) decoded_payload: Option<Vec<u8>>,
     /// Every located and header-validated Parasolid stream carried here.
     pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
+    /// The legacy zlib probe stopped at its work limit in this stream.
+    pub(crate) ps_probe_capped: bool,
 }
 
 /// Complete result of an outer-container scan.
@@ -288,6 +292,13 @@ impl<'a> Section<'a> {
         match self {
             Self::Block(block) => &block.ps_streams,
             Self::Compound(stream) => &stream.ps_streams,
+        }
+    }
+
+    pub(crate) fn ps_probe_capped(self) -> bool {
+        match self {
+            Self::Block(block) => block.ps_probe_capped,
+            Self::Compound(stream) => stream.ps_probe_capped,
         }
     }
 }
@@ -427,7 +438,7 @@ fn compound_stream(
     decoded_bytes: Option<Vec<u8>>,
 ) -> Result<CompoundStream, CodecError> {
     let semantic_payload = decoded_bytes.as_deref().unwrap_or(&bytes);
-    let ps_streams = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
+    let extracted = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
         Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
@@ -438,7 +449,8 @@ fn compound_stream(
         start_sector,
         payload: bytes,
         decoded_payload: decoded_bytes,
-        ps_streams,
+        ps_streams: extracted.streams,
+        ps_probe_capped: extracted.probe_capped,
     })
 }
 
@@ -571,6 +583,7 @@ struct RawBlock {
     family: PayloadFamily,
     payload: Vec<u8>,
     ps_streams: Vec<crate::parasolid::ExtractedStream>,
+    ps_probe_capped: bool,
 }
 
 impl RawBlock {
@@ -594,6 +607,7 @@ impl RawBlock {
             family: self.family,
             payload: self.payload,
             ps_streams: self.ps_streams,
+            ps_probe_capped: self.ps_probe_capped,
         }
     }
 }
@@ -658,8 +672,8 @@ fn block_from_inflated(
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated, ctx)?;
-    let family = if ps_streams.is_empty() {
+    let extracted = crate::parasolid::extract_streams_with_offsets(&inflated, ctx)?;
+    let family = if extracted.streams.is_empty() {
         payload_family(&inflated)
     } else {
         PayloadFamily::Parasolid
@@ -673,7 +687,8 @@ fn block_from_inflated(
         section,
         family,
         payload: inflated,
-        ps_streams,
+        ps_streams: extracted.streams,
+        ps_probe_capped: extracted.probe_capped,
     }))
 }
 

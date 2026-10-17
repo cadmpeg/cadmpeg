@@ -1217,12 +1217,23 @@ pub(crate) fn reference_cells(
         cell.ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("SLDPRT reference cell ordinal overflows u32"))?;
     }
+    let mut classes_at = HashMap::<(&str, u64), Vec<&FeatureInputClass>>::new();
+    for class in classes {
+        classes_at
+            .entry((class.parent.as_str(), class.offset))
+            .or_default()
+            .push(class);
+    }
     let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
     for cell in &cells {
-        for class in classes.iter().filter(|class| {
-            class.parent == cell.parent && class.offset.checked_sub(cell.offset) == Some(12)
-        }) {
-            declarations.entry(cell.kind).or_default().push(class);
+        let Some(class_offset) = cell.offset.checked_add(12) else {
+            continue;
+        };
+        if let Some(declared) = classes_at.get(&(cell.parent.as_str(), class_offset)) {
+            declarations
+                .entry(cell.kind)
+                .or_default()
+                .extend(declared.iter().copied());
         }
     }
     for declared in declarations.values_mut() {

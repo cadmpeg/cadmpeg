@@ -22,6 +22,30 @@ pub(crate) fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) 
     b
 }
 
+/// A legacy nested wrapper without the chained prefix: the wrapper magic,
+/// `decoys` zlib headers that fail to inflate, zero padding, then the zlib
+/// member carrying `stream`. `stream` must compress, or the member stores its
+/// `PS\0\0` header verbatim and the direct-header scan finds it first.
+pub(crate) fn legacy_probe_payload(stream: &[u8], decoys: usize) -> Vec<u8> {
+    use std::io::Write as _;
+
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(stream).unwrap();
+    let member = encoder.finish().unwrap();
+    assert!(
+        !member.windows(4).any(|window| window == b"PS\0\0"),
+        "the zlib member must not expose a raw stream header"
+    );
+    let mut payload = b"abcdefgh".to_vec();
+    payload.extend_from_slice(&crate::layout::zlb_wrapper_header::MAGIC_VALUE);
+    for _ in 0..decoys {
+        payload.extend_from_slice(&[0x78, 0x9c, 0xff, 0xff]);
+    }
+    payload.resize(payload.len() + 4096, 0);
+    payload.extend_from_slice(&member);
+    payload
+}
+
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 pub(crate) const DIRTY_TERMINAL_KNOT: [u8; 8] = 0x7ff8_0000_0000_0001u64.to_be_bytes();

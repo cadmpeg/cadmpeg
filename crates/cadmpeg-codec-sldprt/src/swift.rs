@@ -2,10 +2,11 @@
 //! Semantic PMI stored in the SWIFT GDT-analysis object graph.
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
@@ -13,6 +14,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 use cadmpeg_ir::units::FiniteVector;
@@ -26,6 +28,8 @@ const EPS_SWIFT_APPROXIMATELY_EQUAL_E9: f64 = 1.0e-9;
 const ROOT_CLASS: &str = "PrizMetrik.GdtAnalysisSupport.GdtPart";
 const ENTITY_TOKEN: &[u8] = b"\x06Entity";
 const MAX_DEPTH: usize = 32;
+/// Feature visits one projection may spend across all of its feature walks.
+const SWIFT_FEATURE_WALK_WORK: usize = 1 << 24;
 const DIAMETER_EQUIVALENCE_MM: f64 = 1.0e-5;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -253,6 +257,253 @@ fn unique_id_for_attribute<'a, T: 'a>(
     }
 }
 
+/// The features of one projection and the walk work they share.
+struct FeatureIndex<'a> {
+    entities: BTreeMap<&'a str, &'a Entity>,
+    cyclic: BTreeSet<&'a str>,
+    work: WorkBudget,
+    depth_capped: Cell<usize>,
+    work_capped: Cell<usize>,
+}
+
+impl<'a> FeatureIndex<'a> {
+    fn new(entities: BTreeMap<&'a str, &'a Entity>) -> Self {
+        Self::with_work_limit(entities, SWIFT_FEATURE_WALK_WORK)
+    }
+
+    fn with_work_limit(entities: BTreeMap<&'a str, &'a Entity>, limit: usize) -> Self {
+        Self {
+            cyclic: cyclic_features(&entities),
+            entities,
+            work: WorkBudget::new(limit),
+            depth_capped: Cell::new(0),
+            work_capped: Cell::new(0),
+        }
+    }
+
+    fn get(&self, id: &str) -> Option<&&'a Entity> {
+        self.entities.get(id)
+    }
+
+    fn entry(&self, id: &str) -> Option<(&'a str, &'a Entity)> {
+        self.entities
+            .get_key_value(id)
+            .map(|(id, feature)| (*id, *feature))
+    }
+
+    /// Counts a walk that stopped at a bound. Its result is unknown.
+    fn record_cap(&self) {
+        let counter = if self.work.exhausted() {
+            &self.work_capped
+        } else {
+            &self.depth_capped
+        };
+        if let Some(count) = counter.get().checked_add(1) {
+            counter.set(count);
+        }
+    }
+
+    fn capped<T>(&self) -> Walk<T> {
+        self.record_cap();
+        Walk::Capped
+    }
+
+    fn caps(&self) -> WalkCaps {
+        WalkCaps {
+            depth: self.depth_capped.get(),
+            work: self.work_capped.get(),
+        }
+    }
+}
+
+/// A feature-walk result, or `Capped` when the walk stopped at `MAX_DEPTH` or
+/// at the projection's walk work and its result is unknown.
+#[derive(Debug, Clone, PartialEq)]
+enum Walk<T> {
+    Done(T),
+    Capped,
+}
+
+/// Feature walks of one projection that stopped at a bound, by bound.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct WalkCaps {
+    depth: usize,
+    work: usize,
+}
+
+impl WalkCaps {
+    fn losses(self) -> Vec<LossNote> {
+        let mut losses = Vec::new();
+        if self.depth > 0 {
+            losses.push(
+                crate::loss::SldprtLossCode::PmiSwiftFeatureWalkCapped.note(format!(
+                    "{} SWIFT feature walk(s) reached a feature only past MAX_DEPTH \
+                     ({MAX_DEPTH}); the targets or nominal values they feed were left \
+                     unresolved.",
+                    self.depth
+                )),
+            );
+        }
+        if self.work > 0 {
+            losses.push(
+                crate::loss::SldprtLossCode::PmiSwiftFeatureWalkCapped.note(format!(
+                    "{} SWIFT feature walk(s) stopped at the local work cap \
+                     SWIFT_FEATURE_WALK_WORK ({SWIFT_FEATURE_WALK_WORK}); the targets or \
+                     nominal values they feed were left unresolved.",
+                    self.work
+                )),
+            );
+        }
+        losses
+    }
+}
+
+/// The depth each feature of one walk was expanded from. A feature is
+/// expanded again only from a shallower depth: a deeper re-entry has less
+/// room and reaches nothing the earlier expansion did not. A feature on the
+/// current path is always shallower, so this also stops cycles.
+#[derive(Default)]
+struct WalkDepths<'a> {
+    expanded: BTreeMap<&'a str, usize>,
+    /// Features met at `MAX_DEPTH`, where expansion stops.
+    cut: Vec<&'a str>,
+}
+
+impl<'a> WalkDepths<'a> {
+    /// The child depth when `id` should be expanded from `depth`.
+    fn enter(&mut self, id: &'a str, depth: usize) -> Option<usize> {
+        if self
+            .expanded
+            .get(id)
+            .is_some_and(|expanded| *expanded <= depth)
+        {
+            return None;
+        }
+        let Some(child_depth) = swift_child_depth(depth) else {
+            self.cut.push(id);
+            return None;
+        };
+        self.expanded.insert(id, depth);
+        Some(child_depth)
+    }
+
+    /// Whether a feature met at `MAX_DEPTH` was never expanded, so the walk
+    /// missed it.
+    fn truncated(&self) -> bool {
+        self.cut.iter().any(|id| !self.expanded.contains_key(id))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CycleNode {
+    order: Option<usize>,
+    low: usize,
+    on_stack: bool,
+}
+
+fn lower_cycle_link(nodes: &mut [CycleNode], node: usize, low: usize) {
+    if let Some(state) = nodes.get_mut(node) {
+        state.low = state.low.min(low);
+    }
+}
+
+/// Features on a reference cycle, a self-reference included, found by an
+/// iterative Tarjan walk over child references.
+fn cyclic_features<'a>(entities: &BTreeMap<&'a str, &'a Entity>) -> BTreeSet<&'a str> {
+    let keys = entities.keys().copied().collect::<Vec<_>>();
+    let positions = keys
+        .iter()
+        .enumerate()
+        .map(|(position, key)| (*key, position))
+        .collect::<BTreeMap<_, _>>();
+    let children = entities
+        .values()
+        .map(|feature| {
+            child_feature_ids(feature)
+                .filter_map(|child| positions.get(child).copied())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let no_children: &[usize] = &[];
+    let mut nodes = vec![CycleNode::default(); keys.len()];
+    let mut discovered = 0_usize;
+    let mut stack = Vec::new();
+    let mut cyclic = BTreeSet::new();
+    for root in 0..keys.len() {
+        if nodes.get(root).is_none_or(|node| node.order.is_some()) {
+            continue;
+        }
+        let mut frames = Vec::new();
+        let mut next = Some(root);
+        loop {
+            if let Some(node) = next.take() {
+                let Some(state) = nodes.get_mut(node) else {
+                    break;
+                };
+                *state = CycleNode {
+                    order: Some(discovered),
+                    low: discovered,
+                    on_stack: true,
+                };
+                let Some(after) = discovered.checked_add(1) else {
+                    break;
+                };
+                discovered = after;
+                stack.push(node);
+                let edges = children.get(node).map_or(no_children, Vec::as_slice);
+                frames.push((node, edges.iter()));
+            }
+            let Some((node, edges)) = frames.last_mut() else {
+                break;
+            };
+            let node = *node;
+            if let Some(child) = edges.next().copied() {
+                match nodes.get(child).copied() {
+                    Some(CycleNode { order: None, .. }) => next = Some(child),
+                    Some(CycleNode {
+                        order: Some(order),
+                        on_stack: true,
+                        ..
+                    }) => lower_cycle_link(&mut nodes, node, order),
+                    _ => {}
+                }
+                continue;
+            }
+            frames.pop();
+            let Some(state) = nodes.get(node).copied() else {
+                break;
+            };
+            if let Some((parent, _)) = frames.last() {
+                lower_cycle_link(&mut nodes, *parent, state.low);
+            }
+            if state.order != Some(state.low) {
+                continue;
+            }
+            let mut members = Vec::new();
+            while let Some(member) = stack.pop() {
+                if let Some(member_state) = nodes.get_mut(member) {
+                    member_state.on_stack = false;
+                }
+                members.push(member);
+                if member == node {
+                    break;
+                }
+            }
+            let self_reference = children
+                .get(node)
+                .is_some_and(|edges| edges.contains(&node));
+            if members.len() > 1 || self_reference {
+                cyclic.extend(
+                    members
+                        .into_iter()
+                        .filter_map(|member| keys.get(member).copied()),
+                );
+            }
+        }
+    }
+    cyclic
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RenderedDimension {
     kind: RenderedDimensionKind,
@@ -287,18 +538,20 @@ pub(crate) fn annotations(
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<PmiAnnotation>, CodecError> {
     let Some((stream, root, rendered_dimensions)) = scan_root(ctx, scan)? else {
         return Ok(Vec::new());
     };
-    let projected = project_with_topology(
+    let projection = project_with_topology(
         ctx,
         &root,
         topology,
         &rendered_dimensions,
         pattern_hole_nominals,
-    )?
-    .annotations;
+    )?;
+    losses.extend(projection.walk_caps.losses());
+    let projected = projection.annotations;
     for (reference, entity) in root
         .annotations
         .references
@@ -788,6 +1041,7 @@ fn enrich_implicit_nominals(
 struct AnnotationProjection {
     annotations: Vec<PmiAnnotation>,
     unsupported: BTreeMap<String, usize>,
+    walk_caps: WalkCaps,
 }
 
 #[derive(Clone, Copy)]
@@ -1017,6 +1271,7 @@ fn project_with_topology(
     Ok(AnnotationProjection {
         annotations: projected,
         unsupported,
+        walk_caps: feature_index.caps(),
     })
 }
 
@@ -1024,7 +1279,7 @@ fn project_datum(
     ctx: &DecodeContext<'_>,
     reference: &Reference,
     entity: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     topology: Option<&TopologyIdentityIndex>,
 ) -> Result<Option<PmiAnnotation>, CodecError> {
     let Some(identification) = entity
@@ -1088,7 +1343,7 @@ fn project_lower_profile_tier(
     ctx: &DecodeContext<'_>,
     reference: &Reference,
     entity: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     topology: Option<&TopologyIdentityIndex>,
 ) -> Result<Option<PmiAnnotation>, CodecError> {
     let Some(magnitude) = entity
@@ -1139,7 +1394,7 @@ struct DimensionSource<'a> {
 fn project_dimension(
     ctx: &DecodeContext<'_>,
     source: DimensionSource<'_>,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
@@ -1217,7 +1472,7 @@ fn implicit_dimension_nominal(
     ctx: &DecodeContext<'_>,
     root: &Entity,
     entity: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     rendered: &[RenderedDimension],
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<FiniteReal>, CodecError> {
@@ -1283,17 +1538,18 @@ fn dimension_quantity(dimension: &DimensionKind) -> PmiQuantity {
 fn diameter_from_applied_geometry(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    Ok(unique_diameter(
-        diameter_contributors(ctx, annotation, feature_index)?.into_iter(),
-    ))
+    let Walk::Done(contributors) = diameter_contributors(ctx, annotation, feature_index)? else {
+        return Ok(None);
+    };
+    Ok(unique_diameter(contributors.into_iter()))
 }
 
 fn directional_distance(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     if annotation.integers.get("ComputeAnswerBy") != Some(&0)
         || annotation.integers.get("Direction") != Some(&4)
@@ -1337,7 +1593,7 @@ fn directional_distance(
 fn closed_slot_feature_size_distance(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     direction: [f64; 3],
 ) -> Result<Option<PositiveReal>, CodecError> {
     if annotation.integers.get("FeatureFosUsage") != Some(&2)
@@ -1371,14 +1627,7 @@ fn closed_slot_feature_size_distance(
     })() else {
         return Ok(None);
     };
-    if !feature_reaches(
-        ctx,
-        slot_id,
-        cylinder_id,
-        feature_index,
-        &mut BTreeSet::new(),
-        0,
-    )? {
+    if feature_reaches(ctx, slot_id, cylinder_id, feature_index)? != Walk::Done(true) {
         return Ok(None);
     }
     Ok((|| {
@@ -1433,37 +1682,52 @@ fn closed_slot_feature_size_distance(
     })())
 }
 
+/// Whether `target` is a child reference within `MAX_DEPTH` below `id`.
 fn feature_reaches(
     ctx: &DecodeContext<'_>,
     id: &str,
     target: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
-    visited: &mut BTreeSet<String>,
+    feature_index: &FeatureIndex<'_>,
+) -> Result<Walk<bool>, CodecError> {
+    let mut depths = WalkDepths::default();
+    Ok(
+        match reach_feature(ctx, id, target, feature_index, &mut depths, 0)? {
+            Some(true) => Walk::Done(true),
+            Some(false) if !depths.truncated() => Walk::Done(false),
+            Some(false) | None => feature_index.capped(),
+        },
+    )
+}
+
+/// `None` when the walk work ran out before `target` was found.
+fn reach_feature<'a>(
+    ctx: &DecodeContext<'_>,
+    id: &str,
+    target: &str,
+    feature_index: &FeatureIndex<'a>,
+    depths: &mut WalkDepths<'a>,
     depth: usize,
-) -> Result<bool, CodecError> {
-    if visited.contains(id) {
-        return Ok(false);
+) -> Result<Option<bool>, CodecError> {
+    if !feature_index.work.charge() {
+        return Ok(None);
     }
-    let Some(child_depth) = swift_child_depth(depth) else {
-        return Ok(false);
+    let Some((id, feature)) = feature_index.entry(id) else {
+        return Ok(Some(false));
+    };
+    let Some(child_depth) = depths.enter(id, depth) else {
+        return Ok(Some(false));
     };
     let _depth = ctx.enter_nested("traverse SWIFT feature reachability")?;
-    visited.insert(id.to_owned());
-    let result = (|| {
-        let Some(feature) = feature_index.get(id) else {
-            return Ok(false);
-        };
-        for child in child_feature_ids(feature) {
-            if child == target
-                || feature_reaches(ctx, child, target, feature_index, visited, child_depth)?
-            {
-                return Ok(true);
-            }
+    for child in child_feature_ids(feature) {
+        if child == target {
+            return Ok(Some(true));
         }
-        Ok(false)
-    })();
-    visited.remove(id);
-    result
+        match reach_feature(ctx, child, target, feature_index, depths, child_depth)? {
+            Some(false) => {}
+            reached => return Ok(reached),
+        }
+    }
+    Ok(Some(false))
 }
 
 fn identity_transform(transform: &Entity) -> bool {
@@ -1493,7 +1757,7 @@ fn identity_transform(transform: &Entity) -> bool {
 fn location_projection(
     ctx: &DecodeContext<'_>,
     id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     direction: [f64; 3],
 ) -> Result<Option<FiniteReal>, CodecError> {
     let Some(feature) = feature_index.get(id) else {
@@ -1504,16 +1768,11 @@ fn location_projection(
         "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
         "GdtCone" => axis_projection(feature, "NomCone", direction),
         "GdtCompoundHole" => {
-            let mut projections = Vec::new();
-            collect_rotational_projections(
-                ctx,
-                id,
-                feature_index,
-                direction,
-                &mut BTreeSet::new(),
-                0,
-                &mut projections,
-            )?;
+            let Walk::Done(projections) =
+                collect_rotational_projections(ctx, id, feature_index, direction)?
+            else {
+                return Ok(None);
+            };
             unique_measurement(projections.into_iter())
         }
         _ => None,
@@ -1555,55 +1814,88 @@ fn axis_projection(feature: &Entity, geometry: &str, direction: [f64; 3]) -> Opt
 fn collect_rotational_projections(
     ctx: &DecodeContext<'_>,
     id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     direction: [f64; 3],
-    visited: &mut BTreeSet<String>,
-    depth: usize,
-    projections: &mut Vec<FiniteReal>,
-) -> Result<(), CodecError> {
-    if visited.contains(id) {
-        return Ok(());
-    }
-    let Some(child_depth) = swift_child_depth(depth) else {
-        return Ok(());
-    };
-    let _depth = ctx.enter_nested("scan SWIFT rotational features")?;
-    visited.insert(id.to_owned());
-    let result = (|| {
-        let Some(feature) = feature_index.get(id) else {
-            return Ok(());
-        };
-        let projection = match short_class(&feature.class) {
+) -> Result<Walk<Vec<FiniteReal>>, CodecError> {
+    collect_leaves(
+        ctx,
+        id,
+        feature_index,
+        "scan SWIFT rotational features",
+        |feature| match short_class(&feature.class) {
             "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
             "GdtCone" => axis_projection(feature, "NomCone", direction),
             _ => None,
+        },
+    )
+}
+
+/// Values of the first features below `id` that `leaf` measures, in
+/// first-visit order. A feature `leaf` does not measure is expanded.
+fn collect_leaves<T>(
+    ctx: &DecodeContext<'_>,
+    id: &str,
+    feature_index: &FeatureIndex<'_>,
+    operation: &'static str,
+    leaf: impl Fn(&Entity) -> Option<T>,
+) -> Result<Walk<Vec<T>>, CodecError> {
+    let mut collector = LeafCollector {
+        feature_index,
+        depths: WalkDepths::default(),
+        operation,
+        leaf,
+        values: Vec::new(),
+    };
+    if !collector.collect(ctx, id, 0)? || collector.depths.truncated() {
+        return Ok(feature_index.capped());
+    }
+    Ok(Walk::Done(collector.values))
+}
+
+struct LeafCollector<'w, 'a, T, F> {
+    feature_index: &'w FeatureIndex<'a>,
+    depths: WalkDepths<'a>,
+    operation: &'static str,
+    leaf: F,
+    values: Vec<T>,
+}
+
+impl<T, F: Fn(&Entity) -> Option<T>> LeafCollector<'_, '_, T, F> {
+    /// False when the walk work ran out.
+    fn collect(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+        depth: usize,
+    ) -> Result<bool, CodecError> {
+        if !self.feature_index.work.charge() {
+            return Ok(false);
+        }
+        let Some((id, feature)) = self.feature_index.entry(id) else {
+            return Ok(true);
         };
-        if let Some(projection) = projection {
-            projections.push(projection);
-            return Ok(());
+        let Some(child_depth) = self.depths.enter(id, depth) else {
+            return Ok(true);
+        };
+        let _depth = ctx.enter_nested(self.operation)?;
+        if let Some(value) = (self.leaf)(feature) {
+            self.values.push(value);
+            return Ok(true);
         }
         for child in child_feature_ids(feature) {
-            collect_rotational_projections(
-                ctx,
-                child,
-                feature_index,
-                direction,
-                visited,
-                child_depth,
-                projections,
-            )?;
+            if !self.collect(ctx, child, child_depth)? {
+                return Ok(false);
+            }
         }
-        Ok(())
-    })();
-    visited.remove(id);
-    result
+        Ok(true)
+    }
 }
 
 fn diameter_nominal(
     ctx: &DecodeContext<'_>,
     root: &Entity,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<ImplicitNominal>, CodecError> {
     let direct = diameter_from_applied_geometry(ctx, annotation, feature_index)?;
@@ -1633,7 +1925,7 @@ fn diameter_nominal(
 fn empty_pattern_hole_nominal(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let [reference] = annotation.features.references.as_slice() else {
@@ -1677,7 +1969,7 @@ fn hole_diameter_excluding_counterbore(
     ctx: &DecodeContext<'_>,
     root: &Entity,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut context = BTreeSet::new();
     for reference in &annotation.features.references {
@@ -1710,7 +2002,9 @@ fn hole_diameter_excluding_counterbore(
     let Some(counterbore_diameter) = counterbore_diameter else {
         return Ok(None);
     };
-    let contributors = diameter_contributors(ctx, annotation, feature_index)?;
+    let Walk::Done(contributors) = diameter_contributors(ctx, annotation, feature_index)? else {
+        return Ok(None);
+    };
     let mut removed_counterbore = false;
     let remaining = contributors.into_iter().filter(|value| {
         if diameters_equivalent(value.get(), counterbore_diameter.get()) {
@@ -1727,75 +2021,53 @@ fn hole_diameter_excluding_counterbore(
 fn diameter_contributors(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
-) -> Result<Vec<PositiveReal>, CodecError> {
+    feature_index: &FeatureIndex<'_>,
+) -> Result<Walk<Vec<PositiveReal>>, CodecError> {
     let mut values = Vec::new();
     for reference in &annotation.features.references {
-        collect_diameter_contributors(
-            ctx,
-            &reference.id,
-            feature_index,
-            &mut BTreeSet::new(),
-            0,
-            &mut values,
-        )?;
+        let Walk::Done(found) = collect_diameter_contributors(ctx, &reference.id, feature_index)?
+        else {
+            return Ok(Walk::Capped);
+        };
+        values.extend(found);
     }
-    Ok(values)
+    Ok(Walk::Done(values))
 }
 
 fn collect_diameter_contributors(
     ctx: &DecodeContext<'_>,
     id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
-    visited: &mut BTreeSet<String>,
-    depth: usize,
-    values: &mut Vec<PositiveReal>,
-) -> Result<(), CodecError> {
-    if visited.contains(id) {
-        return Ok(());
-    }
-    let Some(child_depth) = swift_child_depth(depth) else {
-        return Ok(());
-    };
-    let _depth = ctx.enter_nested("scan SWIFT diameter features")?;
-    visited.insert(id.to_owned());
-    let result = (|| {
-        let Some(feature) = feature_index.get(id) else {
-            return Ok(());
-        };
-        let radius = match short_class(&feature.class) {
-            "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
-            "GdtSphere" => nominal_radius(feature, "NomSphere"),
-            _ => None,
-        };
-        if let Some(diameter) = radius.and_then(|radius| PositiveReal::new(radius.get() * 2.0)) {
-            values.push(diameter);
-            return Ok(());
-        }
-        for child in child_feature_ids(feature) {
-            collect_diameter_contributors(ctx, child, feature_index, visited, child_depth, values)?;
-        }
-        Ok(())
-    })();
-    visited.remove(id);
-    result
+    feature_index: &FeatureIndex<'_>,
+) -> Result<Walk<Vec<PositiveReal>>, CodecError> {
+    collect_leaves(
+        ctx,
+        id,
+        feature_index,
+        "scan SWIFT diameter features",
+        |feature| {
+            let radius = match short_class(&feature.class) {
+                "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
+                "GdtSphere" => nominal_radius(feature, "NomSphere"),
+                _ => None,
+            };
+            radius.and_then(|radius| PositiveReal::new(radius.get() * 2.0))
+        },
+    )
 }
 
 fn depth_from_applied_geometry(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_applied_geometry(annotation, |id| {
-        depth_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
-    })
+    measurement_from_applied_geometry(annotation, |id| depth_for_feature(ctx, id, feature_index))
 }
 
 fn depth_nominal(
     ctx: &DecodeContext<'_>,
     root: &Entity,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<ImplicitNominal>, CodecError> {
     if annotation
         .integers
@@ -1832,7 +2104,7 @@ fn depth_nominal(
 fn counterbore_depth_from_sibling(
     root: &Entity,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Option<PositiveReal> {
     let plane = unique_direct_feature(annotation, feature_index, "GdtPlane")?;
     let context = direct_feature_context(annotation, feature_index, "GdtPlane")?;
@@ -1868,7 +2140,7 @@ fn counterbore_depth_from_sibling(
 
 fn unique_direct_feature<'a>(
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &'a Entity>,
+    feature_index: &FeatureIndex<'a>,
     class: &str,
 ) -> Option<&'a Entity> {
     let mut candidates = annotation
@@ -1883,7 +2155,7 @@ fn unique_direct_feature<'a>(
 
 fn direct_feature_context<'a>(
     annotation: &'a Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     operation_class: &str,
 ) -> Option<BTreeSet<&'a str>> {
     let mut context = BTreeSet::new();
@@ -1957,7 +2229,7 @@ fn plane_terminates_cylinder(plane_feature: &Entity, cylinder_feature: &Entity) 
 
 fn direct_cylinder_depth(
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Option<PositiveReal> {
     measurement_from_direct_features(
         annotation,
@@ -1969,7 +2241,7 @@ fn direct_cylinder_depth(
 
 fn thread_depth_from_direct_geometry(
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Option<PositiveReal> {
     measurement_from_direct_features(annotation, feature_index, "GdtCylinder", |feature| {
         feature
@@ -1990,36 +2262,30 @@ fn thread_depth_from_direct_geometry(
 fn width_from_applied_geometry(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_applied_geometry(annotation, |id| {
-        width_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
-    })
+    measurement_from_applied_geometry(annotation, |id| width_for_feature(ctx, id, feature_index))
 }
 
 fn radius_from_applied_geometry(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_applied_geometry(annotation, |id| {
-        radius_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
-    })
+    measurement_from_applied_geometry(annotation, |id| radius_for_feature(ctx, id, feature_index))
 }
 
 fn length_from_applied_geometry(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_from_applied_geometry(annotation, |id| {
-        length_for_feature(ctx, id, feature_index, &mut BTreeSet::new(), 0)
-    })
+    measurement_from_applied_geometry(annotation, |id| length_for_feature(ctx, id, feature_index))
 }
 
 fn counterbore_from_direct_geometry(
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Option<PositiveReal> {
     measurement_from_direct_features(annotation, feature_index, "GdtCylinder", |feature| {
         PositiveReal::new(nominal_radius(feature, "NomCylinder")?.get() * 2.0)
@@ -2028,7 +2294,7 @@ fn counterbore_from_direct_geometry(
 
 fn countersink_diameter_from_direct_geometry(
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Option<PositiveReal> {
     measurement_from_direct_features(
         annotation,
@@ -2040,18 +2306,21 @@ fn countersink_diameter_from_direct_geometry(
 
 fn countersink_angle_from_direct_geometry(
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
 ) -> Option<PositiveReal> {
     measurement_from_direct_features(annotation, feature_index, "GdtCone", nominal_cone_angle)
 }
 
 fn measurement_from_applied_geometry(
     annotation: &Entity,
-    mut measurement: impl FnMut(&str) -> Result<Option<PositiveReal>, CodecError>,
+    mut measurement: impl FnMut(&str) -> Result<Walk<Option<PositiveReal>>, CodecError>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut first: Option<PositiveReal> = None;
     for reference in &annotation.features.references {
-        let Some(value) = measurement(&reference.id)? else {
+        let Walk::Done(value) = measurement(&reference.id)? else {
+            return Ok(None);
+        };
+        let Some(value) = value else {
             continue;
         };
         if let Some(prior) = first {
@@ -2067,7 +2336,7 @@ fn measurement_from_applied_geometry(
 
 fn measurement_from_direct_features(
     annotation: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     class: &str,
     measurement: impl Fn(&Entity) -> Option<PositiveReal>,
 ) -> Option<PositiveReal> {
@@ -2229,11 +2498,9 @@ fn rendered_dimension_literals(text: &str) -> Vec<RenderedDimension> {
 fn depth_for_feature(
     ctx: &DecodeContext<'_>,
     id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
-    visited: &mut BTreeSet<String>,
-    depth: usize,
-) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(ctx, id, feature_index, visited, depth, |feature| {
+    feature_index: &FeatureIndex<'_>,
+) -> Result<Walk<Option<PositiveReal>>, CodecError> {
+    measurement_for_feature(ctx, id, feature_index, |feature| {
         (short_class(&feature.class) == "GdtCylinder")
             .then(|| nominal_cylinder_depth(feature))
             .flatten()
@@ -2243,38 +2510,24 @@ fn depth_for_feature(
 fn width_for_feature(
     ctx: &DecodeContext<'_>,
     id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
-    visited: &mut BTreeSet<String>,
-    depth: usize,
-) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(
-        ctx,
-        id,
-        feature_index,
-        visited,
-        depth,
-        |feature| match short_class(&feature.class) {
+    feature_index: &FeatureIndex<'_>,
+) -> Result<Walk<Option<PositiveReal>>, CodecError> {
+    measurement_for_feature(ctx, id, feature_index, |feature| {
+        match short_class(&feature.class) {
             "GdtCompoundWidth" => nominal_measurement(feature, "NomCompoundWidth", "Width"),
             "GdtCompoundClosedSlot3D" => nominal_measurement(feature, "NomClosedSlot", "Width"),
             _ => None,
-        },
-    )
+        }
+    })
 }
 
 fn radius_for_feature(
     ctx: &DecodeContext<'_>,
     id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
-    visited: &mut BTreeSet<String>,
-    depth: usize,
-) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(
-        ctx,
-        id,
-        feature_index,
-        visited,
-        depth,
-        |feature| match short_class(&feature.class) {
+    feature_index: &FeatureIndex<'_>,
+) -> Result<Walk<Option<PositiveReal>>, CodecError> {
+    measurement_for_feature(ctx, id, feature_index, |feature| {
+        match short_class(&feature.class) {
             "GdtFillet" => feature
                 .doubles
                 .get("Radius")
@@ -2283,78 +2536,125 @@ fn radius_for_feature(
             "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
             "GdtSphere" => nominal_radius(feature, "NomSphere"),
             _ => None,
-        },
-    )
+        }
+    })
 }
 
 fn length_for_feature(
     ctx: &DecodeContext<'_>,
     id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
-    visited: &mut BTreeSet<String>,
-    depth: usize,
-) -> Result<Option<PositiveReal>, CodecError> {
-    measurement_for_feature(
-        ctx,
-        id,
-        feature_index,
-        visited,
-        depth,
-        |feature| match short_class(&feature.class) {
+    feature_index: &FeatureIndex<'_>,
+) -> Result<Walk<Option<PositiveReal>>, CodecError> {
+    measurement_for_feature(ctx, id, feature_index, |feature| {
+        match short_class(&feature.class) {
             "GdtCompoundClosedSlot3D" => nominal_measurement(feature, "NomClosedSlot", "Length"),
             _ => None,
-        },
-    )
+        }
+    })
 }
 
 fn measurement_for_feature(
     ctx: &DecodeContext<'_>,
     id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
-    visited: &mut BTreeSet<String>,
+    feature_index: &FeatureIndex<'_>,
+    direct_measurement: impl Copy + Fn(&Entity) -> Option<PositiveReal>,
+) -> Result<Walk<Option<PositiveReal>>, CodecError> {
+    let mut walk = MeasureWalk::default();
+    let measured = measure_feature(ctx, id, feature_index, &mut walk, 0, direct_measurement)?;
+    if measured == Walk::Capped {
+        return Ok(feature_index.capped());
+    }
+    Ok(measured)
+}
+
+/// One measurement walk: the features on the current path, and values known
+/// for a feature at a depth. A feature on no cycle reaches no feature above
+/// it on any path, so its value depends only on its depth.
+#[derive(Default)]
+struct MeasureWalk<'a> {
+    path: BTreeSet<&'a str>,
+    known: BTreeMap<(&'a str, usize), Option<PositiveReal>>,
+}
+
+fn measure_feature<'a>(
+    ctx: &DecodeContext<'_>,
+    id: &str,
+    feature_index: &FeatureIndex<'a>,
+    walk: &mut MeasureWalk<'a>,
     depth: usize,
     direct_measurement: impl Copy + Fn(&Entity) -> Option<PositiveReal>,
-) -> Result<Option<PositiveReal>, CodecError> {
-    if visited.contains(id) {
-        return Ok(None);
+) -> Result<Walk<Option<PositiveReal>>, CodecError> {
+    if !feature_index.work.charge() {
+        return Ok(Walk::Capped);
+    }
+    let Some((id, feature)) = feature_index.entry(id) else {
+        return Ok(Walk::Done(None));
+    };
+    if walk.path.contains(id) {
+        return Ok(Walk::Done(None));
     }
     let Some(child_depth) = swift_child_depth(depth) else {
-        return Ok(None);
+        return Ok(Walk::Capped);
     };
+    if let Some(known) = walk.known.get(&(id, depth)) {
+        return Ok(Walk::Done(*known));
+    }
     let _depth = ctx.enter_nested("measure SWIFT feature geometry")?;
-    visited.insert(id.to_owned());
-    let result = (|| {
-        let Some(feature) = feature_index.get(id) else {
-            return Ok(None);
+    if let Some(measurement) = direct_measurement(feature) {
+        return Ok(Walk::Done(Some(measurement)));
+    }
+    walk.path.insert(id);
+    let measured = measure_children(
+        ctx,
+        feature,
+        feature_index,
+        walk,
+        child_depth,
+        direct_measurement,
+    );
+    walk.path.remove(id);
+    let measured = measured?;
+    if let Walk::Done(value) = measured {
+        if !feature_index.cyclic.contains(id) {
+            walk.known.insert((id, depth), value);
+        }
+    }
+    Ok(measured)
+}
+
+fn measure_children<'a>(
+    ctx: &DecodeContext<'_>,
+    feature: &'a Entity,
+    feature_index: &FeatureIndex<'a>,
+    walk: &mut MeasureWalk<'a>,
+    child_depth: usize,
+    direct_measurement: impl Copy + Fn(&Entity) -> Option<PositiveReal>,
+) -> Result<Walk<Option<PositiveReal>>, CodecError> {
+    let mut first: Option<PositiveReal> = None;
+    for child in child_feature_ids(feature) {
+        let Walk::Done(value) = measure_feature(
+            ctx,
+            child,
+            feature_index,
+            walk,
+            child_depth,
+            direct_measurement,
+        )?
+        else {
+            return Ok(Walk::Capped);
         };
-        if let Some(measurement) = direct_measurement(feature) {
-            return Ok(Some(measurement));
-        }
-        let mut first: Option<PositiveReal> = None;
-        for child in child_feature_ids(feature) {
-            let Some(value) = measurement_for_feature(
-                ctx,
-                child,
-                feature_index,
-                visited,
-                child_depth,
-                direct_measurement,
-            )?
-            else {
-                continue;
-            };
-            if let Some(prior) = first {
-                if !approximately_equal(value.get(), prior.get()) {
-                    return Ok(None);
-                }
-            } else {
-                first = Some(value);
+        let Some(value) = value else {
+            continue;
+        };
+        if let Some(prior) = first {
+            if !approximately_equal(value.get(), prior.get()) {
+                return Ok(Walk::Done(None));
             }
+        } else {
+            first = Some(value);
         }
-        Ok(first)
-    })();
-    visited.remove(id);
-    result
+    }
+    Ok(Walk::Done(first))
 }
 
 fn child_feature_ids(feature: &Entity) -> impl Iterator<Item = &str> {
@@ -2553,28 +2853,33 @@ fn unique_related<'a>(entity: &'a Entity, name: &str) -> Option<&'a RelatedObjec
     matches.next().is_none().then_some(object)
 }
 
-fn feature_index(root: &Entity) -> BTreeMap<&str, &Entity> {
-    if root.features.references.len() != root.features.entities.len() {
-        return BTreeMap::new();
-    }
+fn feature_index(root: &Entity) -> FeatureIndex<'_> {
     let mut index = BTreeMap::new();
-    for (reference, entity) in root.features.references.iter().zip(&root.features.entities) {
-        index.insert(reference.id.as_str(), entity);
+    if root.features.references.len() == root.features.entities.len() {
+        for (reference, entity) in root.features.references.iter().zip(&root.features.entities) {
+            index.insert(reference.id.as_str(), entity);
+        }
     }
-    index
+    FeatureIndex::new(index)
 }
 
 fn targets(
     ctx: &DecodeContext<'_>,
     entity: &Entity,
-    feature_index: &BTreeMap<&str, &Entity>,
+    feature_index: &FeatureIndex<'_>,
     topology: Option<&TopologyIdentityIndex>,
 ) -> Result<Option<Vec<PmiTarget>>, CodecError> {
     let mut seen = BTreeSet::new();
+    let mut depths = WalkDepths::default();
     let mut targets = Vec::new();
     for reference in &entity.features.references {
-        let valid =
-            visit_expanded_feature_ids(ctx, &reference.id, feature_index, 0, &mut |source_id| {
+        let valid = visit_expanded_feature_ids(
+            ctx,
+            &reference.id,
+            feature_index,
+            &mut depths,
+            0,
+            &mut |source_id| {
                 if !seen.insert(source_id) {
                     return Ok(true);
                 }
@@ -2614,10 +2919,20 @@ fn targets(
                     targets.push(shape_aspect_target(source_id)?);
                 }
                 Ok(true)
-            })?;
-        if !valid {
-            return Ok(None);
+            },
+        )?;
+        match valid {
+            Some(true) => {}
+            Some(false) => return Ok(None),
+            None => {
+                feature_index.record_cap();
+                return Ok(None);
+            }
         }
+    }
+    if depths.truncated() {
+        feature_index.record_cap();
+        return Ok(None);
     }
     Ok(Some(targets))
 }
@@ -2651,32 +2966,48 @@ fn visit_cad_identifiers(
     Ok(())
 }
 
+/// Visits the leaves of `id`'s pattern expansion in first-visit order and
+/// stops at the first leaf `visit` rejects. `visit` must accept a repeated
+/// leaf: a pattern re-entered from a shallower depth visits its leaves again.
+/// `None` when the walk work ran out.
 fn visit_expanded_feature_ids<'a>(
     ctx: &DecodeContext<'_>,
     id: &'a str,
-    feature_index: &BTreeMap<&str, &'a Entity>,
+    feature_index: &FeatureIndex<'a>,
+    depths: &mut WalkDepths<'a>,
     depth: usize,
     visit: &mut impl FnMut(&'a str) -> Result<bool, CodecError>,
-) -> Result<bool, CodecError> {
+) -> Result<Option<bool>, CodecError> {
+    if !feature_index.work.charge() {
+        return Ok(None);
+    }
     let _depth = ctx.enter_nested("expand SWIFT target features")?;
-    let Some(feature) = feature_index.get(id) else {
-        return visit(id);
+    let Some(feature) = feature_index.get(id).copied() else {
+        return visit(id).map(Some);
     };
     if short_class(&feature.class) != "GdtPattern" {
-        return visit(id);
+        return visit(id).map(Some);
     }
-    let Some(child_depth) = swift_child_depth(depth) else {
-        return visit(id);
-    };
     let Some(subfeatures) = direct_subfeature_ids(feature) else {
-        return visit(id);
+        return visit(id).map(Some);
+    };
+    let Some(child_depth) = depths.enter(id, depth) else {
+        return Ok(Some(true));
     };
     for subfeature in subfeatures {
-        if !visit_expanded_feature_ids(ctx, subfeature, feature_index, child_depth, visit)? {
-            return Ok(false);
+        match visit_expanded_feature_ids(
+            ctx,
+            subfeature,
+            feature_index,
+            depths,
+            child_depth,
+            visit,
+        )? {
+            Some(true) => {}
+            stopped => return Ok(stopped),
         }
     }
-    Ok(true)
+    Ok(Some(true))
 }
 
 fn direct_subfeature_ids(feature: &Entity) -> Option<impl Iterator<Item = &str>> {

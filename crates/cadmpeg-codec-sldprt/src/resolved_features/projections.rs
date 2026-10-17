@@ -406,12 +406,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         let Some(owner) = parameter.owner.as_ref() else {
             continue;
         };
-        if !names_by_owner
-            .iter()
-            .any(|(known_owner, known_name)| known_owner == owner && known_name == &parameter.name)
-        {
-            names_by_owner.insert((owner.clone(), parameter.name.clone()));
-        }
+        names_by_owner.insert((owner.clone(), parameter.name.clone()));
         let next = if parameter.ordinal == u32::MAX {
             parameter.ordinal
         } else {
@@ -425,6 +420,13 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
     }
 
     for lane in lane_refs {
+        // Name lookup keeps the first directory record at a repeated identity.
+        let mut names_by_id = HashMap::<&str, &str>::new();
+        for name in &lane.names {
+            names_by_id
+                .entry(name.id.as_str())
+                .or_insert(name.value.as_str());
+        }
         for relation in &lane.relation_instances {
             if relation.parameter_scalar_ref().is_some()
                 || owned.get(&relation.id).is_some_and(Option::is_some)
@@ -438,11 +440,9 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             let Some(feature) = features_by_native_ref.get(relation.feature_ref.as_str()) else {
                 continue;
             };
-            let Some(source_name) = lane
-                .names
-                .iter()
-                .find(|name| name.id == scalar.name)
-                .map(|name| name.value.as_str())
+            let Some(source_name) = names_by_id
+                .get(scalar.name.as_str())
+                .copied()
                 .filter(|name| !name.is_empty())
             else {
                 continue;
@@ -463,16 +463,11 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 next_ordinals.insert(owner.clone(), next_ordinal);
             }
             let mut candidate = reference_name(source_name, None, None);
-            if names_by_owner
-                .iter()
-                .any(|(known_owner, known_name)| known_owner == owner && known_name == &candidate)
-            {
+            if names_by_owner.contains(&(owner.clone(), candidate.clone())) {
                 candidate = reference_name(source_name, Some(relation.offset), None);
                 let mut suffix = 0u32;
                 loop {
-                    if !names_by_owner.iter().any(|(known_owner, known_name)| {
-                        known_owner == owner && known_name == &candidate
-                    }) {
+                    if !names_by_owner.contains(&(owner.clone(), candidate.clone())) {
                         break;
                     }
                     suffix = suffix.checked_add(1).ok_or_else(|| {

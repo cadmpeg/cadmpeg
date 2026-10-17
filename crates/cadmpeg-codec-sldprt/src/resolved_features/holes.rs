@@ -90,7 +90,7 @@ pub(crate) fn project_helix_axes(
             let Some(object) = start.and_then(|start| lane.native_payload.get(start..end)) else {
                 continue;
             };
-            for stream in crate::parasolid::extract_streams_with_offsets(object, ctx)? {
+            for stream in crate::parasolid::extract_streams_with_offsets(object, ctx)?.streams {
                 if let Some(points) =
                     crate::parasolid::mesh_polyline_from_header(&stream.payload, &stream.header)
                 {

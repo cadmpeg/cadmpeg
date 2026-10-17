@@ -39,11 +39,34 @@ pub(crate) struct ExtractedStream {
     pub(crate) header: StreamHeader,
 }
 
+/// Work allowed to the legacy zlib probe per byte of the outer payload. Each
+/// zlib candidate charges the payload bytes after it.
+pub(crate) const PROBE_WORK_PER_PAYLOAD_BYTE: usize = 16;
+
+/// Streams extracted from one outer payload.
+#[derive(Debug)]
+pub(crate) struct ExtractedStreams {
+    /// Streams in payload order.
+    pub(crate) streams: Vec<ExtractedStream>,
+    /// The legacy zlib probe reached its work limit before trying every
+    /// candidate, so a later embedded body may be missing.
+    pub(crate) probe_capped: bool,
+}
+
+impl ExtractedStreams {
+    fn complete(streams: Vec<ExtractedStream>) -> Self {
+        Self {
+            streams,
+            probe_capped: false,
+        }
+    }
+}
+
 /// Extract every stream with its direct or wrapper offset in the outer payload.
 pub(crate) fn extract_streams_with_offsets(
     payload: &[u8],
     ctx: &DecodeContext<'_>,
-) -> Result<Vec<ExtractedStream>, CodecError> {
+) -> Result<ExtractedStreams, CodecError> {
     let mut out = Vec::new();
     let wrapped_prefix = has_wrapped_prefix(payload);
     let starts = if wrapped_prefix {
@@ -62,10 +85,10 @@ pub(crate) fn extract_streams_with_offsets(
         });
     }
     if !out.is_empty() {
-        return Ok(out);
+        return Ok(ExtractedStreams::complete(out));
     }
     let Some(scan_len) = payload.len().checked_sub(WRAPPED_MAGIC_PREFIX.len() - 1) else {
-        return Ok(out);
+        return Ok(ExtractedStreams::complete(out));
     };
     let mut has_magic = false;
     for (magic_at, byte) in payload[..scan_len].iter().enumerate() {
@@ -90,11 +113,11 @@ pub(crate) fn extract_streams_with_offsets(
         }
     }
     if !has_magic {
-        return Ok(out);
+        return Ok(ExtractedStreams::complete(out));
     }
     if !out.is_empty() {
         out.sort_by_key(|stream| stream.offset);
-        return Ok(out);
+        return Ok(ExtractedStreams::complete(out));
     }
 
     // A payload with the section prefix is a malformed chained wrapper, not a
@@ -102,25 +125,28 @@ pub(crate) fn extract_streams_with_offsets(
     // bad continuation from silently recreating the historical one-megabyte
     // truncation.
     if wrapped_prefix {
-        return Ok(out);
+        return Ok(ExtractedStreams::complete(out));
     }
 
     // Preserve older nested wrappers that do not carry the chained-section
     // prefix. Try each zlib member; the first that inflates to a `PS\0\0`-leading
     // stream is the embedded body. zlib headers are `78 01` / `78 9c` / `78 da`.
     // Each candidate charges the payload bytes after it; the probe stops at
-    // sixteen times the payload length. A payload too large to state that
-    // limit is not probed.
-    let Some(probe_limit) = payload.len().checked_mul(16) else {
-        return Ok(out);
+    // `PROBE_WORK_PER_PAYLOAD_BYTE` times the payload length and reports the
+    // stop. A payload too large to state that limit is reported unprobed.
+    let Some(probe_limit) = payload.len().checked_mul(PROBE_WORK_PER_PAYLOAD_BYTE) else {
+        return Ok(ExtractedStreams {
+            streams: out,
+            probe_capped: true,
+        });
     };
     let work = WorkBudget::new(probe_limit);
+    let mut probe_capped = false;
     let mut i = 0usize;
     while i + 2 <= payload.len() {
         if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
             if !work.charge_by(payload.len() - i) {
-                // Local exhaustion ends the best-effort probe with the streams
-                // found so far.
+                probe_capped = true;
                 break;
             }
             let inner = match inflate_zlib_member(
@@ -155,7 +181,10 @@ pub(crate) fn extract_streams_with_offsets(
         }
         i += 1;
     }
-    Ok(out)
+    Ok(ExtractedStreams {
+        streams: out,
+        probe_capped,
+    })
 }
 
 fn stream_payload_present(streams: &[ExtractedStream], payload: &[u8]) -> bool {

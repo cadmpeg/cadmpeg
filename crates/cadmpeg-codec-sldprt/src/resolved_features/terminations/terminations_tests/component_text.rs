@@ -1,4 +1,4 @@
-//! Charged component selection text.
+//! Component selection text.
 
 use crate::resolved_features::terminations::compact_surface_selection_value;
 

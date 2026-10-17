@@ -2219,6 +2219,10 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
     target.stats.off_surface_nurbs_pcurves += source.stats.off_surface_nurbs_pcurves;
+    target
+        .stats
+        .surface_solver_capped
+        .append(&mut source.stats.surface_solver_capped);
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
     target.stats.ambiguous_face_owners += source.stats.ambiguous_face_owners;
@@ -2733,6 +2737,7 @@ fn build_geometry_ir(
         &mut annotations,
         Some(&topology_index),
         Some(&pattern_hole_nominals),
+        &mut pmi_losses,
     )?;
     stamp_feature_baseline(ctx, &mut ir)?;
     let mut native = crate::native::SldprtNative {
@@ -3330,6 +3335,17 @@ fn build_geometry_report(
             s.ambiguous_pcurve_parameters
         )));
     }
+    if !s.surface_solver_capped.is_empty() {
+        losses.push(
+            SldprtLossCode::GeometrySurfaceSolverWorkCapped.note(format!(
+            "{} coedge pcurve(s) were skipped because a NURBS surface solve exceeded the local \
+             work cap SURFACE_SOLVER_LOCAL_WORK ({}): {}.",
+            s.surface_solver_capped.count(),
+            crate::brep::evaluation::SURFACE_SOLVER_LOCAL_WORK,
+            s.surface_solver_capped,
+        )),
+        );
+    }
     if s.off_surface_nurbs_pcurves > 0 {
         losses.push(SldprtLossCode::TopologyPcurveCarrierOffSurface.note(format!(
             "{} NURBS edge carrier(s) have vertex ranges off their bound B-spline surface; pcurve derivation is withheld because the defect is upstream of parameter-space geometry.",
@@ -3362,6 +3378,7 @@ fn build_geometry_report(
             ),
         );
     }
+    append_parasolid_probe_losses(scan, &mut losses);
     append_swift_pmi_losses(ctx, scan, &mut losses)?;
     classification.append_losses(&mut losses);
     Ok(DecodeBody {
@@ -3404,7 +3421,8 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    ir.model.pmi = crate::swift::annotations(ctx, scan, &mut annotations, None, None)?;
+    ir.model.pmi =
+        crate::swift::annotations(ctx, scan, &mut annotations, None, None, &mut pmi_losses)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         sketches,
         entities: sketch_entities,
@@ -3840,7 +3858,7 @@ fn project_design_history(
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters =
         crate::history::parameters::project_parameters(ctx, &parameter_projection)?;
-    crate::history::configuration::project_configuration_design_states(
+    let unprojected = crate::history::configuration::project_configuration_design_states(
         ctx,
         ir,
         histories,
@@ -3848,6 +3866,10 @@ fn project_design_history(
         pmi_dimensions,
         form_padding,
     )?;
+    if unprojected > 0 {
+        losses
+            .push(crate::history::configuration::configuration_projection_capped_loss(unprojected));
+    }
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
@@ -4918,6 +4940,7 @@ fn build_container_report(
             ),
         );
     }
+    append_parasolid_probe_losses(scan, &mut losses);
     append_swift_pmi_losses(ctx, scan, &mut losses)?;
     classification.append_losses(&mut losses);
 
@@ -4928,6 +4951,26 @@ fn build_container_report(
         notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
+}
+
+fn append_parasolid_probe_losses(
+    scan: &ContainerScan<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let mut capped = crate::loss::NamedCount::default();
+    for section in scan.sections().filter(|section| section.ps_probe_capped()) {
+        capped.push(section.source_stream().as_str());
+    }
+    if capped.is_empty() {
+        return;
+    }
+    losses.push(SldprtLossCode::ContainerParasolidProbeCapped.note(format!(
+        "{} section(s) stopped the legacy Parasolid zlib probe at PROBE_WORK_PER_PAYLOAD_BYTE \
+         ({}) times the payload length; later zlib members in those sections were not tried: \
+         {capped}.",
+        capped.count(),
+        crate::parasolid::PROBE_WORK_PER_PAYLOAD_BYTE,
+    )));
 }
 
 fn append_swift_pmi_losses(
