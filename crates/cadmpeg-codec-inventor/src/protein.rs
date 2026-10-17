@@ -400,6 +400,71 @@ mod tests {
     }
 
     #[test]
+    fn protein_instance_past_the_zstd_window_allowance_is_an_issue_without_a_refusal() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "Schemas/SimpleSchema.xml",
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+            )
+            .expect("start synthetic ZIP member");
+        writer
+            .write_all(schema)
+            .expect("write synthetic ZIP member");
+        writer
+            .start_file(
+                "AssetData/InstanceProperties.bin",
+                SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Zstd)
+                    .compression_level(Some(22)),
+            )
+            .expect("start synthetic ZIP member");
+        writer
+            .write_all(b"instance")
+            .expect("write synthetic ZIP member");
+        let zip = writer.finish().expect("finish synthetic ZIP").into_inner();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
+        bytes.extend_from_slice(&zip);
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("package context");
+        let ParsedProtein::Package {
+            declared_len,
+            archive,
+            payload,
+        } = parse_stream(&setup, root).expect("ZIP package parses")
+        else {
+            panic!("package state");
+        };
+        let cfb = crate::test_support::test_fixtures::fixture(true);
+        let (cfb_ctx, cfb_root) =
+            DecodeContext::from_root_bytes(&cfb, &arena, &DecodePolicy::service())
+                .expect("compound context");
+        let snapshot = CompoundSnapshot::new(&cfb_ctx, cfb_root).expect("compound fixture");
+        let stream = snapshot
+            .stream("RSeStorage/RSeSegInfo")
+            .expect("fixture stream")
+            .id();
+        let package = ProteinEnvelope {
+            stream,
+            declared_len,
+            archive,
+            payload,
+        };
+        let (instances, issue) = decode_instances_with_issue(&setup, &package)
+            .expect("an unreadable instance stream does not refuse the decode");
+        assert!(instances.is_empty());
+        let issue = issue.expect("the skipped stream is an issue");
+        assert!(issue.contains("per-expansion allowance"), "{issue}");
+        assert_eq!(setup.resource_refusal(), None);
+        assert!(setup.finish_session().is_ok());
+    }
+
+    #[test]
     fn inventor_reuses_one_schema_catalog_across_instance_streams() {
         let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
         let mut record = Vec::new();

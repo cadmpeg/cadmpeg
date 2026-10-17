@@ -162,6 +162,64 @@ fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
 }
 
 #[test]
+fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusal() {
+    use std::io::Write as _;
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file(
+        "Document.xml",
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+    )
+    .expect("start entry");
+    zip.write_all(document.as_bytes()).expect("write entry");
+    zip.start_file(
+        "thumbnails/Thumbnail.png",
+        SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Zstd)
+            .compression_level(Some(22)),
+    )
+    .expect("start entry");
+    zip.write_all(b"thumbnail").expect("write entry");
+    let bytes = zip.finish().expect("finish ZIP").into_inner();
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+    let scan = super::scan(&ctx, root).expect("one unreadable member does not refuse the archive");
+    let [loss] = scan.losses.as_slice() else {
+        panic!("one loss: {:?}", scan.losses);
+    };
+    let unreadable = crate::loss::FreecadLossCode::ArchiveEntryUnreadable
+        .note(String::new())
+        .code;
+    assert_eq!(loss.code, unreadable);
+    assert!(
+        loss.message
+            .starts_with("thumbnails/Thumbnail.png cannot be opened")
+            && loss.message.contains("per-expansion allowance"),
+        "{}",
+        loss.message
+    );
+    let [entry] = scan.unreadable_entries.as_slice() else {
+        panic!("one unreadable entry");
+    };
+    assert_eq!(entry.name, "thumbnails/Thumbnail.png");
+    assert!(scan.data.contains_key("Document.xml"));
+    assert_eq!(ctx.resource_refusal(), None);
+    assert!(ctx.finish_session().is_ok());
+
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the decode keeps the document");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == unreadable));
+}
+
+#[test]
 fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
     let bytes = br#"<Document SchemaVersion="4"><!-- <Objects><Object/> --><Note attr=">"> <![CDATA[<Object/>]]> </Note><Objects><Object/><Object/></Objects></Document>"#;
     let (bound, objects) = super::xml_envelope_counts(bytes).expect("lexical XML count");
