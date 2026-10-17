@@ -892,6 +892,21 @@ fn ruled_surface_carrier(
     ))
 }
 
+/// The ruled carrier, the text of the geometry loss when the rails state
+/// none, or the decode resource refusal that stopped the projection.
+fn ruled_carrier_or_loss(
+    carrier: Result<Option<NurbsSurface>, CodecError>,
+) -> Result<Result<NurbsSurface, String>, CodecError> {
+    Ok(match carrier {
+        Ok(Some(surface)) => Ok(surface),
+        Ok(None) => Err("ruled rails do not have a finite exact NURBS carrier".to_owned()),
+        Err(error) => Err(format!(
+            "ruled rails state no NURBS carrier: {}",
+            super::non_resource_error(error)?
+        )),
+    })
+}
+
 type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal>>);
 
 /// The span lanes of a ruled carrier, or `None` when the rails state none.
@@ -1614,22 +1629,10 @@ pub(super) fn project(
                 continue;
             }
         }
-        let surface = match ruled_surface_carrier(&first, &second, ctx) {
-            Ok(Some(surface)) => surface,
-            Ok(None) => {
-                super::push_geometry_loss(
-                    &mut losses,
-                    entry,
-                    format_args!("{}", "ruled rails do not have a finite exact NURBS carrier"),
-                );
-                continue;
-            }
-            Err(error) => {
-                super::push_geometry_loss(
-                    &mut losses,
-                    entry,
-                    format_args!("ruled rails state no NURBS carrier: {error}"),
-                );
+        let surface = match ruled_carrier_or_loss(ruled_surface_carrier(&first, &second, ctx))? {
+            Ok(surface) => surface,
+            Err(message) => {
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
