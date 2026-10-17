@@ -32,24 +32,46 @@ fn is_attribute_definition(feature: &Feature) -> bool {
         && !feature.name.is_empty()
 }
 
-pub(crate) fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
-    if is_custom_property(feature)
-        || is_semantic_note(feature)
-        || is_attribute_definition(feature)
-        || matches!(
-            feature.input_class.as_deref(),
-            Some("moAlignGroup_c" | "moAttribute_c" | "moConfigCommentsFolder_c")
-        )
-    {
-        return true;
+/// Recognizes the metadata records of one history. A classless reserved
+/// record is metadata when one of the history's attributes is named after it.
+pub(crate) struct HistoryMetadata<'a> {
+    attribute_names: Vec<&'a str>,
+}
+
+impl<'a> HistoryMetadata<'a> {
+    pub(crate) fn new(features: &'a [Feature]) -> Self {
+        let mut attribute_names = features
+            .iter()
+            .filter(|candidate| candidate.input_class.as_deref() == Some("moAttribute_c"))
+            .map(|candidate| candidate.name.as_str())
+            .collect::<Vec<_>>();
+        attribute_names.sort_unstable();
+        Self { attribute_names }
     }
-    feature.input_class.is_none()
-        && feature.source_id == Some(FeatureSource::Reserved)
-        && !feature.name.is_empty()
-        && features.iter().any(|candidate| {
-            candidate.input_class.as_deref() == Some("moAttribute_c")
-                && candidate.name.starts_with(&feature.name)
-        })
+
+    pub(crate) fn contains(&self, feature: &Feature) -> bool {
+        if is_custom_property(feature)
+            || is_semantic_note(feature)
+            || is_attribute_definition(feature)
+            || matches!(
+                feature.input_class.as_deref(),
+                Some("moAlignGroup_c" | "moAttribute_c" | "moConfigCommentsFolder_c")
+            )
+        {
+            return true;
+        }
+        feature.input_class.is_none()
+            && feature.source_id == Some(FeatureSource::Reserved)
+            && !feature.name.is_empty()
+            && self.has_attribute_starting_with(&feature.name)
+    }
+
+    fn has_attribute_starting_with(&self, prefix: &str) -> bool {
+        let first_not_below = self.attribute_names.partition_point(|name| *name < prefix);
+        self.attribute_names
+            .get(first_not_below)
+            .is_some_and(|name| name.starts_with(prefix))
+    }
 }
 
 pub(super) fn feature_tree_node_role(

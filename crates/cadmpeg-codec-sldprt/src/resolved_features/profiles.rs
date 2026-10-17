@@ -2108,16 +2108,17 @@ pub(crate) fn project_sketch_block_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    let metadata = histories
+        .iter()
+        .map(|history| crate::history::classify::HistoryMetadata::new(&history.features))
+        .collect::<Vec<_>>();
     for lane in lanes {
         let names = FeatureObjectNames::new(&lane.names);
-        for history in histories {
+        for (history, metadata) in histories.iter().zip(&metadata) {
             let mut objects = Vec::new();
             for (ordinal, feature) in history.features.iter().enumerate() {
                 if let Some(name) = names.of(feature) {
-                    if !crate::history::classify::is_history_metadata_record(
-                        feature,
-                        &history.features,
-                    ) {
+                    if !metadata.contains(feature) {
                         objects.push((name.offset, feature, ordinal));
                     }
                 }

@@ -210,9 +210,12 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     }
 
     let native_features = crate::records::HistoryFeatures::new(histories);
-    let mut history_features = HashMap::new();
+    let mut history_metadata = HashMap::new();
     for history in histories {
-        history_features.insert(history.id.as_str(), history.features.as_slice());
+        history_metadata.insert(
+            history.id.as_str(),
+            crate::history::classify::HistoryMetadata::new(&history.features),
+        );
     }
     let mut neutral_indices = HashMap::new();
     for (index, feature) in features.iter().enumerate() {
@@ -227,11 +230,9 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             .iter()
             .filter_map(|feature| Some((names.of(feature)?, feature)))
             .filter(|(_, feature)| {
-                !history_features
+                !history_metadata
                     .get(feature.parent.as_str())
-                    .is_some_and(|features| {
-                        crate::history::classify::is_history_metadata_record(feature, features)
-                    })
+                    .is_some_and(|metadata| metadata.contains(feature))
             })
             .enumerate()
             .collect::<Vec<_>>();

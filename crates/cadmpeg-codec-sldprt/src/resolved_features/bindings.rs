@@ -26,7 +26,7 @@ use super::selections::{
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::classify::is_history_metadata_record;
+use crate::history::classify::HistoryMetadata;
 use crate::history::literals::parse_positive_angle_rad;
 use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
@@ -50,8 +50,9 @@ const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1e-9;
 pub(super) fn history_metadata_ids(histories: &[crate::records::FeatureHistory]) -> HashSet<&str> {
     let mut ids = HashSet::new();
     for history in histories {
+        let metadata = HistoryMetadata::new(&history.features);
         for feature in &history.features {
-            if is_history_metadata_record(feature, &history.features) {
+            if metadata.contains(feature) {
                 ids.insert(feature.id.as_str());
             }
         }

@@ -3,7 +3,7 @@
 use super::scalars::FeatureObjectNames;
 use super::SKETCH_POINT_TOLERANCE;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::classify::is_history_metadata_record;
+use crate::history::classify::HistoryMetadata;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
@@ -26,8 +26,9 @@ pub(super) fn feature_intervals(
     let names = FeatureObjectNames::new(&lane.names);
     let mut starts = Vec::new();
     for history in histories {
+        let metadata = HistoryMetadata::new(&history.features);
         for feature in &history.features {
-            if is_history_metadata_record(feature, &history.features) {
+            if metadata.contains(feature) {
                 continue;
             }
             if let Some(name) = names.of(feature) {
