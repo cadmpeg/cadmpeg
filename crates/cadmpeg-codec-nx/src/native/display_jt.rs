@@ -5562,9 +5562,10 @@ pub(super) fn display_jt_tessellations(
                 return Ok(dropped_display_jt_tessellations(losses, mesh));
             }
             losses.push(NxLossCode::SourceScanBounded.note(format!(
-                "The instance-path scan of Display-JT shape node {} reached its visit bound; \
+                "The instance-path scan of Display-JT shape node {} reached its visit bound of {}; \
                  the part's Display-JT tessellations were skipped.",
-                shape_node.object_id
+                shape_node.object_id,
+                MAX_JT_NODE_PATH_VISITS,
             )));
             return Ok(Vec::new());
         };

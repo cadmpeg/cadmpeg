@@ -1125,6 +1125,55 @@ fn optional_archive_profile_defects_preserve_geometry_and_declarations() {
 }
 
 #[test]
+fn zstd_window_past_the_allowance_skips_an_ancillary_member_and_leaves_the_root_unsupported() {
+    let root = include_bytes!("../writer/tests/data/periodic_two_rims.p21");
+    let streamed = |member: &str| {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        for name in [ROOT_NAME, "preview.bin"] {
+            let options = if name == member {
+                SimpleFileOptions::default()
+                    .compression_method(CompressionMethod::Zstd)
+                    .compression_level(Some(22))
+            } else {
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored)
+            };
+            writer.start_file(name, options).unwrap();
+            let bytes: &[u8] = if name == ROOT_NAME { root } else { b"preview" };
+            std::io::Write::write_all(&mut writer, bytes).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    };
+    let codec = StepCodec::default();
+    let baseline = codec
+        .decode(&mut Cursor::new(root), &DecodeOptions::default())
+        .unwrap();
+
+    let result = EditableDecodeResult::from(
+        codec
+            .decode(
+                &mut Cursor::new(streamed("preview.bin")),
+                &DecodeOptions::default(),
+            )
+            .expect("an ancillary member past the window allowance does not refuse the root"),
+    );
+    assert_eq!(result.ir().model, baseline.ir().model);
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()
+        && loss.message.contains("\"preview.bin\"")));
+
+    let error = codec
+        .decode(
+            &mut Cursor::new(streamed(ROOT_NAME)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("the required root cannot be skipped");
+    assert!(
+        matches!(&error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::NotImplemented(message)) if message.ends_with("per-expansion allowance")),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
     let root = include_bytes!("../writer/tests/data/periodic_two_rims.p21");
     let codec = StepCodec::default();

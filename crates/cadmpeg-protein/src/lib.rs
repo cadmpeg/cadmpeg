@@ -886,6 +886,35 @@ mod tests {
     }
 
     #[test]
+    fn schema_past_the_zstd_window_allowance_is_unsupported_without_a_refusal() {
+        let xml = br#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "Schemas/SimpleSchema.xml",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Zstd)
+                    .compression_level(Some(22)),
+            )
+            .expect("schema entry starts");
+        writer.write_all(xml).expect("schema XML writes");
+        let protein = writer.finish().expect("archive finishes").into_inner();
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&protein, &arena, &DecodePolicy::service())
+                .expect("ZIP fits service input limit");
+        let error = super::SchemaCatalog::load(&ctx, root)
+            .err()
+            .expect("the schema cannot be read");
+        assert!(
+            matches!(&error, CodecError::NotImplemented(message) if message.ends_with("per-expansion allowance")),
+            "{error:?}"
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
     fn schema_inheritance_refuses_at_active_depth_limit() {
         let schemas = std::collections::HashMap::from([
             (

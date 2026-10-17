@@ -187,10 +187,52 @@ pub(crate) fn primary_envelope_fixture_with_unavailable_carrier() -> Vec<u8> {
     primary_envelope_fixture_with_carrier_and_failures(
         EnvelopeDeclarations::default(),
         &[0_u8; 8],
+        &[],
         false,
         false,
     )
 }
+
+/// The primary envelope carrying `kernel` beside a second, `PmDc` segment
+/// whose records are `design`, framed in order at ordinals 0, 1, ... and each
+/// under its own type index.
+pub(crate) fn primary_envelope_fixture_with_design(
+    kernel: &[u8],
+    design: &[([u8; 16], Vec<u8>)],
+) -> Vec<u8> {
+    assert!(!design.is_empty(), "a PmDc segment carries a record");
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &kernel_carrier_fixture(kernel),
+        design,
+        false,
+        false,
+    )
+}
+
+/// One `RSe` segment's registry and metadata identity.
+struct SegmentIdentity {
+    display_name: &'static str,
+    segment_id: [u8; 16],
+    type_name: &'static str,
+}
+
+const BREP_SEGMENT: SegmentIdentity = SegmentIdentity {
+    display_name: "PmBRepSegment",
+    segment_id: [0x5a; 16],
+    type_name: "PmBrepSegmentType",
+};
+
+const DESIGN_SEGMENT: SegmentIdentity = SegmentIdentity {
+    display_name: "PmDcSegment",
+    segment_id: [0x5b; 16],
+    type_name: "PmDcSegmentType",
+};
+
+/// The type id the kernel-carrier record is framed under.
+const CARRIER_TYPE_ID: [u8; 16] = [
+    0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6, 0x47, 0xb5,
+];
 
 fn primary_envelope_fixture_with_kernel_and_failures(
     declarations: EnvelopeDeclarations,
@@ -202,6 +244,7 @@ fn primary_envelope_fixture_with_kernel_and_failures(
     primary_envelope_fixture_with_carrier_and_failures(
         declarations,
         &carrier,
+        &[],
         break_database_body,
         break_metadata_body,
     )
@@ -210,6 +253,7 @@ fn primary_envelope_fixture_with_kernel_and_failures(
 fn primary_envelope_fixture_with_carrier_and_failures(
     declarations: EnvelopeDeclarations,
     carrier: &[u8],
+    design: &[([u8; 16], Vec<u8>)],
     break_database_body: bool,
     break_metadata_body: bool,
 ) -> Vec<u8> {
@@ -221,6 +265,8 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     const REVISION_INFO: usize = 5;
     const BULK: usize = 6;
     const META: usize = 7;
+    const DESIGN_BULK: usize = 8;
+    const DESIGN_META: usize = 9;
     const DIRECTORY_SECTORS: usize = 3;
     const MINI_SECTOR_SIZE: usize = 64;
     const SECTOR_SIZE: usize = 512;
@@ -228,24 +274,48 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     const FREE_SECTOR: u32 = 0xffff_ffff;
     const FAT_SECTOR: u32 = 0xffff_fffd;
 
-    let mut meta = meta_stream_fixture(carrier.len(), declarations);
+    let mut meta = meta_stream_fixture(
+        &BREP_SEGMENT,
+        &[(CARRIER_TYPE_ID, carrier.len())],
+        declarations,
+    );
     if break_metadata_body {
         meta.push(0xff);
     }
-    let bulk = bulk_stream_fixture(carrier);
+    let bulk = bulk_stream_fixture(&[carrier]);
     let mut database = database_fixture(declarations.schema);
     if break_database_body {
         database.truncate(20);
     }
-    let registry = registry_fixture();
+    let registry = if design.is_empty() {
+        registry_fixture(&[&BREP_SEGMENT])
+    } else {
+        registry_fixture(&[&BREP_SEGMENT, &DESIGN_SEGMENT])
+    };
     let revisions = revision_fixture();
-    let streams = [
+    let mut streams = vec![
         (SEGMENT_INFO, "RSeSegInfo", registry),
         (DATABASE, "RSeDb", database),
         (REVISION_INFO, "RSeDbRevisionInfo", revisions),
         (BULK, "Bseg", bulk),
         (META, "Mseg", meta),
     ];
+    if !design.is_empty() {
+        let records = design
+            .iter()
+            .map(|(type_id, payload)| (*type_id, payload.len()))
+            .collect::<Vec<_>>();
+        let payloads = design
+            .iter()
+            .map(|(_, payload)| payload.as_slice())
+            .collect::<Vec<_>>();
+        streams.push((DESIGN_BULK, "Bdc", bulk_stream_fixture(&payloads)));
+        streams.push((
+            DESIGN_META,
+            "Mdc",
+            meta_stream_fixture(&DESIGN_SEGMENT, &records, declarations),
+        ));
+    }
 
     let mut mini_stream = Vec::new();
     let mut mini_fat = vec![FREE_SECTOR; SECTOR_SIZE / 4];
@@ -322,17 +392,42 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         END_OF_CHAIN,
         0,
     );
+    let after_band = if design.is_empty() { BULK } else { DESIGN_BULK };
     directory_node(
         &mut directory,
         V1,
         "V1",
         1,
         NO_STREAM,
-        u32::try_from(BULK).expect("fixture value fits u32"),
+        u32::try_from(after_band).expect("fixture value fits u32"),
         u32::try_from(DATABASE).expect("fixture value fits u32"),
         END_OF_CHAIN,
         0,
     );
+    if !design.is_empty() {
+        directory_node(
+            &mut directory,
+            DESIGN_BULK,
+            "Bdc",
+            2,
+            NO_STREAM,
+            u32::try_from(DESIGN_META).expect("fixture value fits u32"),
+            NO_STREAM,
+            allocations[5].0,
+            allocations[5].1,
+        );
+        directory_node(
+            &mut directory,
+            DESIGN_META,
+            "Mdc",
+            2,
+            NO_STREAM,
+            u32::try_from(BULK).expect("fixture value fits u32"),
+            NO_STREAM,
+            allocations[6].0,
+            allocations[6].1,
+        );
+    }
     directory_node(
         &mut directory,
         SEGMENT_INFO,
@@ -435,35 +530,40 @@ fn database_fixture(schema: u32) -> Vec<u8> {
     bytes
 }
 
-fn registry_fixture() -> Vec<u8> {
+fn registry_fixture(segments: &[&SegmentIdentity]) -> Vec<u8> {
     let mut bytes = Vec::new();
-    push_u32(&mut bytes, 1);
-    push_utf16(&mut bytes, "PmBRepSegment");
-    bytes.extend_from_slice(&[0x5a; 16]);
-    bytes.extend_from_slice(&[0x20; 16]);
-    push_u32(&mut bytes, 3);
-    push_u32(&mut bytes, 1);
-    for value in 4..9 {
-        push_u32(&mut bytes, value);
+    push_u32(
+        &mut bytes,
+        u32::try_from(segments.len()).expect("fixture value fits u32"),
+    );
+    for segment in segments {
+        push_utf16(&mut bytes, segment.display_name);
+        bytes.extend_from_slice(&segment.segment_id);
+        bytes.extend_from_slice(&[0x20; 16]);
+        push_u32(&mut bytes, 3);
+        push_u32(&mut bytes, 1);
+        for value in 4..9 {
+            push_u32(&mut bytes, value);
+        }
+        push_u32(&mut bytes, 9);
+        push_utf16(&mut bytes, segment.type_name);
+        push_u32(&mut bytes, 10);
+        push_u32(&mut bytes, 11);
+        push_version(&mut bytes, 18);
+        push_u32(&mut bytes, 12);
+        bytes.extend_from_slice(&[0x20; 16]);
+        bytes.extend_from_slice(&[0x30; 9]);
+        bytes.extend_from_slice(&segment.segment_id);
+        push_u32(&mut bytes, 13);
+        push_u32(&mut bytes, 2);
+        push_u32(&mut bytes, 14);
+        bytes.extend_from_slice(&(-1_i16).to_le_bytes());
+        bytes.extend_from_slice(&2_i16.to_le_bytes());
+        for value in 15_u16..21 {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&21_u16.to_le_bytes());
     }
-    push_u32(&mut bytes, 9);
-    push_utf16(&mut bytes, "PmBrepSegmentType");
-    push_u32(&mut bytes, 10);
-    push_u32(&mut bytes, 11);
-    push_version(&mut bytes, 18);
-    push_u32(&mut bytes, 12);
-    bytes.extend_from_slice(&[0x20; 16]);
-    bytes.extend_from_slice(&[0x30; 9]);
-    bytes.extend_from_slice(&[0x5a; 16]);
-    push_u32(&mut bytes, 13);
-    push_u32(&mut bytes, 2);
-    push_u32(&mut bytes, 14);
-    bytes.extend_from_slice(&(-1_i16).to_le_bytes());
-    bytes.extend_from_slice(&2_i16.to_le_bytes());
-    for value in 15_u16..21 {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes.extend_from_slice(&21_u16.to_le_bytes());
     bytes.extend_from_slice(&22_u16.to_le_bytes());
     bytes.extend_from_slice(&23_u16.to_le_bytes());
     push_u32(&mut bytes, 1);
@@ -476,14 +576,20 @@ fn revision_fixture() -> Vec<u8> {
     [3_u32, 0].into_iter().flat_map(u32::to_le_bytes).collect()
 }
 
-fn meta_stream_fixture(payload_len: usize, declarations: EnvelopeDeclarations) -> Vec<u8> {
-    let body = meta_table_body(payload_len);
+/// One segment's metadata stream; `records` are the type id and payload
+/// length of each stored record, in bulk order.
+fn meta_stream_fixture(
+    segment: &SegmentIdentity,
+    records: &[([u8; 16], usize)],
+    declarations: EnvelopeDeclarations,
+) -> Vec<u8> {
+    let body = meta_table_body(records);
     let mut bytes = Vec::new();
     push_bytes_vec(&mut bytes, declarations.meta_marker.as_bytes());
     bytes.extend_from_slice(&declarations.meta_version.to_le_bytes());
     bytes.extend_from_slice(&[1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0]);
-    push_utf16(&mut bytes, "PmBRepSegment");
-    bytes.extend_from_slice(&[0x5a; 16]);
+    push_utf16(&mut bytes, segment.display_name);
+    bytes.extend_from_slice(&segment.segment_id);
     bytes.extend_from_slice(
         &[5_u32, 6, 7]
             .into_iter()
@@ -501,29 +607,28 @@ fn meta_stream_fixture(payload_len: usize, declarations: EnvelopeDeclarations) -
     bytes
 }
 
-fn meta_table_body(payload_len: usize) -> Vec<u8> {
-    let type_id = [
-        0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6, 0x47,
-        0xb5,
-    ];
+fn meta_table_body(records: &[([u8; 16], usize)]) -> Vec<u8> {
     let mut body = Vec::new();
     for value in [3_u16, 0, 2, 1, 0, 4, 0] {
         body.extend_from_slice(&value.to_le_bytes());
     }
-    push_counted_section(
-        &mut body,
-        &[0x8000_0000 | u32::try_from(payload_len).expect("fixture value fits u32")],
-        4,
-    );
+    let blocks = records
+        .iter()
+        .map(|(_, len)| 0x8000_0000 | u32::try_from(*len).expect("fixture value fits u32"))
+        .collect::<Vec<_>>();
+    push_counted_section(&mut body, &blocks, 4);
     push_counted_section(&mut body, &[], 10);
     push_counted_section(&mut body, &[], 28);
-    push_u32(&mut body, 1);
-    body.extend_from_slice(&type_id);
-    body.extend_from_slice(&1_u16.to_le_bytes());
-    push_u32(&mut body, 2);
-    body.extend_from_slice(&3_u16.to_le_bytes());
-    push_u32(&mut body, 4);
-    push_u32(&mut body, 32);
+    let type_count = u32::try_from(records.len()).expect("fixture value fits u32");
+    push_u32(&mut body, type_count);
+    for (type_id, _) in records {
+        body.extend_from_slice(type_id);
+        body.extend_from_slice(&1_u16.to_le_bytes());
+        push_u32(&mut body, 2);
+        body.extend_from_slice(&3_u16.to_le_bytes());
+        push_u32(&mut body, 4);
+    }
+    push_u32(&mut body, 4 + type_count * 28);
     let payloads = [0_usize, 0, 0, 0, 0, 0, 0x48];
     let discriminators = [u32::MAX, 0, 0, 0, 0, 0, 18];
     push_u32(&mut body, discriminators[0]);
@@ -540,13 +645,20 @@ fn meta_table_body(payload_len: usize) -> Vec<u8> {
     body
 }
 
-fn bulk_stream_fixture(carrier: &[u8]) -> Vec<u8> {
+/// One segment's bulk stream; record `n` selects type index `n`.
+fn bulk_stream_fixture(payloads: &[&[u8]]) -> Vec<u8> {
     let mut expanded = Vec::new();
-    expanded.extend_from_slice(&0_u32.to_le_bytes());
-    expanded.extend_from_slice(carrier);
-    expanded.extend_from_slice(
-        &(u32::try_from(carrier.len()).expect("fixture value fits u32")).to_le_bytes(),
-    );
+    for (selector, payload) in payloads.iter().enumerate() {
+        push_u32(
+            &mut expanded,
+            u32::try_from(selector).expect("fixture value fits u32"),
+        );
+        expanded.extend_from_slice(payload);
+        push_u32(
+            &mut expanded,
+            u32::try_from(payload.len()).expect("fixture value fits u32"),
+        );
+    }
     expanded.extend_from_slice(&u32::MAX.to_le_bytes());
     let mut bytes = vec![0x3c; 16];
     bytes.extend_from_slice(&0x0104_u16.to_le_bytes());

@@ -1298,6 +1298,59 @@ mod tests {
     }
 
     #[test]
+    fn zstd_member_with_a_window_past_the_allowance_is_skipped_without_fusing() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "streamed.bin",
+                SimpleFileOptions::default()
+                    .compression_method(CompressionMethod::Zstd)
+                    .compression_level(Some(22)),
+            )
+            .expect("member");
+        writer.write_all(b"preview").expect("payload");
+        writer
+            .start_file(
+                "geometry.bin",
+                SimpleFileOptions::default().compression_method(CompressionMethod::Zstd),
+            )
+            .expect("member");
+        writer.write_all(b"geometry").expect("payload");
+        let bytes = writer.finish().expect("archive").into_inner();
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+        let snapshot = ArchiveSnapshot::new(&ctx, root).expect("index");
+        let entry = snapshot.entry("streamed.bin").expect("streamed member");
+        let start = usize::try_from(entry.data_start.expect("readable frame")).expect("offset");
+        let end = usize::try_from(entry.data_end().expect("payload end")).expect("offset");
+        assert!(
+            matches!(
+                zstd::zstd_safe::get_frame_content_size(&bytes[start..end]),
+                Ok(None)
+            ),
+            "a streamed level-22 frame declares no content size"
+        );
+        let Err(CodecError::NotImplemented(message)) = snapshot.open(&ctx, "streamed.bin") else {
+            panic!("a window past the per-expansion allowance is unsupported");
+        };
+        assert!(
+            message.starts_with(&format!("Zstandard window of {} bytes", 1_u64 << 27))
+                && message.ends_with("per-expansion allowance"),
+            "{message}"
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+        assert_eq!(
+            snapshot
+                .open(&ctx, "geometry.bin")
+                .expect("an independent member opens")
+                .window(),
+            b"geometry"
+        );
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
     fn empty_zip_ledger_covers_its_end_record() {
         let bytes = zip::ZipWriter::new(Cursor::new(Vec::new()))
             .finish()
