@@ -1,6 +1,7 @@
 {
   "ir": {
     "ir_version": "6",
+    "decode_depth": "full",
     "source": {
       "identity": {
         "classification": "classified",
@@ -367,11 +368,11 @@
                         "form": "polynomial",
                         "points": [
                           {
-                            "u": 0.5,
+                            "u": -0.5,
                             "v": -2.7063293868263703
                           },
                           {
-                            "u": 1.5,
+                            "u": -1.5,
                             "v": -8.11898816047911
                           }
                         ]
@@ -396,12 +397,12 @@
                         "form": "polynomial",
                         "points": [
                           {
-                            "u": 0.25,
-                            "v": 0.5
+                            "u": 0.5,
+                            "v": 0.25
                           },
                           {
-                            "u": 0.75,
-                            "v": 1.5
+                            "u": 1.5,
+                            "v": 0.75
                           }
                         ]
                       },
@@ -467,6 +468,7 @@
         "asm_bulletin_boards": [],
         "asm_delta_states": [],
         "asm_entity_changes": [],
+        "asm_face_boundaries": [],
         "asm_histories": [],
         "asm_history_records": [],
         "body_native_keys": [

@@ -20,8 +20,6 @@ use cadmpeg_ir::scalar::PositiveLength;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
-const EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6: f64 = 1.0e-6;
-const EPS_GEOMETRY_CERTIFIED_CIRCLE_E6: f64 = 1.0e-6;
 const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1.0e-10;
 
@@ -38,8 +36,8 @@ macro_rules! geometric {
 /// of one decode. An exhausted cap skips the arrangement.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
 
-/// Local cap on the certified tubes of one arc or NURBS span. A span that
-/// needs more skips the certification that uses it.
+/// Local cap on the certified tubes of one NURBS span. A span that needs
+/// more skips the certification that uses it.
 const MAX_SUBDIVISIONS: f64 = 100_000.0;
 
 /// Local work caps of the sketch-profile geometry that binds extrude profile
@@ -65,16 +63,6 @@ impl ProfileGeometryWork {
             arrangement_skipped_selections: Cell::new(0),
             densification_skipped_selections: Cell::new(0),
         }
-    }
-
-    /// Run `search` and return whether the densification cap skipped a
-    /// certification inside it. The skip also counts for the open selection.
-    fn densification_within<T>(&self, search: impl FnOnce() -> T) -> (T, bool) {
-        let earlier = self.densification_skipped.replace(false);
-        let value = search();
-        let skipped = self.densification_skipped.get();
-        self.densification_skipped.set(earlier || skipped);
-        (value, skipped)
     }
 
     /// Close one profile selection. Count it against each cap that skipped a
@@ -125,6 +113,10 @@ struct SketchArrangementEdge {
 struct SketchArrangementFace {
     boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
     polyline: Vec<Point2>,
+    /// Whether a separate connected part of the arrangement lies inside the
+    /// face. The face walk gives no hole rings, so the face alone is not the
+    /// region it bounds.
+    encloses_island: bool,
 }
 
 pub(super) fn arrangement_region_containing_points(
@@ -135,8 +127,6 @@ pub(super) fn arrangement_region_containing_points(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
-    use cadmpeg_ir::features::SketchProfileRegion;
-
     let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
@@ -166,8 +156,7 @@ pub(super) fn arrangement_region_containing_points(
         }
     }
     if boundary_count == 1 {
-        let face = geometric!(boundary);
-        return Ok(SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok());
+        return Ok(arrangement_face_region(geometric!(boundary)));
     }
     let mut interior = None;
     let mut interior_count = 0;
@@ -197,8 +186,20 @@ pub(super) fn arrangement_region_containing_points(
     if interior_count != 1 {
         return Ok(None);
     }
-    let face = geometric!(interior);
-    Ok(SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok())
+    Ok(arrangement_face_region(geometric!(interior)))
+}
+
+/// The region `face` bounds, or `None` when an island inside it needs a hole
+/// ring the face walk does not give.
+fn arrangement_face_region(
+    face: &SketchArrangementFace,
+) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    if face.encloses_island {
+        return None;
+    }
+    SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok()
 }
 
 fn sketch_arrangement_faces(
@@ -375,16 +376,16 @@ fn sketch_arrangement_faces(
     if edges.len() < 3 {
         return Ok(None);
     }
-    let mut edge_tubes = Vec::new();
+    let mut edge_pieces = Vec::new();
     for edge in &edges {
-        let Some(tubes) = arrangement_edge_tubes(edge, entities, tolerance, work, ctx)? else {
+        let Some(pieces) = arrangement_edge_pieces(edge, entities, tolerance, work, ctx)? else {
             return Ok(None);
         };
-        edge_tubes.push(tubes);
+        edge_pieces.push(pieces);
     }
     let mut edge_bounds = Vec::new();
-    for tubes in &edge_tubes {
-        let bounds = geometric!(certified_tube_bounds(tubes));
+    for pieces in &edge_pieces {
+        let bounds = geometric!(certified_pieces_bounds(pieces));
         edge_bounds.push(bounds);
     }
     for left_index in 0..edges.len() {
@@ -421,13 +422,7 @@ fn sketch_arrangement_faces(
             {
                 continue;
             }
-            if !arrangement_edges_proven_disjoint(
-                left,
-                right,
-                entities,
-                &edge_tubes[left_index],
-                &edge_tubes[right_index],
-            ) {
+            if !certified_pieces_separated(&edge_pieces[left_index], &edge_pieces[right_index]) {
                 return Ok(None);
             }
         }
@@ -461,6 +456,25 @@ fn sketch_arrangement_faces(
     }
     for uses in &mut outgoing {
         uses.sort_by(|left, right| left.2.total_cmp(&right.2));
+    }
+    let mut component = ctx.alloc_filled(nodes.len(), usize::MAX, "f3d arrangement components")?;
+    let mut component_roots = Vec::new();
+    for root in 0..nodes.len() {
+        if component[root] != usize::MAX || outgoing[root].is_empty() {
+            continue;
+        }
+        component[root] = root;
+        component_roots.push(root);
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            for (edge_index, reverse, _) in &outgoing[node] {
+                let next = edges[*edge_index].nodes[usize::from(!*reverse)];
+                if component[next] == usize::MAX {
+                    component[next] = root;
+                    pending.push(next);
+                }
+            }
+        }
     }
     let mut visited = ctx.alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?;
     let mut faces = Vec::new();
@@ -506,7 +520,17 @@ fn sketch_arrangement_faces(
                 current = (next.0, next.1);
             }
             if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
-                faces.push(SketchArrangementFace { boundary, polyline });
+                // Proven-disjoint components lie wholly inside or outside
+                // the face, so one node of each decides.
+                let own = component[edges[edge_index].nodes[0]];
+                let encloses_island = component_roots
+                    .iter()
+                    .any(|root| *root != own && point_in_polygon(nodes[*root], &polyline));
+                faces.push(SketchArrangementFace {
+                    boundary,
+                    polyline,
+                    encloses_island,
+                });
             }
         }
     }
@@ -1204,92 +1228,51 @@ fn arrangement_edges_coincident(
     )
 }
 
-fn arrangement_edges_proven_disjoint(
-    left: &SketchArrangementEdge,
-    right: &SketchArrangementEdge,
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
-    left_tubes: &[CertifiedCurveTube],
-    right_tubes: &[CertifiedCurveTube],
-) -> bool {
-    match (
-        arrangement_analytic_segment(left, entities),
-        arrangement_analytic_segment(right, entities),
-    ) {
-        (Some(left), Some(right)) => !boundary_segments_intersect(&left, &right),
-        _ => left_tubes.iter().all(|left| {
-            right_tubes.iter().all(|right| {
-                segment_distance((left.start, left.end), (right.start, right.end))
-                    > left.error + right.error
-            })
-        }),
-    }
-}
-
-fn certified_tube_bounds(tubes: &[CertifiedCurveTube]) -> Option<[Point2; 2]> {
-    let first = tubes.first()?;
-    Some(tubes.iter().fold(
+fn certified_pieces_bounds(pieces: &[CertifiedPiece]) -> Option<[Point2; 2]> {
+    let mut bounds = pieces.iter().map(CertifiedPiece::bounds);
+    let first = bounds.next()?;
+    Some(bounds.fold(first, |[low, high], [piece_low, piece_high]| {
         [
-            Point2::new(
-                first.start.u.min(first.end.u) - first.error,
-                first.start.v.min(first.end.v) - first.error,
-            ),
-            Point2::new(
-                first.start.u.max(first.end.u) + first.error,
-                first.start.v.max(first.end.v) + first.error,
-            ),
-        ],
-        |mut bounds, tube| {
-            bounds[0].u = bounds[0].u.min(tube.start.u.min(tube.end.u) - tube.error);
-            bounds[0].v = bounds[0].v.min(tube.start.v.min(tube.end.v) - tube.error);
-            bounds[1].u = bounds[1].u.max(tube.start.u.max(tube.end.u) + tube.error);
-            bounds[1].v = bounds[1].v.max(tube.start.v.max(tube.end.v) + tube.error);
-            bounds
-        },
-    ))
+            Point2::new(low.u.min(piece_low.u), low.v.min(piece_low.v)),
+            Point2::new(high.u.max(piece_high.u), high.v.max(piece_high.v)),
+        ]
+    }))
 }
 
-fn arrangement_edge_tubes(
+/// Certify one arrangement edge: a line or arc exactly, or a whole
+/// non-periodic NURBS as chord tubes.
+fn arrangement_edge_pieces(
     edge: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
+) -> Result<Option<Vec<CertifiedPiece>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
+    if let Some(segment) = arrangement_analytic_segment(edge, entities) {
+        return Ok(Some(vec![CertifiedPiece::Exact(segment)]));
+    }
     let entity = geometric!(entities
         .iter()
         .find(|entity| entity.id() == &edge.boundary.entity));
+    let SketchGeometryDefinition::Nurbs { curve } = entity.geometry.definition() else {
+        return Ok(None);
+    };
+    if curve.periodic()
+        || sketch_geometry_parameter_range(&entity.geometry)
+            != Some(edge.boundary.parameter_range.endpoints())
+    {
+        return Ok(None);
+    }
     let scale = edge
         .polyline
         .iter()
         .flat_map(|point| [point.u.abs(), point.v.abs()])
         .fold(1.0_f64, f64::max);
     let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
-    Ok(match entity.geometry.definition() {
-        SketchGeometryDefinition::Line { .. } => Some(vec![CertifiedCurveTube {
-            start: edge.polyline[0],
-            end: *geometric!(edge.polyline.last()),
-            error: 0.0,
-        }]),
-        SketchGeometryDefinition::Circle { center, radius }
-        | SketchGeometryDefinition::Arc { center, radius, .. } => certified_arc_tubes(
-            center.get(),
-            *radius,
-            edge.boundary.parameter_range.endpoints()[0],
-            edge.boundary.parameter_range.endpoints()[1],
-            target_error,
-            work,
-        ),
-        SketchGeometryDefinition::Nurbs { curve }
-            if !curve.periodic()
-                && sketch_geometry_parameter_range(&entity.geometry)
-                    == Some(edge.boundary.parameter_range.endpoints()) =>
-        {
-            return certified_nurbs_tubes(curve, target_error, work, ctx);
-        }
-        _ => None,
-    })
+    let tubes = geometric!(certified_nurbs_tubes(curve, target_error, work, ctx)?);
+    Ok(Some(tubes.into_iter().map(CertifiedPiece::Tube).collect()))
 }
 
 fn arrangement_analytic_segment(
@@ -1519,22 +1502,14 @@ pub(super) fn region_containing_points(
         };
         boundaries.push(boundary);
     }
-    let (containment, capped) = work.densification_within(|| {
-        let mut containment = Vec::new();
-        for (outer_index, outer) in boundaries.iter().enumerate() {
-            let mut row = Vec::new();
-            for (inner_index, inner) in boundaries.iter().enumerate() {
-                let contains = outer_index != inner_index && outer.strictly_contains(inner, work);
-                row.push(contains);
-            }
-            containment.push(row);
+    let mut containment = Vec::new();
+    for (outer_index, outer) in boundaries.iter().enumerate() {
+        let mut row = Vec::new();
+        for (inner_index, inner) in boundaries.iter().enumerate() {
+            let contains = outer_index != inner_index && outer.strictly_contains(inner);
+            row.push(contains);
         }
-        containment
-    });
-    // A capped containment test answers "not contained" without a proof, so
-    // the matrix would be incomplete.
-    if capped {
-        return Ok(None);
+        containment.push(row);
     }
     let mut projected = Vec::new();
     for point in points {
@@ -1651,7 +1626,7 @@ pub(super) fn profile_loops_are_independent(
     }
     for (left_index, left) in boundaries.iter().enumerate() {
         for right in boundaries.iter().skip(left_index + 1) {
-            if !left.is_provably_disjoint(right, work) {
+            if !left.is_provably_disjoint(right) {
                 return Ok(false);
             }
         }
@@ -1689,16 +1664,26 @@ enum ProfileBoundary {
 
 #[derive(Clone)]
 struct CertifiedProfileLoop {
-    tubes: Vec<CertifiedCurveTube>,
+    pieces: Vec<CertifiedPiece>,
 }
 
-#[derive(Clone)]
+/// One piece of a certified boundary curve.
+#[derive(Clone, Copy)]
+enum CertifiedPiece {
+    /// A sketch line or circular arc, which the tests use exactly.
+    Exact(ProfileBoundarySegment),
+    /// A chord within `error` of one NURBS span.
+    Tube(CertifiedCurveTube),
+}
+
+#[derive(Clone, Copy)]
 struct CertifiedCurveTube {
     start: Point2,
     end: Point2,
     error: f64,
 }
 
+#[derive(Clone, Copy)]
 enum ProfileBoundarySegment {
     Line {
         start: Point2,
@@ -1722,7 +1707,7 @@ impl ProfileBoundary {
         }
     }
 
-    fn strictly_contains(&self, inner: &Self, work: &ProfileGeometryWork) -> bool {
+    fn strictly_contains(&self, inner: &Self) -> bool {
         match (self, inner) {
             (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
             (
@@ -1774,10 +1759,10 @@ impl ProfileBoundary {
                     })
             }
             (outer, inner) => {
-                let Some(outer) = outer.certified_loop(work) else {
+                let Some(outer) = outer.certified_loop() else {
                     return false;
                 };
-                let Some(inner) = inner.certified_loop(work) else {
+                let Some(inner) = inner.certified_loop() else {
                     return false;
                 };
                 outer.strictly_contains(&inner)
@@ -1785,7 +1770,7 @@ impl ProfileBoundary {
         }
     }
 
-    fn is_provably_disjoint(&self, other: &Self, work: &ProfileGeometryWork) -> bool {
+    fn is_provably_disjoint(&self, other: &Self) -> bool {
         let intersects = match (self, other) {
             (Self::Polygon(left), Self::Polygon(right)) => polygon_edges(left).any(|left_edge| {
                 polygon_edges(right).any(|right_edge| segments_intersect(left_edge, right_edge))
@@ -1819,13 +1804,10 @@ impl ProfileBoundary {
                 .any(|segment| point_boundary_segment_distance(*center, segment) <= radius.get()),
             (Self::CertifiedLoop(_), _) | (_, Self::CertifiedLoop(_)) => return false,
         };
-        !intersects && !self.strictly_contains(other, work) && !other.strictly_contains(self, work)
+        !intersects && !self.strictly_contains(other) && !other.strictly_contains(self)
     }
 
-    fn certified_loop(
-        &self,
-        work: &ProfileGeometryWork,
-    ) -> Option<std::borrow::Cow<'_, CertifiedProfileLoop>> {
+    fn certified_loop(&self) -> Option<std::borrow::Cow<'_, CertifiedProfileLoop>> {
         use std::borrow::Cow;
 
         match self {
@@ -1833,10 +1815,16 @@ impl ProfileBoundary {
                 CertifiedProfileLoop::from_vertices(vertices).map(Cow::Owned)
             }
             Self::CircularArcLoop(segments) => {
-                certified_analytic_loop(segments, work).map(Cow::Owned)
+                CertifiedProfileLoop::from_segments(segments.iter().copied()).map(Cow::Owned)
             }
             Self::Circle { center, radius } => {
-                certified_circle(*center, *radius, work).map(Cow::Owned)
+                CertifiedProfileLoop::from_segments([ProfileBoundarySegment::Arc {
+                    center: *center,
+                    radius: *radius,
+                    start_angle: 0.0,
+                    end_angle: std::f64::consts::TAU,
+                }])
+                .map(Cow::Owned)
             }
             Self::CertifiedLoop(loop_) => Some(Cow::Borrowed(loop_)),
         }
@@ -1844,49 +1832,110 @@ impl ProfileBoundary {
 }
 
 impl CertifiedProfileLoop {
-    fn new(tubes: Vec<CertifiedCurveTube>) -> Option<Self> {
-        (tubes.len() >= 3).then_some(Self { tubes })
-    }
-
-    fn vertices(&self) -> impl Iterator<Item = Point2> + Clone + '_ {
-        self.tubes.iter().map(|tube| tube.start)
+    /// Fewer than three chords bound no area; one arc can close a loop.
+    fn new(pieces: Vec<CertifiedPiece>) -> Option<Self> {
+        (pieces.len() >= 3 || pieces.iter().any(CertifiedPiece::is_arc)).then_some(Self { pieces })
     }
 
     fn from_vertices(vertices: &[Point2]) -> Option<Self> {
-        let mut tubes = Vec::new();
-        for (start, end) in polygon_edges(vertices) {
-            tubes.push(CertifiedCurveTube {
-                start,
-                end,
-                error: 0.0,
-            });
-        }
-        Self::new(tubes)
+        Self::from_segments(
+            polygon_edges(vertices).map(|(start, end)| ProfileBoundarySegment::Line { start, end }),
+        )
     }
 
+    fn from_segments(segments: impl IntoIterator<Item = ProfileBoundarySegment>) -> Option<Self> {
+        Self::new(segments.into_iter().map(CertifiedPiece::Exact).collect())
+    }
+
+    /// A point outside every tube has the winding number of the chord and
+    /// exact-segment loop, because each span deforms to its chord inside its
+    /// own tube without crossing the point.
     fn contains_point(&self, point: Point2) -> bool {
-        self.tubes
-            .iter()
-            .all(|tube| point_segment_distance(point, (tube.start, tube.end)) > tube.error)
-            && point_in_polygon_edges(
-                point,
-                self.vertices()
-                    .zip(self.vertices().cycle().skip(1))
-                    .take(self.tubes.len()),
-            )
+        self.pieces.iter().all(|piece| piece.clears_point(point))
+            && point_in_segment_loop(point, self.pieces.iter().map(CertifiedPiece::segment))
     }
 
     fn strictly_contains(&self, inner: &Self) -> bool {
-        self.tubes.iter().all(|outer| {
-            inner.tubes.iter().all(|inner| {
-                segment_distance((outer.start, outer.end), (inner.start, inner.end))
-                    > outer.error + inner.error
-            })
-        }) && inner
-            .vertices()
-            .next()
-            .is_some_and(|point| self.contains_point(point))
+        certified_pieces_separated(&self.pieces, &inner.pieces)
+            && inner
+                .pieces
+                .first()
+                .is_some_and(|piece| self.contains_point(piece.start()))
     }
+}
+
+impl CertifiedPiece {
+    fn is_arc(&self) -> bool {
+        matches!(self, Self::Exact(ProfileBoundarySegment::Arc { .. }))
+    }
+
+    /// The exact segment, or the chord of a tube.
+    fn segment(&self) -> ProfileBoundarySegment {
+        match *self {
+            Self::Exact(segment) => segment,
+            Self::Tube(tube) => ProfileBoundarySegment::Line {
+                start: tube.start,
+                end: tube.end,
+            },
+        }
+    }
+
+    fn start(&self) -> Point2 {
+        boundary_segment_endpoints(&self.segment()).0
+    }
+
+    fn end(&self) -> Point2 {
+        boundary_segment_endpoints(&self.segment()).1
+    }
+
+    /// A box around the piece: an arc's whole circle, or a tube's chord
+    /// widened by its error.
+    fn bounds(&self) -> [Point2; 2] {
+        let (first, second, margin) = match *self {
+            Self::Exact(ProfileBoundarySegment::Line { start, end }) => (start, end, 0.0),
+            Self::Exact(ProfileBoundarySegment::Arc { center, radius, .. }) => {
+                (center, center, radius.get())
+            }
+            Self::Tube(tube) => (tube.start, tube.end, tube.error),
+        };
+        [
+            Point2::new(
+                first.u.min(second.u) - margin,
+                first.v.min(second.v) - margin,
+            ),
+            Point2::new(
+                first.u.max(second.u) + margin,
+                first.v.max(second.v) + margin,
+            ),
+        ]
+    }
+
+    /// Whether `point` is off the piece, or outside the tube of a NURBS span.
+    fn clears_point(&self, point: Point2) -> bool {
+        match self {
+            Self::Exact(segment) => point_boundary_segment_distance(point, segment) > 0.0,
+            Self::Tube(tube) => point_segment_distance(point, (tube.start, tube.end)) > tube.error,
+        }
+    }
+
+    /// Whether the two pieces provably have no common point.
+    fn separated_from(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Exact(left), Self::Exact(right)) => !boundary_segments_intersect(left, right),
+            (Self::Exact(segment), Self::Tube(tube)) | (Self::Tube(tube), Self::Exact(segment)) => {
+                chord_boundary_segment_distance((tube.start, tube.end), segment) > tube.error
+            }
+            (Self::Tube(left), Self::Tube(right)) => {
+                segment_distance((left.start, left.end), (right.start, right.end))
+                    > left.error + right.error
+            }
+        }
+    }
+}
+
+fn certified_pieces_separated(left: &[CertifiedPiece], right: &[CertifiedPiece]) -> bool {
+    left.iter()
+        .all(|left| right.iter().all(|right| left.separated_from(right)))
 }
 
 fn profile_boundary(
@@ -1941,136 +1990,43 @@ fn certified_profile_loop(
     // scale keeps the conservative tube practical while exact boundary tests
     // continue to govern the source linear tolerance.
     let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
-    let mut tubes = Vec::new();
+    let mut pieces = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
         let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
-        let mut entity_tubes = match entity.geometry.definition() {
-            SketchGeometryDefinition::Line { start, end } => vec![CertifiedCurveTube {
-                start: start.get(),
-                end: end.get(),
-                error: 0.0,
-            }],
-            SketchGeometryDefinition::Arc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-            } => geometric!(certified_arc_tubes(
-                center.get(),
-                *radius,
-                start_angle.get(),
-                end_angle.get(),
-                target_error,
-                work
-            )),
-            SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-                geometric!(certified_nurbs_tubes(curve, target_error, work, ctx)?)
+        let entity_pieces = if let Some(segment) = profile_use_segment(entity, use_.reversed) {
+            vec![CertifiedPiece::Exact(segment)]
+        } else {
+            let SketchGeometryDefinition::Nurbs { curve } = entity.geometry.definition() else {
+                return Ok(None);
+            };
+            if curve.periodic() {
+                return Ok(None);
             }
-            _ => return Ok(None),
+            let mut tubes = geometric!(certified_nurbs_tubes(curve, target_error, work, ctx)?);
+            if use_.reversed {
+                tubes.reverse();
+                for tube in &mut tubes {
+                    std::mem::swap(&mut tube.start, &mut tube.end);
+                }
+            }
+            tubes.into_iter().map(CertifiedPiece::Tube).collect()
         };
-        if use_.reversed {
-            entity_tubes.reverse();
-            for tube in &mut entity_tubes {
-                std::mem::swap(&mut tube.start, &mut tube.end);
-            }
-        }
-        let first = geometric!(entity_tubes.first()).start;
+        let first = geometric!(entity_pieces.first()).start();
         if previous_end.is_some_and(|end| point_distance(end, first) > tolerance) {
             return Ok(None);
         }
-        previous_end = entity_tubes.last().map(|tube| tube.end);
-        tubes.extend(entity_tubes);
+        previous_end = entity_pieces.last().map(CertifiedPiece::end);
+        pieces.extend(entity_pieces);
     }
     if previous_end.is_none_or(|end| {
-        tubes
+        pieces
             .first()
-            .is_none_or(|first| point_distance(end, first.start) > tolerance)
+            .is_none_or(|first| point_distance(end, first.start()) > tolerance)
     }) {
         return Ok(None);
     }
-    Ok(CertifiedProfileLoop::new(tubes))
-}
-
-fn certified_analytic_loop(
-    segments: &[ProfileBoundarySegment],
-    work: &ProfileGeometryWork,
-) -> Option<CertifiedProfileLoop> {
-    let scale = segments
-        .iter()
-        .flat_map(|segment| {
-            let (start, end) = boundary_segment_endpoints(segment);
-            [start.u.abs(), start.v.abs(), end.u.abs(), end.v.abs()]
-        })
-        .fold(1.0_f64, f64::max);
-    let tolerance = EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6 * scale;
-    let mut tubes = Vec::new();
-    for segment in segments {
-        let segment_tubes = match segment {
-            ProfileBoundarySegment::Line { start, end } => vec![CertifiedCurveTube {
-                start: *start,
-                end: *end,
-                error: 0.0,
-            }],
-            ProfileBoundarySegment::Arc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-            } => certified_arc_tubes(*center, *radius, *start_angle, *end_angle, tolerance, work)?,
-        };
-        for tube in segment_tubes {
-            tubes.push(tube);
-        }
-    }
-    CertifiedProfileLoop::new(tubes)
-}
-
-fn certified_circle(
-    center: Point2,
-    radius: PositiveLength,
-    work: &ProfileGeometryWork,
-) -> Option<CertifiedProfileLoop> {
-    let tolerance = EPS_GEOMETRY_CERTIFIED_CIRCLE_E6
-        * (1.0 + center.u.abs().max(center.v.abs()).max(radius.get()));
-    let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance, work)?;
-    CertifiedProfileLoop::new(tubes)
-}
-
-fn certified_arc_tubes(
-    center: Point2,
-    radius: PositiveLength,
-    start: f64,
-    end: f64,
-    target_error: f64,
-    work: &ProfileGeometryWork,
-) -> Option<Vec<CertifiedCurveTube>> {
-    let sweep = end - start;
-    if !sweep.is_finite() || sweep == 0.0 {
-        return None;
-    }
-    let radius = radius.get();
-    let count = subdivision_count(radius * sweep.abs(), target_error, work)?;
-    let count_float = f64_from_index(count)?;
-    let error = radius * sweep.abs() / count_float;
-    let mut tubes = Vec::new();
-    for index in 0..count {
-        let parameter = |ordinal: usize| {
-            f64_from_index(ordinal).map(|ordinal| start + sweep * ordinal / count_float)
-        };
-        let point = |angle: f64| {
-            Point2::new(
-                center.u + radius * angle.cos(),
-                center.v + radius * angle.sin(),
-            )
-        };
-        tubes.push(CertifiedCurveTube {
-            start: point(parameter(index)?),
-            end: point(parameter(index + 1)?),
-            error,
-        });
-    }
-    Some(tubes)
+    Ok(CertifiedProfileLoop::new(pieces))
 }
 
 fn certified_nurbs_tubes(
@@ -2180,44 +2136,11 @@ fn circular_arc_profile_segments(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> Option<Vec<ProfileBoundarySegment>> {
-    use cadmpeg_ir::sketches::SketchGeometryDefinition;
-
     let mut segments = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
-        let segment = match *entity.geometry.definition() {
-            SketchGeometryDefinition::Line { start, end } => {
-                let [start, end] = if use_.reversed {
-                    [end, start]
-                } else {
-                    [start, end]
-                };
-                ProfileBoundarySegment::Line {
-                    start: start.get(),
-                    end: end.get(),
-                }
-            }
-            SketchGeometryDefinition::Arc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-            } => {
-                let (start_angle, end_angle) = if use_.reversed {
-                    (end_angle.get(), start_angle.get())
-                } else {
-                    (start_angle.get(), end_angle.get())
-                };
-                ProfileBoundarySegment::Arc {
-                    center: center.get(),
-                    radius,
-                    start_angle,
-                    end_angle,
-                }
-            }
-            _ => return None,
-        };
+        let segment = profile_use_segment(entity, use_.reversed)?;
         let (start, end) = boundary_segment_endpoints(&segment);
         if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
             return None;
@@ -2229,6 +2152,43 @@ fn circular_arc_profile_segments(
     (segments.len() >= 2
         && previous_end.is_some_and(|end| point_distance(end, first_start) <= tolerance))
     .then_some(segments)
+}
+
+/// The sketch line or circular arc of one profile use, in use direction.
+fn profile_use_segment(
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    reversed: bool,
+) -> Option<ProfileBoundarySegment> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    match *entity.geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
+            let [start, end] = if reversed { [end, start] } else { [start, end] };
+            Some(ProfileBoundarySegment::Line {
+                start: start.get(),
+                end: end.get(),
+            })
+        }
+        SketchGeometryDefinition::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let (start_angle, end_angle) = if reversed {
+                (end_angle.get(), start_angle.get())
+            } else {
+                (start_angle.get(), end_angle.get())
+            };
+            Some(ProfileBoundarySegment::Arc {
+                center: center.get(),
+                radius,
+                start_angle,
+                end_angle,
+            })
+        }
+        _ => None,
+    }
 }
 
 fn line_profile_vertices(
@@ -2290,8 +2250,14 @@ fn boundary_segment_endpoints(segment: &ProfileBoundarySegment) -> (Point2, Poin
 }
 
 fn point_in_circular_arc_loop(point: Point2, segments: &[ProfileBoundarySegment]) -> bool {
+    point_in_segment_loop(point, segments.iter().copied())
+}
+
+fn point_in_segment_loop(
+    point: Point2,
+    segments: impl Iterator<Item = ProfileBoundarySegment>,
+) -> bool {
     segments
-        .iter()
         .map(|segment| match segment {
             ProfileBoundarySegment::Line { start, end } => {
                 let crosses_up = start.v <= point.v && point.v < end.v;
@@ -2312,7 +2278,7 @@ fn point_in_circular_arc_loop(point: Point2, segments: &[ProfileBoundarySegment]
                 radius,
                 start_angle,
                 end_angle,
-            } => horizontal_ray_arc_winding(point, *center, radius.get(), *start_angle, *end_angle),
+            } => horizontal_ray_arc_winding(point, center, radius.get(), start_angle, end_angle),
         })
         .sum::<i32>()
         != 0
@@ -2415,6 +2381,66 @@ fn point_boundary_segment_distance(point: Point2, segment: &ProfileBoundarySegme
             }
         }
     }
+}
+
+/// Answer the distance from the segment `chord` to a sketch line or arc.
+///
+/// A chord that does not meet the arc is nearest to it at an end of either
+/// curve, or at the arc point nearest the chord's supporting line: an interior
+/// pair is a local minimum only where the joining segment is normal to both
+/// curves, which puts the arc point on the line's perpendicular through the
+/// center, on the side toward the line.
+fn chord_boundary_segment_distance(
+    chord: (Point2, Point2),
+    segment: &ProfileBoundarySegment,
+) -> f64 {
+    let ProfileBoundarySegment::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } = *segment
+    else {
+        let (start, end) = boundary_segment_endpoints(segment);
+        return segment_distance(chord, (start, end));
+    };
+    // A chord wholly outside or wholly inside the circle cannot meet the arc;
+    // only a chord across it needs the exact intersection test.
+    let farthest = point_distance(center, chord.0).max(point_distance(center, chord.1));
+    if point_segment_distance(center, chord) <= radius.get()
+        && radius.get() <= farthest
+        && line_arc_intersection_points(chord, segment)
+            .is_some_and(|points| points.iter().any(Option::is_some))
+    {
+        return 0.0;
+    }
+    let (arc_start, arc_end) = boundary_segment_endpoints(segment);
+    let mut distance = [
+        point_boundary_segment_distance(chord.0, segment),
+        point_boundary_segment_distance(chord.1, segment),
+        point_segment_distance(arc_start, chord),
+        point_segment_distance(arc_end, chord),
+    ]
+    .into_iter()
+    .fold(f64::INFINITY, f64::min);
+    let foot = cadmpeg_ir::math::planar::line_projection_parameter(chord.0, chord.1, center)
+        .and_then(|parameter| {
+            Some(Point2::new(
+                cadmpeg_ir::math::interpolate(chord.0.u, chord.1.u, parameter.get())?.get(),
+                cadmpeg_ir::math::interpolate(chord.0.v, chord.1.v, parameter.get())?.get(),
+            ))
+        });
+    if let Some(foot) = foot {
+        let angle = (foot.v - center.v).atan2(foot.u - center.u);
+        if directed_angle_parameter(angle, start_angle, end_angle).is_some() {
+            let nearest = Point2::new(
+                center.u + radius.get() * angle.cos(),
+                center.v + radius.get() * angle.sin(),
+            );
+            distance = distance.min(point_segment_distance(nearest, chord));
+        }
+    }
+    distance
 }
 
 fn boundary_segment_max_distance(point: Point2, segment: &ProfileBoundarySegment) -> f64 {
