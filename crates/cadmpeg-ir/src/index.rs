@@ -91,7 +91,7 @@ pub(crate) fn public_result<T>(value: Result<T, std::convert::Infallible>) -> T 
 }
 
 fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex<'_> {
-    let mut index = HashMap::new();
+    let mut index = HashMap::with_capacity(entities.len());
     for (slot, entity) in entities.iter().enumerate() {
         index.insert(entity.identity(), slot);
     }
@@ -284,12 +284,15 @@ macro_rules! define_model_index {
             }
 
             fn build_identity_set(&self) -> (BorrowedIdentityIndex<'a, bool>, bool) {
-                let mut identities = BorrowedIdentityIndex::new();
                 let mut entities = 0_usize;
-                $(
-                    entities += self.ir.model.$field.len();
-                    for entity in &self.ir.model.$field { identities.entry(entity.identity(), || false); }
-                )*
+                $(entities += self.ir.model.$field.len();)*
+                let mut slots = entities;
+                if self.include_native {
+                    self.native_view().for_each(|_, _, records| slots += records.len());
+                    slots += self.additional_native_identities.len();
+                }
+                let mut identities = BorrowedIdentityIndex { slots: HashMap::with_capacity(slots) };
+                $(for entity in &self.ir.model.$field { identities.entry(entity.identity(), || false); })*
                 if !self.include_native {
                     return (identities, false);
                 }
