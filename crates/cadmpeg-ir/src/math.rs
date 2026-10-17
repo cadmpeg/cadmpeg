@@ -234,7 +234,16 @@ pub(crate) fn power_of_two_product(mut value: f64, mut exponent: i32) -> f64 {
         }
         exponent += 969;
     }
-    value * normal_power_of_two(exponent).unwrap_or_else(|| 2.0_f64.powi(exponent))
+    value * normal_power_of_two(exponent).unwrap_or_else(|| power_of_two_by_powi(exponent))
+}
+
+/// `2.0_f64.powi(exponent)`, kept out of line: the optimizer may otherwise
+/// evaluate the `powi` intrinsic ahead of the branch that selects it, on every
+/// call.
+#[cold]
+#[inline(never)]
+fn power_of_two_by_powi(exponent: i32) -> f64 {
+    2.0_f64.powi(exponent)
 }
 
 /// `2^exponent` for a normal binary64 exponent, `-1022..=1023`, formed from
