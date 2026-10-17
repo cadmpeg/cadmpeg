@@ -205,29 +205,29 @@ pub(super) fn bind_face_selection(
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::face::DesignFaceOperand],
     updated_face_slots: &[i64],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
-        return Ok(());
+        return;
     };
     if native == &scope.id {
         if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(scope, operands)?
+            crate::design::feature_project::direct_face_selection(scope, operands)
         {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
             }
         }
-        return Ok(());
+        return;
     }
     let mut matching_groups = groups.iter().filter(|group| group.id == *native);
     let Some(group) = matching_groups.next() else {
-        return Ok(());
+        return;
     };
     if matching_groups.next().is_some()
         || group.scope_record_index != scope.record_index
         || crate::ids::native_stream(&group.id) != crate::ids::native_stream(&scope.id)
     {
-        return Ok(());
+        return;
     }
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
@@ -236,13 +236,13 @@ pub(super) fn bind_face_selection(
             group,
             operands,
             updated_face_slots,
-        )?
+        )
     {
         *selection = resolved;
-        return Ok(());
+        return;
     }
     let Some(stream) = crate::ids::native_stream(&scope.id) else {
-        return Ok(());
+        return;
     };
     let mut faces = Vec::new();
     for record_index in group.members().iter().map(|member| &member.value) {
@@ -252,17 +252,17 @@ pub(super) fn bind_face_selection(
                 && operand.record_index() == *record_index
         });
         let Some(operand) = matches.next() else {
-            return Ok(());
+            return;
         };
         if matches.next().is_some() {
-            return Ok(());
+            return;
         }
         let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
             _ => {
                 let [face] = operand.changed_candidate_faces.as_slice() else {
-                    return Ok(());
+                    return;
                 };
                 face
             }
@@ -271,7 +271,7 @@ pub(super) fn bind_face_selection(
             continue;
         }
         if !operand.candidate_faces.contains(candidate) {
-            return Ok(());
+            return;
         }
 
         faces.push(candidate.clone());
@@ -282,7 +282,6 @@ pub(super) fn bind_face_selection(
             native: native.to_owned(),
         };
     }
-    Ok(())
 }
 
 pub(super) fn bind_body_recipe_face_selection(
