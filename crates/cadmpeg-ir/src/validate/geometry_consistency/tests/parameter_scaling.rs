@@ -22,7 +22,10 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
     });
     let index = ModelIndex::new_model_only(&ir);
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &id,
         geometry: &ir.model.surfaces[0].geometry,
     };

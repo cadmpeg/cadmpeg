@@ -400,9 +400,18 @@ pub fn attribute_chain_name(
     entity: &Record,
     by_index: &HashMap<i64, &Record, RandomState>,
 ) -> Option<String> {
+    attribute_chain_name_text(entity, by_index).map(str::to_owned)
+}
+
+/// The first non-empty name attribute on `entity`'s attribute chain, borrowed
+/// from the record that holds it.
+pub(crate) fn attribute_chain_name_text<'a>(
+    entity: &Record,
+    by_index: &HashMap<i64, &'a Record, RandomState>,
+) -> Option<&'a str> {
     let mut current = entity.ref_at(0)?;
     for _ in 0..by_index.len() {
-        let record = by_index.get(&current)?;
+        let record: &'a Record = by_index.get(&current)?;
         if record.name == "string_attrib-name_attrib-gen-attrib" {
             let mut values = record.tokens.iter().filter_map(|token| match token {
                 Token::Str(value) => Some(value.as_str()),
@@ -416,7 +425,7 @@ pub fn attribute_chain_name(
             }
             if let (Some("name"), Some(value)) = (previous, last) {
                 if !value.is_empty() {
-                    return Some(value.to_owned());
+                    return Some(value);
                 }
             }
         }

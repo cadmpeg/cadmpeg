@@ -90,7 +90,10 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
         metadata: PcurveMetadata::default(),
     };
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -410,6 +413,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([2.0, 3.0])),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -418,6 +422,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([3.0, 2.0])),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -431,6 +436,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&mapped_surface_offset()),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -477,6 +483,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&context_first),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -496,6 +503,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -515,6 +523,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the pcurve is consistent with the surface");
@@ -537,6 +546,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&mismatched),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the pcurve is consistent with the surface");
@@ -616,6 +626,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the pcurve is consistent with the surface");
@@ -643,6 +654,7 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the pcurve is consistent with the surface");
@@ -678,6 +690,7 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the pcurve is consistent with the surface");
@@ -807,7 +820,10 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         metadata: PcurveMetadata::default(),
     };
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -1402,6 +1418,7 @@ fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -1454,6 +1471,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the pcurve is consistent with the surface");
@@ -1492,7 +1510,10 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
     });
     let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -1553,7 +1574,10 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
     });
     let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -1612,7 +1636,10 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
     });
     let index = crate::index::ModelIndex::build(&ir);
     let context = SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &surface_id,
         geometry: &surface,
     };
@@ -1730,7 +1757,13 @@ fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut findings = Vec::new();
-    check_pcurve_surface_consistency(&ctx, &index, &mut findings).unwrap();
+    check_pcurve_surface_consistency(
+        &ctx,
+        &index,
+        &crate::eval::admission::ModelEvaluationPass::new(),
+        &mut findings,
+    )
+    .unwrap();
     assert!(findings.is_empty(), "{findings:?}");
     assert!(ctx.finish_session().is_ok());
 }

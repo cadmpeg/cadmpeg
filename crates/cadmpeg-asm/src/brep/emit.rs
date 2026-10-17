@@ -124,7 +124,7 @@ fn map_law_formula(
 use std::collections::{HashMap, HashSet};
 
 use super::attributes::{
-    attribute_chain_color, attribute_chain_name, attribute_owner, collect_attributes,
+    attribute_chain_color, attribute_chain_name_text, attribute_owner, collect_attributes,
     decode_transform, source_attribute, unknown_record_id,
 };
 use super::geometry::{
@@ -138,6 +138,24 @@ use super::topology::{
 };
 use super::{id, inherited_attribute_target, AsmBrep, Carriers, Reachable, WireShellTopology};
 const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
+
+/// A copy of `entity`'s attribute-chain name, retained against the session.
+/// Many entities may share one name record, so each copy is charged.
+fn retained_attribute_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entity: &Record,
+    by_index: &HashMap<i64, &Record>,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    attribute_chain_name_text(entity, by_index)
+        .map(|name| {
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(name.len()),
+                "ASM attribute name",
+            )?;
+            Ok(name.to_owned())
+        })
+        .transpose()
+}
 
 /// Emit a kept surface carrier and, when present, its procedural-surface
 /// construction and nested support carriers.
@@ -4812,6 +4830,7 @@ pub(super) fn emit_loops(
 /// Emit reachable faces, folding surface reversal into the normalized sense and
 /// recording native sidedness.
 pub(super) fn emit_faces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4826,7 +4845,7 @@ pub(super) fn emit_faces(
     } = reach;
     let subshell_shells = subshell_ancestor_shells(records, by_index)?;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
-    let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
+    let attribute_name = |entity: &Record| retained_attribute_name(ctx, entity, by_index);
     for r in records {
         let i = i64::try_from(r.index).map_err(|_| {
             cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
@@ -4863,7 +4882,7 @@ pub(super) fn emit_faces(
                 surface: <SurfaceId>::from(id(format, surface)),
                 sense,
                 loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
-                name: attribute_name(r),
+                name: attribute_name(r)?,
                 color: attribute_color(r),
                 tolerance: None,
             });
@@ -4952,7 +4971,7 @@ pub fn emit_containers(
         saved_free_edges,
     } = wire;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
-    let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
+    let attribute_name = |entity: &Record| retained_attribute_name(ctx, entity, by_index);
     let mut emitted_shells = HashSet::new();
 
     for r in records.iter().filter(|record| record.head() == "shell") {
@@ -5063,7 +5082,7 @@ pub fn emit_containers(
                     regions,
                     transform: transform_record
                         .and_then(|transform| decode_transform(transform, header_scale)),
-                    name: attribute_name(r),
+                    name: attribute_name(r)?,
                     color: attribute_color(r),
                     visible: None,
                 });
