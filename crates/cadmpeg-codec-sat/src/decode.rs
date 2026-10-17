@@ -21,7 +21,7 @@ use crate::loss::SatLossCode;
 use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    match classify(ctx, bytes)? {
+    match classify(bytes) {
         Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
         Some(StreamKind::Text) => decode_text(ctx, bytes),
         Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, &header),
@@ -54,7 +54,7 @@ fn decode_asm_binary(
         let start = stream.offset();
         // A history-bearing stream ends its solved partition at the delta-state
         // boundary; a history-less stream ends at EOF without a terminator tag.
-        let framed = match asm_header::solved_record_limit_with_header(ctx, bytes, header)? {
+        let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
             Some(limit) => sab::frame(
                 ctx,
                 bytes,
@@ -136,7 +136,7 @@ fn decode_acis_binary(
         None
     } else {
         let start = stream.offset();
-        let framed = match acis_header::solved_record_limit_with_header(ctx, bytes, header)? {
+        let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
             Some(limit) => sab::frame(
                 ctx,
                 bytes,
@@ -204,7 +204,7 @@ fn decode_acis_binary(
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     let (text_header, branch, records, framing, unread, concatenated_streams, unread_stream_layout) =
         if ctx.container_only() {
-            let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
+            let (header, branch) = sat::parse_container(bytes).map_err(|failure| {
                 failure.into_codec_error(ctx, |error| {
                     unsupported_unframed(
                         &StreamEvidence::Text(None),
@@ -232,7 +232,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
                 stream.unread_stream_layout,
             )
         };
-    let header = text_header.as_kernel_header(ctx)?;
+    let header = text_header.as_kernel_header();
     let mut attributes = BTreeMap::new();
     header_attributes(&header, branch.into(), &mut attributes);
     if let sat::TextUnits::Declared(scale) = text_header.units() {

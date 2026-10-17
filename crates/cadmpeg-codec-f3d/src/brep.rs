@@ -227,7 +227,7 @@ pub(crate) fn decode_text(
         ctx,
         &stream.records,
         bytes,
-        Some(&stream.header.as_kernel_header(ctx)?),
+        Some(&stream.header.as_kernel_header()),
         entry,
         format,
         DecodePurpose::Model,

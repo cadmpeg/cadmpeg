@@ -9,17 +9,12 @@ use crate::SatCodec;
 
 #[test]
 fn binary_classification_admits_an_asm_binary_header() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let mut bytes = b"ASM BinaryFile4".to_vec();
     bytes.resize(31, 0);
     bytes.extend_from_slice(&[7, 3]);
     bytes.extend_from_slice(b"ASM");
-    let arena = DecodeArena::new();
-    let (service, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("build the decode context");
     assert!(matches!(
-        super::classify(&service, &bytes).expect("header admitted"),
+        super::classify(&bytes),
         Some(super::StreamKind::AsmBinary(_))
     ));
 }

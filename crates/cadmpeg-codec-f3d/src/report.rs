@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::SourceMeta;
@@ -51,7 +50,6 @@ pub(crate) fn build_decode_report(
 /// and dialect losses ahead of route losses. An archive member uses the outer
 /// archive layers already classified by the F3Z session.
 pub(crate) fn classify_document(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     scope: ReportScope,
     attributes: BTreeMap<String, String>,
@@ -59,7 +57,7 @@ pub(crate) fn classify_document(
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let dialects = match scope {
         ReportScope::Standalone => {
-            let (dialects, mut losses) = crate::dialect::classify_layers(ctx, scan)?;
+            let (dialects, mut losses) = crate::dialect::classify_layers(scan)?;
             losses.extend(crate::dialect::dialect_losses(&dialects));
             losses.append(&mut body.losses);
             body.losses = losses;
@@ -76,10 +74,9 @@ pub(crate) fn classify_document(
 /// Build a single-document inspection summary with the same dialect facts that
 /// decode projects into losses.
 pub(crate) fn build_inspection_summary(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<ContainerSummary, cadmpeg_core::CodecError> {
-    let (layers, mut losses) = crate::dialect::classify_layers(ctx, scan)?;
+    let (layers, mut losses) = crate::dialect::classify_layers(scan)?;
     losses.extend(crate::dialect::dialect_losses(&layers));
     let mut summary = crate::container::summarize(scan, layers);
     header_losses(scan, &mut losses)?;
@@ -214,14 +211,9 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let source = classify_document(
-            &ctx,
-            &scan,
-            ReportScope::Standalone,
-            BTreeMap::new(),
-            &mut report,
-        )
-        .unwrap();
+        let source =
+            classify_document(&scan, ReportScope::Standalone, BTreeMap::new(), &mut report)
+                .unwrap();
         assert!(source.dialects().is_some());
         assert!(report
             .losses
