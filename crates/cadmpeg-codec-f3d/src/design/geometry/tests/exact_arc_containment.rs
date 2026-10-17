@@ -238,3 +238,24 @@ fn nurbs_bounded_profile_with_large_arc_side_resolves_region_and_hole() {
         Some(loops(1, Vec::new()))
     );
 }
+
+/// Each half of the rim is about 31 400 long, so covering it with tubes at
+/// the arrangement's NURBS target error of about 0.1 would take some 314 000
+/// tubes.
+#[test]
+fn arrangement_certifies_a_large_circle_around_a_nurbs_profile_exactly() {
+    let rim = [circle("far-rim", Point2::new(5.0, 5.0), 10_000.0)];
+    let island = nurbs_topped_square();
+    let sketch = sketch(&[&rim, &island]);
+    let entities = [rim.as_slice(), &island].concat();
+    let work = local_profile_work();
+    let faces = crate::test_support::with_decode_context(|decode_ctx| {
+        sketch_arrangement_faces(&sketch, &entities, EPS_EXACT_ARC_REGION, &work, decode_ctx)
+    })
+    .unwrap();
+
+    // The disc of the rim and the square.
+    assert_eq!(faces.map(|faces| faces.len()), Some(2));
+    work.finish_selection();
+    assert!(work.losses().is_empty());
+}
