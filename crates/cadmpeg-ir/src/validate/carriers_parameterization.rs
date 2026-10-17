@@ -1057,7 +1057,7 @@ fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
 /// mixture of wrappers exactly as it is reported bare.
 ///
 /// The match is exhaustive, so a new pcurve variant states its answer here.
-/// Each carrier visit enters the caller session and admits its work.
+/// Each nested carrier visit counts against the caller session's recursion depth.
 fn pcurve_requires_bounded_domain(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &PcurveGeometry,

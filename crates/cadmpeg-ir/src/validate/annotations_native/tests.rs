@@ -277,6 +277,52 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
 }
 
 #[test]
+fn many_native_annotation_paths_parse_their_record_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    // Scanning the record per path would read 2^28 members.
+    const FIELDS: usize = 1 << 14;
+    let id = "test:native:record#wide";
+    let mut ir = crate::CadIr::empty();
+    ir.native.namespace_mut("test").arenas_mut().insert(
+        "records".into(),
+        vec![NativeRecord::new(
+            crate::ids::Identity::new(id).unwrap(),
+            (0..FIELDS)
+                .map(|index| (format!("field{index:05}"), Value::from(index)))
+                .collect(),
+        )
+        .unwrap()],
+    );
+    let mut builder = crate::AnnotationBuilder::new();
+    for index in 0..FIELDS {
+        builder.derived(id, &format!("field{index:05}")).unwrap();
+    }
+    builder.derived(id, "field99999").unwrap();
+    let annotations = builder.build();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let all_ids = super::BorrowedIdentities::build(|add| add(id, ())).unwrap();
+    let mut findings = Vec::new();
+    check_annotations(
+        &ctx,
+        crate::native::view::NativeView::new(&ir, None),
+        &annotations,
+        &all_ids,
+        &mut findings,
+    )
+    .unwrap();
+    let messages: Vec<_> = findings
+        .iter()
+        .map(|finding| finding.message.as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        ["exactness field path `field99999` does not resolve"]
+    );
+}
+
+#[test]
 fn annotations_on_many_model_points_resolve_without_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = crate::CadIr::empty();

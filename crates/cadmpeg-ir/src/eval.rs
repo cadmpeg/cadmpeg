@@ -2974,7 +2974,7 @@ pub enum EvaluationFailure<R> {
     NonFinite(R),
     /// The evaluation's local work slice ran out. The decode session continues.
     WorkExhausted,
-    /// Scratch storage for admitted geometry was refused.
+    /// The decode session refused. The session keeps this refusal.
     ResourceLimit(ResourceLimit),
 }
 
@@ -6176,12 +6176,36 @@ pub fn model_surface_point(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    admission.within_model(|admission| model_surface_point_inner(admission, ir, geometry, u, v))
+    admission.within_model(|admission| {
+        model_surface_point_inner(admission, ModelSource::Document(ir), geometry, u, v)
+    })
+}
+
+/// Evaluate a surface carrier against the caller's index of its model.
+pub(super) fn model_surface_point_in_index(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    admission.within_model(|admission| {
+        model_surface_point_inner(admission, ModelSource::Index(index), geometry, u, v)
+    })
+}
+
+/// The model that a surface point reads its construction from: an index the
+/// caller holds, or a document that is indexed only when a construction is
+/// read.
+#[derive(Clone, Copy)]
+enum ModelSource<'index, 'ir> {
+    Index(&'index crate::index::ModelIndex<'ir>),
+    Document(&'ir CadIr),
 }
 
 fn model_surface_point_inner(
     admission: admission::EvaluationAdmission<'_, '_>,
-    ir: &CadIr,
+    source: ModelSource<'_, '_>,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
@@ -6194,23 +6218,19 @@ fn model_surface_point_inner(
     let Some(construction) = geometry.procedural_construction() else {
         return crate::eval::decode::surface_point(admission, geometry, u, v);
     };
-    let mut procedural = None;
-    for candidate in &ir.model.procedural_surfaces {
-        let matches = crate::ids::comparison::equal(
-            &admission,
-            candidate.id.as_str(),
-            construction.as_str(),
-            "model surface construction identity",
-        )
-        .map_err(EvaluationFailure::from)?;
-        if matches {
-            procedural = Some(candidate);
-            break;
+    let built;
+    let index = match source {
+        ModelSource::Index(index) => index,
+        ModelSource::Document(ir) => {
+            built = crate::index::ModelIndex::build(ir);
+            &built
         }
-    }
-    let procedural = procedural.ok_or(EvaluationFailure::NoValue)?;
+    };
+    let procedural = index
+        .procedural_surface_construction(construction.as_str(), admission)
+        .map_err(EvaluationFailure::from)?
+        .ok_or(EvaluationFailure::NoValue)?;
     let carrier_interval = record_u_interval(procedural.record_bounds());
-    let index = &crate::index::ModelIndex::build(ir);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => model_native_extrusion_point(
             admission,

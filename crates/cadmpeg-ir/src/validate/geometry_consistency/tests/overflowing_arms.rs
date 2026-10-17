@@ -27,6 +27,7 @@ fn a_support_side_whose_nurbs_pcurve_overflows_misses_its_contract_by_nan() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -64,6 +65,7 @@ fn a_support_side_whose_placed_support_overflows_misses_its_contract_by_inf() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -117,6 +119,7 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
     super::check_pcurve_surface_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the pcurve is consistent with the surface");
@@ -167,6 +170,7 @@ fn a_surface_curve_whose_end_overflows_misses_its_support_contract_by_nan() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -188,6 +192,7 @@ fn a_surface_offset_whose_solved_end_overflows_misses_its_offset_distance_by_nan
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -211,6 +216,7 @@ fn a_surface_offset_whose_base_end_overflows_misses_its_contracts_by_nan() {
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -300,6 +306,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -566,6 +573,7 @@ fn a_support_side_on_a_blend_whose_support_partial_overflows_misses_its_contract
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
@@ -650,6 +658,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
     check_procedural_support_consistency(
         &cadmpeg_test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
+        &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
     )
     .expect("check that the procedural support is consistent");
