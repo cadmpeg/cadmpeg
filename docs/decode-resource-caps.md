@@ -103,7 +103,11 @@ Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
 storage are not retained bytes; per-input bounds, entity charges, and local
 work caps bound them. A new copy of bytes that the decoded document keeps
-must call `retain_bytes` before the copy.
+must call `retain_bytes` before the copy. A native record's text may be
+counted twice toward retained bytes, once by the codec before attach and
+once by the IR at attach (Rhino link bytes and `from_typed_for_decode`
+JSON copies), so the retained ceiling is conservative by at most that
+text.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
 parse it, charge its depth to the session, and bound the tree's storage by
@@ -143,7 +147,9 @@ charged when they are serialized.
 
 The census lists every `const MAX_*` under `crates/**/src` at this commit,
 except items in `#[cfg(test)]` modules, `#[cfg(test)]` or `#[test]`
-functions, and test files. Four constants are excluded for that reason:
+functions, and test files. Run `python3 scripts/check-resource-caps.py`
+to check the table, the totals, and the production constants. Four
+constants are excluded for that reason:
 CATIA `MAX_PAIR_SOLUTIONS` (`solve/incidence.rs`) and `MAX_ORIENTED_OPTIONS`
 (`solve/mesh_quotient.rs`) are in test functions, F3D `MAX_INDEX_FLOAT`
 (`writer/generate/native_geometry.rs`) is in a test module, and
