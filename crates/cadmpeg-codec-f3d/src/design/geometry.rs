@@ -113,6 +113,10 @@ struct SketchArrangementEdge {
 struct SketchArrangementFace {
     boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
     polyline: Vec<Point2>,
+    /// Whether a separate connected part of the arrangement lies inside the
+    /// face. The face walk gives no hole rings, so the face alone is not the
+    /// region it bounds.
+    encloses_island: bool,
 }
 
 pub(super) fn arrangement_region_containing_points(
@@ -123,8 +127,6 @@ pub(super) fn arrangement_region_containing_points(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
-    use cadmpeg_ir::features::SketchProfileRegion;
-
     let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
@@ -154,8 +156,7 @@ pub(super) fn arrangement_region_containing_points(
         }
     }
     if boundary_count == 1 {
-        let face = geometric!(boundary);
-        return Ok(SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok());
+        return Ok(arrangement_face_region(geometric!(boundary)));
     }
     let mut interior = None;
     let mut interior_count = 0;
@@ -185,8 +186,20 @@ pub(super) fn arrangement_region_containing_points(
     if interior_count != 1 {
         return Ok(None);
     }
-    let face = geometric!(interior);
-    Ok(SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok())
+    Ok(arrangement_face_region(geometric!(interior)))
+}
+
+/// The region `face` bounds, or `None` when an island inside it needs a hole
+/// ring the face walk does not give.
+fn arrangement_face_region(
+    face: &SketchArrangementFace,
+) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    if face.encloses_island {
+        return None;
+    }
+    SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok()
 }
 
 fn sketch_arrangement_faces(
@@ -444,6 +457,25 @@ fn sketch_arrangement_faces(
     for uses in &mut outgoing {
         uses.sort_by(|left, right| left.2.total_cmp(&right.2));
     }
+    let mut component = ctx.alloc_filled(nodes.len(), usize::MAX, "f3d arrangement components")?;
+    let mut component_roots = Vec::new();
+    for root in 0..nodes.len() {
+        if component[root] != usize::MAX || outgoing[root].is_empty() {
+            continue;
+        }
+        component[root] = root;
+        component_roots.push(root);
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            for (edge_index, reverse, _) in &outgoing[node] {
+                let next = edges[*edge_index].nodes[usize::from(!*reverse)];
+                if component[next] == usize::MAX {
+                    component[next] = root;
+                    pending.push(next);
+                }
+            }
+        }
+    }
     let mut visited = ctx.alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?;
     let mut faces = Vec::new();
     for edge_index in 0..edges.len() {
@@ -488,7 +520,17 @@ fn sketch_arrangement_faces(
                 current = (next.0, next.1);
             }
             if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
-                faces.push(SketchArrangementFace { boundary, polyline });
+                // Proven-disjoint components lie wholly inside or outside
+                // the face, so one node of each decides.
+                let own = component[edges[edge_index].nodes[0]];
+                let encloses_island = component_roots
+                    .iter()
+                    .any(|root| *root != own && point_in_polygon(nodes[*root], &polyline));
+                faces.push(SketchArrangementFace {
+                    boundary,
+                    polyline,
+                    encloses_island,
+                });
             }
         }
     }
