@@ -98,17 +98,19 @@ pub(super) fn native_surface_id(
     crate::identity::compose_checked(&native_surface_namespace(scan, surface_id).0, surface_id)
 }
 
-/// Compare a selected native surface identity without constructing one.
-pub(super) fn matches_native_surface_id(
+/// Return a predicate that compares a candidate with the selected native
+/// surface identity without constructing one.
+///
+/// Selecting the namespace scans every surface row, so build the predicate
+/// once and apply it to each candidate surface.
+pub(super) fn native_surface_id_matcher(
     scan: &ContainerScan,
     surface_id: u32,
-    candidate: &SurfaceId,
-) -> bool {
-    crate::identity::matches_numbered_identity(
-        candidate.as_str(),
-        native_surface_namespace(scan, surface_id).1,
-        surface_id,
-    )
+) -> impl Fn(&SurfaceId) -> bool {
+    let prefix = native_surface_namespace(scan, surface_id).1;
+    move |candidate| {
+        crate::identity::matches_numbered_identity(candidate.as_str(), prefix, surface_id)
+    }
 }
 
 /// Return a native surface row only when its compact identifier is unique
@@ -129,7 +131,7 @@ pub(super) fn unique_native_surface_row<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{matches_native_surface_id, native_surface_id, native_surface_namespace};
+    use super::{native_surface_id, native_surface_id_matcher, native_surface_namespace};
     use crate::surface::{SurfaceKind, SurfaceRow};
 
     #[test]
@@ -153,14 +155,15 @@ mod tests {
             prefix,
             17,
         ));
-        assert!(matches_native_surface_id(&scan, 17, &native));
+        let matches = native_surface_id_matcher(&scan, 17);
+        assert!(matches(&native));
         let visible = cadmpeg_ir::ids::SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 17);
         assert!(!crate::identity::matches_numbered_identity(
             visible.as_str(),
             prefix,
             17,
         ));
-        assert!(!matches_native_surface_id(&scan, 17, &visible));
+        assert!(!matches(&visible));
     }
 }
 
