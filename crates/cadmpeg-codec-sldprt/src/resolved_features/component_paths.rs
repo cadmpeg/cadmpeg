@@ -209,13 +209,10 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         Ambiguous { strength: u8 },
     }
 
-    let mut native_features = HashMap::new();
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut history_features = HashMap::new();
     for history in histories {
         history_features.insert(history.id.as_str(), history.features.as_slice());
-        for feature in &history.features {
-            native_features.insert(feature.id.as_str(), feature);
-        }
     }
     let mut neutral_indices = HashMap::new();
     for (index, feature) in features.iter().enumerate() {
@@ -227,8 +224,8 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     for lane in lanes {
         let names = FeatureObjectNames::new(&lane.names);
         let mut objects = native_features
-            .values()
-            .filter_map(|feature| Some((names.of(feature)?, *feature)))
+            .iter()
+            .filter_map(|feature| Some((names.of(feature)?, feature)))
             .filter(|(_, feature)| {
                 !history_features
                     .get(feature.parent.as_str())

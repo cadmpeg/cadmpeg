@@ -333,16 +333,13 @@ pub(crate) fn project_compact_sketch_profiles(
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
 
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
         let names = FeatureObjectNames::new(&lane.names);
         let mut objects = native_features
-            .values()
+            .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
                 let start = names.of(feature).map(|name| name.offset).or_else(|| {
@@ -352,7 +349,7 @@ pub(crate) fn project_compact_sketch_profiles(
                         .map(crate::records::SketchInputEntity::offset)
                         .min()
                 })?;
-                Some((start, *feature))
+                Some((start, feature))
             })
             .enumerate()
             .map(|(ordinal, (offset, feature))| (offset, ordinal, feature))
@@ -915,10 +912,7 @@ pub(crate) fn project_marker_backed_sketches(
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
 
-    let mut native_features = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        native_features.insert(feature.id.as_str(), feature);
-    }
+    let native_features = crate::records::HistoryFeatures::new(histories);
     let mut marker_owners = HashSet::new();
     for owner in lanes
         .iter()
@@ -946,7 +940,7 @@ pub(crate) fn project_marker_backed_sketches(
         let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in native_features
-            .values()
+            .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
         {
             let Some((start, feature)) = (|| {
@@ -957,7 +951,7 @@ pub(crate) fn project_marker_backed_sketches(
                         .map(crate::records::SketchInputEntity::offset)
                         .min()
                 })?;
-                Some((start, *feature))
+                Some((start, feature))
             })() else {
                 continue;
             };
@@ -2699,7 +2693,7 @@ fn project_detached_legacy_config_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
-    native_features: &HashMap<&str, &crate::records::Feature>,
+    native_features: &crate::records::HistoryFeatures<'_>,
     lanes: &[FeatureInputLane],
     feature_frames: &HashMap<String, (Point3, Vector3, Vector3)>,
 ) {
@@ -2745,7 +2739,7 @@ fn project_detached_legacy_config_sketches(
                 ) {
                     break 'feature_edit;
                 }
-                let Some(native_feature) = native_features.get(native_ref).copied() else {
+                let Some(native_feature) = native_features.get(native_ref) else {
                     break 'feature_edit;
                 };
                 let markers = lane
@@ -3576,6 +3570,45 @@ mod detached_legacy_sketch_tests {
             }) if id == &sketches[0].id));
     }
 
+    #[test]
+    fn tied_object_names_give_the_compact_interval_to_the_later_history_feature() {
+        let (mut history, lane, feature) = compact_profile_projection_fixture();
+        let earlier = crate::records::Feature {
+            id: "feature-earlier".into(),
+            ..history.features[0].clone()
+        };
+        history.features.insert(0, earlier);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        for _ in 0..32 {
+            let mut sketches = Vec::new();
+            let mut entities = Vec::new();
+            let mut losses = Vec::new();
+            let mut admitted = [feature.clone()];
+            super::project_compact_sketch_profiles(
+                &service,
+                &mut admitted,
+                &mut sketches,
+                &mut entities,
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
+                &mut losses,
+            )
+            .unwrap();
+            assert_eq!(sketches.len(), 1);
+            assert_eq!(entities.len(), 4);
+            assert!(matches!(admitted[0].evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
+                }) if id == &sketches[0].id));
+        }
+    }
+
     fn marker(
         ordinal: u32,
         object_index: Option<u32>,
@@ -3940,6 +3973,94 @@ mod detached_legacy_sketch_tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn tied_object_names_give_the_marker_interval_to_the_later_history_feature() {
+        let mut native_feature = feature();
+        native_feature.kind = "Sketch".into();
+        native_feature.input_class = Some("moProfileFeature_c".into());
+        native_feature.name = "point".into();
+        let earlier = crate::records::Feature {
+            id: "feature-earlier".into(),
+            ..native_feature.clone()
+        };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![earlier, native_feature],
+        };
+        let lane_id = "sldprt:feature-input:resolved-features#1";
+        let point = marker(0, Some(1), SketchInputKind::Point, Some([0.0, 0.0]));
+        let point = point.with_test_position(point.ordinal(), 20);
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: vec![0; 64].into(),
+            classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 8,
+                object_id: ObjectId::from_value(30),
+                value: "point".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![point],
+        };
+        let neutral_feature = cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
+                .expect("identity grammar"),
+            ordinal: 30,
+            name: Some("point".into()),
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                }),
+            ),
+            native_ref: Some("feature".into()),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("profile fixture fits service policy");
+        for _ in 0..32 {
+            let mut features = vec![neutral_feature.clone()];
+            let mut sketches = Vec::new();
+            let mut sketch_entities = Vec::new();
+            project_marker_backed_sketches(
+                &ctx,
+                &mut features,
+                &mut sketches,
+                &mut sketch_entities,
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
+            )
+            .expect("marker profile projection fits service policy");
+
+            assert_eq!(sketches.len(), 1);
+            assert_eq!(sketch_entities.len(), 1);
+        }
     }
 
     #[test]
