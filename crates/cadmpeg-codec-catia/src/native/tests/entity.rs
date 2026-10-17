@@ -1445,8 +1445,29 @@ fn derived_definition_schema_selections_match_decoded_record() {
     let selectors =
         crate::entity_table::parse_definition_schema_selectors(record.definition_prefix());
     let catalog = native.catalogs.first();
-    let admitted = super::super::definition_schema_selections(&selectors, catalog);
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::definition_schema_selections(ctx, &selectors, catalog)
+    })
+    .expect("derive the definition schema selections");
     assert_eq!(admitted, record.definition_schema_selections);
+
+    let entry = &catalog.expect("fixture catalog").entries[4];
+    let class_text = u64::try_from(entry.id.len() + "Sketch".len()).expect("fixture text fits");
+    let admitted = crate::test_support::with_retained_limit(class_text, |ctx| {
+        super::super::definition_schema_selections(ctx, &selectors, catalog)
+    })
+    .expect("one class copy fits its own length");
+    assert_eq!(admitted, record.definition_schema_selections);
+    let error = crate::test_support::with_retained_limit(class_text - 1, |ctx| {
+        super::super::definition_schema_selections(ctx, &selectors, catalog)
+    })
+    .expect_err("the class copy is charged before it is made");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain CATIA schema class text"
+    ));
 }
 
 #[test]
@@ -1502,7 +1523,10 @@ fn derived_entity_value_selections_match_decoded_record() {
     let catalog = native.catalogs.first();
     let fields = record.value_fields();
     let packets = record.value_packets(&fields);
-    let admitted = super::super::entity_value_schema_selections(&fields, catalog, &packets);
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_value_schema_selections(ctx, &fields, catalog, &packets)
+    })
+    .expect("derive the entity value schema selections");
     assert_eq!(admitted, record.value_schema_selections);
 }
 
@@ -1514,7 +1538,10 @@ fn derived_repeated_reference_selection_matches_decoded_record() {
     let record = &native.object_graphs[0].records[0];
     let preamble = crate::object_graph::repeated_reference_schema_preamble(&record.payload);
     let catalog = native.catalogs.first();
-    let admitted = super::super::repeated_reference_schema_selection(preamble.as_ref(), catalog);
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::repeated_reference_schema_selection(ctx, preamble.as_ref(), catalog)
+    })
+    .expect("derive the repeated reference schema selection");
     assert_eq!(admitted, record.repeated_reference_schema_selection);
 }
 
