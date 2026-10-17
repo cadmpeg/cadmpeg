@@ -687,6 +687,7 @@ fn decode_with_table(
     )?;
     emit_loops(&mut out, records, &by_index, &reach, format)?;
     emit_faces(
+        ctx,
         &mut out,
         records,
         &by_index,
@@ -712,7 +713,7 @@ fn decode_with_table(
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
-        emit_annotation_records(&mut out, records, &by_index, &carriers, stream, format)?;
+        emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
 
         attach_point_edge_carriers(&mut out, records, format);
         let collapsed = collapsed_edges(records, &by_index, &reach.edges, format)?;

@@ -515,7 +515,7 @@ pub fn procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralCurve, cadmpeg_core::CodecError>> {
-    procedural_curve_recursive(ctx, toks, table, &mut Vec::new())
+    procedural_curve_recursive(ctx, toks, table, &mut std::collections::HashSet::new())
 }
 
 /// Resolve the signed pcurve slot carried by an `intcurve` reference.
@@ -538,7 +538,13 @@ pub fn pcurve_for_selector_with_chart(
         2 | -2 => 1,
         _ => return None,
     };
-    pcurve_for_selector_recursive(ctx, toks, slot, table, &mut Vec::new())
+    pcurve_for_selector_recursive(
+        ctx,
+        toks,
+        slot,
+        table,
+        &mut std::collections::HashSet::new(),
+    )
 }
 
 fn pcurve_for_selector_recursive(
@@ -546,7 +552,7 @@ fn pcurve_for_selector_recursive(
     toks: &[Token],
     slot: usize,
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
 ) -> Option<Result<(PcurveNurbs, bool), cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM pcurve reference"));
     // A record-level intcurve wrapper can carry only a compact `{ref N}`
@@ -555,7 +561,7 @@ fn pcurve_for_selector_recursive(
     // own ordered slots remain authoritative and must not be searched here.
     if let Some(index) = direct_subtype_reference(toks) {
         if !seen.contains(&index) {
-            seen.push(index);
+            seen.insert(index);
             // Not the search refusal the four `for` loops over
             // `subtype_refs` state. This is the single record-level
             // delegation, and the wrapper's own routes below run whenever the
@@ -754,14 +760,14 @@ pub fn cacheless_procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<HelixDefinition, cadmpeg_core::CodecError>> {
-    cacheless_procedural_curve_recursive(ctx, toks, table, &mut Vec::new())
+    cacheless_procedural_curve_recursive(ctx, toks, table, &mut std::collections::HashSet::new())
 }
 
 fn cacheless_procedural_curve_recursive(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
 ) -> Option<Result<HelixDefinition, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM cacheless curve reference"));
     if let Some(definition) = helix_definition(toks) {
@@ -781,7 +787,7 @@ fn cacheless_procedural_curve_recursive(
         // decoder does about it is the decoder's decision: the search refuses
         // the stream rather than skipping the reference and reading the one
         // behind it.
-        seen.push(index);
+        seen.insert(index);
         let target = table.span(index)?;
         if let Some(decoded) =
             cacheless_procedural_curve_recursive(ctx, target.tokens(), table, seen)
@@ -796,7 +802,7 @@ fn procedural_curve_recursive(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-    seen: &mut Vec<usize>,
+    seen: &mut std::collections::HashSet<usize>,
 ) -> Option<Result<DecodedProceduralCurve, cadmpeg_core::CodecError>> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM procedural curve reference"));
     let vector_offset = vector_offset_definition(toks);
@@ -912,7 +918,7 @@ fn procedural_curve_recursive(
         // decoder does about it is the decoder's decision: the search refuses
         // the stream rather than skipping the reference and reading the one
         // behind it.
-        seen.push(index);
+        seen.insert(index);
         let target = table.span(index)?;
         if let Some(decoded) = procedural_curve_recursive(ctx, target.tokens(), table, seen) {
             return Some(decoded);
@@ -920,9 +926,6 @@ fn procedural_curve_recursive(
     }
     None
 }
-
-#[cfg(test)]
-mod reference_allocation_tests {}
 
 fn embedded_deformable(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,

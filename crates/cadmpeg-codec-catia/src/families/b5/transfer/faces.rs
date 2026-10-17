@@ -291,6 +291,7 @@ fn b5_face_loops(
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurve_uses: &PcurveUses,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<cadmpeg_ir::topology::FaceLoops, cadmpeg_core::CodecError> {
     let mut ids = Vec::new();
 
@@ -340,7 +341,7 @@ fn b5_face_loops(
     else {
         return unspecified();
     };
-    crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows)
+    crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows, refusal)
 }
 
 fn copy_face_loops(loops: &FaceLoops) -> FaceLoops {
@@ -380,6 +381,7 @@ pub(super) fn emit_faces(
     graph: &B5Graph,
     plan: &TransferPlan,
     emitted: &EmittedFaceInputs<'_>,
+    refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let surface_ids = emitted.surface_ids;
@@ -498,8 +500,15 @@ pub(super) fn emit_faces(
             ownership.face_components[face_index],
             ShellId::mint,
         )?;
-        let face_loops =
-            b5_face_loops(ir, graph, face, loop_orientation, surface_ids, pcurve_uses)?;
+        let face_loops = b5_face_loops(
+            ir,
+            graph,
+            face,
+            loop_orientation,
+            surface_ids,
+            pcurve_uses,
+            refusal,
+        )?;
         annotate(
             annotations,
             &face_id,
@@ -834,7 +843,8 @@ mod tests {
                     SurfaceId::mint("catia:test:surface#surface%2310".to_string())
                         .expect("identity grammar")
                 )]),
-                &pcurve_uses
+                &pcurve_uses,
+                &mut crate::nurbs::LaneRefusals::new()
             ))
             .expect("compute the B5 face loops"),
             cadmpeg_ir::topology::FaceLoops::classified(

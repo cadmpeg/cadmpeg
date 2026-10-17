@@ -36,3 +36,34 @@ fn configuration_attachment_preserves_active_relation() {
         Some("nx:arrangements:attribute-use#0")
     );
 }
+
+#[test]
+fn configuration_attribute_uses_keep_the_first_relation_per_configuration() {
+    let configurations = (0..4096)
+        .map(|index| format!("nx:arrangements:configuration#{index}"))
+        .collect::<Vec<_>>();
+    let relations = (0..3 * 4096)
+        .map(|index| format!("nx:arrangements:attribute-use#{index}"))
+        .collect::<Vec<_>>();
+    let pairs = relations
+        .iter()
+        .enumerate()
+        .map(|(index, relation)| {
+            (
+                configurations[(index * 7) % configurations.len()].as_str(),
+                relation.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let first = super::super::first_configuration_attribute_uses(pairs.iter().copied());
+
+    assert_eq!(first.len(), configurations.len());
+    for configuration in &configurations {
+        let expected = pairs
+            .iter()
+            .find(|(candidate, _)| candidate == configuration)
+            .map(|(_, relation)| *relation);
+        assert_eq!(first.get(configuration.as_str()).copied(), expected);
+    }
+}

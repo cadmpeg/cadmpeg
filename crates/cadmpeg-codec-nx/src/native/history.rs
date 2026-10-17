@@ -13,6 +13,25 @@ pub(super) const NATIVE_PRIMARY_BODY_CLOSURE_WITNESS: &str = "native_primary_bod
 /// Source property carrying an admitted native primary-body object index.
 pub(super) const NATIVE_PRIMARY_BODY_OBJECT_INDEX: &str = "primary_body_object_index";
 
+/// Feature dependencies in first-push order, each once.
+#[derive(Default)]
+pub(super) struct FeatureDependencies {
+    ordered: Vec<FeatureId>,
+    seen: BTreeSet<FeatureId>,
+}
+
+impl FeatureDependencies {
+    pub(super) fn push(&mut self, candidate: &FeatureId) {
+        if self.seen.insert(candidate.clone()) {
+            self.ordered.push(candidate.clone());
+        }
+    }
+
+    pub(super) fn into_vec(self) -> Vec<FeatureId> {
+        self.ordered
+    }
+}
+
 /// Ordered feature writers indexed by both native history identity and the
 /// neutral body identity established by projection.
 #[derive(Default)]
@@ -56,13 +75,8 @@ impl BodyWriterHistory {
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
         outputs: &[BodyId],
-        dependencies: &mut Vec<FeatureId>,
+        dependencies: &mut FeatureDependencies,
     ) {
-        let mut append = |writer: &FeatureId| {
-            if !dependencies.contains(writer) {
-                dependencies.push(writer.clone());
-            }
-        };
         let mut has_output_writer = false;
         for output in outputs {
             if let Some(writer) = self.outputs.get(output) {
@@ -70,16 +84,16 @@ impl BodyWriterHistory {
                     continue;
                 }
                 has_output_writer = true;
-                append(writer);
+                dependencies.push(writer);
             }
         }
         if !has_output_writer {
             if let Some(writer) = native_body.and_then(|body| self.native.get(&body)) {
-                append(writer);
+                dependencies.push(writer);
             } else if let Some(writer) =
                 offset_store_body.and_then(|body| self.offset_store.get(body))
             {
-                append(writer);
+                dependencies.push(writer);
             }
         }
     }
@@ -274,7 +288,7 @@ pub(crate) fn active_feature_closure(
 mod tests {
     use super::{
         active_feature_closure, ActiveFeatureClosureRejection, BodyWriterHistory,
-        NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+        FeatureDependencies, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::FeatureDefinition;
@@ -434,7 +448,7 @@ mod tests {
             let mut history = BodyWriterHistory::default();
             history.record_writer(Some(7), None, std::slice::from_ref(&body), &first);
 
-            let mut dependencies = Vec::new();
+            let mut dependencies = FeatureDependencies::default();
             history.extend_primary_dependencies(
                 None,
                 Some(8),
@@ -443,18 +457,18 @@ mod tests {
                 &mut dependencies,
             );
 
-            assert_eq!(dependencies, [first]);
+            assert_eq!(dependencies.into_vec(), [first]);
             assert!(history.native_writer(8).is_none());
             history.record_writer(Some(8), None, std::slice::from_ref(&body), &second);
             assert_eq!(history.native_writer(8), Some(&second));
-            dependencies.clear();
+            let mut dependencies = FeatureDependencies::default();
             history.extend_primary_dependencies(None, Some(7), None, &[body], &mut dependencies);
-            assert_eq!(dependencies, [second]);
+            assert_eq!(dependencies.into_vec(), [second]);
 
-            dependencies.clear();
+            let mut dependencies = FeatureDependencies::default();
             history.extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies);
             assert_eq!(
-                dependencies,
+                dependencies.into_vec(),
                 [FeatureId::mint("synthetic:test:id#first").expect("identity grammar")]
             );
         });
@@ -490,7 +504,7 @@ mod tests {
                 std::slice::from_ref(&existing)
             ));
 
-            let mut dependencies = Vec::new();
+            let mut dependencies = FeatureDependencies::default();
             history.extend_primary_dependencies(
                 Some(&provisional),
                 Some(7),
@@ -498,9 +512,9 @@ mod tests {
                 std::slice::from_ref(&existing),
                 &mut dependencies,
             );
-            assert_eq!(dependencies, [retained]);
+            assert_eq!(dependencies.into_vec(), [retained]);
 
-            let mut dependencies = Vec::new();
+            let mut dependencies = FeatureDependencies::default();
             history.extend_primary_dependencies(
                 Some(&provisional),
                 Some(7),
@@ -509,7 +523,7 @@ mod tests {
                 &mut dependencies,
             );
             assert_eq!(
-                dependencies,
+                dependencies.into_vec(),
                 [FeatureId::mint("synthetic:test:id#retained").expect("identity grammar")]
             );
 
@@ -528,7 +542,7 @@ mod tests {
             let mut history = BodyWriterHistory::default();
             history.record_writer(None, Some("store-a:block#7"), &[], &first);
 
-            let mut dependencies = Vec::new();
+            let mut dependencies = FeatureDependencies::default();
             history.extend_primary_dependencies(
                 None,
                 None,
@@ -536,8 +550,8 @@ mod tests {
                 &[],
                 &mut dependencies,
             );
-            assert_eq!(dependencies, [first]);
-            dependencies.clear();
+            assert_eq!(dependencies.into_vec(), [first]);
+            let mut dependencies = FeatureDependencies::default();
             history.extend_primary_dependencies(
                 None,
                 None,
@@ -545,14 +559,14 @@ mod tests {
                 &[],
                 &mut dependencies,
             );
-            assert!(dependencies.is_empty());
+            assert!(dependencies.into_vec().is_empty());
 
             history.record_writer(None, Some("store-a:block#7"), &[], &second);
             assert_eq!(
                 history.offset_store_writer("store-a:block#7"),
                 Some(&second)
             );
-            dependencies.clear();
+            let mut dependencies = FeatureDependencies::default();
             history.extend_primary_dependencies(
                 None,
                 None,
@@ -560,7 +574,7 @@ mod tests {
                 &[],
                 &mut dependencies,
             );
-            assert_eq!(dependencies, [second]);
+            assert_eq!(dependencies.into_vec(), [second]);
         });
     }
 
@@ -689,5 +703,23 @@ mod tests {
             active_feature_closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter)
         );
+    }
+
+    #[test]
+    fn feature_dependencies_keep_first_push_order_over_many_repeats() {
+        let ids = (0..4096)
+            .map(|index| {
+                FeatureId::mint(format!("synthetic:test:id#feature-{index}"))
+                    .expect("identity grammar")
+            })
+            .collect::<Vec<_>>();
+        let mut dependencies = FeatureDependencies::default();
+        for round in 0..4 {
+            for id in ids.iter().rev().skip(round) {
+                dependencies.push(id);
+            }
+        }
+        let expected = ids.iter().rev().cloned().collect::<Vec<_>>();
+        assert_eq!(dependencies.into_vec(), expected);
     }
 }

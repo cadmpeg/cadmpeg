@@ -67,6 +67,9 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(undecoded[0]
         .message
         .contains("injected design-intent failure"));
+    assert!(undecoded[0]
+        .message
+        .contains("dimension-companion and configuration reports were not produced"));
     assert!(full
         .report()
         .losses

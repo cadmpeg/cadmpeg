@@ -340,6 +340,130 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
 }
 
 #[test]
+fn hole_package_projection_counts_uses_and_templates_over_many_packages() {
+    use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
+    use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+    use crate::native::features::holes::FeatureSimpleHoleConstructionMember;
+    use crate::native::features::holes::FeatureSimpleHoleTemplate;
+    use crate::native::features::holes::SimpleHoleConstructionMembers;
+    use crate::native::features::holes::SimpleHoleEndTreatment;
+    use crate::native::features::holes::SimpleHoleExtent;
+    use crate::native::features::holes::SimpleHoleFamily;
+    use crate::native::features::holes::SimpleHoleForm;
+    use cadmpeg_ir::scalar::Length;
+
+    let template = |operation_label: String| FeatureSimpleHoleTemplate {
+        id: format!("template-{operation_label}"),
+        payload_string: format!("string-{operation_label}"),
+        operation_label,
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::None,
+        end_treatment: SimpleHoleEndTreatment::None,
+    };
+    let package_use =
+        |operation_label: String, group: String| FeatureHolePackageConstructionGroupUse {
+            id: format!("use-{operation_label}-{group}"),
+            operation_label,
+            construction_group_lane: "package-lane".into(),
+            simple_hole_construction_group: group,
+            source_offset: 0,
+        };
+    let members = |package: usize| [format!("simple-{package}-a"), format!("simple-{package}-b")];
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+    // A package is rejected when its label repeats (multiples of 13), its
+    // group is used twice (multiples of 17), or a member template repeats
+    // (multiples of 11).
+    let mut templates = Vec::new();
+    let mut groups = Vec::new();
+    let mut uses = Vec::new();
+    for package in 0..1024 {
+        let [first, second] = members(package);
+        templates.push(template(first.clone()));
+        templates.push(template(second.clone()));
+        if package.is_multiple_of(11) {
+            templates.push(template(first.clone()));
+        }
+        groups.push(FeatureSimpleHoleConstructionGroup {
+            id: format!("group-{package}"),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            members: SimpleHoleConstructionMembers::new(
+                [first, second]
+                    .into_iter()
+                    .map(|operation_label| FeatureSimpleHoleConstructionMember {
+                        scalar_lane: format!("lane-{operation_label}"),
+                        block_reference: format!("blocks-{operation_label}"),
+                        operation_label,
+                    })
+                    .collect(),
+            )
+            .unwrap(),
+        });
+        uses.push(package_use(
+            format!("package-{package}"),
+            format!("group-{package}"),
+        ));
+        if package.is_multiple_of(13) {
+            uses.push(package_use(
+                format!("package-{package}"),
+                format!("group-missing-{package}"),
+            ));
+        }
+        if package.is_multiple_of(17) {
+            uses.push(package_use(
+                format!("package-extra-{package}"),
+                format!("group-{package}"),
+            ));
+        }
+    }
+    let member_labels = (0..1024).flat_map(members).collect::<Vec<_>>();
+    let outputs = member_labels
+        .iter()
+        .map(|operation| (operation.clone(), vec![body.clone()]))
+        .collect();
+    let diameters = member_labels
+        .iter()
+        .map(|operation| (operation.clone(), Length::new(5.1).unwrap()))
+        .collect();
+
+    let projection = hole_package_projection(
+        &CadIr::empty(),
+        &templates,
+        &groups,
+        &uses,
+        HolePackageSources {
+            outputs: &outputs,
+            diameters: &diameters,
+            chamfers: &BTreeMap::new(),
+        },
+    );
+
+    let accepted = (0..1024)
+        .filter(|package: &usize| {
+            !package.is_multiple_of(13)
+                && !package.is_multiple_of(17)
+                && !package.is_multiple_of(11)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        projection.outputs.keys().cloned().collect::<Vec<_>>(),
+        accepted
+            .iter()
+            .map(|package| format!("package-{package}"))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        projection.internal_operations,
+        accepted.iter().copied().flat_map(members).collect()
+    );
+    assert!(projection.placements.is_empty());
+}
+
+#[test]
 fn active_configuration_retains_complete_evaluated_parameter_state() {
     let parameter = |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {
         id: ParameterId::mint(id).expect("identity grammar"),
@@ -403,6 +527,72 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
             ),
         ])
     );
+}
+
+#[test]
+fn active_configuration_parameter_state_checks_long_dependency_chains_by_id() {
+    let id = |ordinal: u32| {
+        ParameterId::mint(format!("synthetic:test:id#p{ordinal}")).expect("identity grammar")
+    };
+    let value = |ordinal: u32| {
+        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(f64::from(ordinal)).unwrap())
+    };
+    let parameters = (0..4096)
+        .map(|ordinal| DesignParameter {
+            id: id(ordinal),
+            owner: None,
+            ordinal,
+            name: format!("p{ordinal}"),
+            expression: format!("p{ordinal}"),
+            display: None,
+            value: Some(value(ordinal)),
+            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                ordinal
+                    .checked_sub(1)
+                    .map(id)
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        })
+        .collect::<Vec<_>>();
+    let attach = |parameters: Vec<DesignParameter>| {
+        let mut ir = CadIr::empty();
+        ir.model.parameters = parameters;
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId::mint("synthetic:test:id#active").expect("identity grammar"),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: Some("Model".to_string()),
+            material: None,
+            properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        });
+        attach_active_configuration_parameter_values(&mut ir, &mut AnnotationBuilder::new())
+            .expect("valid exactness fields");
+        ir.model.configurations.remove(0).parameter_values
+    };
+
+    assert_eq!(
+        attach(parameters.clone()),
+        (0..4096)
+            .map(|ordinal| (id(ordinal), value(ordinal)))
+            .collect::<BTreeMap<_, _>>()
+    );
+    let mut repeated = parameters.clone();
+    repeated.push(parameters[0].clone());
+    assert!(attach(repeated).is_empty());
+    let mut reversed = parameters;
+    reversed[4095].ordinal = 0;
+    assert!(attach(reversed).is_empty());
 }
 
 #[test]

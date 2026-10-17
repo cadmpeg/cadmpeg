@@ -908,6 +908,13 @@ impl ArithmeticWorkBound {
     pub(crate) fn reached(&self) -> bool {
         self.0.get()
     }
+
+    /// Mark this bound when `probe` reached it.
+    pub(crate) fn include(&self, probe: &Self) {
+        if probe.reached() {
+            self.0.set(true);
+        }
+    }
 }
 
 fn decode_arithmetic(

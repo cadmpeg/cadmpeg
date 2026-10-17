@@ -15,7 +15,7 @@ use crate::math::{Point2, Point3};
 use crate::scalar::FiniteReal;
 use crate::units::FinitePoint2;
 
-/// Inline spline support through degree 15; larger windows use admitted backing.
+/// Inline spline support through degree 15; larger windows use heap storage.
 pub(super) const INLINE_SUPPORT: usize = 16;
 
 /// A basis or pole window with bounded inline storage.
@@ -217,7 +217,7 @@ pub fn outer_refusal<T, R>(
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
 /// A procedural carrier without a solved cache has no value here.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn curve_point<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &CurveGeometry,
@@ -239,7 +239,7 @@ pub fn curve_point<'ctx, 'arena: 'ctx>(
 /// reaches no coordinate, and each reads NaN; a projection that overflows
 /// carries each coordinate it reached.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn nurbs_curve_point_at<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     curve: &NurbsCurve,
@@ -267,7 +267,7 @@ pub fn nurbs_curve_point_at<'ctx, 'arena: 'ctx>(
 /// why it has no finite value, as [`super::curve_tangent_solved`] states. A
 /// procedural carrier without a solved cache has no value here.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn curve_tangent<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &CurveGeometry,
@@ -290,7 +290,7 @@ pub fn curve_tangent<'ctx, 'arena: 'ctx>(
 
 /// Evaluate a surface carrier at `(u, v)` on its own parameterization.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn surface_point<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SurfaceGeometry,
@@ -327,7 +327,7 @@ pub fn surface_point<'ctx, 'arena: 'ctx>(
 /// evaluated point as the witness. A caller that wants the domain asks
 /// the carrier for it.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &PcurveGeometry,
@@ -433,7 +433,7 @@ mod tests;
 /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
 /// construction; no arm follows an arena id.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn curve_point_solved<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedCurveGeometry,
@@ -452,7 +452,7 @@ pub fn curve_point_solved<'ctx, 'arena: 'ctx>(
 /// alone, so partials outside the finite range at a finite point leave the
 /// point finite.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn surface_point_solved<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     geometry: &SolvedSurfaceGeometry,
@@ -472,7 +472,7 @@ pub fn surface_point_solved<'ctx, 'arena: 'ctx>(
 /// leaves the finite range reaches no coordinate, and each reads NaN; a
 /// projection that overflows carries each coordinate it reached.
 ///
-/// The admission policy supplies session accounting or standard-library storage.
+/// The admission supplies the recursion depth and any local work slice.
 pub fn nurbs_surface_point<'ctx, 'arena: 'ctx>(
     admission: impl Into<EvaluationAdmission<'ctx, 'arena>>,
     surface: &crate::geometry::nurbs::NurbsSurface,

@@ -545,6 +545,8 @@ pub(crate) struct Graph {
     by_pos: BTreeMap<usize, (NodeKind, u32)>,
     /// Record keys grouped by kind in their physical stream order.
     by_kind: BTreeMap<NodeKind, Vec<(NodeKind, u32)>>,
+    /// FACE identities grouped by their SHELL reference, in physical order.
+    faces_by_shell: BTreeMap<u32, Vec<u32>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -972,12 +974,28 @@ impl Graph {
             changed = true;
         }
         if changed {
-            self.by_kind.clear();
-            for &key in self.by_pos.values() {
-                let keys = self.by_kind.entry(key.0).or_default();
+            self.index_kinds();
+        }
+    }
 
-                keys.push(key);
-            }
+    /// Rebuild the kind and shell-face indices from the position index.
+    fn index_kinds(&mut self) {
+        self.by_kind.clear();
+        for &key in self.by_pos.values() {
+            self.by_kind.entry(key.0).or_default().push(key);
+        }
+        self.faces_by_shell.clear();
+        for key in self.by_kind.get(&NodeKind::Face).into_iter().flatten() {
+            let Some(face) = self.nodes.get(key) else {
+                continue;
+            };
+            let Some(shell) = face.face_fields().and_then(|fields| fields.shell) else {
+                continue;
+            };
+            self.faces_by_shell
+                .entry(u32::from(shell))
+                .or_default()
+                .push(face.xmt());
         }
     }
 
@@ -1034,16 +1052,30 @@ impl Graph {
         ownership: Vec<NodeCandidate>,
         selected: &[NodeCandidate],
     ) -> Vec<NodeCandidate> {
-        let mut admitted_ownership = Vec::new();
-        for candidate in ownership {
-            if selected
-                .iter()
-                .all(|selected| !selected.overlaps(candidate))
-            {
-                admitted_ownership.push(candidate);
-            }
-        }
-        admitted_ownership
+        let mut spans = selected
+            .iter()
+            .map(|candidate| (candidate.pos(), candidate.end()))
+            .collect::<Vec<_>>();
+        spans.sort_unstable();
+        // `reaches[i]` is the furthest end of the first `i + 1` spans by start.
+        let mut reach = 0;
+        let reaches = spans
+            .iter()
+            .map(|&(_, end)| {
+                reach = reach.max(end);
+                reach
+            })
+            .collect::<Vec<_>>();
+        ownership
+            .into_iter()
+            .filter(|candidate| {
+                let starts_before = spans.partition_point(|&(pos, _)| pos < candidate.end());
+                starts_before
+                    .checked_sub(1)
+                    .and_then(|last| reaches.get(last))
+                    .is_none_or(|&reach| reach <= candidate.pos())
+            })
+            .collect()
     }
 
     /// Admit one complete canonical record without building graph indices.
@@ -1506,8 +1538,8 @@ impl Graph {
         }
     }
 
-    /// Two face-index visits per face and one endpoint lookup bound a census.
-    /// Unrelated record kinds do not participate in shell ownership checks.
+    /// Return whether a SHELL's ownership fields and face census define a
+    /// body shape.
     fn is_body_shape_shell(&self, shell: &Node) -> bool {
         let Some(fields) = shell.shell_fields() else {
             return false;
@@ -1532,23 +1564,20 @@ impl Graph {
             self.get_target(NodeKind::Face, fields.first_face)
                 .and_then(Node::face_fields)
                 .filter(|face| face.shell.map(u32::from) == Some(shell.xmt()))?;
-            let count = self
-                .of_kind(NodeKind::Face)
-                .filter(|face| {
-                    face.face_fields()
-                        .is_some_and(|fields| fields.shell.map(u32::from) == Some(shell.xmt()))
-                })
-                .count();
+            let count = self.faces_by_shell.get(&shell.xmt()).map_or(0, Vec::len);
             return (count != 0).then_some(count);
         }
 
         let mut face_xmt = fields.first_face;
         let face_limit = self.kind_count(NodeKind::Face);
+        let mut walked = BTreeSet::new();
         let mut count = 0usize;
         while let Some(target) = face_xmt {
             let current = u32::from(target);
             count = count.checked_add(1)?;
             (count <= face_limit).then_some(())?;
+            // A chain that revisits a face never reaches the null reference.
+            walked.insert(current).then_some(())?;
             let face = self
                 .get(NodeKind::Face, current)
                 .and_then(Node::face_fields)?;
@@ -1567,12 +1596,11 @@ impl Graph {
         let fields = shell.shell_fields()?;
         if fields.last_face.is_some() {
             faces.extend(
-                self.of_kind(NodeKind::Face)
-                    .filter(|face| {
-                        face.face_fields()
-                            .is_some_and(|fields| fields.shell.map(u32::from) == Some(shell.xmt()))
-                    })
-                    .map(Node::xmt),
+                self.faces_by_shell
+                    .get(&shell.xmt())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             );
         } else {
             let mut face_xmt = fields.first_face;
@@ -1654,11 +1682,7 @@ impl FixedRecordSelection {
             graph.by_pos.insert(node.pos(), key);
             graph.nodes.insert(key, node);
         }
-        for &key in graph.by_pos.values() {
-            let keys = graph.by_kind.entry(key.0).or_default();
-
-            keys.push(key);
-        }
+        graph.index_kinds();
         graph
     }
 }
@@ -1681,10 +1705,6 @@ impl NodeCandidate {
     }
     fn end(self) -> usize {
         self.end
-    }
-
-    fn overlaps(self, other: Self) -> bool {
-        self.pos < other.end() && other.pos < self.end()
     }
 
     fn materialize(self, stream: &[u8]) -> Option<Node> {

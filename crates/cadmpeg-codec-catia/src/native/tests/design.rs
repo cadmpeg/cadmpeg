@@ -452,6 +452,36 @@ fn native_object_references_select_sparse_entity_identities() {
 }
 
 #[test]
+fn design_object_class_copies_are_charged_before_they_are_made() {
+    let mut bytes = sequential_entity_backed_object_graph(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0x81, 0x83, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x85], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x86], &[0xfe]),
+    ]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Profile",
+        "Limit",
+        "Pad",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert!(native.design_objects[0].relations[0].source_class.is_some());
+    let error = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+    })
+    .expect_err("design-object class copies are charged before they are made");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain CATIA schema class text"
+    ));
+}
+
+#[test]
 fn native_design_relations_preserve_both_endpoint_schema_classes() {
     let mut bytes = sequential_entity_backed_object_graph(&[
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0x81, 0x83, 0xfe]),
@@ -884,7 +914,10 @@ fn decode_links_design_objects_through_their_owner_record_group() {
 #[test]
 fn design_objects_rederive_to_the_decoded_objects() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_nested_design_objects());
-    let admitted = super::super::design_objects(&native.object_graphs, &native.entity_records);
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+    })
+    .expect("derive the design objects");
     assert_eq!(admitted, native.design_objects);
 }
 
@@ -923,11 +956,15 @@ fn parallel_reference_table_rederives_to_the_decoded_table() {
         .enumerate()
         .filter_map(|(index, record)| Some((record.entity_id()?, index)))
         .collect::<HashMap<_, _>>();
-    let admitted = super::super::design_parallel_reference_table(
-        &fields,
-        graph,
-        &indices,
-        super::super::terminal_null_entity_id(&indices),
-    );
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::design_parallel_reference_table(
+            ctx,
+            &fields,
+            graph,
+            &indices,
+            super::super::terminal_null_entity_id(&indices),
+        )
+    })
+    .expect("derive the parallel reference table");
     assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
 }

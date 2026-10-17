@@ -42,7 +42,7 @@ pub(super) fn write_new(
     validate_assembly_projection(target, loaded_native.as_ref())?;
     let has_native = loaded_native.is_some();
     let native = loaded_native.unwrap_or_default();
-    let attributes = attributes::AttributeIndex::new(target, &native)?;
+    let attributes = attributes::AttributeIndex::new(target, &native);
     if !target.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),

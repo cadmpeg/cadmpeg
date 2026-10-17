@@ -70,7 +70,7 @@ use topology::{check_references, check_tolerances, check_topology_tolerances};
 /// Both the carrier-parameterization pass and the geometric-consistency pass
 /// ask this question of the same carrier, so they ask it of one function.
 ///
-/// Each carrier visit enters the caller session and admits its work.
+/// Each nested carrier visit counts against the caller session's recursion depth.
 fn pcurve_parameter_domain(
     ctx: &DecodeContext<'_>,
     geometry: &crate::geometry::pcurve::PcurveGeometry,
@@ -188,8 +188,10 @@ fn validate_model_with_index<'ir>(
     check_native_links(ids.native_view(), ids, &mut findings)?;
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
-    check_pcurve_surface_consistency(ctx, ids, &mut findings)?;
-    check_procedural_support_consistency(ctx, ids, &mut findings)?;
+    let evaluations = crate::eval::admission::ModelEvaluationPass::new();
+    check_pcurve_surface_consistency(ctx, ids, &evaluations, &mut findings)?;
+    check_procedural_support_consistency(ctx, ids, &evaluations, &mut findings)?;
+    evaluations.report(&mut findings);
     check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings)?;
     check_sketches(ctx, ir, &mut findings)?;

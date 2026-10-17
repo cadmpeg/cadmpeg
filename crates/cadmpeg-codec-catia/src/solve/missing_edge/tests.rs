@@ -137,9 +137,15 @@ fn repeated_long_row_selects_one_majority_sharing_face() {
         handles(&[10, 14, 70]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
-        .expect("compute the repeated edge face handle candidates from sets")
-        .expect("complete owning-face containment");
+    let candidates = repeated_edge_face_handle_candidates_from_sets(
+        &ctx,
+        &rows,
+        &faces,
+        &[[0, 0]],
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("compute the repeated edge face handle candidates from sets")
+    .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![vec![1]]);
 }
@@ -154,9 +160,15 @@ fn repeated_long_row_abstains_when_majority_sharing_is_not_unique() {
         handles(&[11, 12, 13]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
-        .expect("compute the repeated edge face handle candidates from sets")
-        .expect("complete owning-face containment");
+    let candidates = repeated_edge_face_handle_candidates_from_sets(
+        &ctx,
+        &rows,
+        &faces,
+        &[[0, 0]],
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("compute the repeated edge face handle candidates from sets")
+    .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![Vec::<usize>::new()]);
 }
@@ -172,9 +184,15 @@ fn repeated_short_row_retains_every_complete_handle_sharing_face() {
         handles(&[10, 60]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
-        .expect("compute the repeated edge face handle candidates from sets")
-        .expect("complete owning-face containment");
+    let candidates = repeated_edge_face_handle_candidates_from_sets(
+        &ctx,
+        &rows,
+        &faces,
+        &[[0, 0]],
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("compute the repeated edge face handle candidates from sets")
+    .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![vec![1, 2]]);
 }
@@ -185,11 +203,15 @@ fn repeated_handle_selector_requires_file_wide_owning_face_containment() {
     let rows = vec![row(&[10, 11]), row(&[20, 21])];
     let faces = vec![handles(&[10, 11, 20]), handles(&[20, 21])];
 
-    assert!(
-        repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0], [0, 1]],)
-            .expect("compute the repeated edge face handle candidates from sets")
-            .is_none()
-    );
+    assert!(repeated_edge_face_handle_candidates_from_sets(
+        &ctx,
+        &rows,
+        &faces,
+        &[[0, 0], [0, 1]],
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .expect("compute the repeated edge face handle candidates from sets")
+    .is_none());
 }
 
 #[test]
@@ -365,7 +387,13 @@ fn repeated_handle_index_preserves_face_order() {
     }
     let expected = vec![vec![1, 2]];
     let actual = crate::test_support::with_service_context(|ctx| {
-        repeated_edge_face_handle_candidates_from_sets(ctx, &rows, &faces, &[[0, 0]])
+        repeated_edge_face_handle_candidates_from_sets(
+            ctx,
+            &rows,
+            &faces,
+            &[[0, 0]],
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("find the repeated edge face handle candidates");
     assert_eq!(actual, Some(expected));
@@ -495,10 +523,66 @@ fn repeated_handle_row_selects_the_second_sharing_face() {
     let faces = vec![handles(&[10, 11]), handles(&[10, 11])];
     catia_test_context!(service_ctx);
     assert_eq!(
-        repeated_edge_face_handle_candidates_from_sets(&service_ctx, &rows, &faces, &[[0, 0]],)
-            .expect("compute the repeated edge face handle candidates from sets"),
+        repeated_edge_face_handle_candidates_from_sets(
+            &service_ctx,
+            &rows,
+            &faces,
+            &[[0, 0]],
+            &mut crate::nurbs::LaneRefusals::new()
+        )
+        .expect("compute the repeated edge face handle candidates from sets"),
         Some(vec![vec![1]])
     );
+}
+
+#[test]
+fn repeated_handle_overlap_past_its_step_bound_leaves_later_rows_without_candidates() {
+    const FACES: usize = 1024;
+    let steps_per_row = 2 * FACES;
+    let rows_within = super::MAX_REPEATED_EDGE_HANDLE_STEPS / steps_per_row;
+    let rows = vec![row(&[10, 11]); rows_within + 2];
+    let faces = vec![handles(&[10, 11]); FACES];
+    let serialized = vec![[0, 0]; rows.len()];
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let candidates = crate::test_support::with_service_context(|ctx| {
+        repeated_edge_face_handle_candidates_from_sets(
+            ctx,
+            &rows,
+            &faces,
+            &serialized,
+            &mut refusal,
+        )
+    })
+    .expect("compute the repeated edge face handle candidates from sets")
+    .expect("complete owning-face containment");
+
+    let sharing_faces = (1..FACES).collect::<Vec<_>>();
+    assert!(candidates[..rows_within]
+        .iter()
+        .all(|faces| *faces == sharing_faces));
+    assert!(candidates[rows_within..].iter().all(Vec::is_empty));
+    let notes = refusal.take_notes();
+    let [note] = notes.as_slice() else {
+        panic!("one bounded handle overlap");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::TopologyStandardSearchBounded.kind()
+    );
+    assert!(note.message.contains("bound of 1048576 face-handle steps"));
+    assert!(note.message.contains("2 repeated edge rows keep no"));
+}
+
+#[test]
+fn repeated_handle_overlap_within_its_step_bound_states_no_loss() {
+    let rows = vec![row(&[10, 11])];
+    let faces = vec![handles(&[10, 11]), handles(&[10, 11])];
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    crate::test_support::with_service_context(|ctx| {
+        repeated_edge_face_handle_candidates_from_sets(ctx, &rows, &faces, &[[0, 0]], &mut refusal)
+    })
+    .expect("compute the repeated edge face handle candidates from sets");
+    assert_eq!(refusal.note_count(), 0);
 }
 
 #[test]

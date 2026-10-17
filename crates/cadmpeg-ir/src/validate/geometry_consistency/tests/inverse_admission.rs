@@ -35,7 +35,10 @@ fn mapped_pcurve_inverse_admits_exact_linear_step_without_storage() {
     let (ir, id, geometry) = fixture();
     let index = crate::index::ModelIndex::new_model_only(&ir);
     let context = super::super::SurfacePcurveContext {
-        index: &index,
+        model: crate::validate::geometry_consistency::PassEvaluator {
+            index: &index,
+            pass: &crate::eval::admission::ModelEvaluationPass::new(),
+        },
         surface_id: &id,
         geometry: &ir.model.surfaces[0].geometry,
     };

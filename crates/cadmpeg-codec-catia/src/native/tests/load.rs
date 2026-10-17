@@ -1239,14 +1239,18 @@ fn configuration_entity_produces_a_schema_configuration_record() {
         classes: &classes,
         terminal_nulls: &terminal_nulls,
     };
-    let service = super::super::object_production(
-        configuration_entity,
-        configuration_object,
-        &references,
-        &expressions,
-        &expression_entities,
-        &bindings,
-    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::object_production(
+            ctx,
+            configuration_entity,
+            configuration_object,
+            &references,
+            &expressions,
+            &expression_entities,
+            &mut super::super::RelationDependencies::new(&bindings),
+        )
+    })
+    .expect("select the configuration object production");
     assert!(matches!(
         service,
         Some(crate::native::CatiaEntityObjectProduction::SchemaConfigurationRecord(_))

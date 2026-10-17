@@ -667,11 +667,16 @@ pub(crate) fn resolve_standard_edge_faces(
     resolve_edge_faces_from_runs(ctx, serialized, &runs)
 }
 
+/// Face visits the repeated-edge trim-handle overlap may take over one file;
+/// each step visits one face that lists one handle of a repeated edge row.
+pub(crate) const MAX_REPEATED_EDGE_HANDLE_STEPS: usize = 1 << 20;
+
 fn repeated_edge_face_handle_candidates_from_sets(
     ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     face_handles: &[HashSet<u32>],
     serialized: &[[usize; 2]],
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     if edge_rows.len() != serialized.len()
         || serialized
@@ -711,6 +716,8 @@ fn repeated_edge_face_handle_candidates_from_sets(
         }
         index
     };
+    let mut remaining_steps = MAX_REPEATED_EDGE_HANDLE_STEPS;
+    let mut bounded_edges = 0usize;
     for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
         if faces[0] != faces[1] || row.handles().len() < 2 {
             continue;
@@ -720,6 +727,15 @@ fn repeated_edge_face_handle_candidates_from_sets(
             .iter()
             .copied()
             .collect::<std::collections::HashSet<_>>();
+        let steps = unique_handles
+            .iter()
+            .map(|handle| face_index.get(handle).map_or(0, Vec::len))
+            .sum::<usize>();
+        let Some(remaining) = remaining_steps.checked_sub(steps) else {
+            bounded_edges += 1;
+            continue;
+        };
+        remaining_steps = remaining;
         let counts = {
             let mut counts = HashMap::<usize, usize>::new();
             for handle in &unique_handles {
@@ -750,6 +766,13 @@ fn repeated_edge_face_handle_candidates_from_sets(
         }
         candidates[edge] = matching;
     }
+    if bounded_edges > 0 {
+        refusal.push_standard_search_bounded(format_args!(
+            "The repeated-edge trim-handle overlap reached its bound of \
+             {MAX_REPEATED_EDGE_HANDLE_STEPS} face-handle steps; {bounded_edges} repeated edge \
+             rows keep no trim-handle face candidates."
+        ));
+    }
     Ok(Some(candidates))
 }
 
@@ -760,6 +783,7 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     serialized: &[[usize; 2]],
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     let Some(face_run) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
@@ -792,7 +816,13 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
         }
         face_handles
     };
-    repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles, serialized)
+    repeated_edge_face_handle_candidates_from_sets(
+        ctx,
+        &edge_rows,
+        &face_handles,
+        serialized,
+        refusal,
+    )
 }
 
 /// Refine unresolved repeated-face domains with positive trim-handle evidence.
