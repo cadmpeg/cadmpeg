@@ -52,13 +52,13 @@ use feature_projection::{
     blind_hole_body_projection, blind_hole_operations, block_placement,
     body_writing_unresolved_feature_definition, brep_feature_definition,
     counterbore_axis_placements_for_operations, counterbore_body_projection,
-    counterbore_operations, feature_source_content, hole_axis_placements_for_operations,
-    hole_body_projection, hole_package_projection, native_feature_parameters, new_body_boolean_op,
-    non_boolean_feature_definition_with_parameters, non_modeling_history_definition,
-    offset_surface_feature_definition, primary_hole_outputs, selection_indices_native,
-    simple_hole_chamfers, simple_hole_native_properties, simple_hole_operations,
-    sphere_body_projection, thicken_feature_definition, HolePackageSources, HoleProjection,
-    NewBodyEvidence, NxBlendFamily,
+    counterbore_operations, expressions_by_id, feature_source_content,
+    hole_axis_placements_for_operations, hole_body_projection, hole_package_projection,
+    native_feature_parameters, new_body_boolean_op, non_boolean_feature_definition_with_parameters,
+    non_modeling_history_definition, offset_surface_feature_definition, primary_hole_outputs,
+    selection_indices_native, simple_hole_chamfers, simple_hole_native_properties,
+    simple_hole_operations, sphere_body_projection, thicken_feature_definition, HolePackageSources,
+    HoleProjection, NewBodyEvidence, NxBlendFamily,
 };
 
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
@@ -1587,7 +1587,7 @@ fn attach_feature_operations(
     let features = &model.features;
     let parasolid_group_members = model.parasolid.group_members.as_slice();
     let data_blocks = model.om.data_blocks.as_slice();
-    let expressions = model.om.expressions.as_slice();
+    let expressions_by_id = expressions_by_id(&model.om.expressions);
     let body_bindings = model.segments.body_bindings.as_slice();
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
@@ -4147,7 +4147,8 @@ fn attach_feature_operations(
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
+        let native_parameters =
+            native_feature_parameters(operation_parameter_uses, &expressions_by_id);
         let sketch = if label.value == "SKETCH" {
             attach_sketch_graph(
                 ir,
