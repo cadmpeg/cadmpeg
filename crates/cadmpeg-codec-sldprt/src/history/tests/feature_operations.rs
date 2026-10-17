@@ -490,11 +490,15 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     );
     let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands,
-            ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target.starts_with("sldprt:feature-input:body-path:")
-            && tools.starts_with("sldprt:feature-input:body-path:"))));
+        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!(
+                (operands.target(), operands.tools()),
+                (BodySelection::Native(target), BodySelection::Native(tools))
+                    if target.starts_with("sldprt:feature-input:body-path:")
+                        && tools.starts_with("sldprt:feature-input:body-path:")
+            )
+    ));
     assert!(matches!(
         &decoded.ir().model.configurations[1].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
@@ -540,11 +544,15 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
             ..
         }) if matches!((operands.target(), operands.tools(),), (BodySelection::Unresolved, BodySelection::Unresolved,))));
     assert!(matches!(
-        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition, FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands,
-            ..
-        }) if matches!((operands.target(), operands.tools(),), (BodySelection::Native(target), BodySelection::Native(tools),) if target.starts_with("sldprt:feature-input:body-path:")
-            && tools.starts_with("sldprt:feature-input:body-path:"))));
+        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
+        FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+            if matches!(
+                (operands.target(), operands.tools()),
+                (BodySelection::Native(target), BodySelection::Native(tools))
+                    if target.starts_with("sldprt:feature-input:body-path:")
+                        && tools.starts_with("sldprt:feature-input:body-path:")
+            )
+    ));
 }
 
 #[test]

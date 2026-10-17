@@ -3,7 +3,7 @@ use cadmpeg_ir::features::PlanarProfileRef;
 
 use super::feature_sources::{FeatureSources, SourcedFeature};
 use super::operations::feature_inline_operation_fields;
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
@@ -225,9 +225,10 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     }
     let mut profiles = HashMap::<&str, Vec<ProfileVote<'_>>>::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut objects = native_features
             .values()
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?, *feature)))
+            .filter_map(|feature| Some((names.of(feature)?, *feature)))
             .filter(|(_, feature)| {
                 !history_features
                     .get(feature.parent.as_str())

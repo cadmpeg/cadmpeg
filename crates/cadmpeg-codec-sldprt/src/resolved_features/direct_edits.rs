@@ -1,7 +1,7 @@
 //! Direct face and body edit inputs.
 
 use super::axes::{compact_line_reference_directions, declared_line_reference_directions};
-use super::scalars::feature_object_name;
+use super::scalars::FeatureObjectNames;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
 use cadmpeg_core::decode::u64_from_index;
@@ -147,10 +147,11 @@ pub(crate) fn enrich_history_move_face_translations(
 ) {
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FeatureDirection3>>>::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(feature) {
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -274,10 +275,11 @@ pub(crate) fn enrich_history_move_body_translations(
 ) {
     let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FiniteVector3>>>::new();
     for lane in lanes {
+        let names = FeatureObjectNames::new(&lane.names);
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(feature) {
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
