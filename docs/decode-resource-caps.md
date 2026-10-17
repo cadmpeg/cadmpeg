@@ -121,8 +121,9 @@ availability once and passes it to the history decoder.
 `admit_history_binding` subtracts an estimate for each history stream
 (changed record slots times `HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT`, the
 estimated `asm_delta_states` native text per slot). A stream whose estimate
-does not fit is not bound, and the decode reports
-`history.binding-budget-exceeded`. The native records of a bound history are
+does not fit is not bound and keeps only its state headers, without bulletin
+boards or history records, and the decode reports
+`history.binding-budget-exceeded`. The native records of a history are
 charged when they are serialized.
 
 ## Production census

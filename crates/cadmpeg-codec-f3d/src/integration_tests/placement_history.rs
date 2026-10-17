@@ -129,9 +129,6 @@ fn duplicate_component_insert_placements_do_not_depend_on_the_retained_allowance
 }
 
 #[test]
-#[ignore = "no allowance both skips history binding and decodes: the skipped history still \
-            serializes about 278 bytes per entity change against a 170-byte per-slot binding \
-            estimate, so the decode refuses at 'serialize native record'"]
 fn an_allowance_that_skips_history_binding_keeps_the_placements() {
     let bytes = design();
     let bound = decode_bound(&bytes);
