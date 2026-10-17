@@ -896,6 +896,80 @@ fn carrier_groups_preserve_membership_multiplicity_changes() {
 }
 
 #[test]
+fn shared_carrier_slot_rows_change_as_groups() {
+    let cylinder = |surface, radius| AsmHistoricalCylinder {
+        surface,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        radius,
+    };
+    let axis = |surface, x| AsmHistoricalSurfaceAxis {
+        surface,
+        origin: Point3::new(x, 0.0, 0.0),
+        direction: Vector3::new(0.0, 0.0, 1.0),
+    };
+    let topologies = [
+        AsmHistoricalTopology::default(),
+        AsmHistoricalTopology {
+            surfaces: vec![2, 2, 4],
+            surface_cylinders: vec![cylinder(2, 1.0), cylinder(2, 3.0), cylinder(4, 5.0)],
+            surface_axes: vec![axis(2, 1.0), axis(2, 3.0), axis(4, 5.0)],
+            ..Default::default()
+        },
+        AsmHistoricalTopology {
+            surfaces: vec![2, 2, 4],
+            surface_cylinders: vec![cylinder(2, 1.0), cylinder(2, 4.0), cylinder(4, 5.0)],
+            surface_axes: vec![axis(2, 1.0), axis(2, 3.0), axis(4, 5.0)],
+            ..Default::default()
+        },
+        AsmHistoricalTopology {
+            surfaces: vec![4],
+            surface_cylinders: vec![cylinder(4, 5.0)],
+            surface_axes: vec![axis(4, 5.0)],
+            ..Default::default()
+        },
+        AsmHistoricalTopology::default(),
+    ];
+    let versions = [
+        BTreeMap::new(),
+        BTreeMap::from([(2, 2), (4, 4)]),
+        BTreeMap::from([(2, 12), (4, 4)]),
+        BTreeMap::from([(4, 4)]),
+        BTreeMap::new(),
+    ];
+    let mut materialized = AsmHistoricalTopology::default();
+    let mut memberships = membership::Memberships::default();
+    for index in 0usize..topologies.len() {
+        let snapshot = |index: usize| AsmStateSnapshot {
+            state_id: i64::try_from(index).unwrap(),
+            topology: &topologies[index],
+            versions: &versions[index],
+        };
+        let transition =
+            AsmHistoricalTransition::between(index.checked_sub(1).map(snapshot), snapshot(index))
+                .unwrap();
+        if index == 2 {
+            assert_eq!(
+                transition.rows.surface_cylinders.set,
+                [cylinder(2, 1.0), cylinder(2, 4.0)]
+            );
+            assert!(transition.rows.surface_cylinders.removed.is_empty());
+            assert!(transition.rows.surface_axes.is_empty());
+        }
+        if index == 3 {
+            assert!(transition.rows.surface_cylinders.set.is_empty());
+            assert_eq!(transition.rows.surface_cylinders.removed, [2]);
+            assert_eq!(transition.rows.surface_axes.removed, [2]);
+        }
+        let decoded: AsmHistoricalTransition =
+            serde_json::from_slice(&serde_json::to_vec(&transition).unwrap()).unwrap();
+        decoded.apply_topology(&mut materialized).unwrap();
+        assert_eq!(materialized, topologies[index], "state {index}");
+        memberships.apply(&decoded).unwrap();
+    }
+}
+
+#[test]
 fn carrier_groups_reject_inconsistent_memberships() {
     let cases: Vec<fn(&mut AsmHistory)> = vec![
         |history| {

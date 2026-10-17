@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validate transition membership without materializing geometry rows.
-use super::{check_delta_order, intersects, strictly_sorted};
+use super::{check_delta_order, intersects, ordered_keys, strictly_sorted};
 use crate::history_records::{
     AsmHistoricalEntityDelta, AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistoricalTransition,
     AsmTransitionError,
@@ -80,9 +80,7 @@ fn apply_rows<R: AsmHistoricalRow>(
     current: &mut BTreeSet<i64>,
     delta: &AsmHistoricalRowDelta<R>,
 ) -> Result<(), AsmTransitionError> {
-    if !strictly_sorted(delta.set.iter().map(R::key))
-        || !strictly_sorted(delta.removed.iter().copied())
-    {
+    if !ordered_keys(&delta.set) || !strictly_sorted(delta.removed.iter().copied()) {
         return Err(AsmTransitionError::UnsortedFamily);
     }
     for key in &delta.removed {

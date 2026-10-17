@@ -99,36 +99,43 @@ fn entity_delta(
     Some(result)
 }
 
+fn ordered_keys<R: AsmHistoricalRow>(rows: &[R]) -> bool {
+    if R::SHARED_KEYS {
+        rows.windows(2).all(|pair| pair[0].key() <= pair[1].key())
+    } else {
+        strictly_sorted(rows.iter().map(R::key))
+    }
+}
+
+/// Split the leading rows whose key is `key` from the rest.
+fn split_key<R: AsmHistoricalRow>(rows: &[R], key: i64) -> (&[R], &[R]) {
+    rows.split_at(rows.iter().take_while(|row| row.key() == key).count())
+}
+
 impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
+    /// A changed key sets all of its rows.
     fn between(older: &[R], newer: &[R]) -> Option<Self> {
-        if !strictly_sorted(older.iter().map(R::key)) || !strictly_sorted(newer.iter().map(R::key))
-        {
+        if !ordered_keys(older) || !ordered_keys(newer) {
             return None;
         }
         let mut result = Self::default();
-        let mut old = older.iter().peekable();
-        let mut new = newer.iter().peekable();
-        while let (Some(&older), Some(&newer)) = (old.peek(), new.peek()) {
-            match older.key().cmp(&newer.key()) {
-                std::cmp::Ordering::Less => {
-                    result.removed.push(older.key());
-                    old.next();
-                }
-                std::cmp::Ordering::Greater => {
-                    result.set.push(newer.clone());
-                    new.next();
-                }
-                std::cmp::Ordering::Equal => {
-                    if older != newer {
-                        result.set.push(newer.clone());
-                    }
-                    old.next();
-                    new.next();
-                }
+        let (mut old, mut new) = (older, newer);
+        while let (Some(older), Some(newer)) = (old.first(), new.first()) {
+            let key = older.key().min(newer.key());
+            let (old_rows, old_rest) = split_key(old, key);
+            let (new_rows, new_rest) = split_key(new, key);
+            if new_rows.is_empty() {
+                result.removed.push(key);
+            } else if old_rows != new_rows {
+                result.set.extend_from_slice(new_rows);
             }
+            (old, new) = (old_rest, new_rest);
         }
-        result.removed.extend(old.map(R::key));
-        result.set.extend(new.cloned());
+        while let Some(older) = old.first() {
+            result.removed.push(older.key());
+            old = split_key(old, older.key()).1;
+        }
+        result.set.extend_from_slice(new);
         Some(result)
     }
 
@@ -136,18 +143,14 @@ impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
         if self.is_empty() {
             return Ok(());
         }
-        if !strictly_sorted(self.set.iter().map(R::key))
-            || !strictly_sorted(self.removed.iter().copied())
-        {
+        if !ordered_keys(&self.set) || !strictly_sorted(self.removed.iter().copied()) {
             return Err(AsmTransitionError::UnsortedFamily);
         }
-        let mut old = std::mem::take(family).into_iter().peekable();
-        let mut set = self.set.iter().peekable();
+        let previous = std::mem::take(family);
+        let (mut old, mut set) = (previous.as_slice(), self.set.as_slice());
         let mut removed = self.removed.iter().peekable();
-        while old.peek().is_some() || set.peek().is_some() {
-            let old_key = old.peek().map(R::key);
-            let set_key = set.peek().map(|row| row.key());
-            let key = match (old_key, set_key) {
+        loop {
+            let key = match (old.first().map(R::key), set.first().map(R::key)) {
                 (Some(old), Some(new)) => old.min(new),
                 (Some(key), None) | (None, Some(key)) => key,
                 (None, None) => break,
@@ -155,25 +158,18 @@ impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
             if removed.peek().is_some_and(|&&removed| removed < key) {
                 return Err(AsmTransitionError::RemovedRowAbsent);
             }
-            let remove = removed.peek().is_some_and(|&&removed| removed == key);
-            if remove {
-                if old_key != Some(key) {
-                    return Err(AsmTransitionError::RemovedRowAbsent);
-                }
-                removed.next();
+            let (old_rows, old_rest) = split_key(old, key);
+            let (set_rows, set_rest) = split_key(set, key);
+            let remove = removed.next_if(|&&removed| removed == key).is_some();
+            if remove && old_rows.is_empty() {
+                return Err(AsmTransitionError::RemovedRowAbsent);
             }
-            let previous = if old_key == Some(key) {
-                old.next()
-            } else {
-                None
-            };
-            if set_key == Some(key) {
-                if let Some(row) = set.next() {
-                    family.push(row.clone());
-                }
+            if !set_rows.is_empty() {
+                family.extend_from_slice(set_rows);
             } else if !remove {
-                family.extend(previous);
+                family.extend_from_slice(old_rows);
             }
+            (old, set) = (old_rest, set_rest);
         }
         if removed.next().is_some() {
             return Err(AsmTransitionError::RemovedRowAbsent);
