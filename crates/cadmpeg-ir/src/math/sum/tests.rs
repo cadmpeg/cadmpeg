@@ -3,9 +3,9 @@ use proptest::prelude::{prop_oneof, Just, Strategy};
 use proptest::{prop_assert_eq, proptest};
 
 use super::{
-    bit_is_set, rounded_magnitude, scaled_finite, ExactSignedSum, ScaledValue, Window,
-    EXACT_PRODUCT_EXPONENT, EXACT_SUM_WORDS, MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT,
-    MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
+    bit_is_set, rounded_magnitude, scaled_finite, ExactSignedSum, LaneProductSums, LaneSum,
+    ProductSum, ScaledValue, Window, EXACT_PRODUCT_EXPONENT, EXACT_SUM_WORDS, MAX_SCALED_EXPONENT,
+    MIN_SCALED_EXPONENT, MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
 };
 use crate::scalar::{FiniteReal, NonZeroReal};
 
@@ -565,5 +565,57 @@ proptest! {
             scaled_parts(ScaledValue::product_of_nonzero(four)),
             scaled_parts(full_scan::product_of_nonzero(four))
         );
+    }
+
+    #[test]
+    fn each_lane_sums_as_product_sum_sums_its_own_terms(
+        terms in proptest::collection::vec(
+            (
+                [any_factor(), any_factor(), any_factor()],
+                [any_factor(), any_factor(), any_factor()],
+            ),
+            0..8,
+        ),
+    ) {
+        // The lanes of a homogeneous sum are pole coordinates and a unit
+        // weight factor, all finite.
+        let terms: Vec<_> = terms
+            .into_iter()
+            .map(|(shared, [x, y, z])| {
+                let finite = |value: f64| if value.is_finite() { value } else { 1.0 };
+                (shared, [finite(x), finite(y), finite(z), 1.0])
+            })
+            .collect();
+        let mut lanes = LaneProductSums::<4>::default();
+        let undefined = terms
+            .iter()
+            .any(|(shared, lane_factors)| lanes.add(*shared, *lane_factors).is_none());
+        let settled = lanes.finish();
+        for (lane, settled) in settled.into_iter().enumerate() {
+            let lane_terms = terms
+                .iter()
+                .map(|(shared, lane_factors)| Some([shared[0], shared[1], shared[2], lane_factors[lane]]));
+            let separate = match super::product_sum(lane_terms.clone()) {
+                ProductSum::Undefined => None,
+                ProductSum::Zero => Some(None),
+                ProductSum::Value(value) => Some(scaled_parts(Some(value))),
+            };
+            let shared = if undefined {
+                None
+            } else {
+                let value = match settled {
+                    LaneSum::Settled(value) => value,
+                    LaneSum::Replay => {
+                        let mut exact = ExactSignedSum::default();
+                        for factors in lane_terms.flatten() {
+                            exact.add_factors(factors);
+                        }
+                        exact.finish()
+                    }
+                };
+                Some(scaled_parts(value))
+            };
+            prop_assert_eq!(shared, separate, "lane {}", lane);
+        }
     }
 }
