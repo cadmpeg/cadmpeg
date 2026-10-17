@@ -6,6 +6,25 @@ use crate::scalar::FiniteReal;
 const EPS_UNIT_RESULT: f64 = 8.0 * f64::EPSILON;
 
 #[test]
+fn a_normal_power_of_two_is_the_power_powi_forms() {
+    for exponent in -1100..=1100 {
+        let formed = super::normal_power_of_two(exponent).map(f64::to_bits);
+        if (-1022..=1023).contains(&exponent) {
+            assert_eq!(
+                formed,
+                Some(2.0_f64.powi(exponent).to_bits()),
+                "2^{exponent}"
+            );
+        } else {
+            assert_eq!(formed, None, "2^{exponent}");
+        }
+    }
+    for exponent in [i32::MIN, i32::MAX] {
+        assert_eq!(super::normal_power_of_two(exponent), None);
+    }
+}
+
+#[test]
 fn numerical_audit_translation_retains_finite_cancellation() {
     assert_eq!(
         Point3::new(-1e308, 0.0, 0.0).translated(Vector3::new(1e308, 0.0, 0.0), 2.0),
