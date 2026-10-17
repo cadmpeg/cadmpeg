@@ -329,6 +329,48 @@ fn repeated_swift_tolerances_share_one_datum_system() {
 }
 
 #[test]
+fn swift_tolerances_with_distinct_datum_modifiers_keep_distinct_systems() {
+    let mut root = semantic_root();
+    let mut second_position = root
+        .annotations
+        .entities
+        .get(1)
+        .expect("position annotation")
+        .clone();
+    second_position
+        .related
+        .first_mut()
+        .and_then(|collection| collection.entity.related.first_mut())
+        .expect("applied datum")
+        .entity
+        .integers
+        .insert("Modifier".into(), 1);
+    root.annotations
+        .references
+        .push(super::reference("A21", "GdtPosition"));
+    root.annotations.entities.push(second_position);
+    let projected = project(&root);
+    let systems = projected
+        .iter()
+        .filter(|annotation| matches!(&annotation.definition, PmiDefinition::DatumSystem { .. }))
+        .count();
+    assert_eq!(systems, 2);
+    for id in ["A20", "A21"] {
+        let annotation = projected
+            .iter()
+            .find(|annotation| annotation.id == pmi_id(id).expect("valid PMI ID"))
+            .expect("position tolerance");
+        let PmiDefinition::GeometricTolerance { datum_system, .. } = &annotation.definition else {
+            panic!("position tolerance definition")
+        };
+        assert_eq!(
+            datum_system.as_ref().map(cadmpeg_ir::ids::PmiId::as_str),
+            Some(format!("sldprt:model:pmi#{id}:datum-system").as_str())
+        );
+    }
+}
+
+#[test]
 fn rejects_ambiguous_root_and_impossible_count() {
     let encoded = encoded_root();
     let mut duplicate = encoded.clone();
