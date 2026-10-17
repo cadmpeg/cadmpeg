@@ -471,12 +471,7 @@ fn identity_grammar_admits_only_three_components_and_one_key() {
         ("a:b:c##unread", false),
         ("abc", false),
     ] {
-        let result =
-            super::Identity::admit_text(
-                text.to_owned(),
-                |_| Ok::<(), std::convert::Infallible>(()),
-            )
-            .unwrap();
+        let result = super::Identity::admit_text(text.to_owned());
         assert_eq!(result.is_ok(), valid, "{text:?}");
         assert_eq!(
             result.map_or_else(|text| text, super::Identity::into_string),
