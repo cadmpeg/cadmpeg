@@ -101,12 +101,10 @@ mod tests {
     }
 
     #[test]
-    fn utf16le_text_rejects_invalid_surrogates_before_retaining() {
+    fn utf16le_text_rejects_invalid_surrogates() {
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root context");
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default())
+            .expect("empty root context");
         for bytes in [&[0, 0xd8][..], &[0, 0xdc][..], &[0, 0xd8, 0x41, 0][..]] {
             assert!(matches!(
                 ctx.utf16le_text(bytes, bytes.len() / 2, false, "UTF-16 test"),

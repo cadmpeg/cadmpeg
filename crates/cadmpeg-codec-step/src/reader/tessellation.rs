@@ -45,6 +45,7 @@ pub(super) fn decode(
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
     let mut item_placements = BTreeMap::<u64, Vec<Transform>>::new();
     let mut unresolved_placements = BTreeSet::new();
+    let mut crowded_placements = BTreeSet::new();
     let mut declared_items = BTreeSet::new();
     let mut unresolved_containers = BTreeSet::new();
     let mut body_context_items = BTreeSet::new();
@@ -75,9 +76,10 @@ pub(super) fn decode(
             geometry,
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
+            crowded_placements: &mut crowded_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::BodyItems,
-            active: BTreeSet::new(),
+            walk: AssociationWalk::default(),
             ctx,
         };
         for item in item_ids {
@@ -121,9 +123,10 @@ pub(super) fn decode(
             geometry,
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
+            crowded_placements: &mut crowded_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::Placements,
-            active: BTreeSet::new(),
+            walk: AssociationWalk::default(),
             ctx,
         };
         for item in items {
@@ -153,9 +156,10 @@ pub(super) fn decode(
             geometry,
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
+            crowded_placements: &mut crowded_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::DetachedAnnotation,
-            active: BTreeSet::new(),
+            walk: AssociationWalk::default(),
             ctx,
         };
         associator.visit(item, None)?;
@@ -181,7 +185,11 @@ pub(super) fn decode(
         if !item_bodies.get(&item).is_some_and(BTreeSet::is_empty) {
             continue;
         }
-        if distinct_placement(placements).is_none() {
+        if crowded_placements.contains(&item) {
+            losses.push(StepLossCode::TessellationPlacementAmbiguous.note(format!(
+                "tessellation item #{item} has more than {MAX_ITEM_PLACEMENTS} distinct repositioning placements; mesh retained in source coordinates"
+            )));
+        } else if distinct_placement(placements).is_none() {
             let distinct_count = distinct_placement_count(placements);
             losses.push(StepLossCode::TessellationPlacementAmbiguous.note(format!(
                 "tessellation item #{item} has {distinct_count} distinct repositioning placements; mesh retained in source coordinates"
@@ -355,7 +363,8 @@ pub(super) fn decode(
                 }
             },
         };
-        if item_bodies.get(&id).is_some_and(BTreeSet::is_empty) {
+        if item_bodies.get(&id).is_some_and(BTreeSet::is_empty) && !crowded_placements.contains(&id)
+        {
             if let Some(placement) =
                 distinct_placement(item_placements.get(&id).map_or(&[], Vec::as_slice))
             {
@@ -512,6 +521,22 @@ enum AssociationMode {
     DetachedAnnotation,
 }
 
+/// Distinct inherited placements that one association walk follows into a
+/// tessellated item. Past it, the item and the items it contains keep source
+/// coordinates.
+const MAX_ITEM_PLACEMENTS: usize = 64;
+
+/// The state of one association walk.
+#[derive(Default)]
+struct AssociationWalk {
+    /// Items on the current path.
+    active: BTreeSet<u64>,
+    /// The inherited placements already followed into each item.
+    followed: BTreeMap<u64, BTreeSet<Option<[[u64; 4]; 3]>>>,
+    /// Items that passed `MAX_ITEM_PLACEMENTS` in this walk.
+    crowded: BTreeSet<u64>,
+}
+
 struct TessellationItemAssociator<'a, 'ctx, 'arena> {
     bodies: &'a [BodyId],
     exchange: &'a Exchange,
@@ -522,22 +547,34 @@ struct TessellationItemAssociator<'a, 'ctx, 'arena> {
     geometry: &'a GeometryData,
     placements: &'a mut BTreeMap<u64, Vec<Transform>>,
     unresolved_placements: &'a mut BTreeSet<u64>,
+    /// Items that some walk reached through more than
+    /// `MAX_ITEM_PLACEMENTS` placements.
+    crowded_placements: &'a mut BTreeSet<u64>,
     body_context_items: &'a mut BTreeSet<u64>,
     mode: AssociationMode,
-    active: BTreeSet<u64>,
+    walk: AssociationWalk,
     ctx: &'ctx DecodeContext<'arena>,
 }
 
 impl TessellationItemAssociator<'_, '_, '_> {
     fn visit(&mut self, id: u64, inherited_placement: Option<Transform>) -> Result<(), CodecError> {
         let _depth_guard = self.ctx.enter_nested("step_tessellation_association")?;
-        if !self.active.insert(id) {
+        if self.walk.active.contains(&id) || self.walk.crowded.contains(&id) {
             return Ok(());
         }
+        let followed = self.walk.followed.entry(id).or_default();
+        let key = inherited_placement.map(placement_key);
+        if followed.contains(&key) {
+            return Ok(());
+        }
+        if followed.len() == MAX_ITEM_PLACEMENTS {
+            return self.crowd(id);
+        }
+        followed.insert(key);
         let Some(record) = self.exchange.records().get(&id) else {
-            self.active.remove(&id);
             return Ok(());
         };
+        self.walk.active.insert(id);
         let local_placement = if has_entity(record, "REPOSITIONED_TESSELLATED_ITEM") {
             let placement = repositioned_placement(record, self.geometry);
             if placement.is_none() {
@@ -605,7 +642,38 @@ impl TessellationItemAssociator<'_, '_, '_> {
             self.declared_items.insert(id);
             associate_bodies(self.item_bodies, id, self.bodies);
         }
-        self.active.remove(&id);
+        self.walk.active.remove(&id);
+        Ok(())
+    }
+
+    /// Marks `id` and every item it contains as reached through more than
+    /// `MAX_ITEM_PLACEMENTS` placements.
+    fn crowd(&mut self, id: u64) -> Result<(), CodecError> {
+        let _depth_guard = self.ctx.enter_nested("step_tessellation_association")?;
+        if !self.walk.crowded.insert(id) {
+            return Ok(());
+        }
+        self.crowded_placements.insert(id);
+        let Some(record) = self.exchange.records().get(&id) else {
+            return Ok(());
+        };
+        let Some(kind) = entity_kind(
+            record,
+            &[
+                "TESSELLATED_SOLID",
+                "TESSELLATED_SHELL",
+                "TESSELLATED_GEOMETRIC_SET",
+            ],
+        ) else {
+            return Ok(());
+        };
+        let item_ids = match entity_parameter(record, kind, 0, 1).and_then(ValueExt::list) {
+            Some(items) => container_item_ids(items, kind, id)?,
+            None => Vec::new(),
+        };
+        for item in item_ids {
+            self.crowd(item)?;
+        }
         Ok(())
     }
 }

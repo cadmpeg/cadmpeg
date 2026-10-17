@@ -61,7 +61,8 @@ fn presentation_style_depth_walk_refuses_depth_limit() {
 #[test]
 fn presentation_style_domain_walk_refuses_depth_limit() {
     style_graph_refuses("step_presentation_style_domain_walk", |exchange, ctx| {
-        super::super::style_domain(4, exchange, ctx).map(|_| ())
+        super::super::style_domain(4, exchange, &mut std::collections::BTreeMap::new(), ctx)
+            .map(|_| ())
     });
 }
 

@@ -77,6 +77,20 @@ fn exponential_anchor_expansion_omits_the_bounded_items() {
 }
 
 #[test]
+fn repeated_instances_naming_a_bounded_anchor_are_omitted() {
+    let records = (1..=2_000).fold(String::new(), |mut records, id| {
+        write!(records, "#{id}=ITEM(<#a23>);").expect("write anchor record fixture");
+        records
+    });
+    let (exchange, diagnostics) = parse(&source(&doubling_anchors(23), &records));
+
+    assert!(exchange.records().is_empty());
+    for id in 1..=2_000 {
+        assert!(bounded(&diagnostics, &format!("instance #{id}")), "#{id}");
+    }
+}
+
+#[test]
 fn aggregate_anchor_materialization_omits_the_records_past_the_total() {
     let records = (1..=8).fold(String::new(), |mut records, id| {
         write!(records, "#{id}=ITEM(<#a15>);").expect("write anchor record fixture");
