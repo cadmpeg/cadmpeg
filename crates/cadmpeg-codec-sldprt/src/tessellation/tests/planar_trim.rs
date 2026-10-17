@@ -136,7 +136,7 @@ fn planar_trim_rejects_a_triangle_spanning_a_concave_outer() {
     )
     .unwrap();
     assert!(!trim.contains_mesh(
-        &mesh,
+        &crate::tessellation::MeshSamples::of(&mesh),
         cadmpeg_ir::transform::Transform::identity(),
         super::EPS_DISPLAY_QUANTIZATION,
         &WorkBudget::new(usize::MAX),

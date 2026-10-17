@@ -74,7 +74,7 @@ macro_rules! assign_unique_surface_owners {
 macro_rules! planar_contains_mesh {
     ($trim:expr, $mesh:expr, $tolerance:expr) => {{
         $trim.contains_mesh(
-            $mesh,
+            &crate::tessellation::MeshSamples::of($mesh),
             cadmpeg_ir::transform::Transform::identity(),
             $tolerance,
             &cadmpeg_core::decode::WorkBudget::new(usize::MAX),
@@ -1625,5 +1625,7 @@ mod geometry_predicates;
 mod cone_supports;
 
 mod planar_trim;
+
+mod pole_box;
 
 mod arc_trims;
