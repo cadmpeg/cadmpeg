@@ -9,7 +9,7 @@ use super::holes::feature_object_byte_ranges;
 use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
 use super::relation_geometry::{
-    owned_relation_parameters, relation_display_scalar_for_parameter,
+    owned_relation_parameters, relation_display_scalar_for_parameter, LaneIds,
     RELATION_DISPLAY_SCALAR_ID_PROPERTY, RELATION_PARAMETER_ID_PROPERTY,
     RELATION_PARAMETER_ROLE_PROPERTY, RELATION_PARAMETER_ROLE_REFERENCE,
 };
@@ -428,6 +428,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .entry(name.id.as_str())
                 .or_insert(name.value.as_str());
         }
+        let ids = LaneIds::new(lane);
         for relation in &lane.relation_instances {
             if relation.parameter_scalar_ref().is_some()
                 || owned.get(&relation.id).is_some_and(Option::is_some)
@@ -435,7 +436,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             {
                 continue;
             }
-            let Some(scalar) = relation_display_scalar_for_parameter(relation, lane) else {
+            let Some(scalar) = relation_display_scalar_for_parameter(relation, &ids) else {
                 continue;
             };
             let Some(feature) = features_by_native_ref.get(relation.feature_ref.as_str()) else {
