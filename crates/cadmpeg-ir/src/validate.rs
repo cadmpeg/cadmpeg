@@ -32,7 +32,6 @@ mod pmi;
 mod presentation;
 mod products;
 mod referential_integrity;
-mod scans;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
@@ -180,12 +179,12 @@ fn validate_model_with_index<'ir>(
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
-    check_pmi(ir, &mut findings)?;
+    check_pmi(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings)?;
-    check_shell_connectivity(ir, &mut findings)?;
-    check_wire_topology(ir, &mut findings)?;
+    check_shell_connectivity(ir, &mut findings);
+    check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
-    check_native_links(ids.native_view(), ids, &mut findings)?;
+    check_native_links(ids.native_view(), ids, &mut findings);
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
     let evaluations = crate::eval::admission::ModelEvaluationPass::new();
@@ -193,17 +192,16 @@ fn validate_model_with_index<'ir>(
     check_procedural_support_consistency(ctx, ids, &evaluations, &mut findings)?;
     evaluations.report(&mut findings);
     check_topology_tolerances(ir, &mut findings);
-    check_tessellations(ir, &mut findings)?;
+    check_tessellations(ir, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
-    check_spreadsheets(ir, &mut findings)?;
+    check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
     let reference_ids = BorrowedIdentities::build(|add| {
         for id in ids.identities(crate::index::StandardIndex) {
-            add(id, ())?;
+            add(id, ());
         }
-        Ok(())
-    })?;
-    check_presentation(ir, &reference_ids, &mut findings)?;
+    });
+    check_presentation(ir, &reference_ids, &mut findings);
     check_drawings(ir, &reference_ids, &mut findings);
     check_semantic_annotations(ir, &reference_ids, &mut findings);
     check_typed_references(ctx, ir, &reference_ids, &mut findings)?;
@@ -235,13 +233,12 @@ fn validate_annotations<'a>(
 ) -> Result<(), CodecError> {
     let all_ids = BorrowedIdentities::build(|add| {
         for id in ids.identities(crate::index::StandardIndex) {
-            add(id, ())?;
+            add(id, ());
         }
         for id in additional {
-            add(id, ())?;
+            add(id, ());
         }
-        Ok(())
-    })?;
+    });
     check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)
 }
 

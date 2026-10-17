@@ -77,8 +77,7 @@ mod tests {
     #[test]
     fn semantic_annotations_report_the_second_duplicate_order() {
         let ir = fixture();
-        let ids =
-            super::BorrowedIdentities::build(|add| add("test:source:unknown#record", ())).unwrap();
+        let ids = super::BorrowedIdentities::build(|add| add("test:source:unknown#record", ()));
         let mut findings = Vec::new();
         check_semantic_annotations(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);

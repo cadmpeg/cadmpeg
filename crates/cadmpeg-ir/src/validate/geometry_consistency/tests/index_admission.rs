@@ -64,7 +64,7 @@ fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     {
-        let positions = super::super::vertex_positions(&ir).unwrap();
+        let positions = super::super::vertex_positions(&ir);
         assert_eq!(
             positions.get(vertex.id.as_str()),
             Some(&(

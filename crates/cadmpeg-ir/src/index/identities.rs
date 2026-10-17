@@ -3,8 +3,6 @@
 
 use std::collections::{hash_map::Entry, HashMap};
 
-use cadmpeg_core::CodecError;
-
 pub(crate) struct BorrowedIdentities<'ir, T = ()> {
     slots: HashMap<&'ir str, Slots<T>>,
     /// Number of slots, counting every duplicate of an identity.
@@ -51,11 +49,7 @@ impl<'ir, T> BorrowedIdentities<'ir, T> {
         }
     }
 
-    pub(crate) fn build(
-        visit: impl FnOnce(
-            &mut dyn FnMut(&'ir str, T) -> Result<(), CodecError>,
-        ) -> Result<(), CodecError>,
-    ) -> Result<Self, CodecError> {
+    pub(crate) fn build(visit: impl FnOnce(&mut dyn FnMut(&'ir str, T))) -> Self {
         let mut index = Self::new();
         visit(&mut |id, value| {
             match index.slots.entry(id) {
@@ -65,9 +59,8 @@ impl<'ir, T> BorrowedIdentities<'ir, T> {
                 Entry::Occupied(mut entry) => entry.get_mut().later.push(value),
             }
             index.len += 1;
-            Ok(())
-        })?;
-        Ok(index)
+        });
+        index
     }
 
     pub(crate) fn contains(&self, id: &str) -> bool {
@@ -161,11 +154,10 @@ mod tests {
     #[test]
     fn borrowed_identity_values_preserve_last_duplicate() {
         let index = super::BorrowedIdentities::build(|add| {
-            add("test:model:point#same", 1)?;
-            add("test:model:point#other", 2)?;
-            add("test:model:point#same", 3)
-        })
-        .unwrap();
+            add("test:model:point#same", 1);
+            add("test:model:point#other", 2);
+            add("test:model:point#same", 3);
+        });
         assert_eq!(index.get("test:model:point#same"), Some(&3));
         assert_eq!(index.get("test:model:point#other"), Some(&2));
         let query = "test:model:point#absent";
@@ -175,11 +167,10 @@ mod tests {
     #[test]
     fn borrowed_identity_unique_lookup_distinguishes_duplicates() {
         let index = super::BorrowedIdentities::build(|add| {
-            add("test:model:point#duplicate", 1)?;
-            add("test:model:point#unique", 2)?;
-            add("test:model:point#duplicate", 3)
-        })
-        .unwrap();
+            add("test:model:point#duplicate", 1);
+            add("test:model:point#unique", 2);
+            add("test:model:point#duplicate", 3);
+        });
         assert_eq!(index.get_unique("test:model:point#duplicate"), None);
         assert_eq!(index.get_unique("test:model:point#unique"), Some(&2));
         assert_eq!(index.get("test:model:point#duplicate"), Some(&3));
@@ -191,10 +182,9 @@ mod tests {
     fn borrowed_identity_replacement_mutation_and_counts_keep_shared_lookup_semantics() {
         let id = "test:model:point#same";
         let mut index = super::BorrowedIdentities::build(|add| {
-            add(id, 1)?;
-            add(id, 2)
-        })
-        .unwrap();
+            add(id, 1);
+            add(id, 2);
+        });
         assert_eq!(index.match_count(id), 2);
         assert_eq!(index.insert(id, 3), Some(2));
         *index.get_mut(id).unwrap() = 4;
@@ -211,10 +201,9 @@ mod tests {
     fn borrowed_identity_remove_keeps_last_duplicate_and_absence_semantics() {
         let id = "test:model:point#same";
         let mut index = super::BorrowedIdentities::build(|add| {
-            add(id, 1)?;
-            add(id, 2)
-        })
-        .unwrap();
+            add(id, 1);
+            add(id, 2);
+        });
         assert_eq!(index.remove(id), Some(2));
         assert_eq!(index.get(id), Some(&1));
         assert_eq!(index.remove(id), Some(1));
@@ -262,15 +251,13 @@ mod tests {
         let duplicates = [0, 42, COUNT - 1];
         let mut index = super::BorrowedIdentities::build(|add| {
             for (value, id) in ids.iter().enumerate() {
-                add(id, value)?;
+                add(id, value);
             }
             for value in duplicates {
-                add(&ids[value], COUNT + value)?;
-                add(&ids[value], 2 * COUNT + value)?;
+                add(&ids[value], COUNT + value);
+                add(&ids[value], 2 * COUNT + value);
             }
-            Ok(())
-        })
-        .unwrap();
+        });
         assert_eq!(index.len(), COUNT + 6);
         assert_eq!(index.values().count(), COUNT + 6);
         assert_eq!(index.identities().count(), COUNT + 6);

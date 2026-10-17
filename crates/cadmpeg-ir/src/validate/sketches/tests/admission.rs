@@ -177,13 +177,12 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
     let first = point(1.0, 2.0);
     let last = point(3.0, 4.0);
     let geometry = BorrowedIdentities::build(|add| {
-        add(id.as_str(), &first)?;
-        add(id.as_str(), &last)
-    })
-    .unwrap();
+        add(id.as_str(), &first);
+        add(id.as_str(), &last);
+    });
     let locus = SketchLocus::Entity(id.clone());
     assert_eq!(
-        super::super::sketch_locus_point(&locus, &geometry).unwrap(),
+        super::super::sketch_locus_point(&locus, &geometry),
         Some(crate::math::Point2::new(3.0, 4.0))
     );
     let restriction = SketchConstraintDefinitionInput::Midpoint {
@@ -202,10 +201,9 @@ fn sketch_index_helpers_keep_last_duplicate_values() {
         crate::scalar::Length::new(2.0).unwrap(),
     ));
     let parameters = BorrowedIdentities::build(|add| {
-        add(parameter.as_str(), &first)?;
-        add(parameter.as_str(), &last)
-    })
-    .unwrap();
+        add(parameter.as_str(), &first);
+        add(parameter.as_str(), &last);
+    });
     assert!(super::super::spatial_length_parameter_matches(
         Some(2.0),
         &parameter,

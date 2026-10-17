@@ -125,4 +125,12 @@ impl<'a> NativeView<'a> {
         }
         Ok(())
     }
+
+    /// Visit native arenas in the order of [`Self::visit`] with a callback that cannot fail.
+    pub(crate) fn for_each(self, mut visit: impl FnMut(&'a str, &'a str, NativeArena<'a>)) {
+        let Ok(()) = self.visit::<std::convert::Infallible>(|format, arena, records| {
+            visit(format, arena, records);
+            Ok(())
+        });
+    }
 }

@@ -134,11 +134,10 @@ pub(super) fn check_procedural_support_consistency(
     };
     let curves = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
-            add(curve.id.as_str(), &curve.geometry)?;
+            add(curve.id.as_str(), &curve.geometry);
         }
-        Ok(())
-    })?;
-    let owners = curve_owners(ir)?;
+    });
+    let owners = curve_owners(ir);
     for procedural in &ir.model.procedural_curves {
         let Some(owner) = owners.get_unique(procedural.id.as_str()).copied() else {
             continue;
@@ -417,26 +416,22 @@ fn check_support_sides(
     Ok(())
 }
 
-fn curve_owners(ir: &CadIr) -> Result<BorrowedIdentities<'_, &crate::ids::CurveId>, CodecError> {
+fn curve_owners(ir: &CadIr) -> BorrowedIdentities<'_, &crate::ids::CurveId> {
     BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             if let Some(construction) = curve.geometry.procedural_construction() {
-                add(construction.as_str(), &curve.id)?;
+                add(construction.as_str(), &curve.id);
             }
         }
-        Ok(())
     })
 }
 
-fn vertex_positions(
-    ir: &CadIr,
-) -> Result<BorrowedIdentities<'_, (Point3, Option<f64>)>, CodecError> {
+fn vertex_positions(ir: &CadIr) -> BorrowedIdentities<'_, (Point3, Option<f64>)> {
     let points = BorrowedIdentities::build(|add| {
         for point in &ir.model.points {
-            add(point.id.as_str(), point.position().get())?;
+            add(point.id.as_str(), point.position().get());
         }
-        Ok(())
-    })?;
+    });
     BorrowedIdentities::build(|add| {
         for vertex in &ir.model.vertices {
             if let Some(position) = points.get(vertex.point.as_str()) {
@@ -446,10 +441,9 @@ fn vertex_positions(
                         *position,
                         vertex.tolerance.map(crate::scalar::PositiveReal::get),
                     ),
-                )?;
+                );
             }
         }
-        Ok(())
     })
 }
 
@@ -463,20 +457,18 @@ pub(super) fn check_edge_endpoint_consistency(
 ) -> Result<(), CodecError> {
     let curves = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
-            add(curve.id.as_str(), &curve.geometry)?;
+            add(curve.id.as_str(), &curve.geometry);
         }
-        Ok(())
-    })?;
-    let owners = curve_owners(ir)?;
+    });
+    let owners = curve_owners(ir);
     let curve_cache_tolerances = BorrowedIdentities::build(|add| {
         for curve in &ir.model.procedural_curves {
             if let Some(owner) = owners.get_unique(curve.id.as_str()) {
-                add(owner.as_str(), curve.cache_fit_tolerance())?;
+                add(owner.as_str(), curve.cache_fit_tolerance());
             }
         }
-        Ok(())
-    })?;
-    let vertices = vertex_positions(ir)?;
+    });
+    let vertices = vertex_positions(ir);
     for edge in &ir.model.edges {
         let Some([start_t, end_t]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
@@ -530,10 +522,9 @@ pub(super) fn check_edge_endpoint_consistency(
     }
     let edges = BorrowedIdentities::build(|add| {
         for edge in &ir.model.edges {
-            add(edge.id.as_str(), edge)?;
+            add(edge.id.as_str(), edge);
         }
-        Ok(())
-    })?;
+    });
     for coedge in &ir.model.coedges {
         let Some(use_curve) = &coedge.use_curve else {
             continue;
@@ -612,24 +603,21 @@ pub(super) fn check_pcurve_surface_consistency(
     };
     let curves = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
-            add(curve.id.as_str(), &curve.geometry)?;
+            add(curve.id.as_str(), &curve.geometry);
         }
-        Ok(())
-    })?;
+    });
     let surfaces = BorrowedIdentities::build(|add| {
         for surface in &ir.model.surfaces {
-            add(surface.id.as_str(), &surface.geometry)?;
+            add(surface.id.as_str(), &surface.geometry);
         }
-        Ok(())
-    })?;
+    });
     let surface_owners = BorrowedIdentities::build(|add| {
         for surface in &ir.model.surfaces {
             if let Some(construction) = surface.geometry.procedural_construction() {
-                add(construction.as_str(), &surface.id)?;
+                add(construction.as_str(), &surface.id);
             }
         }
-        Ok(())
-    })?;
+    });
     let procedurally_parameterized_surfaces = BorrowedIdentities::build(|add| {
         for surface in &ir.model.procedural_surfaces {
             if !matches!(
@@ -637,37 +625,32 @@ pub(super) fn check_pcurve_surface_consistency(
                 crate::geometry::ProceduralSurfaceDefinition::Subset(_)
             ) {
                 if let Some(owner) = surface_owners.get_unique(surface.id.as_str()) {
-                    add(owner.as_str(), ())?;
+                    add(owner.as_str(), ());
                 }
             }
         }
-        Ok(())
-    })?;
+    });
     let pcurves = BorrowedIdentities::build(|add| {
         for pcurve in &ir.model.pcurves {
-            add(pcurve.id.as_str(), pcurve)?;
+            add(pcurve.id.as_str(), pcurve);
         }
-        Ok(())
-    })?;
+    });
     let edges = BorrowedIdentities::build(|add| {
         for edge in &ir.model.edges {
-            add(edge.id.as_str(), edge)?;
+            add(edge.id.as_str(), edge);
         }
-        Ok(())
-    })?;
+    });
     let faces = BorrowedIdentities::build(|add| {
         for face in &ir.model.faces {
-            add(face.id.as_str(), face)?;
+            add(face.id.as_str(), face);
         }
-        Ok(())
-    })?;
+    });
     let loops = BorrowedIdentities::build(|add| {
         for lp in &ir.model.loops {
-            add(lp.id.as_str(), lp)?;
+            add(lp.id.as_str(), lp);
         }
-        Ok(())
-    })?;
-    let vertices = vertex_positions(ir)?;
+    });
+    let vertices = vertex_positions(ir);
 
     for coedge in &ir.model.coedges {
         let Some((first_use, last_use)) = coedge.pcurves.first().zip(coedge.pcurves.last()) else {
