@@ -205,3 +205,15 @@ pub(crate) fn a5_nurbs_pair_bound_edge_stream(duplicate_first_surface: bool) -> 
     }
     bytes
 }
+
+/// The pcurve pair of [`a5_nurbs_pair_bound_edge_stream`], then one bilinear
+/// A5 surface for each pole set.
+pub(crate) fn a5_nurbs_edge_stream_with_surfaces(surfaces: &[[[f64; 3]; 4]]) -> Vec<u8> {
+    let mut bytes = a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 0.0]);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_uv([0.0, 0.0], [0.0, 1.0]));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    for poles in surfaces {
+        bytes.extend_from_slice(&a5_surface_stream_with_poles(*poles));
+    }
+    bytes
+}

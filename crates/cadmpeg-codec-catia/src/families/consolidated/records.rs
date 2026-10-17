@@ -38,7 +38,8 @@ use crate::wire::bytes::{
 use crate::wire::records::consolidated_records;
 use crate::wire::records::{
     family_pcurves_from_records, records_are_contiguous, scan_vertex_record_ranges,
-    ConsolidatedFamily, ConsolidatedPcurve, ConsolidatedRawFrame, ConsolidatedRecord,
+    ConsolidatedFamily, ConsolidatedPcurve, ConsolidatedPcurveSite, ConsolidatedRawFrame,
+    ConsolidatedRecord,
 };
 
 const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-6;
@@ -1521,34 +1522,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
             }
         }
         if supports.iter().all(Option::is_none) {
-            let mut candidates = [Vec::new(), Vec::new()];
-            for side in [0, 1] {
-                for surface in &surfaces {
-                    let binding = ConsolidatedSupportBinding::NurbsCarrier {
-                        pos: surface.pos,
-                        offset: FiniteReal::ZERO,
-                    };
-                    if let Some(points) =
-                        support_points(ctx, &binding, &block.pcurves[side], &carriers)?
-                    {
-                        candidates[side].push((binding, points));
-                    }
-                }
-            }
-            let mut winner = None;
-            'pairs: for (first_binding, first_points) in &candidates[0] {
-                for (second_binding, second_points) in &candidates[1] {
-                    if !point_sequences_agree(first_points, second_points) {
-                        continue;
-                    }
-                    if winner.is_some() {
-                        winner = None;
-                        break 'pairs;
-                    }
-                    winner = Some([*first_binding, *second_binding]);
-                }
-            }
-            if let Some(winner) = winner {
+            if let Some(winner) = unique_agreeing_nurbs_pair(ctx, &block, &surfaces, &carriers)? {
                 supports = winner.map(Some);
             }
         }
@@ -1661,6 +1635,72 @@ fn resolve_side_support(
     })
 }
 
+/// The one pair of NURBS carriers without offset, one for each side of
+/// `block`, on which the two pcurves lift to points that agree.
+///
+/// Two lifts agree only if their first points agree. The complete lifts are
+/// thus evaluated only for the pairs whose first points agree.
+fn unique_agreeing_nurbs_pair(
+    ctx: &DecodeContext<'_>,
+    block: &ConsolidatedEdgeBlock,
+    surfaces: &[FreeformSurface],
+    carriers: &ConsolidatedCarriers<'_>,
+) -> Result<Option<[ConsolidatedSupportBinding; 2]>, CodecError> {
+    let [first_pcurve, second_pcurve] = &block.pcurves;
+    if first_pcurve.sites.len() != second_pcurve.sites.len() {
+        return Ok(None);
+    }
+    let bindings = surfaces
+        .iter()
+        .map(|surface| ConsolidatedSupportBinding::NurbsCarrier {
+            pos: surface.pos,
+            offset: FiniteReal::ZERO,
+        })
+        .collect::<Vec<_>>();
+    let mut starts = [Vec::new(), Vec::new()];
+    for (side, pcurve) in block.pcurves.iter().enumerate() {
+        for binding in &bindings {
+            let start = support_points_at(ctx, binding, &pcurve.sites[..1], carriers)?
+                .and_then(|points| points.first().copied());
+            starts[side].push(start);
+        }
+    }
+    let mut lifts = [vec![None; bindings.len()], vec![None; bindings.len()]];
+    let mut winner = None;
+    for (first, first_start) in starts[0].iter().enumerate() {
+        let Some(first_start) = first_start else {
+            continue;
+        };
+        for (second, second_start) in starts[1].iter().enumerate() {
+            let Some(second_start) = second_start else {
+                continue;
+            };
+            if !distance_at_most(*first_start, *second_start, 2e-3) {
+                continue;
+            }
+            for (side, index, pcurve) in [(0, first, first_pcurve), (1, second, second_pcurve)] {
+                if lifts[side][index].is_none() {
+                    lifts[side][index] =
+                        Some(support_points(ctx, &bindings[index], pcurve, carriers)?);
+                }
+            }
+            let (Some(Some(first_points)), Some(Some(second_points))) =
+                (&lifts[0][first], &lifts[1][second])
+            else {
+                continue;
+            };
+            if !point_sequences_agree(first_points, second_points) {
+                continue;
+            }
+            if winner.is_some() {
+                return Ok(None);
+            }
+            winner = Some([bindings[first], bindings[second]]);
+        }
+    }
+    Ok(winner)
+}
+
 fn point_sequences_agree(first: &[Point3], second: &[Point3]) -> bool {
     !first.is_empty()
         && first.len() == second.len()
@@ -1704,13 +1744,22 @@ fn support_points(
     pcurve: &ConsolidatedPcurve,
     carriers: &ConsolidatedCarriers<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
+    support_points_at(ctx, binding, &pcurve.sites, carriers)
+}
+
+/// The points of `binding` at `sites`, in site order.
+fn support_points_at(
+    ctx: &DecodeContext<'_>,
+    binding: &ConsolidatedSupportBinding,
+    sites: &[ConsolidatedPcurveSite],
+    carriers: &ConsolidatedCarriers<'_>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
     let points = match binding {
         ConsolidatedSupportBinding::Cylinder { pos } => {
             let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            pcurve
-                .sites
+            sites
                 .iter()
                 .map(|site| b2_cylinder_point(carrier, site.point.get()))
                 .collect::<Option<Vec<_>>>()
@@ -1724,8 +1773,7 @@ fn support_points(
             else {
                 return Ok(None);
             };
-            pcurve
-                .sites
+            sites
                 .iter()
                 .map(|site| b2_cylinder_point(carrier, site.point.get()))
                 .collect::<Option<Vec<_>>>()
@@ -1734,8 +1782,7 @@ fn support_points(
             let Some(carrier) = carriers.cones.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            pcurve
-                .sites
+            sites
                 .iter()
                 .map(|site| b2_cone_point(carrier, site.point.get()))
                 .collect::<Option<Vec<_>>>()
@@ -1744,8 +1791,7 @@ fn support_points(
             let Some(carrier) = carriers.spheres.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            pcurve
-                .sites
+            sites
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
@@ -1767,8 +1813,7 @@ fn support_points(
             let Some(carrier) = carriers.tori.iter().find(|value| value.pos == *pos) else {
                 return Ok(None);
             };
-            pcurve
-                .sites
+            sites
                 .iter()
                 .map(|site| b2_torus_point(ctx, carrier, site.point.get()))
                 .collect::<Result<Option<Vec<_>>, _>>()?
@@ -1780,8 +1825,7 @@ fn support_points(
             let Some(geometry) = b2_plane_geometry(carrier) else {
                 return Ok(None);
             };
-            pcurve
-                .sites
+            sites
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
@@ -1803,8 +1847,7 @@ fn support_points(
             else {
                 return Ok(None);
             };
-            pcurve
-                .sites
+            sites
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
@@ -2400,6 +2443,109 @@ mod tests {
             lifted,
             points.iter().map(|point| point.get()).collect::<Vec<_>>()
         );
+    }
+
+    /// The pair search that lifts both pcurves in full on every carrier.
+    fn exhaustive_nurbs_pair(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        block: &super::ConsolidatedEdgeBlock,
+        carriers: &super::ConsolidatedCarriers<'_>,
+    ) -> Option<[super::ConsolidatedSupportBinding; 2]> {
+        let mut candidates = [Vec::new(), Vec::new()];
+        for side in [0, 1] {
+            for surface in carriers.nurbs_surfaces {
+                let binding = super::ConsolidatedSupportBinding::NurbsCarrier {
+                    pos: surface.pos,
+                    offset: cadmpeg_ir::scalar::FiniteReal::ZERO,
+                };
+                if let Some(points) =
+                    super::support_points(ctx, &binding, &block.pcurves[side], carriers)
+                        .expect("lift within the test budget")
+                {
+                    candidates[side].push((binding, points));
+                }
+            }
+        }
+        let mut winner = None;
+        for (first_binding, first_points) in &candidates[0] {
+            for (second_binding, second_points) in &candidates[1] {
+                if !super::point_sequences_agree(first_points, second_points) {
+                    continue;
+                }
+                if winner.is_some() {
+                    return None;
+                }
+                winner = Some([*first_binding, *second_binding]);
+            }
+        }
+        winner
+    }
+
+    #[test]
+    fn nurbs_pair_search_matches_the_exhaustive_search() {
+        let offset =
+            |point: [f64; 3], by: [f64; 3]| [point[0] + by[0], point[1] + by[1], point[2] + by[2]];
+        let (p0, p1) = ([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]);
+        let along_u = [
+            p0,
+            offset(p0, [0.0, 0.0, 1.0]),
+            p1,
+            offset(p1, [0.0, 0.0, 1.0]),
+        ];
+        let along_v = [
+            p0,
+            p1,
+            offset(p0, [0.0, 1.0, 0.0]),
+            offset(p1, [0.0, 1.0, 0.0]),
+        ];
+        let same_start = [
+            p0,
+            offset(p1, [0.0, 0.0, 0.5]),
+            offset(p1, [0.0, 0.5, 0.0]),
+            offset(p1, [0.5, 0.0, 0.0]),
+        ];
+        let far = along_u.map(|point| offset(point, [100.0, 0.0, 0.0]));
+        let cases: [(&[[[f64; 3]; 4]], bool); 6] = [
+            (&[along_u, along_v], true),
+            (&[along_u, along_v, along_u], false),
+            (&[far, along_u, same_start, along_v, far], true),
+            (&[same_start, along_u], false),
+            (&[far], false),
+            (&[], false),
+        ];
+        for (surfaces, unique) in cases {
+            let bytes =
+                crate::test_support::test_a5_bound::a5_nurbs_edge_stream_with_surfaces(surfaces);
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let carriers_found = crate::families::a5a8::records::a5_surfaces_from_records(
+                &bytes,
+                &records,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+            .expect("decode the test surfaces");
+            assert_eq!(carriers_found.len(), surfaces.len());
+            let carriers = super::ConsolidatedCarriers {
+                cylinders: &[],
+                embedded_cylinders: &[],
+                circles: &[],
+                cones: &[],
+                spheres: &[],
+                tori: &[],
+                planes: &[],
+                nurbs_surfaces: &carriers_found,
+            };
+            let blocks = super::consolidated_edge_blocks_from_records(&bytes, &records);
+            assert_eq!(blocks.len(), 1);
+            let (found, expected) = crate::test_support::with_service_context(|ctx| {
+                (
+                    super::unique_agreeing_nurbs_pair(ctx, &blocks[0], &carriers_found, &carriers)
+                        .expect("search within the test budget"),
+                    exhaustive_nurbs_pair(ctx, &blocks[0], &carriers),
+                )
+            });
+            assert_eq!(found, expected, "{surfaces:?}");
+            assert_eq!(found.is_some(), unique, "{surfaces:?}");
+        }
     }
 }
 
