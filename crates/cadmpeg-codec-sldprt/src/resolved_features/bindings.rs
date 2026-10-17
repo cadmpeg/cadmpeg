@@ -26,7 +26,7 @@ use super::selections::{
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::classify::is_history_metadata_record;
+use crate::history::classify::HistoryMetadata;
 use crate::history::literals::parse_positive_angle_rad;
 use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
@@ -50,8 +50,9 @@ const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1e-9;
 pub(super) fn history_metadata_ids(histories: &[crate::records::FeatureHistory]) -> HashSet<&str> {
     let mut ids = HashSet::new();
     for history in histories {
+        let metadata = HistoryMetadata::new(&history.features);
         for feature in &history.features {
-            if is_history_metadata_record(feature, &history.features) {
+            if metadata.contains(feature) {
                 ids.insert(feature.id.as_str());
             }
         }
@@ -1067,6 +1068,7 @@ pub(crate) fn bind_scalar_operands(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let represented_sketches = represented_sketch_features(histories, lanes);
     let metadata_ids = history_metadata_ids(histories);
+    let features_by_id = crate::records::HistoryFeatures::new(histories);
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
@@ -1101,18 +1103,13 @@ pub(crate) fn bind_scalar_operands(
             }
         }
         bind_detached_legacy_sketch_objects(ctx, histories, &represented_sketches, lane)?;
-        let mut features_by_id = HashMap::new();
-        for feature in histories.iter().flat_map(|history| &history.features) {
-            features_by_id.insert(feature.id.as_str(), feature);
-        }
         for pair in starts.windows(2) {
             let [(_, parent_id), (child_start, child_id)] = pair else {
                 continue;
             };
-            let (Some(parent), Some(child)) = (
-                features_by_id.get(parent_id).copied(),
-                features_by_id.get(child_id).copied(),
-            ) else {
+            let (Some(parent), Some(child)) =
+                (features_by_id.get(parent_id), features_by_id.get(child_id))
+            else {
                 continue;
             };
             if native_object_class(parent.input_class.as_deref().unwrap_or_default())

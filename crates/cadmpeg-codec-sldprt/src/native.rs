@@ -388,10 +388,10 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
-        let features_by_id = features
-            .iter()
-            .map(|record| (record.id.as_str(), record))
-            .collect::<HashMap<_, _>>();
+        let mut features_by_id = HashMap::new();
+        for record in &features {
+            features_by_id.entry(record.id.as_str()).or_insert(record);
+        }
         let feature_ids = features_by_id.keys().copied().collect::<HashSet<_>>();
         let lane_ids = native
             .feature_input_lanes
@@ -1067,7 +1067,6 @@ impl SldprtNative {
             .feature_input_lanes
             .iter()
             .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane))
-            .cloned()
             .collect::<Vec<_>>();
         crate::resolved_features::classes::bind_history_classes(
             &mut expected_histories,
