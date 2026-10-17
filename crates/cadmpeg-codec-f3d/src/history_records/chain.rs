@@ -139,48 +139,75 @@ impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
         }
         if !strictly_sorted(self.set.iter().map(R::key))
             || !strictly_sorted(self.removed.iter().copied())
+            || !strictly_sorted(family.iter().map(R::key))
         {
             return Err(AsmTransitionError::UnsortedFamily);
         }
-        let mut old = std::mem::take(family).into_iter().peekable();
-        let mut set = self.set.iter().peekable();
-        let mut removed = self.removed.iter().peekable();
-        while old.peek().is_some() || set.peek().is_some() {
-            let old_key = old.peek().map(R::key);
-            let set_key = set.peek().map(|row| row.key());
-            let key = match (old_key, set_key) {
-                (Some(old), Some(new)) => old.min(new),
-                (Some(key), None) | (None, Some(key)) => key,
-                (None, None) => break,
-            };
-            if removed.peek().is_some_and(|&&removed| removed < key) {
-                return Err(AsmTransitionError::RemovedRowAbsent);
+        replace_key_runs(
+            family,
+            R::key,
+            self.set
+                .iter()
+                .map(|row| (row.key(), std::slice::from_ref(row))),
+            &self.removed,
+        )
+    }
+}
+
+/// Replace the run of rows with each set key by that key's rows and drop the
+/// run of each removed key, in a family sorted by key. Rows before the first
+/// run whose length changes stay in place.
+fn replace_key_runs<'a, R: Clone + 'a>(
+    family: &mut Vec<R>,
+    key: impl Fn(&R) -> i64,
+    set: impl IntoIterator<Item = (i64, &'a [R])>,
+    removed: &[i64],
+) -> Result<(), AsmTransitionError> {
+    let run = |family: &[R], target: i64| {
+        let start = family.partition_point(|row| key(row) < target);
+        start..start + family[start..].partition_point(|row| key(row) <= target)
+    };
+    let mut set = set.into_iter().peekable();
+    let mut removed = removed.iter().copied().peekable();
+    let mut resized = Vec::new();
+    loop {
+        let next_removed = removed.peek().copied();
+        let (target, rows, remove) = match set.peek() {
+            Some(&(target, rows)) if next_removed.is_none_or(|removed| target <= removed) => {
+                set.next();
+                (target, rows, next_removed == Some(target))
             }
-            let remove = removed.peek().is_some_and(|&&removed| removed == key);
-            if remove {
-                if old_key != Some(key) {
-                    return Err(AsmTransitionError::RemovedRowAbsent);
-                }
-                removed.next();
-            }
-            let previous = if old_key == Some(key) {
-                old.next()
-            } else {
-                None
-            };
-            if set_key == Some(key) {
-                if let Some(row) = set.next() {
-                    family.push(row.clone());
-                }
-            } else if !remove {
-                family.extend(previous);
-            }
+            _ => match next_removed {
+                Some(target) => (target, &[][..], true),
+                None => break,
+            },
+        };
+        if remove {
+            removed.next();
         }
-        if removed.next().is_some() {
+        let run = run(family, target);
+        if remove && run.is_empty() {
             return Err(AsmTransitionError::RemovedRowAbsent);
         }
-        Ok(())
+        if run.len() == rows.len() {
+            family[run].clone_from_slice(rows);
+        } else {
+            resized.push((run, rows));
+        }
     }
+    let Some(first) = resized.first().map(|(run, _)| run.start) else {
+        return Ok(());
+    };
+    let mut tail = family.split_off(first).into_iter();
+    let mut position = first;
+    for (run, rows) in resized {
+        family.extend(tail.by_ref().take(run.start - position));
+        family.extend_from_slice(rows);
+        tail.by_ref().take(run.len()).for_each(drop);
+        position = run.end;
+    }
+    family.extend(tail);
+    Ok(())
 }
 
 fn entity_tags(topology: &AsmHistoricalTopology) -> Vec<AsmHistoricalEntityTags> {
@@ -527,21 +554,30 @@ impl AsmHistoricalTransition {
         self.rows
             .point_positions
             .apply(&mut topology.point_positions)?;
-        if !self.rows.persistent_subentity_tags.is_empty() {
-            if self.rows.persistent_subentity_tags.set.iter().any(|group| {
+        let tags = &self.rows.persistent_subentity_tags;
+        if !tags.is_empty() {
+            if tags.set.iter().any(|group| {
                 group.tags.is_empty()
                     || group
                         .tags
                         .iter()
                         .any(|tag| tag.entity_ref != group.entity_ref)
-            }) {
+            }) || !strictly_sorted(tags.set.iter().map(|group| group.entity_ref))
+                || !strictly_sorted(tags.removed.iter().copied())
+                || !topology
+                    .persistent_subentity_tags
+                    .is_sorted_by_key(|tag| tag.entity_ref)
+            {
                 return Err(AsmTransitionError::UnsortedFamily);
             }
-            let mut tags =
-                group_entity_tags(std::mem::take(&mut topology.persistent_subentity_tags));
-            self.rows.persistent_subentity_tags.apply(&mut tags)?;
-            topology.persistent_subentity_tags =
-                tags.into_iter().flat_map(|group| group.tags).collect();
+            replace_key_runs(
+                &mut topology.persistent_subentity_tags,
+                |tag| tag.entity_ref,
+                tags.set
+                    .iter()
+                    .map(|group| (group.entity_ref, group.tags.as_slice())),
+                &tags.removed,
+            )?;
         }
         Ok(())
     }
@@ -691,6 +727,9 @@ fn apply_membership(
         return Ok(());
     }
     check_delta_order(delta)?;
+    if !strictly_sorted(family.iter().copied()) {
+        return Err(AsmTransitionError::UnsortedFamily);
+    }
     let mut revisions = updated_records.iter().peekable();
     let mut deleted = delta.deleted.iter().peekable();
     let expected_updates = family.iter().copied().filter(|slot| {
@@ -709,36 +748,38 @@ fn apply_membership(
     if intersects(&delta.inserted, &delta.deleted) {
         return Err(AsmTransitionError::InsertedPresent);
     }
-    let mut old = std::mem::take(family).into_iter().peekable();
-    let mut inserted = delta.inserted.iter().peekable();
-    let mut deleted = delta.deleted.iter().peekable();
-    while old.peek().is_some() || inserted.peek().is_some() {
-        let key = match (old.peek(), inserted.peek()) {
-            (Some(a), Some(b)) if a == *b => return Err(AsmTransitionError::InsertedPresent),
-            (Some(a), Some(b)) => (*a).min(**b),
-            (Some(key), None) => *key,
-            (None, Some(key)) => **key,
-            (None, None) => break,
-        };
-        if deleted.peek().is_some_and(|&&removed| removed < key) {
+    let present = |slot: &&i64| family.binary_search(slot).is_ok();
+    // A key-order merge of the family and the insertions meets an inserted
+    // slot already present at that slot, and an absent deletion only at the
+    // next merged slot above it.
+    let follows = |keys: &[i64], low: i64, high: i64| {
+        keys.get(keys.partition_point(|&key| key <= low))
+            .is_some_and(|&key| key < high)
+    };
+    match (
+        delta.inserted.iter().find(present),
+        delta.deleted.iter().find(|slot| !present(slot)),
+    ) {
+        (Some(&inserted), Some(&absent))
+            if absent < inserted
+                && (follows(family, absent, inserted)
+                    || follows(&delta.inserted, absent, inserted)) =>
+        {
             return Err(AsmTransitionError::DeletedAbsent);
         }
-        if inserted.peek().is_some_and(|&&added| added == key) {
-            inserted.next();
-            family.push(key);
-        } else {
-            old.next();
-            if deleted.peek().is_some_and(|&&removed| removed == key) {
-                deleted.next();
-            } else {
-                family.push(key);
-            }
-        }
+        (Some(_), _) => return Err(AsmTransitionError::InsertedPresent),
+        (None, Some(_)) => return Err(AsmTransitionError::DeletedAbsent),
+        (None, None) => {}
     }
-    if deleted.next().is_some() {
-        return Err(AsmTransitionError::DeletedAbsent);
-    }
-    Ok(())
+    replace_key_runs(
+        family,
+        |slot| *slot,
+        delta
+            .inserted
+            .iter()
+            .map(|slot| (*slot, std::slice::from_ref(slot))),
+        &delta.deleted,
+    )
 }
 
 impl AsmHistoricalRowsDelta {
@@ -928,6 +969,52 @@ impl AsmHistory {
             if ordinal != index {
                 *state = OnceLock::new();
             }
+        }
+    }
+
+    /// Materialize the member state at `index` by applying its transitions to
+    /// the nearest older materialization in place; that older state is no
+    /// longer cached.
+    pub(crate) fn advance_topology(&mut self, index: usize) {
+        let Ok(Some(order)) = self.materialized.order.get_or_init(|| self.bound_chain()) else {
+            return;
+        };
+        if self.transition_validity(order).get(index) != Some(&true) {
+            return;
+        }
+        let Some(position) = order.iter().position(|&ordinal| ordinal == index) else {
+            return;
+        };
+        self.materialized
+            .states
+            .get_or_init(|| self.states.iter().map(|_| OnceLock::new()).collect());
+        let Some(cache) = self.materialized.states.get_mut() else {
+            return;
+        };
+        if cache.get(index).is_none_or(|state| state.get().is_some()) {
+            return;
+        }
+        let Some(older) = order
+            .iter()
+            .skip(position + 1)
+            .position(|&older| matches!(cache.get(older).and_then(OnceLock::get), Some(Some(_))))
+            .map(|offset| position + 1 + offset)
+        else {
+            return;
+        };
+        let Some(Some(mut materialized)) = cache.get_mut(order[older]).and_then(OnceLock::take)
+        else {
+            return;
+        };
+        let advanced = order[position..older]
+            .iter()
+            .rev()
+            .try_for_each(|&ordinal| {
+                let transition = self.states.get(ordinal)?.transition.as_ref()?;
+                transition.apply_topology(&mut materialized).ok()
+            });
+        if let Some(state) = cache.get_mut(index) {
+            *state = OnceLock::from(advanced.map(|()| materialized));
         }
     }
 
