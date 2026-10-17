@@ -147,13 +147,13 @@ charged when they are serialized.
 
 The census lists every `const MAX_*` under `crates/**/src` at this commit,
 except items in `#[cfg(test)]` modules, `#[cfg(test)]` or `#[test]`
-functions, and test files. Run `python3 scripts/check-resource-caps.py`
-to check the table, the totals, and the production constants. Four
-constants are excluded for that reason:
+functions, and test files. Four constants are excluded for that reason:
 CATIA `MAX_PAIR_SOLUTIONS` (`solve/incidence.rs`) and `MAX_ORIENTED_OPTIONS`
 (`solve/mesh_quotient.rs`) are in test functions, F3D `MAX_INDEX_FLOAT`
 (`writer/generate/native_geometry.rs`) is in a test module, and
-`MAX_MUTATION_BYTES` is in a fuzz target outside `src`. Where a constant is
+`MAX_MUTATION_BYTES` is in a fuzz target outside `src`.
+`python3 scripts/check-resource-caps.py` checks the table, the totals, and
+the production constants against each other. Where a constant is
 ambiguous, the kind follows the code at exhaustion and the note says so.
 "No loss at this site" means the code that detects exhaustion does not
 report a loss; a caller may report a general failure for the same item.
