@@ -299,7 +299,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
         lanes,
         &geometry_budget,
     )
-    .expect("evaluator allocation succeeds")
+    .expect("evaluation stays within session limits")
 }
 
 fn assign_ext11_support_uv_to_surfaces_with_index(
@@ -873,7 +873,7 @@ pub(super) fn invalidate_inconsistent_support_uv(
         &geometry_budget,
         false,
     )
-    .expect("evaluator allocation succeeds");
+    .expect("evaluation stays within session limits");
 }
 
 /// Invalidate support lanes that disagree with their surface and retain
@@ -2769,7 +2769,7 @@ mod tests {
                 Some(&values),
                 &geometry_budget,
             )
-            .expect("evaluator allocation succeeds"));
+            .expect("evaluation stays within session limits"));
             assert_eq!(geometry_budget.remaining(), 1);
         });
     }
@@ -2888,7 +2888,7 @@ mod tests {
                     return;
                 }
                 let parameters = parameters
-                    .expect("evaluator allocation succeeds")
+                    .expect("evaluation stays within session limits")
                     .expect("coarse grid contains the exact chart point");
                 assert_eq!(parameters, Point2::new(0.5, 0.5));
 
@@ -2902,7 +2902,7 @@ mod tests {
                     FIT_TOLERANCE,
                     &miss_budget,
                 )
-                .expect("evaluator allocation succeeds")
+                .expect("evaluation stays within session limits")
                 .is_none());
             });
         }

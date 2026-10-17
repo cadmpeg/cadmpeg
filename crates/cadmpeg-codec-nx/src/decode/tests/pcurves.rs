@@ -508,7 +508,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
             [0.0, 1.0],
             NonNegativeReal::new(1.0e-8).expect("nonnegative tolerance"),
         )
-        .expect("evaluator allocation succeeds")
+        .expect("evaluation stays within session limits")
         .is_none());
 
         ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -531,7 +531,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
                 [0.0, 1.0],
                 NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
             )
-            .expect("evaluator allocation succeeds"),
+            .expect("evaluation stays within session limits"),
             Some(PcurveGeometry::Line(_))
         ));
     });
@@ -582,7 +582,7 @@ fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
             [-f64::MAX, f64::MAX],
             NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
         )
-        .expect("evaluator allocation succeeds") else {
+        .expect("evaluation stays within session limits") else {
             panic!("finite NURBS boundary pcurve");
         };
         assert_eq!(
@@ -641,7 +641,7 @@ fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
             [-f64::MAX, f64::MAX],
             NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
         )
-        .expect("evaluator allocation succeeds") else {
+        .expect("evaluation stays within session limits") else {
             panic!("finite generator pcurve");
         };
         assert_eq!(
@@ -699,7 +699,7 @@ fn rational_generator_does_not_get_an_affine_boundary_certificate() {
             [0.0, 1.0],
             NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
         )
-        .expect("evaluator allocation succeeds"));
+        .expect("evaluation stays within session limits"));
     });
 }
 
@@ -739,7 +739,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
                 [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
                 [0.0, 1.0],
                 NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
-            ).expect("evaluator allocation succeeds"), Some(PcurveGeometry::Line(line_pcurve))
+            ).expect("evaluation stays within session limits"), Some(PcurveGeometry::Line(line_pcurve))
                     if {
                         let origin = line_pcurve.origin().as_raw();
         let direction = line_pcurve.direction().as_raw();
@@ -785,7 +785,7 @@ fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
             [-f64::MAX, f64::MAX],
             NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
         )
-        .expect("evaluator allocation succeeds") else {
+        .expect("evaluation stays within session limits") else {
             panic!("finite wide NURBS boundary pcurve");
         };
         assert_eq!(
@@ -1542,12 +1542,12 @@ fn nurbs_blend_contact_requires_the_declared_radius_shell() {
         let center = Point3::new(1.2, 0.7, 2.0);
 
         let direction = surface_contact_direction(geometry_ctx, &ir, &surface, center, 2.0, 0)
-            .expect("evaluator allocation succeeds")
+            .expect("evaluation stays within session limits")
             .expect("the support contains one contact at the blend radius");
         assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
         assert!(
             surface_contact_direction(geometry_ctx, &ir, &surface, center, 1.0, 0)
-                .expect("evaluator allocation succeeds")
+                .expect("evaluation stays within session limits")
                 .is_none()
         );
     });
@@ -1822,7 +1822,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
             [0.0, 1.0],
             NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
         )
-        .expect("evaluator allocation succeeds"));
+        .expect("evaluation stays within session limits"));
 
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second)) =
             &mut ir.model.surfaces[1].geometry
@@ -1850,7 +1850,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
             [0.0, 1.0],
             NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
         )
-        .expect("evaluator allocation succeeds"));
+        .expect("evaluation stays within session limits"));
     });
 }
 

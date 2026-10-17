@@ -1489,7 +1489,7 @@ fn orient_edge_range_with_budget(
         &mut curve_point_cache,
         geometry_budget,
     )
-    .expect("evaluator allocation succeeds")
+    .expect("evaluation stays within session limits")
 }
 
 const MAX_CURVE_POINT_CACHE_ENTRIES: usize = 131_072;
@@ -2048,12 +2048,12 @@ mod tests {
             ({
                 let first = cache
                     .point_with_budget(&curve, &geometry, 0.25, &geometry_budget)
-                    .expect("evaluator allocation succeeds")
+                    .expect("evaluation stays within session limits")
                     .expect("NURBS evaluation");
                 let remaining_after_first = geometry_budget.remaining();
                 let second = cache
                     .point_with_budget(&curve, &geometry, 0.25, &geometry_budget)
-                    .expect("evaluator allocation succeeds")
+                    .expect("evaluation stays within session limits")
                     .expect("cached NURBS evaluation");
 
                 assert_eq!(first, second);
