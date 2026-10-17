@@ -804,6 +804,7 @@ pub(crate) fn project_compact_edge_selections_with_ids(
             .or_default();
         group.push(selection);
     }
+    let mut fillet_objects = None;
     for feature in features {
         let feature_id = &feature.id;
         let dependencies = &mut feature.dependencies;
@@ -853,8 +854,10 @@ pub(crate) fn project_compact_edge_selections_with_ids(
             if let Some((existing_edges, tangency_weight)) =
                 sole_unresolved_fillet_group(definition)
             {
+                let fillet_objects = fillet_objects
+                    .get_or_insert_with(|| VariableFilletObjects::new(histories, lanes));
                 if let Some(radius_groups) =
-                    variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
+                    variable_fillet_radius_groups(native_ref, fillet_objects, edge_selections)
                 {
                     let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
                     if unresolved_edges || radius_groups.len() == 1 {
@@ -921,21 +924,105 @@ pub(crate) fn project_compact_edge_selections_with_ids(
 #[derive(Debug)]
 struct RadiusSelectionGroup<'a>(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>);
 
+/// Variable fillet records and their histories' lane objects, indexed once
+/// for every fillet a projection pass resolves.
+struct VariableFilletObjects<'a> {
+    histories: &'a [crate::records::FeatureHistory],
+    lanes: &'a [FeatureInputLane],
+    /// The first history holding each record id, and the first variable
+    /// fillet with that id in it.
+    fillets: HashMap<&'a str, (usize, &'a crate::records::Feature)>,
+    /// Each history's named objects in every lane, built on first use.
+    lane_objects: HashMap<usize, Vec<LaneObjects<'a>>>,
+}
+
+/// One lane's named history objects sorted by offset, with each record id's
+/// first position.
+struct LaneObjects<'a> {
+    starts: Vec<(u64, &'a crate::records::Feature)>,
+    first: HashMap<&'a str, usize>,
+}
+
+impl<'a> VariableFilletObjects<'a> {
+    fn new(histories: &'a [crate::records::FeatureHistory], lanes: &'a [FeatureInputLane]) -> Self {
+        let mut first_history = HashMap::new();
+        let mut fillets = HashMap::new();
+        for (history_index, history) in histories.iter().enumerate() {
+            for feature in &history.features {
+                let id = feature.id.as_str();
+                if *first_history.entry(id).or_insert(history_index) == history_index
+                    && feature.kind.eq_ignore_ascii_case("VarFillet")
+                {
+                    fillets.entry(id).or_insert((history_index, feature));
+                }
+            }
+        }
+        Self {
+            histories,
+            lanes,
+            fillets,
+            lane_objects: HashMap::new(),
+        }
+    }
+
+    fn fillet(&self, feature_ref: &str) -> Option<(usize, &'a crate::records::Feature)> {
+        self.fillets.get(feature_ref).copied()
+    }
+
+    /// Each lane that names `feature_ref` among the history's objects, with
+    /// the end of its object: the next object's start, else the payload end.
+    fn object_ends(
+        &mut self,
+        history: usize,
+        feature_ref: &str,
+    ) -> Vec<(&'a FeatureInputLane, usize)> {
+        let lanes = self.lanes;
+        let features = self
+            .histories
+            .get(history)
+            .map_or(&[][..], |history| history.features.as_slice());
+        let lane_objects = self.lane_objects.entry(history).or_insert_with(|| {
+            lanes
+                .iter()
+                .map(|lane| {
+                    let names = FeatureObjectNames::new(&lane.names);
+                    let mut starts = Vec::new();
+                    for candidate in features {
+                        if let Some(name) = names.of(candidate) {
+                            starts.push((name.offset, candidate));
+                        }
+                    }
+                    starts.sort_unstable_by_key(|(left, _)| *left);
+                    let mut first = HashMap::new();
+                    for (index, (_, candidate)) in starts.iter().enumerate() {
+                        first.entry(candidate.id.as_str()).or_insert(index);
+                    }
+                    LaneObjects { starts, first }
+                })
+                .collect()
+        });
+        lanes
+            .iter()
+            .zip(lane_objects.iter())
+            .filter_map(|(lane, objects)| {
+                let index = *objects.first.get(feature_ref)?;
+                let end = objects
+                    .starts
+                    .get(index + 1)
+                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                    .unwrap_or(lane.native_payload.len());
+                Some((lane, end))
+            })
+            .collect()
+    }
+}
+
 fn variable_fillet_radius_groups<'a>(
     feature_ref: &str,
-    histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    objects: &mut VariableFilletObjects<'_>,
     selections: &[&'a FeatureInputEdgeSelection],
 ) -> Option<Vec<RadiusSelectionGroup<'a>>> {
-    let history = histories.iter().find(|history| {
-        history
-            .features
-            .iter()
-            .any(|feature| feature.id == feature_ref)
-    })?;
-    let feature = history.features.iter().find(|feature| {
-        feature.id == feature_ref && feature.kind.eq_ignore_ascii_case("VarFillet")
-    })?;
+    let (history, feature) = objects.fillet(feature_ref)?;
     let mut parameter_names = HashSet::new();
     for name in feature.parameters.keys() {
         if variable_fillet_dimension_index_for_feature(feature, name.as_str()).is_some() {
@@ -1007,25 +1094,7 @@ fn variable_fillet_radius_groups<'a>(
     let mut control_names = HashSet::<String>::new();
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
-    for lane in lanes {
-        let names = FeatureObjectNames::new(&lane.names);
-        let mut objects = Vec::new();
-        for candidate in &history.features {
-            if let Some(name) = names.of(candidate) {
-                objects.push((name.offset, candidate));
-            }
-        }
-        objects.sort_unstable_by_key(|(left, _)| *left);
-        let Some(index) = objects
-            .iter()
-            .position(|(_, candidate)| candidate.id == feature_ref)
-        else {
-            continue;
-        };
-        let object_end = objects
-            .get(index + 1)
-            .and_then(|(offset, _)| usize::try_from(*offset).ok())
-            .unwrap_or(lane.native_payload.len());
+    for (lane, object_end) in objects.object_ends(history, feature_ref) {
         let Some(controls) = variable_fillet_control_references(feature, lane, object_end) else {
             continue;
         };
