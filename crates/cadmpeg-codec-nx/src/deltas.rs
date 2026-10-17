@@ -125,8 +125,8 @@ pub(crate) struct TaggedReferenceLane {
 pub(crate) struct ReferenceTypeMap {
     /// Ordered `(reference, type_code)` entries.
     pub(crate) entries: MapEntries,
-    /// Type code of the optional terminal map target.
-    pub(crate) target_kind: Option<NonZeroU16>,
+    /// Optional raw word following the terminal null-reference separator.
+    pub(crate) terminal_word: Option<NonZeroU16>,
     /// First byte of the map.
     pub(crate) offset: usize,
     /// First byte following the map.
@@ -534,7 +534,7 @@ fn reference_type_maps(
                     ReferenceTypeMapLimit::Bounded(shared_end),
                 )?
                 .filter(|map| {
-                    map.target_kind.is_none() && map.entries.last_kind() == following_kind
+                    map.terminal_word.is_none() && map.entries.last_kind() == following_kind
                 })
             } else {
                 None
@@ -549,7 +549,7 @@ fn reference_type_maps(
 
 #[derive(Clone, Copy)]
 enum ReferenceTypeMapLimit {
-    TargetTerminated,
+    WithTerminalWord,
     Bounded(usize),
 }
 
@@ -560,7 +560,7 @@ fn reference_type_map(
     limit: ReferenceTypeMapLimit,
 ) -> Result<Option<ReferenceTypeMap>, CodecError> {
     let expected_end = match limit {
-        ReferenceTypeMapLimit::TargetTerminated => None,
+        ReferenceTypeMapLimit::WithTerminalWord => None,
         ReferenceTypeMapLimit::Bounded(end) => Some(end),
     };
     let Some(mut at) = (|| {
@@ -586,7 +586,7 @@ fn reference_type_map(
                 .ok()
                 .map(|entries| ReferenceTypeMap {
                     entries,
-                    target_kind: None,
+                    terminal_word: None,
                     offset,
                     end: at,
                 }));
@@ -617,12 +617,12 @@ fn reference_type_map(
                     .ok()
                     .map(|entries| ReferenceTypeMap {
                         entries,
-                        target_kind: None,
+                        terminal_word: None,
                         offset,
                         end: at,
                     }));
             }
-            let Some(target_kind) = View::u16_be_at(stream, at).and_then(NonZeroU16::new) else {
+            let Some(terminal_word) = View::u16_be_at(stream, at).and_then(NonZeroU16::new) else {
                 return Ok(None);
             };
             let Some(next) = at.checked_add(2) else {
@@ -636,7 +636,7 @@ fn reference_type_map(
                 .ok()
                 .map(|entries| ReferenceTypeMap {
                     entries,
-                    target_kind: Some(target_kind),
+                    terminal_word: Some(terminal_word),
                     offset,
                     end: at,
                 }));
@@ -3027,7 +3027,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(40_000, 81), (3, 100)].try_into().unwrap(),
-                target_kind: NonZeroU16::new(55),
+                terminal_word: NonZeroU16::new(55),
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -3046,7 +3046,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(40_000, 81), (3, 100)].try_into().unwrap(),
-                target_kind: NonZeroU16::new(55),
+                terminal_word: NonZeroU16::new(55),
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -3055,7 +3055,7 @@ mod reference_type_map_tests {
     }
 
     #[test]
-    fn reference_type_map_accepts_null_target_kind() {
+    fn reference_type_map_retains_terminal_word_one() {
         let mut bytes = map_bytes();
         bytes[18..].copy_from_slice(&[0, 1]);
 
@@ -3064,7 +3064,7 @@ mod reference_type_map_tests {
         assert_eq!(census.reference_type_maps.len(), 1);
         assert_eq!(
             census.reference_type_maps[0]
-                .target_kind
+                .terminal_word
                 .map(NonZeroU16::get),
             Some(1)
         );
@@ -3072,7 +3072,7 @@ mod reference_type_map_tests {
     }
 
     #[test]
-    fn reference_type_map_accepts_schema_defined_target_kind() {
+    fn reference_type_map_retains_raw_terminal_word() {
         let mut bytes = map_bytes();
         bytes[18..].copy_from_slice(&323u16.to_be_bytes());
 
@@ -3081,9 +3081,26 @@ mod reference_type_map_tests {
         assert_eq!(census.reference_type_maps.len(), 1);
         assert_eq!(
             census.reference_type_maps[0]
-                .target_kind
+                .terminal_word
                 .map(NonZeroU16::get),
             Some(323)
+        );
+        assert_eq!(census.bytes_decoded(), bytes.len());
+    }
+
+    #[test]
+    fn reference_type_map_retains_full_width_terminal_word() {
+        let mut bytes = map_bytes();
+        bytes[18..].copy_from_slice(&u16::MAX.to_be_bytes());
+
+        let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
+
+        assert_eq!(census.reference_type_maps.len(), 1);
+        assert_eq!(
+            census.reference_type_maps[0]
+                .terminal_word
+                .map(NonZeroU16::get),
+            Some(u16::MAX)
         );
         assert_eq!(census.bytes_decoded(), bytes.len());
     }
@@ -3101,7 +3118,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(3, 82)].try_into().unwrap(),
-                target_kind: NonZeroU16::new(612),
+                terminal_word: NonZeroU16::new(612),
                 offset: 0,
                 end: map.len(),
             }]
@@ -3111,7 +3128,7 @@ mod reference_type_map_tests {
     }
 
     #[test]
-    fn reference_type_map_accepts_entry_table_without_target_clause() {
+    fn reference_type_map_accepts_entry_table_without_terminal_clause() {
         let bytes = vec![0, 1, 0, 1, 0, 3, 0, 81, 0, 4, 0, 100];
 
         let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
@@ -3120,7 +3137,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(3, 81), (4, 100)].try_into().unwrap(),
-                target_kind: None,
+                terminal_word: None,
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -3138,7 +3155,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(3, 81)].try_into().unwrap(),
-                target_kind: None,
+                terminal_word: None,
                 offset: 0,
                 end: 8,
             }]
@@ -3164,7 +3181,7 @@ mod reference_type_map_tests {
     }
 
     #[test]
-    fn reference_type_map_accepts_targetless_terminal_clause() {
+    fn reference_type_map_accepts_terminal_clause_without_word() {
         let bytes = vec![1, 0, 1, 0, 3, 0, 81, 0, 4, 0, 100, 0, 1, 0, 0];
 
         let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &bytes)).unwrap();
@@ -3173,7 +3190,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(3, 81), (4, 100)].try_into().unwrap(),
-                target_kind: None,
+                terminal_word: None,
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -3191,7 +3208,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(3, 67), (4, 11)].try_into().unwrap(),
-                target_kind: NonZeroU16::new(61),
+                terminal_word: NonZeroU16::new(61),
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -3215,7 +3232,7 @@ mod reference_type_map_tests {
     }
 
     #[test]
-    fn target_clause_self_delimits_reference_type_map_prefixes() {
+    fn terminal_word_self_delimits_reference_type_map_prefixes() {
         let first = map_bytes();
         let mut bytes = first.clone();
         bytes.extend(map_bytes());
@@ -3235,13 +3252,13 @@ mod reference_type_map_tests {
         let bytes = map_bytes();
         let mut unknown_entry_type = bytes.clone();
         unknown_entry_type[9] = 0xfe;
-        let mut zero_target_type = bytes.clone();
-        zero_target_type[18..].copy_from_slice(&0u16.to_be_bytes());
+        let mut zero_terminal_word = bytes.clone();
+        zero_terminal_word[18..].copy_from_slice(&0u16.to_be_bytes());
 
         for malformed in [
             &bytes[..bytes.len() - 1],
             unknown_entry_type.as_slice(),
-            zero_target_type.as_slice(),
+            zero_terminal_word.as_slice(),
         ] {
             assert!(
                 crate::test_support::with_decode_context(|ctx| walk(ctx, malformed))

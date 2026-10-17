@@ -753,7 +753,7 @@ mod tests {
                 "canonical hash fixture"
             )
             .unwrap(),
-            "eb507fc4ff48a2e41ebec43bb0ada630bea68043d43a6a17fbc04707786e7fe8"
+            "6d6c204b99177a870fdda25b7a94d3fea71b3a58a2ae83c785a66d5e1e7657a6"
         );
         assert_eq!(
             document_local_sha256(
@@ -765,7 +765,7 @@ mod tests {
                 "document-local SHA-256"
             )
             .unwrap(),
-            "2c8cd5a0f057269f6fba38c2d48b984287b7391b3f88273dae44bfdd82d74ce6"
+            "d479b653b712a38f87d739abe0916418b7eb17cd6ed55305eca524235e845aa7"
         );
     }
 
@@ -946,7 +946,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "9c812ae63387118a953170c37dc570d7bc69a4370e85097b3d09ea47d6aabf48"
+            "fb9b1e8652c7b69e38dfa87cae214ca2b1f68c4c679d6e782754ff11b98c4806"
         );
         assert_eq!(
             document_local_sha256(

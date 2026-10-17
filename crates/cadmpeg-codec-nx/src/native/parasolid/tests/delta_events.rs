@@ -385,7 +385,18 @@ fn deltas_events_subtract_reference_type_maps_from_residuals() {
         Vec::<(u32, u16)>::from(map.entries.clone()),
         [(40_000, 81), (3, 100)]
     );
-    assert_eq!(map.target_kind.map(std::num::NonZeroU16::get), Some(55));
+    assert_eq!(map.terminal_word.map(std::num::NonZeroU16::get), Some(55));
+    let wire = serde_json::to_value(map).unwrap();
+    assert_eq!(wire["terminal_word"], 55);
+    assert!(wire.get("target_kind").is_none());
+    let mut invalid = wire;
+    invalid["terminal_word"] = serde_json::json!(0);
+    let error =
+        serde_json::from_value::<crate::native::parasolid::ParasolidDeltasReferenceTypeMap>(
+            invalid,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("terminal_word: must be nonzero"));
     assert_eq!(map.byte_len, 20);
     assert_eq!(
         map.inflated_offset,

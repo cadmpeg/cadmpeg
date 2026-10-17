@@ -900,9 +900,9 @@ pub(super) struct ParasolidDeltasReferenceTypeMap {
     pub(super) stream_ordinal: u32,
     /// Ordered `(XMT identity, Parasolid type code)` entries.
     entries: MapEntries,
-    /// Type code of the optional terminal map target.
-    #[serde(deserialize_with = "deserialize_map_target_kind")]
-    target_kind: Option<std::num::NonZeroU16>,
+    /// Optional raw word following the terminal null-reference separator.
+    #[serde(deserialize_with = "deserialize_map_terminal_word")]
+    terminal_word: Option<std::num::NonZeroU16>,
     /// Exact map byte length.
     byte_len: u64,
     /// SHA-256 of the exact map bytes.
@@ -911,16 +911,16 @@ pub(super) struct ParasolidDeltasReferenceTypeMap {
     pub(super) inflated_offset: u64,
 }
 
-fn deserialize_map_target_kind<'de, D>(
+fn deserialize_map_terminal_word<'de, D>(
     deserializer: D,
 ) -> Result<Option<std::num::NonZeroU16>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     cadmpeg_core::absent_key::nullable::<D, u16>(deserializer)?
-        .map(|kind| {
-            std::num::NonZeroU16::new(kind).ok_or_else(|| {
-                serde::de::Error::custom("target_kind: must be nonzero when present")
+        .map(|word| {
+            std::num::NonZeroU16::new(word).ok_or_else(|| {
+                serde::de::Error::custom("terminal_word: must be nonzero when present")
             })
         })
         .transpose()
@@ -1322,7 +1322,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     )?,
                     stream_ordinal: stream_ordinal_u32,
                     entries: map.entries,
-                    target_kind: map.target_kind,
+                    terminal_word: map.terminal_word,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                         ctx,

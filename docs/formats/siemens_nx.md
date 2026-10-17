@@ -1070,19 +1070,18 @@ pair order and exact byte identity; field roles remain unassigned.
 A reference/type map begins with either `ref(1), 0001` or `01, ref(1)` and
 continues with `entry[n]`, where `n > 0` and each entry is
 `ref, kind:u16 BE`. The map either ends after its entries or has the terminal
-`ref(1), 0000`, optionally followed by `target_kind:u16 BE`. A targetless
+`ref(1), 0000`, optionally followed by `terminal_word:u16 BE`. A targetless
 terminal closes at the end of the containing complement interval. A terminal
-with `target_kind` self-delimits the map independently of following bytes.
+with `terminal_word` self-delimits the map independently of following bytes.
 A final entry may share its `kind` bytes with a complete record beginning at
 that kind tag.
-When a final type-82 entry is followed by a target-bearing terminal, the map
+When a final type-82 entry is followed by a terminal with a word, the map
 owns the shared type-82 kind and terminal before counted-record framing is
 applied.
 Every entry reference is a non-null compact or extended XMT. Every entry kind
 is a defined Parasolid record kind, type 11, type 79, type 80, type 35, type
 55, type 61, type 67, or type 100.
-When present, `target_kind` is any nonzero schema type code, including the null
-type-code sentinel `1`; it need not identify a parsed record family. The
+When present, `terminal_word` is a nonzero unsigned 16-bit raw value. The
 terminal null reference distinguishes the clause from the non-null entry lane.
 
 A type-3 `PARTITION` instance contains `xmt, current_pmark:ref,

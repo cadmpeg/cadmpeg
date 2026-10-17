@@ -108,11 +108,11 @@ relation to the owning pmark edge before assigning body change-state roles.
 
 ### PS-19. Deltas reference/type maps
 
-**Question.** Which record owns each deltas reference/type map, and what does each entry mean?
+**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what does its terminal word mean?
 
-**Known.** `siemens_nx.md` §4.2 "A reference/type map begins with either" defines the counted reference and type lanes and their byte boundary.
+**Known.** `siemens_nx.md` §4.2 "A reference/type map begins with either" defines the non-null XMT and type-code entry lanes, their byte boundary, and the separate optional raw terminal word. The terminal word is not constrained to the schema type-code table.
 
-**Need.** We must know ownership and entry roles to apply the map to the correct entities.
+**Need.** Establish complete enclosing Deltas sequence ownership, the preceding and succeeding state relation, the exact typed create/modify/delete key sets, and the terminal word's namespace before applying a map to entities.
 
 ### PS-22. Deltas reference-marker packets
 

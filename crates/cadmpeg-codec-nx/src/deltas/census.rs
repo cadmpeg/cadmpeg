@@ -193,7 +193,7 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             continue;
         }
         if let Some(map) =
-            reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::TargetTerminated)?
+            reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::WithTerminalWord)?
         {
             census.bytes_decoded += map.end - map.offset;
             offset = map.end;
