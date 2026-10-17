@@ -3660,6 +3660,7 @@ pub(super) fn display_jt_polygon_meshes(
     sequences: &[DisplayJtTopologyPacketSequence],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
 ) -> Result<Vec<DisplayJtPolygonMesh>, CodecError> {
+    let headers_by_element = first_by_key(coordinate_headers, |header| header.element.as_str());
     let mut meshes = Vec::new();
     for sequence in sequences {
         let values = |role: TopologyPacketRole| {
@@ -3676,10 +3677,7 @@ pub(super) fn display_jt_polygon_meshes(
         if valences.is_empty() {
             continue;
         }
-        let Some(coordinate_header) = coordinate_headers
-            .iter()
-            .find(|header| header.element == sequence.element)
-        else {
+        let Some(coordinate_header) = headers_by_element.get(sequence.element.as_str()) else {
             return Ok(Vec::new());
         };
         let mut degrees = Vec::new();
@@ -3776,21 +3774,13 @@ pub(super) fn display_jt_vertex_normals(
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
     coordinates: &[DisplayJtVertexCoordinates],
 ) -> Result<Vec<DisplayJtVertexNormals>, CodecError> {
+    let coordinates_by_element = element_coordinates(coordinate_headers, coordinates);
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x8 == 0 {
             continue;
         }
-        let Some(coordinate_header) = coordinate_headers
-            .iter()
-            .find(|header| header.element == vertex_header.element)
-        else {
-            return Ok(Vec::new());
-        };
-        let Some(coordinates) = coordinates
-            .iter()
-            .find(|coordinates| coordinates.header == coordinate_header.id)
-        else {
+        let Some(coordinates) = coordinates_by_element.get(vertex_header.element.as_str()) else {
             return Ok(Vec::new());
         };
         let Some(source_offset) = coordinates
@@ -3844,21 +3834,14 @@ pub(super) fn display_jt_vertex_colors(
     coordinates: &[DisplayJtVertexCoordinates],
     normals: &[DisplayJtVertexNormals],
 ) -> Result<Vec<DisplayJtVertexColors>, CodecError> {
+    let coordinates_by_element = element_coordinates(coordinate_headers, coordinates);
+    let normals_by_header = first_by_key(normals, |normal| normal.vertex_records_header.as_str());
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x30 == 0 {
             continue;
         }
-        let Some(coordinate_header) = coordinate_headers
-            .iter()
-            .find(|header| header.element == vertex_header.element)
-        else {
-            return Ok(Vec::new());
-        };
-        let Some(coordinates) = coordinates
-            .iter()
-            .find(|coordinates| coordinates.header == coordinate_header.id)
-        else {
+        let Some(coordinates) = coordinates_by_element.get(vertex_header.element.as_str()) else {
             return Ok(Vec::new());
         };
         let Some(mut source_offset) = coordinates
@@ -3868,10 +3851,7 @@ pub(super) fn display_jt_vertex_colors(
             return Ok(Vec::new());
         };
         if vertex_header.vertex_bindings & 0x8 != 0 {
-            let Some(normal_array) = normals
-                .iter()
-                .find(|normal| normal.vertex_records_header == vertex_header.id)
-            else {
+            let Some(normal_array) = normals_by_header.get(vertex_header.id.as_str()) else {
                 return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(normal_array.byte_len)) else {
@@ -3938,6 +3918,9 @@ pub(super) fn display_jt_vertex_texture_coordinates(
         normals,
         colors,
     } = inputs;
+    let coordinates_by_element = element_coordinates(coordinate_headers, coordinates);
+    let normals_by_header = first_by_key(normals, |normal| normal.vertex_records_header.as_str());
+    let colors_by_header = first_by_key(colors, |color| color.vertex_records_header.as_str());
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
         if !(0..8)
@@ -3948,16 +3931,7 @@ pub(super) fn display_jt_vertex_texture_coordinates(
         if vertex_header.vertex_attribute_count == 0 {
             return Ok(Vec::new());
         }
-        let Some(coordinate_header) = coordinate_headers
-            .iter()
-            .find(|header| header.element == vertex_header.element)
-        else {
-            return Ok(Vec::new());
-        };
-        let Some(coordinates) = coordinates
-            .iter()
-            .find(|coordinates| coordinates.header == coordinate_header.id)
-        else {
+        let Some(coordinates) = coordinates_by_element.get(vertex_header.element.as_str()) else {
             return Ok(Vec::new());
         };
         let Some(mut source_offset) = coordinates
@@ -3967,10 +3941,7 @@ pub(super) fn display_jt_vertex_texture_coordinates(
             return Ok(Vec::new());
         };
         if vertex_header.vertex_bindings & 0x8 != 0 {
-            let Some(normal_array) = normals
-                .iter()
-                .find(|normal| normal.vertex_records_header == vertex_header.id)
-            else {
+            let Some(normal_array) = normals_by_header.get(vertex_header.id.as_str()) else {
                 return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(normal_array.byte_len)) else {
@@ -3979,10 +3950,7 @@ pub(super) fn display_jt_vertex_texture_coordinates(
             source_offset = next;
         }
         if vertex_header.vertex_bindings & 0x30 != 0 {
-            let Some(color_array) = colors
-                .iter()
-                .find(|color| color.vertex_records_header == vertex_header.id)
-            else {
+            let Some(color_array) = colors_by_header.get(vertex_header.id.as_str()) else {
                 return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(color_array.byte_len)) else {
@@ -4061,21 +4029,21 @@ pub(super) fn display_jt_vertex_flags(
         colors,
         texture_coordinates,
     } = inputs;
+    let coordinates_by_element = element_coordinates(coordinate_headers, coordinates);
+    let normals_by_header = first_by_key(normals, |array| array.vertex_records_header.as_str());
+    let colors_by_header = first_by_key(colors, |array| array.vertex_records_header.as_str());
+    let texture_coordinates_by_channel = first_by_key(texture_coordinates, |array| {
+        (
+            array.vertex_records_header.as_str(),
+            usize::from(array.channel),
+        )
+    });
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x40 == 0 {
             continue;
         }
-        let Some(coordinate_header) = coordinate_headers
-            .iter()
-            .find(|header| header.element == vertex_header.element)
-        else {
-            return Ok(Vec::new());
-        };
-        let Some(coordinates) = coordinates
-            .iter()
-            .find(|coordinates| coordinates.header == coordinate_header.id)
-        else {
+        let Some(coordinates) = coordinates_by_element.get(vertex_header.element.as_str()) else {
             return Ok(Vec::new());
         };
         let Some(mut source_offset) = coordinates
@@ -4085,10 +4053,7 @@ pub(super) fn display_jt_vertex_flags(
             return Ok(Vec::new());
         };
         if vertex_header.vertex_bindings & 0x8 != 0 {
-            let Some(array) = normals
-                .iter()
-                .find(|array| array.vertex_records_header == vertex_header.id)
-            else {
+            let Some(array) = normals_by_header.get(vertex_header.id.as_str()) else {
                 return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
@@ -4097,10 +4062,7 @@ pub(super) fn display_jt_vertex_flags(
             source_offset = next;
         }
         if vertex_header.vertex_bindings & 0x30 != 0 {
-            let Some(array) = colors
-                .iter()
-                .find(|array| array.vertex_records_header == vertex_header.id)
-            else {
+            let Some(array) = colors_by_header.get(vertex_header.id.as_str()) else {
                 return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
@@ -4111,10 +4073,9 @@ pub(super) fn display_jt_vertex_flags(
         for channel in (0..8)
             .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
         {
-            let Some(array) = texture_coordinates.iter().find(|array| {
-                array.vertex_records_header == vertex_header.id
-                    && usize::from(array.channel) == channel
-            }) else {
+            let Some(array) =
+                texture_coordinates_by_channel.get(&(vertex_header.id.as_str(), channel))
+            else {
                 return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
@@ -5332,6 +5293,21 @@ fn first_by_key<'a, T, K: Eq + Hash>(
         map.entry(key(record)).or_insert(record);
     }
     map
+}
+
+/// The coordinates of each tri-strip element's first coordinate-array header.
+fn element_coordinates<'a>(
+    coordinate_headers: &'a [DisplayJtVertexCoordinateArrayHeader],
+    coordinates: &'a [DisplayJtVertexCoordinates],
+) -> HashMap<&'a str, &'a DisplayJtVertexCoordinates> {
+    let coordinates_by_header =
+        first_by_key(coordinates, |coordinates| coordinates.header.as_str());
+    first_by_key(coordinate_headers, |header| header.element.as_str())
+        .into_iter()
+        .filter_map(|(element, header)| {
+            Some((element, *coordinates_by_header.get(header.id.as_str())?))
+        })
+        .collect()
 }
 
 /// The record of each key, or `None` when the key repeats.
