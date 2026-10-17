@@ -690,6 +690,16 @@ pub(super) fn validate_source_less_history_graph(
             }
         }
     }
+    if let Some(history) = native
+        .asm_histories
+        .iter()
+        .find(|history| history.binding_budget_exceeded)
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize ASM history {} whose bulletin boards and records were not retained",
+            history.id
+        )));
+    }
     for history in &native.asm_histories {
         match history.preamble {
             Some(preamble)

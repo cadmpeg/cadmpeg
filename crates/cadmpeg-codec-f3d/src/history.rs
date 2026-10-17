@@ -146,7 +146,8 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// snapshot with no history tail) or a malformed history body. `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
 /// `remaining_retained_bytes` is the session's remaining retained-byte allowance,
-/// less the estimates reserved for earlier history streams.
+/// less the estimates reserved for earlier history streams. A history whose
+/// estimate does not fit keeps only its state headers.
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
@@ -192,7 +193,12 @@ pub(crate) fn decode(
     bind_snapshot_revision_ids(&mut states)?;
     let binding_budget_exceeded = admit_history_binding(&states, remaining_retained_bytes)?
         == HistoryBindingAdmission::Skipped;
-    if !binding_budget_exceeded {
+    if binding_budget_exceeded {
+        for state in &mut states {
+            state.bulletin_boards = Vec::new();
+            state.records = Vec::new();
+        }
+    } else {
         bind_complete_record_tables(ctx, &mut states, bytes, width)?;
     }
     if states.is_empty() {
@@ -517,13 +523,15 @@ pub(crate) const HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT: u64 = 170;
 pub(crate) enum HistoryBindingAdmission {
     /// The estimate fits; it is reserved and the history is bound.
     Admitted,
-    /// The estimate exceeds the remaining allowance; historical topology is skipped.
+    /// The estimate exceeds the remaining allowance; the history keeps its state
+    /// headers only.
     Skipped,
 }
 
 /// Validate the chain, then reserve its estimated retained bytes before decoding
-/// record tables. A skipped history leaves the allowance unchanged and has no
-/// transitions. A chain that does not validate is admitted and stays unbound.
+/// record tables. A skipped history leaves the allowance unchanged and keeps no
+/// bulletin boards, history records or transitions. A chain that does not
+/// validate is admitted and stays unbound.
 pub(crate) fn admit_history_binding(
     states: &[AsmDeltaState],
     remaining_retained_bytes: &mut u64,
