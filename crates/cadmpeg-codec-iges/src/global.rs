@@ -371,9 +371,13 @@ fn admitted_global_loss(code: IgesLossCode, message: String) -> LossNote {
 }
 
 fn recovered_real_loss_note(index: usize, source: &str, value: f64) -> LossNote {
-    let message = format!("IGES Global field {} ({}) uses noncanonical real syntax {source:?}; the decoder recovered finite value {value}; {REAL_SYNTAX_RECOVERY_CONSEQUENCE}",
-    index + 1,
-    field_name(index));
+    let message = format!(
+        "IGES Global field {} ({}) uses noncanonical real syntax {source:?}; the \
+         decoder recovered finite value {value}; \
+         {REAL_SYNTAX_RECOVERY_CONSEQUENCE}",
+        index + 1,
+        field_name(index)
+    );
     admitted_global_loss(IgesLossCode::GlobalNumericSyntaxRecovered, message)
 }
 
@@ -1348,12 +1352,20 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         losses: Vec::new(),
     };
     if field_count < 2 {
-        let message = "IGES Global record ends before the delimiter declarations; all fields are omitted and the decoder uses the default comma and semicolon grammar".to_string();
+        let message = "IGES Global record ends before the delimiter declarations; all fields \
+                       are omitted and the decoder uses the default comma and semicolon grammar"
+            .to_string();
         let note = admitted_global_loss(IgesLossCode::GlobalNoncanonicalFraming, message);
         resolution.losses.push(note);
     }
     if let Some((offset, error)) = unreadable_suffix {
-        let message = format!("IGES Global field {} ({}) at Global byte {offset} has an unreadable suffix: {error}; preceding interpretation fields retained, remaining metadata left source-only", field_count + 1, field_name(field_count));
+        let message = format!(
+            "IGES Global field {} ({}) at Global byte {offset} has an unreadable \
+             suffix: {error}; preceding interpretation fields retained, remaining \
+             metadata left source-only",
+            field_count + 1,
+            field_name(field_count)
+        );
         let note = admitted_global_loss(IgesLossCode::GlobalNoncanonicalFraming, message);
         resolution.losses.push(note);
     }

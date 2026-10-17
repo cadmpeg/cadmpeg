@@ -306,7 +306,10 @@ impl<'a> PhysicalParse<'a> {
         if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
-                let message = format!("IGES 4.0 requires the Terminate Section to be the last physical line; retained {post_terminate_count} trailing record(s) as source data");
+                let message = format!(
+                    "IGES 4.0 requires the Terminate Section to be the last physical line; \
+                     retained {post_terminate_count} trailing record(s) as source data"
+                );
                 let code = IgesLossCode::GlobalNoncanonicalFraming;
 
                 losses.push(code.note(message));
@@ -560,7 +563,9 @@ fn decode_with_occurrence_limits(
             &mut losses,
             IgesLossCode::ParameterCountOverdeclared,
             format_args!(
-                "IGES entity D{source_sequence} declares a counted list of {declared} items; its Parameter Data record holds {present} in whole or in part, so the list was not read"
+                "IGES entity D{source_sequence} declares a counted list of {declared} \
+                 items; its Parameter Data record holds {present} in whole or in part, \
+                 so the list was not read"
             ),
             source_sequence,
             &parse.directory,

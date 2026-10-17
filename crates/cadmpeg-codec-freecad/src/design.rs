@@ -49,9 +49,9 @@ use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 mod sketch_cache;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
-/// Endpoint-index candidates that profile chaining may examine across all
-/// sketches of one document. A sketch whose chaining passes it keeps no
-/// profiles and reports `sketch.profile-matching-bounded`.
+/// Endpoint-index candidates that profile chaining may examine in one
+/// sketch. A sketch whose chaining passes it keeps no profiles and reports
+/// `sketch.profile-matching-bounded`; later sketches start a new count.
 const MAX_PROFILE_ENDPOINT_CANDIDATES: usize = 1 << 24;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
 const EXTERNAL_GEOMETRY_MISSING_FLAG: u64 = 1 << 3;
@@ -131,7 +131,6 @@ pub(crate) fn transfer(
         ordinal_by_feature.insert(feature_id(object)?, feature_ordinals[object.id().as_str()]);
     }
 
-    let profile_work = WorkBudget::new(MAX_PROFILE_ENDPOINT_CANDIDATES);
     for object in objects {
         if !is_design_object(&object.type_name) {
             continue;
@@ -160,6 +159,7 @@ pub(crate) fn transfer(
             datum_definition(&object.type_name, &owned)
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sketch(&object.type_name) {
+            let profile_work = WorkBudget::new(MAX_PROFILE_ENDPOINT_CANDIDATES);
             let decoded = parse_sketch(ctx, object, &owned, &profile_work, &mut losses)?;
             let sketch = decoded.sketch;
             let sketch_id = sketch.id.clone();
@@ -1629,7 +1629,7 @@ fn parse_sketch(
             crate::loss::FreecadLossCode::SketchProfileMatchingBounded.note(format!(
                 "sketch {} profiles are not chained: endpoint matching reached \
                  MAX_PROFILE_ENDPOINT_CANDIDATES ({MAX_PROFILE_ENDPOINT_CANDIDATES} candidates \
-                 per document); sketch entities and constraints are retained",
+                 per sketch); sketch entities and constraints are retained",
                 object.name()
             )),
         );
@@ -8075,7 +8075,7 @@ mod profile_tests {
             constraints,
             &WorkBudget::new(super::MAX_PROFILE_ENDPOINT_CANDIDATES),
         )
-        .expect("profile matching within the document limit")
+        .expect("profile matching within the sketch limit")
     }
 
     #[test]

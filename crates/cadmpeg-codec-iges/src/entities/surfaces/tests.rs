@@ -307,6 +307,38 @@ fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
 }
 
 #[test]
+fn ruled_carrier_keeps_a_resource_refusal_out_of_the_loss_text() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let refusal = ctx
+        .retain_bytes(2, "iges ruled carrier")
+        .expect_err("two bytes exceed the retained ceiling");
+    let CodecError::ResourceLimit(limit) = refusal else {
+        panic!("expected a retained limit refusal");
+    };
+
+    assert!(matches!(
+        super::ruled_carrier_or_loss(Err(CodecError::ResourceLimit(limit))),
+        Err(CodecError::ResourceLimit(actual)) if actual == limit
+    ));
+    assert_eq!(
+        super::ruled_carrier_or_loss(Err(CodecError::Malformed("invalid rail".into())))
+            .unwrap()
+            .unwrap_err(),
+        format!(
+            "ruled rails state no NURBS carrier: {}",
+            CodecError::Malformed("invalid rail".into())
+        )
+    );
+    assert_eq!(
+        super::ruled_carrier_or_loss(Ok(None)).unwrap().unwrap_err(),
+        "ruled rails do not have a finite exact NURBS carrier"
+    );
+}
+
+#[test]
 fn decode_solves_a_parameter_matched_ruled_surface() {
     let result = IgesCodec
         .decode(
