@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
+use crate::grouping::group_pairs;
 use cadmpeg_core::CodecError;
 
 pub(super) mod construction_records;
@@ -4141,58 +4142,64 @@ pub(super) fn feature_operation_body_identity_segment_uses(
 
 const BODY_HISTORY_TERMINAL_STREAM_ROLE: u32 = 16;
 
-fn body_history_partition_stream(
-    binding: &SegmentBodyBinding,
+/// The partition stream closing each plain stream's body-history unit, keyed
+/// by stream ordinal.
+///
+/// A unit is a maximal run of plain streams followed directly by a partition
+/// stream. Each stream of the run has exactly one plain binding, and only the
+/// last binding has the terminal role.
+fn body_history_partition_streams(
     bindings: &[SegmentBodyBinding],
     streams: &[crate::parasolid::Stream],
+) -> BTreeMap<usize, u32> {
+    let plain_bindings = sole_by_key(
+        bindings
+            .iter()
+            .filter(|binding| binding.stream_kind == crate::parasolid::StreamKind::Plain),
+        |binding| binding.stream_ordinal,
+    );
+    let complete_run = |run: std::ops::Range<usize>| {
+        !run.is_empty()
+            && run.clone().all(|ordinal| {
+                u32::try_from(ordinal)
+                    .ok()
+                    .and_then(|key| plain_bindings.get(&key).copied().flatten())
+                    .is_some_and(|binding| {
+                        (binding.stream_role == BODY_HISTORY_TERMINAL_STREAM_ROLE)
+                            == (ordinal + 1 == run.end)
+                    })
+            })
+    };
+    let mut partitions = BTreeMap::new();
+    let mut run_start = 0;
+    for (ordinal, stream) in streams.iter().enumerate() {
+        if stream.kind() == crate::parasolid::StreamKind::Plain {
+            continue;
+        }
+        if stream.kind() == crate::parasolid::StreamKind::Partition
+            && complete_run(run_start..ordinal)
+        {
+            if let Ok(partition) = u32::try_from(ordinal) {
+                for plain in run_start..ordinal {
+                    partitions.insert(plain, partition);
+                }
+            }
+        }
+        run_start = ordinal + 1;
+    }
+    partitions
+}
+
+fn body_history_partition_stream(
+    binding: &SegmentBodyBinding,
+    partitions: &BTreeMap<usize, u32>,
 ) -> Option<u32> {
     if binding.stream_kind != crate::parasolid::StreamKind::Plain {
         return None;
     }
-    let Ok(stream_ordinal) = usize::try_from(binding.stream_ordinal) else {
-        return None;
-    };
-    if streams
-        .get(stream_ordinal)
-        .is_none_or(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
-    {
-        return None;
-    }
-    let partition_ordinal = streams
-        .iter()
-        .enumerate()
-        .skip(stream_ordinal + 1)
-        .find_map(|(ordinal, stream)| {
-            (stream.kind() == crate::parasolid::StreamKind::Partition).then_some(ordinal)
-        })?;
-    let run_start = streams[..stream_ordinal]
-        .iter()
-        .rposition(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
-        .map_or(0, |ordinal| ordinal + 1);
-    let run_streams = streams.get(run_start..partition_ordinal)?;
-    if !run_streams
-        .iter()
-        .all(|stream| stream.kind() == crate::parasolid::StreamKind::Plain)
-    {
-        return None;
-    }
-
-    let mut terminal_role = None;
-    for ordinal in run_start..partition_ordinal {
-        let mut matches = bindings.iter().filter(|candidate| {
-            candidate.stream_kind == crate::parasolid::StreamKind::Plain
-                && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
-        });
-        let candidate = matches.next()?;
-        if matches.next().is_some() || terminal_role == Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
-            return None;
-        }
-        terminal_role = Some(candidate.stream_role);
-    }
-    if terminal_role != Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
-        return None;
-    }
-    u32::try_from(partition_ordinal).ok()
+    partitions
+        .get(&usize::try_from(binding.stream_ordinal).ok()?)
+        .copied()
 }
 
 /// Resolve body-write GROUP nodes only inside their complete body-history unit.
@@ -4210,45 +4217,52 @@ pub(super) fn feature_operation_body_partition_uses(
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
     group_members: &[crate::native::parasolid::ParasolidGroupMember],
 ) -> Vec<FeatureOperationBodyPartitionUse> {
+    let sole_writes = sole_by_key(writes, |write| write.id.as_str());
+    let sole_bindings = sole_by_key(bindings, |binding| binding.id.as_str());
+    let partitions = body_history_partition_streams(bindings, streams);
+    let groups_by_partition_node = group_pairs(groups.iter().filter_map(|group| {
+        Some((
+            (group.origin.partition_stream_ordinal()?, group.node_id),
+            group.id.as_str(),
+        ))
+    }));
+    let members_by_partition_node = group_pairs(group_members.iter().map(|member| {
+        (
+            (member.partition_stream_ordinal, member.group_node_id),
+            member.id.as_str(),
+        )
+    }));
     let mut output = Vec::new();
     for image_use in image_uses {
-        let mut matching_writes = writes
-            .iter()
-            .filter(|write| write.id == image_use.operation_body_write);
-        let Some(write) = matching_writes.next() else {
-            continue;
-        };
-        if matching_writes.next().is_some() {
-            continue;
-        }
-        let mut matching_bindings = bindings
-            .iter()
-            .filter(|binding| binding.id == image_use.segment_body_binding);
-        let Some(binding) = matching_bindings.next() else {
-            continue;
-        };
-        if matching_bindings.next().is_some() {
-            continue;
-        }
-        let Some(partition_stream_ordinal) =
-            body_history_partition_stream(binding, bindings, streams)
+        let Some(Some(write)) = sole_writes
+            .get(image_use.operation_body_write.as_str())
+            .copied()
         else {
             continue;
         };
-        let mut parasolid_group_records = Vec::new();
-        for group in groups.iter().filter(|group| {
-            group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
-                && group.node_id == write.frame.group_node().value()
-        }) {
-            parasolid_group_records.push(group.id.clone());
-        }
-        let mut parasolid_group_members = Vec::new();
-        for member in group_members.iter().filter(|member| {
-            member.partition_stream_ordinal == partition_stream_ordinal
-                && member.group_node_id == write.frame.group_node().value()
-        }) {
-            parasolid_group_members.push(member.id.clone());
-        }
+        let Some(Some(binding)) = sole_bindings
+            .get(image_use.segment_body_binding.as_str())
+            .copied()
+        else {
+            continue;
+        };
+        let Some(partition_stream_ordinal) = body_history_partition_stream(binding, &partitions)
+        else {
+            continue;
+        };
+        let key = (partition_stream_ordinal, write.frame.group_node().value());
+        let parasolid_group_records = groups_by_partition_node
+            .get(&key)
+            .into_iter()
+            .flatten()
+            .map(|id| (*id).to_owned())
+            .collect();
+        let parasolid_group_members = members_by_partition_node
+            .get(&key)
+            .into_iter()
+            .flatten()
+            .map(|id| (*id).to_owned())
+            .collect();
         let item = FeatureOperationBodyPartitionUse {
             id: write
                 .id
