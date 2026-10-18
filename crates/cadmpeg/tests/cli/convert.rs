@@ -32,7 +32,7 @@ fn validation_budgets_follow_loaded_native_and_cadir_input_sizes() {
         let mut entry = source.by_index(index).unwrap();
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).unwrap();
-        if entry.name() == "Document.xml" {
+        if entry.name().expect("entry name") == "Document.xml" {
             let text = std::str::from_utf8(&bytes).unwrap();
             assert!(text.contains("<Properties Count=\"17\""));
             let mut extra = String::new();
@@ -48,7 +48,9 @@ fn validation_budgets_follow_loaded_native_and_cadir_input_sizes() {
                 .replacen("</Properties>", &format!("{extra}</Properties>"), 1)
                 .into_bytes();
         }
-        writer.start_file(entry.name(), options).unwrap();
+        writer
+            .start_file(entry.name().expect("entry name"), options)
+            .unwrap();
         writer.write_all(&bytes).unwrap();
     }
     writer.finish().unwrap();

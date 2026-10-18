@@ -1003,7 +1003,7 @@ fn unreadable_child_map_reference_keeps_independent_geometry() {
     let replacement = b"1 0 3 1 9 ;:H,E;:H:5,E 0";
     for index in 0..source.len() {
         let mut entry = source.by_index(index).expect("geometry member");
-        let name = entry.name().to_owned();
+        let name = entry.name().expect("entry name").into_owned();
         let mut data = Vec::new();
         entry.read_to_end(&mut data).expect("read geometry member");
         if !changed {

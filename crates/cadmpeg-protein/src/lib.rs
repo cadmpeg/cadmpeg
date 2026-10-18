@@ -396,7 +396,7 @@ pub fn has_schemas(protein: &[u8]) -> bool {
     (0..archive.len()).any(|index| {
         archive
             .by_index(index)
-            .is_ok_and(|entry| is_schema_entry(entry.name()))
+            .is_ok_and(|entry| entry.name().is_ok_and(|name| is_schema_entry(&name)))
     })
 }
 
@@ -414,17 +414,21 @@ fn schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<HashMap<String, Sc
         let mut entry = archive.by_index(index).map_err(|error| {
             CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
         })?;
-        if !entry_names.insert(entry.name().to_owned()) {
+        let name = entry
+            .name()
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid Protein entry name: {error}"))
+            })?
+            .into_owned();
+        if !entry_names.insert(name.clone()) {
             return Err(CodecError::malformed(format_args!(
-                "Protein archive defines entry {} more than once",
-                entry.name()
+                "Protein archive defines entry {name} more than once"
             )));
         }
-        if !is_schema_entry(entry.name()) {
+        if !is_schema_entry(&name) {
             continue;
         }
         let size = entry.size();
-        let name = entry.name().to_owned();
         let bytes = read_entry_bounded(ctx, &mut entry, size)?;
         parse_schema_document(ctx, &name, &bytes, &mut schemas)?;
     }

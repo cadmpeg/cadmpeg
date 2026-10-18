@@ -170,7 +170,7 @@ pub(crate) fn f3d_with_text_brep_stream(members: &[&str], stream: &[u8]) -> Vec<
     let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
     for i in 0..source.len() {
         let mut entry = source.by_index(i).unwrap();
-        let name = entry.name().to_owned();
+        let name = entry.name().expect("entry name").into_owned();
         let mut bytes = Vec::new();
         Read::read_to_end(&mut entry, &mut bytes).unwrap();
         zip.start_file(name, stored).unwrap();

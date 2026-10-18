@@ -26,8 +26,9 @@ fn damaged_first_optional_frame_keeps_detection_and_required_brep_admission() {
         .chain(
             source
                 .file_names()
+                .map(|name| name.expect("entry name"))
                 .filter(|name| *name != optional)
-                .map(str::to_owned),
+                .map(std::borrow::Cow::into_owned),
         )
         .collect::<Vec<_>>();
     for name in names {

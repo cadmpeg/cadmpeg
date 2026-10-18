@@ -198,7 +198,7 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
     let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
     for i in 0..source.len() {
         let mut entry = source.by_index(i).unwrap();
-        let name = entry.name().to_owned();
+        let name = entry.name().expect("entry name").into_owned();
         let mut bytes = Vec::new();
         std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
         zip.start_file(name, stored).unwrap();
@@ -286,7 +286,7 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
     let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
     for index in 0..source.len() {
         let mut entry = source.by_index(index).unwrap();
-        let name = entry.name().to_owned();
+        let name = entry.name().expect("entry name").into_owned();
         let mut bytes = Vec::new();
         std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
         zip.start_file(name, stored).unwrap();

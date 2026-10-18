@@ -251,11 +251,14 @@ impl<'a> ArchiveSnapshot<'a> {
         for ordinal in 0..archive.len() {
             let name = archive
                 .name_for_index(ordinal)
-                .ok_or_else(|| CodecError::malformed("ZIP indexed name is absent"))?;
+                .ok_or_else(|| CodecError::malformed("ZIP indexed name is absent"))?
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+                })?;
             let name_len = cadmpeg_core::decode::u64_from_index(name.len());
             ctx.charge_retained(name_len, "ZIP entry record name")?;
             ctx.charge_retained(name_len, "ZIP duplicate name")?;
-            if !names.insert(name.to_owned()) {
+            if !names.insert(name.clone().into_owned()) {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate ZIP entry name {name}"
                 )));
@@ -264,7 +267,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 ctx,
                 root.window(),
                 central,
-                name.to_owned(),
+                name.into_owned(),
                 archive.offset(),
                 archive_central_start,
             )?;
@@ -316,11 +319,14 @@ impl<'a> ArchiveSnapshot<'a> {
             Admission::Unreadable(error) => return Err(error),
         };
         for candidate in index.archive.file_names() {
+            let candidate = candidate.map_err(|error| {
+                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+            })?;
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(candidate.len()),
                 "ZIP name probe comparison",
             )?;
-            if matches(candidate) {
+            if matches(&candidate) {
                 return Ok(true);
             }
         }
@@ -1440,6 +1446,39 @@ mod tests {
     use zip::CompressionMethod;
 
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
+
+    #[test]
+    fn indexed_names_preserve_cp437_and_utf8_identity() {
+        for (stored, expected, legacy) in [("x", "é", true), ("水", "水", false)] {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            writer.start_file(stored, options).expect("entry");
+            writer.write_all(b"payload").expect("payload");
+            let mut bytes = writer.finish().expect("archive").into_inner();
+            if legacy {
+                let archive = zip::ZipArchive::new(Cursor::new(&bytes)).expect("index");
+                let central = usize::try_from(archive.central_directory_start()).expect("offset");
+                drop(archive);
+                bytes[crate::layout::local_header::LEN] = 0x82;
+                bytes[central + crate::layout::central_header::LEN] = 0x82;
+            }
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            assert!(
+                ArchiveSnapshot::contains_matching_name(&ctx, root, |name| name == expected)
+                    .expect("name probe")
+            );
+            let archive = ArchiveSnapshot::new(&ctx, root).expect("snapshot");
+            assert_eq!(archive.entries().len(), 1);
+            assert_eq!(
+                archive.open(&ctx, expected).expect("member").window(),
+                b"payload"
+            );
+        }
+    }
 
     #[test]
     fn payload_admission_is_local_to_opened_members() {

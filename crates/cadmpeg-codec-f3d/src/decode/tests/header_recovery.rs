@@ -189,7 +189,7 @@ fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
             let mut entry = source.by_index(index).unwrap();
             let mut data = Vec::new();
             entry.read_to_end(&mut data).unwrap();
-            if entry.name() == "Manifest.dat" {
+            if entry.name().expect("entry name") == "Manifest.dat" {
                 if field == 0 {
                     data[4] = 0xff;
                 } else {
@@ -212,7 +212,10 @@ fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
                 }
             }
             output
-                .start_file(entry.name(), zip::write::SimpleFileOptions::default())
+                .start_file(
+                    entry.name().expect("entry name"),
+                    zip::write::SimpleFileOptions::default(),
+                )
                 .unwrap();
             output.write_all(&data).unwrap();
         }
