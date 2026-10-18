@@ -20,6 +20,7 @@ use super::PlanarHole;
 use super::PlanarOuter;
 use super::PlanarTrim;
 use super::PlaneFrame;
+use super::TrimPolygon;
 use super::CLASS_MARKER;
 use super::EPS_DISPLAY_QUANTIZATION;
 use super::SCENE_SOURCE_MARKER;
@@ -1233,12 +1234,12 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        outer: Some(PlanarOuter::Polygon(vec![
+        outer: Some(PlanarOuter::Polygon(TrimPolygon::new(vec![
             Point2::new(-3.0, -3.0),
             Point2::new(3.0, -3.0),
             Point2::new(3.0, 3.0),
             Point2::new(-3.0, 3.0),
-        ])),
+        ]))),
         holes: vec![PlanarHole::Circle(CircularHole {
             center: Point2::new(0.0, 0.0),
             radius: 1.0,
@@ -1278,12 +1279,12 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        outer: Some(PlanarOuter::Polygon(vec![
+        outer: Some(PlanarOuter::Polygon(TrimPolygon::new(vec![
             Point2::new(-4.0, -4.0),
             Point2::new(4.0, -4.0),
             Point2::new(4.0, 4.0),
             Point2::new(-4.0, 4.0),
-        ])),
+        ]))),
         holes: vec![PlanarHole::polygon(
             vec![
                 Point2::new(-2.0, -2.0),
@@ -1629,5 +1630,7 @@ mod planar_trim;
 mod pole_box;
 
 mod owner_fit;
+
+mod edge_bands;
 
 mod arc_trims;

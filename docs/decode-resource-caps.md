@@ -332,6 +332,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/history/project/solid.rs`                     | `MAX_LENGTHS`                             | `2`                                                     | 1    | Length slots of the same shape.                                                                                                                                                                                                                                              |
 | `cadmpeg-codec-sldprt`   | `src/history/project/solid.rs`                     | `MAX_ANGLES`                              | `2`                                                     | 1    | Angle slots of the same shape.                                                                                                                                                                                                                                               |
 | `cadmpeg-codec-sldprt`   | `src/tessellation.rs`                              | `MAX_PLANAR_TRIM_ARC_SEGMENTS`            | `4096`                                                  | 4    | Clamp on the tolerance-derived segment count of a planar trim arc. A larger request gets 4096 segments and the trim carries their larger sagitta as its boundary tolerance; nothing is skipped.                                                                              |
+| `cadmpeg-codec-sldprt`   | `src/tessellation.rs`                              | `MAX_BAND_LISTINGS_PER_EDGE`              | `8`                                                     | N    | Size of the `v`-band edge index of a planar trim polygon. Past it the index tries a quarter as many bands, and below four bands the polygon is scanned whole. Containment answers do not change.                                                                            |
+| `cadmpeg-codec-sldprt`   | `src/tessellation.rs`                              | `MAX_BOXED_POLYGON_SCALE`                 | `1.0e150`                                               | N    | Numeric range of the box shortcut in ear clipping, below which the crossing products cannot overflow. A larger polygon or point is tested without the shortcut, with the same answer.                                                                                      |
 | `cadmpeg-codec-sldprt`   | `src/pmi.rs`                                       | `MAX_EXCLUSIVE_COUNT`                     | `9_223_372_036_854_775_808.0`                           | N    | Exclusive `i64` range for an exact count stored as `f64`.                                                                                                                                                                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/resolved_features/drafts.rs`                  | `MAX_PATH_CELLS`                          | `65`                                                    | 1    | Cell count of a compact component path. Outside the range the selection is not read.                                                                                                                                                                                         |
 | `cadmpeg-codec-sldprt`   | `src/brep/spline.rs`                               | `MAX_ARRAY_VALUES`                        | `1_000_000`                                             | 2    | Declared count of one spline value array. A larger array is skipped.                                                                                                                                                                                                         |
@@ -416,7 +418,7 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 
 ## Totals
 
-Production `MAX_*` constants: 215.
+Production `MAX_*` constants: 217.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -424,8 +426,8 @@ Production `MAX_*` constants: 215.
 | 2    | Per-input bound            | 68    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 100   |
-| N    | Not a decode bound         | 19    |
-|      | Total                      | 215   |
+| N    | Not a decode bound         | 21    |
+|      | Total                      | 217   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -434,7 +436,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 17,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 11,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
 and `cadmpeg-codec-catia` 49.
 
 ## Routing

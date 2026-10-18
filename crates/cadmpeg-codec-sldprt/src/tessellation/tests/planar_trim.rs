@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{PlanarOuter, PlanarTrim, PlaneFrame};
+use super::super::{PlanarOuter, PlanarTrim, PlaneFrame, TrimPolygon};
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -117,7 +117,7 @@ fn planar_trim_rejects_a_triangle_spanning_a_concave_outer() {
             Vector3::new(1., 0., 0.),
         )
         .unwrap(),
-        outer: Some(PlanarOuter::Polygon(boundary)),
+        outer: Some(PlanarOuter::Polygon(TrimPolygon::new(boundary))),
         holes: Vec::new(),
         boundary_tolerance: 0.,
     };
@@ -244,9 +244,13 @@ fn checked_convex_boundary_is_reused_for_every_triangle() {
         })
         .collect::<Vec<_>>();
     let work = WorkBudget::new(usize::MAX);
-    let boundary =
-        super::super::CheckedPlanarPolygon::new(&polygon, super::EPS_DISPLAY_QUANTIZATION, &work)
-            .unwrap();
+    let trim_polygon = TrimPolygon::new(polygon.clone());
+    let boundary = super::super::CheckedPlanarPolygon::new(
+        &trim_polygon,
+        super::EPS_DISPLAY_QUANTIZATION,
+        &work,
+    )
+    .unwrap();
     for index in 1..polygon.len() - 1 {
         assert!(boundary.contains_triangle([polygon[0], polygon[index], polygon[index + 1]]));
     }
