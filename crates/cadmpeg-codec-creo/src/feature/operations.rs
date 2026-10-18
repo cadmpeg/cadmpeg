@@ -822,7 +822,7 @@ pub(crate) fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
 
 #[cfg(test)]
 mod tests {
-    mod resource_limits;
+    mod current_operations;
 
     use super::reference_names;
     use std::borrow::Cow;

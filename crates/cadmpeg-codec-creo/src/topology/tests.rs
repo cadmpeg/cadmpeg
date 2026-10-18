@@ -910,4 +910,4 @@ fn build_matches_the_linear_scan_walk_on_random_successor_graphs() {
     }
 }
 
-mod work_admission;
+mod components;

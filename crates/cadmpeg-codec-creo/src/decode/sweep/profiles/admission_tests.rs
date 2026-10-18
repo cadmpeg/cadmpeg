@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{ProfileEntity, ValidatedProfile};
+use super::{ProfileEntity, ProfileValidationWork, ValidatedProfile};
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::SketchGeometry;
@@ -31,19 +31,28 @@ fn polygon_curve(points: &[[f64; 2]]) -> ProfileEntity {
 fn single_nurbs_crossing_spans_cannot_mint_validated_profile() {
     let entity = polygon_curve(&[[0.0, 0.0], [3.0, 3.0], [0.0, 3.0], [2.0, 0.0], [0.0, 0.0]]);
     assert!(
-        crate::decode::with_service_context(|ctx| ValidatedProfile::new(ctx, vec![entity]))
-            .expect("construct the validated profile")
-            .is_none()
+        crate::decode::with_service_context(|ctx| ValidatedProfile::new(
+            ctx,
+            vec![entity],
+            &mut ProfileValidationWork::new(1).expect("work")
+        ))
+        .expect("construct the validated profile")
+        .is_none()
     );
 }
 
 #[test]
 fn single_nurbs_simple_polygon_keeps_area() {
     let entity = polygon_curve(&[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]]);
-    let profile =
-        crate::decode::with_service_context(|ctx| ValidatedProfile::new(ctx, vec![entity]))
-            .expect("construct the validated profile")
-            .expect("simple profile");
+    let profile = crate::decode::with_service_context(|ctx| {
+        ValidatedProfile::new(
+            ctx,
+            vec![entity],
+            &mut ProfileValidationWork::new(1).expect("work"),
+        )
+    })
+    .expect("construct the validated profile")
+    .expect("simple profile");
     assert!((profile.area() - 9.0).abs() < f64::EPSILON * 64.0);
 }
 
@@ -54,7 +63,8 @@ fn adjacent_nurbs_entities_cannot_cross_away_from_shared_endpoints() {
     assert!(
         crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(
             ctx,
-            vec![vec![first, second]]
+            vec![vec![first, second]],
+            &mut crate::lane_refusal::LaneRefusals::new()
         ))
         .expect("order the extrusion profiles")
         .is_none()
@@ -67,7 +77,8 @@ fn empty_extrusion_profile_is_withheld_before_containment() {
     assert!(
         crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(
             ctx,
-            vec![vec![], vec![entity]]
+            vec![vec![], vec![entity]],
+            &mut crate::lane_refusal::LaneRefusals::new()
         ))
         .expect("order the extrusion profiles")
         .is_none()
@@ -114,9 +125,13 @@ fn circular_profile_contains_point_outside_quadrant_diamond() {
         let outer = vec![circle(Point2::new(0.0, 0.0), 1.0, false)];
         assert!(super::profile_strictly_contains(ctx, &outer, [0.7, 0.7]).expect("containment"));
         let hole = vec![circle(Point2::new(0.7, 0.7), 0.001, true)];
-        assert!(super::ordered_extrusion_profiles(ctx, vec![outer, hole])
-            .expect("order the extrusion profiles")
-            .is_some());
+        assert!(super::ordered_extrusion_profiles(
+            ctx,
+            vec![outer, hole],
+            &mut crate::lane_refusal::LaneRefusals::new()
+        )
+        .expect("order the extrusion profiles")
+        .is_some());
     });
 }
 

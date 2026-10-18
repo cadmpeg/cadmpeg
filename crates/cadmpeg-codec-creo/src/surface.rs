@@ -1194,7 +1194,7 @@ pub(crate) struct TabulatedCylinderCurveReplay {
     pub(crate) tangent_condition: u8,
     /// B-spline degree.
     pub(crate) degree: u8,
-    /// Exact count-budgeted parameter body.
+    /// Exact parameter body bytes.
     pub(crate) parameter_body: Vec<u8>,
     /// Four contiguous control-point entity identifiers.
     pub(crate) control_point_ids: [u32; 4],

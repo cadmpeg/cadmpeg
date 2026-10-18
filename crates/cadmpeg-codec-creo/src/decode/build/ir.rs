@@ -489,6 +489,20 @@ fn transfer_display_tessellations(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model tessellations")?;
+        let vertex_size = if strip.normals().is_some() {
+            std::mem::size_of::<ShadedVertex<FinitePoint3, FiniteVector3>>()
+        } else {
+            std::mem::size_of::<FinitePoint3>()
+        };
+        let Some(vertex_bytes) = cadmpeg_core::decode::u64_from_index(strip.positions().len())
+            .checked_mul(cadmpeg_core::decode::u64_from_index(vertex_size))
+        else {
+            return Err(display_strip_error(
+                strip.offset,
+                "vertex storage size overflows",
+            ));
+        };
+        ctx.retain_bytes(vertex_bytes, "retain Creo display tessellation vertices")?;
         let mut positions = Vec::new();
         for position in strip.positions() {
             let mut point = Point3::from(position.get());

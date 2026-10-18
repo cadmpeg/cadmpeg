@@ -22,7 +22,7 @@ use super::{
 use crate::scalar::ScalarCache;
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 
-mod resource_limits;
+mod images;
 
 const ADMITTED: &str = "reference collection is admitted";
 

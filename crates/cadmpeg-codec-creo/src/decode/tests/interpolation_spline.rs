@@ -30,6 +30,7 @@ use crate::decode::sweep::profiles::{
 };
 use crate::decode::uniqueness::unique_feature_profile_definition;
 use crate::feature::schema::SchemaClass;
+use crate::lane_refusal::LaneRefusals;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     edge_treatments::ChamferSpec, AngularTermination, BooleanOp, EdgeSelection, ExtrudeDirection,
@@ -142,7 +143,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     .expect("spline profile");
     assert_eq!(profiles[0][0].start(), [1.0, 0.0]);
     assert_eq!(profiles[0][0].end(), [0.0, 1.0]);
-    let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
+    let ordered = ordered_extrusion_profiles(&ctx, profiles.clone(), &mut LaneRefusals::new())
         .expect("order the extrusion profiles")
         .expect("closed spline");
     let area = ordered[0].area();
@@ -331,9 +332,13 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     };
     let outer = rectangle([-2.0, -2.0], [2.0, 2.0], false);
     let hole = rectangle([-1.0, -1.0], [1.0, 1.0], true);
-    let profiles = ordered_extrusion_profiles(&ctx, vec![hole.clone(), outer.clone()])
-        .expect("order the extrusion profiles")
-        .expect("strict outer and hole");
+    let profiles = ordered_extrusion_profiles(
+        &ctx,
+        vec![hole.clone(), outer.clone()],
+        &mut LaneRefusals::new(),
+    )
+    .expect("order the extrusion profiles")
+    .expect("strict outer and hole");
     let outer_area = profiles[0].area();
     assert_eq!(profiles[0].entities(), &outer);
     assert!(outer_area > 0.0);
@@ -344,7 +349,8 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         vec![
             rectangle([-2.0, -2.0], [2.0, 2.0], false),
             rectangle([-1.0, -1.0], [1.0, 1.0], false),
-        ]
+        ],
+        &mut LaneRefusals::new(),
     )
     .expect("order the extrusion profiles")
     .is_none());
@@ -353,7 +359,8 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
         vec![
             rectangle([-2.0, -2.0], [2.0, 2.0], false),
             rectangle([1.0, -1.0], [3.0, 1.0], true),
-        ]
+        ],
+        &mut LaneRefusals::new(),
     )
     .expect("order the extrusion profiles")
     .is_none());
@@ -387,6 +394,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     let profiles = ordered_extrusion_profiles(
         &ctx,
         vec![circular_hole, rectangle([-2.0, -2.0], [2.0, 2.0], false)],
+        &mut LaneRefusals::new(),
     )
     .expect("order the extrusion profiles")
     .expect("arc-bounded hole");

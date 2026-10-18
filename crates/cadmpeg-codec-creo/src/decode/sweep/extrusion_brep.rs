@@ -220,7 +220,23 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         else {
             continue;
         };
-        let Some(profiles) = ordered_extrusion_profiles(ctx, profiles)? else {
+        let mut profile_refusal = crate::lane_refusal::LaneRefusals::new();
+        let Some(profiles) = ordered_extrusion_profiles(ctx, profiles, &mut profile_refusal)?
+        else {
+            let records = profile_refusal.take_records();
+            if !records.is_empty() {
+                let body_id = extrusion_id!(BodyId, "body");
+                if !ir.model.bodies.iter().any(|body| body.id == body_id) {
+                    push_rejected_extrusion(
+                        diagnostics,
+                        body_id,
+                        format_args!(
+                            "refused extrusion profile validation: {}",
+                            JoinedLaneRecords(&records)
+                        ),
+                    );
+                }
+            }
             continue;
         };
         let body_id = extrusion_id!(BodyId, "body");

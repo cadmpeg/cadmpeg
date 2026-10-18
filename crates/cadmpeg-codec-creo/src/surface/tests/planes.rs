@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-mod resource_limits;
+mod scalar_slots;
 
 use super::named_prototype_records;
 use super::named_surface_value;

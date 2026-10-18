@@ -529,7 +529,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     Ok(transferred)
 }
 
-/// Copy section-relative surface rows under the caller's collection budget.
+/// Copy the surface rows inside `section` with section-relative offsets.
 fn relative_surface_rows(
     rows: &[crate::surface::SurfaceRow],
     section: &crate::container::Section,

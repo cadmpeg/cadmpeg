@@ -657,6 +657,7 @@ fn classify(name: &str) -> SectionRole {
 fn scan_sections(data: &[u8], body_start: usize) -> Result<Vec<ScannedSection<'_>>, CodecError> {
     // Collect header hits as (offset_of_section_hash, raw_name).
     let mut hits: Vec<(usize, String)> = Vec::new();
+    let mut directory_names: Option<(usize, BTreeSet<&[u8]>)> = None;
     let mut i = body_start;
     if let Some(preceding_byte) = body_start.checked_sub(1) {
         i = preceding_byte;
@@ -696,7 +697,16 @@ fn scan_sections(data: &[u8], body_start: usize) -> Result<Vec<ScannedSection<'_
                     data.len(),
                 )));
             };
-            if !toc_lists_section(directory, name_bytes) {
+            if directory_names
+                .as_ref()
+                .is_none_or(|(end, _)| *end != directory_end)
+            {
+                directory_names = Some((directory_end, toc_listed_names(directory)));
+            }
+            if !directory_names
+                .as_ref()
+                .is_some_and(|(_, names)| names.contains(name_bytes))
+            {
                 continue;
             }
         }
@@ -713,14 +723,28 @@ fn scan_sections(data: &[u8], body_start: usize) -> Result<Vec<ScannedSection<'_
     Ok(sections)
 }
 
-fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
+/// Sections listed by the `#UGC_TOC` tables of `data`.
+///
+/// Real TOC header lines and row tables do not overlap, so the bytes they
+/// span fit in the input. Headers past that many visited bytes are not read
+/// and the skip goes to `losses`.
+fn toc_sections<'a>(
+    data: &'a [u8],
+    header_base: usize,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<ScannedSection<'a>> {
     let mut sections = Vec::new();
+    let visited = cadmpeg_core::decode::WorkBudget::new(data.len());
     let mut toc_from = 0;
     while let Some(toc_offset) = find(data, TOC_START, toc_from) {
         toc_from = toc_offset + TOC_START.len();
         let Some(line_end) = find(data, b"\n", toc_offset) else {
-            continue;
+            break;
         };
+        if !visited.charge_by(line_end - toc_offset) {
+            losses.push(toc_scan_capped_loss(data.len(), toc_offset));
+            break;
+        }
         let Ok(header) = std::str::from_utf8(&data[toc_offset..line_end]) else {
             continue;
         };
@@ -736,6 +760,14 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
             continue;
         }
         let rows_start = line_end + 1;
+        let available = data.len() - rows_start;
+        let row_bytes = count
+            .checked_mul(row_width)
+            .map_or(available, |bytes| bytes.min(available));
+        if !visited.charge_by(row_bytes) {
+            losses.push(toc_scan_capped_loss(data.len(), toc_offset));
+            break;
+        }
         for index in 0..count {
             let Some(start) = index
                 .checked_mul(row_width)
@@ -824,6 +856,16 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
     sections
 }
 
+fn toc_scan_capped_loss(
+    input_length: usize,
+    toc_offset: usize,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::CreoLossCode::TocScanCapped.note(format!(
+        "TOC header and row bytes visited reached the input length ({input_length} bytes); \
+         the TOC header at offset {toc_offset} and later headers were not read"
+    ))
+}
+
 fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<ScannedSection<'_>> {
     let Some(toc_offset) = find(data, b"\n@Toc ", banner_offset).map(|offset| offset + 1) else {
         return Vec::new();
@@ -898,15 +940,6 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<ScannedSection<
     }
     let mut sections = Vec::new();
     for _ in 0..count {
-        let mut window_start = next;
-        while window_start < data.len() {
-            let remaining = data.len() - window_start;
-            let step = if remaining < 64 { remaining } else { 64 };
-            if data[window_start..window_start + step].contains(&b'\n') {
-                break;
-            }
-            window_start += step;
-        }
         let Some((entry, after_entry)) = legacy::line(data, next) else {
             break;
         };
@@ -996,9 +1029,16 @@ fn expanded_sections(
         if !payload.starts_with(UNIX_COMPRESS_MAGIC) {
             continue;
         }
-        // A section above the expansion ceiling is left compressed.
+        // A section above the expansion ceiling or the per-expansion
+        // allowance is left compressed.
+        let per_expand_allowance = ctx.per_expand_allowance();
         let expansion = if expected_length > MAX_EXPANDED_SECTION {
             Err("declared expansion exceeds the 256 MiB section ceiling".into())
+        } else if cadmpeg_core::decode::u64_from_index(expected_length) > per_expand_allowance {
+            Err(format!(
+                "declared expansion of {expected_length} bytes exceeds the \
+                 {per_expand_allowance}-byte per-expansion allowance"
+            ))
         } else {
             match crate::compress::decode(ctx, payload, expected_length) {
                 Ok(Some(expanded)) => Ok(expanded),
@@ -1063,10 +1103,16 @@ pub(crate) fn section_region<'a>(data: &'a [u8], section: &Section) -> Option<&'
     data.get(section.offset()..section.end())
 }
 
-fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
-    toc.windows(name.len() + 2).any(|window| {
-        window[0] == b'\n' && &window[1..=name.len()] == name && window[1 + name.len()] == b' '
-    })
+/// The names `toc` lists as `\n<name> `: on each line after the first, the
+/// bytes before the line's first space.
+fn toc_listed_names(toc: &[u8]) -> BTreeSet<&[u8]> {
+    let mut names = BTreeSet::new();
+    for line in toc.split(|&byte| byte == b'\n').skip(1) {
+        if let Some(space) = line.iter().position(|&byte| byte == b' ') {
+            names.insert(&line[..space]);
+        }
+    }
+    names
 }
 
 /// Section-name bytes: printable ASCII minus space, plus the `ND:` decoration
@@ -1337,7 +1383,7 @@ fn binary_principal_unit(data: &[u8]) -> BinaryUnitSelection {
     }
 }
 
-fn cmnm_model_name(data: &[u8]) -> Option<Result<(String, usize), CodecError>> {
+fn cmnm_model_name(data: &[u8]) -> Option<(String, usize)> {
     const PREFIX: &[u8] = &cmnm::PREFIX_VALUE;
     let marker = find(data, PREFIX, 0)?;
     let start = marker + cmnm::NAME_LENGTH_HEX;
@@ -1348,14 +1394,12 @@ fn cmnm_model_name(data: &[u8]) -> Option<Result<(String, usize), CodecError>> {
     (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
         .then_some(())?;
     let name = std::str::from_utf8(name).ok()?;
-    Some(Ok(name.to_owned()).map(|name| (name, marker + cmnm::LEN)))
+    Some((name.to_owned(), marker + cmnm::LEN))
 }
 
 /// Find the root model name stored by binary sections that do not carry a
 /// `CMNM` header record.
-fn native_model_name(
-    sections: &[ScannedSection<'_>],
-) -> Option<Result<(String, usize), CodecError>> {
+fn native_model_name(sections: &[ScannedSection<'_>]) -> Option<(String, usize)> {
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
@@ -1380,10 +1424,7 @@ fn native_model_name(
             let value = &region[name_start..value_end];
             if let Ok(name) = std::str::from_utf8(value) {
                 if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
-                    return Some(
-                        Ok(name.to_owned())
-                            .map(|name| (name, section.section.offset() + name_start)),
-                    );
+                    return Some((name.to_owned(), section.section.offset() + name_start));
                 }
             }
             from = value_end + 1;
@@ -2583,9 +2624,7 @@ pub(crate) fn scan_bytes<'a>(
     }
 
     let version_line = line_at(&data, 0);
-    let mut model_name = cmnm_model_name(&data)
-        .transpose()?
-        .map(|(name, offset)| ModelName { name, offset });
+    let mut model_name = cmnm_model_name(&data).map(|(name, offset)| ModelName { name, offset });
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -2598,11 +2637,12 @@ pub(crate) fn scan_bytes<'a>(
         .map(|nl| nl + 1);
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
+    let mut local_work_cap_losses = Vec::new();
     let mut legacy_ascii = legacy_ascii_framing(&data)?;
     let sections = if let Some(legacy) = legacy_ascii.as_ref() {
         legacy_toc_sections(&data, legacy.banner_offset)
     } else {
-        toc_sections(&data, header_end.unwrap_or(0))
+        toc_sections(&data, header_end.unwrap_or(0), &mut local_work_cap_losses)
     };
     let sections = if sections.is_empty() {
         scan_sections(&data, body_start)?
@@ -2652,7 +2692,7 @@ pub(crate) fn scan_bytes<'a>(
     let references = reference_scan(sections)?;
     let layout = identify_layout(&data, &all_sections, legacy_ascii);
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
-        if let Some((name, offset)) = native_model_name(sections).transpose()? {
+        if let Some((name, offset)) = native_model_name(sections) {
             model_name = Some(ModelName { name, offset });
         }
     }
@@ -2694,7 +2734,6 @@ pub(crate) fn scan_bytes<'a>(
     surface_rows.extend(legacy_geometry.rows);
     surface_rows.as_mut_slice().sort_by_key(|left| left.offset);
     let cross_section_surface_rows = cross_section_surface_rows(sections)?;
-    let mut local_work_cap_losses = Vec::new();
     let nonvisible_surface_parameters = surface_parameters(
         ctx,
         &nonvisible_geometry_sections,
@@ -3374,7 +3413,7 @@ mod feature_row_definition_tests {
     fn zero_width_toc_has_no_rows() {
         let data = b"#UGC_TOC 2 18446744073709551615 0#\n";
 
-        assert!(toc_sections(data, 0).is_empty());
+        assert!(toc_sections(data, 0, &mut Vec::new()).is_empty());
     }
 
     #[test]
