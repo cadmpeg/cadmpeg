@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Test-only charge probes. Normal builds contain no probe state or calls.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use super::{ResourceDimension, ResourceLimits};
 
@@ -23,6 +23,7 @@ struct Recording {
 thread_local! {
     static TARGET: RefCell<Option<Target>> = const { RefCell::new(None) };
     static RECORDING: RefCell<Option<Recording>> = const { RefCell::new(None) };
+    static WORK: Cell<Option<u64>> = const { Cell::new(None) };
 }
 
 #[derive(Debug)]
@@ -114,6 +115,41 @@ pub(super) fn record_charge(dimension: ResourceDimension, operation: &str, amoun
     });
 }
 
+/// Run `run` and return its result with the work units charged to every
+/// [`WorkBudget`](super::WorkBudget) on this thread.
+///
+/// A charge counts once, at the counter that made it, even when a charging
+/// slice also debits its ancestors; [`WorkBudget::consume_child`](super::WorkBudget::consume_child)
+/// transfers count nothing. Nested recordings add to the outer recording.
+pub fn work_charged<T>(run: impl FnOnce() -> T) -> (T, u64) {
+    let outer = WORK.with(|work| work.replace(Some(0)));
+    let guard = RestoreWork(outer);
+    let result = run();
+    let charged = WORK.with(|work| work.get().unwrap_or(0));
+    drop(guard);
+    (result, charged)
+}
+
+#[derive(Debug)]
+struct RestoreWork(Option<u64>);
+
+impl Drop for RestoreWork {
+    fn drop(&mut self) {
+        let inner = WORK.with(|work| work.get().unwrap_or(0));
+        let outer = self.0.map(|outer| outer.saturating_add(inner));
+        WORK.with(|work| work.set(outer));
+    }
+}
+
+pub(super) fn record_work(work: usize) {
+    WORK.with(|recorded| {
+        if let Some(total) = recorded.get() {
+            let work = u64::try_from(work).unwrap_or(u64::MAX);
+            recorded.set(Some(total.saturating_add(work)));
+        }
+    });
+}
+
 /// Run a normal policy check while suspending any enclosing charge probe.
 /// The outer probe is restored when `run` returns or unwinds.
 pub fn without_probe<T>(run: impl FnOnce() -> T) -> T {
@@ -172,9 +208,9 @@ pub(super) fn charge_limit(
 
 #[cfg(test)]
 mod tests {
-    use super::{at_charge, charged_at, without_probe};
+    use super::{at_charge, charged_at, without_probe, work_charged};
     use crate::decode::budget::DecodeBudget;
-    use crate::decode::{DecodePolicy, ResourceDimension, ResourceLimit};
+    use crate::decode::{DecodePolicy, ResourceDimension, ResourceLimit, WorkBudget};
 
     fn entity_probe_policy() -> DecodePolicy {
         let mut policy = DecodePolicy::desktop();
@@ -216,6 +252,22 @@ mod tests {
             assert!(run(entity_probe_policy()).is_err());
         });
         assert!(run(entity_probe_policy()).is_ok());
+    }
+
+    #[test]
+    fn work_recording_counts_each_charge_once() {
+        let root = WorkBudget::new(10);
+        let ((), outer) = work_charged(|| {
+            let child = root.charging_slice(5);
+            let ((), inner) = work_charged(|| assert!(child.charge_by(2)));
+            assert_eq!(inner, 2);
+            let detached = root.child_slice(3);
+            assert!(detached.charge_by(3));
+            assert!(root.consume_child(&detached).is_ok());
+            assert!(!child.charge_by(4));
+        });
+        assert_eq!(outer, 5);
+        assert_eq!(root.consumed(), 5);
     }
 
     #[test]

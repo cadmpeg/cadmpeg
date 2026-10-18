@@ -778,7 +778,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 if assigned[root].is_some() {
                     continue;
                 }
-                let work_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
+                let work_budget = budget.map(|budget| budget.charging_slice(budget.remaining()));
                 let Some(scan_work) = domains[root].len().checked_add(1) else {
                     scan_deferred = true;
                     continue;
@@ -794,13 +794,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 if work_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                     scan_deferred = true;
                     continue;
-                }
-                if let (Some(budget), Some(work_budget)) = (budget, work_budget.as_ref()) {
-                    let work = budget.remaining() - work_budget.remaining();
-                    if !budget.charge_by(work) {
-                        *exhausted = true;
-                        break;
-                    }
                 }
                 if values.is_empty() {
                     dead = true;
@@ -915,7 +908,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                 continue;
             }
-            let matching_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
+            let matching_budget = budget.map(|budget| budget.charging_slice(budget.remaining()));
             let mut support_domains = Vec::new();
             for (_, roots) in &point_supports {
                 support_domains.push(roots.as_slice());
@@ -975,12 +968,9 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 .as_ref()
                 .is_none_or(|budget| !budget.exhausted())
             {
-                if let (Some(budget), Some(matching_budget)) = (budget, matching_budget.as_ref()) {
-                    let work = budget.remaining() - matching_budget.remaining();
-                    if !budget.charge_by(work) {
-                        *exhausted = true;
-                        break None;
-                    }
+                if budget.is_some_and(WorkBudget::exhausted) {
+                    *exhausted = true;
+                    break None;
                 }
                 if coverage_matching.is_none() {
                     break None;
@@ -1376,7 +1366,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 .checked_add(base)
         });
         let component_budget = match component_limit {
-            Some(Some(limit)) => Some(WorkBudget::new(limit)),
+            Some(Some(limit)) => Some(shared_budget.map_or_else(
+                || WorkBudget::new(limit),
+                |shared| shared.charging_slice(limit),
+            )),
             Some(None) => return Ok(None),
             None => None,
         };
@@ -1452,7 +1445,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             let copy = domain.clone();
             arc_domains.push(copy);
         }
-        let arc_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
+        let arc_budget = budget.map(|budget| budget.charging_slice(budget.remaining()));
         let arc_consistent = enforce_edge_arc_consistency(
             &mut arc_domains,
             &local_edges,
@@ -1462,12 +1455,9 @@ pub(super) fn close_coordinate_roots_with_incidence(
             arc_budget.as_ref(),
         );
         if arc_consistent {
-            if let (Some(budget), Some(arc_budget)) = (budget, arc_budget.as_ref()) {
-                let work = budget.remaining() - arc_budget.remaining();
-                if !budget.charge_by(work) {
-                    exhausted.set(true);
-                    return Ok(None);
-                }
+            if budget.is_some_and(WorkBudget::exhausted) {
+                exhausted.set(true);
+                return Ok(None);
             }
             local_domains = arc_domains;
         } else {

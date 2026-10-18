@@ -121,7 +121,7 @@ pub(super) const MAX_PLANAR_POINT_PAIRS: usize = 1 << 30;
 pub(super) struct PlanarPairBudget(cadmpeg_core::decode::WorkBudget);
 
 impl PlanarPairBudget {
-    pub(super) const fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self(cadmpeg_core::decode::WorkBudget::new(
             MAX_PLANAR_POINT_PAIRS,
         ))

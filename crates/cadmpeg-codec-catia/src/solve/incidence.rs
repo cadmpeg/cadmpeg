@@ -1555,6 +1555,7 @@ fn prepare_face_configuration_domains(
     choices: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
     active: &[bool],
+    budget: &WorkBudget,
 ) -> Result<Option<PreparedFaceFactors>, CodecError> {
     let Some(assignments) = assignments else {
         return Ok(None);
@@ -1583,9 +1584,9 @@ fn prepare_face_configuration_domains(
         {
             continue;
         }
-        let budget = WorkBudget::new(MAX_FACE_ENDPOINT_CONFIGURATION_WORK);
+        let face_budget = budget.charging_slice(MAX_FACE_ENDPOINT_CONFIGURATION_WORK);
         let Some(configurations) =
-            mesh_face_endpoint_configurations(assignments, choices, selected, &budget)
+            mesh_face_endpoint_configurations(assignments, choices, selected, &face_budget)
         else {
             continue;
         };
@@ -1609,9 +1610,9 @@ fn prepare_face_configuration_domains(
                 .unwrap_or_default(),
         );
     }
-    let arc_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let arc_budget = budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
     let viable = prune_face_configuration_support(ctx, &mut configurations, &arc_budget)?;
-    let singleton_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let singleton_budget = budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
     if !viable
         || (!arc_budget.exhausted()
             && !prune_face_configuration_singleton_support(
@@ -1624,7 +1625,7 @@ fn prepare_face_configuration_domains(
             domain.clear();
         }
     }
-    let graph_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let graph_budget = budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
     let graph = FaceFactorGraph::compile(ctx, &configurations, &graph_budget)?;
     let active = graph
         .as_ref()
@@ -4076,6 +4077,7 @@ where
             choices,
             assignment,
             &active,
+            budget,
         )?;
         let filter = |solution: &[MeshEndpointPair]| -> Result<bool, CodecError> {
             let mut completed = assignment.to_vec();
@@ -4113,7 +4115,7 @@ where
             }
             Ok(true)
         };
-        let degree_support_budget = budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let degree_support_budget = budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut search = IncidenceComponentSearch {
             ctx,
             choices,
@@ -4292,7 +4294,7 @@ where
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
-                let closure_budget = search_budget.child_slice(closure_limit);
+                let closure_budget = search_budget.charging_slice(closure_limit);
                 let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
                     ctx,
                     point_count,
@@ -4490,7 +4492,7 @@ where
                 else {
                     return Ok(None);
                 };
-                let preparation_budget = search_budget.child_slice(preparation_limit);
+                let preparation_budget = search_budget.charging_slice(preparation_limit);
                 let Some(domains) = quotient.prepare_coordinate_root_domains(
                     ctx,
                     point_count,
@@ -4515,7 +4517,8 @@ where
         .to_vec();
         let mut narrowed_choices = base_choices.clone();
         if let Some(domains) = mesh_assignments {
-            let implicit_support_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let implicit_support_budget =
+                search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let implicit_support_viable = if let Some(coordinate) = coordinate_domains.as_ref() {
                 prune_implicit_ordered_face_endpoint_support(
                     domains,
@@ -4534,7 +4537,7 @@ where
                 narrowed_choices.clone_from(&base_choices);
             }
             let implicit_choices = narrowed_choices.clone();
-            let face_support_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let face_support_budget = search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             if !prune_ordered_face_endpoint_support(
                 ctx,
                 domains,
@@ -4547,7 +4550,8 @@ where
             if face_support_budget.exhausted() {
                 narrowed_choices = implicit_choices;
             } else if let Some(domains) = coordinate_domains.take() {
-                let refinement_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                let refinement_budget =
+                    search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
                 match domains.refine_candidates(ctx, &narrowed_choices, Some(&refinement_budget))? {
                     Some(refined) => {
                         narrowed_choices = refined.edge_candidates().to_vec();
@@ -4637,7 +4641,7 @@ where
                 else {
                     return Ok(None);
                 };
-                let budget = search_budget.child_slice(closure_limit);
+                let budget = search_budget.charging_slice(closure_limit);
                 let Some(domains) = mesh_assignments else {
                     if !quotient.point_assignment_exists(
                         ctx,
@@ -4688,19 +4692,18 @@ where
             return Ok(Some(()));
         }
         for component in &components {
-            // Preflight is a rejection shortcut only. Give each independent
-            // component its own bounded slice so a large component cannot
-            // consume the composition budget needed by all later components.
-            // Exhaustion leaves the component unknown; the complete composition
-            // below remains the sound decision point.
+            // Preflight is a rejection shortcut only. Each component's slices
+            // are charged to the search budget, but exhausting them leaves the
+            // component unknown rather than ending the search; the complete
+            // composition below remains the sound decision point.
             let component_preflight_budget =
-                search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let preflight_orientation_budget =
-                search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let coordinate_preflight_budget =
-                search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let boundary_preflight_budget =
-                search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
             let mut accept_first =
                 |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
@@ -4768,12 +4771,13 @@ where
             }
         }
         rejection = IncidenceRejection::ComponentComposition;
-        let orientation_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let orientation_budget = search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         // These deductions can reduce composition work but cannot establish a
         // solution. Keep their exhaustion independent of the exact search budget.
         let coordinate_propagation_budget =
-            search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let boundary_propagation_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let boundary_propagation_budget =
+            search_budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         match visit_components(
             ctx,
             VisitComponentsInputs {

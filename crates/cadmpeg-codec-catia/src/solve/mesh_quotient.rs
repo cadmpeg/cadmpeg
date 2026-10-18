@@ -3737,7 +3737,7 @@ pub(super) fn propagate_common_ordered_face_quotients(
                         MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS
                     }
                 };
-                let face_budget = WorkBudget::new(face_limit);
+                let face_budget = budget.charging_slice(face_limit);
                 // An exhausted face slice skips this face.
                 if let MeshFaceBoundaryDomain::DeferredValidation(domain) = domain {
                     let mut merged_nodes = Vec::new();
@@ -4150,6 +4150,7 @@ pub(super) fn propagate_common_boundary_components(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
+    budget: &WorkBudget,
 ) -> Result<Option<()>, CodecError> {
     const MAX_COMPONENT_STATES: usize = 128;
     const MAX_COMPONENT_OPERATIONS: usize = 8_192;
@@ -4244,7 +4245,7 @@ pub(super) fn propagate_common_boundary_components(
             }
             ordered_faces.push(face);
         }
-        let budget = WorkBudget::new(MAX_COMPONENT_OPERATIONS);
+        let budget = budget.charging_slice(MAX_COMPONENT_OPERATIONS);
         for _ in 0..MAX_COMPONENT_ROUNDS {
             let Some(before) = quotient.monotone_measure()? else {
                 return Ok(None);
@@ -4578,13 +4579,12 @@ fn possible_face_equations(faces: &[Vec<MeshFaceBoundaryAssignment>]) -> Vec<Vec
     faces_equations
 }
 
-fn possible_face_choices_with_limit(
+fn possible_face_choices_within(
     faces: &[Vec<MeshFaceBoundaryAssignment>],
     face_equations: &[Vec<[usize; 2]>],
-    limit: usize,
+    budget: &WorkBudget,
     faces_choices: &mut Vec<Vec<Vec<[usize; 2]>>>,
 ) -> bool {
-    let budget = WorkBudget::new(limit);
     for (assignments, fallback) in faces.iter().zip(face_equations) {
         let mut choices = HashSet::new();
         for assignment in assignments {
@@ -4664,7 +4664,12 @@ fn possible_face_choices(
 ) -> Vec<Vec<Vec<[usize; 2]>>> {
     let mut choices = Vec::new();
     assert!(
-        possible_face_choices_with_limit(faces, face_equations, usize::MAX, &mut choices),
+        possible_face_choices_within(
+            faces,
+            face_equations,
+            &WorkBudget::new(usize::MAX),
+            &mut choices
+        ),
         "unbounded test face-choice materialization"
     );
     choices
@@ -6389,7 +6394,7 @@ fn resolve_endpoint_configuration_relation_streaming(
         HashSet::<(MeshEndpointRelationSelections, Vec<[usize; 2]>)>::new();
     let mut relation_walk_state_memo = HashSet::<MeshEndpointRelationStateSignature>::new();
     let coordinate_budget =
-        coordinate_domains.map(|_| budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS));
+        coordinate_domains.map(|_| budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS));
     let mut ambiguous = false;
     let mut exhausted = false;
     let mut evaluate = |selections: MeshEndpointRelationSelections,
@@ -6449,7 +6454,7 @@ fn resolve_endpoint_configuration_relation_streaming(
             let row = vec![pair];
             candidates.push(row);
         }
-        let endpoint_resolution_budget = budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let endpoint_resolution_budget = budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let outcome = if assignment_domains.iter().all(|domain| domain.len() == 1) {
             let mut selected = Vec::new();
             let mut complete = true;
@@ -7307,20 +7312,8 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
 pub(super) fn prune_mesh_endpoint_pair_support(
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
+    budget: &WorkBudget,
 ) -> bool {
-    prune_mesh_endpoint_pair_support_with_limit(
-        assignments,
-        edge_candidates,
-        MAX_MESH_CONSTRAINT_OPERATIONS,
-    )
-}
-
-pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
-    assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
-    edge_candidates: &mut [Vec<[usize; 2]>],
-    limit: usize,
-) -> bool {
-    let budget = WorkBudget::new(limit);
     'fixpoint: loop {
         let mut changed = false;
         for face in assignments.iter_mut() {
@@ -7330,7 +7323,7 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                     assignment,
                     edge_candidates,
                     None,
-                    Some(&budget),
+                    Some(budget),
                 )
                 .unwrap_or(true)
             });
@@ -7382,7 +7375,7 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                                 assignment,
                                 edge_candidates,
                                 Some((edge, *pair)),
-                                Some(&budget),
+                                Some(budget),
                             )
                             .unwrap_or(true)
                     })
@@ -7638,7 +7631,11 @@ fn resolve_standard_mesh_endpoint_candidates(
     } = inputs;
 
     let mut edge_candidates = edge_candidates.to_vec();
-    if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
+    if !prune_mesh_endpoint_pair_support(
+        &mut assignments,
+        &mut edge_candidates,
+        &budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS),
+    ) {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     }
     let quotient = if let Some(prepared) = prepared_quotient {
@@ -7683,7 +7680,7 @@ fn resolve_standard_mesh_endpoint_candidates(
         .clone()
         .coordinate_domain_preparation_limit(vertex_points.len(), &edge_candidates)?
     {
-        let preparation_budget = budget.child_slice(preparation_limit);
+        let preparation_budget = budget.charging_slice(preparation_limit);
         let mut coordinate_quotient = quotient.clone();
         coordinate_quotient.prepare_coordinate_root_domains(
             ctx,
@@ -7709,16 +7706,16 @@ fn resolve_standard_mesh_endpoint_candidates(
     }
     let face_equations = possible_face_equations(&assignments);
     let mut face_choices = Vec::new();
-    if !possible_face_choices_with_limit(
+    if !possible_face_choices_within(
         &assignments,
         &face_equations,
-        MAX_MESH_CONSTRAINT_OPERATIONS,
+        &budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS),
         &mut face_choices,
     ) {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
     }
     let unselected = vec![None; edge_candidates.len()];
-    let configuration_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let configuration_budget = budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut endpoint_configurations = Vec::new();
     for face in &assignments {
         let mut face_configurations = Vec::new();
@@ -7734,7 +7731,7 @@ fn resolve_standard_mesh_endpoint_candidates(
                     &unselected,
                     &local_budget,
                 );
-                if !configuration_budget.charge_by(local_budget.consumed())
+                if configuration_budget.consume_child(&local_budget).is_err()
                     || local_budget.exhausted()
                 {
                     None
@@ -7839,7 +7836,53 @@ pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
     pub(crate) complete_solution_valid: FC,
 }
 
+/// Runs `run`; test builds assert that `budget` paid for every work unit
+/// charged during it.
+#[cfg(test)]
+fn charged_to<T>(budget: &WorkBudget, run: impl FnOnce() -> T) -> T {
+    let before = budget.consumed();
+    let (result, charged) = cadmpeg_core::decode::test_support::work_charged(run);
+    let paid = u64::try_from(budget.consumed() - before).unwrap_or(u64::MAX);
+    assert!(
+        charged <= paid,
+        "work outside the candidate budget: charged {charged}, budget paid {paid}"
+    );
+    result
+}
+
+#[cfg(not(test))]
+fn charged_to<T>(_budget: &WorkBudget, run: impl FnOnce() -> T) -> T {
+    run()
+}
+
 pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
+    ctx: &DecodeContext<'_>,
+    inputs: ParseStandardMeshCandidateOutcomeInputs<
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        FP,
+        FC,
+    >,
+) -> Result<MeshCandidateSolve, CodecError>
+where
+    FP: Fn(&[Option<[usize; 2]>]) -> bool,
+    FC: Fn(&[Option<[usize; 2]>]) -> bool,
+{
+    let budget = inputs.budget;
+    charged_to(budget, || solve_standard_mesh_candidate(ctx, inputs))
+}
+
+fn solve_standard_mesh_candidate<FP, FC>(
     ctx: &DecodeContext<'_>,
     inputs: ParseStandardMeshCandidateOutcomeInputs<
         '_,
@@ -7880,7 +7923,7 @@ where
         complete_solution_valid,
     } = inputs;
 
-    let endpoint_budget = budget.child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
+    let endpoint_budget = budget.charging_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
     let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) =
         (|| -> Result<Option<_>, CodecError> {
             let Some(face_run) = largest_fbb_run(bytes) else {
@@ -8022,6 +8065,7 @@ where
             &mesh_domains,
             edge_candidates,
             &mut mesh_quotient,
+            budget,
         )?
         .is_none()
     {
@@ -8123,11 +8167,8 @@ where
                         return Ok(ControlFlow::Continue(()));
                     };
                     deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
-                    // This child owns the incidence-to-endpoint relation phase. The
-                    // complete materialization invoked by that relation takes its
-                    // own MAX_MESH_CONSTRAINT_OPERATIONS child slice.
                     let endpoint_resolution_budget =
-                        endpoint_budget.child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
+                        endpoint_budget.charging_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
                     let resolution = resolve_standard_mesh_endpoint_candidates(
                         ctx,
                         ResolveStandardMeshEndpointCandidatesInputs {
@@ -8312,7 +8353,7 @@ where
         }
         let branch_budget = budget.child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
         let outcome = solve(assignment, &branch_budget)?;
-        if !budget.charge_by(branch_budget.consumed()) {
+        if budget.consume_child(&branch_budget).is_err() {
             exhaustion = Some(MeshCandidateExhaustion::FaceDomainEnumeration);
             return Ok(false);
         }
@@ -9235,7 +9276,7 @@ fn coordinate_root_closure_refuses_recursive_walk_depth() {
 }
 
 #[test]
-fn coordinate_root_preparation_budgets_independent_components_separately() {
+fn coordinate_root_component_closures_are_charged_to_their_caller() {
     const COMPONENT_COUNT: usize = 8;
     catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
@@ -9303,22 +9344,43 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
         .is_none());
     assert!(shared_incidence_budget.exhausted());
 
-    let preparation_budget = WorkBudget::new(100);
-    let outcome = quotient
-        .coordinate_root_closure_outcome_for_incidence(
-            &ctx,
-            COMPONENT_COUNT * 3,
-            &candidates,
-            MeshIncidenceBoundary {
-                edge_faces: &edge_faces,
-                face_count: COMPONENT_COUNT,
-                domains: &boundary_domains,
-            },
-            Some(&preparation_budget),
-        )
-        .expect("compute the coordinate root closure outcome for incidence");
+    let closure_for_incidence = |budget: &WorkBudget| {
+        let mut quotient = quotient.clone();
+        cadmpeg_core::decode::test_support::work_charged(|| {
+            quotient
+                .coordinate_root_closure_outcome_for_incidence(
+                    &ctx,
+                    COMPONENT_COUNT * 3,
+                    &candidates,
+                    MeshIncidenceBoundary {
+                        edge_faces: &edge_faces,
+                        face_count: COMPONENT_COUNT,
+                        domains: &boundary_domains,
+                    },
+                    Some(budget),
+                )
+                .expect("compute the coordinate root closure outcome for incidence")
+        })
+    };
+    let small_budget = WorkBudget::new(100);
+    let (outcome, charged) = closure_for_incidence(&small_budget);
+    assert_eq!(
+        outcome,
+        MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
+    );
+    assert!(
+        charged <= 100,
+        "component closures charged {charged} of 100"
+    );
+
+    let preparation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let (outcome, charged) = closure_for_incidence(&preparation_budget);
     assert!(matches!(outcome, MeshSolve::Solved(_)), "{outcome:?}");
     assert!(!preparation_budget.exhausted());
+    assert_eq!(
+        charged,
+        u64::try_from(preparation_budget.consumed()).expect("consumed fits u64")
+    );
 }
 
 #[test]
@@ -9774,8 +9836,9 @@ fn boundary_component_exhausted_slice_returns_no_states() {
 
 #[cfg(test)]
 mod pair_support_tests {
-    use super::prune_mesh_endpoint_pair_support;
+    use super::{prune_mesh_endpoint_pair_support, MAX_MESH_CONSTRAINT_OPERATIONS};
     use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
+    use cadmpeg_core::decode::WorkBudget;
 
     #[test]
     fn endpoint_pair_pruning_keeps_independent_one_edge_faces() {
@@ -9795,7 +9858,8 @@ mod pair_support_tests {
         let mut candidates = vec![vec![[0, 0]]; EDGES];
         assert!(prune_mesh_endpoint_pair_support(
             &mut assignments,
-            &mut candidates
+            &mut candidates,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
         ));
         assert!(assignments.iter().all(|choices| choices.len() == 1));
         assert!(candidates.iter().all(|pairs| pairs == &[[0, 0]]));

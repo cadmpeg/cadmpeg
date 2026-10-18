@@ -57,9 +57,14 @@ charges and `refuse_input_limit`.
 A local work cap skips. The caller checks `WorkBudget::exhausted` (or its own
 counter), drops the item it was building, and adds a loss that names the
 bound. A partial result is not emitted as complete. Use
-`WorkBudget::child_slice` for a nested phase: the child limit is the smaller
-of the requested limit and the parent's remaining work, and
-`consume_child` moves the child's work back to the parent.
+`WorkBudget::charging_slice` for a nested phase: the child limit is the
+smaller of the requested limit and the parent's remaining work, every charge
+to the child also charges each counter it was drawn from, and exhausting the
+child leaves the parent usable. The work below a counter therefore never
+exceeds its limit, however deeply phases nest or repeat. `child_slice` makes
+a detached child whose work reaches the parent only when `consume_child`
+moves it back; use it only for a phase that runs alone and is transferred
+before the parent charges again.
 `WorkBudget::recursion_guard` bounds recursion inside a local search; at its
 depth it exhausts the work budget and does not touch the session.
 
@@ -384,11 +389,10 @@ report a loss; a caller may report a general failure for the same item.
 
 These production `WorkBudget::new` sites take a limit that is not a `MAX_*`
 constant. Sites that forward a limit parameter from a `MAX_*` constant above
-(CATIA `possible_face_choices_with_limit`,
-`prune_mesh_endpoint_pair_support_with_limit`, the mesh-quotient face slice,
-the zero-entity candidate search, and NX `GeometryWorkBudget::from_context`)
-are covered by that constant's row. `WorkBudget::child_slice` in
-`cadmpeg-core` is the slice mechanism itself.
+(the CATIA mesh-quotient face slice, the zero-entity candidate search, and NX
+`GeometryWorkBudget::from_context`) are covered by that constant's row.
+`WorkBudget::child_slice` and `WorkBudget::charging_slice` in `cadmpeg-core`
+are the slice mechanisms themselves.
 
 | Crate                  | File                                                             | Limit                                  | Value                                        | Enforcement                                                                                                                                  |
 | ---------------------- | ---------------------------------------------------------------- | -------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -404,8 +408,8 @@ are covered by that constant's row. `WorkBudget::child_slice` in
 | `cadmpeg-codec-sldprt` | `src/pmi.rs`, `src/pmi/patch_slots.rs`                           | `PMI_PARSE_WORK_PER_PAYLOAD_BYTE`      | 16 × payload length                          | One unit per MessagePack value and validated string byte. Exhaustion skips the rest of the section; `pmi.semantic-parse-capped` counts them. |
 | `cadmpeg-codec-sldprt` | `src/swift.rs`                                                   | `SWIFT_FEATURE_WALK_WORK`              | `1 << 24`                                    | SWIFT feature walks of one projection. A walk cut short stays unresolved; `pmi.swift-feature-walk-capped` counts them.                       |
 | `cadmpeg-codec-sldprt` | `src/history/configuration.rs`                                   | `CONFIGURATION_PROJECTION_WORK`        | `1 << 26`                                    | History records copied per configuration. Later configurations stay empty; `config.projection-work-capped` counts them.                      |
-| `cadmpeg-codec-catia`  | `src/solve/mesh_quotient/coordinate_assignment.rs` (three sites) | `budget.remaining()`                   | parent remainder                             | Hand-built child slices; the work is charged back to the parent with `charge_by`.                                                            |
-| `cadmpeg-codec-catia`  | `src/solve/mesh_quotient/coordinate_assignment.rs`               | `component_limit`                      | derived from `MAX_COORDINATE_CLOSURE_STATES` | Per-component closure budget: support and traversal work times the state limit.                                                              |
+| `cadmpeg-codec-catia`  | `src/solve/mesh_quotient/coordinate_assignment.rs` (three sites) | `budget.remaining()`                   | parent remainder                             | Charging slices of the caller's budget; exhausting one skips that scan without exhausting the caller.                                        |
+| `cadmpeg-codec-catia`  | `src/solve/mesh_quotient/coordinate_assignment.rs`               | `component_limit`                      | derived from `MAX_COORDINATE_CLOSURE_STATES` | Per-component closure budget: support and traversal work times the state limit, as a charging slice of the caller's budget when it has one. |
 | `cadmpeg-ir`           | `src/eval.rs` (two sites)                                        | `DEFAULT_NURBS_SURFACE_INVERSION_WORK` | `1_000_000`                                  | Surface inversion entry points without a caller budget. The callers own skip and loss.                                                       |
 | `cadmpeg-ir`           | `src/eval/admission.rs`                                          | `parent.remaining()`                   | parent remainder                             | `within_work_slice` child; `consume_child` charges the parent and an exhausted child exhausts the parent.                                    |
 
@@ -446,8 +450,8 @@ Route a new bound as follows.
 - Entities are charged with `admit_entities` at admission boundaries or with
   `charge_entities`.
 - A search, a solver, or a derived walk gets a named `WorkBudget` limit and
-  `child_slice` for nested phases. At exhaustion it skips the item and adds
-  a loss.
+  `charging_slice` for nested phases. At exhaustion it skips the item and
+  adds a loss.
 - Optional enrichment whose size is known before it is built may check
   `retained_bytes_available()` and skip with a loss.
 

@@ -424,6 +424,7 @@ fn face_configuration_domains_prepare_for_shared_edge_faces() {
         &choices,
         &[None],
         &[true],
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
     .expect("prepare face configuration domains")
     .is_some());

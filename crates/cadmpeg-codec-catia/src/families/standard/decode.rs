@@ -2801,7 +2801,10 @@ fn try_decode_standard_population(
         }
         let mut bound_standard_limit_curve_count = 0;
         let mut topology_diagnostics = StandardTopologyDiagnostics::default();
+        #[cfg(not(test))]
         let topology_budget = WorkBudget::new(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS);
+        #[cfg(test)]
+        let topology_budget = WorkBudget::new(crate::test_support::standard_topology_limit());
         let topology_result = attach_standard_topology(
             ctx,
             AttachStandardTopologyInputs {
@@ -6099,7 +6102,7 @@ fn attach_standard_topology(
                 if circle_constraint.selection_bounded() {
                     circle_selection_bounded.set(true);
                 }
-                if !solve_budget.charge_by(preferred_budget.consumed()) {
+                if solve_budget.consume_child(&preferred_budget).is_err() {
                     return Ok(mesh_quotient::MeshSolve::Failed(
                         mesh_quotient::MeshCandidateFailure::Exhausted(
                             mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
@@ -6146,7 +6149,7 @@ fn attach_standard_topology(
                             },
                         },
                     )?;
-                    if !solve_budget.charge_by(fallback_budget.consumed()) {
+                    if solve_budget.consume_child(&fallback_budget).is_err() {
                         return Ok(mesh_quotient::MeshSolve::Failed(
                             mesh_quotient::MeshCandidateFailure::Exhausted(
                                 mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,

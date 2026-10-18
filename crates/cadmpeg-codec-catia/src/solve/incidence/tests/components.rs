@@ -784,6 +784,7 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
         &domains,
         &candidates,
         &mut quotient,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
     .expect("propagate common boundary components")
     .expect("ordered component quotient");
@@ -815,6 +816,7 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
         &domains,
         &candidates,
         &mut quotient,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
     .expect("propagate common boundary components")
     .expect("unordered component quotient");
@@ -921,6 +923,7 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
         &domains,
         &candidates,
         &mut quotient,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
     .expect("propagate common boundary components")
     .expect("deferred component quotient");
