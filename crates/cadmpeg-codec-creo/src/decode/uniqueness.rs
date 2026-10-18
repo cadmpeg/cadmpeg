@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unique-owner lookups for feature definitions, transforms, profiles, and datum planes.
 
+use std::collections::BTreeMap;
+
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::ProfileRef;
 
@@ -12,6 +14,42 @@ use super::sketch_ids::feature_sketch_record_id_in_scan;
 pub(crate) fn exactly_one<T>(mut iter: impl Iterator<Item = T>) -> Option<T> {
     let first = iter.next()?;
     iter.next().is_none().then_some(first)
+}
+
+/// Rows keyed by a numeric identifier, indexed once.
+///
+/// [`UniqueById::get`] returns what `exactly_one` returns over the rows that
+/// carry the identifier, without scanning the rows per lookup.
+pub(crate) struct UniqueById<'a, T> {
+    /// `None` marks an identifier that two or more rows carry.
+    rows: BTreeMap<u32, Option<&'a T>>,
+}
+
+impl<'a, T> UniqueById<'a, T> {
+    pub(crate) fn new(rows: impl IntoIterator<Item = &'a T>, id: impl Fn(&T) -> u32) -> Self {
+        let mut indexed = BTreeMap::new();
+        for row in rows {
+            match indexed.entry(id(row)) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(row));
+                }
+            }
+        }
+        Self { rows: indexed }
+    }
+
+    /// Return the only row that carries `id`.
+    pub(crate) fn get(&self, id: u32) -> Option<&'a T> {
+        self.rows.get(&id).copied().flatten()
+    }
+
+    /// Return whether any row carries `id`.
+    pub(crate) fn contains(&self, id: u32) -> bool {
+        self.rows.contains_key(&id)
+    }
 }
 
 pub(super) fn unique_owned_feature_definition(
@@ -97,4 +135,32 @@ pub(super) fn unique_feature_datum_plane(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::{exactly_one, UniqueById};
+
+    #[test]
+    fn unique_by_id_matches_the_per_identifier_scan() {
+        let rows = [
+            (3, 'a'),
+            (1, 'b'),
+            (3, 'c'),
+            (0, 'd'),
+            (7, 'e'),
+            (3, 'f'),
+            (7, 'g'),
+        ];
+        let index = UniqueById::new(&rows, |row| row.0);
+        for id in 0..=8 {
+            assert_eq!(
+                index.get(id),
+                exactly_one(rows.iter().filter(|row| row.0 == id)),
+                "{id}"
+            );
+            assert_eq!(
+                index.contains(id),
+                rows.iter().any(|row| row.0 == id),
+                "{id}"
+            );
+        }
+    }
+}
