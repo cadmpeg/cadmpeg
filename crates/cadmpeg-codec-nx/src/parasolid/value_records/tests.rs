@@ -435,3 +435,37 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
         );
     });
 }
+
+#[test]
+fn counted_value_identities_require_nonempty_payloads() {
+    crate::test_support::with_decode_context(|ctx| {
+        for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
+            let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
+            assert!(
+                crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    });
+}
+
+#[test]
+fn numeric_identity_probe_uses_no_payload_storage() {
+    let bytes = [0, 0x52, 0, 0, 0, 1, 0, 17, 0, 0, 0, 9];
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            assert_eq!(
+                crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0)
+                    .unwrap(),
+                Some((0x52, 17, 12))
+            );
+        },
+    );
+}

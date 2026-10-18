@@ -1090,20 +1090,6 @@ fn legal_owner_flags_carry_binary_values_and_exact_layout_length() {
 }
 
 #[test]
-fn counted_value_identities_require_nonempty_payloads() {
-    crate::test_support::with_decode_context(|ctx| {
-        for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
-            let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
-            assert!(
-                crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0)
-                    .unwrap()
-                    .is_none()
-            );
-        }
-    });
-}
-
-#[test]
 fn a_packed_member_reporting_fewer_bytes_than_a_zlib_member_holds_is_refused_by_name() {
     use crate::parasolid::{packed_member_advance, MIN_ZLIB_MEMBER_LEN};
 
@@ -1166,26 +1152,6 @@ fn owned_value_discovery_refuses_before_building_child_lanes() {
         |ctx| {
             assert!(
                 matches!(crate::parasolid::referenced_value_record_offsets(ctx, &bytes), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "NX field-name reference lanes")
-            );
-        },
-    );
-}
-
-#[test]
-fn numeric_identity_probe_uses_no_payload_storage() {
-    let bytes = [0, 0x52, 0, 0, 0, 1, 0, 17, 0, 0, 0, 9];
-    crate::test_support::with_decode_context_over(
-        &bytes,
-        |policy| {
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = 0;
-        },
-        |ctx| {
-            assert_eq!(
-                crate::parasolid::value_records::entity_value_record_identity_at(ctx, &bytes, 0)
-                    .unwrap(),
-                Some((0x52, 17, 12))
             );
         },
     );
