@@ -36,7 +36,8 @@ use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind,
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
     AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint, AsmHistoricalRelation,
-    AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
+    AsmHistoricalRow, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
+    AsmPreamble,
 };
 use crate::records::topology::{
     body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
@@ -5097,17 +5098,14 @@ fn resolve_bounded_face_recipe_target<'a>(
         })
         .count();
     let first_clause = &operand.recipe_references[..first_clause_len];
-    let mut topology_faces = HashSet::new();
-    for face in &preceding.faces {
-        topology_faces.insert(*face);
-    }
+    let topology_faces = selection::FamilySlots::new(&preceding.faces);
     let mut target_candidates = BTreeSet::new();
     for face in first_clause
         .first()
         .into_iter()
         .flat_map(effective_faces)
         .filter_map(|face| stable_ref(face.as_str()))
-        .filter(|face| topology_faces.contains(face))
+        .filter(|face| topology_faces.contains(*face))
     {
         target_candidates.insert(face);
     }
@@ -5116,7 +5114,7 @@ fn resolve_bounded_face_recipe_target<'a>(
         for face in effective_faces(reference)
             .iter()
             .filter_map(|face| stable_ref(face.as_str()))
-            .filter(|face| topology_faces.contains(face))
+            .filter(|face| topology_faces.contains(*face))
         {
             candidates.insert(face);
         }
@@ -5637,10 +5635,7 @@ fn resolve_direct_face_recipe_clauses(
             clauses.push((key.0, key.1, grouped));
         }
     }
-    let mut topology_faces = HashSet::new();
-    for face in &topology.faces {
-        topology_faces.insert(*face);
-    }
+    let topology_faces = selection::FamilySlots::new(&topology.faces);
     let mut resolved = Vec::new();
     for (_, _, references) in clauses {
         let mut intersection = None::<HashSet<i64>>;
@@ -5654,7 +5649,7 @@ fn resolve_direct_face_recipe_clauses(
             for face in candidates
                 .iter()
                 .filter_map(|face| stable_ref(face.as_str()))
-                .filter(|face| topology_faces.contains(face) && changed_faces.contains(face))
+                .filter(|face| topology_faces.contains(*face) && changed_faces.contains(face))
             {
                 eligible.insert(face);
             }
@@ -5820,15 +5815,12 @@ fn profile_face_group_cardinality_candidates(
     changed_faces: &HashSet<i64>,
     member_count: usize,
 ) -> Option<Vec<i64>> {
-    let mut preceding_faces = HashSet::new();
-    for face in &topology.faces {
-        preceding_faces.insert(*face);
-    }
+    let preceding_faces = selection::FamilySlots::new(&topology.faces);
     let mut faces_by_carrier = HashMap::<i64, Vec<i64>>::new();
     for face in changed_faces
         .iter()
         .copied()
-        .filter(|face| preceding_faces.contains(face))
+        .filter(|face| preceding_faces.contains(*face))
     {
         let mut bindings = topology
             .face_surfaces
@@ -6010,16 +6002,13 @@ fn face_boundary_edges<'a>(
     topology: &'a AsmHistoricalTopology,
     topology_queries: &mut TopologyQueryCache<'a>,
 ) -> Vec<i64> {
-    let index = topology_queries
+    let boundaries = topology_queries
         .boundaries
-        .get(topology, topology_cache::aggregate_boundaries);
-    let mut selected = HashSet::new();
+        .get(topology, topology_cache::FaceBoundaries::new);
+    let mut edges = Vec::new();
     for face in faces.iter().filter_map(|face| stable_ref(face.as_str())) {
-        for edge in index.get(&face).into_iter().flatten() {
-            selected.insert(*edge);
-        }
+        boundaries.extend(topology, face, &mut edges);
     }
-    let mut edges = selected.into_iter().collect::<Vec<_>>();
     edges.sort_unstable_by(Ord::cmp);
     edges.dedup();
     edges
@@ -6663,32 +6652,26 @@ fn bind_historical_edge_operand<'a>(
     else {
         return Ok(());
     };
-    let mut preceding_faces = HashSet::new();
-    for face in &topology.faces {
-        preceding_faces.insert(*face);
-    }
+    let preceding_faces = selection::FamilySlots::new(&topology.faces);
     let inserted_faces = result_topology
         .faces
         .iter()
         .copied()
-        .filter(|face| !preceding_faces.contains(face))
+        .filter(|face| !preceding_faces.contains(*face))
         .collect::<Vec<_>>();
-    let mut result_edges = HashSet::new();
-    for edge in &result_topology.edges {
-        result_edges.insert(*edge);
-    }
+    let result_edges = selection::FamilySlots::new(&result_topology.edges);
     let deleted_edges = topology
         .edges
         .iter()
         .copied()
-        .filter(|edge| !result_edges.contains(edge) && chain_deleted_edges.contains(edge))
+        .filter(|edge| !result_edges.contains(*edge) && chain_deleted_edges.contains(edge))
         .collect::<Vec<_>>();
     let updated_edges = topology
         .edges
         .iter()
         .copied()
         .filter(|edge| {
-            result_edges.contains(edge)
+            result_edges.contains(*edge)
                 && (chain_deleted_edges.contains(edge) || chain_updated_edges.contains(edge))
         })
         .collect::<Vec<_>>();
@@ -7456,19 +7439,19 @@ fn walk_body_closures(
     topology: &AsmHistoricalTopology,
     mut reach: impl FnMut(i64, i64),
 ) -> Option<()> {
-    let body_regions = KeyedRows::relations(&topology.body_regions);
-    let region_shells = KeyedRows::relations(&topology.region_shells);
-    let shell_faces = KeyedRows::relations(&topology.shell_faces);
-    let shell_wire_edges = KeyedRows::relations(&topology.shell_wire_edges);
-    let shell_free_vertices = KeyedRows::relations(&topology.shell_free_vertices);
-    let face_loops = KeyedRows::relations(&topology.face_loops);
-    let loop_coedges = KeyedRows::relations(&topology.loop_coedges);
-    let coedges = KeyedRows::new(&topology.coedge_topology, |coedge| coedge.coedge);
-    let edges = KeyedRows::new(&topology.edge_vertices, |edge| edge.edge);
-    let face_surfaces = KeyedRows::new(&topology.face_surfaces, |binding| binding.entity);
-    let edge_curves = KeyedRows::new(&topology.edge_curves, |binding| binding.entity);
-    let coedge_pcurves = KeyedRows::new(&topology.coedge_pcurves, |binding| binding.entity);
-    let vertex_points = KeyedRows::new(&topology.vertex_points, |binding| binding.entity);
+    let body_regions = KeyedRows::new(&topology.body_regions);
+    let region_shells = KeyedRows::new(&topology.region_shells);
+    let shell_faces = KeyedRows::new(&topology.shell_faces);
+    let shell_wire_edges = KeyedRows::new(&topology.shell_wire_edges);
+    let shell_free_vertices = KeyedRows::new(&topology.shell_free_vertices);
+    let face_loops = KeyedRows::new(&topology.face_loops);
+    let loop_coedges = KeyedRows::new(&topology.loop_coedges);
+    let coedges = KeyedRows::new(&topology.coedge_topology);
+    let edges = KeyedRows::new(&topology.edge_vertices);
+    let face_surfaces = KeyedRows::new(&topology.face_surfaces);
+    let edge_curves = KeyedRows::new(&topology.edge_curves);
+    let coedge_pcurves = KeyedRows::new(&topology.coedge_pcurves);
+    let vertex_points = KeyedRows::new(&topology.vertex_points);
     let mut shell_edges = ShellRanks::new(&edges);
     let mut shell_vertices = ShellRanks::new(&vertex_points);
     for &body in &topology.bodies {
@@ -7532,17 +7515,16 @@ struct KeyedRows<'a, T> {
     rows: &'a [T],
     /// Row positions in key order, when the rows are not already in key order.
     order: Option<Vec<usize>>,
-    key: fn(&T) -> i64,
 }
 
-impl<'a, T> KeyedRows<'a, T> {
-    fn new(rows: &'a [T], key: fn(&T) -> i64) -> Self {
-        let order = (!rows.is_sorted_by_key(key)).then(|| {
+impl<'a, T: AsmHistoricalRow> KeyedRows<'a, T> {
+    fn new(rows: &'a [T]) -> Self {
+        let order = (!rows.is_sorted_by_key(T::key)).then(|| {
             let mut order = (0..rows.len()).collect::<Vec<_>>();
-            order.sort_by_key(|&row| key(&rows[row]));
+            order.sort_by_key(|&row| rows[row].key());
             order
         });
-        Self { rows, order, key }
+        Self { rows, order }
     }
 
     fn len(&self) -> usize {
@@ -7558,11 +7540,11 @@ impl<'a, T> KeyedRows<'a, T> {
     /// ranks below `len`.
     fn rank(&self, key: i64) -> Option<usize> {
         let after = match &self.order {
-            Some(order) => order.partition_point(|&row| (self.key)(&self.rows[row]) <= key),
-            None => self.rows.partition_point(|row| (self.key)(row) <= key),
+            Some(order) => order.partition_point(|&row| self.rows[row].key() <= key),
+            None => self.rows.partition_point(|row| row.key() <= key),
         };
         let rank = after.checked_sub(1)?;
-        ((self.key)(self.at(rank)) == key).then_some(rank)
+        (self.at(rank).key() == key).then_some(rank)
     }
 
     fn get(&self, key: i64) -> Option<&'a T> {
@@ -7571,10 +7553,6 @@ impl<'a, T> KeyedRows<'a, T> {
 }
 
 impl<'a> KeyedRows<'a, AsmHistoricalRelation> {
-    fn relations(rows: &'a [AsmHistoricalRelation]) -> Self {
-        Self::new(rows, |relation| relation.owner_ref)
-    }
-
     fn members(&self, owner: i64) -> Option<&'a [i64]> {
         self.get(owner)
             .map(|relation| relation.member_refs.as_slice())
@@ -7590,7 +7568,7 @@ struct ShellRanks {
 }
 
 impl ShellRanks {
-    fn new<T>(rows: &KeyedRows<'_, T>) -> Self {
+    fn new<T: AsmHistoricalRow>(rows: &KeyedRows<'_, T>) -> Self {
         Self {
             visits: vec![0; rows.len()],
             shell: 0,

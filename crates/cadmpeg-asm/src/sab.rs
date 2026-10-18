@@ -187,9 +187,12 @@ impl Record {
     /// Leading name component used for dispatch, such as `cone` or `body`.
     #[must_use]
     pub fn head(&self) -> &str {
-        self.name
-            .split_once('-')
-            .map_or(self.name.as_str(), |(head, _)| head)
+        let end = self
+            .name
+            .bytes()
+            .position(|byte| byte == b'-')
+            .unwrap_or(self.name.len());
+        &self.name[..end]
     }
 
     /// Returns the `i`th payload value token. Payload identifiers leave field
