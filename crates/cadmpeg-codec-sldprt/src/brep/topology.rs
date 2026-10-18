@@ -16,8 +16,8 @@
 //! (u16) and, for most families, an `ordinal`/`seq` (u32). The magic
 //! `c2 bc 92 8f 99 6e 00 00` anchors the bridge, edge-use, and vertex-use
 //! parses. Records are keyed by `attr` within each stream. Same-site merges
-//! preserve partition topology, add missing subordinate deltas records and
-//! typed-FACE-selected bridges, and apply deltas point updates. The decoder
+//! preserve partition records and add missing subordinate deltas records and
+//! typed-FACE-selected bridges. The decoder
 //! merges all admitted sites. It keeps the active site's primary identities
 //! and qualifies the other sites' identities; without an active site, it
 //! qualifies every site's identities.
@@ -608,14 +608,12 @@ impl Tables {
             deltas.vertex_uses,
             "merge Parasolid topology vertex uses",
         )?;
-        for (attr, record) in deltas.points.drain() {
-            ctx.insert_hash_map(
-                &mut self.points,
-                attr,
-                record,
-                "merge Parasolid topology points",
-            )?;
-        }
+        merge_missing(
+            ctx,
+            &mut self.points,
+            deltas.points,
+            "merge Parasolid topology points",
+        )?;
         Ok(())
     }
 }
@@ -941,8 +939,7 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// Scan the stream body for every typed topology record. Successful records do
 /// not advance the scan past their extent because valid records can overlap an
 /// enclosing payload. Family-specific framing gates reject payload coincidences.
-/// Later full records replace earlier records with the same `attr`, matching
-/// partition-base plus deltas-override merge order.
+/// Later full records replace earlier records with the same `attr` in this stream.
 pub(crate) fn scan(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<Tables, CodecError> {
     scan_with_point_framing(ctx, body, false, None, None)
 }
