@@ -147,11 +147,7 @@ fn classified_report_wire_requires_its_primary_format() {
         report
     );
 
-    let contradictory = golden.replacen(
-        "\"transfer\":\"full\"",
-        "\"transfer\":\"container_only\"",
-        1,
-    );
+    let contradictory = golden.replacen("\"transfer\":\"full\"", "\"transfer\":\"container\"", 1);
     let error = serde_json::from_str::<DecodeReport>(&contradictory)
         .expect_err("a container-only report has no geometry outcome to state");
     assert!(
@@ -182,7 +178,7 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
 
     let rendered = serde_json::to_string(&report).unwrap();
     assert!(
-        rendered.contains("\"transfer\":\"container_only\""),
+        rendered.contains("\"transfer\":\"container\""),
         "{rendered}"
     );
     assert!(!rendered.contains("geometry_transferred"), "{rendered}");
@@ -208,7 +204,7 @@ fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
     );
 
     let mut container_only = base.clone();
-    container_only["transfer"]["transfer"] = serde_json::json!("container_only");
+    container_only["transfer"]["transfer"] = serde_json::json!("container");
     let error = serde_json::from_value::<DecodeReport>(container_only.clone())
         .expect_err("a container-only report has no geometry outcome");
     assert!(
@@ -220,10 +216,19 @@ fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
         .as_object_mut()
         .expect("map")
         .remove("geometry_transferred");
-    let report = serde_json::from_value::<DecodeReport>(container_only).expect("container only");
+    let report =
+        serde_json::from_value::<DecodeReport>(container_only.clone()).expect("container only");
     assert_eq!(report.transfer, DecodeTransfer::ContainerOnly {});
     let wire = serde_json::to_value(&report).unwrap();
-    assert_eq!(wire["transfer"]["transfer"], "container_only");
+    assert_eq!(wire["transfer"]["transfer"], "container");
+    assert_eq!(
+        wire["transfer"]["transfer"],
+        serde_json::to_value(cadmpeg_core::decode::DecodeDepth::Container).unwrap(),
+        "the transfer tag spells the depth it delivered"
+    );
+    container_only["transfer"]["transfer"] = serde_json::json!("container_only");
+    serde_json::from_value::<DecodeReport>(container_only)
+        .expect_err("the depth token is `container`");
     assert!(wire["transfer"].get("geometry_transferred").is_none());
 
     let mut without_outcome = base;
