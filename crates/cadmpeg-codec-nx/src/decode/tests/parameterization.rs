@@ -5,7 +5,9 @@
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use crate::decode::blend::blend_surface_point;
-use crate::decode::offset::{offset_surface_parameters, offset_surface_parameters_with_tolerance};
+use crate::decode::offset::test_support::{
+    offset_surface_parameters, offset_surface_parameters_with_tolerance,
+};
 use crate::decode::support_uv::{complete_ext11_support_uv, SerializedSupportUv};
 use crate::test_support::test_bytes::put_ref;
 use crate::test_support::test_deltas::bspline_partition_stream;

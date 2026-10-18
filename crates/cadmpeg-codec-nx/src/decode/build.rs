@@ -7,9 +7,9 @@ use super::emit::{
     unknown_stream_metadata,
 };
 use super::geometry_work::{
-    GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
-    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
-    MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+    model_geometry_work_limit, GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK,
+    MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK, MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
+    MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK, MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
 };
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
 use super::pcurves::{
@@ -186,7 +186,7 @@ pub(super) fn try_decode_geometry(
         None => None,
     };
     let preselection = rmfastload_preselection.or(terminal_preselection);
-    let chart_count = scan
+    let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
         .enumerate()
@@ -197,31 +197,50 @@ pub(super) fn try_decode_geometry(
                     .is_none_or(|(_, selected, _)| selected.contains(si))
         })
         .map(|(si, _)| {
-            parsed
-                .stream(si)
-                .view_for_geometry()
-                .intersections
-                .curves
-                .len()
+            let view = parsed.stream(si).view_for_geometry();
+            (view.intersections.curves.len(), view.graph.node_count())
         })
-        .sum::<usize>();
+        .fold(
+            (0_usize, 0_usize),
+            |(charts, records), (stream_charts, stream_records)| {
+                (charts + stream_charts, records + stream_records)
+            },
+        );
     let transfer_limit = completion_transfer_budget_limit(chart_count);
     let support_uv_limit = support_uv_completion_budget_limit(chart_count);
+    let geometry_limits = crate::decode::report::GeometryWorkLimits {
+        adaptive: model_geometry_work_limit(MAX_ADAPTIVE_GEOMETRY_WORK, geometry_record_count),
+        pcurve_completion: model_geometry_work_limit(
+            MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
+            geometry_record_count,
+        ),
+        serialized_support_uv: model_geometry_work_limit(
+            MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
+            geometry_record_count,
+        ),
+        support_uv_completion: model_geometry_work_limit(
+            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+            geometry_record_count,
+        ),
+        coupled_support_uv: model_geometry_work_limit(
+            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+            geometry_record_count,
+        ),
+    };
     let exact_transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
     let transfer_budget = WorkBudget::new(transfer_limit);
     let support_uv_validation_budget = WorkBudget::new(support_uv_limit);
     let support_budget = WorkBudget::new(support_uv_limit);
     let coupled_support_budget = WorkBudget::new(support_uv_limit);
-    let adaptive_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
+    let adaptive_geometry_budget = GeometryWorkBudget::from_context(ctx, geometry_limits.adaptive);
     let completion_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_PCURVE_COMPLETION_GEOMETRY_WORK);
+        GeometryWorkBudget::from_context(ctx, geometry_limits.pcurve_completion);
     let support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK);
+        GeometryWorkBudget::from_context(ctx, geometry_limits.support_uv_completion);
     let coupled_support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK);
+        GeometryWorkBudget::from_context(ctx, geometry_limits.coupled_support_uv);
     let serialized_support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK);
+        GeometryWorkBudget::from_context(ctx, geometry_limits.serialized_support_uv);
     let mut support_uv_lane_geometry_exhausted = false;
     let mut intersection_index = IntersectionIncidenceIndex::default();
     let mut model_endpoint_witnesses = EndpointWitnesses::new();
@@ -1124,7 +1143,7 @@ pub(super) fn try_decode_geometry(
         // whole-lane proofs while preventing one recursive support from
         // starving every later attachment candidate.
         let isolate_validation_lanes =
-            completion_geometry_budget.remaining() <= MAX_PCURVE_COMPLETION_GEOMETRY_WORK / 2;
+            completion_geometry_budget.remaining() <= geometry_limits.pcurve_completion / 2;
         let support_uv_validation =
             invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
                 ctx,
@@ -1307,6 +1326,7 @@ pub(super) fn try_decode_geometry(
         support_uv_lane_geometry_exhausted,
         transfer_limit,
         support_uv_limit,
+        geometry_limits,
     };
     let adaptive_geometry_exhausted = adaptive_geometry_budget.exhausted();
 

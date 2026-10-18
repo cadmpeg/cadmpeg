@@ -181,7 +181,7 @@ fn swift_pattern_depth_cap_drops_the_targets() {
         None
     );
     assert_eq!(index.caps(), DEPTH_CAPPED);
-    let [loss] = index.caps().losses().try_into().unwrap();
+    let [loss] = index.caps().losses(index.work_limit).try_into().unwrap();
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::PmiSwiftFeatureWalkCapped.kind()

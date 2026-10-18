@@ -158,9 +158,12 @@ fn jt_node_path_skips_after_the_visit_bound() {
 /// Tessellate one triangle bound to a shape node with 2^`levels` instance
 /// paths: two group nodes per level, each the parent of both nodes one level
 /// below. Without a vertex-records header the mesh does not resolve.
+/// `leading_mesh_header` adds a mesh named `leading-mesh` before it that
+/// reads that coordinate header.
 fn tessellate_scene(
     levels: u32,
     with_vertex_header: bool,
+    leading_mesh_header: Option<&str>,
 ) -> (usize, Vec<cadmpeg_ir::report::loss::LossNote>) {
     use super::super::{
         DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedElementWire,
@@ -185,17 +188,24 @@ fn tessellate_scene(
         }
     }
 
-    let mesh = DisplayJtPolygonMesh::try_from(DisplayJtPolygonMeshWire {
-        id: "mesh".into(),
-        topology: "topology".into(),
-        coordinate_header: "coordinate-header".into(),
-        polygons: vec![vec![0, 1, 2]],
-        vertex_attribute_indices: vec![vec![None; 3]],
-        polygon_groups: vec![0],
-        polygon_flags: vec![0],
-        source_offset: 0,
-    })
-    .expect("valid mesh");
+    let mesh = |id: &str, coordinate_header: &str| {
+        DisplayJtPolygonMesh::try_from(DisplayJtPolygonMeshWire {
+            id: id.into(),
+            topology: "topology".into(),
+            coordinate_header: coordinate_header.into(),
+            polygons: vec![vec![0, 1, 2]],
+            vertex_attribute_indices: vec![vec![None; 3]],
+            polygon_groups: vec![0],
+            polygon_flags: vec![0],
+            source_offset: 0,
+        })
+        .expect("valid mesh")
+    };
+    let meshes = leading_mesh_header
+        .map(|header| mesh("leading-mesh", header))
+        .into_iter()
+        .chain([mesh("mesh", "coordinate-header")])
+        .collect::<Vec<_>>();
     let coordinates = DisplayJtVertexCoordinates {
         id: "coordinates".into(),
         header: "coordinate-header".into(),
@@ -314,7 +324,7 @@ fn tessellate_scene(
         source_offset: 0,
     };
     let inputs = crate::native::display_jt::DisplayJtTessellationInputs {
-        meshes: std::slice::from_ref(&mesh),
+        meshes: &meshes,
         coordinates: std::slice::from_ref(&coordinates),
         normals: &[],
         colors: &[],
@@ -346,11 +356,11 @@ fn tessellate_scene(
 
 #[test]
 fn jt_tessellations_report_the_visit_bound_as_a_scan_loss() {
-    let (tessellations, losses) = tessellate_scene(2, true);
+    let (tessellations, losses) = tessellate_scene(2, true, None);
     assert_eq!(tessellations, 4);
     assert!(losses.is_empty());
 
-    let (tessellations, losses) = tessellate_scene(16, true);
+    let (tessellations, losses) = tessellate_scene(16, true, None);
     assert_eq!(tessellations, 0);
     assert_eq!(losses.len(), 1);
     assert_eq!(
@@ -363,8 +373,19 @@ fn jt_tessellations_report_the_visit_bound_as_a_scan_loss() {
 }
 
 #[test]
+fn jt_tessellations_report_a_bounded_shape_node_once() {
+    let (tessellations, losses) = tessellate_scene(16, true, Some("coordinate-header"));
+    assert_eq!(tessellations, 0);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::NxLossCode::SourceScanBounded.kind()
+    );
+}
+
+#[test]
 fn jt_tessellations_report_an_unresolved_mesh_as_dropped() {
-    let (tessellations, losses) = tessellate_scene(2, false);
+    let (tessellations, losses) = tessellate_scene(2, false, None);
     assert_eq!(tessellations, 0);
     assert_eq!(losses.len(), 1);
     assert_eq!(
@@ -372,6 +393,18 @@ fn jt_tessellations_report_an_unresolved_mesh_as_dropped() {
         crate::loss::NxLossCode::DisplayJtTessellationsDropped.kind()
     );
     assert!(losses[0].message.contains("polygon mesh mesh"));
+}
+
+#[test]
+fn jt_tessellations_skip_only_the_unresolved_mesh() {
+    let (tessellations, losses) = tessellate_scene(2, true, Some("missing-header"));
+    assert_eq!(tessellations, 4);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::NxLossCode::DisplayJtTessellationsDropped.kind()
+    );
+    assert!(losses[0].message.contains("polygon mesh leading-mesh"));
 }
 
 #[test]

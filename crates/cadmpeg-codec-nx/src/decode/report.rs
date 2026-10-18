@@ -21,11 +21,6 @@ use super::feature_completeness::{
     sweep_definition_is_incomplete, thicken_definition_is_incomplete,
     trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
 };
-use super::geometry_work::{
-    MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
-    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
-    MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
-};
 use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
 use super::support_uv::pcurve_requires_completion;
 use super::{Counts, Scan};
@@ -137,6 +132,17 @@ pub(super) struct CompletionBudgetStatus {
     pub(super) support_uv_lane_geometry_exhausted: bool,
     pub(super) transfer_limit: usize,
     pub(super) support_uv_limit: usize,
+    pub(super) geometry_limits: GeometryWorkLimits,
+}
+
+/// Limits of the model-wide geometry budgets, scaled to the selected records.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct GeometryWorkLimits {
+    pub(super) adaptive: usize,
+    pub(super) pcurve_completion: usize,
+    pub(super) serialized_support_uv: usize,
+    pub(super) support_uv_completion: usize,
+    pub(super) coupled_support_uv: usize,
 }
 
 // Keep the independent report facts explicit at the decode/report boundary.
@@ -245,19 +251,24 @@ fn push_bounded_completion_losses(
             completion_budget.support_uv_limit,
             completion_budget.support_uv_limit,
             completion_budget.support_uv_limit,
-            MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
-            MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
-            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
-            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+            completion_budget.geometry_limits.pcurve_completion,
+            completion_budget.geometry_limits.serialized_support_uv,
+            completion_budget.geometry_limits.support_uv_completion,
+            completion_budget.geometry_limits.coupled_support_uv,
             unresolved_intersection_lanes,
         ));
     }
 
     if adaptive_geometry_exhausted {
-        push_report_loss(losses, NxLossCode::GeometryAdaptiveWorkBounded, format_args!(
-            "Model-wide adaptive geometry certification stopped at its {MAX_ADAPTIVE_GEOMETRY_WORK}-unit work bound; \
+        push_report_loss(
+            losses,
+            NxLossCode::GeometryAdaptiveWorkBounded,
+            format_args!(
+                "Model-wide adaptive geometry certification stopped at its {}-unit work bound; \
              unresolved adaptive geometry certification results were left untyped.",
-        ));
+                completion_budget.geometry_limits.adaptive,
+            ),
+        );
     }
 }
 
@@ -1073,6 +1084,7 @@ mod tests {
                 support_uv_lane_geometry_exhausted: false,
                 transfer_limit: 0,
                 support_uv_limit: 0,
+                geometry_limits: super::GeometryWorkLimits::default(),
             };
             let adaptive_geometry_exhausted = adaptive.exhausted();
             assert!(completion_budget.pcurves.geometry_exhausted);

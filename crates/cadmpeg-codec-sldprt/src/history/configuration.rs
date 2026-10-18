@@ -217,19 +217,42 @@ pub(crate) fn project_compact_and_generated(
     Ok(())
 }
 
-/// History records the configuration pass may copy and enrich in total. Each
-/// configuration charges one unit per history, history content item and
-/// feature; configurations left when it runs out keep empty states.
+/// Floor of the history records the configuration pass may copy and enrich
+/// in total. Each configuration charges one unit per history, history content
+/// item and feature; configurations left when it runs out keep empty states.
 const CONFIGURATION_PROJECTION_WORK: usize = 1 << 26;
 
-/// The loss for configurations the pass left unprojected.
+/// Work the configuration pass may spend per history record and
+/// configuration it walks, above [`CONFIGURATION_PROJECTION_WORK`].
+const CONFIGURATION_PROJECTION_WORK_PER_ROW: usize = 64;
+
+/// The configuration pass limit for `configurations` over `histories`.
+pub(crate) fn configuration_projection_work_limit(
+    configurations: usize,
+    histories: &[FeatureHistory],
+) -> usize {
+    projection_work_limit(
+        configuration_history_units(histories).and_then(|units| units.checked_add(configurations)),
+    )
+}
+
+/// The configuration pass limit over `rows`, where `None` means past `usize`.
+fn projection_work_limit(rows: Option<usize>) -> usize {
+    rows.and_then(|rows| rows.checked_mul(CONFIGURATION_PROJECTION_WORK_PER_ROW))
+        .map_or(CONFIGURATION_PROJECTION_WORK, |work| {
+            work.max(CONFIGURATION_PROJECTION_WORK)
+        })
+}
+
+/// The loss for configurations a pass of `work_limit` left unprojected.
 pub(crate) fn configuration_projection_capped_loss(
     unprojected: usize,
+    work_limit: usize,
 ) -> cadmpeg_ir::report::loss::LossNote {
     crate::loss::SldprtLossCode::ConfigProjectionWorkCapped.note(format!(
         "{unprojected} configuration(s) were left without projected parameter values and \
          feature states because the configuration pass exceeded the local work cap \
-         CONFIGURATION_PROJECTION_WORK ({CONFIGURATION_PROJECTION_WORK})."
+         CONFIGURATION_PROJECTION_WORK ({work_limit})."
     ))
 }
 
@@ -246,7 +269,7 @@ fn configuration_history_units(histories: &[FeatureHistory]) -> Option<usize> {
 /// Reproject configuration-local evaluated parameters and feature operations from native lanes.
 ///
 /// Returns how many configurations were left unprojected because the pass
-/// reached [`CONFIGURATION_PROJECTION_WORK`].
+/// reached [`configuration_projection_work_limit`].
 pub(crate) fn project_configuration_design_states(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -255,6 +278,7 @@ pub(crate) fn project_configuration_design_states(
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let work_limit = configuration_projection_work_limit(ir.model.configurations.len(), histories);
     project_configuration_design_states_within(
         ctx,
         ir,
@@ -264,7 +288,7 @@ pub(crate) fn project_configuration_design_states(
             pmi_dimensions,
         },
         form_padding,
-        CONFIGURATION_PROJECTION_WORK,
+        work_limit,
     )
 }
 

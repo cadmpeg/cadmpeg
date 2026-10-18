@@ -114,10 +114,15 @@ pub(crate) fn validate_native(
                     });
                 }
             }
-            for missing in configurations.difference(&seen_configurations) {
+            for missing in history
+                .configurations
+                .iter()
+                .map(|configuration| configuration.id.as_str())
+                .filter(|id| seen_configurations.insert(*id))
+            {
                 findings.push(Finding {
-                    related: (*missing != history.id.as_str())
-                        .then(|| (*missing).to_owned())
+                    related: (missing != history.id.as_str())
+                        .then(|| missing.to_owned())
                         .into_iter()
                         .collect(),
                     check: Check::NativeLinks,
@@ -126,10 +131,16 @@ pub(crate) fn validate_native(
                     entity: Some(history.id.clone()),
                 });
             }
-            for missing in root_features.difference(&seen_features) {
+            for missing in history
+                .features
+                .iter()
+                .filter(|feature| feature.tree_parent.is_none())
+                .map(|feature| feature.id.as_str())
+                .filter(|id| seen_features.insert(*id))
+            {
                 findings.push(Finding {
-                    related: (*missing != history.id.as_str())
-                        .then(|| (*missing).to_owned())
+                    related: (missing != history.id.as_str())
+                        .then(|| missing.to_owned())
                         .into_iter()
                         .collect(),
                     check: Check::NativeLinks,

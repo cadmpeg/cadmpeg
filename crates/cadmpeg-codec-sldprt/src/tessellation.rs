@@ -34,9 +34,37 @@ const EPS_POLE_BOX_ROUNDING: f64 = 1.0e-9;
 const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
 const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
-/// Work one surface-owner pass may spend on trims, containment tests and
-/// vertex measures. Tables left when it runs out stay unassigned.
+/// Floor of the work one surface-owner pass may spend on trims, containment
+/// tests and vertex measures. Tables left when it runs out stay unassigned.
 const TESSELLATION_OWNER_WORK: usize = 1 << 30;
+
+/// Work the surface-owner pass may spend per row it walks, above
+/// [`TESSELLATION_OWNER_WORK`]. The rows are the model's faces and coedges
+/// and the vertices and triangles of the tables that need an owner.
+const TESSELLATION_OWNER_WORK_PER_ROW: usize = 1 << 17;
+
+/// The rows the surface-owner pass walks, or `None` past `usize`.
+fn tessellation_owner_rows(model: &cadmpeg_ir::document::Model) -> Option<usize> {
+    let mut rows = model.faces.len().checked_add(model.coedges.len())?;
+    for mesh in model
+        .tessellations
+        .iter()
+        .filter(|mesh| needs_surface_owner(mesh))
+    {
+        rows = rows
+            .checked_add(mesh.vertex_count())?
+            .checked_add(mesh.triangle_count())?;
+    }
+    Some(rows)
+}
+
+/// The owner work over `rows`, where `None` means past `usize`.
+fn tessellation_owner_work_limit(rows: Option<usize>) -> usize {
+    rows.and_then(|rows| rows.checked_mul(TESSELLATION_OWNER_WORK_PER_ROW))
+        .map_or(TESSELLATION_OWNER_WORK, |work| {
+            work.max(TESSELLATION_OWNER_WORK)
+        })
+}
 
 /// Charges a step over `left` × `right` items. A product past `usize` cannot
 /// be paid, so it exhausts the budget.
@@ -866,14 +894,16 @@ impl MeshSamples {
 /// display quantization tolerance; an unconstrained nearest-support fit is
 /// not an ownership witness.
 ///
-/// The pass spends at most [`TESSELLATION_OWNER_WORK`]. Once spent, the
+/// The pass spends at most [`TESSELLATION_OWNER_WORK_PER_ROW`] per row it
+/// walks, and never less than [`TESSELLATION_OWNER_WORK`]. Once spent, the
 /// remaining tables stay unassigned and one loss counts them.
 pub(crate) fn assign_unique_surface_owners(
     ctx: &DecodeContext<'_>,
     model: &mut cadmpeg_ir::document::Model,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
-    assign_unique_surface_owners_within(ctx, model, losses, TESSELLATION_OWNER_WORK)
+    let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(model));
+    assign_unique_surface_owners_within(ctx, model, losses, work_limit)
 }
 
 fn assign_unique_surface_owners_within(

@@ -1061,7 +1061,10 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
     );
     assert!(capped.model.configurations[1].feature_states.is_empty());
     assert!(capped.model.configurations[1].parameter_values.is_empty());
-    let loss = super::configuration_projection_capped_loss(unprojected);
+    let loss = super::configuration_projection_capped_loss(
+        unprojected,
+        super::CONFIGURATION_PROJECTION_WORK,
+    );
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::ConfigProjectionWorkCapped.kind()
@@ -1073,4 +1076,25 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
          CONFIGURATION_PROJECTION_WORK (67108864)."
     );
     Ok(())
+}
+
+#[test]
+fn configuration_projection_work_scales_with_rows_above_the_floor() {
+    use super::{
+        projection_work_limit, CONFIGURATION_PROJECTION_WORK, CONFIGURATION_PROJECTION_WORK_PER_ROW,
+    };
+    let past_floor = CONFIGURATION_PROJECTION_WORK / CONFIGURATION_PROJECTION_WORK_PER_ROW * 4;
+    assert_eq!(
+        projection_work_limit(Some(10)),
+        CONFIGURATION_PROJECTION_WORK
+    );
+    assert_eq!(
+        projection_work_limit(Some(past_floor)),
+        past_floor * CONFIGURATION_PROJECTION_WORK_PER_ROW
+    );
+    assert_eq!(
+        projection_work_limit(Some(usize::MAX)),
+        CONFIGURATION_PROJECTION_WORK
+    );
+    assert_eq!(projection_work_limit(None), CONFIGURATION_PROJECTION_WORK);
 }

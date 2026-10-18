@@ -109,6 +109,9 @@ pub(crate) enum SldprtLossCode {
     TopologyBodyHierarchyDerived,
     /// One face owner has multiple non-equivalent face-use bridges.
     TopologyFaceOwnerAmbiguous,
+    /// Shared-edge coedge senses give an odd-parity face cycle, so some face
+    /// sense contradicts one of its edges.
+    TopologyFaceSenseConflict,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
     /// A NURBS edge's vertex range is off its bound surface; no pcurve is derived.
@@ -206,6 +209,7 @@ impl SldprtLossCode {
         Self::TessellationOwnerWorkCapped,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceOwnerAmbiguous,
+        Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
@@ -273,6 +277,7 @@ impl SldprtLossCode {
             Self::TessellationOwnerWorkCapped => "tessellation.owner-work-capped",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
+            Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
@@ -352,6 +357,7 @@ impl SldprtLossCode {
             | Self::TessellationOwnerWorkCapped
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceOwnerAmbiguous
+            | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
@@ -381,9 +387,9 @@ impl SldprtLossCode {
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
-            Self::TopologyBodyHierarchyDerived | Self::TopologyFaceOwnerAmbiguous => {
-                LossTaxonomy::TopologyGaugeSubstituted
-            }
+            Self::TopologyBodyHierarchyDerived
+            | Self::TopologyFaceOwnerAmbiguous
+            | Self::TopologyFaceSenseConflict => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
@@ -611,6 +617,7 @@ mod tests {
                 "tessellation.owner-work-capped",
                 "topology.body-hierarchy-derived",
                 "topology.face-owner-ambiguous",
+                "topology.face-sense-conflict",
                 "topology.face-unclaimed",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",

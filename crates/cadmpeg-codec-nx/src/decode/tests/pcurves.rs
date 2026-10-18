@@ -5,13 +5,13 @@ use crate::decode::blend::{surface_contact_direction, surface_offset_lineage};
 use crate::decode::build::{
     rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
 };
-use crate::decode::emit::orient_edge_range;
-use crate::decode::offset::{
-    certified_offset_cache_fit, subdivide_offset_rectangle, translation_net_normal,
-};
+use crate::decode::emit::test_support::orient_edge_range;
+use crate::decode::offset::test_support::certified_offset_cache_fit;
+use crate::decode::offset::{subdivide_offset_rectangle, translation_net_normal};
+use crate::decode::pcurves::test_support::{exact_analytic_isocurve_pcurve, pcurve_matches_edge};
 use crate::decode::pcurves::{
     coincident_pcurve_pair, complete_tolerant_intersection_pcurves_from_serialized_branches,
-    exact_boundary_pcurve, orient_tolerant_intersection_pcurve, pcurve_matches_edge,
+    exact_boundary_pcurve, orient_tolerant_intersection_pcurve,
 };
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
@@ -225,33 +225,15 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         ]);
 
         let range = [0.0, std::f64::consts::TAU];
-        let cone_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
-            ctx,
-            &ir,
-            &cone_ellipse,
-            &cone,
-            range,
-            1.0e-12,
-        )
-        .expect("cone ellipse");
-        let sphere_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
-            ctx,
-            &ir,
-            &sphere_circle,
-            &sphere,
-            range,
-            1.0e-12,
-        )
-        .expect("sphere parallel");
-        let torus_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
-            ctx,
-            &ir,
-            &torus_circle,
-            &torus,
-            range,
-            1.0e-12,
-        )
-        .expect("torus meridian");
+        let cone_pcurve =
+            exact_analytic_isocurve_pcurve(ctx, &ir, &cone_ellipse, &cone, range, 1.0e-12)
+                .expect("cone ellipse");
+        let sphere_pcurve =
+            exact_analytic_isocurve_pcurve(ctx, &ir, &sphere_circle, &sphere, range, 1.0e-12)
+                .expect("sphere parallel");
+        let torus_pcurve =
+            exact_analytic_isocurve_pcurve(ctx, &ir, &torus_circle, &torus, range, 1.0e-12)
+                .expect("torus meridian");
         assert!(matches!(sphere_pcurve, PcurveGeometry::Line(line_pcurve)
             if {
                 let origin = line_pcurve.origin().as_raw();

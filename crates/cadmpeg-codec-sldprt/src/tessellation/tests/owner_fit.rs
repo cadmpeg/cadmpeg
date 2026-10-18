@@ -213,3 +213,24 @@ fn surface_residual_is_the_measured_residual() {
         }
     }
 }
+
+#[test]
+fn owner_work_scales_with_rows_above_the_floor() {
+    use crate::tessellation::{
+        tessellation_owner_work_limit, TESSELLATION_OWNER_WORK, TESSELLATION_OWNER_WORK_PER_ROW,
+    };
+    let past_floor = TESSELLATION_OWNER_WORK / TESSELLATION_OWNER_WORK_PER_ROW * 4;
+    assert_eq!(
+        tessellation_owner_work_limit(Some(10)),
+        TESSELLATION_OWNER_WORK
+    );
+    assert_eq!(
+        tessellation_owner_work_limit(Some(past_floor)),
+        past_floor * TESSELLATION_OWNER_WORK_PER_ROW
+    );
+    assert_eq!(
+        tessellation_owner_work_limit(Some(usize::MAX)),
+        TESSELLATION_OWNER_WORK
+    );
+    assert_eq!(tessellation_owner_work_limit(None), TESSELLATION_OWNER_WORK);
+}

@@ -29,8 +29,21 @@ const EPS_SWIFT_APPROXIMATELY_EQUAL_E9: f64 = 1.0e-9;
 const ROOT_CLASS: &str = "PrizMetrik.GdtAnalysisSupport.GdtPart";
 const ENTITY_TOKEN: &[u8] = b"\x06Entity";
 const MAX_DEPTH: usize = 32;
-/// Feature visits one projection may spend across all of its feature walks.
+/// Floor of the feature visits one projection may spend across all of its
+/// feature walks.
 const SWIFT_FEATURE_WALK_WORK: usize = 1 << 24;
+/// Feature visits a projection may spend per feature and annotation of its
+/// root, above [`SWIFT_FEATURE_WALK_WORK`].
+const SWIFT_FEATURE_WALK_WORK_PER_ROW: usize = 1024;
+
+/// The walk work of a projection over `rows` features and annotations, where
+/// `None` means past `usize`.
+fn swift_feature_walk_work_limit(rows: Option<usize>) -> usize {
+    rows.and_then(|rows| rows.checked_mul(SWIFT_FEATURE_WALK_WORK_PER_ROW))
+        .map_or(SWIFT_FEATURE_WALK_WORK, |work| {
+            work.max(SWIFT_FEATURE_WALK_WORK)
+        })
+}
 const DIAMETER_EQUIVALENCE_MM: f64 = 1.0e-5;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -263,11 +276,13 @@ struct FeatureIndex<'a> {
     entities: BTreeMap<&'a str, &'a Entity>,
     cyclic: BTreeSet<&'a str>,
     work: WorkBudget,
+    work_limit: usize,
     depth_capped: Cell<usize>,
     work_capped: Cell<usize>,
 }
 
 impl<'a> FeatureIndex<'a> {
+    #[cfg(test)]
     fn new(entities: BTreeMap<&'a str, &'a Entity>) -> Self {
         Self::with_work_limit(entities, SWIFT_FEATURE_WALK_WORK)
     }
@@ -277,6 +292,7 @@ impl<'a> FeatureIndex<'a> {
             cyclic: cyclic_features(&entities),
             entities,
             work: WorkBudget::new(limit),
+            work_limit: limit,
             depth_capped: Cell::new(0),
             work_capped: Cell::new(0),
         }
@@ -333,7 +349,7 @@ struct WalkCaps {
 }
 
 impl WalkCaps {
-    fn losses(self) -> Vec<LossNote> {
+    fn losses(self, work_limit: usize) -> Vec<LossNote> {
         let mut losses = Vec::new();
         if self.depth > 0 {
             losses.push(
@@ -349,7 +365,7 @@ impl WalkCaps {
             losses.push(
                 crate::loss::SldprtLossCode::PmiSwiftFeatureWalkCapped.note(format!(
                     "{} SWIFT feature walk(s) stopped at the local work cap \
-                     SWIFT_FEATURE_WALK_WORK ({SWIFT_FEATURE_WALK_WORK}); the targets or \
+                     SWIFT_FEATURE_WALK_WORK ({work_limit}); the targets or \
                      nominal values they feed were left unresolved.",
                     self.work
                 )),
@@ -551,7 +567,7 @@ pub(crate) fn annotations(
         &rendered_dimensions,
         pattern_hole_nominals,
     )?;
-    losses.extend(projection.walk_caps.losses());
+    losses.extend(projection.walk_caps.losses(projection.walk_work_limit));
     let projected = projection.annotations;
     let positions_by_prefix =
         positions_by_id_prefix(projected.iter().map(|annotation| annotation.id.as_str()));
@@ -1057,6 +1073,7 @@ struct AnnotationProjection {
     annotations: Vec<PmiAnnotation>,
     unsupported: BTreeMap<String, usize>,
     walk_caps: WalkCaps,
+    walk_work_limit: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -1289,6 +1306,7 @@ fn project_with_topology(
         annotations: projected,
         unsupported,
         walk_caps: feature_index.caps(),
+        walk_work_limit: feature_index.work_limit,
     })
 }
 
@@ -2908,7 +2926,8 @@ fn feature_index(root: &Entity) -> FeatureIndex<'_> {
             index.insert(reference.id.as_str(), entity);
         }
     }
-    FeatureIndex::new(index)
+    let rows = index.len().checked_add(root.annotations.entities.len());
+    FeatureIndex::with_work_limit(index, swift_feature_walk_work_limit(rows))
 }
 
 fn targets(

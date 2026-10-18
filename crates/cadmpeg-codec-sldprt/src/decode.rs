@@ -3889,8 +3889,15 @@ fn project_design_history(
         form_padding,
     )?;
     if unprojected > 0 {
-        losses
-            .push(crate::history::configuration::configuration_projection_capped_loss(unprojected));
+        losses.push(
+            crate::history::configuration::configuration_projection_capped_loss(
+                unprojected,
+                crate::history::configuration::configuration_projection_work_limit(
+                    ir.model.configurations.len(),
+                    histories,
+                ),
+            ),
+        );
     }
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
