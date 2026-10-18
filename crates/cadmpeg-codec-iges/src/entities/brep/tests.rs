@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -8,9 +9,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
-use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
+use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::Edge;
+use cadmpeg_ir::topology::{Coedge, Edge, Sense};
 use cadmpeg_ir::CadIr;
 
 use crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file_with_first_edge;
@@ -607,4 +608,190 @@ fn brep_projected_pcurve_use_adds_one_model_pcurve() {
         super::project_pcurve_uses(&mut candidate, &uses, resolved, None, &stem, &ctx).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(candidate.model().pcurves.len(), 1);
+}
+
+/// An open shell whose loop repeats one edge `uses` times, each use naming
+/// the same composite pcurve: a degree-1, 64-span child joined to a
+/// single-span degree-127 child.
+fn shared_composite_pcurve_loop_file(uses: usize) -> Vec<u8> {
+    use crate::test_support::test_curves_and_surfaces::planar_nurbs_parameters;
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+
+    let entity = |entity_type, form, label: &str, status, parameters: String| OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status,
+        parameters,
+    };
+    let loop_uses = vec!["0,11,1,1,1,0,17"; uses].join(",");
+    owned_test_file(&[
+        entity(116, 0, "LOCATION", "00010000", "116,0,0,0,0;".into()),
+        entity(123, 0, "NORMAL", "00010000", "123,0,0,1;".into()),
+        entity(190, 0, "SURFACE", "00010000", "190,1,3;".into()),
+        entity(110, 0, "EDGE1", "00010000", "110,0,0,0,1,0,0;".into()),
+        entity(502, 1, "VERTICES", "00010000", "502,2,0,0,0,1,0,0;".into()),
+        entity(504, 1, "EDGES", "00010001", "504,1,7,9,1,9,2;".into()),
+        entity(
+            126,
+            0,
+            "LOW",
+            "00010500",
+            planar_nurbs_parameters(1, 64, false, |index| [f64::from(index) / 128.0, 0.0]),
+        ),
+        entity(
+            126,
+            0,
+            "HIGH",
+            "00010500",
+            planar_nurbs_parameters(127, 1, false, |index| [0.5 + f64::from(index) / 254.0, 0.0]),
+        ),
+        entity(102, 0, "PCURVE", "00010500", "102,2,13,15;".into()),
+        entity(
+            508,
+            1,
+            "LOOP",
+            "00010000",
+            format!("508,{uses},{loop_uses};"),
+        ),
+        entity(510, 1, "FACE", "00010000", "510,5,1,1,19;".into()),
+        entity(514, 2, "SHELL", "00000000", "514,1,21,1;".into()),
+    ])
+}
+
+#[test]
+fn decode_resolves_a_pcurve_shared_by_many_edge_uses_like_a_single_reference() {
+    // Raising 64 spans to degree 127 needs 2^20 blends; resolving the
+    // composite per edge use would cost that once for each use.
+    let decode = |uses| {
+        IgesCodec
+            .decode(
+                &mut Cursor::new(shared_composite_pcurve_loop_file(uses)),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    let use_pcurves = |result: &cadmpeg_ir::codec::DecodeResult| {
+        let model = &result.ir().model;
+        model
+            .coedges
+            .iter()
+            .map(|coedge| {
+                assert_eq!(coedge.pcurves.len(), 1);
+                model
+                    .pcurves
+                    .iter()
+                    .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+                    .map(|pcurve| (pcurve.geometry.clone(), pcurve.metadata.clone()))
+                    .unwrap()
+            })
+            .collect::<Vec<_>>()
+    };
+    let single = decode(1);
+    assert!(
+        single.report().losses.is_empty(),
+        "{:#?}",
+        single.report().losses
+    );
+    let expected = use_pcurves(&single);
+    assert_eq!(expected.len(), 1);
+    assert!(matches!(
+        &expected[0].0,
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } if nurbs.degree() == 127
+    ));
+
+    let uses = 16;
+    let shared = decode(uses);
+    assert!(
+        shared.report().losses.is_empty(),
+        "{:#?}",
+        shared.report().losses
+    );
+    assert!(shared
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "iges:model:body#D23"));
+    assert_eq!(use_pcurves(&shared), vec![expected[0].clone(); uses]);
+}
+
+fn test_coedge(id: &str, sense: Sense) -> Coedge {
+    Coedge {
+        id: CoedgeId::mint(id).unwrap(),
+        owner_loop: LoopId::mint("test:model:loop#loop").unwrap(),
+        edge: EdgeId::mint("test:model:edge#edge").unwrap(),
+        radial_next: CoedgeId::mint(id).unwrap(),
+        sense,
+        pcurves: Vec::new(),
+        use_curve: None,
+    }
+}
+
+fn scan_coedge<'a>(coedges: &'a [Coedge], id: &CoedgeId) -> Option<&'a Coedge> {
+    coedges.iter().find(|coedge| coedge.id == *id)
+}
+
+#[test]
+fn coedge_index_lookups_match_the_unindexed_scan() {
+    let first = "test:model:coedge#first";
+    let second = "test:model:coedge#second";
+    let missing = "test:model:coedge#missing";
+    let coedges = vec![
+        test_coedge(first, Sense::Forward),
+        test_coedge(first, Sense::Reversed),
+        test_coedge(second, Sense::Reversed),
+    ];
+    let positions = super::first_coedge_positions(&coedges);
+    for id in [first, second, missing] {
+        let id = CoedgeId::mint(id).unwrap();
+        assert_eq!(
+            positions
+                .get(&id)
+                .and_then(|position| coedges.get(*position))
+                .map(|coedge| (&coedge.id, coedge.sense)),
+            scan_coedge(&coedges, &id).map(|coedge| (&coedge.id, coedge.sense)),
+            "{}",
+            id.as_str()
+        );
+    }
+
+    let first_id = CoedgeId::mint(first).unwrap();
+    let second_id = CoedgeId::mint(second).unwrap();
+    let radial = BTreeMap::from([((1, 1, 0), vec![first_id.clone(), second_id.clone()])]);
+    assert_eq!(
+        super::closed_shell_radial_is_inconsistent(&coedges, &positions, &radial),
+        {
+            let mut senses = radial[&(1, 1, 0)]
+                .iter()
+                .filter_map(|id| scan_coedge(&coedges, id).map(|coedge| coedge.sense));
+            match (senses.next(), senses.next()) {
+                (Some(left), Some(right)) => left == right,
+                _ => true,
+            }
+        }
+    );
+
+    let mut indexed = coedges.clone();
+    let mut scanned = coedges;
+    super::assign_radial_next(&mut indexed, &positions, &radial);
+    for ring in radial.values() {
+        for (index, id) in ring.iter().enumerate() {
+            if let Some(coedge) = scanned.iter_mut().find(|coedge| coedge.id == *id) {
+                coedge.radial_next = ring[(index + 1) % ring.len()].clone();
+            }
+        }
+    }
+    assert_eq!(
+        indexed
+            .iter()
+            .map(|coedge| (coedge.id.as_str(), coedge.radial_next.as_str()))
+            .collect::<Vec<_>>(),
+        scanned
+            .iter()
+            .map(|coedge| (coedge.id.as_str(), coedge.radial_next.as_str()))
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(indexed[0].radial_next.as_str(), second);
+    assert_eq!(indexed[1].radial_next.as_str(), first);
 }

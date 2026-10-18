@@ -26,7 +26,7 @@ use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
 use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::profiles::line_pcurve;
-use super::super::uniqueness::exactly_one;
+use super::super::uniqueness::{exactly_one, ExactIdPositions, NumberedIdentityPositions};
 use crate::decode::analytic::carriers::{
     geometry_section_record, native_face_orientations, ordered_face_loops,
     ordered_parameter_face_loops, placed_carriers,
@@ -1893,14 +1893,12 @@ pub(in super::super) fn transfer_native_brep(
             body_components
         };
     let solved_point_count = solved_vertices.len();
+    let mut point_ids = NumberedIdentityPositions::new(
+        ir.model.points.iter().map(|item| item.id.as_str()),
+        "creo:visibgeom:point#",
+    );
     for (vertex_id, position) in solved_vertices {
-        if ir.model.points.iter().any(|item| {
-            crate::identity::matches_numbered_identity(
-                item.id.as_str(),
-                "creo:visibgeom:point#",
-                *vertex_id,
-            )
-        }) {
+        if point_ids.contains(*vertex_id) {
             continue;
         }
         let point_id = crate::identity::compose_checked::<PointId>(
@@ -1933,7 +1931,9 @@ pub(in super::super) fn transfer_native_brep(
         let position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(*position))
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        let point_position = ir.model.points.len();
         source_carriers.admit_point(ir, Point::new(point_id, position, Some(source_object)))?;
+        point_ids.admit(ir.model.points[point_position].id.as_str(), point_position);
     }
     diagnostics.body_count_mismatch =
         !body_components.is_empty() && selected_body_count != Some(body_components.len());
@@ -1958,15 +1958,27 @@ pub(in super::super) fn transfer_native_brep(
         .sum();
 
     let used_vertices = used_brep_vertices(&neutral_edge_curves, &edge_vertices);
+    let mut vertex_ids = NumberedIdentityPositions::new(
+        ir.model.vertices.iter().map(|item| item.id.as_str()),
+        "creo:visibgeom:vertex#",
+    );
+    let mut numbered_curves = NumberedIdentityPositions::new(
+        ir.model.curves.iter().map(|item| item.id.as_str()),
+        "creo:visibgeom:curve#",
+    );
+    let mut exact_curves =
+        ExactIdPositions::new(ir.model.curves.iter().map(|item| item.id.as_str()));
+    let mut numbered_edges = NumberedIdentityPositions::new(
+        ir.model.edges.iter().map(|item| item.id.as_str()),
+        "creo:visibgeom:edge#",
+    );
+    let mut exact_pcurves =
+        ExactIdPositions::new(ir.model.pcurves.iter().map(|item| item.id.as_str()));
+    let mut exact_surfaces =
+        ExactIdPositions::new(ir.model.surfaces.iter().map(|item| item.id.as_str()));
 
     for vertex_id in used_vertices {
-        if ir.model.vertices.iter().any(|item| {
-            crate::identity::matches_numbered_identity(
-                item.id.as_str(),
-                "creo:visibgeom:vertex#",
-                vertex_id,
-            )
-        }) {
+        if vertex_ids.contains(vertex_id) {
             continue;
         }
         let vertex = crate::identity::compose_checked::<VertexId>(
@@ -1986,6 +1998,7 @@ pub(in super::super) fn transfer_native_brep(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model vertices")?;
+        let vertex_position = ir.model.vertices.len();
         source_carriers.admit_vertex(
             ir,
             Vertex {
@@ -1994,6 +2007,10 @@ pub(in super::super) fn transfer_native_brep(
                 tolerance: None,
             },
         )?;
+        vertex_ids.admit(
+            ir.model.vertices[vertex_position].id.as_str(),
+            vertex_position,
+        );
     }
     for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
@@ -2012,55 +2029,46 @@ pub(in super::super) fn transfer_native_brep(
         let model_curve_count = model_curve_counts[curve_id];
         let param_range = if model_curve_count == 0 {
             None
-        } else {
-            let candidate = exactly_one(
-                ir.model
-                    .curves
-                    .iter_mut()
-                    .filter(|candidate| candidate.id == curve),
-            );
-            if let Some(candidate) = candidate {
-                let mut geometry = source_carriers.curve_geometry(candidate).clone();
-                let derived_line = curve_evidence.derived_intersections.contains(&curve)
-                    && matches!(geometry.solved(), Some(SolvedCurveGeometry::Line(_)));
-                let range = if derived_line {
-                    orient_line_edge_carrier(&mut geometry, points)
-                } else {
-                    let mut range =
-                        orient_nonperiodic_nurbs_edge_carrier(ctx, &mut geometry, points)?;
-                    if range.is_none() {
-                        range = exact_line_edge_parameter_range(&geometry, points);
-                    }
-                    if range.is_none() {
-                        range = nonperiodic_conic_edge_parameter_range(&geometry, points);
-                    }
-                    if range.is_none() {
-                        if let Some(faces) = curve_faces.get(curve_id).copied() {
-                            range = pcurve_backed_periodic_conic_parameter_range(
-                                ctx,
-                                &geometry,
-                                (*curve_id, faces),
-                                &native_pcurves,
-                                &ir.model.surfaces,
-                                points,
-                                source_carriers,
-                            )?;
-                        }
-                    }
-                    if range.is_none() && unbacked_closed_edge {
-                        range = full_periodic_conic_edge_parameter_range(&geometry, points[0]);
-                    }
-                    if range.is_none() && unbacked_closed_edge {
-                        range =
-                            full_periodic_nurbs_edge_parameter_range(ctx, &geometry, points[0])?;
-                    }
-                    range
-                };
-                source_carriers.replace_curve_geometry(ctx, candidate, geometry)?;
-                range
+        } else if let Some(position) = exact_curves.unique(curve.as_str()) {
+            let candidate = &mut ir.model.curves[position];
+            let mut geometry = source_carriers.curve_geometry(candidate).clone();
+            let derived_line = curve_evidence.derived_intersections.contains(&curve)
+                && matches!(geometry.solved(), Some(SolvedCurveGeometry::Line(_)));
+            let range = if derived_line {
+                orient_line_edge_carrier(&mut geometry, points)
             } else {
-                None
-            }
+                let mut range = orient_nonperiodic_nurbs_edge_carrier(ctx, &mut geometry, points)?;
+                if range.is_none() {
+                    range = exact_line_edge_parameter_range(&geometry, points);
+                }
+                if range.is_none() {
+                    range = nonperiodic_conic_edge_parameter_range(&geometry, points);
+                }
+                if range.is_none() {
+                    if let Some(faces) = curve_faces.get(curve_id).copied() {
+                        range = pcurve_backed_periodic_conic_parameter_range(
+                            ctx,
+                            &geometry,
+                            (*curve_id, faces),
+                            &native_pcurves,
+                            &ir.model.surfaces,
+                            points,
+                            source_carriers,
+                        )?;
+                    }
+                }
+                if range.is_none() && unbacked_closed_edge {
+                    range = full_periodic_conic_edge_parameter_range(&geometry, points[0]);
+                }
+                if range.is_none() && unbacked_closed_edge {
+                    range = full_periodic_nurbs_edge_parameter_range(ctx, &geometry, points[0])?;
+                }
+                range
+            };
+            source_carriers.replace_curve_geometry(ctx, candidate, geometry)?;
+            range
+        } else {
+            None
         };
         let id = crate::identity::compose_checked::<EdgeId>(
             &crate::identity::VISIBGEOM_EDGE,
@@ -2075,6 +2083,7 @@ pub(in super::super) fn transfer_native_brep(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model edges")?;
+        let edge_position = ir.model.edges.len();
         source_carriers.admit_edge(
             ctx,
             ir,
@@ -2090,7 +2099,8 @@ pub(in super::super) fn transfer_native_brep(
                 tolerance: None,
             },
         )?;
-        if !ir.model.curves.iter().any(|item| item.id == curve) {
+        numbered_edges.admit(ir.model.edges[edge_position].id.as_str(), edge_position);
+        if !exact_curves.contains(curve.as_str()) {
             let offset = row_offsets.get(curve_id).copied().unwrap_or(0);
             annotate(
                 annotations,
@@ -2101,6 +2111,7 @@ pub(in super::super) fn transfer_native_brep(
                 Exactness::Unknown,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            let curve_position = ir.model.curves.len();
             source_carriers.admit_curve(
                 ctx,
                 ir,
@@ -2129,6 +2140,9 @@ pub(in super::super) fn transfer_native_brep(
                     }),
                 },
             )?;
+            let admitted = ir.model.curves[curve_position].id.as_str();
+            numbered_curves.admit(admitted, curve_position);
+            exact_curves.admit(admitted, curve_position);
         }
     }
 
@@ -2317,6 +2331,10 @@ pub(in super::super) fn transfer_native_brep(
                     },
                 )?;
                 surface_positions.admit(&ir.model.surfaces, ir.model.surfaces.len() - 1);
+                exact_surfaces.admit(
+                    ir.model.surfaces[ir.model.surfaces.len() - 1].id.as_str(),
+                    ir.model.surfaces.len() - 1,
+                );
             }
             let face_sense = if face_orientations[face_id] {
                 Sense::Reversed
@@ -2433,20 +2451,12 @@ pub(in super::super) fn transfer_native_brep(
                         .or_else(|| {
                             native_candidates.is_none().then_some(())?;
                             let surface = &ir.model.surfaces[face_surface?];
-                            let curve = exactly_one(ir.model.curves.iter().filter(|candidate| {
-                                crate::identity::matches_numbered_identity(
-                                    candidate.id.as_str(),
-                                    "creo:visibgeom:curve#",
-                                    half_edge.curve_id,
-                                )
-                            }))?;
-                            let edge = exactly_one(ir.model.edges.iter().filter(|candidate| {
-                                crate::identity::matches_numbered_identity(
-                                    candidate.id.as_str(),
-                                    "creo:visibgeom:edge#",
-                                    half_edge.curve_id,
-                                )
-                            }))?;
+                            let curve = numbered_curves
+                                .unique(half_edge.curve_id)
+                                .map(|position| &ir.model.curves[position])?;
+                            let edge = numbered_edges
+                                .unique(half_edge.curve_id)
+                                .map(|position| &ir.model.edges[position])?;
                             let (geometry, tag) = planar_curve_pcurve(
                                 source_carriers.surface_geometry(surface),
                                 source_carriers.curve_geometry(curve),
@@ -2517,10 +2527,11 @@ pub(in super::super) fn transfer_native_brep(
                                     &crate::identity::VISIBGEOM_PCURVE,
                                     format_args!("{}:{face_id}", half_edge.curve_id)
                                 )?;
-                            if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
+                            if !exact_pcurves.contains(pcurve.as_str()) {
                                 annotate(annotations, &pcurve, "VisibGeom", cadmpeg_core::decode::u64_from_index(offset), tag, Exactness::Derived)?;
                                 ctx.charge_entities(1, "admit Creo model pcurves")?;
-                                source_carriers.admit_pcurve(
+                                let pcurve_position = ir.model.pcurves.len();
+                                source_carriers.admit_pcurve_indexed(
                                     ctx,
                                     ir,
                                     Pcurve {
@@ -2530,7 +2541,12 @@ pub(in super::super) fn transfer_native_brep(
                                         metadata,
                                     },
                                     &namespaces.surface_id(*face_id)?,
+                                    &exact_surfaces,
                                 )?;
+                                exact_pcurves.admit(
+                                    ir.model.pcurves[pcurve_position].id.as_str(),
+                                    pcurve_position,
+                                );
                             }
                             Ok(Some(PcurveUse {
                                 pcurve,
@@ -2579,6 +2595,10 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut surface_ids =
+        ExactIdPositions::new(ir.model.surfaces.iter().map(|surface| surface.id.as_str()));
+    let mut curve_ids =
+        ExactIdPositions::new(ir.model.curves.iter().map(|curve| curve.id.as_str()));
     for pair in &scan.curves.fc05_cylinder_cap_pairs {
         let Some(frame) = fc05_cap_pair_model_frame(scan, pair) else {
             continue;
@@ -2587,7 +2607,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             &crate::identity::VISIBGEOM_SURFACE,
             pair.surface_id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if surface_ids.contains(id.as_str()) {
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -2607,6 +2627,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
+        let surface_position = ir.model.surfaces.len();
         source_carriers.admit_surface(
             ctx,
             ir,
@@ -2630,6 +2651,10 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 }),
             },
         )?;
+        surface_ids.admit(
+            ir.model.surfaces[surface_position].id.as_str(),
+            surface_position,
+        );
         for crate::curve::Fc05CapEdge {
             curve_id,
             cap_plane_id,
@@ -2656,7 +2681,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 &crate::identity::VISIBGEOM_CURVE,
                 curve_id,
             )?;
-            if ir.model.curves.iter().any(|curve| curve.id == id) {
+            if curve_ids.contains(id.as_str()) {
                 continue;
             }
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -2682,6 +2707,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            let curve_position = ir.model.curves.len();
             source_carriers.admit_curve(
                 ctx,
                 ir,
@@ -2703,6 +2729,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     }),
                 },
             )?;
+            curve_ids.admit(ir.model.curves[curve_position].id.as_str(), curve_position);
         }
     }
     Ok(())

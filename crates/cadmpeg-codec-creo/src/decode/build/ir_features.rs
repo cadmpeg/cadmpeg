@@ -26,12 +26,12 @@ use super::super::feature_history::draft::{
 use super::super::feature_history::knit::emit_feature_result_topologies;
 use super::super::feature_history::link::link_feature_sketch_history;
 use super::super::feature_history::named::{
-    named_feature_definition, named_or_referenced_feature_definition,
+    named_feature_definition_with, named_or_referenced_feature_definition,
     retain_native_feature_parameters,
 };
 use super::super::feature_history::outputs::{
     copy_body_id, feature_output_bodies, feature_parameters, feature_reference_name,
-    feature_source_properties, insert_feature_source_property, schema_operation_kind,
+    feature_source_properties_with, insert_feature_source_property, schema_operation_kind,
     SchemaClassList,
 };
 use super::super::native::annotate;
@@ -40,7 +40,7 @@ use super::super::uniqueness::unique_feature_datum_plane;
 use crate::decode::sketch_transfer::constraints::close_sketch_constraint_parameter_references;
 use crate::decode::sketch_transfer::recipe::{
     current_feature_operation, current_feature_recipe, current_feature_recipe_parent,
-    feature_schema_class, row_feature_schema_classes,
+    row_feature_schema_classes, FeatureSchemaClasses,
 };
 
 fn compose_feature_id(feature_id: u32) -> Result<IrFeatureId, cadmpeg_core::CodecError> {
@@ -119,6 +119,7 @@ pub(super) fn emit_model_features(
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let schema_classes = FeatureSchemaClasses::new(scan);
     let mut regeneration_edges = Vec::new();
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     let mut operation_feature_ids = BTreeSet::new();
@@ -238,7 +239,8 @@ pub(super) fn emit_model_features(
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(ctx, scan, ir, operation.feature_id)?;
-        let mut source_properties = feature_source_properties(scan, operation.feature_id);
+        let mut source_properties =
+            feature_source_properties_with(scan, &schema_classes, operation.feature_id);
         if let Some(prefix) = current_operation
             .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
         {
@@ -249,7 +251,7 @@ pub(super) fn emit_model_features(
             );
         }
         let mut parameters = feature_parameters(scan, operation.feature_id);
-        let schema_class = feature_schema_class(scan, operation.feature_id);
+        let schema_class = schema_classes.get(operation.feature_id);
         let definition = schema_class.map_or_else(
             || {
                 current_feature_recipe(&scan.features.operations, operation.feature_id)
@@ -464,7 +466,7 @@ pub(super) fn emit_model_features(
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
-        let schema_class = feature_schema_class(scan, feature_id);
+        let schema_class = schema_classes.get(feature_id);
         let Some(offset) = scan
             .features
             .rows
@@ -492,15 +494,17 @@ pub(super) fn emit_model_features(
             Exactness::ByteExact,
         )?;
         let mut parameters = feature_parameters(scan, feature_id);
-        let mut source_properties = feature_source_properties(scan, feature_id);
+        let mut source_properties =
+            feature_source_properties_with(scan, &schema_classes, feature_id);
         let definition = schema_class.map_or_else(
-            || match match named_feature_definition(
+            || match match named_feature_definition_with(
                 ctx,
                 scan,
                 ir,
                 source_carriers,
                 feature_id,
                 kind,
+                &schema_classes,
             )? {
                 Some(definition) => Some(definition),
                 None => unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id)?,

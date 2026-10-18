@@ -17,7 +17,7 @@ use cadmpeg_core::CodecError;
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
     current_feature_operation, feature_recipe_effect, feature_revolution_extent,
-    feature_schema_class, feature_section_sweep_semantics_conflict,
+    feature_section_sweep_semantics_conflict, FeatureSchemaClasses,
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
@@ -39,9 +39,35 @@ pub(in super::super) fn named_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
-    if let Some(definition) =
-        name_only_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
-    {
+    named_feature_definition_with(
+        ctx,
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+        kind,
+        &FeatureSchemaClasses::new(scan),
+    )
+}
+
+pub(in super::super) fn named_feature_definition_with(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+    kind: &str,
+    schema_classes: &FeatureSchemaClasses,
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
+    if let Some(definition) = name_only_feature_definition(
+        ctx,
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+        kind,
+        schema_classes,
+    )? {
         return Ok(Some(definition));
     }
     let schema_class = match kind {
@@ -76,6 +102,7 @@ fn name_only_feature_definition(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     kind: &str,
+    schema_classes: &FeatureSchemaClasses,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
     if feature_section_sweep_semantics_conflict(scan, feature_id)
         && (matches!(kind, "Protrusion" | "Cut" | "Extrude" | "Revolve")
@@ -120,13 +147,13 @@ fn name_only_feature_definition(
         "Cross Section" | "Querschnitt" => Some(FeatureTreeNodeRole::CrossSections),
         "Body" | "Körper"
             if feature_reference_name(scan, feature_id).is_none()
-                && feature_schema_class(scan, feature_id).is_none() =>
+                && schema_classes.get(feature_id).is_none() =>
         {
             Some(FeatureTreeNodeRole::SolidBodies)
         }
         "Surface"
             if feature_reference_name(scan, feature_id).is_none()
-                && feature_schema_class(scan, feature_id).is_none() =>
+                && schema_classes.get(feature_id).is_none() =>
         {
             Some(FeatureTreeNodeRole::SurfaceBodies)
         }

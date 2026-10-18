@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit IGES B-rep topology projection.
 
+use super::composite::CompositeIndex;
 use super::geometry::{resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
@@ -88,6 +89,7 @@ struct BodyDefinition<'a> {
 }
 
 struct SurfaceSupport<'a> {
+    sequence: u32,
     id: &'a SurfaceId,
     geometry: &'a cadmpeg_ir::geometry::SurfaceGeometry,
     factor: f64,
@@ -117,6 +119,52 @@ fn compose_sense(left: Sense, right: Sense) -> Sense {
         Sense::Forward
     } else {
         Sense::Reversed
+    }
+}
+
+fn first_coedge_positions(coedges: &[Coedge]) -> BTreeMap<CoedgeId, usize> {
+    let mut positions = BTreeMap::new();
+    for (position, coedge) in coedges.iter().enumerate() {
+        positions.entry(coedge.id.clone()).or_insert(position);
+    }
+    positions
+}
+
+fn closed_shell_radial_is_inconsistent(
+    coedges: &[Coedge],
+    positions: &BTreeMap<CoedgeId, usize>,
+    radial: &BTreeMap<(u32, u32, usize), Vec<CoedgeId>>,
+) -> bool {
+    radial.values().any(|ring| {
+        if ring.len() != 2 {
+            return true;
+        }
+        let mut senses = ring.iter().filter_map(|id| {
+            positions
+                .get(id)
+                .and_then(|position| coedges.get(*position))
+                .map(|coedge| coedge.sense)
+        });
+        match (senses.next(), senses.next()) {
+            (Some(first), Some(second)) => first == second,
+            _ => true,
+        }
+    })
+}
+
+fn assign_radial_next(
+    coedges: &mut [Coedge],
+    positions: &BTreeMap<CoedgeId, usize>,
+    radial: &BTreeMap<(u32, u32, usize), Vec<CoedgeId>>,
+) {
+    for ring in radial.values() {
+        for (index, id) in ring.iter().enumerate() {
+            if let Some(&position) = positions.get(id) {
+                if let Some(coedge) = coedges.get_mut(position) {
+                    coedge.radial_next = ring[(index + 1) % ring.len()].clone();
+                }
+            }
+        }
     }
 }
 
@@ -272,11 +320,110 @@ fn surface_point_or_refusal(
 /// One resolved pcurve use: its geometry and the parameter range it covers.
 type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
 
+/// A pcurve resolved on its support, with its end points mapped onto it.
+#[derive(Clone)]
+struct ResolvedPcurve {
+    geometry: PcurveGeometry,
+    range: [f64; 2],
+    start: Point3,
+    end: Point3,
+}
+
+/// Pcurves one body resolved, keyed by (pcurve sequence, support surface
+/// sequence).
+///
+/// While one body projects, the source model is not mutated and the length
+/// factor and global resolution are fixed, so a resolution depends only on
+/// the key, and a pcurve that many uses share pays its [`MAX_BEZIER_BLENDS`]
+/// elevation and its end-point evaluation at most twice. A key first records
+/// that it was resolved and keeps the result from its second resolution on,
+/// so a pcurve with one use is not retained. Only resolved pcurves are kept:
+/// one without a carrier or finite end points abandons the body, so that
+/// answer is never asked for twice.
+///
+/// [`MAX_BEZIER_BLENDS`]: super::nurbs_controls::MAX_BEZIER_BLENDS
+type BodyPcurves = BTreeMap<(u32, u32), Option<ResolvedPcurve>>;
+
+/// Per-body curve lookups for pcurve resolution.
+///
+/// The edge arena grows as each body commits, so both indexes are rebuilt
+/// for the body on first pcurve use. `model` borrows the document; it must
+/// be dropped before the body commits.
+struct BodyPcurveIndexes<'a> {
+    model: Option<cadmpeg_ir::index::ModelIndex<'a>>,
+    composite: Option<CompositeIndex>,
+}
+
 #[derive(Clone, Copy)]
 struct PcurveEndpointCheck {
     start: Point3,
     end: Point3,
     tolerance: f64,
+}
+
+fn resolve_pcurve(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    sequence: u32,
+    support: &SurfaceSupport<'_>,
+    tolerance: f64,
+    ctx: &DecodeContext<'_>,
+    composite_index: Option<&CompositeIndex>,
+) -> Result<Option<ResolvedPcurve>, super::composite::CompositeCurveError> {
+    let Some((geometry, range)) = pcurve_geometry(
+        index,
+        sequence,
+        &super::trimming::PcurveSupport {
+            surface_id: support.id,
+            geometry: support.geometry,
+            factor: support.factor,
+        },
+        Some(tolerance),
+        ctx,
+        composite_index,
+    )?
+    else {
+        return Ok(None);
+    };
+    let (Some(start), Some(end)) = (
+        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]),
+        )?)
+        .map_err(CodecError::from)?
+        .map(|uv| {
+            surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                index,
+                support.id,
+                uv.u,
+                uv.v,
+            ))
+        })
+        .transpose()?
+        .flatten(),
+        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]),
+        )?)
+        .map_err(CodecError::from)?
+        .map(|uv| {
+            surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                index,
+                support.id,
+                uv.u,
+                uv.v,
+            ))
+        })
+        .transpose()?
+        .flatten(),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(ResolvedPcurve {
+        geometry,
+        range,
+        start: start.get(),
+        end: end.get(),
+    }))
 }
 
 fn resolve_pcurve_uses<'a>(
@@ -285,7 +432,8 @@ fn resolve_pcurve_uses<'a>(
     support: &SurfaceSupport<'_>,
     endpoints: PcurveEndpointCheck,
     ctx: &'a DecodeContext<'_>,
-    model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
+    indexes: &mut BodyPcurveIndexes<'a>,
+    body_pcurves: &mut BodyPcurves,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
         start: expected_start,
@@ -295,66 +443,40 @@ fn resolve_pcurve_uses<'a>(
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
-    if model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source));
+    if indexes.model.is_none() {
+        indexes.model = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source));
     }
-    let Some(index) = model_index.as_ref() else {
+    if indexes.composite.is_none() {
+        indexes.composite = Some(CompositeIndex::from_ir(source));
+    }
+    let Some(index) = indexes.model.as_ref() else {
         return Ok(None);
     };
     let mut resolved = Vec::new();
     let mut mapped = Vec::new();
     for (_, sequence) in uses {
-        let Some((geometry, range)) = pcurve_geometry(
-            index,
-            *sequence,
-            &super::trimming::PcurveSupport {
-                surface_id: support.id,
-                geometry: support.geometry,
-                factor: support.factor,
-            },
-            Some(tolerance),
-            ctx,
-            None,
-        )?
-        else {
-            return Ok(None);
-        };
-        let (Some(start), Some(end)) = (
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]),
-            )?)
-            .map_err(CodecError::from)?
-            .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+        let key = (*sequence, support.sequence);
+        let pcurve = match body_pcurves.get(&key) {
+            Some(Some(pcurve)) => pcurve.clone(),
+            seen => {
+                let repeated = seen.is_some();
+                let Some(pcurve) = resolve_pcurve(
                     index,
-                    support.id,
-                    uv.u,
-                    uv.v,
-                ))
-            })
-            .transpose()?
-            .flatten(),
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]),
-            )?)
-            .map_err(CodecError::from)?
-            .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
-                    index,
-                    support.id,
-                    uv.u,
-                    uv.v,
-                ))
-            })
-            .transpose()?
-            .flatten(),
-        ) else {
-            return Ok(None);
+                    *sequence,
+                    support,
+                    tolerance,
+                    ctx,
+                    indexes.composite.as_ref(),
+                )?
+                else {
+                    return Ok(None);
+                };
+                body_pcurves.insert(key, repeated.then(|| pcurve.clone()));
+                pcurve
+            }
         };
-        resolved.push((geometry, range));
-        mapped.push((start.get(), end.get()));
+        resolved.push((pcurve.geometry, pcurve.range));
+        mapped.push((pcurve.start, pcurve.end));
     }
     Ok(
         (cadmpeg_ir::math::Point3::distance(mapped[0].0, expected_start) <= tolerance
@@ -979,7 +1101,11 @@ pub(super) fn project(
     for definition in body_definitions {
         let ir = commit_session.document();
         let entry = definition.entry;
-        let mut model_index = None;
+        let mut pcurve_indexes = BodyPcurveIndexes {
+            model: None,
+            composite: None,
+        };
+        let mut body_pcurves = BodyPcurves::new();
         // The edge arena does grow — every committed body appends to it —
         // so this index lives for one body and is built on first use, where
         // it replaces a full-arena scan per distinct edge. Its `&str` keys
@@ -1080,6 +1206,7 @@ pub(super) fn project(
                                 ir,
                                 pcurves,
                                 &SurfaceSupport {
+                                    sequence: face_definition.surface,
                                     id: &surface_id,
                                     geometry: support_geometry,
                                     factor,
@@ -1090,7 +1217,8 @@ pub(super) fn project(
                                     tolerance,
                                 },
                                 ctx,
-                                &mut model_index,
+                                &mut pcurve_indexes,
+                                &mut body_pcurves,
                             ) {
                                 Ok(resolved) => resolved,
                                 Err(error) => {
@@ -1182,6 +1310,7 @@ pub(super) fn project(
                             ir,
                             pcurves,
                             &SurfaceSupport {
+                                sequence: face_definition.surface,
                                 id: &surface_id,
                                 geometry: support_geometry,
                                 factor,
@@ -1192,7 +1321,8 @@ pub(super) fn project(
                                 tolerance,
                             },
                             ctx,
-                            &mut model_index,
+                            &mut pcurve_indexes,
+                            &mut body_pcurves,
                         ) {
                             Ok(resolved) => resolved,
                             Err(error) => {
@@ -1484,24 +1614,13 @@ pub(super) fn project(
             );
             continue;
         }
+        let coedge_positions = first_coedge_positions(&candidate.model().coedges);
         if definition.closed
-            && radial.values().any(|ring| {
-                if ring.len() != 2 {
-                    return true;
-                }
-                let mut senses = ring.iter().filter_map(|id| {
-                    candidate
-                        .model()
-                        .coedges
-                        .iter()
-                        .find(|coedge| coedge.id == *id)
-                        .map(|coedge| coedge.sense)
-                });
-                match (senses.next(), senses.next()) {
-                    (Some(first), Some(second)) => first == second,
-                    _ => true,
-                }
-            })
+            && closed_shell_radial_is_inconsistent(
+                &candidate.model().coedges,
+                &coedge_positions,
+                &radial,
+            )
         {
             super::push_geometry_loss(
                 &mut losses,
@@ -1512,18 +1631,11 @@ pub(super) fn project(
             );
             continue;
         }
-        for ring in radial.values() {
-            for (index, id) in ring.iter().enumerate() {
-                if let Some(coedge) = candidate
-                    .model_mut()
-                    .coedges
-                    .iter_mut()
-                    .find(|coedge| coedge.id == *id)
-                {
-                    coedge.radial_next = ring[(index + 1) % ring.len()].clone();
-                }
-            }
-        }
+        assign_radial_next(
+            candidate.model_mut().coedges.as_mut_slice(),
+            &coedge_positions,
+            &radial,
+        );
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
@@ -1544,7 +1656,7 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        drop(model_index);
+        drop(pcurve_indexes);
         if commit_session.commit_model(candidate)?.is_err() {
             super::push_geometry_loss(
                 &mut losses,
