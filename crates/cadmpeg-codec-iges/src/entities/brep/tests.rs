@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -8,9 +9,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
-use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
+use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::Edge;
+use cadmpeg_ir::topology::{Coedge, Edge, Sense};
 use cadmpeg_ir::CadIr;
 
 use crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file_with_first_edge;
@@ -713,4 +714,84 @@ fn decode_resolves_a_pcurve_shared_by_many_edge_uses_like_a_single_reference() {
         .iter()
         .any(|body| body.id.as_str() == "iges:model:body#D23"));
     assert_eq!(use_pcurves(&shared), vec![expected[0].clone(); uses]);
+}
+
+fn test_coedge(id: &str, sense: Sense) -> Coedge {
+    Coedge {
+        id: CoedgeId::mint(id).unwrap(),
+        owner_loop: LoopId::mint("test:model:loop#loop").unwrap(),
+        edge: EdgeId::mint("test:model:edge#edge").unwrap(),
+        radial_next: CoedgeId::mint(id).unwrap(),
+        sense,
+        pcurves: Vec::new(),
+        use_curve: None,
+    }
+}
+
+fn scan_coedge<'a>(coedges: &'a [Coedge], id: &CoedgeId) -> Option<&'a Coedge> {
+    coedges.iter().find(|coedge| coedge.id == *id)
+}
+
+#[test]
+fn coedge_index_lookups_match_the_unindexed_scan() {
+    let first = "test:model:coedge#first";
+    let second = "test:model:coedge#second";
+    let missing = "test:model:coedge#missing";
+    let coedges = vec![
+        test_coedge(first, Sense::Forward),
+        test_coedge(first, Sense::Reversed),
+        test_coedge(second, Sense::Reversed),
+    ];
+    let positions = super::first_coedge_positions(&coedges);
+    for id in [first, second, missing] {
+        let id = CoedgeId::mint(id).unwrap();
+        assert_eq!(
+            positions
+                .get(&id)
+                .and_then(|position| coedges.get(*position))
+                .map(|coedge| (&coedge.id, coedge.sense)),
+            scan_coedge(&coedges, &id).map(|coedge| (&coedge.id, coedge.sense)),
+            "{}",
+            id.as_str()
+        );
+    }
+
+    let first_id = CoedgeId::mint(first).unwrap();
+    let second_id = CoedgeId::mint(second).unwrap();
+    let radial = BTreeMap::from([((1, 1, 0), vec![first_id.clone(), second_id.clone()])]);
+    assert_eq!(
+        super::closed_shell_radial_is_inconsistent(&coedges, &positions, &radial),
+        {
+            let mut senses = radial[&(1, 1, 0)]
+                .iter()
+                .filter_map(|id| scan_coedge(&coedges, id).map(|coedge| coedge.sense));
+            match (senses.next(), senses.next()) {
+                (Some(left), Some(right)) => left == right,
+                _ => true,
+            }
+        }
+    );
+
+    let mut indexed = coedges.clone();
+    let mut scanned = coedges;
+    super::assign_radial_next(&mut indexed, &positions, &radial);
+    for ring in radial.values() {
+        for (index, id) in ring.iter().enumerate() {
+            if let Some(coedge) = scanned.iter_mut().find(|coedge| coedge.id == *id) {
+                coedge.radial_next = ring[(index + 1) % ring.len()].clone();
+            }
+        }
+    }
+    assert_eq!(
+        indexed
+            .iter()
+            .map(|coedge| (coedge.id.as_str(), coedge.radial_next.as_str()))
+            .collect::<Vec<_>>(),
+        scanned
+            .iter()
+            .map(|coedge| (coedge.id.as_str(), coedge.radial_next.as_str()))
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(indexed[0].radial_next.as_str(), second);
+    assert_eq!(indexed[1].radial_next.as_str(), first);
 }
