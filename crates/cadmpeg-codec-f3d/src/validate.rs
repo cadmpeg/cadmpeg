@@ -545,7 +545,7 @@ fn valid_axial_assembly_targets(
 }
 
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 fn reload_native_arena<T: serde::de::DeserializeOwned>(
     decode: &DecodeContext<'_>,
@@ -839,7 +839,7 @@ fn validate_loaded(
                 .map(|member| &member.value)
                 .map(move |member| (native_stream, group.scope_record_index, *member))
         })
-        .collect::<std::collections::HashSet<_>>();
+        .collect::<BTreeSet<_>>();
     validate_act(&ctx, &mut findings)?;
     validate_body_bindings(&ctx, &mut findings)?;
     validate_body_bounds(&ctx, &mut findings);
@@ -1147,7 +1147,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     let mut type_ordinals = HashMap::<&str, u32>::new();
     let mut timeline_ordinals = HashMap::<&str, u32>::new();
     let mut entity_type_counts = HashMap::<(&str, u64), usize>::new();
-    let mut expected = HashMap::<(&str, u64), (String, u32, bool, &str)>::new();
+    let mut expected = BTreeMap::<(&str, u64), (String, u32, bool, &str)>::new();
     let mut design_types = native.design_types.iter().collect::<Vec<_>>();
     design_types.sort_by(|left, right| {
         (
@@ -7251,7 +7251,7 @@ fn face_ids_match_refs(
 /// Report face-group members with no resolved recipe operand.
 fn validate_face_group_member_resolution(
     findings: &mut Vec<Finding>,
-    face_group_members: HashSet<(&str, u32, u32)>,
+    face_group_members: BTreeSet<(&str, u32, u32)>,
     face_operand_records: &HashSet<(&str, u32, u32)>,
     entity_selection_operands: &[records::topology::entity_selection::DesignEntitySelectionOperand],
 ) {
@@ -7441,7 +7441,7 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             );
         }
     }
-    let mut visibility_ordinal_ranges = HashMap::<&str, (usize, u32)>::new();
+    let mut visibility_ordinal_ranges = BTreeMap::<&str, (usize, u32)>::new();
     for (stream, ordinal) in visibility_ordinals {
         let (count, maximum) = visibility_ordinal_ranges.entry(stream).or_default();
         *count += 1;

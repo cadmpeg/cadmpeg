@@ -562,21 +562,28 @@ pub(super) fn collect_wire_topology(
             }
         }
     }
+    let subshell_shells = subshell_ancestor_shells(records, by_index)?;
+    // A coedge has one owner, so each is walked by at most one wire.
+    let mut walked_coedges = HashSet::new();
     for shell in records.iter().filter(|record| record.head() == "shell") {
         let shell_index = i64::try_from(shell.index).map_err(|_| {
             cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
         })?;
         let mut wire_guard = HashSet::new();
-        for root in shell_wire_roots(shell, by_index) {
+        let mut shell_edges = HashSet::new();
+        let mut shell_vertices = HashSet::new();
+        for root in shell_wire_roots(shell, by_index, &subshell_shells) {
             let mut wire_ref = Some(root);
             while let Some(wire_index) = wire_ref {
                 if !wire_guard.insert(wire_index) {
                     break;
                 }
-                let Some(wire) = by_index
-                    .get(&wire_index)
-                    .filter(|record| record.head() == "wire")
-                else {
+                let Some(wire) = by_index.get(&wire_index).filter(|record| {
+                    record.head() == "wire"
+                        && record.ref_at(5).is_some_and(|owner| {
+                            resolves_to_shell(owner, shell_index, &subshell_shells)
+                        })
+                }) else {
                     break;
                 };
                 let side = match wire.chunk(7) {
@@ -585,11 +592,11 @@ pub(super) fn collect_wire_topology(
                     _ => None,
                 };
                 let mut wire_edges = Vec::new();
+                let mut wire_edge_set = HashSet::new();
                 if let Some(first_coedge) = wire.ref_at(4) {
                     let mut coedge_ref = Some(first_coedge);
-                    let mut coedge_guard = HashSet::new();
                     while let Some(coedge_index) = coedge_ref {
-                        if !coedge_guard.insert(coedge_index) {
+                        if !walked_coedges.insert(coedge_index) {
                             break;
                         }
                         let Some(coedge) = by_index
@@ -599,13 +606,14 @@ pub(super) fn collect_wire_topology(
                             break;
                         };
                         if let Some(edge_index) = coedge.ref_at(6) {
-                            if !wire_edges.contains(&edge_index) {
+                            if wire_edge_set.insert(edge_index) {
                                 wire_edges.push(edge_index);
                             }
-
-                            let edges = wire_edges_by_shell.entry(shell_index).or_default();
-                            if !edges.contains(&edge_index) {
-                                edges.push(edge_index);
+                            if shell_edges.insert(edge_index) {
+                                wire_edges_by_shell
+                                    .entry(shell_index)
+                                    .or_default()
+                                    .push(edge_index);
                             }
                             keep_wire_edge(inputs, out, edge_index, carriers, reach)?;
                         }
@@ -627,9 +635,11 @@ pub(super) fn collect_wire_topology(
                 if let Some(vertex) = free_vertex {
                     reach.vertices.insert(vertex);
 
-                    let vertices = free_vertices_by_shell.entry(shell_index).or_default();
-                    if !vertices.contains(&vertex) {
-                        vertices.push(vertex);
+                    if shell_vertices.insert(vertex) {
+                        free_vertices_by_shell
+                            .entry(shell_index)
+                            .or_default()
+                            .push(vertex);
                     }
                     if let Some(point) = by_index
                         .get(&vertex)
@@ -979,8 +989,7 @@ pub(super) fn shell_faces(
     let Ok(shell_index) = i64::try_from(shell.index) else {
         return out;
     };
-    let in_shell =
-        |owner: i64| owner == shell_index || subshell_shells.get(&owner) == Some(&shell_index);
+    let in_shell = |owner: i64| resolves_to_shell(owner, shell_index, subshell_shells);
     let mut faces = HashSet::new();
     face_chain(
         shell.ref_at(5),
@@ -1022,18 +1031,30 @@ pub(super) fn shell_faces(
     out
 }
 
-pub(super) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>) -> Vec<i64> {
+/// Whether `owner` is `shell` or a subshell whose ancestor is `shell`.
+fn resolves_to_shell(owner: i64, shell: i64, subshell_shells: &HashMap<i64, i64>) -> bool {
+    owner == shell || subshell_shells.get(&owner) == Some(&shell)
+}
+
+/// First wires of `shell` and of the subshells whose ancestor is `shell`.
+pub(super) fn shell_wire_roots(
+    shell: &Record,
+    by_index: &HashMap<i64, &Record>,
+    subshell_shells: &HashMap<i64, i64>,
+) -> Vec<i64> {
     let mut out = shell.ref_at(6).into_iter().collect::<Vec<_>>();
+    let Ok(shell_index) = i64::try_from(shell.index) else {
+        return out;
+    };
     let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop() {
         if !guard.insert(index) {
             break;
         }
-        let Some(record) = by_index
-            .get(&index)
-            .filter(|record| record.head() == "subshell")
-        else {
+        let Some(record) = by_index.get(&index).filter(|record| {
+            record.head() == "subshell" && subshell_shells.get(&index) == Some(&shell_index)
+        }) else {
             break;
         };
         if let Some(wire) = record.ref_at(7) {
