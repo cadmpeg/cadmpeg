@@ -446,8 +446,7 @@ Production `MAX_*` constants: 224.
 | 1    | Format or reader invariant | 29    |
 | 2    | Per-input bound            | 68    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 107   |
-| 4    | Local work cap             | 99    |
+| 4    | Local work cap             | 106   |
 | N    | Not a decode bound         | 21    |
 |      | Total                      | 224   |
 
