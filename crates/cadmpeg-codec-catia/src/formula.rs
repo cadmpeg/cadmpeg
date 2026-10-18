@@ -233,7 +233,7 @@ pub(crate) fn transfer_parameters(
             formula.parameter_dependencies.as_slice(),
             || {
                 let type_checked = (if formula_type_complete {
-                    parse_formula_expression_with_mode(
+                    evaluate_formula_expression_with_mode(
                         ctx,
                         &expression.expression.value,
                         &type_bindings,
@@ -247,7 +247,7 @@ pub(crate) fn transfer_parameters(
                         .is_some_and(|source_type| value.satisfies_source_type(source_type))
                 });
                 let evaluated = (if formula_complete {
-                    parse_formula_expression(
+                    evaluate_formula_expression(
                         ctx,
                         &expression.expression.value,
                         &expression_bindings,
@@ -1053,7 +1053,7 @@ fn evaluate_legacy_output_assignment(
     output_parameter: &str,
 ) -> Option<EvaluatedFormulaValue> {
     let expression = legacy_output_assignment_expression(source, output_parameter)?;
-    evaluate_formula_expression(expression, &BTreeMap::new())
+    tests::evaluated(expression, &BTreeMap::new())
 }
 
 struct LegacyRelationEvaluation<'a> {
@@ -1128,7 +1128,7 @@ fn legacy_relation_evaluation<'a>(
         let dependency = parameter_id.clone();
         dependencies.push(dependency);
     }
-    let Some(evaluated) = parse_formula_expression(ctx, expression, &bindings)? else {
+    let Some(evaluated) = evaluate_formula_expression(ctx, expression, &bindings)? else {
         return Ok(None);
     };
     let Some(source_type_kind) = canonical_parameter_type(source_type) else {
@@ -1552,7 +1552,7 @@ fn relation_program_output_candidate<'a>(
     }
 
     let parse = parses.get_or_parse(expression_entity.id.as_str(), inputs, || {
-        let type_checked = parse_formula_expression_with_mode(
+        let type_checked = evaluate_formula_expression_with_mode(
             ctx,
             &expression.expression.value,
             &type_bindings,
@@ -1563,7 +1563,7 @@ fn relation_program_output_candidate<'a>(
                 .is_some_and(|source_type| value.satisfies_source_type(source_type))
         });
         let evaluated = (if all_inputs_complete {
-            parse_formula_expression(ctx, &expression.expression.value, &expression_bindings)?
+            evaluate_formula_expression(ctx, &expression.expression.value, &expression_bindings)?
         } else {
             None
         })
@@ -3799,15 +3799,15 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     }
 }
 
-fn parse_formula_expression<'a>(
+fn evaluate_formula_expression<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
 ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-    parse_formula_expression_with_mode(ctx, source, bindings, true)
+    evaluate_formula_expression_with_mode(ctx, source, bindings, true)
 }
 
-fn parse_formula_expression_with_mode<'a>(
+fn evaluate_formula_expression_with_mode<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
@@ -3823,27 +3823,6 @@ fn parse_formula_expression_with_mode<'a>(
         static_check: !evaluate,
     }
     .parse()
-}
-
-#[cfg(test)]
-fn evaluate_formula_expression<'a>(
-    source: &'a str,
-    bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
-) -> Option<EvaluatedFormulaValue> {
-    crate::test_support::with_service_context(|ctx| parse_formula_expression(ctx, source, bindings))
-        .expect("parse formula expression")
-}
-
-#[cfg(test)]
-fn evaluate_formula_expression_with_mode<'a>(
-    source: &'a str,
-    bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
-    evaluate: bool,
-) -> Option<EvaluatedFormulaValue> {
-    crate::test_support::with_service_context(|ctx| {
-        parse_formula_expression_with_mode(ctx, source, bindings, evaluate)
-    })
-    .expect("parse formula expression with mode")
 }
 
 fn static_formula_value(parameter_type: FormulaParameterType) -> EvaluatedFormulaValue {
@@ -3922,8 +3901,8 @@ fn neutral_parameter_id(native_id: &str) -> Result<ParameterId, cadmpeg_core::Co
 
 #[cfg(test)]
 mod parser_tests {
+    use super::tests::{evaluated, evaluated_with_mode};
     use super::{
-        evaluate_formula_expression, evaluate_formula_expression_with_mode,
         evaluate_legacy_output_assignment, finite_scalar, formula_parameter_candidates_agree,
         parameter_expression, static_formula_value, string_literal_expression,
         typed_parameter_evaluation, EvaluatedFormulaBoolean, EvaluatedFormulaString,
@@ -3976,7 +3955,7 @@ mod parser_tests {
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root fits input limit");
-        let refused = super::parse_formula_expression(&ctx, "true ? 1 ; 2", &BTreeMap::new());
+        let refused = super::evaluate_formula_expression(&ctx, "true ? 1 ; 2", &BTreeMap::new());
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_formula_expression_depth")
@@ -3993,8 +3972,7 @@ mod parser_tests {
             assert!(parameter_expression(&ParameterValue::String(value.to_string())).is_empty());
         }
         assert_eq!(
-            evaluate_formula_expression("\"Cilas Evans\"", &BTreeMap::new())
-                .and_then(EvaluatedFormulaValue::string),
+            evaluated("\"Cilas Evans\"", &BTreeMap::new()).and_then(EvaluatedFormulaValue::string),
             Some("Cilas Evans".to_string())
         );
     }
@@ -4025,42 +4003,28 @@ mod parser_tests {
             ("#5_", static_formula_value(FormulaParameterType::Real)),
         ]);
 
-        assert!(
-            evaluate_formula_expression_with_mode("#1_ /2+1mm", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Length))
-        );
-        assert!(
-            evaluate_formula_expression_with_mode("#3_ ? #2_ ; 1", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Integer))
-        );
-        assert!(
-            evaluate_formula_expression_with_mode("#4_", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::String))
-        );
-        assert!(
-            evaluate_formula_expression_with_mode("ToString(#2_)", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::String))
-        );
-        assert!(
-            evaluate_formula_expression_with_mode("(#1_) / #2_", &bindings, false)
-                .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Length))
-        );
-        assert!(
-            evaluate_formula_expression_with_mode("#5_ + 0", &bindings, false)
-                .is_none_or(|value| !value.satisfies_source_type(FormulaParameterType::Integer))
-        );
-        assert!(evaluate_formula_expression_with_mode("#1_ ** #2_", &bindings, false).is_none());
-        assert!(
-            evaluate_formula_expression_with_mode("#1_ ** 2", &bindings, false)
-                .and_then(EvaluatedFormulaValue::scalar)
-                .is_some_and(|value| {
-                    value.dimension()
-                        == FormulaDimension {
-                            length: 2,
-                            angle: 0,
-                        }
-                })
-        );
+        assert!(evaluated_with_mode("#1_ /2+1mm", &bindings, false)
+            .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Length)));
+        assert!(evaluated_with_mode("#3_ ? #2_ ; 1", &bindings, false)
+            .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Integer)));
+        assert!(evaluated_with_mode("#4_", &bindings, false)
+            .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::String)));
+        assert!(evaluated_with_mode("ToString(#2_)", &bindings, false)
+            .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::String)));
+        assert!(evaluated_with_mode("(#1_) / #2_", &bindings, false)
+            .is_some_and(|value| value.satisfies_source_type(FormulaParameterType::Length)));
+        assert!(evaluated_with_mode("#5_ + 0", &bindings, false)
+            .is_none_or(|value| !value.satisfies_source_type(FormulaParameterType::Integer)));
+        assert!(evaluated_with_mode("#1_ ** #2_", &bindings, false).is_none());
+        assert!(evaluated_with_mode("#1_ ** 2", &bindings, false)
+            .and_then(EvaluatedFormulaValue::scalar)
+            .is_some_and(|value| {
+                value.dimension()
+                    == FormulaDimension {
+                        length: 2,
+                        angle: 0,
+                    }
+            }));
     }
 
     #[test]
@@ -4072,30 +4036,28 @@ mod parser_tests {
             ("#4_", static_formula_value(FormulaParameterType::String)),
         ]);
 
-        let unknown_predicate = evaluate_formula_expression_with_mode("#3_ > 1", &bindings, false)
+        let unknown_predicate = evaluated_with_mode("#3_ > 1", &bindings, false)
             .and_then(EvaluatedFormulaValue::boolean)
             .expect("Boolean comparison type");
         assert_eq!(unknown_predicate.known_value(), None);
 
-        let length = evaluate_formula_expression_with_mode("#4_.Length()", &bindings, false)
+        let length = evaluated_with_mode("#4_.Length()", &bindings, false)
             .and_then(EvaluatedFormulaValue::scalar)
             .expect("string length type");
         assert_eq!(length.integral(), Some(true));
         assert_eq!(length.known_value(), None);
 
-        let known_length =
-            evaluate_formula_expression_with_mode("\"text\".Length()", &bindings, false)
-                .and_then(EvaluatedFormulaValue::scalar)
-                .expect("known string length");
+        let known_length = evaluated_with_mode("\"text\".Length()", &bindings, false)
+            .and_then(EvaluatedFormulaValue::scalar)
+            .expect("known string length");
         assert_eq!(known_length.known_value(), Some(4.0));
 
-        let known_real =
-            evaluate_formula_expression_with_mode("\"12.5\".ToReal()", &bindings, false)
-                .and_then(EvaluatedFormulaValue::scalar)
-                .expect("known string-to-real value");
+        let known_real = evaluated_with_mode("\"12.5\".ToReal()", &bindings, false)
+            .and_then(EvaluatedFormulaValue::scalar)
+            .expect("known string-to-real value");
         assert_eq!(known_real.known_value(), Some(12.5));
 
-        let parsed = evaluate_formula_expression_with_mode("#4_.ToReal()", &bindings, false)
+        let parsed = evaluated_with_mode("#4_.ToReal()", &bindings, false)
             .and_then(EvaluatedFormulaValue::scalar)
             .expect("string-to-real type");
         assert_eq!(parsed.known_value(), None);
@@ -4109,7 +4071,7 @@ mod parser_tests {
             "ToUpper(#4_)",
         ] {
             assert!(
-                evaluate_formula_expression_with_mode(expression, &bindings, false).is_some(),
+                evaluated_with_mode(expression, &bindings, false).is_some(),
                 "{expression}"
             );
         }
@@ -4121,7 +4083,7 @@ mod parser_tests {
             "true ? 5 ; 1 / 0",
         ] {
             assert!(
-                evaluate_formula_expression_with_mode(expression, &bindings, false).is_some(),
+                evaluated_with_mode(expression, &bindings, false).is_some(),
                 "{expression}"
             );
         }
@@ -4131,7 +4093,7 @@ mod parser_tests {
             "false ? 1 / 0 ; 1mm",
         ] {
             assert!(
-                evaluate_formula_expression_with_mode(expression, &bindings, false).is_none(),
+                evaluated_with_mode(expression, &bindings, false).is_none(),
                 "{expression}"
             );
         }
@@ -4157,39 +4119,34 @@ mod parser_tests {
             "sqrt(-1)",
         ] {
             assert!(
-                evaluate_formula_expression_with_mode(expression, &bindings, false).is_none(),
+                evaluated_with_mode(expression, &bindings, false).is_none(),
                 "{expression}"
             );
         }
-        assert!(evaluate_formula_expression_with_mode("1 * 0", &bindings, false).is_some());
+        assert!(evaluated_with_mode("1 * 0", &bindings, false).is_some());
         for expression in ["exp(#3_)", "acosh(#3_)", "atanh(#3_)"] {
             assert!(
-                evaluate_formula_expression_with_mode(expression, &bindings, false).is_some(),
+                evaluated_with_mode(expression, &bindings, false).is_some(),
                 "{expression}"
             );
         }
 
         assert!(
-            evaluate_formula_expression_with_mode("round(#1_, \"mm\", #2_)", &bindings, false)
+            evaluated_with_mode("round(#1_, \"mm\", #2_)", &bindings, false)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .is_some_and(|value| value.dimension() == FormulaDimension::LENGTH)
         );
         assert!(
-            evaluate_formula_expression_with_mode("round(#1_, #4_, #2_)", &bindings, false)
+            evaluated_with_mode("round(#1_, #4_, #2_)", &bindings, false)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .is_some_and(|value| value.dimension() == FormulaDimension::LENGTH)
         );
-        assert!(evaluate_formula_expression_with_mode(
-            "#3_ > 1 ? round(#1_, #4_, #2_) ; 5mm",
-            &bindings,
-            false,
-        )
-        .and_then(EvaluatedFormulaValue::scalar)
-        .is_some_and(|value| value.dimension() == FormulaDimension::LENGTH));
         assert!(
-            evaluate_formula_expression_with_mode("round(#3_, #4_, #2_)", &bindings, false)
-                .is_none()
+            evaluated_with_mode("#3_ > 1 ? round(#1_, #4_, #2_) ; 5mm", &bindings, false,)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .is_some_and(|value| value.dimension() == FormulaDimension::LENGTH)
         );
+        assert!(evaluated_with_mode("round(#3_, #4_, #2_)", &bindings, false).is_none());
     }
 
     #[test]
@@ -4205,12 +4162,12 @@ mod parser_tests {
         ] {
             let invalid = format!("{predicate} ? 1 / 0 ; 1");
             assert!(
-                evaluate_formula_expression_with_mode(&invalid, &bindings, false).is_none(),
+                evaluated_with_mode(&invalid, &bindings, false).is_none(),
                 "{invalid}"
             );
             let valid = format!("{predicate} ? 1 ; 1 / 0");
             assert!(
-                evaluate_formula_expression_with_mode(&valid, &bindings, false).is_some(),
+                evaluated_with_mode(&valid, &bindings, false).is_some(),
                 "{valid}"
             );
         }
@@ -4262,7 +4219,7 @@ mod parser_tests {
         for (argument_count, accepted) in [(128, true), (129, false)] {
             let expression = format!("max({})", vec!["1"; argument_count].join(","));
             assert_eq!(
-                evaluate_formula_expression(&expression, &bindings).is_some(),
+                evaluated(&expression, &bindings).is_some(),
                 accepted,
                 "{argument_count}"
             );
@@ -4281,7 +4238,7 @@ mod parser_tests {
                 FormulaDimension::ANGLE,
             ),
         ] {
-            let value = evaluate_formula_expression(expression, &bindings)
+            let value = evaluated(expression, &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .expect("dimensioned rounded value");
             assert!(value.dimension() == dimension, "{expression}");
@@ -4300,10 +4257,7 @@ mod parser_tests {
             "round(12.3mm,\"mm\",1mm)",
             "round(12.3mm,\"mm\")",
         ] {
-            assert!(
-                evaluate_formula_expression(expression, &bindings).is_none(),
-                "{expression}"
-            );
+            assert!(evaluated(expression, &bindings).is_none(), "{expression}");
         }
     }
 
@@ -4327,7 +4281,7 @@ mod parser_tests {
                 FormulaDimension::SCALAR,
             ),
         ] {
-            let value = evaluate_formula_expression(expression, &bindings)
+            let value = evaluated(expression, &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .expect("typed interpolation");
             assert!(value.dimension() == dimension, "{expression}");
@@ -4342,10 +4296,7 @@ mod parser_tests {
             "LinearInterpolation(10mm,30mm,0.25mm)",
             "CubicInterpolation(10deg,30,0.5)",
         ] {
-            assert!(
-                evaluate_formula_expression(expression, &bindings).is_none(),
-                "{expression}"
-            );
+            assert!(evaluated(expression, &bindings).is_none(), "{expression}");
         }
     }
 
@@ -4357,7 +4308,7 @@ mod parser_tests {
             "CubicInterpolation(1e308,-1e308,0.5)",
         ] {
             for evaluate in [true, false] {
-                let value = evaluate_formula_expression_with_mode(expression, &bindings, evaluate)
+                let value = evaluated_with_mode(expression, &bindings, evaluate)
                     .and_then(EvaluatedFormulaValue::scalar)
                     .expect("finite interpolated value");
                 assert_eq!(value.value(), 0.0);
@@ -4372,7 +4323,7 @@ mod parser_tests {
         for (depth, accepted) in [(128, true), (129, false)] {
             let expression = format!("{}1{}", "true ? ".repeat(depth), " ; 1".repeat(depth));
             crate::test_support::with_service_context(|ctx| {
-                let result = super::parse_formula_expression(ctx, &expression, &bindings);
+                let result = super::evaluate_formula_expression(ctx, &expression, &bindings);
                 assert_eq!(
                     result
                         .expect("the local depth ceiling is not a session refusal")
@@ -4388,41 +4339,36 @@ mod parser_tests {
     #[test]
     fn formula_comparisons_and_logical_operators_are_typed_and_precedenced() {
         let bindings = BTreeMap::new();
-        assert!(
-            evaluate_formula_expression("(3 > 2) and (1mm <= 2mm)", &bindings)
-                .and_then(EvaluatedFormulaValue::boolean)
-                .map(EvaluatedFormulaBoolean::value)
-                .is_some_and(|value| value)
-        );
+        assert!(evaluated("(3 > 2) and (1mm <= 2mm)", &bindings)
+            .and_then(EvaluatedFormulaValue::boolean)
+            .map(EvaluatedFormulaBoolean::value)
+            .is_some_and(|value| value));
         assert_eq!(
-            evaluate_formula_expression("false or true and false", &bindings)
+            evaluated("false or true and false", &bindings)
                 .and_then(EvaluatedFormulaValue::boolean)
                 .map(EvaluatedFormulaBoolean::value),
             Some(false)
         );
         assert_eq!(
-            evaluate_formula_expression("1mm == 1cm", &bindings)
+            evaluated("1mm == 1cm", &bindings)
                 .and_then(EvaluatedFormulaValue::boolean)
                 .map(EvaluatedFormulaBoolean::value),
             Some(false)
         );
         assert_eq!(
-            evaluate_formula_expression("true <> false", &bindings)
+            evaluated("true <> false", &bindings)
                 .and_then(EvaluatedFormulaValue::boolean)
                 .map(EvaluatedFormulaBoolean::value),
             Some(true)
         );
         assert_eq!(
-            evaluate_formula_expression("not false and false or not (1 > 2)", &bindings)
+            evaluated("not false and false or not (1 > 2)", &bindings)
                 .and_then(EvaluatedFormulaValue::boolean)
                 .map(EvaluatedFormulaBoolean::value),
             Some(true)
         );
         for expression in ["not 1", "not \"false\"", "notable", "not"] {
-            assert!(
-                evaluate_formula_expression(expression, &bindings).is_none(),
-                "{expression}"
-            );
+            assert!(evaluated(expression, &bindings).is_none(), "{expression}");
         }
     }
 
@@ -4441,8 +4387,7 @@ mod parser_tests {
             ("false ? false ? 1 / 0 ; 2 ; 3", true),
             ("true ? 5 ; mod(2, 1.5)", true),
         ] {
-            let value = evaluate_formula_expression(expression, &bindings)
-                .expect("lazy expression is complete");
+            let value = evaluated(expression, &bindings).expect("lazy expression is complete");
             match value {
                 EvaluatedFormulaValue::Boolean(value) => {
                     assert_eq!(value.value(), expected, "{expression}");
@@ -4461,7 +4406,7 @@ mod parser_tests {
             }
         }
         assert_eq!(
-            evaluate_formula_expression(
+            evaluated(
                 "true ? \"selected\" ; ReplaceSubText(\"text\",\"\",\"x\")",
                 &bindings,
             )
@@ -4470,7 +4415,7 @@ mod parser_tests {
             Some("selected")
         );
         assert_eq!(
-            evaluate_formula_expression("false ? ToString(1.5) ; \"selected\"", &bindings)
+            evaluated("false ? ToString(1.5) ; \"selected\"", &bindings)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("selected")
@@ -4483,19 +4428,16 @@ mod parser_tests {
             "true ? 5mm ; round(12.3mm,\"mm\",-1)",
             "true ? 5mm ; round(12.3mm,\"unknown\",1)",
         ] {
-            assert!(
-                evaluate_formula_expression(expression, &bindings).is_some(),
-                "{expression}"
-            );
+            assert!(evaluated(expression, &bindings).is_some(), "{expression}");
         }
         assert_eq!(
-            evaluate_formula_expression("true ? \"selected\" ; \"text\".Extract(-1,1)", &bindings,)
+            evaluated("true ? \"selected\" ; \"text\".Extract(-1,1)", &bindings,)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("selected")
         );
         assert!(
-            evaluate_formula_expression("false ? \"not a number\".ToReal() ; 5", &bindings,)
+            evaluated("false ? \"not a number\".ToReal() ; 5", &bindings,)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .is_some_and(|value| value.value() == 5.0)
         );
@@ -4517,23 +4459,17 @@ mod parser_tests {
             "true ? \"selected\" ; \"text\".Extract(1mm, 1)",
             "true ? 5mm ; round(12.3mm,\"deg\",1)",
         ] {
-            assert!(
-                evaluate_formula_expression(expression, &bindings).is_none(),
-                "{expression}"
-            );
+            assert!(evaluated(expression, &bindings).is_none(), "{expression}");
         }
         for expression in ["true ? 1mm ; 1rad", "false ? 1mm ; 1rad", "true ? 1 ; 1mm"] {
-            assert!(
-                evaluate_formula_expression(expression, &bindings).is_none(),
-                "{expression}"
-            );
+            assert!(evaluated(expression, &bindings).is_none(), "{expression}");
         }
         for (expression, expected_dimension) in [
             ("true ? 1mm ; 2mm", FormulaDimension::LENGTH),
             ("false ? 1rad ; 2rad", FormulaDimension::ANGLE),
         ] {
             assert!(
-                evaluate_formula_expression(expression, &bindings)
+                evaluated(expression, &bindings)
                     .and_then(EvaluatedFormulaValue::scalar)
                     .is_some_and(|value| value.dimension() == expected_dimension),
                 "{expression}"
@@ -4558,100 +4494,95 @@ mod parser_tests {
             ),
         ]);
         assert_eq!(
-            evaluate_formula_expression("#1_.Length()", &bindings)
+            evaluated("#1_.Length()", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .map(super::EvaluatedFormulaScalar::value),
             Some(11.0)
         );
         assert_eq!(
-            evaluate_formula_expression("#1_ .Search(#2_)", &bindings)
+            evaluated("#1_ .Search(#2_)", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .map(super::EvaluatedFormulaScalar::value),
             Some(6.0)
         );
         assert_eq!(
-            evaluate_formula_expression("#1_.Search(\"missing\")", &bindings)
+            evaluated("#1_.Search(\"missing\")", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .map(super::EvaluatedFormulaScalar::value),
             Some(-1.0)
         );
         assert_eq!(
-            evaluate_formula_expression("ReplaceSubText(#1_,\"Cilas\",\"Easy\")", &bindings)
+            evaluated("ReplaceSubText(#1_,\"Cilas\",\"Easy\")", &bindings)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("Easy Evans")
         );
         assert_eq!(
-            evaluate_formula_expression("\"Revision\" + ToString(#3_)", &bindings)
+            evaluated("\"Revision\" + ToString(#3_)", &bindings)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("Revision-1")
         );
-        assert!(
-            evaluate_formula_expression("\"Cilas Evans\" == #1_", &bindings)
-                .and_then(EvaluatedFormulaValue::boolean)
-                .map(EvaluatedFormulaBoolean::value)
-                .is_some_and(|value| value)
-        );
+        assert!(evaluated("\"Cilas Evans\" == #1_", &bindings)
+            .and_then(EvaluatedFormulaValue::boolean)
+            .map(EvaluatedFormulaBoolean::value)
+            .is_some_and(|value| value));
         assert_eq!(
-            evaluate_formula_expression("\"Cilas Evans Evans\".Search(\"Evans\",7)", &bindings)
+            evaluated("\"Cilas Evans Evans\".Search(\"Evans\",7)", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .map(super::EvaluatedFormulaScalar::value),
             Some(12.0)
         );
         assert_eq!(
-            evaluate_formula_expression(
-                "\"Cilas Evans Evans\".Search(\"Evans\",0,false)",
-                &bindings,
-            )
-            .and_then(EvaluatedFormulaValue::scalar)
-            .map(super::EvaluatedFormulaScalar::value),
+            evaluated("\"Cilas Evans Evans\".Search(\"Evans\",0,false)", &bindings,)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .map(super::EvaluatedFormulaScalar::value),
             Some(12.0)
         );
         assert_eq!(
-            evaluate_formula_expression("\"é猫x猫\".Search(\"猫\",2)", &bindings)
+            evaluated("\"é猫x猫\".Search(\"猫\",2)", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .map(super::EvaluatedFormulaScalar::value),
             Some(3.0)
         );
         assert_eq!(
-            evaluate_formula_expression("\"text\".Search(\"t\",5)", &bindings)
+            evaluated("\"text\".Search(\"t\",5)", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .map(super::EvaluatedFormulaScalar::value),
             Some(-1.0)
         );
         assert_eq!(
-            evaluate_formula_expression("\"é猫x\".Extract(1,1)", &bindings)
+            evaluated("\"é猫x\".Extract(1,1)", &bindings)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("猫")
         );
         assert_eq!(
-            evaluate_formula_expression("\"é猫x\".Extract(3,0)", &bindings)
+            evaluated("\"é猫x\".Extract(3,0)", &bindings)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("")
         );
         assert_eq!(
-            evaluate_formula_expression("ToUpper(\"Mixed Straße\")", &bindings)
+            evaluated("ToUpper(\"Mixed Straße\")", &bindings)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("MIXED STRASSE")
         );
         assert_eq!(
-            evaluate_formula_expression("ToLower(\"Mixed Case\")", &bindings)
+            evaluated("ToLower(\"Mixed Case\")", &bindings)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("mixed case")
         );
         assert_eq!(
-            evaluate_formula_expression("\"12.5\".ToReal()", &bindings)
+            evaluated("\"12.5\".ToReal()", &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .map(super::EvaluatedFormulaScalar::value),
             Some(12.5)
         );
         assert_eq!(
-            evaluate_formula_expression("\"AAxxAA\" - \"AA\"", &bindings)
+            evaluated("\"AAxxAA\" - \"AA\"", &bindings)
                 .and_then(EvaluatedFormulaValue::string)
                 .as_deref(),
             Some("xx")
@@ -4679,10 +4610,7 @@ mod parser_tests {
             "\"text\" - \"\"",
             "\"text\".Unknown()",
         ] {
-            assert!(
-                evaluate_formula_expression(expression, &bindings).is_none(),
-                "{expression}"
-            );
+            assert!(evaluated(expression, &bindings).is_none(), "{expression}");
         }
     }
 
@@ -4698,10 +4626,7 @@ mod parser_tests {
             "1 < 2 < 3",
             "true >= false",
         ] {
-            assert!(
-                evaluate_formula_expression(expression, &bindings).is_none(),
-                "{expression}"
-            );
+            assert!(evaluated(expression, &bindings).is_none(), "{expression}");
         }
     }
 
@@ -4719,7 +4644,7 @@ mod parser_tests {
             ("1in", 25.4),
             ("1m", 1_000.0),
         ] {
-            let actual = evaluate_formula_expression(literal, &bindings)
+            let actual = evaluated(literal, &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .expect("complete length literal");
             assert_eq!(actual.value(), expected, "{literal}");
@@ -4735,7 +4660,7 @@ mod parser_tests {
             ("1grad", std::f64::consts::PI / 200.0),
             ("1deg", std::f64::consts::PI / 180.0),
         ] {
-            let actual = evaluate_formula_expression(literal, &bindings)
+            let actual = evaluated(literal, &bindings)
                 .and_then(EvaluatedFormulaValue::scalar)
                 .expect("complete angle literal");
             assert_eq!(actual.value(), expected, "{literal}");
