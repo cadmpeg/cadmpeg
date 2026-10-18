@@ -1060,8 +1060,30 @@ fn composite_index_lookups_match_the_unindexed_scan() {
             end: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
             tolerance: None,
         });
+        ir.model.curves.push(Curve {
+            parameter_range: None,
+            id: bounded.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
 
         let index = CompositeIndex::from_ir(&ir);
+        assert_eq!(
+            index
+                .curve_by_id(&ir, &bounded)
+                .map(|curve| curve.geometry.clone()),
+            ir.model
+                .curves
+                .iter()
+                .find(|curve| curve.id == bounded)
+                .map(|curve| curve.geometry.clone()),
+        );
         for curve_id in [bounded, edgeless, absent] {
             let scanned = bounded_nurbs_for_curve(&ir, &curve_id, decode_ctx, None)
                 .expect("carrier lanes pair");

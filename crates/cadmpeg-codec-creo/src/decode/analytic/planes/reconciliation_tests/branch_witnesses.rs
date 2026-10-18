@@ -507,7 +507,12 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
 #[test]
 fn round_edge_plane_envelope_preserves_type24_geometry() {
     let scan = round_edge_envelope_scan();
-    let envelopes = round_edge_envelopes_for_plane(&scan, 1);
+    let schema_classes = crate::decode::sketch_transfer::recipe::FeatureSchemaClasses::new(&scan);
+    let parameters =
+        crate::decode::uniqueness::UniqueById::new(&scan.surfaces.parameters, |record| {
+            record.surface_id
+        });
+    let envelopes = round_edge_envelopes_for_plane(&scan, 1, &schema_classes, &parameters);
     assert_eq!(envelopes.len(), 1);
     assert_eq!(envelopes[0].vertices, [[0.0, 1.0, 2.0], [-1.0, 2.0, 0.0]]);
 }

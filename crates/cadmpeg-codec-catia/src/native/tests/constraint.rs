@@ -911,15 +911,20 @@ fn constraint_ranges_decode_and_range_intervals_rederive_identically() {
     ));
     let range_entity = &range_native.entity_records[0];
     assert!(range_entity.range_interval.is_some());
-    let service = super::super::range_interval(
-        range_entity.value_payload(),
-        &range_entity.value_schema_selections,
-        range_entity.suffix_value(),
-        &super::super::EntityIncidenceIndex::new(
-            &range_native.object_graphs[0].records,
-            &range_entity.object_graph,
-        ),
-        range_entity.entity_id,
+    let incidences = super::super::EntityIncidenceIndex::new(
+        &range_native.object_graphs[0].records,
+        &range_entity.object_graph,
     );
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::resolved_range_interval(
+            ctx,
+            range_entity.value_payload(),
+            &range_entity.value_schema_selections,
+            range_entity.suffix_value(),
+            &incidences,
+            range_entity.entity_id,
+        )
+    })
+    .expect("derive the range interval");
     assert_eq!(service, range_entity.range_interval);
 }

@@ -9,7 +9,7 @@ use super::selections::{agreed_feature_geometry_ids, feature_edge_selection};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
     current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
-    feature_schema_class, unique_feature_revolution_extent,
+    unique_feature_revolution_extent, FeatureSchemaClasses,
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_core::decode::DecodeContext;
@@ -713,15 +713,16 @@ pub(super) fn section_definition_for_history_feature<'a>(
     Some(definition)
 }
 
-pub(in super::super) fn feature_source_properties(
+pub(in super::super) fn feature_source_properties_with(
     scan: &ContainerScan,
+    schema_classes: &FeatureSchemaClasses,
     feature_id: u32,
 ) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
     if let Some(recipe) = current_feature_recipe(&scan.features.operations, feature_id) {
         insert_feature_source_property(&mut properties, "recipe", recipe.name());
     }
-    let schema_class = feature_schema_class(scan, feature_id);
+    let schema_class = schema_classes.get(feature_id);
     if let Some(schema_class) = schema_class {
         insert_feature_source_property(&mut properties, "featdefs_schema_class", schema_class);
     }
