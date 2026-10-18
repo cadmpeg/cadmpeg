@@ -6019,21 +6019,33 @@ fn solve_face_orientation(out: &mut Brep) {
     for lp in &out.loops {
         loop_faces.insert(lp.id.clone(), lp.face.clone());
     }
-    let mut uses: HashMap<EdgeId, Vec<(FaceId, bool)>> = HashMap::new();
+    let mut edge_slots: HashMap<&EdgeId, usize> = HashMap::new();
+    let mut uses: Vec<(&EdgeId, Vec<(FaceId, bool)>)> = Vec::new();
     for coedge in &out.coedges {
         if let Some(face) = loop_faces.get(&coedge.owner_loop) {
-            let edge_uses = uses.entry(coedge.edge.clone()).or_default();
-            edge_uses.push((face.clone(), coedge.sense == Sense::Reversed));
+            let slot = *edge_slots.entry(&coedge.edge).or_insert_with(|| {
+                uses.push((&coedge.edge, Vec::new()));
+                uses.len() - 1
+            });
+            uses[slot]
+                .1
+                .push((face.clone(), coedge.sense == Sense::Reversed));
         }
     }
+    let shared_edges = uses
+        .into_iter()
+        .filter(|(_, uses)| uses.len() == 2)
+        .map(|(edge, uses)| {
+            let (a, a_reversed) = &uses[0];
+            let (b, b_reversed) = &uses[1];
+            (edge, a.clone(), b.clone(), *a_reversed == *b_reversed)
+        })
+        .collect::<Vec<_>>();
     let mut adjacency: HashMap<FaceId, Vec<(FaceId, bool)>> = HashMap::new();
-    for edge_uses in uses.values().filter(|uses| uses.len() == 2) {
-        let (a, a_reversed) = &edge_uses[0];
-        let (b, b_reversed) = &edge_uses[1];
-        let parity = *a_reversed == *b_reversed;
+    for (_, a, b, parity) in &shared_edges {
         for (face, neighbor) in [(a, b), (b, a)] {
             let neighbors = adjacency.entry(face.clone()).or_default();
-            neighbors.push((neighbor.clone(), parity));
+            neighbors.push((neighbor.clone(), *parity));
         }
     }
     let mut initial = HashMap::new();
@@ -6058,6 +6070,22 @@ fn solve_face_orientation(out: &mut Brep) {
                 }
             }
         }
+    }
+    let mut conflicts = crate::loss::NamedCount::default();
+    for (edge, a, b, parity) in &shared_edges {
+        if solved.get(a).map(|sense| sense ^ parity) != solved.get(b).copied() {
+            conflicts.push(edge.as_str());
+        }
+    }
+    if !conflicts.is_empty() {
+        out.losses.push(
+            crate::loss::SldprtLossCode::TopologyFaceSenseConflict.note(format!(
+                "coedge senses form an odd-parity face cycle; each face keeps the sense first \
+                 reached in face order, which contradicts shared edges {conflicts} \
+                 ({} in total).",
+                conflicts.count()
+            )),
+        );
     }
     for face in &mut out.faces {
         face.sense = if solved.get(&face.id).copied().unwrap_or(false) {
@@ -7633,6 +7661,77 @@ mod tests {
         (super::solve_face_orientation(&mut brep));
         assert_eq!(brep.faces[0].sense, Sense::Forward);
         assert_eq!(brep.faces[1].sense, Sense::Forward);
+        assert!(brep.losses.is_empty());
+    }
+
+    #[test]
+    fn odd_parity_face_cycle_solves_in_face_order_and_reports_the_conflict() {
+        use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
+        use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
+
+        let mint = |id: &str| format!("test:model:entity#{id}");
+        let face = |id: &str| Face {
+            id: FaceId::mint(mint(id)).expect("identity grammar"),
+            shell: ShellId::mint(mint("shell")).expect("identity grammar"),
+            surface: SurfaceId::mint(mint(&format!("surface-{id}"))).expect("identity grammar"),
+            sense: Sense::Forward,
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(mint(
+                &format!("loop-{id}"),
+            ))
+            .expect("identity grammar")]),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let lp = |face: &str| Loop {
+            id: LoopId::mint(mint(&format!("loop-{face}"))).expect("identity grammar"),
+            face: FaceId::mint(mint(face)).expect("identity grammar"),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(
+                    vec![CoedgeId::mint(mint(&format!("coedge-{face}-0")))
+                        .expect("identity grammar")],
+                    Vec::new(),
+                )
+                .expect("valid loop ring"),
+            ),
+        };
+        let coedge = |face: &str, index: usize, edge: &str| Coedge {
+            id: CoedgeId::mint(mint(&format!("coedge-{face}-{index}"))).expect("identity grammar"),
+            owner_loop: LoopId::mint(mint(&format!("loop-{face}"))).expect("identity grammar"),
+            edge: EdgeId::mint(mint(edge)).expect("identity grammar"),
+            radial_next: CoedgeId::mint(mint(&format!("coedge-{face}-{index}")))
+                .expect("identity grammar"),
+            sense: Sense::Forward,
+            use_curve: None,
+            pcurves: Vec::new(),
+        };
+        let mut brep = super::Brep {
+            faces: vec![face("a"), face("b"), face("c")],
+            loops: vec![lp("a"), lp("b"), lp("c")],
+            coedges: vec![
+                coedge("a", 0, "edge-ab"),
+                coedge("b", 0, "edge-ab"),
+                coedge("b", 1, "edge-bc"),
+                coedge("c", 0, "edge-bc"),
+                coedge("c", 1, "edge-ca"),
+                coedge("a", 1, "edge-ca"),
+            ],
+            ..Default::default()
+        };
+
+        (super::solve_face_orientation(&mut brep));
+        assert_eq!(
+            brep.faces.iter().map(|face| face.sense).collect::<Vec<_>>(),
+            [Sense::Forward, Sense::Reversed, Sense::Reversed]
+        );
+        assert_eq!(brep.losses.len(), 1);
+        assert_eq!(
+            brep.losses[0].code.local_code(),
+            "topology.face-sense-conflict"
+        );
+        assert!(brep.losses[0]
+            .message
+            .ends_with(&format!("shared edges {} (1 in total).", mint("edge-bc"))));
     }
 
     #[test]
