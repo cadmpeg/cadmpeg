@@ -201,48 +201,41 @@ fn mapped_normalized_endpoint_options(
     Some(normalized_endpoint_options(&mapped))
 }
 
-fn coordinate_find(
-    ctx: &DecodeContext<'_>,
-    parent: &mut [usize],
-    node: usize,
-) -> Result<usize, CodecError> {
-    let _depth = ctx.enter_nested("catia_gauge_coordinate_find")?;
-    if parent[node] == node {
-        return Ok(node);
+fn coordinate_find(parent: &mut [usize], node: usize) -> usize {
+    let mut root = node;
+    while parent[root] != root {
+        root = parent[root];
     }
-    let root = coordinate_find(ctx, parent, parent[node])?;
-    parent[node] = root;
-    Ok(root)
+    let mut current = node;
+    while parent[current] != root {
+        let next = parent[current];
+        parent[current] = root;
+        current = next;
+    }
+    root
 }
 
-fn coordinate_union(
-    ctx: &DecodeContext<'_>,
-    parent: &mut [usize],
-    left: usize,
-    right: usize,
-) -> Result<(), CodecError> {
-    let left = coordinate_find(ctx, parent, left)?;
-    let right = coordinate_find(ctx, parent, right)?;
+fn coordinate_union(parent: &mut [usize], left: usize, right: usize) {
+    let left = coordinate_find(parent, left);
+    let right = coordinate_find(parent, right);
     if left != right {
         parent[right] = left;
     }
-    Ok(())
 }
 
+/// List every order of `points`. The caller admits only classes whose
+/// factorial fits [`MAX_COORDINATE_GAUGE_PERMUTATIONS`], which bounds the depth.
 fn enumerate_coordinate_permutations(
-    ctx: &DecodeContext<'_>,
     points: &[usize],
     index: usize,
     current: &mut Vec<usize>,
     used: &mut [bool],
     output: &mut Vec<Vec<usize>>,
-) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("catia_gauge_permutation_depth")?;
-
+) {
     if index == points.len() {
         let copy = current.clone();
         output.push(copy);
-        return Ok(());
+        return;
     }
 
     for target in 0..points.len() {
@@ -251,11 +244,10 @@ fn enumerate_coordinate_permutations(
         }
         used[target] = true;
         current.push(points[target]);
-        enumerate_coordinate_permutations(ctx, points, index + 1, current, used, output)?;
+        enumerate_coordinate_permutations(points, index + 1, current, used, output);
         current.pop();
         used[target] = false;
     }
-    Ok(())
 }
 
 /// Return `value!`, or `None` when it exceeds `limit`.
@@ -367,7 +359,7 @@ pub(super) fn build_mesh_coordinate_gauge(
         }
         if let Some(&first) = group_points.first() {
             for point in group_points.into_iter().skip(1) {
-                coordinate_union(ctx, &mut parent, first, point)?;
+                coordinate_union(&mut parent, first, point);
             }
         }
     }
@@ -375,7 +367,7 @@ pub(super) fn build_mesh_coordinate_gauge(
         let mut components = BTreeMap::<usize, Vec<usize>>::new();
         for point in 0..point_count {
             if active.get(point).copied().unwrap_or(false) {
-                let root = coordinate_find(ctx, &mut parent, point)?;
+                let root = coordinate_find(&mut parent, point);
                 components.entry(root).or_default().push(point);
             }
         }
@@ -558,13 +550,12 @@ pub(super) fn build_mesh_coordinate_gauge(
             let mut used = ctx.alloc_filled(class.len(), false, "catia_coordinate_gauge_used")?;
             let mut class_orders = Vec::new();
             enumerate_coordinate_permutations(
-                ctx,
                 class,
                 0,
                 &mut Vec::new(),
                 &mut used,
                 &mut class_orders,
-            )?;
+            );
 
             let mut next = Vec::new();
 

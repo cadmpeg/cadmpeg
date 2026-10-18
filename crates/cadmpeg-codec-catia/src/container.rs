@@ -241,13 +241,14 @@ fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<Pr
     {
         let bytes = &data[segment.range.clone()];
 
+        let mut walk = JpegCandidateWalk::new(bytes);
         let mut selected = None;
         let mut ambiguous = false;
         for (start, signature) in bytes.windows(3).enumerate() {
             if signature != [0xff, 0xd8, 0xff] {
                 continue;
             }
-            if let Some((end, width, height, components)) = jpeg_extent(bytes, start) {
+            if let Some((end, width, height, components)) = walk.extent(start) {
                 if selected.is_some() {
                     ambiguous = true;
                     break;
@@ -414,10 +415,69 @@ fn tagged_ascii<'a>(data: &'a [u8], open: &[u8], close: &[u8]) -> Option<&'a str
         .flatten()
 }
 
-fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
-    data.get(start..)?;
+/// Marker walks over every JPEG candidate of one segment in linear total work.
+///
+/// A walk's outcome depends only on its position, its phase (at a marker
+/// prefix or inside a fill-byte run), whether it is in entropy-coded data and
+/// whether it has seen a frame header. Positions strictly increase, so every
+/// state a failed walk passed through is recorded and later walks stop on
+/// reaching one. Successful walks record nothing; the caller stops at the
+/// second.
+struct JpegCandidateWalk<'a> {
+    data: &'a [u8],
+    failed: Vec<u8>,
+    trail: Vec<(usize, u8)>,
+    #[cfg(test)]
+    steps: usize,
+}
 
-    (|| {
+impl<'a> JpegCandidateWalk<'a> {
+    const MARKER_PREFIX: u8 = 0;
+    const FILL_RUN: u8 = 4;
+
+    fn new(data: &'a [u8]) -> Self {
+        Self {
+            data,
+            failed: Vec::new(),
+            trail: Vec::new(),
+            #[cfg(test)]
+            steps: 0,
+        }
+    }
+
+    fn extent(&mut self, start: usize) -> Option<(usize, u16, u16, u8)> {
+        self.trail.clear();
+        let extent = self.walk(start);
+        if extent.is_none() && !self.trail.is_empty() {
+            if self.failed.is_empty() {
+                self.failed = vec![0; self.data.len()];
+            }
+            for &(at, state) in &self.trail {
+                self.failed[at] |= state;
+            }
+        }
+        extent
+    }
+
+    fn visit(&mut self, at: usize, phase: u8, in_entropy: bool, has_frame: bool) -> Option<()> {
+        #[cfg(test)]
+        {
+            self.steps += 1;
+        }
+        let state = 1u8 << (phase + u8::from(in_entropy) + 2 * u8::from(has_frame));
+        if self
+            .failed
+            .get(at)
+            .is_some_and(|failed| failed & state != 0)
+        {
+            return None;
+        }
+        self.trail.push((at, state));
+        Some(())
+    }
+
+    fn walk(&mut self, start: usize) -> Option<(usize, u16, u16, u8)> {
+        let data = self.data;
         if data.get(start..start + 2) != Some(&[0xff, 0xd8]) {
             return None;
         }
@@ -425,6 +485,7 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
         let mut frame = None;
         let mut in_entropy = false;
         while at + 1 < data.len() {
+            self.visit(at, Self::MARKER_PREFIX, in_entropy, frame.is_some())?;
             if data[at] != 0xff {
                 if in_entropy {
                     at += 1;
@@ -432,7 +493,9 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
                 }
                 return None;
             }
+            at += 1;
             while data.get(at) == Some(&0xff) {
+                self.visit(at, Self::FILL_RUN, in_entropy, frame.is_some())?;
                 at += 1;
             }
             let marker = *data.get(at)?;
@@ -478,7 +541,7 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
             at = end;
         }
         None
-    })()
+    }
 }
 
 /// Locate the coherent E5 record stream in the outer-body preamble or a FINJPL segment.

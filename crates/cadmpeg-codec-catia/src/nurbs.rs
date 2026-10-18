@@ -81,12 +81,12 @@ impl LaneRefusals {
 
     /// Record that the zero-entity endpoint-pair and endpoint-locus candidate
     /// search reached its work bound.
-    pub(crate) fn push_zero_entity_candidates_bounded(&mut self) {
+    pub(crate) fn push_zero_entity_candidates_bounded(&mut self, limit: usize) {
         self.notes.push(
             crate::loss::CatiaLossCode::TopologyZeroEntityCandidatesBounded.note(format!(
-                "The zero-entity endpoint candidate search reached its bound of {} operations; \
-                 the endpoint-pair or endpoint-locus candidates it cut short are not retained.",
-                crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS
+                "The zero-entity endpoint candidate search reached its bound of {limit} \
+                 operations; the endpoint-pair or endpoint-locus candidates it cut short are not \
+                 retained."
             )),
         );
     }
@@ -103,6 +103,38 @@ impl LaneRefusals {
                  byte; {bounded_candidates} later catalog candidates were not read, and the \
                  object classes they name stay unresolved.",
                 crate::catalog::MAX_CATALOG_WALK_BYTES_PER_INPUT_BYTE
+            )),
+        );
+    }
+
+    /// Record the configuration-row links that kept no intervening entities at
+    /// the per-record allowance.
+    pub(crate) fn push_configuration_row_order_bounded(&mut self, bounded_links: usize) {
+        if bounded_links == 0 {
+            return;
+        }
+        self.notes.push(
+            crate::loss::CatiaLossCode::HistoryConfigurationRowOrderBounded.note(format!(
+                "The configuration-row chains reached their bound of {} kept intervening \
+                 entities per entity record; {bounded_links} row links keep no intervening \
+                 entities, and their source order stays unresolved.",
+                crate::native::schema_configuration_chain::MAX_INTERVENING_ENTITIES_PER_RECORD
+            )),
+        );
+    }
+
+    /// Record the relations that kept no parameter dependencies at the
+    /// per-input-byte allowance.
+    pub(crate) fn push_relation_dependencies_bounded(&mut self, bounded_relations: usize) {
+        if bounded_relations == 0 {
+            return;
+        }
+        self.notes.push(
+            crate::loss::CatiaLossCode::HistoryRelationDependenciesBounded.note(format!(
+                "The relation parameter dependencies reached their bound of {} kept text bytes \
+                 per input byte; {bounded_relations} relations keep no parameter dependencies, \
+                 and their program inputs stay unresolved.",
+                crate::native::MAX_RELATION_DEPENDENCY_BYTES_PER_INPUT_BYTE
             )),
         );
     }

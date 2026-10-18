@@ -1941,12 +1941,11 @@ fn advance_compact_boundary_domains<'a>(
                     return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
                 };
                 for (_, mut candidate) in state.assignment_options_limited(
-                    ctx,
                     face,
                     &candidates,
                     &oriented_edges,
                     remaining,
-                    Some(budget),
+                    budget,
                 )? {
                     let mut next_oriented = HashSet::new();
                     for &edge in &oriented_edges {

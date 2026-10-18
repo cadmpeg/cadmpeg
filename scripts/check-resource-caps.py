@@ -82,13 +82,14 @@ def production_constants(root: Path) -> list[Constant]:
     """Every production ``const MAX_*`` under ``crates/**/*.rs``."""
     found: list[Constant] = []
     for path in sorted(root.glob("crates/**/*.rs")):
-        if not SOURCE_POLICY.is_production_rs(path):
+        relative_path = path.relative_to(root)
+        if not SOURCE_POLICY.is_production_rs(relative_path):
             continue
         code, _ = SOURCE_POLICY.production_source(
             path.read_text(encoding="utf-8")
         )
-        relative = path.relative_to(root).as_posix()
-        parts = Path(relative).parts
+        relative = relative_path.as_posix()
+        parts = relative_path.parts
         crate = parts[1]
         file = Path(*parts[2:]).as_posix()
         for match in CONST_MAX.finditer(code):

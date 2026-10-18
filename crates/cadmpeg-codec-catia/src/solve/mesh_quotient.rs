@@ -2086,12 +2086,11 @@ impl MeshQuotient {
 
     pub(super) fn assignment_options_limited(
         &self,
-        ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
         oriented_edges: &HashSet<usize>,
         limit: usize,
-        budget: Option<&WorkBudget>,
+        budget: &WorkBudget,
     ) -> Result<Vec<MeshOrientationOption>, CodecError> {
         struct BoundaryOrientationSearch<
             'input0,
@@ -2116,11 +2115,10 @@ impl MeshQuotient {
             oriented: &'input6 mut HashSet<usize>,
             gaugeable_edges: &'input7 HashSet<usize>,
             limit: usize,
-            budget: Option<&'input9 WorkBudget>,
+            budget: &'input9 WorkBudget,
         }
 
         fn walk(
-            ctx: &DecodeContext<'_>,
             inputs: BoundaryOrientationSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<(), CodecError> {
             let BoundaryOrientationSearch {
@@ -2139,12 +2137,13 @@ impl MeshQuotient {
                 budget,
             } = inputs;
 
-            let _depth = ctx.enter_nested("catia orientation search")?;
-
+            let Ok(_depth) = budget.recursion_guard() else {
+                return Ok(());
+            };
             if output.len() >= limit {
                 return Ok(());
             }
-            if budget.is_some_and(|budget| !budget.charge()) {
+            if !budget.charge() {
                 return Ok(());
             }
             if boundary_index == boundaries.len() {
@@ -2167,56 +2166,58 @@ impl MeshQuotient {
                 let Some(root) = quotient.merge(last_end, first_start)? else {
                     return Ok(());
                 };
-                if !quotient.propagate_component_edge_domains(root, edge_candidates, budget)? {
+                if !quotient.propagate_component_edge_domains(
+                    root,
+                    edge_candidates,
+                    Some(budget),
+                )? {
                     return Ok(());
                 }
                 directions.push(std::mem::take(boundary_directions));
-                walk(
-                    ctx,
-                    BoundaryOrientationSearch {
-                        boundaries,
-                        boundary_index: boundary_index + 1,
-                        at: 0,
-                        boundary_directions,
-                        directions,
-                        quotient,
-                        edge_candidates,
-                        output,
-                        seen,
-                        oriented,
-                        gaugeable_edges,
-                        limit,
-                        budget,
-                    },
-                )?;
+                walk(BoundaryOrientationSearch {
+                    boundaries,
+                    boundary_index: boundary_index + 1,
+                    at: 0,
+                    boundary_directions,
+                    directions,
+                    quotient,
+                    edge_candidates,
+                    output,
+                    seen,
+                    oriented,
+                    gaugeable_edges,
+                    limit,
+                    budget,
+                })?;
                 *boundary_directions = directions.pop().unwrap_or_default();
                 return Ok(());
             }
             let edge = boundary[at].edge;
             let first = oriented.insert(edge);
-            let mut advance = |reversed: bool,
-                               mut quotient: MeshQuotient|
-             -> Result<(), CodecError> {
-                if at > 0 {
-                    let Some(previous_end) =
-                        edge_end(boundary[at - 1], boundary_directions[at - 1])
-                    else {
-                        return Ok(());
-                    };
-                    let Some(current_start) = edge_start(boundary[at], reversed) else {
-                        return Ok(());
-                    };
-                    let Some(root) = quotient.merge(previous_end, current_start)? else {
-                        return Ok(());
-                    };
-                    if !quotient.propagate_component_edge_domains(root, edge_candidates, budget)? {
-                        return Ok(());
+            let mut advance =
+                |reversed: bool, mut quotient: MeshQuotient| -> Result<(), CodecError> {
+                    if at > 0 {
+                        let Some(previous_end) =
+                            edge_end(boundary[at - 1], boundary_directions[at - 1])
+                        else {
+                            return Ok(());
+                        };
+                        let Some(current_start) = edge_start(boundary[at], reversed) else {
+                            return Ok(());
+                        };
+                        let Some(root) = quotient.merge(previous_end, current_start)? else {
+                            return Ok(());
+                        };
+                        if !quotient.propagate_component_edge_domains(
+                            root,
+                            edge_candidates,
+                            Some(budget),
+                        )? {
+                            return Ok(());
+                        }
                     }
-                }
-                boundary_directions.push(reversed);
-                walk(
-                    ctx,
-                    BoundaryOrientationSearch {
+                    boundary_directions.push(reversed);
+                    walk(BoundaryOrientationSearch {
                         boundaries,
                         boundary_index,
                         at: at + 1,
@@ -2230,11 +2231,10 @@ impl MeshQuotient {
                         gaugeable_edges,
                         limit,
                         budget,
-                    },
-                )?;
-                boundary_directions.pop();
-                Ok(())
-            };
+                    })?;
+                    boundary_directions.pop();
+                    Ok(())
+                };
             match (boundary[at].reversed, first) {
                 (Some(reversed), _) => advance(reversed, quotient)?,
                 (None, true) if gaugeable_edges.contains(&edge) => advance(false, quotient)?,
@@ -2312,7 +2312,7 @@ impl MeshQuotient {
                 if output.len() >= limit {
                     break;
                 }
-                if budget.is_some_and(|budget| !budget.charge_by(orientation_work)) {
+                if !budget.charge_by(orientation_work) {
                     break;
                 }
                 let mut directions = Vec::new();
@@ -2373,7 +2373,11 @@ impl MeshQuotient {
                 }
                 let affected_edges =
                     quotient.affected_edges_for_nodes(&merged_nodes, edge_candidates)?;
-                if !quotient.propagate_edge_domains(affected_edges, edge_candidates, budget)? {
+                if !quotient.propagate_edge_domains(
+                    affected_edges,
+                    edge_candidates,
+                    Some(budget),
+                )? {
                     continue;
                 }
                 if admit_orientation_option(&mut seen, &output, &directions, &quotient)? {
@@ -2387,24 +2391,21 @@ impl MeshQuotient {
         let mut oriented = HashSet::new();
 
         oriented.extend(oriented_edges.iter().copied());
-        walk(
-            ctx,
-            BoundaryOrientationSearch {
-                boundaries: &assignment.boundaries,
-                boundary_index: 0,
-                at: 0,
-                boundary_directions: &mut Vec::new(),
-                directions: &mut Vec::new(),
-                quotient: self.clone(),
-                edge_candidates,
-                output: &mut output,
-                seen: &mut seen,
-                oriented: &mut oriented,
-                gaugeable_edges: &gaugeable_edges,
-                limit,
-                budget,
-            },
-        )?;
+        walk(BoundaryOrientationSearch {
+            boundaries: &assignment.boundaries,
+            boundary_index: 0,
+            at: 0,
+            boundary_directions: &mut Vec::new(),
+            directions: &mut Vec::new(),
+            quotient: self.clone(),
+            edge_candidates,
+            output: &mut output,
+            seen: &mut seen,
+            oriented: &mut oriented,
+            gaugeable_edges: &gaugeable_edges,
+            limit,
+            budget,
+        })?;
         Ok(output)
     }
 
@@ -2695,6 +2696,7 @@ impl MeshQuotient {
             'input5,
             'input6,
             'input7,
+            'input8,
             'input9,
         > {
             domains: &'input0 [Arc<HashSet<usize>>],
@@ -2707,11 +2709,13 @@ impl MeshQuotient {
             solutions: &'input7 mut Vec<Vec<usize>>,
             solution_limit: usize,
             budget: Option<&'input9 WorkBudget>,
+            exhausted: &'input8 mut bool,
+            depth: usize,
         }
 
         fn walk(
             ctx: &DecodeContext<'_>,
-            inputs: CoordinateAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_>,
+            inputs: CoordinateAssignmentSearch<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<(), CodecError> {
             fn rollback(
                 assigned: &mut [Option<usize>],
@@ -2735,11 +2739,18 @@ impl MeshQuotient {
                 solutions,
                 solution_limit,
                 budget,
+                exhausted,
+                depth,
             } = inputs;
 
-            let _depth = ctx.enter_nested("catia_point_assignment_walk")?;
-
-            if solutions.len() >= solution_limit {
+            if solutions.len() >= solution_limit || *exhausted {
+                return Ok(());
+            }
+            if depth >= WorkBudget::RECURSION_DEPTH {
+                if let Some(budget) = budget {
+                    budget.exhaust();
+                }
+                *exhausted = true;
                 return Ok(());
             }
             if budget.is_some_and(|budget| !budget.charge()) {
@@ -2855,6 +2866,8 @@ impl MeshQuotient {
                         solutions,
                         solution_limit,
                         budget,
+                        exhausted,
+                        depth: depth + 1,
                     },
                 )?;
                 used.remove(&point);
@@ -2917,6 +2930,7 @@ impl MeshQuotient {
         let mut solutions = Vec::new();
         let mut assigned = vec![None; domains.len()];
         let mut used = HashSet::new();
+        let mut exhausted = false;
         walk(
             ctx,
             CoordinateAssignmentSearch {
@@ -2930,9 +2944,11 @@ impl MeshQuotient {
                 solutions: &mut solutions,
                 solution_limit,
                 budget,
+                exhausted: &mut exhausted,
+                depth: 0,
             },
         )?;
-        if budget.is_some_and(WorkBudget::exhausted) {
+        if exhausted || budget.is_some_and(WorkBudget::exhausted) {
             Ok(PointAssignmentOutcome::Exhausted)
         } else {
             let mut completed = Vec::new();
@@ -3052,8 +3068,9 @@ fn deferred_face_quotient_options_limited(
             budget,
         } = inputs;
 
-        let _depth = ctx.enter_nested("catia deferred gap search")?;
-
+        let Ok(_depth) = budget.recursion_guard() else {
+            return Ok(());
+        };
         if output.len() >= limit || budget.exhausted() {
             return Ok(());
         }
@@ -3180,8 +3197,9 @@ fn deferred_face_quotient_options_limited(
             budget,
         } = inputs;
 
-        let _depth = ctx.enter_nested("catia deferred gap walk")?;
-
+        let Ok(_depth) = budget.recursion_guard() else {
+            return Ok(());
+        };
         if output.len() >= limit || budget.exhausted() {
             return Ok(());
         }
@@ -3890,22 +3908,20 @@ fn mesh_boundary_domain_edges(domain: &MeshFaceBoundaryDomain) -> Vec<usize> {
 }
 
 pub(super) fn bounded_unordered_cycle_assignments(
-    ctx: &DecodeContext<'_>,
     edges: &[usize],
     quotient: &MeshQuotient,
     limit: usize,
     budget: &WorkBudget,
 ) -> Result<Option<Vec<MeshFaceBoundaryAssignment>>, CodecError> {
-    struct Search<'a, 'b> {
+    struct Search<'a> {
         edges: &'a [usize],
         compatible: &'a HashSet<(usize, usize)>,
-        ctx: &'a DecodeContext<'b>,
         limit: usize,
         budget: &'a WorkBudget,
         assignments: Vec<MeshFaceBoundaryAssignment>,
     }
 
-    impl Search<'_, '_> {
+    impl Search<'_> {
         fn walk(
             &mut self,
             first_start: usize,
@@ -3913,8 +3929,9 @@ pub(super) fn bounded_unordered_cycle_assignments(
             used: u64,
             boundary: &mut Vec<MeshBoundaryEdgeCandidate>,
         ) -> Result<bool, CodecError> {
-            let _depth = self.ctx.enter_nested("catia unordered boundary search")?;
-
+            let Ok(_depth) = self.budget.recursion_guard() else {
+                return Ok(false);
+            };
             if !self.budget.charge() {
                 return Ok(false);
             }
@@ -3998,7 +4015,6 @@ pub(super) fn bounded_unordered_cycle_assignments(
     let mut search = Search {
         edges: &edges,
         compatible: &compatible,
-        ctx,
         limit,
         budget,
         assignments: Vec::new(),
@@ -4034,12 +4050,11 @@ fn advance_boundary_component_states(
                     let mut candidates = Vec::new();
                     for assignment in assignments {
                         for (_, quotient) in state.assignment_options_limited(
-                            ctx,
                             assignment,
                             edge_candidates,
                             oriented_edges,
                             remaining,
-                            Some(budget),
+                            budget,
                         )? {
                             candidates.push(quotient);
                         }
@@ -4086,19 +4101,18 @@ fn advance_boundary_component_states(
                 }
                 MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
                     let Some(assignments) =
-                        bounded_unordered_cycle_assignments(ctx, edges, state, remaining, budget)?
+                        bounded_unordered_cycle_assignments(edges, state, remaining, budget)?
                     else {
                         return Ok(None);
                     };
                     let mut candidates = Vec::new();
                     for assignment in &assignments {
                         for (_, quotient) in state.assignment_options_limited(
-                            ctx,
                             assignment,
                             edge_candidates,
                             oriented_edges,
                             remaining,
-                            Some(budget),
+                            budget,
                         )? {
                             candidates.push(quotient);
                         }
@@ -5958,7 +5972,9 @@ where
         evaluate,
     } = inputs;
 
-    let _depth = ctx.enter_nested("catia_endpoint_relation_walk_depth")?;
+    let Ok(_depth) = budget.recursion_guard() else {
+        return Ok(true);
+    };
     if budget.exhausted() || !budget.charge() {
         return Ok(true);
     }
@@ -8334,7 +8350,6 @@ where
 /// A second solved assignment is semantic ambiguity: no topology gauge may
 /// erase a different edge-to-face incidence graph.
 pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_assignments<F>(
-    ctx: &DecodeContext<'_>,
     candidates: MeshFaceAssignmentCandidates<'_>,
     budget: &WorkBudget,
     mut solve: F,
@@ -8389,7 +8404,6 @@ where
             allowed_faces,
             face_count,
         } => visit_duplicate_face_assignments(
-            ctx,
             edge_faces,
             allowed_faces,
             face_count,
@@ -8526,13 +8540,11 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
 
 #[test]
 fn face_domain_solver_returns_the_unique_concrete_assignment() {
-    catia_test_context!(ctx);
     let edge_faces = [[0, 0]];
     let allowed_faces = [vec![2, 1]];
     let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
     let mut visited = Vec::new();
     let result = parse_standard_mesh_candidate_outcome_with_face_assignments(
-        &ctx,
         MeshFaceAssignmentCandidates::Domains {
             edge_faces: &edge_faces,
             allowed_faces: &allowed_faces,
@@ -8569,12 +8581,10 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
 
 #[test]
 fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
-    catia_test_context!(ctx);
     let assignments = [vec![[0, 0]], vec![[0, 2]]];
     let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
     let mut visited = Vec::new();
     let result = parse_standard_mesh_candidate_outcome_with_face_assignments(
-        &ctx,
         MeshFaceAssignmentCandidates::Concrete {
             assignments: &assignments,
             face_count: 3,
@@ -8610,12 +8620,10 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
 
 #[test]
 fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
-    catia_test_context!(ctx);
     let edge_faces = [[0, 0]];
     let allowed_faces = [vec![1, 2]];
     let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
     let result = parse_standard_mesh_candidate_outcome_with_face_assignments(
-        &ctx,
         MeshFaceAssignmentCandidates::Domains {
             edge_faces: &edge_faces,
             allowed_faces: &allowed_faces,
@@ -9216,9 +9224,8 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
 }
 
 #[test]
-fn coordinate_root_closure_refuses_recursive_walk_depth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn coordinate_root_closure_walk_does_not_charge_the_session_recursion_ceiling() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_faces = [[0, 1], [0, 1]];
@@ -9267,12 +9274,8 @@ fn coordinate_root_closure_refuses_recursive_walk_depth() {
         Some((&edge_faces, &boundary_domains)),
         None,
     );
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.operation == "catia_coordinate_closure_walk"
-    ));
+    assert!(result.is_ok());
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
@@ -9720,7 +9723,6 @@ fn face_domain_local_work_exhaustion_reports_an_exhausted_search() {
         let budget = cadmpeg_core::decode::WorkBudget::new(0);
         let assignments = [vec![[0, 0]]];
         let outcome = parse_standard_mesh_candidate_outcome_with_face_assignments(
-            ctx,
             MeshFaceAssignmentCandidates::Concrete {
                 assignments: &assignments,
                 face_count: 1,
@@ -9991,10 +9993,9 @@ fn endpoint_configuration_helpers_refuse_missing_or_duplicate_edges() {
 #[test]
 fn concrete_face_assignment_returns_the_solved_topology() {
     let assignments = [vec![[0, 0]]];
-    let run = |ctx: &DecodeContext<'_>| {
+    let result = {
         let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
         parse_standard_mesh_candidate_outcome_with_face_assignments(
-            ctx,
             MeshFaceAssignmentCandidates::Concrete {
                 assignments: &assignments,
                 face_count: 1,
@@ -10013,10 +10014,7 @@ fn concrete_face_assignment_returns_the_solved_topology() {
             },
         )
     };
-    assert!(matches!(
-        crate::test_support::with_service_context(run),
-        Ok(MeshSolve::Solved(_))
-    ));
+    assert!(matches!(result, Ok(MeshSolve::Solved(_))));
 }
 
 #[test]

@@ -69,7 +69,7 @@ Writers create a unique temporary file in the destination directory, then rename
 
 ## Loss reports
 
-Source decoders return `DecodeReport`, including a typed `DecodeTransfer`, a decode-coverage census, notes, and attributable `LossNote` entries. `DecodeTransfer` distinguishes container-only, geometry, and full decodes, and records the geometry outcome for geometry and full decodes. The JSON form tags the state as `container_only`, `geometry`, or `full` and carries `geometry_transferred` only for the last two. Validation propagates supplied decode losses unchanged.
+Source decoders return `DecodeReport`, including a typed `DecodeTransfer`, a decode-coverage census, notes, and attributable `LossNote` entries. `DecodeTransfer` distinguishes container-only, geometry, and full decodes, and records the geometry outcome for geometry and full decodes. The JSON form tags the state as `container`, `geometry`, or `full`, the `DecodeDepth` it delivered, and carries `geometry_transferred` only for the last two. Validation propagates supplied decode losses unchanged.
 
 Each codec owns a `*LossCode` enum in `src/loss.rs`. Every reported drop goes through `code.note(message)`, which pins the namespaced local code, `LossTaxonomy`, severity, and strict floor. Shared taxonomy is the category used for subsystem reporting; the stable machine-readable identifier is the codec-local `family.detail` string.
 

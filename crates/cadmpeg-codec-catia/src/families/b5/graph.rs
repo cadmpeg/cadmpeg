@@ -1034,9 +1034,10 @@ fn parse_from_records_with_class21(
             },
         );
     }
+    let grids = crate::families::a5a8::records::A8ExternalGrids::new(bytes);
     for frame in frames {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            bytes,
+            &grids,
             frame.start,
             frame.end,
             frame.object_id,
@@ -1878,16 +1879,16 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
 }
 
 pub(in crate::families) fn targeted_surfaces_from_frames(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     object_ids: &HashSet<u32>,
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<BTreeMap<u32, B5Surface>, CodecError> {
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
+    let grids = crate::families::a5a8::records::A8ExternalGrids::new(bytes);
     for frame in frames {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            bytes,
+            &grids,
             frame.start,
             frame.end,
             frame.object_id,
@@ -1950,12 +1951,23 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         );
     }
     let mut surfaces = BTreeMap::new();
+    let mut bounded = 0usize;
     for &object_id in object_ids {
-        if let Some(surface) =
-            resolve_targeted_surface(ctx, object_id, &records, &headers, &resolved, &rolling)?
-        {
+        let budget = WorkBudget::new(MAX_TARGETED_SURFACE_RESOLUTION_STEPS);
+        let surface =
+            resolve_targeted_surface(object_id, &records, &headers, &resolved, &rolling, &budget)?;
+        if budget.exhausted() {
+            bounded += 1;
+        } else if let Some(surface) = surface {
             surfaces.insert(object_id, surface);
         }
+    }
+    if bounded > 0 {
+        refusal.push_standard_search_bounded(format_args!(
+            "The targeted B5 surface resolution reached its bound of \
+             {MAX_TARGETED_SURFACE_RESOLUTION_STEPS} steps for {bounded} requested surfaces; \
+             those surfaces stay unresolved."
+        ));
     }
     Ok(surfaces)
 }
@@ -2052,35 +2064,51 @@ fn merge_targeted_surface(
         .or_insert(Some(surface));
 }
 
+/// Resolution calls for one requested surface. An analytic offset resolves
+/// both its carrier and its source, so shared offsets can branch.
+pub(crate) const MAX_TARGETED_SURFACE_RESOLUTION_STEPS: usize = 4_096;
+/// Analytic offsets one requested surface may resolve through before its
+/// resolution stops; each level holds two resolution frames on the stack.
+pub(crate) const MAX_TARGETED_SURFACE_OFFSET_DEPTH: usize = 64;
+
+/// Resolve one requested surface through aliases, constructions and analytic
+/// offsets. `None` when it does not resolve; `budget` is exhausted when the
+/// resolution stopped at its bound instead.
 fn resolve_targeted_surface(
-    ctx: &DecodeContext<'_>,
     object_id: u32,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
+    budget: &WorkBudget,
 ) -> Result<Option<B5Surface>, CodecError> {
     resolve_targeted_surface_inner(
-        ctx,
         object_id,
         records,
         headers,
         resolved,
         rolling,
-        HashSet::new(),
+        (HashSet::new(), 0),
+        budget,
     )
 }
 
 fn resolve_targeted_surface_inner(
-    ctx: &DecodeContext<'_>,
     mut object_id: u32,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
-    mut visited: HashSet<u32>,
+    (mut visited, depth): (HashSet<u32>, usize),
+    budget: &WorkBudget,
 ) -> Result<Option<B5Surface>, CodecError> {
-    let _depth = ctx.enter_nested("catia_b5_targeted_surface_resolution")?;
+    if depth >= MAX_TARGETED_SURFACE_OFFSET_DEPTH {
+        budget.exhaust();
+        return Ok(None);
+    }
+    if !budget.charge() {
+        return Ok(None);
+    }
     loop {
         if !visited.insert(object_id) || records.get(&object_id).is_some_and(Option::is_none) {
             return Ok(None);
@@ -2113,7 +2141,13 @@ fn resolve_targeted_surface_inner(
         }
         if record.family == 0xb5 && record.class == 0x30 {
             return resolve_targeted_analytic_offset(
-                ctx, record, records, headers, resolved, rolling, &visited,
+                record,
+                records,
+                headers,
+                resolved,
+                rolling,
+                (&visited, depth + 1),
+                budget,
             );
         }
         return Ok(surface_node(record, headers.get(&object_id)));
@@ -2121,13 +2155,13 @@ fn resolve_targeted_surface_inner(
 }
 
 fn resolve_targeted_analytic_offset(
-    ctx: &DecodeContext<'_>,
     record: &B5Record,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
-    visited: &HashSet<u32>,
+    (visited, depth): (&HashSet<u32>, usize),
+    budget: &WorkBudget,
 ) -> Result<Option<B5Surface>, CodecError> {
     if record.payload.first() != Some(&0x82) {
         return Ok(None);
@@ -2140,13 +2174,13 @@ fn resolve_targeted_analytic_offset(
         return Ok(None);
     };
     let Some(carrier) = resolve_targeted_surface_inner(
-        ctx,
         carrier_id,
         records,
         headers,
         resolved,
         rolling,
-        visited.clone(),
+        (visited.clone(), depth),
+        budget,
     )?
     else {
         return Ok(None);
@@ -2155,13 +2189,13 @@ fn resolve_targeted_analytic_offset(
     surfaces.insert(carrier_id, copy_surface(&carrier)?);
     if !matches!(carrier, B5Surface::RollingBall { .. }) {
         let Some(source) = resolve_targeted_surface_inner(
-            ctx,
             source_id,
             records,
             headers,
             resolved,
             rolling,
-            visited.clone(),
+            (visited.clone(), depth),
+            budget,
         )?
         else {
             return Ok(None);

@@ -39,6 +39,7 @@ pub struct DecodeReport {
 pub enum DecodeTransfer {
     /// The decoder stopped after container inspection and transferred no
     /// semantic geometry.
+    #[serde(rename = "container")]
     ContainerOnly {},
     /// The decoder transferred the model and left every design arena empty,
     /// with the recorded B-rep geometry outcome.

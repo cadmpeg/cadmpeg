@@ -1232,12 +1232,11 @@ impl MeshSelectionSearch<'_, '_> {
                 )
             } else {
                 measured.assignment_options_limited(
-                    self.ctx,
                     assignment,
                     self.edge_candidates,
                     &selected_edges,
                     remaining,
-                    Some(budget),
+                    budget,
                 )
             }?;
             if budget.exhausted() {

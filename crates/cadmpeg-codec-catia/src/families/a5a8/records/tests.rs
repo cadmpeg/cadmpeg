@@ -101,7 +101,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
         (3, 3)
     );
     let surface = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-        &bytes,
+        &crate::families::a5a8::records::A8ExternalGrids::new(&bytes),
         inner_start,
         inner_end,
         inner_object_id,
@@ -113,7 +113,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     assert_eq!(surface.poles().into_iter().nth(8).unwrap().x, 8.0);
     assert!(
         crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
-            &bytes,
+            &crate::families::a5a8::records::A8ExternalGrids::new(&bytes),
             inner_start,
             inner_end - 1,
             inner_object_id,
@@ -480,7 +480,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
             .try_into()
             .expect("one elided header");
     let surface = crate::families::a5a8::records::a8_surface_from_external_grid(
-        &bytes,
+        &crate::families::a5a8::records::A8ExternalGrids::new(&bytes),
         &header,
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -528,9 +528,10 @@ fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_gri
             .collect::<Vec<_>>(),
         [100, 101]
     );
+    let grids = crate::families::a5a8::records::A8ExternalGrids::new(&bytes);
     for header in &headers {
         let surface = crate::families::a5a8::records::a8_surface_from_external_grid(
-            &bytes,
+            &grids,
             header,
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -538,6 +539,40 @@ fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_gri
         .expect("support reference selects one equal-sized grid");
         assert_eq!(surface.object_id(), Some(header.object_id));
     }
+}
+
+#[test]
+fn a8_elided_surfaces_resolve_against_one_support_index() {
+    let surfaces = 512u16;
+    let mut bytes = Vec::new();
+    for object_id in 100..100 + surfaces {
+        let mut stream = a8_elided_surface_stream();
+        stream[7..11].copy_from_slice(&u32::from(object_id).to_le_bytes());
+        let pcurve = stream
+            .windows(3)
+            .position(|value| value == [0xb5, 0x03, 0x21])
+            .expect("external pcurve");
+        stream[pcurve + 10..pcurve + 12].copy_from_slice(&object_id.to_le_bytes());
+        bytes.extend(stream);
+    }
+    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(
+        &bytes,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("resolve the A8 surfaces");
+    assert_eq!(
+        resolved
+            .iter()
+            .map(super::FreeformSurface::object_id)
+            .collect::<Vec<_>>(),
+        (100..100 + surfaces)
+            .map(|object_id| Some(u32::from(object_id)))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        crate::families::a5a8::records::a8_external_grid_ranges(&bytes).len(),
+        usize::from(surfaces)
+    );
 }
 
 #[test]
@@ -1320,7 +1355,7 @@ fn a8_external_grid_surface_reads_nine_poles() {
         .try_into()
         .expect("one elided header");
     let surface = crate::families::a5a8::records::a8_surface_from_external_grid(
-        &bytes,
+        &crate::families::a5a8::records::A8ExternalGrids::new(&bytes),
         &header,
         &mut crate::nurbs::LaneRefusals::new(),
     )

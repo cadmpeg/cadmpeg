@@ -1362,17 +1362,15 @@ fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
 
 #[test]
 fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
-    catia_test_context!(ctx);
     let serialized = [[0, 0], [1, 1], [0, 2]];
     let allowed = [vec![2, 1, 0], Vec::new(), Vec::new()];
     let mut assignments = Vec::new();
 
-    let outcome =
-        visit_duplicate_face_assignments(&ctx, &serialized, &allowed, 3, 4, |assignment| {
-            assignments.push(assignment.to_vec());
-            Ok(true)
-        })
-        .expect("visit duplicate face assignments");
+    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 4, |assignment| {
+        assignments.push(assignment.to_vec());
+        Ok(true)
+    })
+    .expect("visit duplicate face assignments");
 
     assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Complete));
     assert_eq!(

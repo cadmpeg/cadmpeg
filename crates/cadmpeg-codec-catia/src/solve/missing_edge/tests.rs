@@ -574,6 +574,33 @@ fn repeated_handle_overlap_past_its_step_bound_leaves_later_rows_without_candida
 }
 
 #[test]
+fn repeated_handle_overlap_allowance_grows_with_the_handle_tables() {
+    const FACES: usize = 1024;
+    const HANDLES_PER_FACE: u32 = 32;
+    let steps_per_row = 2 * FACES;
+    let rows = vec![row(&[10, 11]); super::MAX_REPEATED_EDGE_HANDLE_STEPS / steps_per_row + 2];
+    let face = (10..10 + HANDLES_PER_FACE).collect::<Vec<_>>();
+    let faces = vec![handles(&face); FACES];
+    let serialized = vec![[0, 0]; rows.len()];
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    catia_test_context!(service_ctx);
+
+    let candidates = repeated_edge_face_handle_candidates_from_sets(
+        &service_ctx,
+        &rows,
+        &faces,
+        &serialized,
+        &mut refusal,
+    )
+    .expect("compute the repeated edge face handle candidates from sets")
+    .expect("complete owning-face containment");
+
+    let sharing_faces = (1..FACES).collect::<Vec<_>>();
+    assert!(candidates.iter().all(|faces| *faces == sharing_faces));
+    assert!(refusal.take_notes().is_empty());
+}
+
+#[test]
 fn repeated_handle_overlap_within_its_step_bound_states_no_loss() {
     let rows = vec![row(&[10, 11])];
     let faces = vec![handles(&[10, 11]), handles(&[10, 11])];
@@ -611,6 +638,23 @@ fn endpoint_degree_closure_closes_a_three_edge_cycle() {
     )
     .expect("compute the repeated face endpoint closures")
     .is_some());
+}
+
+#[test]
+fn endpoint_degree_closure_past_its_depth_bound_keeps_no_closure() {
+    const EDGE_COUNT: usize = 300;
+    let edge_faces = vec![[0, 0]; EDGE_COUNT];
+    let allowed = vec![vec![1]; EDGE_COUNT];
+    let endpoint_pairs = (0..EDGE_COUNT)
+        .map(|point| [point, (point + 1) % EDGE_COUNT])
+        .collect::<Vec<_>>();
+    catia_test_context!(service_ctx);
+
+    let closures =
+        repeated_face_endpoint_closures(&service_ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
+            .expect("a deep closure search stays local");
+
+    assert!(closures.is_none());
 }
 
 #[test]

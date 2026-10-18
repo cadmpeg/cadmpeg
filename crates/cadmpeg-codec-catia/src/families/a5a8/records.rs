@@ -20,6 +20,8 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
+use std::cell::OnceCell;
+use std::collections::HashMap;
 use std::ops::Range;
 
 const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
@@ -1389,9 +1391,10 @@ pub(in crate::families) fn resolved_a8_surfaces(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
     let mut surfaces = Vec::new();
+    let grids = A8ExternalGrids::new(data);
     for frame in a8_frames(data, 0x34) {
         if let Some(surface) = resolved_a8_surface_from_object_frame(
-            data,
+            &grids,
             frame.pos,
             frame.end,
             frame.object_id,
@@ -1424,17 +1427,18 @@ pub(in crate::families) fn a8_surface_header_from_object_frame(
 
 /// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
 pub(in crate::families) fn resolved_a8_surface_from_object_frame(
-    data: &[u8],
+    grids: &A8ExternalGrids<'_>,
     start: usize,
     end: usize,
     object_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FreeformSurface>, CodecError> {
+    let data = grids.data;
     let Some(parsed) = parse_selected_a8_surface_header(data, start, end, object_id) else {
         return Ok(None);
     };
     if parsed.header.pole_storage == PoleStorage::Elided {
-        a8_surface_from_external_grid(data, &parsed.header, refusal)
+        a8_surface_from_external_grid(grids, &parsed.header, refusal)
     } else {
         a8_surface_from_parsed(data, parsed, refusal)
     }
@@ -1445,14 +1449,15 @@ pub(in crate::families) fn resolved_a8_surface_from_object_frame(
 /// between a length-closed `b5 <flag> 21` pcurve and the following A/B-family
 /// frame; its pcurve support reference must equal the surface object id.
 fn a8_surface_from_external_grid(
-    data: &[u8],
+    grids: &A8ExternalGrids<'_>,
     header: &A8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FreeformSurface>, CodecError> {
+    let data = grids.data;
     let Some(need) = ExternalGridNeed::from_header(header) else {
         return Ok(None);
     };
-    let mut ranges = a8_external_grid_candidate_ranges(data, need);
+    let mut ranges = a8_external_grid_candidate_ranges(grids, need);
     let Some(range) = ranges.next() else {
         return Ok(None);
     };
@@ -1513,6 +1518,7 @@ fn a8_surface_from_external_grid(
 /// Return every complete support-bound external A8 pole allocation.
 pub(in crate::families) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
+    let grids = A8ExternalGrids::new(data);
     for frame in a8_frames(data, 0x34) {
         if data.get(frame.payload..frame.end).is_none() {
             continue;
@@ -1522,7 +1528,7 @@ pub(in crate::families) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usi
             continue;
         };
         for range in a8_external_grid_candidate_ranges(
-            data,
+            &grids,
             ExternalGridNeed::from_layout(frame.object_id, &layout),
         ) {
             ranges.push(range);
@@ -1572,10 +1578,49 @@ impl ExternalGridNeed {
     }
 }
 
-fn a8_external_grid_candidate_ranges(
-    data: &[u8],
+/// Object stream with a lazily built index of `b5 <flag> 21` pcurve frame ends
+/// keyed by their support reference, the only frames that can precede an
+/// external A8 pole allocation.
+pub(in crate::families) struct A8ExternalGrids<'a> {
+    data: &'a [u8],
+    pcurve_ends_by_support: OnceCell<HashMap<u32, Vec<usize>>>,
+}
+
+impl<'a> A8ExternalGrids<'a> {
+    pub(in crate::families) fn new(data: &'a [u8]) -> Self {
+        Self {
+            data,
+            pcurve_ends_by_support: OnceCell::new(),
+        }
+    }
+
+    fn pcurve_ends(&self, support: u32) -> &[usize] {
+        let data = self.data;
+        self.pcurve_ends_by_support
+            .get_or_init(|| {
+                let mut ends = HashMap::<u32, Vec<usize>>::new();
+                for frame in object_stream_frames(data)
+                    .filter(|frame| frame.family == 0xb5 && frame.class == 0x21)
+                {
+                    let Some(mut at) = frame.payload.checked_add(1) else {
+                        continue;
+                    };
+                    if let Some(support) = object_stream_reference(data, &mut at) {
+                        ends.entry(support).or_default().push(frame.end);
+                    }
+                }
+                ends
+            })
+            .get(&support)
+            .map_or(&[], Vec::as_slice)
+    }
+}
+
+fn a8_external_grid_candidate_ranges<'a>(
+    grids: &'a A8ExternalGrids<'_>,
     need: ExternalGridNeed,
-) -> impl Iterator<Item = Range<usize>> + '_ {
+) -> impl Iterator<Item = Range<usize>> + 'a {
+    let data = grids.data;
     let layout = (|| {
         if need.pole_storage != PoleStorage::Elided {
             return None;
@@ -1597,32 +1642,28 @@ fn a8_external_grid_candidate_ranges(
             .and_then(|bytes| bytes.checked_add(weight_bytes))?;
         Some((poles, grid_bytes))
     })();
-    object_stream_frames(data)
-        .filter(|frame| frame.family == 0xb5 && frame.class == 0x21)
-        .filter(move |frame| {
-            let Some(mut at) = frame.payload.checked_add(1) else {
-                return false;
-            };
-            object_stream_reference(data, &mut at) == Some(need.object_id)
-        })
-        .filter_map(move |frame| {
-            let (poles, grid_bytes) = layout?;
-            let start = frame.end;
-            let end = start.checked_add(grid_bytes)?;
-            object_stream_frame(data, end)?;
-            let mut at = start;
+    let pcurve_ends = if layout.is_some() {
+        grids.pcurve_ends(need.object_id)
+    } else {
+        &[]
+    };
+    pcurve_ends.iter().filter_map(move |&start| {
+        let (poles, grid_bytes) = layout?;
+        let end = start.checked_add(grid_bytes)?;
+        object_stream_frame(data, end)?;
+        let mut at = start;
+        for _ in 0..poles {
+            f64_point(data, at)?;
+            at += 24;
+        }
+        if need.rational {
             for _ in 0..poles {
-                f64_point(data, at)?;
-                at += 24;
+                NonZeroReal::new(f64_le(data, at)?.get())?;
+                at += 8;
             }
-            if need.rational {
-                for _ in 0..poles {
-                    NonZeroReal::new(f64_le(data, at)?.get())?;
-                    at += 8;
-                }
-            }
-            (at == end).then_some(start..end)
-        })
+        }
+        (at == end).then_some(start..end)
+    })
 }
 
 fn parse_external_grid_candidate(

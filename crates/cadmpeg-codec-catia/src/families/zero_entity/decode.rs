@@ -998,7 +998,11 @@ pub(in crate::families) fn try_decode_zero_entity(
     let topology_counts = {
         let mut candidate_ir = std::mem::replace(&mut ir, CadIr::empty());
         let mut candidate_annotations = annotations.copy_transaction();
-        let topology_budget = cadmpeg_core::decode::WorkBudget::new(crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS);
+        let topology_budget = cadmpeg_core::decode::WorkBudget::new(
+            crate::families::zero_entity::topology::zero_entity_topology_allowance(
+                support_runs.iter().map(|run| run.supports.len()).sum(),
+            ),
+        );
         let counts = crate::families::zero_entity::topology_transfer::transfer_closed_face_topology(
             &mut admission,
             &mut candidate_ir,

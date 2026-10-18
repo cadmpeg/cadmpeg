@@ -7,9 +7,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
+    BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
@@ -221,19 +222,45 @@ fn b5_plane_point(
     )
 }
 
+/// Positions of the model's surfaces and pcurves by id; the first entry of a
+/// repeated id wins.
+struct B5ModelIndex {
+    surfaces: HashMap<SurfaceId, usize>,
+    pcurves: HashMap<PcurveId, usize>,
+}
+
+impl B5ModelIndex {
+    fn new(ir: &CadIr) -> Self {
+        let mut surfaces = HashMap::new();
+        for (index, surface) in ir.model.surfaces.iter().enumerate() {
+            surfaces.entry(surface.id.clone()).or_insert(index);
+        }
+        let mut pcurves = HashMap::new();
+        for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
+            pcurves.entry(pcurve.id.clone()).or_insert(index);
+        }
+        Self { surfaces, pcurves }
+    }
+
+    fn surface<'a>(&self, ir: &'a CadIr, id: &SurfaceId) -> Option<&'a Surface> {
+        ir.model.surfaces.get(*self.surfaces.get(id)?)
+    }
+
+    fn pcurve<'a>(&self, ir: &'a CadIr, id: &PcurveId) -> Option<&'a Pcurve> {
+        ir.model.pcurves.get(*self.pcurves.get(id)?)
+    }
+}
+
 fn b5_planar_loop_points(
     ir: &CadIr,
+    index: &B5ModelIndex,
     graph: &B5Graph,
     loop_id: u32,
     loop_orientation: &OrientedLoop,
     surface_id: &SurfaceId,
     pcurve_uses: &PcurveUses,
 ) -> Option<Vec<Point3>> {
-    let surface = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == *surface_id)?;
+    let surface = index.surface(ir, surface_id)?;
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         return None;
     };
@@ -254,11 +281,7 @@ fn b5_planar_loop_points(
         if parameter_range[0] == parameter_range[1] {
             return None;
         }
-        let pcurve = ir
-            .model
-            .pcurves
-            .iter()
-            .find(|pcurve| pcurve.id == *pcurve_id)?;
+        let pcurve = index.pcurve(ir, pcurve_id)?;
         let PcurveGeometry::Line(line_pcurve) = &pcurve.geometry else {
             return None;
         };
@@ -285,7 +308,7 @@ fn b5_planar_loop_points(
 /// The face's loop ids and their classification, built once from the loop
 /// rows the graph states for this face.
 fn b5_face_loops(
-    ir: &CadIr,
+    (ir, index): (&CadIr, &B5ModelIndex),
     graph: &B5Graph,
     face: &super::super::graph::B5Face,
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
@@ -325,20 +348,21 @@ fn b5_face_loops(
         let Some(orientation) = loop_orientation.get(loop_id) else {
             return unspecified();
         };
-        let Some(points) =
-            b5_planar_loop_points(ir, graph, *loop_id, orientation, surface_id, pcurve_uses)
-        else {
+        let Some(points) = b5_planar_loop_points(
+            ir,
+            index,
+            graph,
+            *loop_id,
+            orientation,
+            surface_id,
+            pcurve_uses,
+        ) else {
             return unspecified();
         };
         let id = id.clone();
         rows.push((id, points));
     }
-    let Some(surface) = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == *surface_id)
-    else {
+    let Some(surface) = index.surface(ir, surface_id) else {
         return unspecified();
     };
     crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows, refusal)
@@ -488,6 +512,7 @@ pub(super) fn emit_faces(
         );
     }
 
+    let model_index = B5ModelIndex::new(ir);
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
         let face_id = crate::resource::compose_u32_id(
@@ -501,7 +526,7 @@ pub(super) fn emit_faces(
             ShellId::mint,
         )?;
         let face_loops = b5_face_loops(
-            ir,
+            (ir, &model_index),
             graph,
             face,
             loop_orientation,
@@ -673,7 +698,7 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMember, B5LoopMetadata};
-    use super::{b5_face_loops, OrientedLoop, OrientedLoopMember};
+    use super::{b5_face_loops, B5ModelIndex, OrientedLoop, OrientedLoopMember};
 
     #[test]
     fn planar_line_pcurve_faces_derive_roles_from_containment() {
@@ -834,7 +859,7 @@ mod tests {
 
         assert_eq!(
             (b5_face_loops(
-                &ir,
+                (&ir, &B5ModelIndex::new(&ir)),
                 &graph,
                 &graph.faces[0],
                 &orientations,

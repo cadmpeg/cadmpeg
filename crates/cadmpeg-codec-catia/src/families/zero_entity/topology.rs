@@ -13,7 +13,20 @@ use super::records::ZeroEntitySupportRun;
 use crate::solve::union_find::UnionFind;
 
 const MODEL_POINT_TOLERANCE: f64 = 2e-3;
+/// Least number of zero-entity endpoint-candidate and closed-face transfer
+/// operations one decode may take.
 pub(crate) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
+/// Operations allowed per support occurrence once that exceeds
+/// [`MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS`].
+pub(crate) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT: usize = 256;
+
+/// Zero-entity topology operations allowed for `supports` support occurrences.
+pub(crate) fn zero_entity_topology_allowance(supports: usize) -> usize {
+    supports
+        .checked_mul(MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT)
+        .unwrap_or(supports)
+        .max(MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS)
+}
 
 /// One sense-oriented support occurrence owned by a face.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -729,12 +742,24 @@ mod tests {
         assert!(bounded.loci.is_empty());
 
         let mut sink = crate::nurbs::LaneRefusals::new();
-        sink.push_zero_entity_candidates_bounded();
+        sink.push_zero_entity_candidates_bounded(0);
         let notes = sink.take_notes();
         assert_eq!(notes.len(), 1);
         assert_eq!(
             notes[0].code,
             crate::loss::CatiaLossCode::TopologyZeroEntityCandidatesBounded.kind()
+        );
+    }
+
+    #[test]
+    fn topology_allowance_grows_with_support_occurrences() {
+        assert_eq!(
+            super::zero_entity_topology_allowance(4),
+            MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS
+        );
+        assert_eq!(
+            super::zero_entity_topology_allowance(8_192),
+            8_192 * super::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT
         );
     }
 

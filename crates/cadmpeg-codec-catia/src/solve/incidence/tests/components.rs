@@ -878,11 +878,9 @@ fn compact_unordered_boundary_refuses_degree_overflow() {
 fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 16));
     let budget = WorkBudget::new(10_000);
-    catia_test_context!(ctx);
 
     assert!(
         crate::solve::mesh_quotient::bounded_unordered_cycle_assignments(
-            &ctx,
             &(0..8).collect::<Vec<_>>(),
             &quotient,
             16,

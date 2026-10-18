@@ -946,6 +946,141 @@ fn summary_preview_requires_one_complete_jpeg_candidate() {
     assert!(super::preview_images(&duplicate).is_empty());
 }
 
+fn reference_jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
+    if data.get(start..start + 2) != Some(&[0xff, 0xd8]) {
+        return None;
+    }
+    let mut at = start + 2;
+    let mut frame = None;
+    let mut in_entropy = false;
+    while at + 1 < data.len() {
+        if data[at] != 0xff {
+            if in_entropy {
+                at += 1;
+                continue;
+            }
+            return None;
+        }
+        while data.get(at) == Some(&0xff) {
+            at += 1;
+        }
+        let marker = *data.get(at)?;
+        at += 1;
+        if in_entropy && marker == 0x00 {
+            continue;
+        }
+        if marker == 0xd9 {
+            let (width, height, components) = frame?;
+            return Some((at, width, height, components));
+        }
+        if matches!(marker, 0x01 | 0xd0..=0xd8) {
+            continue;
+        }
+        let length = usize::from(u16::from_be_bytes(data.get(at..at + 2)?.try_into().ok()?));
+        if length < 2 {
+            return None;
+        }
+        let payload = at + 2;
+        let end = at.checked_add(length)?;
+        if end > data.len() {
+            return None;
+        }
+        if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
+            if length < 8 {
+                return None;
+            }
+            let width = u16::from_be_bytes(data.get(payload + 3..payload + 5)?.try_into().ok()?);
+            let height = u16::from_be_bytes(data.get(payload + 1..payload + 3)?.try_into().ok()?);
+            let components = data[payload + 5];
+            let expected_length = 8 + 3 * usize::from(components);
+            if width == 0
+                || height == 0
+                || components == 0
+                || length != expected_length
+                || frame.is_some()
+            {
+                return None;
+            }
+            frame = Some((width, height, components));
+        }
+        in_entropy = marker == 0xda;
+        at = end;
+    }
+    None
+}
+
+fn jpeg_candidate_walk_steps(bytes: &[u8]) -> usize {
+    let mut walk = super::JpegCandidateWalk::new(bytes);
+    for start in 0..bytes.len() {
+        if bytes[start..].starts_with(&[0xff, 0xd8, 0xff]) {
+            assert_eq!(walk.extent(start), None);
+        }
+    }
+    walk.steps
+}
+
+#[test]
+fn jpeg_candidate_walk_matches_independent_marker_walks() {
+    let valid = summary_preview_segment();
+    let image_start = valid
+        .windows(3)
+        .position(|bytes| bytes == [0xff, 0xd8, 0xff])
+        .expect("fixture JPEG SOI");
+    let alphabet = [
+        0xff, 0xff, 0xff, 0xd8, 0xd9, 0xda, 0xc0, 0xe0, 0x00, 0x00, 0x01, 0x02, 0x08, 0x0b, 0xd0,
+    ];
+    let mut state = 0x2545_f491_u32;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        usize::try_from(state).expect("a u32 fits usize")
+    };
+    for case in 0..400 {
+        let mut bytes = if case % 4 == 0 {
+            valid[image_start..].to_vec()
+        } else {
+            Vec::new()
+        };
+        let length = 16 + next() % 240;
+        for _ in 0..length {
+            let byte = alphabet[next() % alphabet.len()];
+            let at = next() % (bytes.len() + 1);
+            bytes.insert(at, byte);
+        }
+        let mut walk = super::JpegCandidateWalk::new(&bytes);
+        for start in 0..bytes.len() {
+            if bytes[start..].starts_with(&[0xff, 0xd8, 0xff]) {
+                assert_eq!(
+                    walk.extent(start),
+                    reference_jpeg_extent(&bytes, start),
+                    "case {case} start {start}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn jpeg_candidate_walk_is_linear_on_repeated_start_markers() {
+    let bytes = [0xff, 0xd8].repeat(1 << 15);
+    assert!(jpeg_candidate_walk_steps(&bytes) <= 8 * bytes.len());
+}
+
+#[test]
+fn jpeg_candidate_walk_is_linear_on_segments_ending_inside_one_fill_run() {
+    let candidates = 4096usize;
+    let run_start = 6 * candidates;
+    let mut bytes = Vec::new();
+    for index in 0..candidates {
+        let length = u16::try_from(run_start + index - 6 * index - 4).expect("segment length");
+        bytes.extend_from_slice(&[0xff, 0xd8, 0xff, 0xe0]);
+        bytes.extend_from_slice(&length.to_be_bytes());
+    }
+    bytes.resize(run_start + 4 * candidates, 0xff);
+    assert!(jpeg_candidate_walk_steps(&bytes) <= 8 * bytes.len());
+}
+
 #[test]
 fn scan_parses_directory_and_identifies_standard() {
     let f = standard_catpart();
