@@ -26,7 +26,7 @@ use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 fn transfer_vertex_tolerances(
     graph: &B5Graph,
@@ -307,7 +307,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &supported, &extrusions, &BTreeMap::new(),),
-        HashSet::from([10, 20, 30, 31, 40, 50, 90, 100])
+        BTreeSet::from([10, 20, 30, 31, 40, 50, 90, 100])
     );
 }
 
@@ -331,7 +331,7 @@ fn surface_closure_follows_aliases_to_native_constructions() {
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &BTreeMap::new(), &BTreeMap::new(), &aliases,),
-        HashSet::from([10, 30, 40])
+        BTreeSet::from([10, 30, 40])
     );
 }
 

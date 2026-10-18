@@ -76,48 +76,95 @@ fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> 
 /// for the indexed slice. A pass that looks up a surface for every pcurve
 /// path builds one index instead of scanning every surface per path.
 pub(in crate::decode) struct ModelSurfaceIndex<'a> {
-    /// `None` marks an identity that two or more surfaces carry.
-    surfaces: BTreeMap<(u32, usize), Option<&'a Surface>>,
+    surfaces: &'a [Surface],
+    positions: ModelSurfacePositions,
 }
 
 impl<'a> ModelSurfaceIndex<'a> {
     pub(in crate::decode) fn new(surfaces: &'a [Surface]) -> Self {
-        let mut indexed = BTreeMap::new();
-        for surface in surfaces {
-            let id = surface.id.as_str();
-            for (namespace, prefix) in MODEL_SURFACE_PREFIXES.into_iter().enumerate() {
-                let Some(face_id) = crate::identity::numbered_identity(id, prefix) else {
-                    continue;
-                };
-                match indexed.entry((face_id, namespace)) {
-                    std::collections::btree_map::Entry::Occupied(mut entry) => {
-                        entry.insert(None);
-                    }
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(Some(surface));
-                    }
-                }
-            }
+        Self {
+            surfaces,
+            positions: ModelSurfacePositions::new(surfaces),
         }
-        Self { surfaces: indexed }
     }
 
     /// Return the only surface in the first namespace that names `face_id`.
     pub(in crate::decode) fn unique(&self, face_id: u32) -> Option<&'a Surface> {
         (0..MODEL_SURFACE_PREFIXES.len())
-            .find_map(|namespace| self.surfaces.get(&(face_id, namespace)))
+            .find_map(|namespace| self.positions.positions.get(&(face_id, namespace)))
             .copied()
             .flatten()
+            .map(|position| &self.surfaces[position])
     }
 
     /// Return the surfaces whose canonical identity is `prefix` followed by
     /// `face_id`, or `None` when no surface carries it.
-    pub(in crate::decode) fn named(&self, prefix: &str, face_id: u32) -> Option<NamedSurfaces<'a>> {
+    pub(in crate::decode) fn named(
+        &self,
+        prefix: &str,
+        face_id: u32,
+    ) -> Option<NamedSurfaces<&'a Surface>> {
+        self.positions
+            .named(prefix, face_id)
+            .map(|named| named.map(|position| &self.surfaces[position]))
+    }
+
+    /// Release the surface borrow, keeping the positions.
+    pub(in crate::decode) fn into_positions(self) -> ModelSurfacePositions {
+        self.positions
+    }
+}
+
+/// Positions of model surfaces keyed like [`ModelSurfaceIndex`].
+///
+/// It borrows nothing, so a pass that appends to the model while it looks
+/// surfaces up keeps one and records each surface it appends.
+pub(in crate::decode) struct ModelSurfacePositions {
+    /// `None` marks an identity that two or more surfaces carry.
+    positions: BTreeMap<(u32, usize), Option<usize>>,
+}
+
+impl ModelSurfacePositions {
+    pub(in crate::decode) fn new(surfaces: &[Surface]) -> Self {
+        let mut indexed = Self {
+            positions: BTreeMap::new(),
+        };
+        for position in 0..surfaces.len() {
+            indexed.admit(surfaces, position);
+        }
+        indexed
+    }
+
+    /// Index the surface at `position`, which must not be indexed yet.
+    pub(in crate::decode) fn admit(&mut self, surfaces: &[Surface], position: usize) {
+        let id = surfaces[position].id.as_str();
+        for (namespace, prefix) in MODEL_SURFACE_PREFIXES.into_iter().enumerate() {
+            let Some(face_id) = crate::identity::numbered_identity(id, prefix) else {
+                continue;
+            };
+            match self.positions.entry((face_id, namespace)) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(position));
+                }
+            }
+        }
+    }
+
+    /// Return the positions of the surfaces whose canonical identity is
+    /// `prefix` followed by `face_id`, or `None` when no surface carries it.
+    pub(in crate::decode) fn named(
+        &self,
+        prefix: &str,
+        face_id: u32,
+    ) -> Option<NamedSurfaces<usize>> {
         let namespace = MODEL_SURFACE_PREFIXES
             .iter()
             .position(|candidate| *candidate == prefix)?;
-        Some(match self.surfaces.get(&(face_id, namespace))? {
-            Some(surface) => NamedSurfaces::Unique(surface),
+        Some(match self.positions.get(&(face_id, namespace))? {
+            Some(position) => NamedSurfaces::Unique(*position),
             None => NamedSurfaces::Duplicate,
         })
     }
@@ -125,16 +172,23 @@ impl<'a> ModelSurfaceIndex<'a> {
 
 /// The model surfaces that carry one canonical identity.
 #[derive(Debug, Clone, Copy)]
-pub(in crate::decode) enum NamedSurfaces<'a> {
-    Unique(&'a Surface),
+pub(in crate::decode) enum NamedSurfaces<T> {
+    Unique(T),
     Duplicate,
 }
 
-impl<'a> NamedSurfaces<'a> {
-    pub(in crate::decode) fn unique(self) -> Option<&'a Surface> {
+impl<T> NamedSurfaces<T> {
+    pub(in crate::decode) fn unique(self) -> Option<T> {
         match self {
             Self::Unique(surface) => Some(surface),
             Self::Duplicate => None,
+        }
+    }
+
+    fn map<U>(self, f: impl FnOnce(T) -> U) -> NamedSurfaces<U> {
+        match self {
+            Self::Unique(surface) => NamedSurfaces::Unique(f(surface)),
+            Self::Duplicate => NamedSurfaces::Duplicate,
         }
     }
 }

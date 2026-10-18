@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{keep_faces_and_carriers, walk_reachable_topology, TopologyContext};
+use crate::brep::records::WireMembers;
 use crate::brep::{AsmBrep, Carriers, DecodePurpose, Reachable};
 use crate::kernel_header::RefWidth;
 use crate::nurbs;
@@ -151,11 +152,83 @@ fn a_face_chain_lists_only_the_faces_its_shell_owns() {
     let by_index = index_records(&records);
     let kept = HashSet::from([2, 3]);
     let format = crate::asm_format!("f3d");
+    let subshells = std::collections::HashMap::new();
     assert_eq!(
-        super::shell_faces(&records[0], &by_index, &kept, format).len(),
+        super::shell_faces(&records[0], &by_index, &subshells, &kept, format).len(),
         2
     );
-    assert!(super::shell_faces(&records[1], &by_index, &kept, format).is_empty());
+    assert!(super::shell_faces(&records[1], &by_index, &subshells, &kept, format).is_empty());
+}
+
+#[test]
+fn shells_sharing_one_subshell_face_chain_list_it_once_in_linear_time() {
+    // Walking the shared tree once per shell would list 2^24 faces.
+    const SHELLS: usize = 1 << 12;
+    const SUBSHELLS: usize = 1 << 12;
+    const FACES: usize = 1 << 12;
+    let first_subshell = SHELLS;
+    let first_face = first_subshell + SUBSHELLS;
+    let mut records = (0..SHELLS)
+        .map(|shell| ref_record(shell, "shell", &[-1, -1, -1, -1, as_ref(first_subshell)]))
+        .collect::<Vec<_>>();
+    // Every subshell is a child of shell 0 and points at the same face chain.
+    records.extend((0..SUBSHELLS).map(|offset| {
+        let subshell = first_subshell + offset;
+        let next = if offset + 1 < SUBSHELLS {
+            as_ref(subshell + 1)
+        } else {
+            -1
+        };
+        ref_record(
+            subshell,
+            "subshell",
+            &[-1, -1, -1, 0, next, -1, as_ref(first_face)],
+        )
+    }));
+    records.extend((0..FACES).map(|offset| {
+        let face = first_face + offset;
+        let next = if offset + 1 < FACES {
+            as_ref(face + 1)
+        } else {
+            -1
+        };
+        ref_record(face, "face", &[-1, -1, -1, next, -1, 0])
+    }));
+    let by_index = index_records(&records);
+    let subshells = super::subshell_ancestor_shells(&records, &by_index).unwrap();
+    let kept = (first_face..first_face + FACES).map(as_ref).collect();
+    let format = crate::asm_format!("f3d");
+    let listed = records[..SHELLS]
+        .iter()
+        .map(|shell| super::shell_faces(shell, &by_index, &subshells, &kept, format).len())
+        .collect::<Vec<_>>();
+    assert_eq!(listed[0], FACES);
+    assert!(listed[1..].iter().all(|&faces| faces == 0));
+}
+
+#[test]
+fn nested_subshells_list_every_face_once() {
+    let records = [
+        ref_record(0, "shell", &[-1, -1, -1, -1, 1, 5]),
+        ref_record(1, "subshell", &[-1, -1, -1, 0, 2, 3, 6]),
+        ref_record(2, "subshell", &[-1, -1, -1, 0, -1, -1, 7]),
+        ref_record(3, "subshell", &[-1, -1, -1, 1, 4, -1, 8]),
+        ref_record(4, "subshell", &[-1, -1, -1, 1, -1, -1, 10]),
+        ref_record(5, "face", &[-1, -1, -1, -1, -1, 0]),
+        ref_record(6, "face", &[-1, -1, -1, -1, -1, 0, 1]),
+        ref_record(7, "face", &[-1, -1, -1, -1, -1, 2, 2]),
+        ref_record(8, "face", &[-1, -1, -1, 9, -1, 0, 3]),
+        ref_record(9, "face", &[-1, -1, -1, -1, -1, 3, 3]),
+        ref_record(10, "face", &[-1, -1, -1, -1, -1, 4, 4]),
+    ];
+    let by_index = index_records(&records);
+    let subshells = super::subshell_ancestor_shells(&records, &by_index).unwrap();
+    let kept = (5..=10).collect();
+    let format = crate::asm_format!("f3d");
+    assert_eq!(
+        super::shell_faces(&records[0], &by_index, &subshells, &kept, format),
+        [5, 6, 8, 9, 10, 7].map(|face| super::FaceId::from(crate::brep::id(format, face)))
+    );
 }
 
 #[test]
@@ -187,6 +260,153 @@ fn deep_subshell_chains_resolve_their_shell_in_linear_time() {
     let shells = super::subshell_ancestor_shells(&records, &by_index).unwrap();
     assert_eq!(shells.len(), DEPTH);
     assert!((1..=DEPTH).all(|subshell| shells.get(&as_ref(subshell)) == Some(&0)));
+}
+
+fn wire_record(index: usize, next: i64, first_coedge: i64, owner: i64) -> Record {
+    let mut record = ref_record(index, "wire", &[-1, -1, -1, next, first_coedge, owner, -1]);
+    record.tokens = record
+        .tokens
+        .iter()
+        .cloned()
+        .chain([Token::False])
+        .collect();
+    record
+}
+
+/// A ring of coedges from `first`, the `i`th naming edge `edges[i]`.
+fn coedge_ring(first: usize, owner: usize, edges: &[usize]) -> Vec<Record> {
+    (0..edges.len())
+        .map(|offset| {
+            let next = first + (offset + 1) % edges.len();
+            let fields = [-1, -1, -1, as_ref(next), -1, -1, as_ref(edges[offset])];
+            let mut fields = fields.to_vec();
+            fields.extend([-1, as_ref(owner)]);
+            ref_record(first + offset, "coedge", &fields)
+        })
+        .collect()
+}
+
+fn collect_wires(records: &[Record]) -> (AsmBrep, crate::brep::WireShellTopology) {
+    let by_index = index_records(records);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
+    let table = nurbs::toks::SubtypeTable::from_records(records);
+    let mut out = AsmBrep::default();
+    let wires = super::collect_wire_topology(
+        TopologyContext {
+            ctx: &ctx,
+            by_index: &by_index,
+            token_table: &table,
+            purpose: DecodePurpose::Model,
+            format: crate::asm_format!("f3d"),
+        },
+        &mut out,
+        records,
+        None,
+        &mut Carriers::default(),
+        &mut Reachable::default(),
+    )
+    .expect("wire topology is within resource limits");
+    (out, wires)
+}
+
+fn wire_edge_count(members: &WireMembers) -> usize {
+    match members {
+        WireMembers::Edges(edges) => edges.len(),
+        WireMembers::Vertex(_) => 1,
+    }
+}
+
+#[test]
+fn shells_sharing_one_wire_chain_list_it_once_in_linear_time() {
+    // Walking the shared chain once per shell and the ring once per wire would
+    // take 2^40 steps; scanning the edge list per coedge would take 2^31.
+    const SHELLS: usize = 1 << 12;
+    const WIRES: usize = 1 << 12;
+    const EDGES: usize = 1 << 16;
+    let first_wire = SHELLS;
+    let first_coedge = first_wire + WIRES;
+    let first_edge = first_coedge + EDGES;
+    let mut records = (0..SHELLS)
+        .map(|shell| {
+            ref_record(
+                shell,
+                "shell",
+                &[-1, -1, -1, -1, -1, -1, as_ref(first_wire)],
+            )
+        })
+        .collect::<Vec<_>>();
+    // Every wire is owned by shell 0 and starts at the same coedge ring.
+    records.extend((0..WIRES).map(|offset| {
+        let next = if offset + 1 < WIRES {
+            as_ref(first_wire + offset + 1)
+        } else {
+            -1
+        };
+        wire_record(first_wire + offset, next, as_ref(first_coedge), 0)
+    }));
+    let edges = (first_edge..first_edge + EDGES).collect::<Vec<_>>();
+    records.extend(coedge_ring(first_coedge, first_wire, &edges));
+    records.extend(edges.iter().map(|&edge| ref_record(edge, "edge", &[-1; 9])));
+
+    let (out, wires) = collect_wires(&records);
+    let expected = edges.iter().copied().map(as_ref).collect::<Vec<_>>();
+    assert_eq!(wires.wire_edges_by_shell.len(), 1);
+    assert_eq!(wires.wire_edges_by_shell.get(&0), Some(&expected));
+    assert_eq!(out.wire_topologies.len(), WIRES);
+    assert_eq!(wire_edge_count(&out.wire_topologies[0].members), EDGES);
+    assert_eq!(
+        out.wire_topologies
+            .iter()
+            .map(|wire| wire_edge_count(&wire.members))
+            .sum::<usize>(),
+        EDGES
+    );
+}
+
+#[test]
+fn nested_wires_list_every_edge_once() {
+    let mut records = vec![
+        ref_record(0, "shell", &[-1, -1, -1, -1, 2, -1, 5]),
+        ref_record(1, "shell", &[-1, -1, -1, -1, 4, -1, 5]),
+        ref_record(2, "subshell", &[-1, -1, -1, 0, -1, 3, -1, 6]),
+        ref_record(3, "subshell", &[-1, -1, -1, 2, -1, -1, -1, 8]),
+        ref_record(4, "subshell", &[-1, -1, -1, 1, -1, -1, -1, 9]),
+        wire_record(5, -1, 10, 0),
+        wire_record(6, 7, 12, 2),
+        wire_record(7, -1, 14, 2),
+        wire_record(8, -1, 15, 3),
+        wire_record(9, -1, 17, 4),
+    ];
+    records.extend(coedge_ring(10, 5, &[20, 21]));
+    records.extend(coedge_ring(12, 6, &[21, 22]));
+    records.extend(coedge_ring(14, 7, &[23]));
+    records.extend(coedge_ring(15, 8, &[24, 20]));
+    records.extend(coedge_ring(17, 9, &[25]));
+    records.extend((20..=25).map(|edge| ref_record(edge, "edge", &[-1; 9])));
+
+    let (out, wires) = collect_wires(&records);
+    assert_eq!(
+        wires.wire_edges_by_shell.get(&0),
+        Some(&vec![20, 21, 22, 23, 24])
+    );
+    assert_eq!(wires.wire_edges_by_shell.get(&1), Some(&vec![25]));
+    let edges_of = |index: u32| {
+        out.wire_topologies
+            .iter()
+            .find(|wire| wire.record_index == index)
+            .map(|wire| wire_edge_count(&wire.members))
+    };
+    assert_eq!(
+        [5, 6, 7, 8, 9].map(edges_of),
+        [Some(2), Some(2), Some(1), Some(2), Some(1)]
+    );
+    assert_eq!(out.wire_topologies.len(), 5);
 }
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {

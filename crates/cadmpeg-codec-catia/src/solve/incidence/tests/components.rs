@@ -835,25 +835,21 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
 
 #[test]
 fn compact_unordered_boundary_rejects_partial_subtours() {
-    catia_test_context!(ctx);
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
 
     assert!(!compact_boundary_domain_viable(
-        &ctx,
         &domain,
         &[Some([0, 1]), Some([1, 2]), Some([2, 0]), None, None],
         None,
     )
     .expect("check that the compact boundary domain is viable"));
     assert!(compact_boundary_domain_viable(
-        &ctx,
         &domain,
         &[Some([0, 1]), Some([1, 2]), Some([2, 3]), None, None],
         None,
     )
     .expect("check that the compact boundary domain is viable"));
     assert!(compact_boundary_domain_viable(
-        &ctx,
         &domain,
         &[
             Some([0, 1]),
@@ -869,14 +865,11 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
 
 #[test]
 fn compact_unordered_boundary_refuses_degree_overflow() {
-    catia_test_context!(ctx);
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle((0..129).collect());
     let mut assignment = vec![Some([0, 0]); 128];
     assignment.push(None);
-    assert!(
-        !compact_boundary_domain_viable(&ctx, &domain, &assignment, None)
-            .expect("check that the compact boundary domain is viable")
-    );
+    assert!(!compact_boundary_domain_viable(&domain, &assignment, None)
+        .expect("check that the compact boundary domain is viable"));
 }
 
 #[test]
@@ -1263,22 +1256,16 @@ fn deferred_boundary_closes_a_four_cycle_over_two_missing_edges() {
 fn compact_unordered_cycle_rejects_a_closed_triangle_subtour() {
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
     let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0]), Some([3, 4]), None];
-    catia_test_context!(service_ctx);
-    assert!(
-        !compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
-            .expect("check that the compact boundary domain is viable")
-    );
+    assert!(!compact_boundary_domain_viable(&domain, &assignment, None)
+        .expect("check that the compact boundary domain is viable"));
 }
 
 #[test]
 fn compact_unordered_triangle_cycle_is_viable() {
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2]);
     let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
-    catia_test_context!(service_ctx);
-    assert!(
-        compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
-            .expect("check that the compact boundary domain is viable")
-    );
+    assert!(compact_boundary_domain_viable(&domain, &assignment, None)
+        .expect("check that the compact boundary domain is viable"));
 }
 
 #[test]

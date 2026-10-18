@@ -1394,6 +1394,7 @@ where
                 body_records.extend_from_slice(&scope.body_records);
                 scope_lists.push((*index, body_records));
             }
+            scope_lists.sort_unstable_by_key(|(index, _)| *index);
             let mut body_links = Vec::new();
             for index in &collection.body_records {
                 if let Some(body) = bodies.get(index) {

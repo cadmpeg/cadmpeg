@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature recipe, schema class, and revolution-extent helpers.
 
-use super::super::uniqueness::unique_feature_definition_for_transform;
+use super::super::uniqueness::{unique_feature_definition_for_transform, UniqueById};
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
-#[cfg(test)]
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_recipe(
     scan: &ContainerScan,
@@ -174,6 +172,67 @@ pub(in super::super) fn feature_schema_class(
             .any(|round| round.feature_id == feature_id)
             .then_some(SchemaClass::Round)
     })
+}
+
+/// The feature schema classes of a scan, indexed once.
+///
+/// [`FeatureSchemaClasses::get`] returns what `feature_schema_class` returns,
+/// without scanning the operations and feature rows per lookup.
+pub(in super::super) struct FeatureSchemaClasses<'a> {
+    operations: UniqueById<'a, crate::feature::operations::FeatureOperation>,
+    /// `None` marks a feature whose rows state two different classes.
+    row_classes: BTreeMap<u32, Option<SchemaClass>>,
+    legacy_rounds: BTreeSet<u32>,
+}
+
+impl<'a> FeatureSchemaClasses<'a> {
+    pub(in super::super) fn new(scan: &'a ContainerScan) -> Self {
+        let mut row_classes = BTreeMap::new();
+        for row in scan
+            .features
+            .rows
+            .iter()
+            .chain(scan.features.depdb_recipe_rows.iter())
+        {
+            let Some(schema_class) = row.root_schema_class else {
+                continue;
+            };
+            match row_classes.entry(row.feature_id) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    if *entry.get() != Some(schema_class) {
+                        entry.insert(None);
+                    }
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(schema_class));
+                }
+            }
+        }
+        Self {
+            operations: UniqueById::new(&scan.features.operations, |operation| {
+                operation.feature_id
+            }),
+            row_classes,
+            legacy_rounds: scan
+                .features
+                .legacy_rounds
+                .iter()
+                .map(|round| round.feature_id)
+                .collect(),
+        }
+    }
+
+    pub(in super::super) fn get(&self, feature_id: u32) -> Option<SchemaClass> {
+        self.operations
+            .get(feature_id)
+            .and_then(crate::feature::operations::FeatureOperation::root_schema_class)
+            .or_else(|| self.row_classes.get(&feature_id).copied().flatten())
+            .or_else(|| {
+                self.legacy_rounds
+                    .contains(&feature_id)
+                    .then_some(SchemaClass::Round)
+            })
+    }
 }
 
 pub(in super::super) fn resolved_feature_schema_class_from_classes(

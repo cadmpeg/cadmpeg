@@ -88,8 +88,8 @@ fn topology_bound_face_points_match_a_per_face_scan() {
 
 #[test]
 fn native_surface_lookups_match_the_identity_matcher_scan() {
-    use super::super::super::surfaces::{native_surface_id_matcher, NativeSurfaceNamespaces};
-    use super::super::pcurves::{ModelSurfaceIndex, NamedSurfaces};
+    use super::super::super::surfaces::NativeSurfaceNamespaces;
+    use super::super::pcurves::{ModelSurfaceIndex, ModelSurfacePositions, NamedSurfaces};
     use crate::surface::SurfaceKind;
 
     let mut scan = crate::test_support::empty_container_scan();
@@ -138,32 +138,49 @@ fn native_surface_lookups_match_the_identity_matcher_scan() {
         ir.model.surfaces.push(surface);
     }
     let namespaces = NativeSurfaceNamespaces::new(&scan);
-    let index = ModelSurfaceIndex::new(&ir.model.surfaces);
-    let position = |surface: &Surface| {
-        ir.model
-            .surfaces
-            .iter()
-            .position(|candidate| std::ptr::eq(candidate, surface))
-    };
-    for id in 0..=9 {
-        let matches = native_surface_id_matcher(&scan, id);
-        let mut scanned = ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| matches(&surface.id));
-        let expected = match (scanned.next(), scanned.next()) {
+    let scanned = |surfaces: &[Surface], id: u32| {
+        let prefix = namespaces.prefix(id);
+        let mut matches = surfaces.iter().enumerate().filter(|(_, surface)| {
+            crate::identity::matches_numbered_identity(surface.id.as_str(), prefix, id)
+        });
+        match (matches.next(), matches.next()) {
             (None, _) => None,
-            (Some(surface), None) => Some(position(surface)),
+            (Some((position, _)), None) => Some(Some(position)),
             (Some(_), Some(_)) => Some(None),
-        };
+        }
+    };
+    let as_option = |named: NamedSurfaces<usize>| match named {
+        NamedSurfaces::Unique(position) => Some(position),
+        NamedSurfaces::Duplicate => None,
+    };
+    let index = ModelSurfaceIndex::new(&ir.model.surfaces);
+    for id in 0..=9 {
         let indexed = index
             .named(namespaces.prefix(id), id)
             .map(|named| match named {
-                NamedSurfaces::Unique(surface) => position(surface),
+                NamedSurfaces::Unique(surface) => ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .position(|candidate| std::ptr::eq(candidate, surface)),
                 NamedSurfaces::Duplicate => None,
             });
-        assert_eq!(indexed, expected, "{id}");
+        assert_eq!(indexed, scanned(&ir.model.surfaces, id), "{id}");
+    }
+
+    let mut positions = ModelSurfacePositions::new(&ir.model.surfaces[..3]);
+    for appended in 3..=ir.model.surfaces.len() {
+        let surfaces = &ir.model.surfaces[..appended];
+        for id in 0..=9 {
+            assert_eq!(
+                positions.named(namespaces.prefix(id), id).map(as_option),
+                scanned(surfaces, id),
+                "{id} after {appended} surfaces"
+            );
+        }
+        if appended < ir.model.surfaces.len() {
+            positions.admit(&ir.model.surfaces, appended);
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inventor-native validation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_asm::brep::records::FaceNativeKey;
 use cadmpeg_core::decode::DecodeContext;
@@ -1613,7 +1613,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         .metadata
         .iter()
         .map(|record| (record.token.as_str(), record))
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     unique(
         findings,
         data.meta_sections
@@ -1898,7 +1898,7 @@ fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
 }
 
 fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Finding>) {
-    let mut positions = HashMap::<&str, HashSet<u64>>::new();
+    let mut positions = BTreeMap::<&str, HashSet<u64>>::new();
     for (entry_name, ordinal) in data
         .protein_assets
         .iter()

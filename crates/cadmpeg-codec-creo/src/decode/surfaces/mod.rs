@@ -30,6 +30,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 
 use super::native::annotate;
+use super::uniqueness::UniqueById;
 
 /// Builds the apex cone the positional and legacy carrier routes all state.
 ///
@@ -55,23 +56,6 @@ fn apex_cone(
 /// namespaces distinct when only one namespace owns the identifier; visible
 /// geometry remains the default for the existing and rowless feature-carrier
 /// paths.
-fn native_surface_namespace(
-    scan: &ContainerScan,
-    surface_id: u32,
-) -> (cadmpeg_ir::ids::IdentityNamespace, &'static str) {
-    select_native_surface_namespace(
-        scan.surfaces.rows.iter().any(|row| row.id == surface_id),
-        scan.surfaces
-            .nonvisible_rows
-            .iter()
-            .any(|row| row.id == surface_id),
-        scan.planes
-            .datum_cylinders
-            .iter()
-            .any(|cylinder| cylinder.id == surface_id),
-    )
-}
-
 fn select_native_surface_namespace(
     visible_present: bool,
     nonvisible_present: bool,
@@ -97,120 +81,182 @@ fn select_native_surface_namespace(
     }
 }
 
-/// The native surface namespaces of a scan, indexed once.
-///
-/// [`NativeSurfaceNamespaces::prefix`] returns the prefix
-/// `native_surface_namespace` selects, without scanning the rows per lookup.
-pub(super) struct NativeSurfaceNamespaces {
-    visible: BTreeSet<u32>,
+/// The native surface rows of a scan, indexed once by compact identifier.
+pub(super) struct NativeSurfaceNamespaces<'a> {
+    visible: UniqueById<'a, crate::surface::SurfaceRow>,
     nonvisible: BTreeSet<u32>,
-    active_datum: BTreeSet<u32>,
+    /// The first active-datum cylinder that carries each identifier.
+    active_datum: BTreeMap<u32, &'a crate::datum::DatumCylinder>,
 }
 
-impl NativeSurfaceNamespaces {
-    pub(super) fn new(scan: &ContainerScan) -> Self {
+impl<'a> NativeSurfaceNamespaces<'a> {
+    pub(super) fn new(scan: &'a ContainerScan) -> Self {
+        let mut active_datum = BTreeMap::new();
+        for cylinder in &scan.planes.datum_cylinders {
+            active_datum.entry(cylinder.id).or_insert(cylinder);
+        }
         Self {
-            visible: scan.surfaces.rows.iter().map(|row| row.id).collect(),
+            visible: UniqueById::new(&scan.surfaces.rows, |row| row.id),
             nonvisible: scan
                 .surfaces
                 .nonvisible_rows
                 .iter()
                 .map(|row| row.id)
                 .collect(),
-            active_datum: scan
-                .planes
-                .datum_cylinders
-                .iter()
-                .map(|cylinder| cylinder.id)
-                .collect(),
+            active_datum,
         }
+    }
+
+    fn selected(&self, surface_id: u32) -> (cadmpeg_ir::ids::IdentityNamespace, &'static str) {
+        select_native_surface_namespace(
+            self.visible.contains(surface_id),
+            self.nonvisible.contains(&surface_id),
+            self.active_datum.contains_key(&surface_id),
+        )
     }
 
     /// Return the canonical identity prefix selected for a native identifier.
     pub(super) fn prefix(&self, surface_id: u32) -> &'static str {
-        select_native_surface_namespace(
-            self.visible.contains(&surface_id),
-            self.nonvisible.contains(&surface_id),
-            self.active_datum.contains(&surface_id),
-        )
-        .1
+        self.selected(surface_id).1
     }
-}
 
-/// Construct the selected surface identity for a native topology identifier.
-pub(super) fn native_surface_id(
-    scan: &ContainerScan,
-    surface_id: u32,
-) -> Result<SurfaceId, cadmpeg_core::CodecError> {
-    crate::identity::compose_checked(&native_surface_namespace(scan, surface_id).0, surface_id)
-}
-
-/// Return a predicate that compares a candidate with the selected native
-/// surface identity without constructing one.
-///
-/// Selecting the namespace scans every surface row, so build the predicate
-/// once and apply it to each candidate surface.
-pub(super) fn native_surface_id_matcher(
-    scan: &ContainerScan,
-    surface_id: u32,
-) -> impl Fn(&SurfaceId) -> bool {
-    let prefix = native_surface_namespace(scan, surface_id).1;
-    move |candidate| {
-        crate::identity::matches_numbered_identity(candidate.as_str(), prefix, surface_id)
+    /// Construct the selected surface identity for a native topology identifier.
+    pub(super) fn surface_id(
+        &self,
+        surface_id: u32,
+    ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
+        crate::identity::compose_checked(&self.selected(surface_id).0, surface_id)
     }
-}
 
-/// Return a native surface row only when its compact identifier is unique
-/// across visible and non-visible geometry namespaces.
-pub(super) fn unique_native_surface_row<'a>(
-    scan: &'a ContainerScan<'_>,
-    surface_id: u32,
-) -> Option<&'a crate::surface::SurfaceRow> {
-    let mut rows = scan
-        .surfaces
-        .rows
-        .iter()
-        .chain(&scan.surfaces.nonvisible_rows)
-        .filter(|row| row.id == surface_id);
-    let row = rows.next()?;
-    rows.next().is_none().then_some(row)
+    /// Return whether any visible geometry row carries the identifier.
+    pub(super) fn is_visible(&self, surface_id: u32) -> bool {
+        self.visible.contains(surface_id)
+    }
+
+    /// Return the only visible geometry row that carries the identifier.
+    pub(super) fn unique_visible_row(
+        &self,
+        surface_id: u32,
+    ) -> Option<&'a crate::surface::SurfaceRow> {
+        self.visible.get(surface_id)
+    }
+
+    /// Return the first active-datum cylinder that carries the identifier.
+    pub(super) fn active_datum(&self, surface_id: u32) -> Option<&'a crate::datum::DatumCylinder> {
+        self.active_datum.get(&surface_id).copied()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{native_surface_id, native_surface_id_matcher, native_surface_namespace};
+    use super::{select_native_surface_namespace, NativeSurfaceNamespaces};
+    use crate::container::ContainerScan;
     use crate::surface::{SurfaceKind, SurfaceRow};
 
-    #[test]
-    fn native_surface_id_preserves_nonvisible_namespace() {
-        let mut scan = crate::test_support::empty_container_scan();
-        scan.surfaces.nonvisible_rows.push(SurfaceRow {
-            id: 17,
+    fn row(id: u32, offset: usize) -> SurfaceRow {
+        SurfaceRow {
+            id,
             kind: SurfaceKind::Plane,
             feature_id: 1,
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: 0,
-        });
+            offset,
+        }
+    }
 
-        let native = native_surface_id(&scan, 17).expect("build the native surface identity");
+    fn datum(id: u32, offset_in_payload: usize) -> crate::datum::DatumCylinder {
+        crate::datum::DatumCylinder {
+            id,
+            feature_id: 1,
+            reversed: false,
+            frame: crate::surface::PositionalCylinderFrame::new(
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                1.0,
+                None,
+            )
+            .expect("valid positional cylinder frame"),
+            offset_in_payload,
+        }
+    }
+
+    /// The per-identifier row scan the index replaces.
+    fn scanned_namespace(
+        scan: &ContainerScan,
+        surface_id: u32,
+    ) -> (cadmpeg_ir::ids::IdentityNamespace, &'static str) {
+        select_native_surface_namespace(
+            scan.surfaces.rows.iter().any(|row| row.id == surface_id),
+            scan.surfaces
+                .nonvisible_rows
+                .iter()
+                .any(|row| row.id == surface_id),
+            scan.planes
+                .datum_cylinders
+                .iter()
+                .any(|cylinder| cylinder.id == surface_id),
+        )
+    }
+
+    #[test]
+    fn native_surface_id_preserves_nonvisible_namespace() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.surfaces.nonvisible_rows.push(row(17, 0));
+
+        let native = NativeSurfaceNamespaces::new(&scan)
+            .surface_id(17)
+            .expect("build the native surface identity");
         assert_eq!(native.as_str(), "creo:novisgeom:surface#17");
-        let prefix = native_surface_namespace(&scan, 17).1;
-        assert!(crate::identity::matches_numbered_identity(
-            native.as_str(),
-            prefix,
-            17,
-        ));
-        let matches = native_surface_id_matcher(&scan, 17);
-        assert!(matches(&native));
-        let visible = cadmpeg_ir::ids::SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 17);
-        assert!(!crate::identity::matches_numbered_identity(
-            visible.as_str(),
-            prefix,
-            17,
-        ));
-        assert!(!matches(&visible));
+    }
+
+    #[test]
+    fn native_surface_namespaces_match_the_row_scans() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.surfaces.rows.extend(
+            [(1, 10), (2, 20), (2, 21), (5, 50), (7, 70)].map(|(id, offset)| row(id, offset)),
+        );
+        scan.surfaces
+            .nonvisible_rows
+            .extend([(2, 22), (3, 30), (4, 40), (3, 31)].map(|(id, offset)| row(id, offset)));
+        scan.planes
+            .datum_cylinders
+            .extend([(4, 41), (6, 60), (6, 61), (7, 71)].map(|(id, offset)| datum(id, offset)));
+        let namespaces = NativeSurfaceNamespaces::new(&scan);
+        for id in 0..=9 {
+            let (namespace, prefix) = scanned_namespace(&scan, id);
+            assert_eq!(namespaces.prefix(id), prefix, "{id}");
+            assert_eq!(
+                namespaces
+                    .surface_id(id)
+                    .expect("build the native surface identity"),
+                crate::identity::compose_checked::<cadmpeg_ir::ids::SurfaceId>(&namespace, id)
+                    .expect("build the scanned surface identity"),
+                "{id}"
+            );
+            assert_eq!(
+                namespaces.is_visible(id),
+                scan.surfaces.rows.iter().any(|row| row.id == id),
+                "{id}"
+            );
+            assert_eq!(
+                namespaces.unique_visible_row(id).map(|row| row.offset),
+                crate::surface::unique_surface_row(&scan.surfaces.rows, id).map(|row| row.offset),
+                "{id}"
+            );
+            assert_eq!(
+                namespaces
+                    .active_datum(id)
+                    .map(|datum| datum.offset_in_payload),
+                scan.planes
+                    .datum_cylinders
+                    .iter()
+                    .find(|datum| datum.id == id)
+                    .map(|datum| datum.offset_in_payload),
+                "{id}"
+            );
+        }
     }
 }
 

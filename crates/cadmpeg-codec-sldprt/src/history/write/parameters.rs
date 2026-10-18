@@ -213,7 +213,8 @@ fn sync_neutral_parameters(
             "SLDPRT parameters require feature records".into(),
         ));
     };
-    for (feature_id, feature) in features {
+    for feature in &ir.model.features {
+        let feature_id = &feature.id;
         let record = native
             .feature_histories
             .iter_mut()
