@@ -120,6 +120,57 @@ fn native_validation_rejects_broken_history_root_graph() {
 }
 
 #[test]
+fn native_validation_reports_omitted_history_roots_in_record_order() {
+    use crate::records::HistoryContent;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="A"/><Configuration Name="B"/><Configuration Name="C"/><Feature Name="R1" Type="Custom" id="1"/><Feature Name="R2" Type="Custom" id="2"/><Feature Name="R3" Type="Custom" id="3"/><Feature Name="R4" Type="Custom" id="4"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut expected = Vec::new();
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
+        let history = &mut native.feature_histories[0];
+        expected.extend(
+            history
+                .configurations
+                .iter()
+                .map(|configuration| format!("omits configuration {}", configuration.id)),
+        );
+        expected.extend(
+            history
+                .features
+                .iter()
+                .filter(|feature| feature.tree_parent.is_none())
+                .map(|feature| format!("omits feature {}", feature.id)),
+        );
+        history.content = vec![HistoryContent::Text("edited".into())];
+    });
+    assert!(expected.len() >= 7, "{expected:?}");
+
+    let omitted = crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+    )
+    .unwrap()
+    .into_iter()
+    .filter_map(|finding| {
+        finding
+            .message
+            .strip_prefix("SolidWorks history root ")
+            .filter(|message| message.starts_with("omits"))
+            .map(str::to_owned)
+    })
+    .collect::<Vec<_>>();
+    assert_eq!(omitted, expected);
+}
+
+#[test]
 fn native_validation_rejects_orphan_history_records() {
     let decoded = SldprtCodec
         .decode(
