@@ -1093,89 +1093,90 @@ pub(crate) fn incidence_cycles(
     incident: &[usize],
     edge_points: &[[usize; 2]],
 ) -> Result<Option<Vec<IncidenceCycle>>, CodecError> {
-    #[derive(Clone, Copy)]
-    struct AdjacentEdge {
-        edge: usize,
-        vertex: usize,
-        reversed: bool,
-    }
+    incidence_cycles_by(incident, |edge| edge_points.get(edge).copied())
+}
 
+/// Split `incident` into closed cycles, reading each edge's endpoint pair
+/// from `edge_points`.
+///
+/// Self-loops come first, in `incident` order. Each other cycle starts at its
+/// lowest unconsumed edge, in its stored direction, and cycles appear in
+/// ascending order of that edge. A repeated or unknown edge, or a vertex not
+/// shared by exactly two non-loop edges, gives `None`.
+pub(crate) fn incidence_cycles_by(
+    incident: &[usize],
+    edge_points: impl Fn(usize) -> Option<[usize; 2]>,
+) -> Result<Option<Vec<IncidenceCycle>>, CodecError> {
     if incident.is_empty() {
         return Ok(None);
     }
-    let mut vertex_indices = HashMap::<usize, usize>::new();
-    let mut at_vertex = Vec::<Vec<AdjacentEdge>>::new();
-    let mut unseen = Vec::<(usize, [usize; 2])>::new();
-    let mut seen_edges = HashSet::new();
-    let mut cycles = Vec::new();
+    let mut loops = Vec::new();
+    let mut edges = Vec::with_capacity(incident.len());
     for &edge in incident {
-        if !seen_edges.insert(edge) {
-            return Ok(None);
-        }
-        let Some(&[start, end]) = edge_points.get(edge) else {
+        let Some([start, end]) = edge_points(edge) else {
             return Ok(None);
         };
         if start == end {
-            let members = vec![(edge, false)];
-            let members = NonEmptyMembers::try_from(members).map_err(CodecError::malformed)?;
-            cycles.push(members);
-            continue;
+            loops.push(edge);
+        } else {
+            edges.push((edge, [start, end]));
         }
-        let mut endpoints = [0; 2];
-        for (slot, vertex) in [start, end].into_iter().enumerate() {
-            let index = if let Some(&index) = vertex_indices.get(&vertex) {
-                index
-            } else {
-                let index = at_vertex.len();
-                vertex_indices.insert(vertex, index);
-                at_vertex.push(Vec::new());
-                index
-            };
-            endpoints[slot] = index;
-        }
-        let [start, end] = endpoints;
-        at_vertex[start].push(AdjacentEdge {
-            edge,
-            vertex: end,
-            reversed: false,
-        });
-        at_vertex[end].push(AdjacentEdge {
-            edge,
-            vertex: start,
-            reversed: true,
-        });
-        unseen.push((edge, [start, end]));
     }
-    if at_vertex.iter().any(|edges| edges.len() != 2) {
+    edges.sort_unstable_by_key(|(edge, _)| *edge);
+    if edges.windows(2).any(|pair| pair[0].0 == pair[1].0) {
         return Ok(None);
     }
-    unseen.sort_unstable_by_key(|left| std::cmp::Reverse(left.0));
-    let mut consumed = HashSet::new();
-    while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {
-        if !consumed.insert(first) {
+    if loops.len() > 1 {
+        let mut sorted = loops.clone();
+        sorted.sort_unstable();
+        if sorted.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Ok(None);
+        }
+    }
+    let mut cycles = Vec::with_capacity(loops.len());
+    for edge in loops {
+        let members =
+            NonEmptyMembers::try_from(vec![(edge, false)]).map_err(CodecError::malformed)?;
+        cycles.push(members);
+    }
+    // Each endpoint occurrence is (vertex, edge rank in `edges`, endpoint
+    // slot). Sorting groups the occurrences of one vertex together; the order
+    // within a pair does not matter because the pair is linked both ways.
+    let mut endpoints = Vec::with_capacity(2 * edges.len());
+    for (rank, (_, points)) in edges.iter().enumerate() {
+        endpoints.push((points[0], rank, 0));
+        endpoints.push((points[1], rank, 1));
+    }
+    endpoints.sort_unstable_by_key(|(vertex, _, _)| *vertex);
+    // `across[rank][slot]` is the other edge occurrence at that endpoint.
+    let mut across = vec![[(0, 0); 2]; edges.len()];
+    for group in endpoints.chunk_by(|left, right| left.0 == right.0) {
+        let &[(_, left, left_slot), (_, right, right_slot)] = group else {
+            return Ok(None);
+        };
+        across[left][left_slot] = (right, right_slot);
+        across[right][right_slot] = (left, left_slot);
+    }
+    let mut consumed = vec![false; edges.len()];
+    for first in 0..edges.len() {
+        if consumed[first] {
             continue;
         }
-        let mut members = Vec::new();
-        members.push((first, false));
-        let mut previous_edge = first;
+        consumed[first] = true;
+        let (first_edge, [start_vertex, mut vertex]) = edges[first];
+        let mut members = vec![(first_edge, false)];
+        let (mut rank, mut slot) = (first, 1);
         while vertex != start_vertex {
-            // Every vertex has two distinct incident edges. The edge other
-            // than the one just traversed continues this closed component.
-            let [left, right] = at_vertex[vertex].as_slice() else {
-                return Ok(None);
-            };
-            let next = if left.edge == previous_edge {
-                right
-            } else {
-                left
-            };
-
-            if !consumed.insert(next.edge) {
+            let (next, entered) = across[rank][slot];
+            if consumed[next] {
                 return Ok(None);
             }
-            vertex = next.vertex;
-            previous_edge = next.edge;
-            members.push((next.edge, next.reversed));
+            consumed[next] = true;
+            let (next_edge, points) = edges[next];
+            members.push((next_edge, entered == 1));
+            rank = next;
+            slot = 1 - entered;
+            vertex = points[slot];
         }
         let members = NonEmptyMembers::try_from(members).map_err(CodecError::malformed)?;
         cycles.push(members);
