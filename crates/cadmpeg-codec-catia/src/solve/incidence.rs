@@ -1463,7 +1463,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
     choices: &mut [Vec<[usize; 2]>],
     coordinate_domains: &MeshCoordinateRootDomains,
     budget: &WorkBudget,
-) -> Result<bool, CodecError> {
+) -> bool {
     loop {
         let mut changed = false;
         for domain in domains {
@@ -1489,7 +1489,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     },
                     |_, _| true,
                 ) else {
-                    return Ok(true);
+                    return true;
                 };
                 if support.by_edge.is_empty() {
                     continue;
@@ -1503,16 +1503,16 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 }
             }
             if !assignment_found {
-                return Ok(false);
+                return false;
             }
             for (edge, supported) in face_support {
                 let Some(current) = choices.get(edge) else {
-                    return Ok(false);
+                    return false;
                 };
                 let values = if current.is_empty() {
                     let Some(values) = coordinate_domains.implicit_edge_candidates(edge, None)
                     else {
-                        return Ok(false);
+                        return false;
                     };
                     let mut collected = Vec::new();
                     for value in values {
@@ -1525,7 +1525,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 let mut retained = Vec::new();
                 for mut pair in values {
                     if !budget.charge() {
-                        return Ok(true);
+                        return true;
                     }
                     pair.sort_unstable_by(Ord::cmp);
                     if supported.contains(&pair) {
@@ -1535,7 +1535,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                 retained.sort_unstable_by(Ord::cmp);
                 retained.dedup();
                 if retained.is_empty() {
-                    return Ok(false);
+                    return false;
                 }
                 if retained != choices[edge] {
                     choices[edge] = retained;
@@ -1544,7 +1544,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
             }
         }
         if !changed {
-            return Ok(true);
+            return true;
         }
     }
 }
@@ -4522,7 +4522,7 @@ where
                     &mut narrowed_choices,
                     coordinate,
                     &implicit_support_budget,
-                )?
+                )
             } else {
                 true
             };
