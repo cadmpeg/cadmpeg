@@ -126,6 +126,22 @@ fn insert_component_naming_space(
     Ok(())
 }
 
+/// The counted context UUID after a typed component reference and its offset.
+///
+/// The reference's two-byte local tail is the shorter of the reserved fields an
+/// untyped binding carries ([`COMPONENT_UUID_RESERVED_LENGTHS`]); the longer
+/// one adds a zero byte before the UUID.
+fn typed_component_context_uuid(bytes: &[u8], after_reference: usize) -> Option<(String, usize)> {
+    [after_reference, after_reference.checked_add(1)?]
+        .into_iter()
+        .filter(|&at| {
+            bytes
+                .get(after_reference..at)
+                .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
+        })
+        .find_map(|at| Some((lp_utf16_bounded(bytes, at, 36..=36)?.0, at)))
+}
+
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,
@@ -225,7 +241,9 @@ pub(crate) fn decode_component_naming_spaces(
             }) {
                 continue;
             }
-            let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+            let Some((context_uuid, uuid_offset)) =
+                typed_component_context_uuid(bytes, uuid_offset)
+            else {
                 continue;
             };
             let Ok(context_uuid) =

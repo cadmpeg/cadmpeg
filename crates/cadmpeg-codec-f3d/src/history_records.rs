@@ -1066,7 +1066,8 @@ pub(crate) enum AsmTopologyScope {
     Retained,
 }
 
-/// Rows inserted or replaced, and keys removed from one keyed family.
+/// Rows inserted or replaced, and keys removed from one keyed family. In a
+/// family with shared keys, `set` holds every row of each key it replaces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalRowDelta<R> {
     #[serde(default = "Vec::new", skip_serializing_if = "Vec::is_empty")]
@@ -1090,8 +1091,13 @@ impl<R> AsmHistoricalRowDelta<R> {
     }
 }
 
-/// One row in a family with unique, strictly increasing keys.
+/// One row in a keyed family. Keys increase strictly unless the family
+/// shares keys, in which case they do not decrease.
 pub(crate) trait AsmHistoricalRow: Clone + PartialEq {
+    /// Rows keyed by a surface or curve slot can share their key: a state
+    /// names one carrier slot more than once when a blend face's base surface
+    /// and its support share it.
+    const SHARED_KEYS: bool = false;
     fn key(&self) -> i64;
 }
 
@@ -1182,12 +1188,14 @@ impl AsmHistoricalRow for AsmHistoricalCoedge {
 }
 
 impl AsmHistoricalRow for AsmHistoricalCurveAxis {
+    const SHARED_KEYS: bool = true;
     fn key(&self) -> i64 {
         self.curve
     }
 }
 
 impl AsmHistoricalRow for AsmHistoricalCylinder {
+    const SHARED_KEYS: bool = true;
     fn key(&self) -> i64 {
         self.surface
     }
@@ -1206,6 +1214,7 @@ impl AsmHistoricalRow for AsmHistoricalOptionalCarrierBinding {
 }
 
 impl AsmHistoricalRow for AsmHistoricalPlane {
+    const SHARED_KEYS: bool = true;
     fn key(&self) -> i64 {
         self.surface
     }
@@ -1224,12 +1233,14 @@ impl AsmHistoricalRow for AsmHistoricalRelation {
 }
 
 impl AsmHistoricalRow for AsmHistoricalSurfaceAxis {
+    const SHARED_KEYS: bool = true;
     fn key(&self) -> i64 {
         self.surface
     }
 }
 
 impl AsmHistoricalRow for AsmHistoricalSurfaceRadius {
+    const SHARED_KEYS: bool = true;
     fn key(&self) -> i64 {
         self.surface
     }

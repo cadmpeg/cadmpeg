@@ -80,3 +80,36 @@ fn historical_coedge_neighbors_follow_ring_order() {
         assert_eq!(coedge.previous, 10 + (ordinal + 99) % 100);
     }
 }
+
+#[test]
+fn appended_tolerant_coedge_curves_join_the_curve_family_in_key_order() {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut brep = cadmpeg_asm::brep::AsmBrep::default();
+    for (id, x) in [
+        ("test:brep:entity#9", 9.0),
+        ("test:brep:entity#20", 20.0),
+        ("test:brep:tolerant-coedge-curve#5", 5.0),
+    ] {
+        brep.curves.push(Curve {
+            parameter_range: None,
+            id: CurveId::mint(id).unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(x, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+            )),
+            source_object: None,
+        });
+    }
+    let topology = historical_topology(&brep).unwrap().unwrap();
+    assert_eq!(topology.curves, [5, 9, 20]);
+    assert_eq!(
+        topology
+            .curve_axes
+            .iter()
+            .map(|axis| (axis.curve, axis.origin.x))
+            .collect::<Vec<_>>(),
+        [(5, 5.0), (9, 9.0), (20, 20.0)]
+    );
+}

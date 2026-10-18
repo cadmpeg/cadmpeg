@@ -50,6 +50,8 @@ pub(crate) enum F3dLossCode {
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
     HistoryBindingBudgetExceeded,
+    /// ASM history topology binding exceeded its local work cap.
+    HistoryBindingWorkExceeded,
     /// A Design recipe side-sequence search exceeded its local work cap.
     RecipeSideSearchBudgetExceeded,
     /// Ordering one owner scope's Design parameters exceeded its local work cap.
@@ -232,6 +234,7 @@ impl F3dLossCode {
         Self::AssemblyJointUnprojected,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
+        Self::HistoryBindingWorkExceeded,
         Self::RecipeSideSearchBudgetExceeded,
         Self::ParameterOrderBudgetExceeded,
         Self::HistoryRecordFramingFailed,
@@ -336,6 +339,7 @@ impl F3dLossCode {
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
+            Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
             Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
             Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
@@ -434,6 +438,7 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => Severity::Info,
             Self::HistoryBindingBudgetExceeded
+            | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
             | Self::HistoryRecordFramingFailed
@@ -547,6 +552,7 @@ impl F3dLossCode {
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
+            | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
             | Self::FeatureDefinitionIncomplete
@@ -685,6 +691,7 @@ mod tests {
                 "assembly.joint-unprojected",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
+                "history.binding-work-exceeded",
                 "feature.recipe-search-budget-exceeded",
                 "parameter.order-budget-exceeded",
                 "history.record-framing-failed",

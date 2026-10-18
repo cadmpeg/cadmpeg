@@ -2,8 +2,9 @@
 //! History binding bound unit tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, WorkBudget};
 
+use crate::history::binding::MAX_HISTORY_BINDING_WORK;
 use crate::history::{
     admit_history_binding, HistoryBindingAdmission, HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT,
 };
@@ -177,6 +178,7 @@ fn skipped_history_does_not_charge_retained_bytes() {
             "large",
             RefWidth::Eight,
             &mut remaining,
+            &WorkBudget::new(MAX_HISTORY_BINDING_WORK),
         )
         .unwrap()
         .unwrap();
@@ -205,6 +207,7 @@ fn skipped_history_leaves_room_for_the_next_smaller_stream() {
             "large",
             RefWidth::Eight,
             &mut remaining,
+            &WorkBudget::new(MAX_HISTORY_BINDING_WORK),
         )
         .unwrap()
         .unwrap();
@@ -215,6 +218,7 @@ fn skipped_history_leaves_room_for_the_next_smaller_stream() {
             "small",
             RefWidth::Eight,
             &mut remaining,
+            &WorkBudget::new(MAX_HISTORY_BINDING_WORK),
         )
         .unwrap()
         .unwrap();
@@ -229,4 +233,50 @@ fn skipped_history_leaves_room_for_the_next_smaller_stream() {
             policy.limits.max_retained_bytes - 1
         );
     });
+}
+
+#[test]
+fn history_past_its_binding_work_keeps_its_records_without_topology() {
+    use cadmpeg_asm::kernel_header::RefWidth;
+    let bytes = geometry_history(true);
+    let decode = |work: &WorkBudget| {
+        crate::test_support::with_decode_context(|ctx| {
+            super::super::decode(
+                ctx,
+                &bytes,
+                "history",
+                RefWidth::Eight,
+                &mut { u64::MAX },
+                work,
+            )
+            .unwrap()
+            .unwrap()
+        })
+    };
+    let unbounded = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
+    let bound = decode(&unbounded);
+    assert!(bound
+        .states()
+        .iter()
+        .all(|state| state.transition.is_some()));
+
+    let at_cap = WorkBudget::new(unbounded.consumed());
+    assert_eq!(decode(&at_cap), bound);
+    assert!(!at_cap.exhausted());
+
+    let past_cap = WorkBudget::new(unbounded.consumed() - 1);
+    let capped = decode(&past_cap);
+    assert!(past_cap.exhausted());
+    assert!(!capped.binding_budget_exceeded);
+    assert_eq!(capped.states().len(), bound.states().len());
+    for (capped, bound) in capped.states().iter().zip(bound.states()) {
+        assert!(!capped.records.is_empty());
+        assert_eq!(
+            *capped,
+            crate::history_records::AsmDeltaState {
+                transition: None,
+                ..bound.clone()
+            }
+        );
+    }
 }

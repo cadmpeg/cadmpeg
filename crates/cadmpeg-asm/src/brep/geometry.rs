@@ -104,8 +104,10 @@ pub(super) fn is_analytic_curve(head: &str) -> bool {
     matches!(head, "straight" | "ellipse" | "degenerate_curve")
 }
 
-/// Decode an analytic surface carrier. Signed sphere and torus radii remain in
-/// the IR because they are part of the ASM carrier semantics.
+/// Decode an analytic surface carrier. Signed sphere radii and torus minor
+/// radii remain in the IR because they are part of the ASM carrier semantics.
+/// A negative torus major radius decodes as its magnitude, the same tube
+/// circle; its pcurves change chart through `SupportChart::torus`.
 pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
     decode_surface_carrier(rec, &collect_carrier(rec))
 }
@@ -188,7 +190,7 @@ fn decode_surface_carrier(rec: &Record, c: &Carrier) -> Option<(SolvedSurfaceGeo
                 SolvedSurfaceGeometry::Torus(TorusSurface::new(
                     FinitePoint3::new(scale_point(origin))?,
                     frame(axis, ref_direction)?,
-                    PositiveLength::new(major * LEN_TO_MM)?,
+                    PositiveLength::new(major.abs() * LEN_TO_MM)?,
                     NonZeroLength::new(minor * LEN_TO_MM)?,
                 )),
                 false,

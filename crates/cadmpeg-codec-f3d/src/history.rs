@@ -148,13 +148,16 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
 /// `remaining_retained_bytes` is the session's remaining retained-byte allowance,
 /// less the estimates reserved for earlier history streams. A history whose
-/// estimate does not fit keeps only its state headers.
+/// estimate does not fit keeps only its state headers. `binding_work` bounds
+/// the topology binding of the history; a history that exhausts it has no
+/// historical topology.
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     width: RefWidth,
     remaining_retained_bytes: &mut u64,
+    binding_work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let framing = HistoryFraming::scan(bytes, stream);
     let mut states = Vec::new();
@@ -200,7 +203,7 @@ pub(crate) fn decode(
             state.records = Vec::new();
         }
     } else {
-        bind_complete_record_tables(ctx, &mut states, bytes, width)?;
+        bind_complete_record_tables(ctx, &mut states, bytes, width, binding_work)?;
     }
     if states.is_empty() {
         return Ok(None);
@@ -659,8 +662,9 @@ fn bind_complete_record_tables(
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: RefWidth,
+    work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    binding::bind(ctx, states, bytes, width).map(|_| ())
+    binding::bind(ctx, states, bytes, width, work).map(|_| ())
 }
 
 pub(crate) fn decode_record_archive(
@@ -7753,7 +7757,7 @@ fn historical_topology(
         }
     }
 
-    Ok(Some(AsmHistoricalTopology {
+    let mut topology = AsmHistoricalTopology {
         bodies: topology_some!(refs(brep.bodies.iter().map(|entity| entity.id.as_str()))),
         regions: topology_some!(refs(brep.regions.iter().map(|entity| entity.id.as_str()))),
         shells: topology_some!(refs(brep.shells.iter().map(|entity| entity.id.as_str()))),
@@ -7936,7 +7940,25 @@ fn historical_topology(
                 })
             })
             .collect::<Option<Vec<_>>>()),
-    }))
+    };
+    // Transitions diff each family in key order. The decoder appends the
+    // containers it builds for saved free edges after the containers it walks,
+    // and the curves it builds for tolerant coedges after the curves it walks.
+    topology.bodies.sort_unstable();
+    topology.regions.sort_unstable();
+    topology.shells.sort_unstable();
+    topology.curves.sort_unstable();
+    topology.curve_axes.sort_by_key(|axis| axis.curve);
+    for family in [
+        &mut topology.body_regions,
+        &mut topology.region_shells,
+        &mut topology.shell_faces,
+        &mut topology.shell_wire_edges,
+        &mut topology.shell_free_vertices,
+    ] {
+        family.sort_by_key(|relation| relation.owner_ref);
+    }
+    Ok(Some(topology))
 }
 
 pub(crate) fn historical_topology_with_tags(

@@ -11,6 +11,9 @@ fn decoded_history_reports_an_invalid_transition() {
             "BREP.test.smbh",
             cadmpeg_asm::kernel_header::RefWidth::Eight,
             &mut { u64::MAX },
+            &cadmpeg_core::decode::WorkBudget::new(
+                crate::history::binding::MAX_HISTORY_BINDING_WORK,
+            ),
         )
         .unwrap()
         .unwrap();

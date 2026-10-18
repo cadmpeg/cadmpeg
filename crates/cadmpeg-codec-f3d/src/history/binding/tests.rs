@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{decode_slots, Binder, HistoricalRecordArchive, Slots, Statistics};
+use super::{
+    decode_slots, Binder, HistoricalRecordArchive, Slots, Statistics, MAX_HISTORY_BINDING_WORK,
+};
 use cadmpeg_asm::sab::{Record, Token};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget};
 use std::collections::BTreeMap;
 
 fn record(slot: i64, name: &str, tokens: Vec<Token>) -> Record {
@@ -202,7 +204,8 @@ fn compare_step(
         archive.insert(revision, record.clone());
         versions_b.insert(slot, revision);
     }
-    let mut binder = Binder::new(&archive, saved_limit);
+    let work = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
+    let mut binder = Binder::new(&archive, saved_limit, &work);
     let mut stats = Statistics::default();
     binder
         .update(&a.keys().copied().collect(), &versions_a)
@@ -228,6 +231,7 @@ fn compare_step(
         &b.keys().copied().collect(),
         &bytes,
         &mut Statistics::default(),
+        &WorkBudget::new(MAX_HISTORY_BINDING_WORK),
         None,
     )
     .unwrap();
@@ -344,7 +348,8 @@ fn clean_multi_loop_face_splits_per_loop() {
         .iter()
         .map(|(&slot, record)| (slot, record.clone()))
         .collect();
-    let mut binder = Binder::new(&archive, None);
+    let work = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
+    let mut binder = Binder::new(&archive, None, &work);
     binder
         .update(
             &a.keys().copied().collect(),
@@ -683,7 +688,8 @@ fn assert_reference_dirty(a: &BTreeMap<i64, Record>, b: &BTreeMap<i64, Record>, 
             (s, s + 1000)
         })
         .collect();
-    let mut binder = Binder::new(&archive, None);
+    let work = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
+    let mut binder = Binder::new(&archive, None, &work);
     binder
         .update(&a.keys().copied().collect(), &versions_a)
         .unwrap();
@@ -747,7 +753,7 @@ fn container_owner_insertion_updates_closure_without_a_forward_link() {
 }
 
 #[test]
-fn saved_container_before_later_body_matches_full_transition_refusal() {
+fn saved_container_before_later_body_binds_in_key_order() {
     let mut records = fixture();
     records.insert(100, refs(100, "body", &[]));
     let mut saved = records[&14].clone();
@@ -767,26 +773,51 @@ fn saved_container_before_later_body_matches_full_transition_refusal() {
     let topology = super::historical_topology_with_tags(&decoded)
         .unwrap()
         .unwrap();
-    assert_eq!(topology.bodies, vec![1, 100, 40]);
-    assert!(!super::IndexedTopology::ordered(&topology));
+    assert_eq!(topology.bodies, vec![1, 40, 100]);
+    assert!(super::IndexedTopology::ordered(&topology));
     let versions = records.keys().map(|&slot| (slot, slot)).collect();
     let snapshot = crate::history_records::AsmStateSnapshot {
         state_id: 1,
         topology: &topology,
         versions: &versions,
     };
-    assert!(super::AsmHistoricalTransition::between(None, snapshot).is_none());
-    assert!(super::transition_for_changes(snapshot, snapshot, &Slots::from([40])).is_none());
+    assert!(super::AsmHistoricalTransition::between(None, snapshot).is_some());
+    assert!(super::transition_for_changes(snapshot, snapshot, &Slots::from([40])).is_some());
     let archive = records
         .iter()
         .map(|(&slot, record)| (slot, record.clone()))
         .collect();
-    let mut binder = Binder::new(&archive, Some(50));
+    let work = WorkBudget::new(MAX_HISTORY_BINDING_WORK);
+    let mut binder = Binder::new(&archive, Some(50), &work);
     binder
         .update(&records.keys().copied().collect(), &versions)
         .unwrap();
-    assert!(binder
+    let full = binder
         .full(&ctx, &bytes, &mut Statistics::default())
         .unwrap()
-        .is_none());
+        .unwrap();
+    assert_eq!(full, topology);
+}
+
+#[test]
+fn binding_work_cap_counts_decoded_records() {
+    let records = fixture();
+    let archive: HistoricalRecordArchive = records
+        .iter()
+        .map(|(&slot, record)| (slot, record.clone()))
+        .collect();
+    let versions = records.keys().map(|&slot| (slot, slot)).collect();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::desktop();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for (limit, binds) in [(records.len() - 1, false), (records.len(), true)] {
+        let work = WorkBudget::new(limit);
+        let mut binder = Binder::new(&archive, None, &work);
+        binder
+            .update(&records.keys().copied().collect(), &versions)
+            .unwrap();
+        let full = binder.full(&ctx, &[], &mut Statistics::default()).unwrap();
+        assert_eq!(full.is_some(), binds, "limit {limit}");
+        assert_eq!(work.exhausted(), !binds, "limit {limit}");
+    }
 }

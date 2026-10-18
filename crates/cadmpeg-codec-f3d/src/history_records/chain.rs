@@ -100,36 +100,43 @@ fn entity_delta(
     Some(result)
 }
 
+fn ordered_keys<R: AsmHistoricalRow>(rows: &[R]) -> bool {
+    if R::SHARED_KEYS {
+        rows.windows(2).all(|pair| pair[0].key() <= pair[1].key())
+    } else {
+        strictly_sorted(rows.iter().map(R::key))
+    }
+}
+
+/// Split the leading rows whose key is `key` from the rest.
+fn split_key<R: AsmHistoricalRow>(rows: &[R], key: i64) -> (&[R], &[R]) {
+    rows.split_at(rows.iter().take_while(|row| row.key() == key).count())
+}
+
 impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
+    /// A changed key sets all of its rows.
     fn between(older: &[R], newer: &[R]) -> Option<Self> {
-        if !strictly_sorted(older.iter().map(R::key)) || !strictly_sorted(newer.iter().map(R::key))
-        {
+        if !ordered_keys(older) || !ordered_keys(newer) {
             return None;
         }
         let mut result = Self::default();
-        let mut old = older.iter().peekable();
-        let mut new = newer.iter().peekable();
-        while let (Some(&older), Some(&newer)) = (old.peek(), new.peek()) {
-            match older.key().cmp(&newer.key()) {
-                std::cmp::Ordering::Less => {
-                    result.removed.push(older.key());
-                    old.next();
-                }
-                std::cmp::Ordering::Greater => {
-                    result.set.push(newer.clone());
-                    new.next();
-                }
-                std::cmp::Ordering::Equal => {
-                    if older != newer {
-                        result.set.push(newer.clone());
-                    }
-                    old.next();
-                    new.next();
-                }
+        let (mut old, mut new) = (older, newer);
+        while let (Some(older), Some(newer)) = (old.first(), new.first()) {
+            let key = older.key().min(newer.key());
+            let (old_rows, old_rest) = split_key(old, key);
+            let (new_rows, new_rest) = split_key(new, key);
+            if new_rows.is_empty() {
+                result.removed.push(key);
+            } else if old_rows != new_rows {
+                result.set.extend_from_slice(new_rows);
             }
+            (old, new) = (old_rest, new_rest);
         }
-        result.removed.extend(old.map(R::key));
-        result.set.extend(new.cloned());
+        while let Some(older) = old.first() {
+            result.removed.push(older.key());
+            old = split_key(old, older.key()).1;
+        }
+        result.set.extend_from_slice(new);
         Some(result)
     }
 
@@ -137,9 +144,9 @@ impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
         if self.is_empty() {
             return Ok(());
         }
-        if !strictly_sorted(self.set.iter().map(R::key))
+        if !ordered_keys(&self.set)
             || !strictly_sorted(self.removed.iter().copied())
-            || !strictly_sorted(family.iter().map(R::key))
+            || !ordered_keys(family)
         {
             return Err(AsmTransitionError::UnsortedFamily);
         }
@@ -147,8 +154,8 @@ impl<R: AsmHistoricalRow> AsmHistoricalRowDelta<R> {
             family,
             R::key,
             self.set
-                .iter()
-                .map(|row| (row.key(), std::slice::from_ref(row))),
+                .chunk_by(|left, right| left.key() == right.key())
+                .map(|rows| (rows[0].key(), rows)),
             &self.removed,
         )
     }

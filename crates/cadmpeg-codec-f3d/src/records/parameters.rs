@@ -778,6 +778,8 @@ impl DesignParameterOwner {
         } else {
             return Err("record_index, parameter_record_index, and companion_record_index must follow a parameter frame order".into());
         };
+        // A variant byte either ends its scope lane, keeping the variant-less
+        // length, or is followed by one zero byte.
         let modern = matches!(
             (
                 wire.frame_length,
@@ -787,9 +789,9 @@ impl DesignParameterOwner {
             (99 | 103, Some(40), None)
                 | (100, Some(41), None)
                 | (107, Some(44), None)
-                | (101, Some(41), Some(0..=1))
-                | (104, Some(40), Some(0..=1))
-                | (108, Some(44), Some(0..=1))
+                | (100 | 101, Some(41), Some(0..=1))
+                | (103 | 104, Some(40), Some(0..=1))
+                | (107 | 108, Some(44), Some(0..=1))
         );
         let legacy = wire.local_ordinal == 0
             && match wire.frame_length {

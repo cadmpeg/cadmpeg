@@ -684,16 +684,20 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     );
     assert_eq!(parsed.evaluated_value().get(), 0.0);
 
-    for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
-        assert!(parse_legacy_parameter_owner_68(
-            &legacy_parameter_owner_68_frame(class_tag),
-            crate::records::identity::Located {
-                value: 1.25,
-                offset: 700
-            },
-            0
-        )
-        .is_some());
+    for class_tag in ["268", "282", "289", "292", "297", "299", "325", "336"] {
+        assert!(
+            parse_legacy_parameter_owner_68(
+                &legacy_parameter_owner_68_frame(class_tag),
+                crate::records::identity::Located {
+                    value: 1.25,
+                    offset: 700
+                },
+                0
+            )
+            .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
+            .is_some(),
+            "class {class_tag}"
+        );
     }
 }
 
@@ -840,6 +844,43 @@ fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
     assert_eq!(parsed.owned_ordinal, 73);
     assert_eq!(parsed.variant, Some(0));
     assert_eq!(parsed.companion_record_index, 46);
+}
+
+/// Ends a frame's scope lane at its variant byte by dropping the zero byte
+/// that follows it.
+fn without_variant_padding(mut frame: Vec<u8>) -> Vec<u8> {
+    frame.remove(frame.len() - 24);
+    frame
+}
+
+#[test]
+fn every_parsed_parameter_owner_frame_is_a_valid_owner_record() {
+    let frames = [
+        parameter_owner_frame(),
+        compact_parameter_owner_frame(),
+        compact_variant_parameter_owner_frame(),
+        counted_parameter_owner_frame(),
+        compact_typed_counted_parameter_owner_frame(),
+        compact_counted_parameter_owner_frame(),
+        tagged_scalar_parameter_owner_frame(),
+        tagged_scalar_variant_parameter_owner_frame(),
+        without_variant_padding(parameter_owner_frame()),
+        without_variant_padding(counted_parameter_owner_frame()),
+        without_variant_padding(tagged_scalar_variant_parameter_owner_frame()),
+    ];
+    for frame in frames {
+        let parsed = parse_parameter_owner(&frame).expect("owner frame");
+        let (length, variant) = (parsed.frame_length, parsed.variant);
+        let super::FrameRelative(value_offset) = parsed.evaluated_value_offset;
+        let owner = parsed
+            .into_record("Design/BulkStream.dat", 1000)
+            .unwrap_or_else(|| panic!("{length}-byte owner with variant {variant:?}"));
+        assert_eq!(owner.frame_length(), length);
+        assert_eq!(
+            i128::from(owner.evaluated_value_offset()),
+            1000 + value_offset
+        );
+    }
 }
 
 #[test]
@@ -1012,6 +1053,22 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         panic!("expected one parameter owner");
     };
     assert_eq!(owner.frame_length(), 104);
+    assert_eq!(owner.evaluated_value_offset(), 40);
+
+    let mut compact = without_variant_padding(parameter_owner_frame());
+    compact.extend_from_slice(&paired_header());
+    let owners = with_scan(&archive(stream, &compact), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("owner frame whose variant ends its scope lane");
+    let [owner] = owners.as_slice() else {
+        panic!("expected one compact parameter owner");
+    };
+    assert_eq!(owner.frame_length(), 103);
     assert_eq!(owner.evaluated_value_offset(), 40);
 
     let unresolved = with_scan(&archive(stream, &[]), |scan| {

@@ -309,7 +309,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         }
     }
 
-    fn typed_binding(out: &mut Vec<u8>, component: u64, context_uuid: &str) {
+    fn typed_binding(out: &mut Vec<u8>, component: u64, reserved_len: usize, context_uuid: &str) {
         out.push(1);
         out.extend_from_slice(&component.to_le_bytes());
         out.extend_from_slice(
@@ -317,7 +317,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
                 .to_le_bytes(),
         );
         out.extend_from_slice(COMPONENT_TYPE_GUID.as_bytes());
-        out.extend_from_slice(&[0, 0]);
+        out.extend(std::iter::repeat_n(0, reserved_len));
         out.extend_from_slice(&36_u32.to_le_bytes());
         for code_unit in context_uuid.encode_utf16() {
             out.extend_from_slice(&code_unit.to_le_bytes());
@@ -342,19 +342,25 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         );
     }
 
-    let mut typed = vec![0xaa, 0xbb];
-    let typed_marker = typed.len();
-    typed_binding(&mut typed, 17, CONTEXT_UUID);
-    let decoded = with_scan(&archive(&typed), |scan| {
-        decode_component_naming_spaces(scan)
-    })
-    .expect("typed component naming space");
-    let [space] = decoded.as_slice() else {
-        panic!("expected one typed component naming space");
-    };
-    assert_eq!(space.component_record_index, 17);
-    assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-    assert_eq!(space.byte_offset, u64_from_index(typed_marker));
+    for reserved_len in [2, 3] {
+        let mut typed = vec![0xaa, 0xbb];
+        let typed_marker = typed.len();
+        typed_binding(&mut typed, 17, reserved_len, CONTEXT_UUID);
+        let decoded = with_scan(&archive(&typed), |scan| {
+            decode_component_naming_spaces(scan)
+        })
+        .expect("typed component naming space");
+        let [space] = decoded.as_slice() else {
+            panic!("expected one typed component naming space");
+        };
+        assert_eq!(space.component_record_index, 17);
+        assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
+        assert_eq!(space.byte_offset, u64_from_index(typed_marker));
+        assert_eq!(
+            space.context_uuid_offset,
+            u64_from_index(typed_marker + 9 + 4 + COMPONENT_TYPE_GUID.len() + reserved_len)
+        );
+    }
 
     let mut overlapping_reference = vec![1];
     binding(
@@ -363,7 +369,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         2,
         "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb",
     );
-    typed_binding(&mut overlapping_reference, 17, CONTEXT_UUID);
+    typed_binding(&mut overlapping_reference, 17, 2, CONTEXT_UUID);
     let decoded = with_scan(&archive(&overlapping_reference), |scan| {
         decode_component_naming_spaces(scan)
     })

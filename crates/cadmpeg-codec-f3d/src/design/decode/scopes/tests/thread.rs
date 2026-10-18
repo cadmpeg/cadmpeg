@@ -451,3 +451,50 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
     );
     assert!(scope.sketch_entity().is_none());
 }
+
+#[test]
+fn scope_without_its_own_history_state_keeps_its_predecessor() {
+    let frame = |current_state: u32, previous_state: u32| {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"344");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for record_index in [16u32, 19] {
+            bytes.push(1);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        bytes.extend_from_slice(&current_state.to_le_bytes());
+        lp_utf16(&mut bytes, "Thread");
+        let mut tail = [0; 87];
+        tail[0..4].copy_from_slice(&3u32.to_le_bytes());
+        tail[41..45].copy_from_slice(&previous_state.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"262");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes
+    };
+    let parse = |bytes: &[u8]| {
+        parse_parameter_scope(
+            bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            12,
+            &crate::records::references::DesignClassTag::try_from("344".to_owned()).unwrap(),
+            0,
+        )
+        .unwrap()
+    };
+
+    let scope = parse(&frame(u32::MAX, 9)).expect("scope that commits no state");
+    assert_eq!(
+        scope.kind(),
+        crate::records::feature::scope::DesignFeatureKind::Thread
+    );
+    assert_eq!(scope.history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id(), Some(9));
+
+    assert!(parse(&frame(10, u32::MAX)).is_none());
+}

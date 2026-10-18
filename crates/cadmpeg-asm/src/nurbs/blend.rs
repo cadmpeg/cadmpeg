@@ -409,6 +409,43 @@ pub(super) fn rolling_ball_side(
 ) -> Option<
     Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::CodecError>,
 > {
+    match propagate_resource!(read_rolling_ball_side(
+        ctx,
+        cur,
+        reference_context,
+        SupportCaches::Resolve
+    )?) {
+        SideRead::Carried(side) => Some(Ok(*side)),
+        SideRead::UncachedSupport => None,
+    }
+}
+
+/// A rolling-ball side the grammar has read.
+enum SideRead {
+    /// A side an embedded construction carries.
+    Carried(Box<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>>),
+    /// A side whose `spline` support owns no solved cache. The grammar reads
+    /// past it, but an embedded side has no carrier for that support.
+    UncachedSupport,
+}
+
+/// Whether reading a rolling-ball support resolves the solved cache of a
+/// `spline` support whose cache is not inline. A variable blend's own cache
+/// does not depend on its supports, so a parse for that cache skips them; a
+/// support that is itself a variable blend would otherwise resolve its own
+/// supports in turn.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SupportCaches {
+    Resolve,
+    Skip,
+}
+
+fn read_rolling_ball_side(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    cur: &mut Cur<'_>,
+    reference_context: Option<&SubtypeTable>,
+    supports: SupportCaches,
+) -> Option<Result<SideRead, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match cur.take_str()? {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
@@ -418,11 +455,19 @@ pub(super) fn rolling_ball_side(
         "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
         _ => return None,
     };
-    let (surface, chart) =
-        match propagate_resource!(optional_rolling_ball_surface(ctx, cur, reference_context)?) {
-            Nullable::Value((surface, chart)) => (Some(surface), chart),
-            Nullable::Null => (None, SupportChart::Canonical),
-        };
+    let (surface, chart) = match propagate_resource!(read_optional_rolling_ball_surface(
+        ctx,
+        cur,
+        reference_context,
+        supports
+    )?) {
+        SupportRead::Charted(support) => {
+            let (surface, chart) = *support;
+            (Some(Nullable::Value(surface)), chart)
+        }
+        SupportRead::Null => (Some(Nullable::Null), SupportChart::Canonical),
+        SupportRead::Uncached => (None, SupportChart::Canonical),
+    };
     let saved = cur.pos();
     let curve = if cur.take_ident() == Some("null_curve") {
         None
@@ -457,9 +502,12 @@ pub(super) fn rolling_ball_side(
         cur.set_pos(extension_start);
         None
     };
-    Some(Ok(RollingBallSide {
+    let Some(surface) = surface else {
+        return Some(Ok(SideRead::UncachedSupport));
+    };
+    Some(Ok(SideRead::Carried(Box::new(RollingBallSide {
         support_kind,
-        surface,
+        surface: surface.value(),
         curve,
         pcurve,
         location: Point3::new(
@@ -469,7 +517,7 @@ pub(super) fn rolling_ball_side(
         ),
         secondary_pcurve,
         extension,
-    }))
+    }))))
 }
 
 /// A rolling-ball support surface and the native chart of the pcurves on it.
@@ -483,12 +531,41 @@ pub(super) fn optional_rolling_ball_surface(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Result<Nullable<ChartedSupport>, cadmpeg_core::CodecError>> {
+    match propagate_resource!(read_optional_rolling_ball_surface(
+        ctx,
+        cur,
+        reference_context,
+        SupportCaches::Resolve
+    )?) {
+        SupportRead::Charted(support) => Some(Ok(Nullable::Value(*support))),
+        SupportRead::Null => Some(Ok(Nullable::Null)),
+        SupportRead::Uncached => None,
+    }
+}
+
+/// A rolling-ball support slot the grammar has read.
+enum SupportRead {
+    /// A support an embedded construction carries.
+    Charted(Box<ChartedSupport>),
+    /// The `null_surface` ident.
+    Null,
+    /// A `spline` support whose subtype owns no decodable solved cache, as when
+    /// its revision tail stores the parameterization form.
+    Uncached,
+}
+
+fn read_optional_rolling_ball_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    cur: &mut Cur<'_>,
+    reference_context: Option<&SubtypeTable>,
+    supports: SupportCaches,
+) -> Option<Result<SupportRead, cadmpeg_core::CodecError>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
-        return Some(Ok(Nullable::Null));
+        return Some(Ok(SupportRead::Null));
     }
     cur.set_pos(saved);
-    rolling_ball_surface(ctx, cur, reference_context).map(|result| result.map(Nullable::Value))
+    rolling_ball_surface(ctx, cur, reference_context, supports)
 }
 
 /// Decode one rolling-ball support surface and the native chart of the
@@ -497,7 +574,8 @@ fn rolling_ball_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<Result<ChartedSupport, cadmpeg_core::CodecError>> {
+    supports: SupportCaches,
+) -> Option<Result<SupportRead, cadmpeg_core::CodecError>> {
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident()?;
@@ -506,40 +584,49 @@ fn rolling_ball_surface(
             let (surface, surface_end) = surface_block(toks, cur.pos())?;
             cur.set_pos(surface_end);
             let ranges = surface_ranges(cur)?;
-            return Some(Ok((
+            return Some(Ok(SupportRead::Charted(Box::new((
                 RollingBallSupportSurface {
                     surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     parameter_ranges: ranges,
                 },
                 SupportChart::Canonical,
-            )));
+            )))));
         }
         cur.take_bool()?;
         let scope = toks::subtype_span(toks, cur.pos())?;
-        let surface = propagate_resource!(match reference_context {
-            Some(table) =>
-                crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table),
-            None => crate::nurbs::core::owned_surface_cache(ctx, scope, None),
-        }?);
+        let surface = match (supports, reference_context) {
+            (SupportCaches::Skip, _) => None,
+            (SupportCaches::Resolve, Some(table)) => {
+                crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table)
+            }
+            (SupportCaches::Resolve, None) => {
+                crate::nurbs::core::owned_surface_cache(ctx, scope, None)
+            }
+        }
+        .transpose();
+        let surface = propagate_resource!(surface);
         cur.set_pos(cur.pos() + scope.tokens().len());
         let ranges = surface_ranges(cur)?;
-        return Some(Ok((
+        let Some(surface) = surface else {
+            return Some(Ok(SupportRead::Uncached));
+        };
+        return Some(Ok(SupportRead::Charted(Box::new((
             RollingBallSupportSurface {
                 surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 parameter_ranges: ranges,
             },
             SupportChart::Canonical,
-        )));
+        )))));
     }
     cur.set_pos(saved);
     embedded_surface_with_ranges(cur).map(|support| {
-        Ok((
+        Ok(SupportRead::Charted(Box::new((
             RollingBallSupportSurface {
                 surface: support.surface,
                 parameter_ranges: support.ranges,
             },
             support.chart,
-        ))
+        ))))
     })
 }
 
@@ -872,7 +959,10 @@ pub(super) const VARIABLE_BLEND_NAMES: &[&str] = &[
 ];
 
 pub(super) struct ParsedVariableBlend {
-    pub(super) surface: DecodedProceduralSurface,
+    /// `None` when the record states what the construction cannot hold: a
+    /// finite upper bound on the second interval, or a side whose support
+    /// owns no solved cache.
+    pub(super) surface: Option<DecodedProceduralSurface>,
     pub(super) current_cache_marker: Option<usize>,
 }
 
@@ -880,6 +970,7 @@ pub(super) fn var_blend_spl_sur(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     reference_context: Option<&SubtypeTable>,
+    supports: SupportCaches,
 ) -> Option<Result<ParsedVariableBlend, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
     let (start, name) = toks::find_owned_subtype_marker(toks, VARIABLE_BLEND_NAMES)?;
@@ -904,15 +995,22 @@ pub(super) fn var_blend_spl_sur(
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
-    let first = match rolling_ball_side(ctx, &mut cur, reference_context)? {
-        Ok(side) => side,
-        Err(limit) => return Some(Err(limit)),
+    let first = propagate_resource!(read_rolling_ball_side(
+        ctx,
+        &mut cur,
+        reference_context,
+        supports
+    )?);
+    let second = propagate_resource!(read_rolling_ball_side(
+        ctx,
+        &mut cur,
+        reference_context,
+        supports
+    )?);
+    let sides = match (first, second) {
+        (SideRead::Carried(first), SideRead::Carried(second)) => Some(Box::new([*first, *second])),
+        _ => None,
     };
-    let second = match rolling_ball_side(ctx, &mut cur, reference_context)? {
-        Ok(side) => side,
-        Err(limit) => return Some(Err(limit)),
-    };
-    let sides = Box::new([first, second]);
     let slice = match rolling_ball_curve(ctx, &mut cur, reference_context)? {
         Ok(curve) => curve,
         Err(limit) => return Some(Err(limit)),
@@ -976,13 +1074,10 @@ pub(super) fn var_blend_spl_sur(
     let [Some(u_lower), Some(u_upper)] = u_range else {
         return None;
     };
-    let v_range = [
+    let [v_lower, v_upper] = [
         cur.take_optional_range_value()?.value(),
         cur.take_optional_range_value()?.value(),
     ];
-    let [v_lower, None] = v_range else {
-        return None;
-    };
     let shape_prefix = cur.take_long()?;
     let shape_parameter = cur.take_f64()?;
     let shape_length = cur.take_f64()? * LEN_TO_MM;
@@ -1018,6 +1113,7 @@ pub(super) fn var_blend_spl_sur(
         cur.take_optional_range_value()?.value(),
         cur.take_optional_range_value()?.value(),
     ];
+    let post_pcurve = nullable_embedded_pcurve(&mut cur)?.value();
     let saved = cur.pos();
     let post_curve = if cur.take_ident() == Some("nullbs") {
         None
@@ -1027,7 +1123,6 @@ pub(super) fn var_blend_spl_sur(
         cur.set_pos(post_end);
         Some(post)
     };
-    let post_pcurve = nullable_embedded_pcurve(&mut cur)?.value();
     cur.at_scope_end().then_some(())?;
     let cache = match cache.into_form()? {
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
@@ -1050,33 +1145,35 @@ pub(super) fn var_blend_spl_sur(
         matches!(cache, VariableBlendCache::Current { .. }).then_some(cache_marker);
     Some(Ok(ParsedVariableBlend {
         current_cache_marker,
-        surface: DecodedProceduralSurface::revision(
-            DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(EmbeddedVariableBlend {
-                subtype,
-                revision,
-                sides,
-                slice: slice.curve,
-                slice_range: slice.parameter_range,
-                offsets,
-                radii,
-                cross_section,
-                u_range: [u_lower, u_upper],
-                v_lower,
-                shape_parameter,
-                shape_length,
-                shape_tail,
-                cache,
-                discontinuities,
-                tail_flag,
-                tail_extensions,
-                secondary_curve,
-                convexity,
-                render_mode,
-                post_range,
-                post_curve,
-                post_pcurve,
-            })),
-        ),
+        surface: sides.filter(|_| v_upper.is_none()).map(|sides| {
+            DecodedProceduralSurface::revision(DecodedProceduralSurfaceDefinition::VariableBlend(
+                Box::new(EmbeddedVariableBlend {
+                    subtype,
+                    revision,
+                    sides,
+                    slice: slice.curve,
+                    slice_range: slice.parameter_range,
+                    offsets,
+                    radii,
+                    cross_section,
+                    u_range: [u_lower, u_upper],
+                    v_lower,
+                    shape_parameter,
+                    shape_length,
+                    shape_tail,
+                    cache,
+                    discontinuities,
+                    tail_flag,
+                    tail_extensions,
+                    secondary_curve,
+                    convexity,
+                    render_mode,
+                    post_range,
+                    post_curve,
+                    post_pcurve,
+                }),
+            ))
+        }),
     }))
 }
 

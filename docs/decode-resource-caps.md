@@ -151,7 +151,11 @@ estimated `asm_delta_states` native text per slot). A stream whose estimate
 does not fit is not bound and keeps only its state headers, without bulletin
 boards or history records, and the decode reports
 `history.binding-budget-exceeded`. The native records of a history are
-charged when they are serialized.
+charged when they are serialized. Binding a stream's topology then charges
+the records it decodes to `MAX_HISTORY_BINDING_WORK`, shared by the streams
+of the decode; a stream that exhausts it keeps its bulletin boards and
+history records without historical topology, and the decode reports
+`history.binding-work-exceeded`.
 
 ## Production census
 
@@ -274,6 +278,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/records/feature/patterns.rs`                  | `MAX_RECTANGULAR_PATTERN_INSTANCES`       | `4_096`                                                 | 4    | Instances in the active direction of the rectangular-pattern instance search. Excess leaves the instances unresolved; `feature.pattern-instance-search-capped` names the constant. |
 | `cadmpeg-codec-f3d`      | `src/records/feature/patterns.rs`                  | `MAX_RECTANGULAR_PATTERN_RECORD_BYTES`    | `1 << 20`                                               | 4    | Bytes one instance record spans in the same search. Same skip and loss. |
 | `cadmpeg-codec-f3d`      | `src/records/feature/patterns.rs`                  | `MAX_RECTANGULAR_PATTERN_SCANNED_BYTES`   | `1 << 24`                                               | 4    | Bytes the instance records of one search span together. Same skip and loss. |
+| `cadmpeg-codec-f3d`      | `src/history/binding.rs`                           | `MAX_HISTORY_BINDING_WORK`                | `1 << 23`                                               | 4    | History records decoded by topology binding, a `WorkBudget` created in `decode/design_intent.rs` and shared by the history streams of one decode. A stream that exhausts it keeps its bulletin boards and history records without historical topology; `history.binding-work-exceeded` counts those streams and names the constant. |
 | `cadmpeg-codec-f3d`      | `src/design/decode/sketch.rs`                      | `MAX_RELATION_RUN`                        | `4096`                                                  | 1    | Counted runs in sketch relation, text and pattern records. A larger count rejects the framing candidate (`None`).                                                                                                                                                            |
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/sheet_metal.rs`          | `MAX_EDGE_WIDTH_DISTANCE_OWNERS`          | `2`                                                     | 1    | Width-distance owners in the single-edge flange frame. A frame with more is not recognized.                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/design/decode/presentation.rs`                | `MAX_ENVELOPE_GAP`                        | `8`                                                     | 1    | Zero padding admitted while a presentation envelope is located.                                                                                                                                                                                                              |
@@ -417,16 +422,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 216.
+Production `MAX_*` constants: 217.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 28    |
 | 2    | Per-input bound            | 68    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 99    |
+| 4    | Local work cap             | 100   |
 | N    | Not a decode bound         | 21    |
-|      | Total                      | 216   |
+|      | Total                      | 217   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -434,7 +439,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 10, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 16,
+`cadmpeg-codec-freecad` 11, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 17,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 13,
 and `cadmpeg-codec-catia` 49.
 
