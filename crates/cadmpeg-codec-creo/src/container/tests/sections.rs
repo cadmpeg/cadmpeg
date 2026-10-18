@@ -38,9 +38,11 @@ fn one_toc_section(marker_name: &str, entry_name: &str) -> Vec<u8> {
 #[test]
 fn toc_section_succeeds_under_service_policy() {
     let data = one_toc_section("ModelView#1", "ModelView 1");
-    let sections = super::super::toc_sections(&data, 0);
+    let mut losses = Vec::new();
+    let sections = super::super::toc_sections(&data, 0, &mut losses);
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].section.raw_name, "ModelView#1");
+    assert!(losses.is_empty());
 }
 
 fn one_legacy_toc_section() -> Vec<u8> {
@@ -113,7 +115,7 @@ fn compressed_section_recovery_propagates_resource_limits() {
             .expect("section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_per_expand = 2;
+    policy.limits.max_decompressed_bytes_total = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
     let mut losses = Vec::new();
     let error = super::super::expanded_sections(&ctx, &bytes, &[section], &mut losses)
@@ -122,6 +124,89 @@ fn compressed_section_recovery_propagates_resource_limits() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::DecompressedBytes)
     );
     assert!(losses.is_empty());
+}
+
+#[test]
+fn compressed_section_above_the_per_expansion_allowance_is_skipped_with_a_loss() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut bytes = b"#SolidPrimdata\n".to_vec();
+    bytes.extend_from_slice(&[0x1f, 0x9d, 0x10, 0x41, 0x58, 0x02]);
+    let split = bytes.len();
+    bytes.extend(one_compressed_section());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_per_expand = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+    let sections = [
+        super::super::Section::scan("SolidPrimdata".into(), 0, split, Some(5), &bytes)
+            .expect("oversized section extent"),
+        super::super::Section::scan("SolidPrimdata".into(), split, bytes.len(), Some(3), &bytes)
+            .expect("good section extent"),
+    ];
+    let mut losses = Vec::new();
+    let expanded = super::super::expanded_sections(&ctx, &bytes, &sections, &mut losses)
+        .expect("the oversized section does not refuse the decode");
+    assert_eq!(expanded.len(), 1);
+    assert_eq!(expanded[0].data, b"ABC");
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].section_offset, 0);
+    assert!(losses[0]
+        .message
+        .contains("declared expansion of 5 bytes exceeds the 4-byte per-expansion allowance"));
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn toc_headers_without_a_line_break_end_the_scan() {
+    let mut data = b"#UGC:2 PART 1\n".to_vec();
+    data.extend(b"#UGC_TOC".repeat(200_000));
+    let mut losses = Vec::new();
+    assert!(super::super::toc_sections(&data, 0, &mut losses).is_empty());
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn overlapping_toc_row_tables_stop_at_the_input_length_with_one_loss() {
+    let header = b"#UGC_TOC a 99999999 1\n";
+    let data = header.repeat(20_000);
+    let mut losses = Vec::new();
+    assert!(super::super::toc_sections(&data, 0, &mut losses).is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::TocScanCapped.kind()
+    );
+    assert!(losses[0]
+        .message
+        .contains(&format!("the TOC header at offset {} ", header.len())));
+}
+
+#[test]
+fn toc_delimited_headers_need_a_directory_listing() {
+    let mut data = b"#UGC_TOC 2 1 0 0\nListed 0 0 0\nOther 0 0 0\n".to_vec();
+    let body_start = data.len();
+    data.extend_from_slice(b"\xf1#Listed\nabc\xf1#Unlisted\ndef\xf1#Other\nghi");
+    let sections = super::super::scan_sections(&data, body_start).expect("sections");
+    let names = sections
+        .iter()
+        .map(|section| section.section.raw_name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["Listed", "Other"]);
+}
+
+#[test]
+fn many_unlisted_toc_delimited_headers_after_a_large_directory_finish() {
+    let mut data = Vec::new();
+    for index in 0..20_000 {
+        data.extend_from_slice(format!("\nEntry{index:05} 0 0 0").as_bytes());
+    }
+    data.push(b'\n');
+    let body_start = data.len();
+    data.extend(b"\xf1#ab\n".repeat(40_000));
+    data.extend_from_slice(b"\xf1#Entry19999\nlast");
+    let sections = super::super::scan_sections(&data, body_start).expect("sections");
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].section.raw_name, "Entry19999");
 }
 
 #[test]
@@ -151,10 +236,8 @@ fn native_model_name_succeeds_under_service_policy() {
     let data = b"#BasicData\nmodel_name\0widget\0";
     let section = super::super::Section::scan("BasicData".to_string(), 0, data.len(), None, data)
         .expect("bounded native name section");
-    let name = super::super::native_model_name(std::slice::from_ref(&section))
-        .transpose()
-        .expect("native name is admitted")
-        .expect("one native name");
+    let name =
+        super::super::native_model_name(std::slice::from_ref(&section)).expect("one native name");
     assert_eq!(name.0, "widget");
 }
 

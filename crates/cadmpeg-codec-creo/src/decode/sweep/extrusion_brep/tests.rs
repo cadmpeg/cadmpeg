@@ -210,9 +210,13 @@ fn closed_extrusion_reaches_brep_admission() {
         )
         .expect("resolve the sketch profiles")
         .expect("profile geometry");
-        assert!(super::ordered_extrusion_profiles(ctx, profiles)
-            .expect("order the extrusion profiles")
-            .is_some());
+        assert!(super::ordered_extrusion_profiles(
+            ctx,
+            profiles,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        )
+        .expect("order the extrusion profiles")
+        .is_some());
     });
     let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
     let count = crate::decode::with_service_context(|ctx| {

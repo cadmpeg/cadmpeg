@@ -151,7 +151,15 @@ impl<'a> DecodeContext<'a> {
         self.budget.decompression_allowance()
     }
 
-    pub(super) fn per_expand_allowance(&self) -> u64 {
+    /// The largest size one expansion may declare: the smaller of
+    /// `max_decompressed_bytes_per_expand` and its input-proportional
+    /// allowance.
+    ///
+    /// A codec compares a declared expansion size against it before
+    /// [`DecodeContext::begin_expand`], so a declared size above it is a
+    /// per-input bound that skips one member instead of fusing the session.
+    #[must_use]
+    pub fn per_expand_allowance(&self) -> u64 {
         self.budget.proportional_allowance(
             self.budget
                 .policy()

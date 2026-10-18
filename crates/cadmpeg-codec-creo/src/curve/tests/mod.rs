@@ -5,14 +5,14 @@ use crate::curve::CurveExpressionLine;
 use crate::curve::ExternalRelationSymbols;
 
 mod affine;
-mod allocation;
-mod dimension_admission;
+mod dimensions;
 mod dump;
+mod expression_programs;
+mod relation_solving;
+mod relation_text_functions;
 mod relations;
 mod rows;
 mod scan;
-mod text_function_admission;
-mod work_admission;
 
 fn evaluate_expression_program(
     lines: &[CurveExpressionLine],

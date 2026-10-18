@@ -55,7 +55,7 @@ fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
     assert_eq!(
         crate::decode::with_service_context(|ctx| super::nurbs_profile_polyline(ctx, &nurbs, 0.01))
             .expect("compute the NURBS profile polyline"),
-        Some(vec![[0.0, 0.0], [1.0, 0.0]])
+        Ok(vec![[0.0, 0.0], [1.0, 0.0]])
     );
 }
 
@@ -75,7 +75,7 @@ fn linear_profile_curve() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
 
 fn linear_profile_polyline_with_policy(
     policy: cadmpeg_core::decode::DecodePolicy,
-) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
+) -> Result<Result<Vec<[f64; 2]>, super::ProfileSamplingStop>, cadmpeg_core::CodecError> {
     let curve = linear_profile_curve();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
@@ -99,7 +99,7 @@ fn nurbs_profile_polyline_depth_refuses_before_recursive_span() {
     assert_eq!(
         linear_profile_polyline_with_policy(DecodePolicy::service())
             .expect("build the linear profile polyline"),
-        Some(vec![[0.0, 0.0], [1.0, 0.0]])
+        Ok(vec![[0.0, 0.0], [1.0, 0.0]])
     );
 }
 
@@ -125,9 +125,13 @@ fn hole_profiles_inside_outer_profile_are_ordered() {
         vec![profile_circle([2.0, 0.0], 1.0, true)],
     ];
     assert!(
-        crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(ctx, profiles))
-            .expect("order the extrusion profiles")
-            .is_some()
+        crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(
+            ctx,
+            profiles,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ))
+        .expect("order the extrusion profiles")
+        .is_some()
     );
 }
 
@@ -559,9 +563,13 @@ fn overflowing_profile_area_is_not_validated() {
     assert!(super::extrusion_profile_signed_area(&ctx, &profile)
         .expect("compute the extrusion profile signed area")
         .is_none());
-    assert!(super::ValidatedProfile::new(&ctx, profile)
-        .expect("construct the validated profile")
-        .is_none());
+    assert!(super::ValidatedProfile::new(
+        &ctx,
+        profile,
+        &mut super::ProfileValidationWork::new(1).expect("work")
+    )
+    .expect("construct the validated profile")
+    .is_none());
 }
 
 #[test]
@@ -721,7 +729,13 @@ fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
             &mut points,
         )
         .expect("the local depth ceiling is not a decode failure");
-        assert_eq!(sampled, None);
+        assert_eq!(
+            sampled,
+            Err(super::ProfileSamplingStop::Capped {
+                bound: "MAX_DEPTH",
+                value: 24
+            })
+        );
         assert!(points.is_empty());
         assert!(ctx.resource_refusal().is_none());
     });
@@ -748,7 +762,13 @@ fn nurbs_profile_local_point_ceiling_leaves_the_span_unsampled() {
             &mut points,
         )
         .expect("the local point ceiling is not a decode failure");
-        assert_eq!(sampled, None);
+        assert_eq!(
+            sampled,
+            Err(super::ProfileSamplingStop::Capped {
+                bound: "MAX_NURBS_PROFILE_POINTS",
+                value: super::MAX_NURBS_PROFILE_POINTS
+            })
+        );
         assert_eq!(points.len(), 262_145);
         assert!(ctx.resource_refusal().is_none());
     });
@@ -759,11 +779,18 @@ fn nurbs_profile_point_append_stops_before_growth_at_the_common_ceiling() {
     crate::decode::with_service_context(|ctx| {
         let mut points = vec![[0.0; 2]; super::MAX_NURBS_PROFILE_POINTS];
         let appended = super::append_nurbs_profile_point(&mut points, [1.0; 2]);
-        assert_eq!(appended, None);
+        assert_eq!(
+            appended,
+            Err(super::ProfileSamplingStop::Capped {
+                bound: "MAX_NURBS_PROFILE_POINTS",
+                value: super::MAX_NURBS_PROFILE_POINTS
+            })
+        );
         assert!(ctx.resource_refusal().is_none());
         assert_eq!(points.len(), super::MAX_NURBS_PROFILE_POINTS);
         assert_eq!(points.last(), Some(&[0.0; 2]));
     });
 }
 
-mod work_admission;
+mod circle_sketch;
+mod set_validation;

@@ -195,6 +195,9 @@ pub(crate) enum CreoLossCode {
     SectionSignBranchesCapped,
     /// Curve-equation relation values were dropped at a local string-text cap.
     CurveExpressionTextCapped,
+    /// TOC headers past the input length in visited header and row bytes
+    /// were not read.
+    TocScanCapped,
 }
 }
 
@@ -280,6 +283,7 @@ impl CreoLossCode {
             Self::PlaneSupportVariantsCapped => "geometry.plane-support-variants-capped",
             Self::SectionSignBranchesCapped => "section.sign-branches-capped",
             Self::CurveExpressionTextCapped => "curve-expression.text-capped",
+            Self::TocScanCapped => "container.toc-scan-capped",
         }
     }
 
@@ -361,7 +365,8 @@ impl CreoLossCode {
             | Self::CurveExpressionKindProhibited
             | Self::PlaneSupportVariantsCapped
             | Self::SectionSignBranchesCapped
-            | Self::CurveExpressionTextCapped => Severity::Warning,
+            | Self::CurveExpressionTextCapped
+            | Self::TocScanCapped => Severity::Warning,
         }
     }
 
@@ -391,6 +396,7 @@ impl CreoLossCode {
             | Self::CarrierTorusParameterRetention => LossTaxonomy::CarrierSummary,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
+            | Self::TocScanCapped
             | Self::LegacyIntegerValueUnresolved
             | Self::LegacyContinuationFormUndefined
             | Self::LegacyUnsignedValueUnresolved
@@ -558,6 +564,7 @@ mod tests {
                 "geometry.plane-support-variants-capped",
                 "section.sign-branches-capped",
                 "curve-expression.text-capped",
+                "container.toc-scan-capped",
             ]
         );
     }

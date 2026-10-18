@@ -193,9 +193,13 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
     )
     .expect("construct the profile entity")
     .expect("valid profile entity")];
-    let profiles = ordered_extrusion_profiles(&ctx, vec![profile.clone()])
-        .expect("order the extrusion profiles")
-        .expect("a full-turn arc is a closed profile");
+    let profiles = ordered_extrusion_profiles(
+        &ctx,
+        vec![profile.clone()],
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("order the extrusion profiles")
+    .expect("a full-turn arc is a closed profile");
     let area = profiles[0].area();
     assert_eq!(
         profiles
@@ -268,9 +272,13 @@ fn circle_remains_a_closed_extrusion_profile() {
             .expect("construct the profile entity")
             .expect("valid profile entity")]]
     );
-    let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
-        .expect("order the extrusion profiles")
-        .expect("closed circle");
+    let ordered = ordered_extrusion_profiles(
+        &ctx,
+        profiles.clone(),
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("order the extrusion profiles")
+    .expect("closed circle");
     let area = ordered[0].area();
     assert_eq!(
         ordered

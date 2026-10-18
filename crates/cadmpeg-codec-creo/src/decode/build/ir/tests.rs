@@ -72,6 +72,47 @@ fn display_tessellation_vertices_are_in_millimeters_at_ir_admission() {
 }
 
 #[test]
+fn display_tessellation_vertices_are_retained_bytes() {
+    let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    crate::decode::with_service_context(|ctx| {
+        let available = ctx.retained_bytes_available();
+        transfer_display_tessellations(
+            ctx,
+            &scan,
+            &mut CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+        )
+        .expect("display tessellation transfer");
+        assert_eq!(
+            available - ctx.retained_bytes_available(),
+            cadmpeg_core::decode::u64_from_index(
+                3 * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>()
+            )
+        );
+    });
+}
+
+#[test]
+fn display_tessellation_retained_bytes_refuse_past_the_session_allowance() {
+    let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test root is admitted");
+    let mut ir = CadIr::empty();
+    let error = transfer_display_tessellations(
+        &ctx,
+        &scan,
+        &mut ir,
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+    )
+    .expect_err("three vertices exceed one retained byte");
+    assert!(matches!(error, CodecError::ResourceLimit(_)));
+    assert!(ir.model.tessellations.is_empty());
+}
+
+#[test]
 fn display_tessellation_vertex_overflow_refuses_unrepresentable_ir() {
     let scan = inch_strip(vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     let mut ir = CadIr::empty();

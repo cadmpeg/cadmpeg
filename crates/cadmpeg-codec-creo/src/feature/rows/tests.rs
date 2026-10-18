@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 
 use crate::psb;
 
-mod resource_limits;
+mod field_decoding;
 
 const SINGLE_ROW: &[u8] = &[40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
 
