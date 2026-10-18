@@ -1199,14 +1199,15 @@ fn relation_symbols_and_dependencies_bind_parameter_candidates() {
         std::collections::HashMap::from([("#1_".to_string(), vec![candidate])]),
     )]);
     let dependencies = crate::test_support::with_service_context(|ctx| {
-        crate::native::RelationDependencies::new(&bindings).of(
+        crate::native::RelationDependencies::new(&bindings, usize::MAX).of(
             ctx,
             crate::native::RelationExpressionKey::ObjectRecord("expression"),
             "#1_",
             "graph",
         )
     })
-    .expect("retain the relation dependencies");
+    .expect("retain the relation dependencies")
+    .expect("the dependencies fit the allowance");
     assert_eq!(dependencies.len(), 1);
     assert_eq!(dependencies[0].candidates[0].entity(), Some("entity-10"));
 }
@@ -1315,17 +1316,18 @@ fn relation_dependencies_scan_an_expression_once_for_every_relation() {
     )]);
     let source = format!("#1_ + {}", "1".repeat(1 << 20));
     let expected = crate::test_support::with_service_context(|ctx| {
-        crate::native::RelationDependencies::new(&bindings).of(
+        crate::native::RelationDependencies::new(&bindings, usize::MAX).of(
             ctx,
             crate::native::RelationExpressionKey::ObjectRecord("expression"),
             &source,
             "graph",
         )
     })
-    .expect("retain one relation's dependencies");
+    .expect("retain one relation's dependencies")
+    .expect("the dependencies fit the allowance");
     assert_eq!(expected.len(), 1);
     crate::test_support::with_service_context(|ctx| {
-        let mut dependencies = crate::native::RelationDependencies::new(&bindings);
+        let mut dependencies = crate::native::RelationDependencies::new(&bindings, usize::MAX);
         for _ in 0..RELATIONS {
             let copied = dependencies
                 .of(
@@ -1335,8 +1337,35 @@ fn relation_dependencies_scan_an_expression_once_for_every_relation() {
                     "graph",
                 )
                 .expect("retain every relation's dependencies");
-            assert_eq!(copied, expected);
+            assert_eq!(copied.as_ref(), Some(&expected));
         }
+    });
+}
+
+#[test]
+fn relation_dependency_copies_past_the_allowance_keep_no_dependencies() {
+    let candidate = crate::native::CatiaEntityReference::resolved_or_unresolved(
+        10,
+        Some("entity-10".to_string()),
+        Some("param".to_string()),
+    );
+    let bindings = std::collections::HashMap::from([(
+        "graph".to_string(),
+        std::collections::HashMap::from([("#1_".to_string(), vec![candidate])]),
+    )]);
+    let copy_text = 2 * ("#1_".len() + "entity-10".len() + "param".len());
+    crate::test_support::with_service_context(|ctx| {
+        let mut dependencies =
+            crate::native::RelationDependencies::new(&bindings, 2 * copy_text + 1);
+        let key = crate::native::RelationExpressionKey::Entity("graph", 7);
+        let mut copy = || {
+            dependencies
+                .of(ctx, key, "#1_ + #1_", "graph")
+                .expect("a bounded copy is a loss, not a refusal")
+                .map(|copied| copied.len())
+        };
+        assert_eq!([copy(), copy(), copy()], [Some(2), Some(2), None]);
+        assert_eq!(dependencies.bounded_relations, 1);
     });
 }
 
@@ -1354,7 +1383,7 @@ fn each_relation_dependency_copy_charges_its_text() {
     let copy_text = 2 * ("#1_".len() + "entity-10".len() + "param".len());
     let limit = u64::try_from(copy_text).expect("fixture text fits u64");
     let error = crate::test_support::with_retained_limit(limit, |ctx| {
-        let mut dependencies = crate::native::RelationDependencies::new(&bindings);
+        let mut dependencies = crate::native::RelationDependencies::new(&bindings, usize::MAX);
         let key = crate::native::RelationExpressionKey::Entity("graph", 7);
         dependencies
             .of(ctx, key, "#1_ + #1_", "graph")

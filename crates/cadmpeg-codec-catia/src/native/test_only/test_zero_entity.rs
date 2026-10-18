@@ -439,7 +439,9 @@ fn derived_zero_entity_endpoint_candidates(
         crate::families::zero_entity::topology::occurrence_endpoint_candidates(
             ctx,
             &occurrences,
-            crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS,
+            crate::families::zero_entity::topology::zero_entity_topology_allowance(
+                runs.iter().map(|run| run.supports.len()).sum(),
+            ),
         )
     })
     .expect("endpoint candidate derivation decodes")

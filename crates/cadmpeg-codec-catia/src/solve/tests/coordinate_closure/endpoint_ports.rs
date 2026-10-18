@@ -10,12 +10,11 @@ use super::{
 
 #[test]
 fn duplicate_face_assignment_visitor_reports_the_bound() {
-    catia_test_context!(ctx);
     let serialized = [[0, 0], [0, 0]];
     let allowed = [vec![1, 2], vec![1, 2]];
     let mut visits = 0;
 
-    let outcome = visit_duplicate_face_assignments(&ctx, &serialized, &allowed, 3, 3, |_| {
+    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 3, |_| {
         visits += 1;
         Ok(true)
     })
@@ -23,6 +22,22 @@ fn duplicate_face_assignment_visitor_reports_the_bound() {
 
     assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Exhausted));
     assert_eq!(visits, 3);
+}
+
+#[test]
+fn duplicate_face_assignment_visitor_exhausts_past_its_depth_bound() {
+    let serialized = vec![[0, 0]; 300];
+    let allowed = vec![vec![1]; 300];
+    let mut visits = 0;
+
+    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 2, usize::MAX, |_| {
+        visits += 1;
+        Ok(true)
+    })
+    .expect("visit duplicate face assignments");
+
+    assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Exhausted));
+    assert_eq!(visits, 0);
 }
 
 #[test]
@@ -407,11 +422,9 @@ fn distinct_coordinate_bijections_remain_ambiguous() {
 fn duplicate_face_visitor_completes_when_the_callback_accepts() {
     let serialized = [[0usize, 0]];
     let allowed = [vec![0usize, 1]];
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        visit_duplicate_face_assignments(ctx, &serialized, &allowed, 2, 4, |_| Ok(true))
-    };
     assert_eq!(
-        crate::test_support::with_service_context(run).expect("visit duplicate face assignments"),
+        visit_duplicate_face_assignments(&serialized, &allowed, 2, 4, |_| Ok(true))
+            .expect("visit duplicate face assignments"),
         Some(DuplicateFaceAssignmentVisit::Complete)
     );
 }

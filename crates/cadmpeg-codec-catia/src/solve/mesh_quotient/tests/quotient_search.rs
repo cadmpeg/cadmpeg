@@ -104,7 +104,6 @@ fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
 #[test]
 fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     const EDGE_COUNT: usize = 10;
-    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..EDGE_COUNT)
             .map(|edge| MeshBoundaryEdgeCandidate {
@@ -120,14 +119,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     let budget = WorkBudget::new(30);
 
     let options = quotient
-        .assignment_options_limited(
-            &ctx,
-            &assignment,
-            &candidates,
-            &HashSet::new(),
-            2,
-            Some(&budget),
-        )
+        .assignment_options_limited(&assignment, &candidates, &HashSet::new(), 2, &budget)
         .expect("find the assignment orientation options");
 
     assert_eq!(options.len(), 1);
@@ -137,7 +129,6 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
 
 #[test]
 fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
-    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -162,12 +153,11 @@ fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
 
     let options = quotient
         .assignment_options_limited(
-            &ctx,
             &assignment,
             &[vec![[0, 1]], vec![[0, 1]]],
             &HashSet::new(),
             4,
-            None,
+            &WorkBudget::new(65_536),
         )
         .expect("find the assignment orientation options");
 
@@ -670,18 +660,23 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
     let unrestricted = [Vec::new(), Vec::new(), Vec::new()];
     let options = quotient.assignment_options(&ctx, &assignment, &unrestricted);
     let limited = quotient
-        .assignment_options_limited(&ctx, &assignment, &unrestricted, &HashSet::new(), 1, None)
+        .assignment_options_limited(
+            &assignment,
+            &unrestricted,
+            &HashSet::new(),
+            1,
+            &WorkBudget::new(65_536),
+        )
         .expect("find the assignment orientation options");
     assert_eq!(limited.len(), 1);
     assert_eq!(limited[0].0, options[0].0);
     let unique = quotient
         .assignment_options_limited(
-            &ctx,
             &assignment,
             &unrestricted,
             &HashSet::new(),
             4_096,
-            None,
+            &WorkBudget::new(65_536),
         )
         .expect("find the assignment orientation options");
     assert!(unique
@@ -691,7 +686,6 @@ fn quotient_options_reject_an_interior_pair_contradiction() {
 
 #[test]
 fn quotient_options_decline_when_their_work_budget_is_exhausted() {
-    catia_test_context!(ctx);
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
@@ -704,14 +698,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
     let budget = WorkBudget::new(0);
 
     let options = quotient
-        .assignment_options_limited(
-            &ctx,
-            &assignment,
-            &[vec![[0, 0]]],
-            &HashSet::new(),
-            1,
-            Some(&budget),
-        )
+        .assignment_options_limited(&assignment, &[vec![[0, 0]]], &HashSet::new(), 1, &budget)
         .expect("find the assignment orientation options");
 
     assert!(options.is_empty());

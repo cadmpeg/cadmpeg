@@ -3805,7 +3805,6 @@ pub(super) fn standard_object_evidence_from_streams(
             requested_surfaces.insert(surface_id);
         }
         let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
-            ctx,
             &stream,
             &requested_surfaces,
             &frames,
@@ -3900,7 +3899,6 @@ pub(super) fn standard_object_evidence_from_streams(
             surface_ids.insert(pcurve.support_id);
         }
         let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
-            ctx,
             &stream,
             &surface_ids,
             &frames,
@@ -6175,7 +6173,6 @@ fn attach_standard_topology(
                 },
             );
             match mesh_quotient::parse_standard_mesh_candidate_outcome_with_face_assignments(
-                ctx,
                 face_assignments,
                 work_budget,
                 |selected_edge_faces, branch_budget| {
@@ -6937,15 +6934,28 @@ fn standard_native_support_endpoint_pair(
 
 /// Bounds the endpoint-pair relations one edge row enumerates.
 const MAX_PAIR_RELATIONS_PER_EDGE: usize = 65_536;
-/// Bounds the unrefined endpoint-pair relations all edge rows of one candidate
-/// enumerate together.
+/// Least number of unrefined endpoint-pair relations all edge rows of one
+/// candidate may enumerate together.
 const MAX_FALLBACK_PAIR_RELATIONS: usize = 65_536;
+/// Unrefined endpoint-pair relations allowed per candidate endpoint once that
+/// exceeds [`MAX_FALLBACK_PAIR_RELATIONS`].
+const MAX_FALLBACK_PAIR_RELATIONS_PER_POINT: usize = 64;
+
+/// Unrefined endpoint-pair relations all edge rows of one candidate may
+/// enumerate together.
+fn fallback_pair_relation_allowance(candidates: &[Vec<usize>]) -> usize {
+    let points = candidates.iter().map(Vec::len).sum::<usize>();
+    points
+        .checked_mul(MAX_FALLBACK_PAIR_RELATIONS_PER_POINT)
+        .unwrap_or(points)
+        .max(MAX_FALLBACK_PAIR_RELATIONS)
+}
 
 /// Enumerate the endpoint-pair candidates of every edge row.
 ///
 /// An edge row whose relations exceed [`MAX_PAIR_RELATIONS_PER_EDGE`] or the
-/// remaining [`MAX_FALLBACK_PAIR_RELATIONS`] keeps no candidate; `refusal`
-/// records the rows the bounds left empty.
+/// remaining [`fallback_pair_relation_allowance`] keeps no candidate;
+/// `refusal` records the rows the bounds left empty.
 fn resolve_standard_endpoint_pairs(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -7139,7 +7149,8 @@ fn resolve_standard_endpoint_pairs(
             }
         }
     }
-    let mut fallback_relation_budget = MAX_FALLBACK_PAIR_RELATIONS;
+    let fallback_relation_allowance = fallback_pair_relation_allowance(candidates);
+    let mut fallback_relation_budget = fallback_relation_allowance;
     let mut bounded_edges = Vec::new();
     for (edge, pairs) in resolved.iter_mut().enumerate() {
         let points = &candidates[edge];
@@ -7169,7 +7180,7 @@ fn resolve_standard_endpoint_pairs(
         refusal.push_standard_search_bounded(format_args!(
             "The standard endpoint-pair enumeration reached its bound of \
              {MAX_PAIR_RELATIONS_PER_EDGE} relations per edge row or \
-             {MAX_FALLBACK_PAIR_RELATIONS} unrefined relations in total; edge rows \
+             {fallback_relation_allowance} unrefined relations in total; edge rows \
              {bounded_edges:?} keep no enumerated endpoint pair."
         ));
     }

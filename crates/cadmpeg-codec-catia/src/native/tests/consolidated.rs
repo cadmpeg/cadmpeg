@@ -1805,9 +1805,6 @@ mod admission;
 fn b2_owner_packet_stream_projects_one_owner_packet() {
     let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let packets = crate::test_support::with_service_context(|ctx| {
-        super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
-    })
-    .expect("parse the consolidated owner packets");
+    let packets = super::super::projection::consolidated_owner_packets(&bytes, &records);
     assert_eq!(packets.len(), 1);
 }

@@ -23,35 +23,53 @@ struct PartialCompactAssignmentViableInputs<'input0, 'input1, 'input2, 'input3, 
     budget: Option<&'input5 WorkBudget>,
 }
 
+/// Find an augmenting path from `component`, trying cycles in index order.
+/// Each frame holds a component and the cycle it is trying.
+fn augment_cycle_matching(
+    component: usize,
+    compatible: &[Vec<bool>],
+    seen: &mut [bool],
+    matched: &mut [Option<usize>],
+) -> bool {
+    let mut frames = vec![(component, 0usize)];
+    let mut returned = None::<bool>;
+    while let Some(&(component, cycle)) = frames.last() {
+        let top = frames.len() - 1;
+        if let Some(available) = returned.take() {
+            if available {
+                matched[cycle] = Some(component);
+                frames.pop();
+                returned = Some(true);
+            } else {
+                frames[top].1 = cycle + 1;
+            }
+            continue;
+        }
+        let Some(next) =
+            (cycle..matched.len()).find(|&next| compatible[component][next] && !seen[next])
+        else {
+            frames.pop();
+            returned = Some(false);
+            continue;
+        };
+        seen[next] = true;
+        frames[top].1 = next;
+        match matched[next] {
+            Some(previous) => frames.push((previous, 0)),
+            None => {
+                matched[next] = Some(component);
+                frames.pop();
+                returned = Some(true);
+            }
+        }
+    }
+    returned == Some(true)
+}
+
 fn partial_compact_assignment_viable(
     ctx: &DecodeContext<'_>,
     inputs: PartialCompactAssignmentViableInputs<'_, '_, '_, '_, '_>,
 ) -> Result<bool, CodecError> {
-    fn augment(
-        ctx: &DecodeContext<'_>,
-        component: usize,
-        compatible: &[Vec<bool>],
-        seen: &mut [bool],
-        matched: &mut [Option<usize>],
-    ) -> Result<bool, CodecError> {
-        let _depth = ctx.enter_nested("catia deferred boundary augmentation")?;
-        for cycle in 0..matched.len() {
-            if !compatible[component][cycle] || seen[cycle] {
-                continue;
-            }
-            seen[cycle] = true;
-            let available = match matched[cycle] {
-                Some(previous) => augment(ctx, previous, compatible, seen, matched)?,
-                None => true,
-            };
-            if available {
-                matched[cycle] = Some(component);
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
     let PartialCompactAssignmentViableInputs {
         domain,
         local_edge_by_id,
@@ -172,7 +190,7 @@ fn partial_compact_assignment_viable(
             let mut matched = vec![None; domain.cycles.len()];
             for component in 0..closed_components.len() {
                 let mut visited = vec![false; domain.cycles.len()];
-                if !augment(ctx, component, &compatible, &mut visited, &mut matched)? {
+                if !augment_cycle_matching(component, &compatible, &mut visited, &mut matched) {
                     return Ok(false);
                 }
             }
@@ -394,6 +412,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         exhausted: &'input13 mut bool,
         base_degrees: &'input14 mut HashMap<(usize, usize), usize>,
         budget: Option<&'input16 WorkBudget>,
+        depth: usize,
     }
     fn walk(
         ctx: &DecodeContext<'_>,
@@ -576,10 +595,17 @@ pub(super) fn close_coordinate_roots_with_incidence(
             exhausted,
             base_degrees,
             budget,
+            depth,
         } = inputs;
 
-        let _depth = ctx.enter_nested("catia_coordinate_closure_walk")?;
         if solutions.len() > 1 || *exhausted {
+            return Ok(());
+        }
+        if depth >= WorkBudget::RECURSION_DEPTH {
+            if let Some(budget) = budget {
+                budget.exhaust();
+            }
+            *exhausted = true;
             return Ok(());
         }
         if budget.is_some_and(|budget| !budget.charge()) {
@@ -1176,6 +1202,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     exhausted,
                     base_degrees,
                     budget,
+                    depth: depth + 1,
                 },
             )?;
             point_uses[point] -= 1;
@@ -1499,6 +1526,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 exhausted: &mut exhausted,
                 base_degrees: &mut base_degrees,
                 budget,
+                depth: 0,
             },
         )?;
         if exhausted {
@@ -1557,6 +1585,39 @@ mod tests {
         MeshBoundaryEdgeCandidate, MeshDeferredBoundaryCycle, MeshDeferredFaceBoundary,
     };
     use std::collections::HashMap;
+
+    #[test]
+    fn cycle_matching_follows_an_augmenting_path_through_every_component() {
+        let components = 2_000;
+        let mut compatible = vec![vec![false; components + 1]; components + 1];
+        for (component, row) in compatible.iter_mut().enumerate().take(components) {
+            row[component] = true;
+            row[component + 1] = true;
+        }
+        compatible[components][0] = true;
+        let mut matched = vec![None; components + 1];
+        for component in 0..=components {
+            let mut seen = vec![false; components + 1];
+            assert!(super::augment_cycle_matching(
+                component,
+                &compatible,
+                &mut seen,
+                &mut matched
+            ));
+        }
+        assert_eq!(matched[0], Some(components));
+        assert!((1..=components).all(|cycle| matched[cycle] == Some(cycle - 1)));
+
+        let mut seen = vec![false; 2];
+        let mut matched = vec![Some(0), None];
+        assert!(!super::augment_cycle_matching(
+            1,
+            &[vec![true, false], vec![true, false]],
+            &mut seen,
+            &mut matched
+        ));
+        assert_eq!(matched, [Some(0), None]);
+    }
 
     #[test]
     fn deferred_coordinate_boundary_admits_a_consistent_partial_assignment() {

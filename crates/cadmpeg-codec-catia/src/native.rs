@@ -5769,15 +5769,17 @@ fn object_production<'a>(
         expression_entities,
     )? {
         if let Some((program_entity_id, expression)) = selected_expression {
-            instance.parameter_dependencies = dependencies.of(
+            if let Some(parameter_dependencies) = dependencies.of(
                 ctx,
                 RelationExpressionKey::Entity(&object.parent, program_entity_id),
                 &expression.source,
                 &object.parent,
-            )?;
-            instance.inputs = expression.signature.as_ref().and_then(|signature| {
-                resolved_relation_program_inputs(signature, &instance.parameter_dependencies)
-            });
+            )? {
+                instance.parameter_dependencies = parameter_dependencies;
+                instance.inputs = expression.signature.as_ref().and_then(|signature| {
+                    resolved_relation_program_inputs(signature, &instance.parameter_dependencies)
+                });
+            }
         }
         return Ok(Some(CatiaEntityObjectProduction::RelationProgramInstance(
             instance,
@@ -5810,12 +5812,14 @@ fn object_production<'a>(
     else {
         return Ok(None);
     };
-    relation.parameter_dependencies = dependencies.of(
-        ctx,
-        RelationExpressionKey::ObjectRecord(expression_object),
-        source,
-        &object.parent,
-    )?;
+    relation.parameter_dependencies = dependencies
+        .of(
+            ctx,
+            RelationExpressionKey::ObjectRecord(expression_object),
+            source,
+            &object.parent,
+        )?
+        .unwrap_or_default();
     Ok(Some(CatiaEntityObjectProduction::FormulaRelation(relation)))
 }
 
@@ -6382,31 +6386,42 @@ enum RelationExpressionKey<'a> {
     Entity(&'a str, u32),
 }
 
+/// Dependency text all relations may keep, per input byte. Many relations can
+/// share one expression and one symbol can bind many same-named parameters, so
+/// the copies grow with the product of those counts.
+pub(crate) const MAX_RELATION_DEPENDENCY_BYTES_PER_INPUT_BYTE: usize = 4;
+
 /// Parameter dependencies of relation expressions.
 ///
 /// Each expression is scanned for symbols once. Every relation copies the
 /// dependencies into its own record, so each copy charges its text as
-/// retained bytes before it is built.
+/// retained bytes before it is built. A copy past the remaining allowance is
+/// not made.
 struct RelationDependencies<'a> {
     parameter_bindings: &'a CatiaParameterBindingIndex,
     symbols: HashMap<RelationExpressionKey<'a>, Vec<(u64, String)>>,
+    remaining_bytes: usize,
+    bounded_relations: usize,
 }
 
 impl<'a> RelationDependencies<'a> {
-    fn new(parameter_bindings: &'a CatiaParameterBindingIndex) -> Self {
+    fn new(parameter_bindings: &'a CatiaParameterBindingIndex, allowance_bytes: usize) -> Self {
         Self {
             parameter_bindings,
             symbols: HashMap::new(),
+            remaining_bytes: allowance_bytes,
+            bounded_relations: 0,
         }
     }
 
+    /// The dependencies of one relation, or `None` past the allowance.
     fn of(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         expression: RelationExpressionKey<'a>,
         source: &str,
         graph: &str,
-    ) -> Result<Vec<CatiaRelationParameterDependency>, CodecError> {
+    ) -> Result<Option<Vec<CatiaRelationParameterDependency>>, CodecError> {
         let symbols = self
             .symbols
             .entry(expression)
@@ -6426,21 +6441,27 @@ impl<'a> RelationDependencies<'a> {
                     .and_then(|(total, text)| total.checked_add(text));
             }
         }
-        let retained = retained.ok_or_else(|| {
-            CodecError::malformed("CATIA relation dependency text overflows usize")
-        })?;
+        let Some((retained, remaining)) = retained
+            .and_then(|retained| Some((retained, self.remaining_bytes.checked_sub(retained)?)))
+        else {
+            self.bounded_relations += 1;
+            return Ok(None);
+        };
+        self.remaining_bytes = remaining;
         ctx.retain_bytes(
             u64_from_index(retained),
             "retain CATIA relation parameter dependencies",
         )?;
-        Ok(symbols
-            .iter()
-            .map(|(source_offset, symbol)| CatiaRelationParameterDependency {
-                source_offset: *source_offset,
-                symbol: symbol.clone(),
-                candidates: bound(symbol).to_vec(),
-            })
-            .collect())
+        Ok(Some(
+            symbols
+                .iter()
+                .map(|(source_offset, symbol)| CatiaRelationParameterDependency {
+                    source_offset: *source_offset,
+                    symbol: symbol.clone(),
+                    candidates: bound(symbol).to_vec(),
+                })
+                .collect(),
+        ))
     }
 }
 
@@ -8952,7 +8973,13 @@ impl CatiaNative {
                 }
             }
         }
-        let mut relation_dependencies = RelationDependencies::new(&parameter_bindings);
+        let mut relation_dependencies = RelationDependencies::new(
+            &parameter_bindings,
+            bytes
+                .len()
+                .checked_mul(MAX_RELATION_DEPENDENCY_BYTES_PER_INPUT_BYTE)
+                .unwrap_or(bytes.len()),
+        );
         for entity in &mut entity_records {
             if let Some(signature) = entity.reference_signature.take() {
                 entity.reference_signature = Some(reference_signature(
@@ -8978,9 +9005,12 @@ impl CatiaNative {
                 &mut relation_dependencies,
             )?;
         }
+        refusal.push_relation_dependencies_bounded(relation_dependencies.bounded_relations);
         let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
-        let schema_configuration_row_chains =
+        let row_chains =
             derive_schema_configuration_row_chains(ctx, &entity_records, &entity_references)?;
+        refusal.push_configuration_row_order_bounded(row_chains.bounded_links);
+        let schema_configuration_row_chains = row_chains.chains;
         alias_rows.retain(|row| {
             // A marker inside the first four bytes of the image has no row
             // frame, so the row is not an independent alias core. Refuse it
@@ -9086,7 +9116,7 @@ impl CatiaNative {
             consolidated_cylinder_groups(bytes, consolidated_records);
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
         let mut consolidated_owner_packets =
-            consolidated_owner_packets(ctx, bytes, consolidated_records)?;
+            consolidated_owner_packets(bytes, consolidated_records);
         resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
         let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
         let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
@@ -9116,14 +9146,21 @@ impl CatiaNative {
                 zero_entity_range.clone(),
                 refusal,
             )?;
+        let zero_entity_topology_allowance =
+            crate::families::zero_entity::topology::zero_entity_topology_allowance(
+                parsed_zero_entity_support_runs
+                    .iter()
+                    .map(|run| run.supports.len())
+                    .sum(),
+            );
         let endpoint_candidates =
             crate::families::zero_entity::topology::bounded_endpoint_candidates(
                 ctx,
                 &parsed_zero_entity_support_runs,
-                crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS,
+                zero_entity_topology_allowance,
             )?;
         if endpoint_candidates.bounded {
-            refusal.push_zero_entity_candidates_bounded();
+            refusal.push_zero_entity_candidates_bounded(zero_entity_topology_allowance);
         }
         let zero_entity_endpoint_pair_candidates =
             zero_entity_endpoint_pair_candidates(endpoint_candidates.pairs);
@@ -9134,7 +9171,7 @@ impl CatiaNative {
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records);
         let consolidated_edge_nodes =
-            consolidated_edge_nodes(ctx, bytes, consolidated_records, &consolidated_circles)?;
+            consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles)?;
         let consolidated_edge_runs = consolidated_edge_runs(
             ctx,
             bytes,

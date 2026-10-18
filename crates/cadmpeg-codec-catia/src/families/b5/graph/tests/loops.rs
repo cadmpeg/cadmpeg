@@ -118,9 +118,14 @@ fn resolve_targeted_surface(
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
 ) -> Option<B5Surface> {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::resolve_targeted_surface(ctx, object_id, records, headers, resolved, rolling)
-    })
+    super::super::resolve_targeted_surface(
+        object_id,
+        records,
+        headers,
+        resolved,
+        rolling,
+        &cadmpeg_core::decode::WorkBudget::new(super::super::MAX_TARGETED_SURFACE_RESOLUTION_STEPS),
+    )
     .expect("resolve targeted surface")
 }
 
@@ -660,6 +665,42 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
         &HashMap::new(),
     )
     .is_none());
+}
+
+#[test]
+fn targeted_surface_resolution_stops_a_deep_offset_chain_at_its_own_bound() {
+    let depth =
+        u16::try_from(super::super::MAX_TARGETED_SURFACE_OFFSET_DEPTH + 44).expect("fixture depth");
+    let records = (1..=depth)
+        .map(|object_id| {
+            let next = (object_id + 1).to_le_bytes();
+            let mut payload = vec![0x82, 0x18, next[0], next[1], 0x18, next[0], next[1]];
+            payload.extend_from_slice(&(-0.5f64).to_le_bytes());
+            (
+                u32::from(object_id),
+                Some(B5Record {
+                    offset: usize::from(object_id),
+                    family: 0xb5,
+                    class: 0x30,
+                    object_id: u32::from(object_id),
+                    payload,
+                }),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let budget =
+        cadmpeg_core::decode::WorkBudget::new(super::super::MAX_TARGETED_SURFACE_RESOLUTION_STEPS);
+    let surface = super::super::resolve_targeted_surface(
+        1,
+        &records,
+        &HashMap::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+        &budget,
+    )
+    .expect("a deep offset chain is not a session refusal");
+    assert!(surface.is_none());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -1238,17 +1279,13 @@ fn targeted_surface_resolution_returns_a_cached_surface() {
     };
     let resolved = HashMap::from([(9, Some(surface.clone()))]);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            super::super::resolve_targeted_surface(
-                ctx,
-                9,
-                &HashMap::new(),
-                &HashMap::new(),
-                &resolved,
-                &HashMap::new(),
-            )
-        })
-        .expect("resolve targeted surface"),
+        resolve_targeted_surface(
+            9,
+            &HashMap::new(),
+            &HashMap::new(),
+            &resolved,
+            &HashMap::new()
+        ),
         Some(surface)
     );
 }

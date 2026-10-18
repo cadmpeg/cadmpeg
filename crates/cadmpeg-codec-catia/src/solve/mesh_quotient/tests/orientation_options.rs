@@ -6,11 +6,10 @@ use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
 use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
 
 use crate::solve::mesh_quotient::MeshQuotient;
+use cadmpeg_core::decode::WorkBudget;
 
 #[test]
 fn open_single_edge_boundary_has_no_orientation_options() {
-    use cadmpeg_core::decode::DecodeContext;
-
     use std::collections::HashSet;
     use std::sync::Arc;
     let assignment = MeshFaceBoundaryAssignment {
@@ -26,13 +25,16 @@ fn open_single_edge_boundary_has_no_orientation_options() {
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
     );
-    let run = |ctx: &DecodeContext<'_>| {
-        quotient
-            .assignment_options_limited(ctx, &assignment, &[vec![[0, 1]]], &HashSet::new(), 1, None)
-            .map(|options| options.is_empty())
-    };
-    catia_test_context!(service_ctx);
-    assert!(run(&service_ctx).expect("find the assignment orientation options"));
+    let options = quotient
+        .assignment_options_limited(
+            &assignment,
+            &[vec![[0, 1]]],
+            &HashSet::new(),
+            1,
+            &WorkBudget::new(64),
+        )
+        .expect("find the assignment orientation options");
+    assert!(options.is_empty());
 }
 
 #[test]

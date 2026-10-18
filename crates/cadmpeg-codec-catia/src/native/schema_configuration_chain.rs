@@ -31,7 +31,8 @@ pub(crate) struct CatiaSchemaConfigurationRowChainLink {
     pub(super) successor_payload_offset: u64,
     /// Same-graph entities strictly between the row and successor.
     ///
-    /// Absent when the successor does not follow the row in source order.
+    /// Absent when the successor does not follow the row in source order, or
+    /// when keeping them would pass [`MAX_INTERVENING_ENTITIES_PER_RECORD`].
     pub(crate) intervening_entities: Option<Vec<CatiaEntityReference>>,
 }
 
@@ -135,15 +136,43 @@ impl TryFrom<ChainWire> for CatiaSchemaConfigurationRowChain {
     }
 }
 
-/// Intervals of one chain can nest, so the intervening references a chain
-/// keeps can grow with the square of its row count.
 const INTERVENING_ENTITY_OPERATION: &str = "retain CATIA configuration-row intervening entities";
+
+/// Intervening references all chains may keep, per entity record. Intervals
+/// of one chain can nest, so the references grow with the square of its row
+/// count; a link past the allowance keeps no intervening order.
+pub(crate) const MAX_INTERVENING_ENTITIES_PER_RECORD: usize = 8;
+
+/// Configuration-row chains and the links whose intervening order was not kept.
+#[derive(Debug)]
+pub(super) struct SchemaConfigurationRowChains {
+    pub(super) chains: Vec<CatiaSchemaConfigurationRowChain>,
+    /// Links left without intervening entities at the per-record allowance.
+    pub(super) bounded_links: usize,
+}
 
 pub(super) fn derive_schema_configuration_row_chains(
     ctx: &DecodeContext<'_>,
     records: &[CatiaEntityRecord],
     entity_references: &CatiaEntityReferenceIndex<'_>,
-) -> Result<Vec<CatiaSchemaConfigurationRowChain>, CodecError> {
+) -> Result<SchemaConfigurationRowChains, CodecError> {
+    derive_schema_configuration_row_chains_within(
+        ctx,
+        records,
+        entity_references,
+        records
+            .len()
+            .checked_mul(MAX_INTERVENING_ENTITIES_PER_RECORD)
+            .unwrap_or(records.len()),
+    )
+}
+
+pub(super) fn derive_schema_configuration_row_chains_within(
+    ctx: &DecodeContext<'_>,
+    records: &[CatiaEntityRecord],
+    entity_references: &CatiaEntityReferenceIndex<'_>,
+    intervening_allowance: usize,
+) -> Result<SchemaConfigurationRowChains, CodecError> {
     let mut row_ids = HashSet::new();
     let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
     for entity in records {
@@ -182,6 +211,8 @@ pub(super) fn derive_schema_configuration_row_chains(
     }
 
     let mut chains = Vec::new();
+    let mut remaining_intervening = intervening_allowance;
+    let mut bounded_links = 0usize;
     for ((graph, root), links) in groups {
         let mut successors = HashMap::new();
         for (row, link) in &links {
@@ -210,39 +241,6 @@ pub(super) fn derive_schema_configuration_row_chains(
             continue;
         };
         let terminal = last_link.successor.clone();
-        let mut chain_links = Vec::new();
-        for row_id in row_ids_in_order {
-            let link = successors[&row_id];
-            let successor_id = link.successor.entity_id();
-            let intervening_entities = if row_id < successor_id {
-                let entities = graph_entities.get(graph).map_or(&[][..], Vec::as_slice);
-                let first = entities.partition_point(|&(id, _)| id <= row_id);
-                let end = entities.partition_point(|&(id, _)| id < successor_id);
-                let mut in_record_order = entities[first..end]
-                    .iter()
-                    .map(|&(id, index)| (index, id))
-                    .collect::<Vec<_>>();
-                in_record_order.sort_unstable();
-                let mut between = Vec::new();
-                for (_, entity_id) in in_record_order {
-                    let reference = entity_references.reference(ctx, graph, entity_id)?;
-                    ctx.retain_bytes(
-                        u64_from_index(reference.entity().map_or(0, str::len)),
-                        INTERVENING_ENTITY_OPERATION,
-                    )?;
-                    between.push(reference);
-                }
-                Some(between)
-            } else {
-                None
-            };
-            let row = entity_references.reference(ctx, graph, row_id)?;
-            chain_links.push(CatiaSchemaConfigurationRowChainLink {
-                row,
-                successor_payload_offset: link.successor_payload_offset,
-                intervening_entities,
-            });
-        }
         let Some((namespace, graph_key)) = graph.split_once('#') else {
             continue;
         };
@@ -256,6 +254,46 @@ pub(super) fn derive_schema_configuration_row_chains(
             continue;
         };
         let id = format!("{format}:{scope}:schema-configuration-row-chain#{graph_key}:{root}");
+        let mut chain_links = Vec::new();
+        for row_id in row_ids_in_order {
+            let link = successors[&row_id];
+            let successor_id = link.successor.entity_id();
+            let intervening_entities = if row_id < successor_id {
+                let entities = graph_entities.get(graph).map_or(&[][..], Vec::as_slice);
+                let first = entities.partition_point(|&(id, _)| id <= row_id);
+                let end = entities.partition_point(|&(id, _)| id < successor_id);
+                let entities = &entities[first..end];
+                if let Some(remaining) = remaining_intervening.checked_sub(entities.len()) {
+                    remaining_intervening = remaining;
+                    let mut in_record_order = entities
+                        .iter()
+                        .map(|&(id, index)| (index, id))
+                        .collect::<Vec<_>>();
+                    in_record_order.sort_unstable();
+                    let mut between = Vec::new();
+                    for (_, entity_id) in in_record_order {
+                        let reference = entity_references.reference(ctx, graph, entity_id)?;
+                        ctx.retain_bytes(
+                            u64_from_index(reference.entity().map_or(0, str::len)),
+                            INTERVENING_ENTITY_OPERATION,
+                        )?;
+                        between.push(reference);
+                    }
+                    Some(between)
+                } else {
+                    bounded_links += 1;
+                    None
+                }
+            } else {
+                None
+            };
+            let row = entity_references.reference(ctx, graph, row_id)?;
+            chain_links.push(CatiaSchemaConfigurationRowChainLink {
+                row,
+                successor_payload_offset: link.successor_payload_offset,
+                intervening_entities,
+            });
+        }
         let object_graph = graph.to_owned();
         chains.push(CatiaSchemaConfigurationRowChain {
             id,
@@ -264,7 +302,10 @@ pub(super) fn derive_schema_configuration_row_chains(
             terminal,
         });
     }
-    Ok(chains)
+    Ok(SchemaConfigurationRowChains {
+        chains,
+        bounded_links,
+    })
 }
 
 #[cfg(test)]

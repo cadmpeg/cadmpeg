@@ -8,10 +8,9 @@ use crate::test_support::test_topology::{
 };
 
 #[test]
-fn port_candidate_search_refuses_depth_limit() {
+fn port_candidate_search_stays_within_its_own_depth() {
     use crate::solve::missing_edge::bind_edge_port_candidates;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ports = [[10, 11], [11, 12]];
     let candidates = [vec![[0, 1]], vec![[1, 2]]];
@@ -38,11 +37,10 @@ fn port_candidate_search_refuses_depth_limit() {
     policy.limits.max_recursion_depth = 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
-    assert!(matches!(
-        bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RecursionDepth
-    ));
+    assert!(bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous)
+        .expect("the port search does not charge the session recursion ceiling")
+        .is_none());
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
@@ -386,16 +384,6 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     .expect("compute the standard mesh prune endpoint candidates")
     .expect("ordered boundary endpoint domains");
     assert_eq!(cycle_domains[0], [[0, 1]]);
-    let inferred_cycle_domains =
-        crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
-            &ctx,
-            &bytes,
-            &[[0, 0]; 4],
-            &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
-        )
-        .expect("compute the standard mesh prune endpoint candidates")
-        .expect("endpoint domain inferred from ordered neighbors");
-    assert_eq!(inferred_cycle_domains[0], [[0, 1]]);
     let endpoint_domains = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
         &ctx,
         &bytes,
@@ -703,7 +691,7 @@ fn standard_quad_with_an_unmatched_row_yields_missing_edge_assignments() {
 }
 
 #[test]
-fn endpoint_pruning_admits_a_quad_missing_one_edge_candidate() {
+fn endpoint_pruning_requires_every_edge_domain() {
     let bytes = standard_quad_topology_stream();
     let candidates = [Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -716,5 +704,5 @@ fn endpoint_pruning_admits_a_quad_missing_one_edge_candidate() {
     };
     assert!(crate::test_support::with_service_context(run)
         .expect("compute the standard mesh prune endpoint candidates")
-        .is_some());
+        .is_none());
 }

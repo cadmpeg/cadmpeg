@@ -36,21 +36,43 @@ fn duplicate_face_slot_fixture(
 }
 
 #[test]
-fn standard_duplicate_search_refuses_recursion_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn standard_duplicate_search_past_its_recursion_guard_exhausts_only_the_topology_search() {
+    use super::{
+        complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow, StandardIncidenceSearch,
+    };
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
-    assert!(matches!(
-        duplicate_face_slot_fixture(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.operation == "catia_standard_duplicate_face_search"
-    ));
+    let edges = cadmpeg_core::decode::WorkBudget::RECURSION_DEPTH + 44;
+    let rows = (0..u32::try_from(edges).expect("fixture edge count"))
+        .map(|handle| {
+            EdgeRow::new(
+                1,
+                vec![handle, handle],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("admitted edge row")
+        })
+        .collect::<Vec<_>>();
+    let points = (0..edges)
+        .map(|edge| [edge, (edge + 1) % edges])
+        .collect::<Vec<_>>();
+    let budget = crate::test_support::topology_budget();
+    let completed = crate::test_support::with_service_context(|ctx| {
+        complete_duplicate_face_slots(
+            ctx,
+            &rows,
+            &vec![[0, 0]; edges],
+            &points,
+            2,
+            StandardIncidenceSearch {
+                budget: &budget,
+                edge_classes: None,
+                mesh_bytes: None,
+            },
+        )
+    })
+    .expect("a deep duplicate-face search is not a session refusal");
+    assert_eq!(completed, None);
+    assert!(budget.exhausted());
 }
 
 #[test]

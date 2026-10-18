@@ -19,10 +19,7 @@ pub(super) fn evaluated<'a>(
     source: &'a str,
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
 ) -> Option<EvaluatedFormulaValue> {
-    crate::test_support::with_service_context(|ctx| {
-        evaluate_formula_expression(ctx, source, bindings)
-    })
-    .expect("evaluate formula expression")
+    evaluate_formula_expression(source, bindings)
 }
 
 pub(super) fn evaluated_with_mode<'a>(
@@ -30,10 +27,7 @@ pub(super) fn evaluated_with_mode<'a>(
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
     evaluate: bool,
 ) -> Option<EvaluatedFormulaValue> {
-    crate::test_support::with_service_context(|ctx| {
-        evaluate_formula_expression_with_mode(ctx, source, bindings, evaluate)
-    })
-    .expect("evaluate formula expression with mode")
+    evaluate_formula_expression_with_mode(source, bindings, evaluate)
 }
 
 fn binding(stream_name: &str) -> CatiaOuterContainerBinding {
@@ -78,24 +72,20 @@ fn legacy_parameter_scope_admits_unbound_fragment_runs() {
 }
 
 fn inactive_string_index(value: f64) -> Option<usize> {
-    crate::test_support::with_service_context(|ctx| {
-        let bindings = std::collections::BTreeMap::new();
-        let parser = super::FormulaExpressionParser {
-            source: "",
-            at: 0,
-            bindings: &bindings,
-            ctx,
-            refusal: None,
-            evaluate: false,
-            static_check: false,
-        };
-        parser.string_index(super::EvaluatedFormulaScalar::from_parts(
-            value,
-            super::FormulaDimension::SCALAR,
-            Some(true),
-            Some(value),
-        ))
-    })
+    let bindings = std::collections::BTreeMap::new();
+    let parser = super::FormulaExpressionParser {
+        source: "",
+        at: 0,
+        bindings: &bindings,
+        evaluate: false,
+        static_check: false,
+    };
+    parser.string_index(super::EvaluatedFormulaScalar::from_parts(
+        value,
+        super::FormulaDimension::SCALAR,
+        Some(true),
+        Some(value),
+    ))
 }
 
 #[test]
