@@ -916,32 +916,78 @@ pub(crate) fn extract_streams<'a>(
 
     let mut streams = Vec::new();
     if container.segment_index().is_some() {
-        let mut seen = BTreeSet::new();
+        let mut seen = BTreeMap::new();
         let mut seen_guard = ctx.reserve_scoped(0, "NX indexed stream offsets")?;
         for wrapper in container.segment_stream_wrappers() {
             ctx.charge_work(1, "scan NX indexed stream wrappers")?;
             let Some(offset) = wrapper.zlib_offset.checked_sub(start) else {
                 continue;
             };
-            if !ctx.insert_scoped_btree_set(
-                &mut seen_guard,
-                &mut seen,
-                offset,
-                "index NX stream offset",
-                "NX indexed stream offsets",
-            )? || offset
+            if offset
                 .checked_add(2)
                 .and_then(|end| part.get(offset..end))
                 .is_none_or(|header| !is_zlib_header(header[0], header[1]))
             {
                 continue;
             }
-            let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset)? else {
+            if !ctx.insert_scoped_btree_map_if_vacant(
+                &mut seen_guard,
+                &mut seen,
+                offset,
+                wrapper.compressed_byte_len,
+                "index NX stream offset",
+                "NX indexed stream offsets",
+            )? {
+                ctx.charge_work(
+                    u64::from(seen.len().checked_ilog2().unwrap_or(0)) + 1,
+                    "check duplicate NX member length",
+                )?;
+                if seen.get(&offset) != Some(&wrapper.compressed_byte_len) {
+                    return Err(CodecError::malformed(format_args!(
+                        "conflicting indexed NX member lengths at file offset {}",
+                        start + offset
+                    )));
+                }
+                continue;
+            }
+            let compressed_end =
+                offset
+                    .checked_add(wrapper.compressed_byte_len)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("indexed NX member extent overflows".into())
+                    })?;
+            ctx.charge_work(
+                2 * (u64::from(seen.len().checked_ilog2().unwrap_or(0)) + 1),
+                "check indexed NX member overlap",
+            )?;
+            let overlaps_preceding = seen
+                .range(..offset)
+                .next_back()
+                .is_some_and(|(&previous, &length)| length > offset - previous);
+            let overlaps_following = seen
+                .range(offset..)
+                .nth(1)
+                .is_some_and(|(&following, _)| following < compressed_end);
+            if overlaps_preceding || overlaps_following {
+                return Err(CodecError::Malformed(
+                    "overlapping indexed NX members".into(),
+                ));
+            }
+            let source = part_view.child(offset, compressed_end).ok_or_else(|| {
+                CodecError::Malformed("indexed NX member exceeds its part payload".into())
+            })?;
+            let Some((inflated, consumed)) = inflate_stream(ctx, source)? else {
                 return Err(CodecError::malformed(format_args!(
                     "invalid indexed zlib member at file offset {}",
                     start + offset
                 )));
             };
+            if consumed != cadmpeg_core::decode::u64_from_index(wrapper.compressed_byte_len) {
+                return Err(CodecError::malformed(format_args!(
+                    "indexed zlib member length at file offset {} differs from its wrapper",
+                    start + offset
+                )));
+            }
             let body = classify(&inflated);
             ctx.charge_entities(1, "admit NX streams")?;
             ctx.push_vec(
@@ -955,14 +1001,25 @@ pub(crate) fn extract_streams<'a>(
                 "NX embedded stream slots",
             )?;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(streams.len()),
-            "classify NX stream roster",
-        )?;
-        if streams.iter().any(|stream| stream.kind().is_parasolid()) {
-            return Ok(streams);
-        }
+        let indexed_count = streams.len();
         append_unindexed_structural_streams(ctx, part_view, start, &mut streams)?;
+        for at in indexed_count..streams.len() {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(at),
+                "merge NX supplemental stream order",
+            )?;
+            let offset = streams[at].file_offset;
+            if let Some(insertion) = streams[..at]
+                .iter()
+                .position(|stream| stream.file_offset > offset)
+            {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(at - insertion + 1),
+                    "insert NX supplemental stream",
+                )?;
+                streams[insertion..=at].rotate_right(1);
+            }
+        }
         return Ok(streams);
     }
 
@@ -982,13 +1039,14 @@ fn append_all_zlib_streams<'a>(
         cadmpeg_core::decode::u64_from_index(part.len()),
         "scan NX embedded stream bytes",
     )?;
-    let mut seen = BTreeSet::new();
+    let mut seen = BTreeMap::new();
     let mut seen_guard = ctx.reserve_scoped(0, "NX embedded stream offset index")?;
     for stream in streams.iter() {
-        ctx.insert_scoped_btree_set(
+        ctx.insert_scoped_btree_map_if_vacant(
             &mut seen_guard,
             &mut seen,
             stream.file_offset,
+            stream.consumed,
             "index NX stream offset",
             "NX embedded stream offset index",
         )?;
@@ -996,13 +1054,29 @@ fn append_all_zlib_streams<'a>(
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
+            let file_offset = file_start + i;
+            ctx.charge_work(
+                u64::from(seen.len().checked_ilog2().unwrap_or(0)) + 1,
+                "find NX retained stream extent",
+            )?;
+            let following = seen.range(file_offset..).next();
+            if let Some((&offset, &consumed)) =
+                following.filter(|(offset, _)| **offset == file_offset)
+            {
+                i += packed_member_advance(offset, consumed)?;
+                continue;
+            }
+            let source_end = following.map_or(part_view.end(), |(&offset, _)| offset - file_start);
+            let source = part_view.child(i, source_end).ok_or_else(|| {
+                CodecError::Malformed("NX member offset exceeds its part payload".into())
+            })?;
+            if let Some((inflated, consumed)) = inflate_stream(ctx, source)? {
                 let body = classify(&inflated);
-                let file_offset = file_start + i;
-                if ctx.insert_scoped_btree_set(
+                if ctx.insert_scoped_btree_map_if_vacant(
                     &mut seen_guard,
                     &mut seen,
                     file_offset,
+                    consumed,
                     "index NX stream offset",
                     "NX embedded stream offset index",
                 )? && (!structural_only
@@ -1020,17 +1094,6 @@ fn append_all_zlib_streams<'a>(
                         "NX embedded stream slots",
                     )?;
                 }
-                // Resume past the bytes this member consumed, not at the next
-                // byte: a spurious `78 xx` zlib header inside the compressed
-                // body would otherwise inflate into a second stream whose source
-                // extent [file_offset, file_offset+consumed) overlaps this
-                // member's, double-attributing the same compressed bytes to two
-                // decompression origins. Skipping the consumed run keeps packed
-                // members' input extents disjoint.
-                //
-                // Plain `+`: `inflate_stream` reads only from `part[i..]`, so
-                // `inflate_zlib_member`'s report is at most the remaining
-                // length and the sum is a byte offset of `part`.
                 i += packed_member_advance(file_offset, consumed)?;
                 continue;
             }
@@ -1187,7 +1250,6 @@ fn legacy_transmit_header(
         && contains(description, b"TRANSMIT FILE"))
 }
 
-/// Inflate one complete zlib member.
 /// The shortest zlib member: the two-byte header, the two bytes a final empty
 /// deflate block needs, and the four-byte Adler-32 trailer.
 ///
@@ -1219,12 +1281,8 @@ fn packed_member_advance(file_offset: usize, consumed: u64) -> Result<usize, Cod
 
 fn inflate_stream<'a>(
     ctx: &DecodeContext<'a>,
-    part_view: View<'a>,
-    offset: usize,
+    source: View<'a>,
 ) -> Result<Option<(Vec<u8>, u64)>, CodecError> {
-    let Some(source) = part_view.child(offset, part_view.end()) else {
-        return Ok(None);
-    };
     let (view, consumed) = match inflate_zlib_member(ctx, source, ExpandSpec::Unknown) {
         Ok(result) => result,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),

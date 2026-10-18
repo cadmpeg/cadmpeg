@@ -35,7 +35,9 @@ pub(crate) fn segment_stream_payload() -> Vec<u8> {
             "SCH_test",
         ))
         .unwrap();
-    payload.extend_from_slice(&encoder.finish().unwrap());
+    let compressed = encoder.finish().unwrap();
+    payload[36..40].copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&compressed);
     payload
 }
 
@@ -56,7 +58,9 @@ pub(crate) fn segment_body_binding_payload(stream_kind: &str) -> Vec<u8> {
             "SCH_test",
         ))
         .unwrap();
-    payload.extend_from_slice(&encoder.finish().unwrap());
+    let compressed = encoder.finish().unwrap();
+    payload[68..72].copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&compressed);
     payload
 }
 
@@ -91,7 +95,11 @@ pub(crate) fn segment_body_binding_repeated_link_payload() -> Vec<u8> {
             "SCH_test",
         ))
         .unwrap();
-    payload.extend_from_slice(&encoder.finish().unwrap());
+    let compressed = encoder.finish().unwrap();
+    let size_offset = usize::try_from(wrapper_offset).unwrap() + 4;
+    payload[size_offset..size_offset + 4]
+        .copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&compressed);
     payload
 }
 
@@ -103,6 +111,8 @@ pub(crate) fn segment_extended_wrapper_payload() -> Vec<u8> {
     payload.resize(64, 0);
     payload.extend_from_slice(&0xc000_0005u32.to_le_bytes());
     payload.resize(64 + 38, 0);
+    payload[72..76].copy_from_slice(&37_u32.to_le_bytes());
+    payload[76..78].copy_from_slice(&4_u16.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
         .write_all(&super::test_bytes::transmit_preamble(
@@ -110,7 +120,9 @@ pub(crate) fn segment_extended_wrapper_payload() -> Vec<u8> {
             "SCH_test",
         ))
         .unwrap();
-    payload.extend_from_slice(&encoder.finish().unwrap());
+    let compressed = encoder.finish().unwrap();
+    payload[68..72].copy_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&compressed);
     payload
 }
 

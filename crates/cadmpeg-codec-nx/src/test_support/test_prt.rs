@@ -347,7 +347,7 @@ pub(crate) fn prt_with_two_terminal_bodies() -> Vec<u8> {
     payload.resize(first_wrapper_offset, 0);
     for compressed in compressed_streams {
         payload.extend_from_slice(&0x8000_0000u32.to_le_bytes());
-        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.extend_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
         payload.extend_from_slice(&compressed);
         if payload.len() < second_wrapper_offset {
             payload.resize(second_wrapper_offset, 0);

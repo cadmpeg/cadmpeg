@@ -152,7 +152,7 @@ pub(super) struct SegmentStreamLink {
     row: usize,
     /// Row word containing the wrapper offset.
     slot: SegmentIndexSlot,
-    /// Zero-based stream ordinal in first segment-wrapper order.
+    /// Zero-based ordinal in the retained stream roster.
     pub(super) stream_ordinal: u32,
     /// Decoded stream classification.
     pub(super) stream_kind: crate::parasolid::StreamKind,
@@ -189,7 +189,11 @@ fn segment_stream_candidates<'a>(
         Ok(streams
             .iter()
             .enumerate()
-            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
+            .find(|(_, stream)| {
+                stream.file_offset == wrapper.zlib_offset
+                    && stream.consumed
+                        == cadmpeg_core::decode::u64_from_index(wrapper.compressed_byte_len)
+            })
             .map(|(stream_ordinal, stream)| SegmentStreamCandidate {
                 wrapper,
                 slot,
@@ -227,7 +231,7 @@ pub(crate) struct SegmentBodyBinding {
     pub(super) id: String,
     /// Validated stream-wrapper link owning the metadata tuple.
     pub(super) stream_link: String,
-    /// Zero-based stream ordinal in first segment-wrapper order.
+    /// Zero-based stream ordinal in the retained stream roster.
     pub(super) stream_ordinal: u32,
     /// Partition or plain cached-body stream classification.
     pub(super) stream_kind: crate::parasolid::StreamKind,
@@ -1313,6 +1317,75 @@ mod tests {
         assert_eq!(links[0].stream_ordinal, 0);
         assert_eq!(links[0].stream_kind.label(), "deltas");
         assert_eq!(links[0].wrapper_byte_len, 8);
+    }
+
+    #[test]
+    fn unresolved_wrapper_does_not_link_a_nearby_structural_member() {
+        use std::io::Write;
+
+        let expanded = crate::test_support::test_streams::primary_point_stream();
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&expanded).unwrap();
+        let member = encoder.finish().unwrap();
+        for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5)] {
+            let mut payload = vec![0; 32 + fixed_len + 4];
+            for (at, word) in [(0, 32_u32), (4, 9), (8, 11), (12, 1), (16, 1), (20, 24)] {
+                payload[at..at + 4].copy_from_slice(&word.to_le_bytes());
+            }
+            payload[32..36].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+            let length = u32::try_from(member.len()).unwrap().to_le_bytes();
+            payload[36..40].copy_from_slice(&length);
+            payload[40..44].copy_from_slice(&code.to_le_bytes());
+            payload[44..46].copy_from_slice(&version.to_le_bytes());
+            if fixed_len == 45 {
+                payload[46..50].copy_from_slice(&length);
+            }
+            payload.extend_from_slice(&member);
+            let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+            crate::test_support::with_decode_context_over(
+                &file,
+                |_| {},
+                |ctx| {
+                    let root = cadmpeg_core::decode::View::over_retained(&file);
+                    let scan = crate::decode::scan(ctx, root).unwrap();
+                    let wrapper = scan.container.segment_stream_wrappers().next().unwrap();
+                    assert_eq!(scan.streams.len(), 1);
+                    assert_eq!(scan.streams[0].file_offset, wrapper.zlib_offset + 4);
+                    assert_eq!(scan.streams[0].inflated, expanded);
+                    assert!(
+                        super::segment_stream_links(ctx, &scan.container, &scan.streams)
+                            .unwrap()
+                            .is_empty()
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn segment_stream_links_require_the_wrapper_member_extent() {
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
+                let mut scan = crate::decode::scan(ctx, root).unwrap();
+                assert_eq!(
+                    super::segment_stream_links(ctx, &scan.container, &scan.streams)
+                        .unwrap()
+                        .len(),
+                    1
+                );
+                scan.streams[0].consumed += 1;
+                assert!(
+                    super::segment_stream_links(ctx, &scan.container, &scan.streams)
+                        .unwrap()
+                        .is_empty()
+                );
+            },
+        );
     }
 
     #[test]

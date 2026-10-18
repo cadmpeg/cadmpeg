@@ -33,6 +33,10 @@ use crate::layout::directory_entry as dir_entry;
 use crate::layout::directory_file_payload as file_payload;
 use crate::layout::extrefstream_handle_set_record as handle_set;
 use crate::layout::legacy_ugii_payload_prefix;
+use crate::layout::segment_stream_wrapper as stream_wrapper;
+use crate::layout::segment_stream_wrapper_a0 as wrapper_a0;
+use crate::layout::segment_stream_wrapper_c0_33 as wrapper_c0_33;
+use crate::layout::segment_stream_wrapper_c0_45 as wrapper_c0_45;
 use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
@@ -217,6 +221,7 @@ pub(crate) struct SegmentStreamWrapper {
     pub(crate) wrapper_byte_len: usize,
     /// Absolute file offset of the candidate zlib member.
     pub(crate) zlib_offset: usize,
+    pub(crate) compressed_byte_len: usize,
 }
 
 /// Counted object-id table in `/Root/FastLoad/RMFastLoad`.
@@ -403,21 +408,70 @@ impl<'a> Container<'a> {
                             .filter_map(move |(word_ordinal, relative)| {
                                 let relative = usize::try_from(relative).ok()?;
                                 let wrapper = payload.get(relative..)?;
-                                let wrapper_word = View::u32_le_at(wrapper, 0)?;
+                                let wrapper_word =
+                                    View::u32_le_at(wrapper, stream_wrapper::MARKER)?;
                                 let extension = usize::try_from(wrapper_word & 0x3fff_ffff).ok()?;
-                                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
-                                    0x8000_0000 => 8usize.checked_add(extension),
-                                    0xc000_0000 => 33usize.checked_add(extension),
-                                    _ => None,
-                                }?;
+                                let compressed_word =
+                                    View::u32_le_at(wrapper, stream_wrapper::COMPRESSED_BYTE_LEN)?;
+                                let compressed_byte_len = usize::try_from(compressed_word).ok()?;
+                                let wrapper_byte_len = if wrapper_word == 0xa000_0000 {
+                                    (View::u32_le_at(wrapper, wrapper_a0::DUPLICATE_BYTE_LEN)?
+                                        == compressed_word
+                                        && View::u32_le_at(wrapper, wrapper_a0::ZERO)?
+                                            == wrapper_a0::ZERO_VALUE)
+                                        .then_some(wrapper_a0::LEN)?
+                                } else {
+                                    match wrapper_word & 0xc000_0000 {
+                                        0x8000_0000 => {
+                                            stream_wrapper::LEN.checked_add(extension)?
+                                        }
+                                        0xc000_0000 => {
+                                            let fixed = match (
+                                                View::u32_le_at(
+                                                    wrapper,
+                                                    wrapper_c0_33::HEADER_CODE,
+                                                )?,
+                                                View::u16_le_at(wrapper, wrapper_c0_33::VERSION)?,
+                                            ) {
+                                                (
+                                                    wrapper_c0_33::HEADER_CODE_VALUE,
+                                                    wrapper_c0_33::VERSION_VALUE,
+                                                ) if View::u32_le_at(
+                                                    wrapper,
+                                                    wrapper_c0_33::ZERO,
+                                                )? == wrapper_c0_33::ZERO_VALUE =>
+                                                {
+                                                    wrapper_c0_33::LEN
+                                                }
+                                                (
+                                                    wrapper_c0_45::HEADER_CODE_VALUE,
+                                                    wrapper_c0_45::VERSION_VALUE,
+                                                ) if View::u32_le_at(
+                                                    wrapper,
+                                                    wrapper_c0_45::DUPLICATE_BYTE_LEN,
+                                                )? == compressed_word =>
+                                                {
+                                                    wrapper_c0_45::LEN
+                                                }
+                                                _ => return None,
+                                            };
+                                            fixed.checked_add(extension)?
+                                        }
+                                        _ => return None,
+                                    }
+                                };
                                 let zlib_relative = relative.checked_add(wrapper_byte_len)?;
-                                (zlib_relative < payload.len()).then_some(SegmentStreamWrapper {
-                                    row_ordinal,
-                                    word_ordinal,
-                                    wrapper_offset: entry_start.checked_add(relative)?,
-                                    wrapper_byte_len,
-                                    zlib_offset: entry_start.checked_add(zlib_relative)?,
-                                })
+                                let compressed_end =
+                                    zlib_relative.checked_add(compressed_byte_len)?;
+                                (compressed_byte_len >= 2 && compressed_end <= payload.len())
+                                    .then_some(SegmentStreamWrapper {
+                                        row_ordinal,
+                                        word_ordinal,
+                                        wrapper_offset: entry_start.checked_add(relative)?,
+                                        wrapper_byte_len,
+                                        zlib_offset: entry_start.checked_add(zlib_relative)?,
+                                        compressed_byte_len,
+                                    })
                             })
                     })
             })

@@ -105,32 +105,52 @@ occupy the declared region from offset zero; zero to eleven trailing bytes fill
 the remainder when that offset is not divisible by twelve. Row order and all
 three words are significant.
 
-A segment-index word can point to a compressed-stream wrapper. Its first
-`u32 LE` is `kind | extension_length`, where `extension_length` is the low 30
-bits. Kind `0x80000000` places the zlib header at
-`8 + extension_length`; kind `0xc0000000` places it at
-`33 + extension_length`. The extension may contain a Parasolid text header.
-The pointed stream is valid only when that exact computed position begins a
-complete zlib payload accepted by the stream grammar. The containing row
-ordinal and word position preserve the wrapper's segment order.
+A segment-index word can point to a compressed-stream wrapper. The common
+prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. The length counts the
+complete zlib member, excluding its wrapper. The member starts after the fixed
+header and any extension. Its complete range lies inside the UG_PART payload.
+
+Marker `0x80000000 | extension_length` has an eight-byte fixed header and uses
+the low 30 bits as the extension length. Exact marker `0xa0000000` instead has
+a sixteen-byte fixed header, `duplicate_byte_len:u32 LE` at `+8`, and
+`zero:u32 LE` at `+12`. Its duplicate length equals `compressed_byte_len`, its
+zero word is zero, and it has no extension.
+
+Marker `0xc0000000 | extension_length` uses the low 30 bits as the extension
+length. Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` select
+the fixed header. Code 37 and version 4 select 33 bytes, with `zero:u32 LE` at
+`+14` equal to zero and bytes `+18..+32` opaque. Code 45 and version 5 select
+45 bytes, with `duplicate_byte_len:u32 LE` at `+14` equal to
+`compressed_byte_len` and bytes `+18..+44` opaque. The extension may contain a
+Parasolid text header.
+
+The computed position is a candidate member start. A wrapper resolves only when
+that position begins a checksum-valid zlib stream that consumes exactly
+`compressed_byte_len` bytes. A position without a zlib header stays unresolved;
+it does not select a nearby member. The containing row ordinal and word position
+preserve the wrapper's segment order.
 
 When the canonical segment index is present, its validated wrapper words are
 the preferred compressed-stream directory. Unique physical members are ordered
 by the first wrapper that addresses them in row and word order; additional
 words addressing the same zlib header remain additional links to that member.
-A standards-conforming zlib member elsewhere in the payload is not an indexed
-stream while the directory supplies at least one Parasolid member. If the
-directory supplies no Parasolid member, an unindexed member is admitted only
-when its inflated bytes contain a complete Parasolid structural record or
-tombstone. For a primary partition or plain stream, the counted header selects
+Words addressing one member with different compressed lengths reject the
+indexed stream directory. Distinct indexed members have disjoint compressed
+extents; overlap rejects the directory. Supplemental members cannot overlap
+indexed members.
+An unindexed member is admitted only when its inflated bytes contain a complete
+Parasolid structural record or tombstone. Supplemental members are read in
+physical order. Each enters the roster before the first existing member with
+a greater file offset, or at the end if none exists. Indexed members keep their
+relative row and word order. For a primary partition or plain stream, the counted header selects
 base schema 11004 or 13006 and a sequential schema walk owns each complete
 record. Any owned record admits the stream, including standalone geometry
 without topology. An unsupported header or an incomplete first record does
 not admit it. Bytes inside a field are never searched for replacement record
 starts. A text-only unindexed payload is not admitted as a body stream.
 When an indexed wrapper target begins with a standards-conforming zlib header,
-failure to reach its checksum-validated stream end rejects the indexed stream
-directory atomically.
+failure to reach its checksum-validated stream end exactly
+`compressed_byte_len` bytes later rejects the indexed stream directory atomically.
 
 A partition or plain cached-body wrapper word begins a five-word segment tuple.
 The following word is zero, the next two words are object-index aliases naming

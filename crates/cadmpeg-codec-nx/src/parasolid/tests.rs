@@ -628,7 +628,7 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
             .to_le_bytes(),
     );
     payload.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
-    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(real.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&real);
 
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
@@ -636,6 +636,384 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].kind(), StreamKind::Deltas);
     assert_eq!(streams[0].schema_token(), Some(&token("SCH_REAL_1_9999")));
+}
+
+fn indexed_member_payload(header: &[u8], member: &[u8]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [32_u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 8]);
+    payload.extend_from_slice(header);
+    payload.extend_from_slice(member);
+    payload
+}
+
+#[test]
+fn partial_indexes_retain_structural_members_without_reordering_indexed_members() {
+    let structural = zlib_compress(&primary_point_stream());
+    let decoy = zlib_compress(b"PS\0\0 (partition) SCH_DECOY text without owned records");
+    let indexed = zlib_compress(&crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (deltas) created by partial index test",
+        "SCH_INDEXED_1_13006",
+    ));
+    for reverse_index in [false, true] {
+        let mut payload = vec![0; 24];
+        for (at, word) in [(12, 1_u32), (16, 1), (20, 24)] {
+            payload[at..at + 4].copy_from_slice(&word.to_le_bytes());
+        }
+        let mut physical_offsets = Vec::new();
+        let mut wrapper_offsets = Vec::new();
+        for ordinal in 0..5 {
+            if ordinal % 2 == 0 {
+                physical_offsets.push(payload.len());
+                payload.extend_from_slice(&structural);
+            } else {
+                wrapper_offsets.push(payload.len());
+                payload.extend_from_slice(&0xa000_0000_u32.to_le_bytes());
+                for _ in 0..2 {
+                    payload.extend_from_slice(&u32::try_from(indexed.len()).unwrap().to_le_bytes());
+                }
+                payload.extend_from_slice(&0_u32.to_le_bytes());
+                physical_offsets.push(payload.len());
+                payload.extend_from_slice(&indexed);
+            }
+            payload.extend_from_slice(&decoy);
+        }
+        if reverse_index {
+            wrapper_offsets.reverse();
+        }
+        for (word, offset) in wrapper_offsets.into_iter().enumerate() {
+            payload[word * 4..word * 4 + 4]
+                .copy_from_slice(&u32::try_from(offset).unwrap().to_le_bytes());
+        }
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            container::scan_bytes(ctx, file.clone())
+        })
+        .unwrap();
+        let (part_start, _) = container
+            .entries
+            .iter()
+            .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
+            .unwrap()
+            .file_span()
+            .unwrap();
+        let offsets = extract_streams(&file)
+            .iter()
+            .map(|stream| stream.file_offset - usize::try_from(part_start).unwrap())
+            .collect::<Vec<_>>();
+        let expected = if reverse_index {
+            [0, 2, 3, 1, 4]
+                .map(|ordinal| physical_offsets[ordinal])
+                .to_vec()
+        } else {
+            physical_offsets
+        };
+        assert_eq!(offsets, expected, "reverse_index={reverse_index}");
+    }
+}
+
+#[test]
+fn indexed_wrapper_families_bound_the_exact_compressed_member() {
+    let inflated = crate::test_support::test_bytes::transmit_preamble(
+        ": TRANSMIT FILE (deltas) created by indexed wrapper test",
+        "SCH_TEST_1_13006",
+    );
+    let member = zlib_compress(&inflated);
+    let member_len = u32::try_from(member.len()).unwrap();
+    for (marker, fixed_len, extension, code, version) in [
+        (0x8000_0003_u32, 8, 3, 0_u32, 0_u16),
+        (0xa000_0000, 16, 0, 0, 0),
+        (0xc000_0005, 33, 5, 37, 4),
+        (0xc000_0007, 45, 7, 45, 5),
+    ] {
+        let mut header = vec![0; fixed_len + extension];
+        header[..4].copy_from_slice(&marker.to_le_bytes());
+        header[4..8].copy_from_slice(&member_len.to_le_bytes());
+        if fixed_len == 16 {
+            header[8..12].copy_from_slice(&member_len.to_le_bytes());
+        } else if fixed_len >= 33 {
+            header[8..12].copy_from_slice(&code.to_le_bytes());
+            header[12..14].copy_from_slice(&version.to_le_bytes());
+            if fixed_len == 45 {
+                header[14..18].copy_from_slice(&member_len.to_le_bytes());
+            }
+            header[18..fixed_len].fill(0xa5);
+        }
+        header[fixed_len..].fill(0x78);
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            indexed_member_payload(&header, &member),
+        )]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            container::scan_bytes(ctx, file.clone())
+        })
+        .unwrap();
+        let wrappers = container.segment_stream_wrappers().collect::<Vec<_>>();
+        assert_eq!(wrappers.len(), 1, "{marker:x}");
+        assert_eq!(wrappers[0].wrapper_byte_len, fixed_len + extension);
+        assert_eq!(wrappers[0].compressed_byte_len, member.len());
+        let streams = extract_streams(&file);
+        assert_eq!(streams.len(), 1, "{marker:x}");
+        assert_eq!(streams[0].file_offset, wrappers[0].zlib_offset);
+        assert_eq!(streams[0].consumed, u64::from(member_len));
+        assert_eq!(streams[0].inflated, inflated);
+    }
+}
+
+#[test]
+fn duplicate_indexed_starts_require_one_compressed_extent_in_either_order() {
+    let member = zlib_compress(b"indexed preview");
+    for difference in [-1_i32, 0, 1] {
+        for reverse in [false, true] {
+            let actual = u32::try_from(member.len()).unwrap();
+            let other = actual.checked_add_signed(difference).unwrap();
+            let mut header = vec![0; 24];
+            header[..4].copy_from_slice(&0x8000_0010_u32.to_le_bytes());
+            header[4..8].copy_from_slice(&actual.to_le_bytes());
+            header[16..20].copy_from_slice(&0x8000_0000_u32.to_le_bytes());
+            header[20..24].copy_from_slice(&other.to_le_bytes());
+            let mut payload = indexed_member_payload(&header, &member);
+            let offsets = if reverse { [48_u32, 32] } else { [32_u32, 48] };
+            for (word, offset) in offsets.into_iter().enumerate() {
+                payload[word * 4..word * 4 + 4].copy_from_slice(&offset.to_le_bytes());
+            }
+            payload.push(0);
+            let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+            crate::test_support::with_decode_context_over(
+                &file,
+                |_| {},
+                |ctx| {
+                    let container = container::scan_bytes(ctx, file.clone()).unwrap();
+                    assert_eq!(container.segment_stream_wrappers().count(), 2);
+                    let result = parasolid::extract_streams(
+                        ctx,
+                        cadmpeg_core::decode::View::over_retained(&file),
+                        &container,
+                    );
+                    if difference == 0 {
+                        assert_eq!(result.unwrap().len(), 1);
+                    } else {
+                        assert!(
+                            matches!(result, Err(cadmpeg_core::CodecError::Malformed(_))),
+                            "difference={difference}, reverse={reverse}"
+                        );
+                    }
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn overlapping_indexed_members_are_rejected_in_either_order() {
+    use std::io::Write;
+
+    let inner = zlib_compress(&primary_point_stream());
+    let mut inner_header = 0x8000_0000_u32.to_le_bytes().to_vec();
+    inner_header.extend_from_slice(&u32::try_from(inner.len()).unwrap().to_le_bytes());
+    let mut literal = primary_point_stream();
+    literal.extend_from_slice(&inner_header);
+    literal.extend_from_slice(&inner);
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::none());
+    encoder.write_all(&literal).unwrap();
+    let outer = encoder.finish().unwrap();
+    let inner_at = outer
+        .windows(inner_header.len())
+        .position(|bytes| bytes == inner_header)
+        .unwrap();
+    assert_eq!(
+        &outer[inner_at + inner_header.len()..][..inner.len()],
+        inner
+    );
+    let mut outer_header = 0x8000_0000_u32.to_le_bytes().to_vec();
+    outer_header.extend_from_slice(&u32::try_from(outer.len()).unwrap().to_le_bytes());
+    for reverse in [false, true] {
+        let mut payload = indexed_member_payload(&outer_header, &outer);
+        let mut offsets = [32_u32, u32::try_from(40 + inner_at).unwrap()];
+        if reverse {
+            offsets.reverse();
+        }
+        for (word, offset) in offsets.into_iter().enumerate() {
+            payload[word * 4..word * 4 + 4].copy_from_slice(&offset.to_le_bytes());
+        }
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |ctx| {
+                let container = container::scan_bytes(ctx, file.clone()).unwrap();
+                assert_eq!(container.segment_stream_wrappers().count(), 2);
+                let result = parasolid::extract_streams(
+                    ctx,
+                    cadmpeg_core::decode::View::over_retained(&file),
+                    &container,
+                );
+                assert!(
+                    matches!(result, Err(cadmpeg_core::CodecError::Malformed(message))
+                if message.contains("overlapping indexed NX members"))
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn supplemental_members_cannot_enclose_an_indexed_member() {
+    use std::io::Write;
+
+    let inner_bytes = primary_point_stream();
+    let inner = zlib_compress(&inner_bytes);
+    let mut inner_header = 0x8000_0000_u32.to_le_bytes().to_vec();
+    inner_header.extend_from_slice(&u32::try_from(inner.len()).unwrap().to_le_bytes());
+    let mut outer_bytes = primary_point_stream();
+    outer_bytes.extend_from_slice(&inner_header);
+    outer_bytes.extend_from_slice(&inner);
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::none());
+    encoder.write_all(&outer_bytes).unwrap();
+    let outer = encoder.finish().unwrap();
+    let inner_wrapper = outer
+        .windows(inner_header.len())
+        .position(|bytes| bytes == inner_header)
+        .unwrap();
+    let mut payload = vec![0; 24];
+    for (at, word) in [
+        (0, u32::try_from(24 + inner_wrapper).unwrap()),
+        (12, 1),
+        (16, 1),
+        (20, 24),
+    ] {
+        payload[at..at + 4].copy_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&outer);
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let streams = extract_streams(&file);
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].inflated, inner_bytes);
+    assert_eq!(streams[0].consumed, u64::try_from(inner.len()).unwrap());
+}
+
+#[test]
+fn unresolved_index_targets_do_not_address_nearby_structural_members() {
+    let expanded = primary_point_stream();
+    let member = zlib_compress(&expanded);
+    let length = u32::try_from(member.len()).unwrap();
+    for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5)] {
+        let mut header = vec![0; fixed_len];
+        header[..4].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+        header[4..8].copy_from_slice(&length.to_le_bytes());
+        header[8..12].copy_from_slice(&code.to_le_bytes());
+        header[12..14].copy_from_slice(&version.to_le_bytes());
+        if fixed_len == 45 {
+            header[14..18].copy_from_slice(&length.to_le_bytes());
+        }
+        header.extend_from_slice(&[0; 4]);
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            indexed_member_payload(&header, &member),
+        )]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            container::scan_bytes(ctx, file.clone())
+        })
+        .unwrap();
+        let wrapper = container.segment_stream_wrappers().next().unwrap();
+        let streams = extract_streams(&file);
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0].file_offset, wrapper.zlib_offset + 4);
+        assert_eq!(streams[0].inflated, expanded);
+    }
+}
+
+#[test]
+fn indexed_member_length_must_equal_the_checksum_validated_extent() {
+    let member = zlib_compress(b"an indexed preview with a declared compressed extent");
+    for (marker, fixed_len, code, version) in [
+        (0x8000_0000_u32, 8, 0_u32, 0_u16),
+        (0xa000_0000, 16, 0, 0),
+        (0xc000_0000, 33, 37, 4),
+        (0xc000_0000, 45, 45, 5),
+    ] {
+        for declared_len in [member.len() - 1, member.len() + 1] {
+            let length = u32::try_from(declared_len).unwrap().to_le_bytes();
+            let mut header = vec![0; fixed_len];
+            header[..4].copy_from_slice(&marker.to_le_bytes());
+            header[4..8].copy_from_slice(&length);
+            if fixed_len == 16 {
+                header[8..12].copy_from_slice(&length);
+            } else if fixed_len >= 33 {
+                header[8..12].copy_from_slice(&code.to_le_bytes());
+                header[12..14].copy_from_slice(&version.to_le_bytes());
+                if fixed_len == 45 {
+                    header[14..18].copy_from_slice(&length);
+                }
+            }
+            let mut payload = indexed_member_payload(&header, &member);
+            payload.push(0);
+            let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+            crate::test_support::with_decode_context_over(
+                &file,
+                |_| {},
+                |ctx| {
+                    let container = container::scan_bytes(ctx, file.clone()).unwrap();
+                    let root = cadmpeg_core::decode::View::over_retained(&file);
+                    assert!(matches!(
+                        parasolid::extract_streams(ctx, root, &container),
+                        Err(cadmpeg_core::CodecError::Malformed(_))
+                    ));
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn indexed_wrapper_headers_reject_inconsistent_lengths_versions_and_truncation() {
+    let member = zlib_compress(b"indexed member");
+    let member_len = u32::try_from(member.len()).unwrap();
+    let mut a0 = vec![0; 16];
+    a0[..4].copy_from_slice(&0xa000_0000_u32.to_le_bytes());
+    a0[4..8].copy_from_slice(&member_len.to_le_bytes());
+    a0[8..12].copy_from_slice(&member_len.to_le_bytes());
+    let mut c0 = vec![0; 45];
+    c0[..4].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+    c0[4..8].copy_from_slice(&member_len.to_le_bytes());
+    c0[8..12].copy_from_slice(&45_u32.to_le_bytes());
+    c0[12..14].copy_from_slice(&5_u16.to_le_bytes());
+    c0[14..18].copy_from_slice(&member_len.to_le_bytes());
+    let mut c0_33 = vec![0; 33];
+    c0_33[..4].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+    c0_33[4..8].copy_from_slice(&member_len.to_le_bytes());
+    c0_33[8..12].copy_from_slice(&37_u32.to_le_bytes());
+    c0_33[12..14].copy_from_slice(&4_u16.to_le_bytes());
+    for (valid, bad_offsets) in [
+        (&a0, &[8, 12][..]),
+        (&c0, &[8, 12, 14][..]),
+        (&c0_33, &[8, 12, 14][..]),
+    ] {
+        for &offset in bad_offsets {
+            let mut header = valid.clone();
+            header[offset] ^= 1;
+            let file = prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                indexed_member_payload(&header, &member),
+            )]);
+            let container =
+                crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+                    .unwrap();
+            assert_eq!(container.segment_stream_wrappers().count(), 0);
+        }
+        for end in 0..valid.len() {
+            let file = prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                indexed_member_payload(&valid[..end], &[]),
+            )]);
+            let container =
+                crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+                    .unwrap();
+            assert_eq!(container.segment_stream_wrappers().count(), 0);
+        }
+    }
 }
 
 #[test]
@@ -658,7 +1036,7 @@ fn extraction_falls_back_to_unindexed_primary_geometry_when_index_has_no_parasol
             .to_le_bytes(),
     );
     payload.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
-    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&u32::try_from(indexed_preview.len()).unwrap().to_le_bytes());
     payload.extend_from_slice(&indexed_preview);
 
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
@@ -1006,4 +1384,31 @@ fn attribute_owner_grouping_is_admitted_once() {
             assert!(ctx.resource_refusal().is_none());
         },
     );
+}
+
+#[test]
+fn unresolved_index_targets_do_not_probe_for_nonstructural_members() {
+    let member = zlib_compress(b"PS\0\0 (partition) SCH_DECOY text without owned records");
+    let length = u32::try_from(member.len()).unwrap();
+    for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5)] {
+        let mut header = vec![0; fixed_len];
+        header[..4].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+        header[4..8].copy_from_slice(&length.to_le_bytes());
+        header[8..12].copy_from_slice(&code.to_le_bytes());
+        header[12..14].copy_from_slice(&version.to_le_bytes());
+        if fixed_len == 45 {
+            header[14..18].copy_from_slice(&length.to_le_bytes());
+        }
+        header.extend_from_slice(&[0; 4]);
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            indexed_member_payload(&header, &member),
+        )]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            container::scan_bytes(ctx, file.clone())
+        })
+        .unwrap();
+        assert_eq!(container.segment_stream_wrappers().count(), 1);
+        assert!(extract_streams(&file).is_empty(), "fixed_len={fixed_len}");
+    }
 }

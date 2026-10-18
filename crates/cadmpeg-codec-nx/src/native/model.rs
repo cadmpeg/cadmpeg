@@ -780,7 +780,7 @@ impl NativeModel {
         let delta_pairs = pair_stream_indices(
             ctx,
             streams,
-            (!segment_stream_links.is_empty()).then_some(&linked_deltas),
+            (container.segment_stream_wrappers().next().is_some()).then_some(&linked_deltas),
         )?;
         let deltas_events =
             parasolid_deltas_events_with_censuses(ctx, streams, parsed.take_delta_censuses(ctx)?)?;

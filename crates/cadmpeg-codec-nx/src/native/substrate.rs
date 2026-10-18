@@ -114,14 +114,10 @@ fn prepare_topology_streams<'a>(
     Ok(semantic)
 }
 
-/// Map each partition stream ordinal to the delta stream ordinals that pair with it,
-/// restricting the delta candidates to those the segment stream links mark as `deltas`
-/// when any links are present.
 pub(super) fn paired_delta_streams(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
 ) -> Result<BTreeMap<usize, Vec<usize>>, CodecError> {
-    let mut has_links = false;
     let wrapper_count = scan.container.segment_stream_wrappers().count();
     let linked_bytes = wrapper_count
         .checked_mul(std::mem::size_of::<usize>())
@@ -135,19 +131,25 @@ pub(super) fn paired_delta_streams(
         let mut matched = None;
         for (ordinal, stream) in scan.streams.iter().enumerate() {
             ctx.charge_work(1, "nx linked delta stream matching")?;
-            if stream.file_offset == wrapper.zlib_offset {
+            if stream.file_offset == wrapper.zlib_offset
+                && stream.consumed
+                    == cadmpeg_core::decode::u64_from_index(wrapper.compressed_byte_len)
+            {
                 matched = Some((ordinal, stream));
                 break;
             }
         }
         if let Some((ordinal, stream)) = matched {
-            has_links = true;
             if stream.kind() == crate::parasolid::StreamKind::Deltas {
                 ctx.insert_btree_set(&mut linked_deltas, ordinal, "nx linked delta candidates")?;
             }
         }
     }
-    pair_stream_indices(ctx, &scan.streams, has_links.then_some(&linked_deltas))
+    pair_stream_indices(
+        ctx,
+        &scan.streams,
+        (wrapper_count != 0).then_some(&linked_deltas),
+    )
 }
 
 /// Pair each eligible delta stream with the nearest preceding partition stream of the
@@ -985,6 +987,40 @@ mod tests {
                         assert!(pairs.is_empty());
                     },
                 );
+            },
+        );
+    }
+
+    #[test]
+    fn wrapper_start_with_a_different_extent_cannot_pair_a_delta() {
+        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            crate::test_support::test_om::segment_stream_payload(),
+        )]);
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |ctx| {
+                let mut scan =
+                    crate::decode::scan(ctx, cadmpeg_core::decode::View::over_retained(&file))
+                        .unwrap();
+                let delta = scan
+                    .streams
+                    .iter()
+                    .position(|stream| stream.kind() == crate::parasolid::StreamKind::Deltas)
+                    .expect("indexed Deltas fixture");
+                let mut primary = scan.streams[delta].clone();
+                if let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &mut primary.body {
+                    *subtype = crate::parasolid::ParasolidSubtype::Partition;
+                }
+                primary.file_offset = 0;
+                scan.streams.insert(0, primary);
+                assert_eq!(
+                    super::paired_delta_streams(ctx, &scan).unwrap().get(&0),
+                    Some(&vec![delta + 1])
+                );
+                scan.streams[delta + 1].consumed += 1;
+                assert!(super::paired_delta_streams(ctx, &scan).unwrap().is_empty());
             },
         );
     }

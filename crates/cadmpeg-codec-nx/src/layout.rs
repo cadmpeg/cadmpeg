@@ -144,6 +144,66 @@ pub(crate) mod ug_part_segment_index_row {
     pub(crate) const VALUE: usize = 8;
 }
 
+/// Byte offsets for the `segment_stream_wrapper` record.
+///
+/// Spec §2. Record length 8 B.
+pub(crate) mod segment_stream_wrapper {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `marker` (`u32`, little-endian). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `compressed_byte_len` (`u32`, little-endian). Spec §2.
+    pub(crate) const COMPRESSED_BYTE_LEN: usize = 4;
+}
+
+/// Byte offsets for the `segment_stream_wrapper_a0` record.
+///
+/// Spec §2. Record length 16 B.
+pub(crate) mod segment_stream_wrapper_a0 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 16;
+    /// Offset of `duplicate_byte_len` (`u32`, little-endian). Spec §2.
+    pub(crate) const DUPLICATE_BYTE_LEN: usize = 8;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 12;
+    /// Stated value of `zero` (`u32`). Spec §2.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `segment_stream_wrapper_c0_33` record.
+///
+/// Spec §2. Record length 33 B.
+pub(crate) mod segment_stream_wrapper_c0_33 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 33;
+    /// Offset of `header_code` (`u32`, little-endian). Spec §2.
+    pub(crate) const HEADER_CODE: usize = 8;
+    /// Stated value of `header_code` (`u32`). Spec §2.
+    pub(crate) const HEADER_CODE_VALUE: u32 = 0x0000_0025;
+    /// Offset of `version` (`u16`, little-endian). Spec §2.
+    pub(crate) const VERSION: usize = 12;
+    /// Stated value of `version` (`u16`). Spec §2.
+    pub(crate) const VERSION_VALUE: u16 = 0x0004;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 14;
+    /// Stated value of `zero` (`u32`). Spec §2.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `segment_stream_wrapper_c0_45` record.
+///
+/// Spec §2. Record length 45 B.
+pub(crate) mod segment_stream_wrapper_c0_45 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 45;
+    /// Stated value of `header_code` (`u32`). Spec §2.
+    pub(crate) const HEADER_CODE_VALUE: u32 = 0x0000_002d;
+    /// Stated value of `version` (`u16`). Spec §2.
+    pub(crate) const VERSION_VALUE: u16 = 0x0005;
+    /// Offset of `duplicate_byte_len` (`u32`, little-endian). Spec §2.
+    pub(crate) const DUPLICATE_BYTE_LEN: usize = 14;
+}
+
 /// Byte offsets for the `fastload_structure_envelope` record.
 ///
 /// Spec §2.3. Record length 12 B.

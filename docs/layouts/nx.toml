@@ -356,6 +356,176 @@ source = "spec"
 anchor = "type_code:u32 subtype_code:u32 value:u32"
 
 [[record]]
+name = "segment_stream_wrapper"
+parsed_by = "crates/cadmpeg-codec-nx/src/container.rs"
+kind = "byte"
+section = "2"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+size = 8
+endianness = "little"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "compressed_byte_len"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record]]
+name = "segment_stream_wrapper_a0"
+parsed_by = "crates/cadmpeg-codec-nx/src/container.rs"
+kind = "byte"
+section = "2"
+anchor = "Exact marker `0xa0000000` instead has a sixteen-byte fixed header"
+size = 16
+endianness = "little"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "compressed_byte_len"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "duplicate_byte_len"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "`duplicate_byte_len:u32 LE` at `+8`"
+
+[[record.field]]
+name = "zero"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "`zero:u32 LE` at `+12`"
+value = 0
+
+[[record]]
+name = "segment_stream_wrapper_c0_33"
+parsed_by = "crates/cadmpeg-codec-nx/src/container.rs"
+kind = "byte"
+section = "2"
+anchor = "Code 37 and version 4 select 33 bytes"
+size = 33
+endianness = "little"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "compressed_byte_len"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "header_code"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12`"
+value = 37
+
+[[record.field]]
+name = "version"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12`"
+value = 4
+
+[[record.field]]
+name = "zero"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "with `zero:u32 LE` at `+14` equal to zero"
+value = 0
+
+[[record.field]]
+name = "opaque"
+offset = 18
+type = "bytes[15]"
+endianness = "n/a"
+source = "spec"
+anchor = "bytes `+18..+32` opaque"
+
+[[record]]
+name = "segment_stream_wrapper_c0_45"
+parsed_by = "crates/cadmpeg-codec-nx/src/container.rs"
+kind = "byte"
+section = "2"
+anchor = "Code 45 and version 5 select 45 bytes"
+size = 45
+endianness = "little"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "compressed_byte_len"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "header_code"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12`"
+value = 45
+
+[[record.field]]
+name = "version"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12`"
+value = 5
+
+[[record.field]]
+name = "duplicate_byte_len"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "`duplicate_byte_len:u32 LE` at `+14` equal to `compressed_byte_len`"
+
+[[record.field]]
+name = "opaque"
+offset = 18
+type = "bytes[27]"
+endianness = "n/a"
+source = "spec"
+anchor = "bytes `+18..+44` opaque"
+
+[[record]]
 name = "fastload_structure_envelope"
 kind = "byte"
 section = "2.3"

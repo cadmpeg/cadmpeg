@@ -208,6 +208,64 @@ Row ordinal 1 has `type_code = 1`, `subtype_code = 1`, and a `value` equal to th
 | 4 | 4 | `subtype_code` | `u32` | little | spec | type_code:u32 subtype_code:u32 value:u32 |
 | 8 | 4 | `value` | `u32` | little | spec | type_code:u32 subtype_code:u32 value:u32 |
 
+## `segment_stream_wrapper`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+
+## `segment_stream_wrapper_a0`
+
+Spec §2 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 8 | 4 | `duplicate_byte_len` | `u32` | little | spec | `duplicate_byte_len:u32 LE` at `+8` |
+| 12 | 4 | `zero` | `u32` | little | spec | `zero:u32 LE` at `+12` · value `0` |
+
+## `segment_stream_wrapper_c0_33`
+
+Spec §2 · layout: byte offsets · size: 33 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 8 | 4 | `header_code` | `u32` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `37` |
+| 12 | 2 | `version` | `u16` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `4` |
+| 14 | 4 | `zero` | `u32` | little | spec | with `zero:u32 LE` at `+14` equal to zero · value `0` |
+| 18 | 15 | `opaque` | `bytes[15]` | n/a | spec | bytes `+18..+32` opaque |
+
+## `segment_stream_wrapper_c0_45`
+
+Spec §2 · layout: byte offsets · size: 45 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 8 | 4 | `header_code` | `u32` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `45` |
+| 12 | 2 | `version` | `u16` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `5` |
+| 14 | 4 | `duplicate_byte_len` | `u32` | little | spec | `duplicate_byte_len:u32 LE` at `+14` equal to `compressed_byte_len` |
+| 18 | 27 | `opaque` | `bytes[27]` | n/a | spec | bytes `+18..+44` opaque |
+
 ## `fastload_structure_envelope`
 
 Spec §2.3 · layout: byte offsets · size: 12 B
