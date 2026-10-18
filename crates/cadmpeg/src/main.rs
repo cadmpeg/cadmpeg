@@ -57,7 +57,8 @@ struct InputArgs {
 
 #[derive(Debug, Clone, Args)]
 struct DecodeArgs {
-    /// Read the container only; do not decode geometry.
+    /// Read the container only; do not decode geometry. `convert` then writes
+    /// CADIR only and refuses every other output format.
     #[arg(long)]
     container_only: bool,
     /// Fail if required content cannot be decoded. Salvage is off.

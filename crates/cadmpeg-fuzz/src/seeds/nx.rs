@@ -34,7 +34,7 @@ pub fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
         ));
     }
     let mut r = vec![0x00, tag];
-    r.extend((2..len).map(|_| 0_u8));
+    r.resize(len, 0);
     Ok(r)
 }
 

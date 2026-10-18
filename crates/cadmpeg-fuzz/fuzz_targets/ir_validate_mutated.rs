@@ -48,14 +48,6 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         2 => {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[],
-                &arena,
-                &cadmpeg_core::decode::DecodePolicy::service(),
-            ) else {
-                return;
-            };
             if let Some(loop_) = ir
                 .model
                 .loops
@@ -69,9 +61,6 @@ fuzz_target!(|data: &[u8]| {
                     // A refused ring leaves the loop unchanged.
                     let _ = loop_.replace_ring(coedges, vertex_uses);
                 }
-            }
-            if ctx.finish_session().is_err() {
-                return;
             }
         }
         3 => {
