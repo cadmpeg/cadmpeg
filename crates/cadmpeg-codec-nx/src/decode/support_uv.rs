@@ -1926,6 +1926,8 @@ fn complete_coupled_support_uv(
             lane_geometry_exhausted |= child_exhausted || parent_exhausted;
             continue;
         };
+        let mut lane_replacements = Vec::new();
+        let mut lane_witnesses = Vec::new();
         for side in 0..2 {
             if missing[side] {
                 let endpoint_values = if let Some(surface) =
@@ -1964,19 +1966,13 @@ fn complete_coupled_support_uv(
                 let parameter_range = samples.parameter_range();
                 let pcurve = linear_pcurve_geometry(parameters, &lanes[side])?;
                 if let Some([Some(first), Some(last)]) = endpoint_values {
-                    let key = (owner.clone(), surfaces[side].clone());
-
-                    let entries = match endpoint_witnesses.entry(key) {
-                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                        std::collections::btree_map::Entry::Vacant(entry) => {
-                            entry.insert(Vec::new())
-                        }
-                    };
-
-                    entries.push((pcurve.clone(), parameter_range, [first, last]));
+                    lane_witnesses.push((
+                        (owner.clone(), surfaces[side].clone()),
+                        (pcurve.clone(), parameter_range, [first, last]),
+                    ));
                 }
 
-                replacements.push((procedural_id.clone(), side, pcurve));
+                lane_replacements.push((procedural_id.clone(), side, pcurve));
             }
         }
         let parent_exhausted = parent_geometry_budget
@@ -1984,6 +1980,13 @@ fn complete_coupled_support_uv(
             .is_err();
         let child_exhausted = lane_geometry_budget.exhausted();
         lane_geometry_exhausted |= child_exhausted || parent_exhausted;
+        if parent_exhausted {
+            continue;
+        }
+        for (key, witness) in lane_witnesses {
+            endpoint_witnesses.entry(key).or_default().push(witness);
+        }
+        replacements.append(&mut lane_replacements);
     }
     drop(model_index);
     for (procedural_id, side, pcurve) in replacements {
