@@ -55,8 +55,8 @@ use crate::decode::analytic::planes::{
     placed_plane_surfaces, placed_planes, reconciled_model_plane,
 };
 use crate::decode::sketch_transfer::recipe::{
-    feature_recipe, feature_recipe_effect, feature_revolution_extent, feature_schema_class,
-    feature_section_sweep_semantics_conflict,
+    feature_recipe, feature_recipe_effect, feature_revolution_extent,
+    feature_section_sweep_semantics_conflict, FeatureSchemaClasses,
 };
 use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
@@ -1066,32 +1066,62 @@ pub(in super::super) fn section_sweep_allows_linear_extrusion(
 }
 
 pub(in super::super) fn feature_is_sheet_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
-    feature_schema_class(scan, feature_id) == Some(SchemaClass::Surface)
+    feature_is_sheet_extrusion_with(scan, &FeatureSchemaClasses::new(scan), feature_id)
+}
+
+pub(in super::super) fn feature_is_sheet_extrusion_with(
+    scan: &ContainerScan,
+    schema_classes: &FeatureSchemaClasses,
+    feature_id: u32,
+) -> bool {
+    schema_classes.get(feature_id) == Some(SchemaClass::Surface)
         && feature_reference_name(scan, feature_id)
             .and_then(|name| std::str::from_utf8(name).ok())
             .is_some_and(|name| numbered_feature_name_has_family(name, "Extrude"))
 }
 
+#[cfg(test)]
 pub(in super::super) fn feature_allows_linear_extrusion(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> bool {
+    feature_allows_linear_extrusion_with(scan, &FeatureSchemaClasses::new(scan), feature_id)
+}
+
+pub(in super::super) fn feature_allows_linear_extrusion_with(
+    scan: &ContainerScan,
+    schema_classes: &FeatureSchemaClasses,
+    feature_id: u32,
+) -> bool {
     (!feature_section_sweep_semantics_conflict(scan, feature_id)
-        && feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
+        && schema_classes.get(feature_id).is_some_and(|schema_class| {
             section_sweep_allows_linear_extrusion(
                 Some(schema_class),
                 feature_recipe(scan, feature_id),
             )
         }))
-        || feature_is_sheet_extrusion(scan, feature_id)
+        || feature_is_sheet_extrusion_with(scan, schema_classes, feature_id)
 }
 
+#[cfg(test)]
 pub(in super::super) fn feature_allows_additive_linear_extrusion(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> bool {
+    feature_allows_additive_linear_extrusion_with(
+        scan,
+        &FeatureSchemaClasses::new(scan),
+        feature_id,
+    )
+}
+
+pub(in super::super) fn feature_allows_additive_linear_extrusion_with(
+    scan: &ContainerScan,
+    schema_classes: &FeatureSchemaClasses,
+    feature_id: u32,
+) -> bool {
     !feature_section_sweep_semantics_conflict(scan, feature_id)
-        && feature_schema_class(scan, feature_id) == Some(SchemaClass::Protrusion)
+        && schema_classes.get(feature_id) == Some(SchemaClass::Protrusion)
         && section_sweep_allows_linear_extrusion(
             Some(SchemaClass::Protrusion),
             feature_recipe(scan, feature_id),

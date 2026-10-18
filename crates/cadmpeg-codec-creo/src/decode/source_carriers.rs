@@ -425,24 +425,42 @@ impl SourceUnitCarriers {
         pcurve: Pcurve,
         surface_id: &SurfaceId,
     ) -> Result<(), CodecError> {
-        let surface = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == surface_id)
-            .ok_or_else(|| CodecError::malformed("Creo pcurve has no owning surface"))?;
-        let scales = self
-            .length_scale_mm
-            .and_then(|scale| {
-                self.surface_geometry(surface).solved().map(|geometry| {
-                    crate::decode::build::units::surface_parameter_scales(
-                        ctx,
-                        geometry,
-                        scale.get(),
-                    )
+        self.admit_pcurve_indexed(
+            ctx,
+            ir,
+            pcurve,
+            surface_id,
+            &crate::decode::uniqueness::ExactIdPositions::new(
+                ir.model.surfaces.iter().map(|surface| surface.id.as_str()),
+            ),
+        )
+    }
+
+    pub(super) fn admit_pcurve_indexed(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        pcurve: Pcurve,
+        surface_id: &SurfaceId,
+        surfaces: &crate::decode::uniqueness::ExactIdPositions,
+    ) -> Result<(), CodecError> {
+        let scales = {
+            let surface = surfaces
+                .first(surface_id.as_str())
+                .and_then(|position| ir.model.surfaces.get(position))
+                .ok_or_else(|| CodecError::malformed("Creo pcurve has no owning surface"))?;
+            self.length_scale_mm
+                .and_then(|scale| {
+                    self.surface_geometry(surface).solved().map(|geometry| {
+                        crate::decode::build::units::surface_parameter_scales(
+                            ctx,
+                            geometry,
+                            scale.get(),
+                        )
+                    })
                 })
-            })
-            .transpose()?;
+                .transpose()?
+        };
         Self::push_pcurve(ctx, ir, pcurve, scales)
     }
 

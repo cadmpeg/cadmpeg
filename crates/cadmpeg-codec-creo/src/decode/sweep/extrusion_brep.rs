@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved extrusion B-rep transfer.
 
+#[cfg(test)]
 use super::super::feature_history::draft::feature_allows_additive_linear_extrusion;
+use super::super::feature_history::draft::feature_allows_additive_linear_extrusion_with;
 use super::super::feature_history::link::generated_profile_entry_is_admissible;
 use super::super::native::annotate;
 use super::super::sketch::intersect::section_point_in_model;
@@ -159,6 +161,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     diagnostics: &mut crate::decode::surfaces::brep::BrepTransferDiagnostics,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let schema_classes = crate::decode::sketch_transfer::recipe::FeatureSchemaClasses::new(scan);
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -173,7 +176,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !feature_allows_additive_linear_extrusion(scan, feature_id)
+        if !feature_allows_additive_linear_extrusion_with(scan, &schema_classes, feature_id)
             || !feature_is_first_material_operation(scan, feature_id)
         {
             continue;

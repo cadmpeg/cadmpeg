@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section surface and curve construction and extrusion surface transfer.
 
-use super::super::feature_history::draft::feature_allows_linear_extrusion;
+use super::super::feature_history::draft::feature_allows_linear_extrusion_with;
 use super::super::feature_history::link::{
     analytic_surface_id_for_feature, generated_surface_id_for_feature, surface_kind_for_geometry,
 };
@@ -534,6 +534,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let schema_classes = crate::decode::sketch_transfer::recipe::FeatureSchemaClasses::new(scan);
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -553,7 +554,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !feature_allows_linear_extrusion(scan, feature_id) {
+        if !feature_allows_linear_extrusion_with(scan, &schema_classes, feature_id) {
             continue;
         }
         let Some(order_table) = &definition.order_table else {
