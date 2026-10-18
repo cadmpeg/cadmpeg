@@ -304,10 +304,31 @@ fn walk_work_cap_reports_the_unknown() {
         Walk::Capped
     );
     assert_eq!(index.caps(), WalkCaps { depth: 0, work: 1 });
-    let [loss] = index.caps().losses().try_into().unwrap();
+    let [loss] = index.caps().losses(index.work_limit).try_into().unwrap();
     assert_eq!(
         loss.message,
         "1 SWIFT feature walk(s) stopped at the local work cap SWIFT_FEATURE_WALK_WORK \
-         (16777216); the targets or nominal values they feed were left unresolved."
+         (4); the targets or nominal values they feed were left unresolved."
+    );
+}
+
+#[test]
+fn feature_walk_work_scales_with_rows_above_the_floor() {
+    use crate::swift::{
+        swift_feature_walk_work_limit, SWIFT_FEATURE_WALK_WORK, SWIFT_FEATURE_WALK_WORK_PER_ROW,
+    };
+    let past_floor = SWIFT_FEATURE_WALK_WORK / SWIFT_FEATURE_WALK_WORK_PER_ROW * 4;
+    assert_eq!(
+        swift_feature_walk_work_limit(Some(10)),
+        SWIFT_FEATURE_WALK_WORK
+    );
+    assert_eq!(swift_feature_walk_work_limit(None), SWIFT_FEATURE_WALK_WORK);
+    assert_eq!(
+        swift_feature_walk_work_limit(Some(past_floor)),
+        past_floor * SWIFT_FEATURE_WALK_WORK_PER_ROW
+    );
+    assert_eq!(
+        swift_feature_walk_work_limit(Some(usize::MAX)),
+        SWIFT_FEATURE_WALK_WORK
     );
 }

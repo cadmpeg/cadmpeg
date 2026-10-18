@@ -1259,6 +1259,11 @@ impl Graph {
             .filter_map(|key| self.nodes.get(key))
     }
 
+    /// Number of records in the graph.
+    pub(crate) fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Cardinality retained by the kind index, without walking node identities.
     pub(crate) fn kind_count(&self, kind: NodeKind) -> usize {
         self.by_kind.get(&kind).map_or(0, Vec::len)
