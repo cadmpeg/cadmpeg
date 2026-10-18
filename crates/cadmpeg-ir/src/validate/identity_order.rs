@@ -11,8 +11,9 @@ use crate::report::{
     Severity,
 };
 
+/// `seen` is absent when every visited identity is known to be distinct.
 fn push_identity<'a>(
-    seen: &mut BorrowedIdentities<'a, bool>,
+    seen: &mut Option<BorrowedIdentities<'a, bool>>,
     findings: &mut Vec<Finding>,
     id: &'a str,
 ) -> Result<(), CodecError> {
@@ -25,6 +26,9 @@ fn push_identity<'a>(
             format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"),
         );
     }
+    let Some(seen) = seen else {
+        return Ok(());
+    };
     let Some(visited) = seen.get_mut(id) else {
         return Err(CodecError::malformed(
             "validation identity index omits an entity",
@@ -67,7 +71,7 @@ macro_rules! define_model_identity_checks {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn check_model_identity_and_order<'a>(
             ir: &'a CadIr,
-            seen: &mut BorrowedIdentities<'a, bool>,
+            seen: &mut Option<BorrowedIdentities<'a, bool>>,
             findings: &mut Vec<Finding>,
         ) -> Result<(), CodecError> {
             $(
@@ -84,14 +88,15 @@ crate::document::arena_registry!(define_model_identity_checks);
 
 /// Check model and native identities and preserve arena-ordered findings.
 pub(super) fn check_identity_and_order(
-    view: crate::native::view::NativeView<'_>,
+    ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    let view = ids.native_view();
     // Build the complete identity table once. Ordered insertion for each visit
     // would shift the existing slots quadratically on large models. Every
     // occurrence of an identity updates the same last slot, preserving which
     // visit first reports a duplicate and the original finding order.
-    let mut seen = BorrowedIdentities::build(|add| {
+    let mut seen = (!ids.entity_identities_distinct()).then(|| BorrowedIdentities::build(|add| {
         macro_rules! collect_model_identities {
             ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
                 $(for entity in &view.ir.model.$field {
@@ -105,7 +110,7 @@ pub(super) fn check_identity_and_order(
                 add(record.id(), false);
             }
         });
-    });
+    }));
     check_model_identity_and_order(view.ir, &mut seen, findings)?;
     let mut by_arena: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     view.visit::<cadmpeg_core::CodecError>(|format, arena, records| {

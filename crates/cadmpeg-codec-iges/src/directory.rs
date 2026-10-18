@@ -268,7 +268,13 @@ pub(crate) fn metadata_losses(entries: &[DirectoryEntry]) -> Vec<LossNote> {
             ("subscript", entry.subscript),
         ] {
             if value.is_none() {
-                let note = IgesLossCode::DirectoryMetadataUnreadable.note(format!("Directory D{} {name} is unreadable; interpretation fields and exact source cards remain available", entry.sequence)).with_provenance(entry.loss_provenance());
+                let note = IgesLossCode::DirectoryMetadataUnreadable
+                    .note(format!(
+                        "Directory D{} {name} is unreadable; interpretation fields and exact \
+                         source cards remain available",
+                        entry.sequence
+                    ))
+                    .with_provenance(entry.loss_provenance());
                 losses.push(note);
             }
         }

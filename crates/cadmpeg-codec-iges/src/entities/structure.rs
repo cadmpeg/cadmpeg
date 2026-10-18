@@ -2334,7 +2334,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2538,10 +2538,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "property value layout, attachment, or owner kind is invalid"
-                ),
+                format_args!("property value layout, attachment, or owner kind is invalid"),
             );
         }
     }
@@ -2554,7 +2551,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2626,7 +2623,7 @@ pub(super) fn project(
                 attribute_shapes.insert(entry.sequence, shape);
             }
         } else {
-            super::push_entity_loss(&mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"));
+            super::push_entity_loss(&mut losses, entry, format_args!("attribute-table definition header, value type, value, or display link is invalid"));
         }
     }
 
@@ -2638,7 +2635,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2684,7 +2681,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "attribute-table instance definition, row count, or typed value is invalid"
                 ),
             );
@@ -2699,7 +2695,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2731,7 +2727,14 @@ pub(super) fn project(
         if units_valid && directory_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(&mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"));
+            super::push_entity_loss(
+                &mut losses,
+                entry,
+                format_args!(
+                    "units count, type/value pair, scale factor, uniqueness, or Directory \
+                     fields are invalid"
+                ),
+            );
         }
     }
 
@@ -2740,7 +2743,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2770,7 +2773,14 @@ pub(super) fn project(
         if directory_valid && classes_valid && cursor == record.parameter_end() {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(&mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"));
+            super::push_entity_loss(
+                &mut losses,
+                entry,
+                format_args!(
+                    "associativity form, class count, class flags, item layout, or Directory \
+                     fields are invalid"
+                ),
+            );
         }
     }
 
@@ -2782,7 +2792,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2811,10 +2821,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "group member list or required association back pointer is invalid"
-                ),
+                format_args!("group member list or required association back pointer is invalid"),
             );
         }
     }
@@ -2827,7 +2834,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -2878,7 +2885,14 @@ pub(super) fn project(
                 }
             }
         } else {
-            super::push_entity_loss(&mut losses, entry, format_args!("{}", "predefined associativity counts, class layout, links, back pointers, or structure are invalid"));
+            super::push_entity_loss(
+                &mut losses,
+                entry,
+                format_args!(
+                    "predefined associativity counts, class layout, links, back pointers, or \
+                     structure are invalid"
+                ),
+            );
         }
     }
 
@@ -2977,10 +2991,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "legacy single-parent plane hole failed neutral topology validation"
-                ),
+                format_args!("legacy single-parent plane hole failed neutral topology validation"),
             );
         }
     }
@@ -3017,7 +3028,14 @@ pub(super) fn project(
         if flow_targets_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(&mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"));
+            super::push_entity_loss(
+                &mut losses,
+                entry,
+                format_args!(
+                    "flow class counts, flags, typed links, required back pointers, \
+                     continuation tree, or directory status is invalid"
+                ),
+            );
         }
     }
 
@@ -3029,7 +3047,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3046,7 +3064,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "external-reference file, symbolic, or library identifier is empty or invalid"
                 ),
             );
@@ -3075,7 +3092,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3133,7 +3150,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "array base, dimensions, selection mask, transform, or acyclicity is invalid"
                 ),
             );
@@ -3148,7 +3164,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3213,7 +3229,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "connect-point fields, references, placement, or use flag are invalid"
                 ),
             );
@@ -3229,7 +3244,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3243,7 +3258,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid-instance target pointer is invalid"),
+                format_args!("solid-instance target pointer is invalid"),
             );
         }
     }
@@ -3270,10 +3285,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "solid-instance form, target, transform, or acyclicity is invalid"
-                ),
+                format_args!("solid-instance form, target, transform, or acyclicity is invalid"),
             );
         }
     }
@@ -3286,7 +3298,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3294,7 +3306,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid-assembly item count is not positive"),
+                format_args!("solid-assembly item count is not positive"),
             );
             continue;
         };
@@ -3320,7 +3332,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "solid-assembly item tuple is invalid"),
+                format_args!("solid-assembly item tuple is invalid"),
             );
             continue;
         }
@@ -3397,7 +3409,6 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 format_args!(
-                    "{}",
                     "solid-assembly use flag, form, members, transforms, or acyclicity is invalid"
                 ),
             );
@@ -3416,7 +3427,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3433,10 +3444,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "subfigure depth, member count, or member pointer is invalid"
-                ),
+                format_args!("subfigure depth, member count, or member pointer is invalid"),
             );
             continue;
         };
@@ -3461,7 +3469,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3494,7 +3502,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "subfigure-instance definition pointer is invalid"),
+                format_args!("subfigure-instance definition pointer is invalid"),
             );
             continue;
         };
@@ -3514,7 +3522,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3535,7 +3543,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "network definition header or member list is invalid"),
+                format_args!("network definition header or member list is invalid"),
             );
             continue;
         };
@@ -3561,7 +3569,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "network definition connect-point count is invalid"),
+                format_args!("network definition connect-point count is invalid"),
             );
             continue;
         };
@@ -3596,7 +3604,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "Parameter Data record is missing"),
+                format_args!("Parameter Data record is missing"),
             );
             continue;
         };
@@ -3648,7 +3656,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!("{}", "network instance definition or count is invalid"),
+                format_args!("network instance definition or count is invalid"),
             );
             continue;
         };
@@ -3697,10 +3705,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "subfigure definition fields or nesting depth is invalid"
-                ),
+                format_args!("subfigure definition fields or nesting depth is invalid"),
             );
         }
     }
@@ -3718,10 +3723,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "subfigure-instance placement or decoded definition is invalid"
-                ),
+                format_args!("subfigure-instance placement or decoded definition is invalid"),
             );
         }
     }
@@ -3755,10 +3757,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "network definition fields or nesting depth is invalid"
-                ),
+                format_args!("network definition fields or nesting depth is invalid"),
             );
         }
     }
@@ -3792,10 +3791,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
-                format_args!(
-                    "{}",
-                    "network instance placement or connection list is invalid"
-                ),
+                format_args!("network instance placement or connection list is invalid"),
             );
         }
     }

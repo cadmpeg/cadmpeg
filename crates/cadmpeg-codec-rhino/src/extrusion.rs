@@ -1680,11 +1680,10 @@ pub(crate) mod tests {
         )
         .expect("the extrusion survives without its optional cache");
         assert!(decoded.meshes.is_empty());
-        assert!(decoded
-            .warnings
-            .messages()
-            .any(|message| message.contains("extrusion mesh cache dropped")
-                && message.contains("document mesh buffer budget exceeded")));
+        assert!(decoded.warnings.messages().any(|message| message
+            .contains("extrusion mesh cache dropped")
+            && message
+                .contains("document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)")));
     }
 
     #[test]

@@ -1119,9 +1119,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                         )
                                     })
                                 }
-                                domain => {
-                                    compact_boundary_domain_viable(ctx, domain, &selected, None)?
-                                }
+                                domain => compact_boundary_domain_viable(domain, &selected, None)?,
                             };
                             if !viable {
                                 return Ok(false);

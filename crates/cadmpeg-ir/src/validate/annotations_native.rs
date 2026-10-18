@@ -2,7 +2,7 @@
 //! Validation of borrowed annotations and native product links.
 
 use crate::document::CadIr;
-use crate::index::identities::BorrowedIdentities;
+use crate::index::identities::{BorrowedIdentities, IdentitySet};
 use crate::native::view::{NativeEntity, NativeView};
 use crate::report::{
     check::{Check, Finding},
@@ -47,7 +47,7 @@ pub(super) fn check_annotations(
     ctx: &DecodeContext<'_>,
     view: NativeView<'_>,
     annotations: &crate::Annotations,
-    all_ids: &BorrowedIdentities<'_>,
+    all_ids: &dyn IdentitySet,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut wanted = BorrowedIdentities::build(|add| {
@@ -252,21 +252,9 @@ pub(super) fn check_native_links(
     findings: &mut Vec<Finding>,
 ) {
     let ir = view.ir;
-    let all_targets = BorrowedIdentities::build(|add| {
-        for id in all_ids.identities(crate::index::StandardIndex) {
-            add(id, ());
-        }
-    });
-    let native_ids = BorrowedIdentities::build(|add| {
-        view.for_each(|_, _, records| {
-            for record in records.records() {
-                add(record.id(), ());
-            }
-        });
-    });
     for feature in &ir.model.features {
         if let Some(target) = &feature.native_ref {
-            if !native_ids.contains(target.as_str()) {
+            if !all_ids.native_record_owns(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -283,7 +271,7 @@ pub(super) fn check_native_links(
             },
         ) = feature.evaluation.definition()
         {
-            if !native_ids.contains(target.as_str()) {
+            if !all_ids.native_record_owns(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -296,7 +284,7 @@ pub(super) fn check_native_links(
     }
     for parameter in &ir.model.parameters {
         if let Some(target) = &parameter.native_ref {
-            if !native_ids.contains(target.as_str()) {
+            if !all_ids.native_record_owns(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -307,7 +295,7 @@ pub(super) fn check_native_links(
             }
         }
         if let Some(semantic) = &parameter.pmi {
-            if !native_ids.contains(semantic.native_ref.as_str()) {
+            if !all_ids.native_record_owns(semantic.native_ref.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -320,7 +308,7 @@ pub(super) fn check_native_links(
     }
     for configuration in &ir.model.configurations {
         if let Some(target) = &configuration.native_ref {
-            if !native_ids.contains(target.as_str()) {
+            if !all_ids.native_record_owns(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -333,7 +321,7 @@ pub(super) fn check_native_links(
     }
     for sketch in &ir.model.sketches {
         if let Some(target) = &sketch.native_ref {
-            if !native_ids.contains(target.as_str()) {
+            if !all_ids.native_record_owns(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -346,7 +334,7 @@ pub(super) fn check_native_links(
     }
     for sketch in &ir.model.spatial_sketches {
         if let Some(target) = &sketch.native_ref {
-            if !native_ids.contains(target.as_str()) {
+            if !all_ids.native_record_owns(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -359,7 +347,7 @@ pub(super) fn check_native_links(
     }
     for constraint in &ir.model.sketch_constraints {
         if let Some(target) = &constraint.native_ref {
-            if !native_ids.contains(target.as_str()) {
+            if !all_ids.native_record_owns(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -374,7 +362,7 @@ pub(super) fn check_native_links(
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {
-                    if !native_ids.contains(target.as_str()) {
+                    if !all_ids.native_record_owns(target.as_str()) {
                         super::record_finding(
                             findings,
                             Check::NativeLinks,
@@ -389,7 +377,7 @@ pub(super) fn check_native_links(
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         if let Some(target) = &constraint.native_ref {
-            if !native_ids.contains(target.as_str()) {
+            if !all_ids.native_record_owns(target.as_str()) {
                 super::record_finding(
                     findings,
                     Check::NativeLinks,
@@ -405,7 +393,7 @@ pub(super) fn check_native_links(
         {
             for operand in operands {
                 if let Some(target) = &operand.native_ref {
-                    if !native_ids.contains(target.as_str()) {
+                    if !all_ids.native_record_owns(target.as_str()) {
                         super::record_finding(
                             findings,
                             Check::NativeLinks,
@@ -426,7 +414,7 @@ pub(super) fn check_native_links(
         for entity in records.records() {
             let NativeEntity::Product(record) = entity else {
                 for target in entity.links() {
-                    if !all_targets.contains(&target) {
+                    if !all_ids.contains(&target, crate::index::StandardIndex) {
                         super::record_finding(
                             findings,
                             Check::NativeLinks,
@@ -471,7 +459,7 @@ pub(super) fn check_native_links(
                     );
                     continue;
                 };
-                if !all_targets.contains(target) {
+                if !all_ids.contains(target, crate::index::StandardIndex) {
                     super::record_finding(
                         findings,
                         Check::NativeLinks,

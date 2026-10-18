@@ -230,7 +230,8 @@ const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
 /// one document. Rejected expansions stay charged, so the copy work of the
 /// document is bounded even when every reference is rolled back.
 const MAX_INSTANCE_COPY_ELEMENTS: usize = 1 << 26;
-const ENTITY_BUDGET_EXCEEDED: &str = "document instance entity budget exceeded";
+const ENTITY_BUDGET_EXCEEDED: &str =
+    "document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)";
 const COPY_ELEMENT_BUDGET_EXCEEDED: &str =
     "document instance copy element budget exceeded (MAX_INSTANCE_COPY_ELEMENTS)";
 
@@ -277,7 +278,7 @@ impl ExpansionBudget {
             Ok(())
         } else {
             Err(ReferenceFailure::Semantic(
-                "document instance reference budget exceeded".to_owned(),
+                "document instance reference budget exceeded (MAX_INSTANCE_REFERENCES)".to_owned(),
             ))
         }
     }
@@ -287,7 +288,7 @@ impl ExpansionBudget {
             Ok(())
         } else {
             Err(ReferenceFailure::Semantic(
-                "document instance member budget exceeded".to_owned(),
+                "document instance member budget exceeded (MAX_INSTANCE_MEMBERS)".to_owned(),
             ))
         }
     }

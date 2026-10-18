@@ -40,7 +40,7 @@ fn brep_surface_endpoint_keeps_evaluator_resource_refusal() {
     let result = super::surface_point_or_refusal(Err(EvaluationFailure::ResourceLimit(limit)));
     assert!(matches!(
         result,
-        Err(super::super::composite::CompositeCurveError::Budget(
+        Err(super::super::composite::CompositeCurveError::Resource(
             CodecError::ResourceLimit(actual)
         )) if actual == limit && actual.dimension == ResourceDimension::RetainedBytes
     ));
