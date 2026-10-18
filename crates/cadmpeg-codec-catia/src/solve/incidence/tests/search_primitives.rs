@@ -6,6 +6,10 @@ use crate::solve::incidence::incidence_choice_components;
 
 use crate::solve::mesh_quotient::MeshQuotient;
 
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
+
+use cadmpeg_core::decode::WorkBudget;
+
 use crate::solve::tests::repeated_domain;
 
 use crate::solve::missing_edge::MeshFaceBoundaryDomain;
@@ -205,6 +209,7 @@ fn common_boundary_propagation_succeeds_for_a_single_ordered_face() {
             &domains,
             &candidates,
             &mut quotient,
+            &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
     };
     assert_eq!(

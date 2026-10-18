@@ -197,6 +197,46 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert_valid(&result);
 }
 
+/// Under every allowance up to the one it needs, the standard mesh search
+/// either finds the topology it finds under the production allowance or skips
+/// it with a loss; it never refuses the decode. Each candidate solve also
+/// asserts in test builds that its allowance paid for all of its work.
+#[test]
+fn fbb_only_mesh_incidence_stays_within_every_topology_allowance() {
+    let bytes = fbb_only_quad_unmatched_edge_catpart();
+    let attached = |result: &EditableDecodeResult| {
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str(),
+        ) == 1
+    };
+    let production = decode(bytes.clone());
+    assert!(attached(&production));
+
+    let mut limit = 0;
+    let smallest = loop {
+        let result =
+            crate::test_support::with_standard_topology_limit(limit, || decode(bytes.clone()));
+        if attached(&result) {
+            break result;
+        }
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("exhausted its operation")),
+            "allowance {limit}: {:?}",
+            result.report().losses
+        );
+        limit += 1;
+        assert!(limit < 10_000, "the fixture needs a small allowance");
+    };
+    assert!(limit > 0);
+    assert_eq!(smallest.ir(), production.ir());
+    assert_valid(&smallest);
+}
+
 #[test]
 fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     let bytes = zero_entity_cylinder_parametric_support_catpart();

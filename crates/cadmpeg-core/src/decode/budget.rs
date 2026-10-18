@@ -6,6 +6,7 @@
 //! every later charge fails and `finish_session` returns the refusal.
 
 use std::cell::Cell;
+use std::rc::Rc;
 
 use crate::CodecError;
 
@@ -291,8 +292,15 @@ impl Drop for DepthGuard<'_> {
 #[derive(Debug)]
 pub struct WorkBudget {
     limit: usize,
-    remaining: Cell<Option<usize>>,
+    account: Rc<WorkAccount>,
     recursion_depth: Cell<usize>,
+}
+
+/// Remaining units of one counter, and the counter that pays for its work.
+#[derive(Debug)]
+struct WorkAccount {
+    remaining: Cell<Option<usize>>,
+    parent: Option<Rc<WorkAccount>>,
 }
 
 /// RAII guard for one recursive frame of a [`WorkBudget`].
@@ -315,12 +323,25 @@ impl WorkBudget {
 
     /// Creates a work counter with `limit` units.
     #[must_use]
-    pub const fn new(limit: usize) -> Self {
+    pub fn new(limit: usize) -> Self {
+        Self::with_parent(limit, None)
+    }
+
+    fn with_parent(limit: usize, parent: Option<Rc<WorkAccount>>) -> Self {
         Self {
             limit,
-            remaining: Cell::new(Some(limit)),
+            account: Rc::new(WorkAccount {
+                remaining: Cell::new(Some(limit)),
+                parent,
+            }),
             recursion_depth: Cell::new(0),
         }
+    }
+
+    fn ancestors(&self) -> impl Iterator<Item = &WorkAccount> {
+        std::iter::successors(self.account.parent.as_deref(), |account| {
+            account.parent.as_deref()
+        })
     }
 
     /// Charges one work unit, returning false after exhaustion.
@@ -329,37 +350,65 @@ impl WorkBudget {
     }
 
     /// Charges several work units, with sticky exhaustion on refusal.
+    ///
+    /// A charging slice also charges every counter it was drawn from. A
+    /// charge that one of them cannot pay exhausts this counter only.
     pub fn charge_by(&self, work: usize) -> bool {
-        let Some(remaining) = self.remaining.get() else {
+        let charged = self.debit(work);
+        #[cfg(feature = "test-support")]
+        if charged {
+            super::test_support::record_work(work);
+        }
+        charged
+    }
+
+    fn debit(&self, work: usize) -> bool {
+        let Some(remaining) = self.account.remaining.get() else {
             return false;
         };
-        if work > remaining {
-            self.remaining.set(None);
-            false
-        } else {
-            self.remaining.set(Some(remaining - work));
-            true
+        let affordable = |account: &WorkAccount| {
+            account
+                .remaining
+                .get()
+                .is_some_and(|remaining| work <= remaining)
+        };
+        if work > remaining || !self.ancestors().all(affordable) {
+            self.exhaust();
+            return false;
         }
+        self.account.remaining.set(Some(remaining - work));
+        for account in self.ancestors() {
+            account
+                .remaining
+                .set(account.remaining.get().map(|remaining| remaining - work));
+        }
+        true
     }
 
     /// Returns whether this counter has refused a charge.
     pub fn exhausted(&self) -> bool {
-        self.remaining.get().is_none()
+        self.account.remaining.get().is_none()
     }
 
-    /// Marks this counter exhausted.
+    /// Marks this counter exhausted. The counters it was drawn from are not.
     pub fn exhaust(&self) {
-        self.remaining.set(None);
+        self.account.remaining.set(None);
     }
 
-    /// Returns unconsumed work units.
+    /// Returns the work units a charge can still use: the smallest remainder
+    /// of this counter and every counter it was drawn from.
     pub fn remaining(&self) -> usize {
-        self.remaining.get().unwrap_or(0)
+        std::iter::once(&*self.account)
+            .chain(self.ancestors())
+            .map(|account| account.remaining.get().unwrap_or(0))
+            .min()
+            .unwrap_or(0)
     }
 
-    /// Returns charged work and the remainder forfeited by exhaustion.
+    /// Returns work charged to this counter and the remainder forfeited by
+    /// exhaustion.
     pub fn consumed(&self) -> usize {
-        self.limit - self.remaining()
+        self.limit - self.account.remaining.get().unwrap_or(0)
     }
 
     /// Enters one recursive frame, refusing past [`WorkBudget::RECURSION_DEPTH`].
@@ -375,9 +424,23 @@ impl WorkBudget {
     }
 
     /// Creates a child counter capped by this counter's remainder.
+    ///
+    /// The child's charges do not reach this counter until
+    /// [`WorkBudget::consume_child`] transfers them.
     #[must_use]
     pub fn child_slice(&self, limit: usize) -> WorkBudget {
         WorkBudget::new(limit.min(self.remaining()))
+    }
+
+    /// Creates a child counter of at most `limit` units whose every charge is
+    /// also charged to this counter, so the work below a counter never
+    /// exceeds its limit.
+    ///
+    /// Exhausting the child, by its own limit or by an ancestor that cannot
+    /// pay, leaves this counter usable.
+    #[must_use]
+    pub fn charging_slice(&self, limit: usize) -> WorkBudget {
+        WorkBudget::with_parent(limit.min(self.remaining()), Some(Rc::clone(&self.account)))
     }
 
     /// Charges this counter for work consumed by a child counter.
@@ -387,7 +450,7 @@ impl WorkBudget {
     /// [`BudgetExhausted`] when the child's work is above this counter's
     /// remainder. The counter marks itself exhausted in that case.
     pub fn consume_child(&self, child: &WorkBudget) -> Result<(), BudgetExhausted> {
-        if self.charge_by(child.consumed()) {
+        if self.debit(child.consumed()) {
             Ok(())
         } else {
             Err(BudgetExhausted)
@@ -460,6 +523,35 @@ mod tests {
         assert!(greedy.charge_by(5));
         assert!(parent.consume_child(&greedy).is_err());
         assert!(parent.exhausted());
+    }
+
+    #[test]
+    fn charging_slices_charge_every_ancestor_and_exhaust_locally() {
+        let root = WorkBudget::new(10);
+        let child = root.charging_slice(8);
+        let grandchild = child.charging_slice(100);
+        assert_eq!(grandchild.remaining(), 8);
+        assert!(grandchild.charge_by(3));
+        assert_eq!((root.remaining(), child.remaining()), (7, 5));
+        assert_eq!(grandchild.consumed(), 3);
+
+        assert!(root.charge_by(5));
+        assert_eq!(grandchild.remaining(), 2);
+        assert!(!grandchild.charge_by(3));
+        assert!(grandchild.exhausted());
+        assert!(!child.exhausted() && !root.exhausted());
+        assert_eq!((root.remaining(), child.remaining()), (2, 2));
+
+        let sibling = child.charging_slice(1);
+        assert!(sibling.charge());
+        assert!(!sibling.charge());
+        assert!(!child.exhausted());
+        assert_eq!(root.remaining(), 1);
+
+        root.exhaust();
+        assert!(!child.charge());
+        assert!(child.exhausted());
+        assert_eq!(root.consumed(), 10);
     }
 
     #[test]

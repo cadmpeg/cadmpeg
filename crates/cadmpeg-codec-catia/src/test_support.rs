@@ -38,6 +38,28 @@ pub(crate) fn topology_budget() -> cadmpeg_core::decode::WorkBudget {
     cadmpeg_core::decode::WorkBudget::new(crate::solve::mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS)
 }
 
+thread_local! {
+    static STANDARD_TOPOLOGY_LIMIT: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The work limit of each standard population's topology search: the
+/// production limit, or the one set by [`with_standard_topology_limit`].
+pub(crate) fn standard_topology_limit() -> usize {
+    STANDARD_TOPOLOGY_LIMIT
+        .get()
+        .unwrap_or(crate::solve::mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS)
+}
+
+/// Runs `run` with every standard topology search on this thread limited to
+/// `limit` work units.
+pub(crate) fn with_standard_topology_limit<T>(limit: usize, run: impl FnOnce() -> T) -> T {
+    let outer = STANDARD_TOPOLOGY_LIMIT.replace(Some(limit));
+    let result = run();
+    STANDARD_TOPOLOGY_LIMIT.set(outer);
+    result
+}
+
 pub(crate) fn with_entity_limit<T>(
     max_entities: u64,
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,

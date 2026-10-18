@@ -5,7 +5,7 @@ use crate::solve::mesh_quotient::selection_search::mesh_assignment_can_merge;
 use crate::solve::mesh_quotient::{
     admit_orientation_option, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
     orientation_fingerprint, orientation_options_equivalent, possible_face_choices,
-    possible_face_choices_with_limit, possible_face_equations, MeshQuotient, MeshSelectionSearch,
+    possible_face_choices_within, possible_face_equations, MeshQuotient, MeshSelectionSearch,
     SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
@@ -601,10 +601,10 @@ fn face_choice_materialization_declines_when_its_work_budget_is_exhausted() {
     let equations = possible_face_equations(&assignments);
 
     let mut choices = Vec::new();
-    assert!(!possible_face_choices_with_limit(
+    assert!(!possible_face_choices_within(
         &assignments,
         &equations,
-        0,
+        &WorkBudget::new(0),
         &mut choices
     ));
 }
@@ -1423,8 +1423,12 @@ fn face_choice_materialization_declines_when_budget_ends_between_masks() {
     let fallback = vec![vec![[0, 1]]];
     let run = |work_limit| {
         let mut choices = Vec::new();
-        let complete =
-            possible_face_choices_with_limit(&assignments, &fallback, work_limit, &mut choices);
+        let complete = possible_face_choices_within(
+            &assignments,
+            &fallback,
+            &WorkBudget::new(work_limit),
+            &mut choices,
+        );
         complete.then_some(choices)
     };
     assert!(run(2).is_none());
@@ -1445,7 +1449,8 @@ fn face_choices_use_the_fallback_equations_for_13_unknown_edges() {
     let faces = [vec![assignment]];
     let fallback = [vec![[0, 1]]];
     let mut choices = Vec::new();
-    let complete = possible_face_choices_with_limit(&faces, &fallback, 2, &mut choices);
+    let complete =
+        possible_face_choices_within(&faces, &fallback, &WorkBudget::new(2), &mut choices);
     assert_eq!(complete.then_some(choices), Some(vec![vec![vec![[0, 1]]]]));
 }
 

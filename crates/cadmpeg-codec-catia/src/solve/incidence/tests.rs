@@ -1160,6 +1160,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
         &choices,
         &[None; 2],
         &[true; 2],
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
     .expect("prepare face configuration domains")
     .expect("compiled face factors");
@@ -1236,6 +1237,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
         &choices,
         &[None; 2],
         &[true; 2],
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
     .expect("prepare face configuration domains")
     .expect("compiled face factors");
@@ -1303,6 +1305,7 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
         &choices,
         &selected,
         &[false, true, false],
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
     .expect("prepare face configuration domains")
     .expect("ordered face factors");
@@ -1317,6 +1320,7 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
         &compatible,
         &selected,
         &[false, true, false],
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     )
     .expect("prepare face configuration domains")
     .expect("compatible ordered face factors");

@@ -1,4 +1,4 @@
-use crate::solve::mesh_quotient::possible_face_choices_with_limit;
+use crate::solve::mesh_quotient::possible_face_choices_within;
 use crate::solve::mesh_quotient::{
     possible_face_choices, possible_face_equations, MeshQuotient, MeshSelectionSearch,
     SearchOutcome, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
@@ -130,7 +130,12 @@ fn forced_face_equations_propagate_for_a_two_edge_loop() {
     let run = |ctx: &DecodeContext<'_>| {
         let equations = possible_face_equations(&assignments);
         let mut choices = Vec::new();
-        if !possible_face_choices_with_limit(&assignments, &equations, usize::MAX, &mut choices) {
+        if !possible_face_choices_within(
+            &assignments,
+            &equations,
+            &WorkBudget::new(usize::MAX),
+            &mut choices,
+        ) {
             return Ok(false);
         }
         let search = MeshSelectionSearch {

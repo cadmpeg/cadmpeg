@@ -7,10 +7,10 @@ use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable;
 use crate::solve::mesh_quotient::mesh_face_endpoint_configurations;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support;
-use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support_with_limit;
 use crate::solve::mesh_quotient::selection_search::mesh_edge_points_compatible;
 use crate::solve::mesh_quotient::MeshIncidenceBoundary;
 use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::missing_edge::bind_edge_port_candidates;
 use crate::solve::missing_edge::expand_deferred_edge_port_components;
 use crate::solve::missing_edge::propagate_edge_port_points;
@@ -1294,7 +1294,8 @@ fn mesh_endpoint_pair_support_propagates_across_incident_faces() {
 
     assert!(prune_mesh_endpoint_pair_support(
         &mut assignments,
-        &mut candidates
+        &mut candidates,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     ));
     assert_eq!(candidates[0], vec![[0, 1]]);
     assert_eq!(assignments[1], vec![assignment(&[0, 3, 4])]);
@@ -1312,10 +1313,10 @@ fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradictio
     }]];
     let mut candidates = vec![vec![[0, 0]]];
 
-    assert!(prune_mesh_endpoint_pair_support_with_limit(
+    assert!(prune_mesh_endpoint_pair_support(
         &mut assignments,
         &mut candidates,
-        0,
+        &WorkBudget::new(0),
     ));
 }
 
@@ -1508,6 +1509,7 @@ fn mesh_endpoint_pair_support_accepts_consistent_alternate_faces() {
     ];
     assert!(prune_mesh_endpoint_pair_support(
         &mut assignments,
-        &mut candidates
+        &mut candidates,
+        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
     ));
 }
