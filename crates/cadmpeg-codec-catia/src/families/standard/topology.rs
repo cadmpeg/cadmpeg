@@ -675,9 +675,9 @@ pub(super) fn complete_duplicate_face_slots(
         solutions: &mut Vec<Vec<usize>>,
         operations: &WorkBudget,
     ) -> Result<(), CodecError> {
-        let _depth = inputs
-            .ctx
-            .enter_nested("catia_standard_duplicate_face_search")?;
+        let Ok(_depth) = operations.recursion_guard() else {
+            return Ok(());
+        };
         if operations.exhausted() || solutions.len() > 1 {
             return Ok(());
         }

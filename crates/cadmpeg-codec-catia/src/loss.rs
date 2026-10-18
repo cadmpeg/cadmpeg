@@ -122,6 +122,10 @@ pub(crate) enum CatiaLossCode {
     HistoryObjectRecordsUnresolved,
     /// Legacy design runs retain unresolved selector, relation, and feature semantics.
     HistoryLegacyRunsUnresolved,
+    /// Configuration-row links kept no intervening entities at their allowance.
+    HistoryConfigurationRowOrderBounded,
+    /// Relations kept no parameter dependencies at their allowance.
+    HistoryRelationDependenciesBounded,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -168,6 +172,8 @@ impl CatiaLossCode {
         Self::HistoryModelingScopeUnresolved,
         Self::HistoryObjectRecordsUnresolved,
         Self::HistoryLegacyRunsUnresolved,
+        Self::HistoryConfigurationRowOrderBounded,
+        Self::HistoryRelationDependenciesBounded,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesVisualizationUnbound,
@@ -215,6 +221,8 @@ impl CatiaLossCode {
             Self::HistoryModelingScopeUnresolved => "history.modeling-scope-unresolved",
             Self::HistoryObjectRecordsUnresolved => "history.object-records-unresolved",
             Self::HistoryLegacyRunsUnresolved => "history.legacy-runs-unresolved",
+            Self::HistoryConfigurationRowOrderBounded => "history.configuration-row-order-bounded",
+            Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -287,7 +295,9 @@ impl CatiaLossCode {
             | Self::AttributesVisualizationUnbound => LossTaxonomy::AttributesNotTransferred,
             Self::HistoryModelingScopeUnresolved
             | Self::HistoryObjectRecordsUnresolved
-            | Self::HistoryLegacyRunsUnresolved => LossTaxonomy::FeatureHistoryRetained,
+            | Self::HistoryLegacyRunsUnresolved
+            | Self::HistoryConfigurationRowOrderBounded
+            | Self::HistoryRelationDependenciesBounded => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -362,6 +372,8 @@ mod tests {
                 "history.modeling-scope-unresolved",
                 "history.object-records-unresolved",
                 "history.legacy-runs-unresolved",
+                "history.configuration-row-order-bounded",
+                "history.relation-dependencies-bounded",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.visualization-unbound",

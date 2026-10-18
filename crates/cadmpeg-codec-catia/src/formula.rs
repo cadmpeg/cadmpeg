@@ -234,11 +234,10 @@ pub(crate) fn transfer_parameters(
             || {
                 let type_checked = (if formula_type_complete {
                     evaluate_formula_expression_with_mode(
-                        ctx,
                         &expression.expression.value,
                         &type_bindings,
                         false,
-                    )?
+                    )
                 } else {
                     None
                 })
@@ -247,11 +246,7 @@ pub(crate) fn transfer_parameters(
                         .is_some_and(|source_type| value.satisfies_source_type(source_type))
                 });
                 let evaluated = (if formula_complete {
-                    evaluate_formula_expression(
-                        ctx,
-                        &expression.expression.value,
-                        &expression_bindings,
-                    )?
+                    evaluate_formula_expression(&expression.expression.value, &expression_bindings)
                 } else {
                     None
                 })
@@ -1016,7 +1011,7 @@ fn collect_legacy_parameters(
                 continue;
             };
             let Some(evaluation) =
-                legacy_relation_evaluation(ctx, relation, &parameters_by_name, candidates)?
+                legacy_relation_evaluation(relation, &parameters_by_name, candidates)
             else {
                 continue;
             };
@@ -1067,24 +1062,20 @@ struct LegacyRelationEvaluation<'a> {
 // typed, same-run packet for every input. This is the complete local binding
 // rule; unresolved selector namespaces never participate in the join.
 fn legacy_relation_evaluation<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     relation: &'a crate::native::CatiaLegacyRelation,
     parameters_by_name: &HashMap<String, Vec<ParameterId>>,
     candidates: &BTreeMap<ParameterId, FormulaParameterCandidate>,
-) -> Result<Option<LegacyRelationEvaluation<'a>>, cadmpeg_core::CodecError> {
+) -> Option<LegacyRelationEvaluation<'a>> {
     let (source_type, expression) = match relation.output.as_ref() {
         Some(output) if relation.result_type == "VoidType" => {
-            let Some(expression) =
-                legacy_output_assignment_expression(&relation.expression, &output.parameter)
-            else {
-                return Ok(None);
-            };
+            let expression =
+                legacy_output_assignment_expression(&relation.expression, &output.parameter)?;
             (output.value_type.as_str(), expression)
         }
         None if relation.result_type != "VoidType" => {
             (relation.result_type.as_str(), relation.expression.as_str())
         }
-        _ => return Ok(None),
+        _ => return None,
     };
     let symbols = if relation.inputs.is_empty() {
         Vec::new()
@@ -1097,27 +1088,23 @@ fn legacy_relation_evaluation<'a>(
     let mut dependency_set = HashSet::new();
     for input in &relation.inputs {
         if !symbol_heads.binds(&input.parameter) {
-            return Ok(None);
+            return None;
         }
         let [parameter_id] = parameters_by_name
             .get(&input.parameter)
             .map(Vec::as_slice)
             .unwrap_or_default()
         else {
-            return Ok(None);
+            return None;
         };
         if !dependency_set.insert(parameter_id) {
-            return Ok(None);
+            return None;
         }
-        let Some(candidate) = candidates.get(parameter_id) else {
-            return Ok(None);
-        };
+        let candidate = candidates.get(parameter_id)?;
         if canonical_parameter_type(&input.value_type) != Some(candidate.parameter_type) {
-            return Ok(None);
+            return None;
         }
-        let Some(value) = candidate.parameter.value.as_ref() else {
-            return Ok(None);
-        };
+        let value = candidate.parameter.value.as_ref()?;
         let evaluated = match value {
             ParameterValue::String(value) => {
                 EvaluatedFormulaValue::String(EvaluatedFormulaString::known(value.to_owned()))
@@ -1128,20 +1115,16 @@ fn legacy_relation_evaluation<'a>(
         let dependency = parameter_id.clone();
         dependencies.push(dependency);
     }
-    let Some(evaluated) = evaluate_formula_expression(ctx, expression, &bindings)? else {
-        return Ok(None);
-    };
-    let Some(source_type_kind) = canonical_parameter_type(source_type) else {
-        return Ok(None);
-    };
-    Ok(evaluated
+    let evaluated = evaluate_formula_expression(expression, &bindings)?;
+    let source_type_kind = canonical_parameter_type(source_type)?;
+    evaluated
         .satisfies_source_type(source_type_kind)
         .then_some(LegacyRelationEvaluation {
             source_type,
             expression,
             evaluated,
             dependencies,
-        }))
+        })
 }
 
 /// The relation input names that a set of relation symbols binds.
@@ -1553,17 +1536,16 @@ fn relation_program_output_candidate<'a>(
 
     let parse = parses.get_or_parse(expression_entity.id.as_str(), inputs, || {
         let type_checked = evaluate_formula_expression_with_mode(
-            ctx,
             &expression.expression.value,
             &type_bindings,
             false,
-        )?
+        )
         .filter(|value| {
             canonical_parameter_type(&signature.result_type)
                 .is_some_and(|source_type| value.satisfies_source_type(source_type))
         });
         let evaluated = (if all_inputs_complete {
-            evaluate_formula_expression(ctx, &expression.expression.value, &expression_bindings)?
+            evaluate_formula_expression(&expression.expression.value, &expression_bindings)
         } else {
             None
         })
@@ -2287,12 +2269,10 @@ impl std::fmt::Display for CasedText<'_> {
     }
 }
 
-struct FormulaExpressionParser<'a, 'b, 'c, 'd> {
+struct FormulaExpressionParser<'a, 'b> {
     source: &'a str,
     at: usize,
     bindings: &'b BTreeMap<&'a str, EvaluatedFormulaValue>,
-    ctx: &'c cadmpeg_core::decode::DecodeContext<'d>,
-    refusal: Option<cadmpeg_core::CodecError>,
     evaluate: bool,
     static_check: bool,
 }
@@ -2348,25 +2328,11 @@ fn static_all_integral(left: Option<bool>, right: Option<bool>) -> Option<bool> 
     (left == Some(true) && right == Some(true)).then_some(true)
 }
 
-impl FormulaExpressionParser<'_, '_, '_, '_> {
-    fn admit<T>(&mut self, result: Result<T, cadmpeg_core::CodecError>) -> Option<T> {
-        match result {
-            Ok(value) => Some(value),
-            Err(error) => {
-                self.refusal = Some(error);
-                None
-            }
-        }
-    }
-
-    fn parse(mut self) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-        let value = self.conditional(0);
-        if let Some(error) = self.refusal {
-            return Err(error);
-        }
-        let Some(value) = value else { return Ok(None) };
+impl FormulaExpressionParser<'_, '_> {
+    fn parse(mut self) -> Option<EvaluatedFormulaValue> {
+        let value = self.conditional(0)?;
         self.skip_whitespace();
-        Ok((self.at == self.source.len()).then_some(value))
+        (self.at == self.source.len()).then_some(value)
     }
 
     fn conditional(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
@@ -3773,11 +3739,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     }
 
     fn peek(&self) -> Option<u8> {
-        if self.refusal.is_some() {
-            None
-        } else {
-            self.source.as_bytes().get(self.at).copied()
-        }
+        self.source.as_bytes().get(self.at).copied()
     }
 
     fn remaining(&self) -> &str {
@@ -3793,32 +3755,26 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         if depth >= MAX_FORMULA_EXPRESSION_DEPTH {
             return None;
         }
-        let ctx = self.ctx;
-        let _depth = self.admit(ctx.enter_nested("catia_formula_expression_depth"))?;
         parse(self, depth + 1)
     }
 }
 
 fn evaluate_formula_expression<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
-) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-    evaluate_formula_expression_with_mode(ctx, source, bindings, true)
+) -> Option<EvaluatedFormulaValue> {
+    evaluate_formula_expression_with_mode(source, bindings, true)
 }
 
 fn evaluate_formula_expression_with_mode<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
     evaluate: bool,
-) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
+) -> Option<EvaluatedFormulaValue> {
     FormulaExpressionParser {
         source,
         at: 0,
         bindings,
-        ctx,
-        refusal: None,
         evaluate,
         static_check: !evaluate,
     }
@@ -3946,20 +3902,6 @@ mod parser_tests {
             &unset_candidate(FormulaParameterType::Length),
             &unset_candidate(FormulaParameterType::Real)
         ));
-    }
-
-    #[test]
-    fn formula_parser_refuses_recursion_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits input limit");
-        let refused = super::evaluate_formula_expression(&ctx, "true ? 1 ; 2", &BTreeMap::new());
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_formula_expression_depth")
-        );
     }
 
     #[test]
@@ -4322,17 +4264,8 @@ mod parser_tests {
         let bindings = BTreeMap::new();
         for (depth, accepted) in [(128, true), (129, false)] {
             let expression = format!("{}1{}", "true ? ".repeat(depth), " ; 1".repeat(depth));
-            crate::test_support::with_service_context(|ctx| {
-                let result = super::evaluate_formula_expression(ctx, &expression, &bindings);
-                assert_eq!(
-                    result
-                        .expect("the local depth ceiling is not a session refusal")
-                        .is_some(),
-                    accepted,
-                    "{depth}"
-                );
-                assert_eq!(ctx.resource_refusal(), None);
-            });
+            let result = super::evaluate_formula_expression(&expression, &bindings);
+            assert_eq!(result.is_some(), accepted, "{depth}");
         }
     }
 

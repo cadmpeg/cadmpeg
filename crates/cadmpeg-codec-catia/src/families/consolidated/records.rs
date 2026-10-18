@@ -1149,83 +1149,93 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
 
 /// Resolve compact edge endpoint references through the framed allocation walk.
 pub(crate) fn consolidated_compact_edge_endpoints_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedCompactEdgeEndpoints>, CodecError> {
-    struct EndpointResolver<'a, 'b> {
-        ctx: &'a DecodeContext<'b>,
+) -> Vec<ConsolidatedCompactEdgeEndpoints> {
+    struct EndpointResolver<'a> {
         records: &'a [ConsolidatedRecord],
         nodes: &'a HashMap<usize, B2EdgeNode>,
         allocation_locations: &'a HashMap<usize, (usize, usize)>,
         allocation_scopes: &'a [Vec<usize>],
-        active: HashSet<(usize, usize)>,
         memo: HashMap<(usize, usize), Option<usize>>,
     }
 
-    impl EndpointResolver<'_, '_> {
-        fn resolve(
-            &mut self,
-            record_index: usize,
-            endpoint: usize,
-        ) -> Result<Option<usize>, CodecError> {
-            let key = (record_index, endpoint);
-            if let Some(cached) = self.memo.get(&key) {
-                return Ok(*cached);
-            }
-            let _depth = self
-                .ctx
-                .enter_nested("catia_compact_endpoint_resolution_depth")?;
+    /// One endpoint reference: a vertex record, or an edge-use record whose
+    /// end endpoint the reference defers to.
+    enum EndpointStep {
+        Vertex(usize),
+        Through(usize),
+    }
 
-            if !self.active.insert(key) {
-                return Ok(None);
+    impl EndpointResolver<'_> {
+        /// Follow a chain of deferring edge-use records to its vertex. Every
+        /// endpoint on the chain shares the chain's result; a chain that
+        /// returns to one of its own endpoints resolves to `None`.
+        fn resolve(&mut self, record_index: usize, endpoint: usize) -> Option<usize> {
+            let mut chain = Vec::new();
+            let mut on_chain = HashSet::new();
+            let mut key = (record_index, endpoint);
+            let result = loop {
+                if let Some(&cached) = self.memo.get(&key) {
+                    break cached;
+                }
+                if !on_chain.insert(key) {
+                    break None;
+                }
+                chain.push(key);
+                match self.step(key.0, key.1) {
+                    Some(EndpointStep::Vertex(target)) => break Some(target),
+                    Some(EndpointStep::Through(target)) => key = (target, 1),
+                    None => break None,
+                }
+            };
+            for key in chain {
+                self.memo.insert(key, result);
             }
-            let result = (|| {
-                let node = self.nodes.get(&record_index)?;
-                let reference = [node.start_vertex_ref, node.end_vertex_ref][endpoint];
-                let encoding = node.reference_encodings[endpoint + 1];
-                let &(scope, allocation_ordinal) = self.allocation_locations.get(&record_index)?;
-                let target = match encoding {
-                    AllocationReferenceEncoding::OwnedChild => allocation_ordinal
-                        .checked_add(1)?
-                        .checked_add(usize::try_from(reference).ok()?)
-                        .and_then(|target| self.allocation_scopes.get(scope)?.get(target))
-                        .copied()?,
-                    AllocationReferenceEncoding::BackwardDistance => {
-                        let target =
-                            allocation_ordinal.checked_sub(usize::try_from(reference).ok()?)?;
-                        *self.allocation_scopes.get(scope)?.get(target)?
-                    }
-                    AllocationReferenceEncoding::WidthCoded => {
-                        let target = record_index.checked_add(usize::try_from(reference).ok()?)?;
-                        let target_record = self.records.get(target)?;
-                        if target_record.source_index()
-                            != self.records.get(record_index)?.source_index()
-                            || target_record.family() != ConsolidatedFamily::B
-                            || target_record.class() != 0x18
-                        {
-                            return None;
-                        }
-                        return Some(Ok(target));
-                    }
-                    AllocationReferenceEncoding::Selector2
-                    | AllocationReferenceEncoding::TaggedU8
-                    | AllocationReferenceEncoding::TaggedU16 => return None,
-                };
-                let target_record = self.records.get(target)?;
-                if target_record.family() != ConsolidatedFamily::B {
-                    return None;
+            result
+        }
+
+        fn step(&self, record_index: usize, endpoint: usize) -> Option<EndpointStep> {
+            let node = self.nodes.get(&record_index)?;
+            let reference = [node.start_vertex_ref, node.end_vertex_ref][endpoint];
+            let encoding = node.reference_encodings[endpoint + 1];
+            let &(scope, allocation_ordinal) = self.allocation_locations.get(&record_index)?;
+            let target = match encoding {
+                AllocationReferenceEncoding::OwnedChild => allocation_ordinal
+                    .checked_add(1)?
+                    .checked_add(usize::try_from(reference).ok()?)
+                    .and_then(|target| self.allocation_scopes.get(scope)?.get(target))
+                    .copied()?,
+                AllocationReferenceEncoding::BackwardDistance => {
+                    let target =
+                        allocation_ordinal.checked_sub(usize::try_from(reference).ok()?)?;
+                    *self.allocation_scopes.get(scope)?.get(target)?
                 }
-                match target_record.class() {
-                    0x5d => Some(Ok(target)),
-                    0x5e => self.resolve(target, 1).transpose(),
-                    _ => None,
+                AllocationReferenceEncoding::WidthCoded => {
+                    let target = record_index.checked_add(usize::try_from(reference).ok()?)?;
+                    let target_record = self.records.get(target)?;
+                    if target_record.source_index()
+                        != self.records.get(record_index)?.source_index()
+                        || target_record.family() != ConsolidatedFamily::B
+                        || target_record.class() != 0x18
+                    {
+                        return None;
+                    }
+                    return Some(EndpointStep::Vertex(target));
                 }
-            })();
-            self.active.remove(&key);
-            let result = result.transpose()?;
-            self.memo.insert(key, result);
-            Ok(result)
+                AllocationReferenceEncoding::Selector2
+                | AllocationReferenceEncoding::TaggedU8
+                | AllocationReferenceEncoding::TaggedU16 => return None,
+            };
+            let target_record = self.records.get(target)?;
+            if target_record.family() != ConsolidatedFamily::B {
+                return None;
+            }
+            match target_record.class() {
+                0x5d => Some(EndpointStep::Vertex(target)),
+                0x5e => Some(EndpointStep::Through(target)),
+                _ => None,
+            }
         }
     }
 
@@ -1257,19 +1267,17 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         }
     }
     let mut resolver = EndpointResolver {
-        ctx,
         records,
         nodes: &nodes,
         allocation_locations: &allocation_locations,
         allocation_scopes: &allocation_scopes,
-        active: HashSet::new(),
         memo: HashMap::new(),
     };
     let mut endpoints = Vec::new();
     for (&record_index, &node) in &nodes {
         let vertices = [
-            resolver.resolve(record_index, 0)?,
-            resolver.resolve(record_index, 1)?,
+            resolver.resolve(record_index, 0),
+            resolver.resolve(record_index, 1),
         ];
         let [Some(start), Some(end)] = vertices else {
             continue;
@@ -1280,19 +1288,18 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         });
     }
     endpoints.sort_by_key(|left| left.node.pos);
-    Ok(endpoints)
+    endpoints
 }
 
 /// Derive owner-local four-edge boundary cycles from fixed-nine references.
 /// Every returned endpoint is closed by the same bounded record source as its
 /// owner. Other fixed-nine roles remain unclassified.
 pub(crate) fn consolidated_owner_boundary_cycles_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedOwnerBoundaryCycle>, CodecError> {
+) -> Vec<ConsolidatedOwnerBoundaryCycle> {
     let mut endpoint_records = HashMap::new();
-    for binding in consolidated_compact_edge_endpoints_from_records(ctx, data, records)? {
+    for binding in consolidated_compact_edge_endpoints_from_records(data, records) {
         endpoint_records.insert(binding.node.pos, binding.endpoint_records);
     }
     let mut face_nodes = BTreeMap::new();
@@ -1376,7 +1383,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
             cycles.push(cycle);
         }
     }
-    Ok(cycles)
+    cycles
 }
 
 /// Build the native endpoint-incidence graph for all complete consolidated

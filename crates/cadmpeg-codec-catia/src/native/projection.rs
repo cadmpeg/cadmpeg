@@ -28,10 +28,9 @@ use super::{
 };
 
 pub(crate) fn consolidated_owner_packets(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<CatiaConsolidatedOwnerPacket>, CodecError> {
+) -> Vec<CatiaConsolidatedOwnerPacket> {
     let fixed = crate::families::b2::records::b2_owner_packets_from_records(bytes, records)
         .collect::<Vec<_>>();
     let mut owner_charts = HashMap::new();
@@ -107,8 +106,8 @@ pub(crate) fn consolidated_owner_packets(
     let mut boundary_cycles = HashMap::new();
     for cycle in
         crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
-            ctx, bytes, records,
-        )?
+            bytes, records,
+        )
     {
         let key = (cycle.source_index, cycle.owner_pos);
         let value = CatiaOwnerBoundaryCycle {
@@ -265,7 +264,7 @@ pub(crate) fn consolidated_owner_packets(
                     }),
             });
     }
-    Ok(output)
+    output
 }
 
 pub(crate) fn consolidated_edge_runs(
@@ -346,7 +345,6 @@ pub(crate) fn consolidated_edge_runs(
 }
 
 pub(crate) fn consolidated_edge_nodes(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
@@ -373,8 +371,8 @@ pub(crate) fn consolidated_edge_nodes(
     let mut compact_endpoints = HashMap::new();
     for binding in
         crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
-            ctx, bytes, records,
-        )?
+            bytes, records,
+        )
     {
         compact_endpoints.insert(
             binding.node.pos,

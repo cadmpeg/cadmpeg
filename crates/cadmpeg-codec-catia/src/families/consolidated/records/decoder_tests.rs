@@ -34,20 +34,14 @@ fn parsed_compact_edge_endpoints(
     bytes: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Vec<crate::families::consolidated::records::ConsolidatedCompactEdgeEndpoints> {
-    crate::test_support::with_service_context(|ctx| {
-        super::consolidated_compact_edge_endpoints_from_records(ctx, bytes, records)
-            .expect("decode the consolidated compact edge endpoints")
-    })
+    super::consolidated_compact_edge_endpoints_from_records(bytes, records)
 }
 
 fn parsed_owner_boundary_cycles(
     bytes: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Vec<crate::families::consolidated::records::ConsolidatedOwnerBoundaryCycle> {
-    crate::test_support::with_service_context(|ctx| {
-        super::consolidated_owner_boundary_cycles_from_records(ctx, bytes, records)
-            .expect("decode the consolidated owner boundary cycles")
-    })
+    super::consolidated_owner_boundary_cycles_from_records(bytes, records)
 }
 
 #[test]
@@ -774,6 +768,37 @@ fn compact_endpoint_walk_resolves_children_and_backward_edge_links() {
         endpoints[1].endpoint_records,
         [first_vertex_pos, second_vertex_pos]
     );
+}
+
+#[test]
+fn compact_endpoint_walk_follows_a_deferring_chain_past_any_recursion_limit() {
+    let first_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
+    ];
+    let vertex = [0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00];
+    let deferring_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x21, 0x05, 0x05, 0x06, 0x32, 0x06, 0x33, 0x21,
+    ];
+    let chain = 2_000;
+    let first_vertex_pos = first_edge.len();
+    let second_vertex_pos = first_vertex_pos + vertex.len();
+    let mut bytes = first_edge.to_vec();
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&vertex);
+    for _ in 0..chain {
+        bytes.extend_from_slice(&deferring_edge);
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let endpoints = parsed_compact_edge_endpoints(&bytes, &records);
+
+    assert_eq!(endpoints.len(), chain + 1);
+    assert_eq!(
+        endpoints[0].endpoint_records,
+        [first_vertex_pos, second_vertex_pos]
+    );
+    assert!(endpoints[1..]
+        .iter()
+        .all(|edge| edge.endpoint_records == [second_vertex_pos, second_vertex_pos]));
 }
 
 #[test]

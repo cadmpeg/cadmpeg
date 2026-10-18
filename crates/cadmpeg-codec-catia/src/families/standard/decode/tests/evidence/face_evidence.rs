@@ -458,6 +458,17 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
 }
 
 #[test]
+fn fallback_pair_relation_allowance_grows_with_candidate_points() {
+    use crate::families::standard::decode::fallback_pair_relation_allowance;
+
+    assert_eq!(fallback_pair_relation_allowance(&[vec![0, 1, 2]]), 65_536);
+    assert_eq!(
+        fallback_pair_relation_allowance(&vec![vec![0; 512]; 4]),
+        2048 * 64
+    );
+}
+
+#[test]
 fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
     let constraint = super::super::super::StandardLinePairConstraint::new(&[], &[], &[]);
     assert!(constraint.edge_pairs(&[None]).is_none());

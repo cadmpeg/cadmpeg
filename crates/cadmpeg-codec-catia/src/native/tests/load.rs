@@ -1219,7 +1219,7 @@ fn derived_configuration_row_chains_match_decoded_chains() {
         classes: &classes,
         terminal_nulls: &terminal_nulls,
     };
-    let chains = crate::test_support::with_service_context(|ctx| {
+    let derived = crate::test_support::with_service_context(|ctx| {
         super::super::derive_schema_configuration_row_chains(
             ctx,
             &native.entity_records,
@@ -1227,6 +1227,8 @@ fn derived_configuration_row_chains_match_decoded_chains() {
         )
     })
     .expect("derive the configuration row chains");
+    assert_eq!(derived.bounded_links, 0);
+    let chains = derived.chains;
     assert_eq!(chains, native.schema_configuration_row_chains);
 
     let links = chains
@@ -1260,7 +1262,9 @@ fn derived_configuration_row_chains_match_decoded_chains() {
         })
     };
     assert_eq!(
-        derive_within(retained).expect("the kept reference text fits its own length"),
+        derive_within(retained)
+            .expect("the kept reference text fits its own length")
+            .chains,
         chains
     );
     let error = derive_within(retained - 1).expect_err("every kept reference text is charged");
@@ -1269,6 +1273,57 @@ fn derived_configuration_row_chains_match_decoded_chains() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
     ));
+}
+
+#[test]
+fn configuration_row_links_past_the_intervening_allowance_keep_no_order() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let classes = super::super::entity_class_index(
+        native.object_graphs.iter().flat_map(|graph| &graph.records),
+    );
+    let (_, _, entities, terminal_nulls, _) =
+        super::super::semantic_entity_indices(&native.entity_records, &classes)
+            .expect("native semantic indices fit service limits");
+    let references = super::super::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        terminal_nulls: &terminal_nulls,
+    };
+    let derive_within = |allowance| {
+        crate::test_support::with_service_context(|ctx| {
+            super::super::schema_configuration_chain::derive_schema_configuration_row_chains_within(
+                ctx,
+                &native.entity_records,
+                &references,
+                allowance,
+            )
+        })
+        .expect("a bounded link is a loss, not a refusal")
+    };
+    let intervening = |chains: &[super::super::CatiaSchemaConfigurationRowChain]| {
+        chains
+            .iter()
+            .flat_map(super::super::CatiaSchemaConfigurationRowChain::links)
+            .map(|link| link.intervening_entities.as_ref().map(Vec::len))
+            .collect::<Vec<_>>()
+    };
+    let full = derive_within(3);
+    assert_eq!(full.bounded_links, 0);
+    assert_eq!(full.chains, native.schema_configuration_row_chains);
+    assert_eq!(intervening(&full.chains), [Some(1), Some(1), Some(1)]);
+
+    let bounded = derive_within(2);
+    assert_eq!(bounded.bounded_links, 1);
+    assert_eq!(intervening(&bounded.chains), [Some(1), Some(1), None]);
+    assert_eq!(
+        bounded.chains[0].terminal,
+        native.schema_configuration_row_chains[0].terminal
+    );
+
+    let empty = derive_within(0);
+    assert_eq!(empty.bounded_links, 3);
+    assert_eq!(intervening(&empty.chains), [None, None, None]);
 }
 
 #[test]
@@ -1323,7 +1378,7 @@ fn configuration_entity_produces_a_schema_configuration_record() {
             &references,
             &expressions,
             &expression_entities,
-            &mut super::super::RelationDependencies::new(&bindings),
+            &mut super::super::RelationDependencies::new(&bindings, usize::MAX),
         )
     })
     .expect("select the configuration object production");

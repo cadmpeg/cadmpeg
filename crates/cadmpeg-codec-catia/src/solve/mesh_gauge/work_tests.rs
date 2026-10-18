@@ -152,19 +152,17 @@ fn identical_edge_rows_keep_the_identity_row_mapping() {
 }
 
 #[test]
+fn coordinate_find_compresses_a_parent_chain_longer_than_any_recursion_limit() {
+    let points = 100_000usize;
+    let mut parent = std::iter::once(0).chain(0..points - 1).collect::<Vec<_>>();
+    assert_eq!(super::coordinate_find(&mut parent, points - 1), 0);
+    assert!(parent.iter().all(|&root| root == 0));
+}
+
+#[test]
 fn coordinate_permutations_of_two_points_list_both_orders() {
     let mut output = vec![];
-    crate::test_support::with_service_context(|ctx| {
-        super::enumerate_coordinate_permutations(
-            ctx,
-            &[0, 1],
-            0,
-            &mut vec![],
-            &mut [false; 2],
-            &mut output,
-        )
-    })
-    .expect("two permutations fit service work");
+    super::enumerate_coordinate_permutations(&[0, 1], 0, &mut vec![], &mut [false; 2], &mut output);
     assert_eq!(output, vec![vec![0, 1], vec![1, 0]]);
 }
 

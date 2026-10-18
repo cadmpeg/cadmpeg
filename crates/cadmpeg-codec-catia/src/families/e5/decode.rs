@@ -3197,6 +3197,8 @@ fn e5_ownership_plan(
         HashMap::<u32, usize>::new(),
         "catia_e5_body_uses",
     )?;
+    let mut faces_by_body =
+        ctx.alloc_filled(body_faces.len(), Vec::new(), "catia_e5_body_faces")?;
     let mut bodies_by_edge = HashMap::new();
     for &edge in topology.edges.keys() {
         bodies_by_edge.insert(edge, HashSet::new());
@@ -3205,6 +3207,7 @@ fn e5_ownership_plan(
         let Some(&body) = body_by_face.get(&face.record_id) else {
             return Ok(None);
         };
+        faces_by_body[body].push(face);
         for edge in face
             .loops
             .iter()
@@ -3237,11 +3240,7 @@ fn e5_ownership_plan(
         }
         let mut parents = UnionFind::new(faces.len());
         let mut first_face_by_edge = HashMap::<u32, usize>::new();
-        for face in topology
-            .faces
-            .iter()
-            .filter(|face| body_by_face[&face.record_id] == body)
-        {
+        for face in &faces_by_body[body] {
             let face_index = face_indices[&face.record_id];
             for edge in face
                 .loops

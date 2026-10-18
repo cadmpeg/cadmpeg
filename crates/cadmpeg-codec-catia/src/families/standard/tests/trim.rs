@@ -46,40 +46,26 @@ fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
 #[test]
 fn endpoint_trail_ordering_stops_when_its_result_limit_is_exceeded() {
     let trails = (0..10).map(|edge| vec![edge]).collect::<Vec<_>>();
-    crate::test_support::with_service_context(|ctx| {
-        assert!(bounded_oriented_trail_orders(ctx, &trails, 16)
-            .expect("compute the bounded oriented trail orders")
-            .is_none());
-        assert_eq!(
-            bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2)
-                .expect("compute the bounded oriented trail orders"),
-            Some(vec![vec![0, 1], vec![1, 0]])
-        );
-    });
+    assert!(bounded_oriented_trail_orders(&trails, 16).is_none());
+    assert_eq!(
+        bounded_oriented_trail_orders(&[vec![0], vec![1]], 2),
+        Some(vec![vec![0, 1], vec![1, 0]])
+    );
 }
 
 #[test]
 fn endpoint_cycle_ordering_quotients_rotation_and_reversal() {
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    crate::test_support::with_service_context(|ctx| {
-        assert_eq!(
-            bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
-                .expect("compute the bounded endpoint cycle orders"),
-            Some(vec![vec![0, 1, 2]])
-        );
-    });
+    assert_eq!(
+        bounded_endpoint_cycle_orders(&[2, 0, 1], &candidates, 4),
+        Some(vec![vec![0, 1, 2]])
+    );
 }
 
 #[test]
 fn endpoint_cycle_ordering_stops_at_its_result_limit() {
     let candidates = vec![vec![[0, 0]]; 8];
-    crate::test_support::with_service_context(|ctx| {
-        assert!(
-            bounded_endpoint_cycle_orders(ctx, &(0..8).collect::<Vec<_>>(), &candidates, 16)
-                .expect("compute the bounded endpoint cycle orders")
-                .is_none()
-        );
-    });
+    assert!(bounded_endpoint_cycle_orders(&(0..8).collect::<Vec<_>>(), &candidates, 16).is_none());
 }
 
 #[test]
@@ -775,20 +761,12 @@ fn allocation_program_rejects_an_unconsumed_trim_packet() {
 fn two_trails_have_two_orders_and_a_triangle_has_one_cycle() {
     let trails = [vec![0], vec![1]];
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    let trail_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        bounded_oriented_trail_orders(ctx, &trails, 2)
-    };
-    let cycle_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
-    };
     assert_eq!(
-        crate::test_support::with_service_context(trail_run)
-            .expect("compute the bounded oriented trail orders"),
+        bounded_oriented_trail_orders(&trails, 2),
         Some(vec![vec![0, 1], vec![1, 0]])
     );
     assert_eq!(
-        crate::test_support::with_service_context(cycle_run)
-            .expect("compute the bounded endpoint cycle orders"),
+        bounded_endpoint_cycle_orders(&[2, 0, 1], &candidates, 4),
         Some(vec![vec![0, 1, 2]])
     );
 }

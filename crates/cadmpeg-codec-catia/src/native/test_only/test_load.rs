@@ -203,6 +203,7 @@ impl CatiaNative {
         let expected_schema_configuration_row_chains =
             crate::test_support::with_service_context(|ctx| {
                 derive_schema_configuration_row_chains(ctx, &entity_records, &entity_references)
+                    .map(|derived| derived.chains)
             })
             .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         if schema_configuration_row_chains != expected_schema_configuration_row_chains {
@@ -330,7 +331,10 @@ impl CatiaNative {
                                         &entity_references,
                                         &relation_expressions,
                                         &relation_expression_entities,
-                                        &mut RelationDependencies::new(&parameter_bindings),
+                                        &mut RelationDependencies::new(
+                                            &parameter_bindings,
+                                            usize::MAX,
+                                        ),
                                     )
                                 })
                                 .ok()
