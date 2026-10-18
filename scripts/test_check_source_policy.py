@@ -508,6 +508,32 @@ class PatternFilters(unittest.TestCase):
 
 
 
+class CheckoutLocationTests(unittest.TestCase):
+    """The directories that hold the checkout do not classify its files."""
+
+    def check_under(self, parent: str) -> list[policy.Finding]:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name) / parent / "cadmpeg"
+        for relative in ("crates/demo/src/lib.rs", "crates/demo/fuzz_targets/target.rs"):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fn f(n: usize) { let _v = vec![0_u8; n]; }\n", encoding="utf-8")
+        with patch.object(policy, "ROOT", root):
+            findings = [item for item in policy.check_source() if item.rule == "unchecked_vec_repeat"]
+            self.assertFalse(policy.is_production_rs(root / "crates/demo/fuzz_targets/target.rs"))
+            self.assertTrue(policy.is_production_rs(root / "crates/demo/src/lib.rs"))
+        return findings
+
+    def test_checkout_under_src_scans_only_crate_sources(self) -> None:
+        findings = self.check_under("src")
+        self.assertEqual([item.path for item in findings], ["crates/demo/src/lib.rs"])
+
+    def test_checkout_under_tests_still_scans_crate_sources(self) -> None:
+        findings = self.check_under("tests")
+        self.assertEqual([item.path for item in findings], ["crates/demo/src/lib.rs"])
+
+
 class PlacementRules(TempSourceCase):
     def test_production_cfg_is_not_test_placement_or_excluded_from_size(self) -> None:
         self.write("crates/demo/src/lib.rs", '\n'.join([
