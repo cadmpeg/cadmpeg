@@ -35,7 +35,7 @@ use crate::native::{
     definition_schema_selections, derive_reference_signature_cohorts, design_object_id,
     design_objects, entity_class_index, entity_suffix_framing, entity_suffix_schema_selection,
     entity_suffix_value, entity_value_schema_selections, object_production, payload_references,
-    range_interval, reference_signature, semantic_entity_indices, store_projection,
+    reference_signature, resolved_range_interval, semantic_entity_indices, store_projection,
     terminal_null_entity_id, value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
     CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
     CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
@@ -195,12 +195,16 @@ impl CatiaNative {
                 "CATIA reference-signature cohorts are not canonical".to_string(),
             ));
         }
-        let expected_schema_configuration_row_chains = derive_schema_configuration_row_chains(
-            &entity_records,
-            &entities_by_graph_identity,
-            &entity_classes_by_graph_identity,
-            &terminal_nulls_by_graph,
-        );
+        let entity_references = CatiaEntityReferenceIndex {
+            entities: &entities_by_graph_identity,
+            classes: &entity_classes_by_graph_identity,
+            terminal_nulls: &terminal_nulls_by_graph,
+        };
+        let expected_schema_configuration_row_chains =
+            crate::test_support::with_service_context(|ctx| {
+                derive_schema_configuration_row_chains(ctx, &entity_records, &entity_references)
+            })
+            .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         if schema_configuration_row_chains != expected_schema_configuration_row_chains {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "schema-configuration-row chains do not match their successor links".to_string(),
@@ -237,19 +241,18 @@ impl CatiaNative {
                         .any(|entity| !valid_entity_record_shape(entity))
                     || graph_entities.iter().any(|entity| {
                         entity.reference_signature
-                            != entity_table::parse_reference_signature(entity.value_payload()).map(
-                                |production| {
-                                    reference_signature(
-                                        production,
-                                        &graph.id,
-                                        &CatiaEntityReferenceIndex {
-                                            entities: &entities_by_graph_identity,
-                                            classes: &entity_classes_by_graph_identity,
-                                            terminal_nulls: &terminal_nulls_by_graph,
-                                        },
-                                    )
-                                },
-                            )
+                            != entity_table::parse_reference_signature(entity.value_payload())
+                                .and_then(|production| {
+                                    crate::test_support::with_service_context(|ctx| {
+                                        reference_signature(
+                                            ctx,
+                                            production,
+                                            &graph.id,
+                                            &entity_references,
+                                        )
+                                    })
+                                    .ok()
+                                })
                     })
                     || graph_entities.iter().any(|entity| {
                         let selectors = entity_table::parse_definition_schema_selectors(
@@ -274,7 +277,12 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         let fields = entity.value_fields();
-                        entity.value_production != value_production(entity, &incidences, &fields)
+                        crate::test_support::with_service_context(|ctx| {
+                            value_production(ctx, entity, &incidences, &fields)
+                        })
+                        .ok()
+                        .as_ref()
+                            != Some(&entity.value_production)
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_value()
@@ -293,14 +301,19 @@ impl CatiaNative {
                             != Some(&entity.suffix_schema_selection)
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.range_interval
-                            != range_interval(
+                        crate::test_support::with_service_context(|ctx| {
+                            resolved_range_interval(
+                                ctx,
                                 entity.value_payload(),
                                 &entity.value_schema_selections,
                                 entity.suffix_value(),
                                 &incidences,
                                 entity.entity_id,
                             )
+                        })
+                        .ok()
+                        .as_ref()
+                            != Some(&entity.range_interval)
                     })
                     || graph_entities.iter().any(|entity| {
                         let object = graph
@@ -314,11 +327,7 @@ impl CatiaNative {
                                         ctx,
                                         entity,
                                         object,
-                                        &CatiaEntityReferenceIndex {
-                                            entities: &entities_by_graph_identity,
-                                            classes: &entity_classes_by_graph_identity,
-                                            terminal_nulls: &terminal_nulls_by_graph,
-                                        },
+                                        &entity_references,
                                         &relation_expressions,
                                         &relation_expression_entities,
                                         &mut RelationDependencies::new(&parameter_bindings),
