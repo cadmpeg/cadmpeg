@@ -233,6 +233,11 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         Plane,
         Carrier,
     }
+    let parameters =
+        crate::decode::uniqueness::UniqueById::new(&scan.surfaces.parameters, |record| {
+            record.surface_id
+        });
+    let rows = crate::decode::uniqueness::UniqueById::new(&scan.surfaces.rows, |row| row.id);
     let local_planes = placed_planes(scan)?;
     let mut frames = Vec::new();
     let mut planes = Vec::new();
@@ -249,7 +254,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
             crate::surface::SurfaceKind::Cylinder => CylinderExtentSurface::Carrier,
             _ => return Ok(None),
         };
-        if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
+        if rows.get(row.id) != Some(row) {
             return Ok(None);
         }
         let Some(source_geometry) = unique_source_surface_geometry(ir, source_carriers, row.id)
@@ -291,9 +296,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                 )) => {
                     let origin = cylinder_surface.origin().get();
                     let axis = *cylinder_surface.frame().axis();
-                    let Some(parameters) =
-                        crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
-                    else {
+                    let Some(parameters) = parameters.get(row.id) else {
                         return Ok(None);
                     };
                     let Some(frame) = parameters.positional_cylinder_frame() else {

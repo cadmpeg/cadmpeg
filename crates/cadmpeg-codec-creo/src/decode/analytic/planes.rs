@@ -1078,14 +1078,18 @@ fn plane_candidate_pcurve_lies_on_carrier(
 }
 
 fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, CarrierEquation> {
+    let parameters =
+        crate::decode::uniqueness::UniqueById::new(&scan.surfaces.parameters, |record| {
+            record.surface_id
+        });
     let mut carriers = BTreeMap::new();
     for row in crate::identity::uniquely_identified_rows(&scan.surfaces.rows, |row| row.id) {
         if row.kind != crate::surface::SurfaceKind::Cylinder {
             continue;
         }
-        let Some(frame) =
-            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
-                .and_then(crate::surface::SurfaceParameterRecord::positional_cylinder_frame)
+        let Some(frame) = parameters
+            .get(row.id)
+            .and_then(crate::surface::SurfaceParameterRecord::positional_cylinder_frame)
         else {
             continue;
         };
@@ -1396,6 +1400,8 @@ fn unique_round_edge_origin_candidate(
 fn round_edge_envelopes_for_plane(
     scan: &ContainerScan,
     plane_id: u32,
+    schema_classes: &crate::decode::sketch_transfer::recipe::FeatureSchemaClasses,
+    parameters: &crate::decode::uniqueness::UniqueById<crate::surface::SurfaceParameterRecord>,
 ) -> Vec<crate::surface::Type24RoundEdgeEnvelope> {
     let mut rows = BTreeMap::new();
     for row in crate::identity::uniquely_identified_rows(&scan.surfaces.rows, |row| row.id) {
@@ -1410,17 +1416,13 @@ fn round_edge_envelopes_for_plane(
                 *face_id != plane_id
                     && rows.get(face_id).is_some_and(|row| {
                         row.kind == crate::surface::SurfaceKind::Cylinder
-                            && crate::decode::sketch_transfer::recipe::feature_schema_class(
-                                scan,
-                                row.feature_id,
-                            ) == Some(SchemaClass::Round)
+                            && schema_classes.get(row.feature_id) == Some(SchemaClass::Round)
                     })
             })?;
             if !topology.bounds_face(plane_id) {
                 return None;
             }
-            let record =
-                crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?;
+            let record = parameters.get(cylinder_id)?;
             record.type24_round_edge_envelope()
         })();
         if let Some(envelope) = envelope {
@@ -1434,6 +1436,11 @@ fn select_round_edge_origin_branches(
     scan: &ContainerScan,
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
 ) {
+    let schema_classes = crate::decode::sketch_transfer::recipe::FeatureSchemaClasses::new(scan);
+    let parameters =
+        crate::decode::uniqueness::UniqueById::new(&scan.surfaces.parameters, |record| {
+            record.surface_id
+        });
     for frame in &scan.planes.local_systems {
         let decoded_frame = frame.frame();
         if frame.classification != crate::surface::LocalSystemClassification::Simple {
@@ -1461,7 +1468,8 @@ fn select_round_edge_origin_branches(
         if existing.len() != 1 || !plane_candidates_equivalent(existing[0], base) {
             continue;
         }
-        let envelopes = round_edge_envelopes_for_plane(scan, frame.surface_id);
+        let envelopes =
+            round_edge_envelopes_for_plane(scan, frame.surface_id, &schema_classes, &parameters);
         let (options, count) = stored_parameter_origin_sign_candidates(base);
         let Some(selected) = unique_round_edge_origin_candidate(&options[..count], &envelopes)
         else {

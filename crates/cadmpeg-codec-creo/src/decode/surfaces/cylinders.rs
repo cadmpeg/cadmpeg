@@ -29,11 +29,11 @@ use super::super::holes::counterbore::{
 use super::super::holes::placement::cylinder_from_complementary_outline_bounds;
 use super::super::holes::sweep::{circular_sweep_geometry, simple_hole_geometry};
 use super::super::native::annotate;
-use super::super::uniqueness::exactly_one;
+use super::super::uniqueness::{exactly_one, UniqueById};
 use crate::decode::analytic::equations::{plane_intersection_line, PlaneEquation};
 use crate::decode::analytic::planes::{is_axis_aligned, placed_planes, reconciled_model_plane};
 use crate::decode::sketch_transfer::recipe::{
-    feature_recipe, feature_schema_class, feature_section_sweep_semantics_conflict,
+    feature_recipe, feature_section_sweep_semantics_conflict, FeatureSchemaClasses,
 };
 use crate::vecmath::{cross, dot};
 
@@ -109,9 +109,12 @@ pub(in super::super) fn transfer_active_datum_cylinders(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     let namespaces = super::NativeSurfaceNamespaces::new(scan);
+    let mut surface_ids = crate::decode::uniqueness::ExactIdPositions::new(
+        ir.model.surfaces.iter().map(|surface| surface.id.as_str()),
+    );
     for datum in &scan.planes.datum_cylinders {
         let id = namespaces.surface_id(datum.id)?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if surface_ids.contains(id.as_str()) {
             continue;
         }
         let frame = datum.frame;
@@ -130,6 +133,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
+        let surface_position = ir.model.surfaces.len();
         source_carriers.admit_surface(
             ctx,
             ir,
@@ -156,6 +160,10 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                 }),
             },
         )?;
+        surface_ids.admit(
+            ir.model.surfaces[surface_position].id.as_str(),
+            surface_position,
+        );
         transferred += 1;
     }
     Ok(transferred)
@@ -455,6 +463,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let parameters = UniqueById::new(&scan.surfaces.parameters, |record| record.surface_id);
     let mut rows = BTreeMap::new();
     for row in crate::identity::uniquely_identified_rows(&scan.surfaces.rows, |row| row.id) {
         rows.insert(row.id, row);
@@ -504,14 +513,10 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         ) else {
             continue;
         };
-        let Some(first) =
-            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, first_id)
-        else {
+        let Some(first) = parameters.get(first_id) else {
             continue;
         };
-        let Some(second) =
-            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, second_id)
-        else {
+        let Some(second) = parameters.get(second_id) else {
             continue;
         };
         let Some(bounds) = first
@@ -943,10 +948,13 @@ pub(in super::super) fn transfer_positional_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
+    let schema_classes = FeatureSchemaClasses::new(scan);
+    let parameters = UniqueById::new(&scan.surfaces.parameters, |record| record.surface_id);
+    let rows = UniqueById::new(&scan.surfaces.rows, |row| row.id);
     let mut round_feature_ids = BTreeSet::new();
     for row in scan.surfaces.rows.iter().filter(|row| {
         row.kind == crate::surface::SurfaceKind::Cylinder
-            && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
+            && schema_classes.get(row.feature_id) == Some(SchemaClass::Round)
     }) {
         round_feature_ids.insert(row.feature_id);
     }
@@ -1000,17 +1008,16 @@ pub(in super::super) fn transfer_positional_cylinders(
     }
     let mut summary = PositionalCylinderTransferSummary::default();
     for record in &scan.surfaces.parameters {
-        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
-            != Some(record)
-        {
+        if parameters.get(record.surface_id) != Some(record) {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
+        let Some(row) = rows
+            .get(record.surface_id)
             .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         else {
             continue;
         };
-        let feature_class = feature_schema_class(scan, row.feature_id);
+        let feature_class = schema_classes.get(row.feature_id);
         let inline_non_plane = record.has_inline_non_plane_envelope()
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
         let selector_corner_interval = record.selector_corner_interval_cylinder_frame().is_some();
@@ -1496,17 +1503,18 @@ pub(in super::super) fn transfer_positional_cones(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let parameters = UniqueById::new(&scan.surfaces.parameters, |record| record.surface_id);
+    let rows = UniqueById::new(&scan.surfaces.rows, |row| row.id);
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
         let Some(frame) = record.positional_cone_frame() else {
             continue;
         };
-        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
-            != Some(record)
-        {
+        if parameters.get(record.surface_id) != Some(record) {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
+        let Some(row) = rows
+            .get(record.surface_id)
             .filter(|row| row.kind == crate::surface::SurfaceKind::Cone)
         else {
             continue;

@@ -21,8 +21,8 @@ use super::super::feature_history::round::{
 };
 use super::super::native::annotate;
 use super::super::sweep::nurbs::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
-use super::super::uniqueness::exactly_one;
-use crate::decode::sketch_transfer::recipe::feature_schema_class;
+use super::super::uniqueness::{exactly_one, UniqueById};
+use crate::decode::sketch_transfer::recipe::FeatureSchemaClasses;
 use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::vecmath::cross;
 
@@ -161,10 +161,13 @@ pub(in super::super) fn transfer_positional_tori(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let schema_classes = FeatureSchemaClasses::new(scan);
+    let parameters = UniqueById::new(&scan.surfaces.parameters, |record| record.surface_id);
+    let rows = UniqueById::new(&scan.surfaces.rows, |row| row.id);
     let mut round_feature_ids = BTreeSet::new();
     for row in &scan.surfaces.rows {
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
-            && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
+            && schema_classes.get(row.feature_id) == Some(SchemaClass::Round)
         {
             round_feature_ids.insert(row.feature_id);
         }
@@ -177,16 +180,13 @@ pub(in super::super) fn transfer_positional_tori(
     }
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
-        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
-        else {
+        let Some(row) = rows.get(record.surface_id) else {
             continue;
         };
         if row.kind != crate::surface::SurfaceKind::TorusOrSphere
-            || crate::surface::unique_surface_parameter(
-                &scan.surfaces.parameters,
-                record.surface_id,
-            )
-            .is_none_or(|unique| unique.offset != record.offset)
+            || parameters
+                .get(record.surface_id)
+                .is_none_or(|unique| unique.offset != record.offset)
         {
             continue;
         }
@@ -196,7 +196,7 @@ pub(in super::super) fn transfer_positional_tori(
         let inline_non_plane = record.has_inline_non_plane_envelope()
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
-            && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
+            && schema_classes.get(row.feature_id) == Some(SchemaClass::Round)
             && !constant_round_feature_ids.contains(&row.feature_id)
             && !inline_non_plane
         {
@@ -282,6 +282,8 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let parameters = UniqueById::new(&scan.surfaces.parameters, |record| record.surface_id);
+    let rows = UniqueById::new(&scan.surfaces.rows, |row| row.id);
     let mut replay_bound_surfaces = BTreeSet::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
         replay_bound_surfaces.insert(replay.surface_id);
@@ -291,12 +293,13 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         if replay_bound_surfaces.contains(&record.surface_id) {
             continue;
         }
-        if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
+        if parameters
+            .get(record.surface_id)
             .is_none_or(|unique| unique.offset != record.offset)
         {
             continue;
         }
-        if crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id).is_none() {
+        if rows.get(record.surface_id).is_none() {
             continue;
         }
         let Some(frame) = record.line_extrusion_frame() else {
@@ -487,6 +490,8 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let parameters = UniqueById::new(&scan.surfaces.parameters, |record| record.surface_id);
+    let rows = UniqueById::new(&scan.surfaces.rows, |row| row.id);
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
         *replay_counts.entry(replay.surface_id).or_default() += 1;
@@ -496,8 +501,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         if replay_counts.get(&replay.surface_id) != Some(&1) {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, replay.surface_id)
-        else {
+        let Some(row) = rows.get(replay.surface_id) else {
             continue;
         };
         if row.kind
@@ -508,9 +512,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         {
             continue;
         }
-        let Some(parameters) =
-            crate::surface::unique_surface_parameter(&scan.surfaces.parameters, replay.surface_id)
-        else {
+        let Some(parameters) = parameters.get(replay.surface_id) else {
             continue;
         };
         let chart_origin = unique_tabulated_cylinder_prototype(scan, replay)
