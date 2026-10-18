@@ -5480,13 +5480,13 @@ fn parse_circle_pcurve_fields(record: &B5Record) -> CirclePcurveFields {
         return None;
     }
     position += 2;
-    let [radius, start, end, orientation, phase] =
+    let [radius, start, end, orientation, _] =
         read_f64_array::<5>(&record.payload, position)?.map(FiniteReal::get);
     if radius <= 0.0 || start >= end || !matches!(orientation, -1.0 | 1.0) {
         return None;
     }
-    let start_angle = phase + orientation * start / radius;
-    let end_angle = phase + orientation * end / radius;
+    let start_angle = orientation * start / radius;
+    let end_angle = orientation * end / radius;
     Some((
         surface,
         center,

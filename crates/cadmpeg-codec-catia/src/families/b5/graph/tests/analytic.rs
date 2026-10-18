@@ -1948,3 +1948,5 @@ fn sampled_map_offset_uses_active_reference_range_inside_full_pcurve_domain() {
     .expect("bounded directrix parse")
     .is_none());
 }
+
+mod circle;
