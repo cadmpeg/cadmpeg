@@ -608,3 +608,109 @@ fn brep_projected_pcurve_use_adds_one_model_pcurve() {
     assert_eq!(projected.len(), 1);
     assert_eq!(candidate.model().pcurves.len(), 1);
 }
+
+/// An open shell whose loop repeats one edge `uses` times, each use naming
+/// the same composite pcurve: a degree-1, 64-span child joined to a
+/// single-span degree-127 child.
+fn shared_composite_pcurve_loop_file(uses: usize) -> Vec<u8> {
+    use crate::test_support::test_curves_and_surfaces::planar_nurbs_parameters;
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+
+    let entity = |entity_type, form, label: &str, status, parameters: String| OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status,
+        parameters,
+    };
+    let loop_uses = vec!["0,11,1,1,1,0,17"; uses].join(",");
+    owned_test_file(&[
+        entity(116, 0, "LOCATION", "00010000", "116,0,0,0,0;".into()),
+        entity(123, 0, "NORMAL", "00010000", "123,0,0,1;".into()),
+        entity(190, 0, "SURFACE", "00010000", "190,1,3;".into()),
+        entity(110, 0, "EDGE1", "00010000", "110,0,0,0,1,0,0;".into()),
+        entity(502, 1, "VERTICES", "00010000", "502,2,0,0,0,1,0,0;".into()),
+        entity(504, 1, "EDGES", "00010001", "504,1,7,9,1,9,2;".into()),
+        entity(
+            126,
+            0,
+            "LOW",
+            "00010500",
+            planar_nurbs_parameters(1, 64, false, |index| [f64::from(index) / 128.0, 0.0]),
+        ),
+        entity(
+            126,
+            0,
+            "HIGH",
+            "00010500",
+            planar_nurbs_parameters(127, 1, false, |index| [0.5 + f64::from(index) / 254.0, 0.0]),
+        ),
+        entity(102, 0, "PCURVE", "00010500", "102,2,13,15;".into()),
+        entity(
+            508,
+            1,
+            "LOOP",
+            "00010000",
+            format!("508,{uses},{loop_uses};"),
+        ),
+        entity(510, 1, "FACE", "00010000", "510,5,1,1,19;".into()),
+        entity(514, 2, "SHELL", "00000000", "514,1,21,1;".into()),
+    ])
+}
+
+#[test]
+fn decode_resolves_a_pcurve_shared_by_many_edge_uses_like_a_single_reference() {
+    // Raising 64 spans to degree 127 needs 2^20 blends; resolving the
+    // composite per edge use would cost that once for each use.
+    let decode = |uses| {
+        IgesCodec
+            .decode(
+                &mut Cursor::new(shared_composite_pcurve_loop_file(uses)),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    let use_pcurves = |result: &cadmpeg_ir::codec::DecodeResult| {
+        let model = &result.ir().model;
+        model
+            .coedges
+            .iter()
+            .map(|coedge| {
+                assert_eq!(coedge.pcurves.len(), 1);
+                model
+                    .pcurves
+                    .iter()
+                    .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+                    .map(|pcurve| (pcurve.geometry.clone(), pcurve.metadata.clone()))
+                    .unwrap()
+            })
+            .collect::<Vec<_>>()
+    };
+    let single = decode(1);
+    assert!(
+        single.report().losses.is_empty(),
+        "{:#?}",
+        single.report().losses
+    );
+    let expected = use_pcurves(&single);
+    assert_eq!(expected.len(), 1);
+    assert!(matches!(
+        &expected[0].0,
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } if nurbs.degree() == 127
+    ));
+
+    let uses = 16;
+    let shared = decode(uses);
+    assert!(
+        shared.report().losses.is_empty(),
+        "{:#?}",
+        shared.report().losses
+    );
+    assert!(shared
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "iges:model:body#D23"));
+    assert_eq!(use_pcurves(&shared), vec![expected[0].clone(); uses]);
+}
