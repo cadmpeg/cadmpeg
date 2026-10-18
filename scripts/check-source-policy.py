@@ -101,9 +101,15 @@ MOD_DECL = re.compile(
 
 
 def is_production_rs(path: Path) -> bool:
-    """True when ``path`` is a production ``.rs`` file under the filter."""
+    """True when ``path`` is a production ``.rs`` file under the filter.
+
+    An absolute path is tested relative to ``ROOT``: the directories that
+    hold the checkout are not part of the crate layout.
+    """
     if path.suffix != ".rs":
         return False
+    if path.is_absolute():
+        path = Path(relative_path(path))
     parts = path.parts
     if any(part in {"tests", "test_support", "golden_tests", "integration_tests", "benches"} for part in parts):
         return False

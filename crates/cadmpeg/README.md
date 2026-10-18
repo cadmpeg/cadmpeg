@@ -94,6 +94,11 @@ geometry output when decoding transfers no geometry. `--allow-errors` and
 `--allow-empty` write the current result anyway. They leave model data
 unchanged.
 
+`convert` decodes a native source only as deeply as the output needs: STEP,
+IGES, and Rhino output decodes geometry and skips design intent, so the decode
+report lists no loss in sketches, features, or history. `--full-decode`, and
+every `--reject-lossy` scope, decode the whole source whatever the output.
+
 ## Inspect, dump, and check
 
 Inspect a native container without decoding its model:
@@ -120,9 +125,10 @@ cadmpeg check bracket.cadir.json
 cadmpeg check bracket.f3d --json
 ```
 
-`--container-only` stops native decoding before geometry. It is useful for
-container diagnostics and normally requires `--allow-empty` when followed by a
-geometry export.
+`--container-only` stops native decoding before geometry and records container
+depth. It is useful for container diagnostics. `convert` writes such a document
+to CADIR only: every other output refuses it (`insufficient_depth`, exit 1),
+and `--allow-empty` does not override that.
 
 ## Read raw bytes
 

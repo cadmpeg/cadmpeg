@@ -46,9 +46,9 @@ By crate: {crates}.
 
 
 class ResourceCapsCensus(unittest.TestCase):
-    def check(self, files: dict[str, str]) -> list[str]:
+    def check(self, files: dict[str, str], parent: str = "") -> list[str]:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / parent
             for name, source in files.items():
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,6 +95,24 @@ class ResourceCapsCensus(unittest.TestCase):
             any("stated overall 99" in line for line in findings),
             findings,
         )
+
+    def test_checkout_under_src_counts_only_crate_sources(self) -> None:
+        findings = self.check(
+            {
+                "crates/demo/src/lib.rs": "const MAX_FOO: usize = 1;\n",
+                "crates/demo/fuzz_targets/target.rs": "const MAX_FUZZ: usize = 2;\n",
+                "docs/decode-resource-caps.md": census_doc(
+                    rows=[
+                        "| `demo` | `src/lib.rs` | `MAX_FOO` | `1` | 2 | note |",
+                    ],
+                    overall=1,
+                    kinds={"2": 1},
+                    crates="`demo` 1",
+                ),
+            },
+            parent="src/cadmpeg",
+        )
+        self.assertEqual(findings, [])
 
 
 if __name__ == "__main__":
