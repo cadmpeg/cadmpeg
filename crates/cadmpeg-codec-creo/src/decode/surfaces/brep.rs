@@ -1974,7 +1974,7 @@ pub(in super::super) fn transfer_native_brep(
     );
     let mut exact_pcurves =
         ExactIdPositions::new(ir.model.pcurves.iter().map(|item| item.id.as_str()));
-    let exact_surfaces =
+    let mut exact_surfaces =
         ExactIdPositions::new(ir.model.surfaces.iter().map(|item| item.id.as_str()));
 
     for vertex_id in used_vertices {
@@ -2331,6 +2331,10 @@ pub(in super::super) fn transfer_native_brep(
                     },
                 )?;
                 surface_positions.admit(&ir.model.surfaces, ir.model.surfaces.len() - 1);
+                exact_surfaces.admit(
+                    ir.model.surfaces[ir.model.surfaces.len() - 1].id.as_str(),
+                    ir.model.surfaces.len() - 1,
+                );
             }
             let face_sense = if face_orientations[face_id] {
                 Sense::Reversed
