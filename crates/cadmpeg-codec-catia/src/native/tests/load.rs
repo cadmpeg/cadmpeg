@@ -1228,6 +1228,47 @@ fn derived_configuration_row_chains_match_decoded_chains() {
     })
     .expect("derive the configuration row chains");
     assert_eq!(chains, native.schema_configuration_row_chains);
+
+    let links = chains
+        .iter()
+        .flat_map(super::super::CatiaSchemaConfigurationRowChain::links);
+    let intervening = links
+        .clone()
+        .filter_map(|link| link.intervening_entities.as_ref())
+        .flatten()
+        .collect::<Vec<_>>();
+    assert!(!intervening.is_empty());
+    let class_text = links
+        .map(|link| &link.row)
+        .chain(intervening.iter().copied())
+        .filter_map(super::super::CatiaEntityReference::class_name)
+        .map(str::len)
+        .sum::<usize>();
+    let entity_text = intervening
+        .iter()
+        .filter_map(|reference| reference.entity())
+        .map(str::len)
+        .sum::<usize>();
+    let retained = u64::try_from(class_text + entity_text).expect("fixture text fits");
+    let derive_within = |limit| {
+        crate::test_support::with_retained_limit(limit, |ctx| {
+            super::super::derive_schema_configuration_row_chains(
+                ctx,
+                &native.entity_records,
+                &references,
+            )
+        })
+    };
+    assert_eq!(
+        derive_within(retained).expect("the kept reference text fits its own length"),
+        chains
+    );
+    let error = derive_within(retained - 1).expect_err("every kept reference text is charged");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    ));
 }
 
 #[test]
