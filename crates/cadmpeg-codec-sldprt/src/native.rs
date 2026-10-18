@@ -994,8 +994,23 @@ impl SldprtNative {
                 .iter()
                 .map(|record| (record.id(), record))
                 .collect::<HashMap<_, _>>();
+            let mut entities_by_feature = HashMap::<Option<&str>, Vec<_>>::new();
+            for entity in &lane.sketch_entities {
+                entities_by_feature
+                    .entry(entity.feature_ref.as_deref())
+                    .or_default()
+                    .push(entity);
+            }
             for scalar in &lane.scalars {
-                let resolved_operands = resolved_scalar_operand_markers(lane, scalar);
+                let resolved_operands =
+                    crate::resolved_features::operands::resolve_scalar_operand_markers(
+                        entities_by_feature
+                            .get(&scalar.feature_ref.as_deref())
+                            .into_iter()
+                            .flatten()
+                            .copied(),
+                        &scalar.operands,
+                    );
                 for (operand, resolved) in scalar.operands.iter().zip(resolved_operands) {
                     let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
                     else {
@@ -1083,18 +1098,6 @@ impl SldprtNative {
         SLDPRT_CATALOGUE.emit_all(ctx, self, namespace)?;
         Ok(())
     }
-}
-
-fn resolved_scalar_operand_markers<'a>(
-    lane: &'a FeatureInputLane,
-    scalar: &crate::records::FeatureInputScalar,
-) -> Vec<Option<&'a crate::records::SketchInputEntity>> {
-    crate::resolved_features::operands::resolve_scalar_operand_markers(
-        lane.sketch_entities
-            .iter()
-            .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
-        &scalar.operands,
-    )
 }
 
 fn generated_surface_identities_disagree_with_payload(

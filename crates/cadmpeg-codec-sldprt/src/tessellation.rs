@@ -1106,12 +1106,22 @@ fn approximate_surface_owner(
         return Ok(None);
     }
     let mut fits = Vec::new();
+    let identity_normals = mesh
+        .normals
+        .iter()
+        .map(|_| std::cell::OnceCell::new())
+        .collect::<Vec<_>>();
     for outcome in candidates
         .iter()
         .enumerate()
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
-            for (point, normal) in mesh.vertices.iter().zip(&mesh.normals) {
+            for ((point, normal), identity_normal) in mesh
+                .vertices
+                .iter()
+                .zip(&mesh.normals)
+                .zip(&identity_normals)
+            {
                 if !work.charge() {
                     return None;
                 }
@@ -1124,7 +1134,12 @@ fn approximate_surface_owner(
                     };
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
-                let mesh_normal = candidate.inverse.apply_vector(normal.get())?.unit()?;
+                let local_normal = || candidate.inverse.apply_vector(normal.get())?.unit();
+                let mesh_normal = if candidate.identity_inverse {
+                    (*identity_normal.get_or_init(local_normal))?
+                } else {
+                    local_normal()?
+                };
                 if surface_normal.dot(mesh_normal).abs() < MIN_TESSELLATION_NORMAL_ALIGNMENT {
                     return None;
                 }
@@ -1391,14 +1406,14 @@ impl AnalyticTrim {
 
 #[derive(Debug, Clone)]
 enum PlanarOuter {
-    Polygon(Vec<Point2>),
+    Polygon(TrimPolygon),
     Circle(CircularHole),
 }
 
 #[derive(Debug, Clone)]
 enum PlanarHole {
     Polygon {
-        boundary: Vec<Point2>,
+        boundary: TrimPolygon,
         triangles: Vec<[Point2; 3]>,
     },
     Circle(CircularHole),
@@ -1408,7 +1423,7 @@ impl PlanarHole {
     fn polygon(boundary: Vec<Point2>, tolerance: f64, work: &WorkBudget) -> Option<Self> {
         let triangles = triangulate_polygon(&boundary, tolerance, work)?;
         Some(Self::Polygon {
-            boundary,
+            boundary: TrimPolygon::new(boundary),
             triangles,
         })
     }
@@ -1424,7 +1439,7 @@ struct PlanarTrim {
 
 enum HoleConstraint<'a> {
     Polygon {
-        boundary: &'a [Point2],
+        boundary: &'a TrimPolygon,
         triangles: &'a [[Point2; 3]],
     },
     Circle {
@@ -1535,12 +1550,12 @@ impl PlanarTrim {
     ) -> bool {
         let tolerance = tolerance + self.boundary_tolerance;
         let outer_edges = match &self.outer {
-            Some(PlanarOuter::Polygon(boundary)) => boundary.len(),
+            Some(PlanarOuter::Polygon(boundary)) => boundary.points.len(),
             Some(PlanarOuter::Circle(_)) | None => 1,
         };
         let point_edges = self.holes.iter().try_fold(outer_edges, |total, hole| {
             total.checked_add(match hole {
-                PlanarHole::Polygon { boundary, .. } => boundary.len(),
+                PlanarHole::Polygon { boundary, .. } => boundary.points.len(),
                 PlanarHole::Circle(_) => 1,
             })
         });
@@ -1584,7 +1599,7 @@ impl PlanarTrim {
         }
         if projected.iter().any(|point| {
             self.outer.as_ref().is_some_and(|outer| !match outer {
-                PlanarOuter::Polygon(outer) => polygon_contains(outer, *point, tolerance),
+                PlanarOuter::Polygon(outer) => outer.contains(*point, tolerance),
                 PlanarOuter::Circle(outer) => {
                     point_distance(*point, outer.center) <= outer.radius + tolerance
                 }
@@ -1644,7 +1659,7 @@ impl PlanarTrim {
 impl HoleConstraint<'_> {
     fn contains_interior(&self, point: Point2, tolerance: f64) -> bool {
         match self {
-            Self::Polygon { boundary, .. } => polygon_strictly_contains(boundary, point, tolerance),
+            Self::Polygon { boundary, .. } => boundary.strictly_contains(point, tolerance),
             Self::Circle { exclusion, .. } => {
                 point_distance(point, exclusion.center) < exclusion.radius - tolerance
             }
@@ -2152,7 +2167,7 @@ fn planar_trim(
         }
         let mut outer = Vec::new();
         outer.extend_from_slice(outer_polygon);
-        (PlanarOuter::Polygon(outer), holes)
+        (PlanarOuter::Polygon(TrimPolygon::new(outer)), holes)
     };
     Some(PlanarTrim {
         frame,
@@ -2666,11 +2681,16 @@ fn triangulate_polygon(
                 }
             }
             let triangle = [previous, current, next];
+            let triangle_box = PolygonBox::new(&triangle, tolerance);
             for (other_position, index) in remaining.iter().enumerate() {
+                let point = polygon[*index];
                 if other_position != previous_position
                     && other_position != position
                     && other_position != next_position
-                    && polygon_strictly_contains(&triangle, polygon[*index], tolerance)
+                    && !triangle_box
+                        .as_ref()
+                        .is_some_and(|bounds| bounds.excludes(point))
+                    && polygon_strictly_contains(&triangle, point, tolerance)
                 {
                     continue 'ears;
                 }
@@ -2720,11 +2740,23 @@ const SEGMENT_BOX_MARGIN: f64 = 1.0e-9;
 /// farther from the edge than the tolerance by more than the measure's
 /// rounding, so the measure would refuse it too and the edge is not measured.
 fn polygon_boundary_within(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
-    polygon.iter().enumerate().any(|(index, start)| {
+    edges_within(polygon, 0..polygon.len(), point, tolerance)
+}
+
+/// [`polygon_boundary_within`] over the edges of `polygon` that start at
+/// `edges`.
+fn edges_within(
+    polygon: &[Point2],
+    edges: impl IntoIterator<Item = usize>,
+    point: Point2,
+    tolerance: f64,
+) -> bool {
+    edges.into_iter().any(|index| {
+        let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];
-        match [point, *start, end].map(FinitePoint2::new) {
+        match [point, start, end].map(FinitePoint2::new) {
             [Some(finite_point), Some(finite_start), Some(finite_end)] => {
-                !segment_box_excludes(point, *start, end, tolerance)
+                !segment_box_excludes(point, start, end, tolerance)
                     && point_segment_distance(finite_point, finite_start, finite_end) <= tolerance
             }
             _ => false,
@@ -2746,11 +2778,20 @@ fn segment_box_excludes(point: Point2, start: Point2, end: Point2, tolerance: f6
 }
 
 fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
-    if polygon_boundary_within(polygon, point, tolerance) {
-        return true;
-    }
+    polygon_boundary_within(polygon, point, tolerance)
+        || crossings_odd(polygon, 0..polygon.len(), point)
+}
+
+/// Whether a ray from `point` toward positive `u` crosses an odd number of
+/// the edges of `polygon` that start at `edges`.
+fn crossings_odd(
+    polygon: &[Point2],
+    edges: impl IntoIterator<Item = usize>,
+    point: Point2,
+) -> bool {
     let mut inside = false;
-    for (index, start) in polygon.iter().enumerate() {
+    for index in edges {
+        let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];
         if (start.v > point.v) == (end.v > point.v) {
             continue;
@@ -2763,25 +2804,273 @@ fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
     inside
 }
 
+/// Polygons with fewer edges are scanned whole.
+const MIN_BANDED_POLYGON_EDGES: usize = 16;
+/// Band listings per edge past which [`EdgeBands`] tries fewer bands.
+const MAX_BAND_LISTINGS_PER_EDGE: usize = 8;
+/// Fewest bands worth keeping; a polygon that needs fewer is scanned whole.
+const MIN_EDGE_BANDS: usize = 4;
+/// Polygons whose coordinates are all smaller than this are neither banded
+/// nor boxed, so the reach of [`EdgeBands::near`] and [`PolygonBox::excludes`]
+/// stays a normal number.
+const MIN_INDEXED_POLYGON_SCALE: f64 = 1.0e-200;
+
+/// A planar trim boundary, with its edges indexed by `v` when that pays.
+#[derive(Debug, Clone)]
+struct TrimPolygon {
+    points: Vec<Point2>,
+    bands: Option<EdgeBands>,
+    /// The last tolerance whose simplicity was tested, and the answer.
+    simple_at: std::cell::Cell<Option<(u64, bool)>>,
+}
+
+impl TrimPolygon {
+    fn new(points: Vec<Point2>) -> Self {
+        Self {
+            bands: EdgeBands::new(&points),
+            points,
+            simple_at: std::cell::Cell::new(None),
+        }
+    }
+
+    fn is_simple(&self, tolerance: f64) -> bool {
+        let key = tolerance.to_bits();
+        if let Some((tested, simple)) = self.simple_at.get() {
+            if tested == key {
+                return simple;
+            }
+        }
+        let simple = is_simple_polygon(&self.points, tolerance);
+        self.simple_at.set(Some((key, simple)));
+        simple
+    }
+
+    /// [`polygon_boundary_within`] over this polygon.
+    fn boundary_within(&self, point: Point2, tolerance: f64) -> bool {
+        match self
+            .bands
+            .as_ref()
+            .and_then(|bands| bands.near(point, tolerance))
+        {
+            Some(edges) => edges_within(&self.points, edges, point, tolerance),
+            None => polygon_boundary_within(&self.points, point, tolerance),
+        }
+    }
+
+    /// [`polygon_contains`] over this polygon.
+    fn contains(&self, point: Point2, tolerance: f64) -> bool {
+        self.boundary_within(point, tolerance) || self.crossings_odd(point)
+    }
+
+    /// [`polygon_strictly_contains`] over this polygon.
+    fn strictly_contains(&self, point: Point2, tolerance: f64) -> bool {
+        !self.boundary_within(point, tolerance) && self.crossings_odd(point)
+    }
+
+    fn crossings_odd(&self, point: Point2) -> bool {
+        match self.bands.as_ref().and_then(|bands| bands.at(point)) {
+            Some(edges) => crossings_odd(&self.points, edges.iter().copied(), point),
+            None => crossings_odd(&self.points, 0..self.points.len(), point),
+        }
+    }
+}
+
+/// Polygons whose coordinates reach this are not boxed, so no product in
+/// [`crossings_odd`] overflows.
+const MAX_BOXED_POLYGON_SCALE: f64 = 1.0e150;
+
+/// A finite polygon's box. A point beyond it by more than the reach of
+/// [`segment_box_excludes`], doubled to absorb rounding, is excluded by every
+/// edge's box. A ray from it toward positive `u` crosses no edge, or crosses
+/// each edge whose `v` range holds it, and a closed polygon has an even number
+/// of those. So the polygon does not contain it.
+struct PolygonBox {
+    minimum: Point2,
+    maximum: Point2,
+    scale: f64,
+    tolerance: f64,
+}
+
+impl PolygonBox {
+    /// `None` when a vertex or `tolerance` is not finite, or the coordinates
+    /// are too small or too large for the margin argument.
+    fn new(polygon: &[Point2], tolerance: f64) -> Option<Self> {
+        let (minimum, maximum) = polygon_bounds(polygon)?;
+        let scale = [minimum.u, minimum.v, maximum.u, maximum.v]
+            .into_iter()
+            .fold(tolerance.abs(), |scale, value| scale.max(value.abs()));
+        (tolerance.is_finite()
+            && (MIN_INDEXED_POLYGON_SCALE..MAX_BOXED_POLYGON_SCALE).contains(&scale))
+        .then_some(Self {
+            minimum,
+            maximum,
+            scale,
+            tolerance,
+        })
+    }
+
+    /// Whether `point` lies beyond the box, so the polygon neither contains
+    /// it nor has an edge within the tolerance of it.
+    fn excludes(&self, point: Point2) -> bool {
+        let scale = self.scale.max(point.u.abs()).max(point.v.abs());
+        if !point.is_finite() || scale >= MAX_BOXED_POLYGON_SCALE {
+            return false;
+        }
+        let reach = self.tolerance.abs() + 2.0 * SEGMENT_BOX_MARGIN * scale;
+        point.u > self.maximum.u + reach
+            || point.u < self.minimum.u - reach
+            || point.v > self.maximum.v + reach
+            || point.v < self.minimum.v - reach
+    }
+}
+
+/// The edges of a polygon of finite vertices, listed by equal bands of `v`.
+/// An edge is listed in every band from the band of its lower end to the band
+/// of its upper end, and [`EdgeBands::band`] never decreases as `v` grows, so
+/// an edge whose `v` range holds a value is listed in that value's band.
+#[derive(Debug, Clone)]
+struct EdgeBands {
+    v_min: f64,
+    band_height: f64,
+    /// The largest absolute vertex coordinate.
+    scale: f64,
+    last_band: usize,
+    /// Band `b` lists the edges `edges[starts[b]..starts[b + 1]]`.
+    starts: Vec<usize>,
+    /// Edges by the index of their start vertex.
+    edges: Vec<usize>,
+}
+
+impl EdgeBands {
+    /// One band per edge, or a quarter as many bands at a time while the edges
+    /// would take too many listings; `None` for a polygon that is small, has a
+    /// vertex that is not finite, is flat in `v`, or has too many long edges
+    /// for even [`MIN_EDGE_BANDS`] bands.
+    fn new(polygon: &[Point2]) -> Option<Self> {
+        let count = polygon.len();
+        if count < MIN_BANDED_POLYGON_EDGES {
+            return None;
+        }
+        let (minimum, maximum) = polygon_bounds(polygon)?;
+        let scale = [minimum.u, minimum.v, maximum.u, maximum.v]
+            .into_iter()
+            .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+        if scale < MIN_INDEXED_POLYGON_SCALE {
+            return None;
+        }
+        let listing_limit = count.checked_mul(MAX_BAND_LISTINGS_PER_EDGE)?;
+        let mut band_count = count;
+        while band_count >= MIN_EDGE_BANDS {
+            let band_height =
+                (maximum.v - minimum.v) / cadmpeg_core::convert::f64_from_index(band_count)?;
+            if !band_height.is_normal() {
+                return None;
+            }
+            let bands = Self {
+                v_min: minimum.v,
+                band_height,
+                scale,
+                last_band: band_count - 1,
+                starts: Vec::new(),
+                edges: Vec::new(),
+            };
+            if let Some(bands) = bands.list(polygon, listing_limit) {
+                return Some(bands);
+            }
+            band_count /= 4;
+        }
+        None
+    }
+
+    /// These bands with the edges of `polygon` listed, unless that takes
+    /// more than `listing_limit` listings.
+    fn list(mut self, polygon: &[Point2], listing_limit: usize) -> Option<Self> {
+        let mut listings = Vec::new();
+        for index in 0..polygon.len() {
+            let (low, high) = self.edge_span(polygon, index);
+            if listings.len() + (high - low + 1) > listing_limit {
+                return None;
+            }
+            listings.extend((low..=high).map(|band| (band, index)));
+        }
+        listings.sort_unstable();
+        self.starts = (0..=self.last_band + 1)
+            .map(|band| listings.partition_point(|&(listed, _)| listed < band))
+            .collect();
+        self.edges = listings.into_iter().map(|(_, index)| index).collect();
+        Some(self)
+    }
+
+    fn edge_span(&self, polygon: &[Point2], index: usize) -> (usize, usize) {
+        let start = polygon[index].v;
+        let end = polygon[(index + 1) % polygon.len()].v;
+        (self.band(start.min(end)), self.band(start.max(end)))
+    }
+
+    /// The whole band heights from the lowest vertex to `v`, clamped to the
+    /// bands. Every step is monotone, so the band never decreases as `v`
+    /// grows.
+    fn band(&self, v: f64) -> usize {
+        let last = self.last_band;
+        let position = ((v - self.v_min) / self.band_height).floor();
+        if position.is_nan() || position <= 0.0 {
+            return 0;
+        }
+        cadmpeg_core::convert::truncate_f64_to_usize(position).map_or(last, |band| band.min(last))
+    }
+
+    /// The edges listed in the band of `point`: every edge whose `v` range
+    /// holds `point.v`, which are the only edges a ray toward positive `u`
+    /// can cross. `None` when `point` is not finite.
+    fn at(&self, point: Point2) -> Option<&[usize]> {
+        if !point.is_finite() {
+            return None;
+        }
+        let band = self.band(point.v);
+        Some(&self.edges[self.starts[band]..self.starts[band + 1]])
+    }
+
+    /// Edges, some more than once, among them every edge that
+    /// [`segment_box_excludes`] does not exclude for `point` and `tolerance`.
+    /// The reach doubles that test's margin, which leaves room for rounding
+    /// millions of times larger than its few ulps. `None` when `point` or
+    /// `tolerance` is not finite.
+    fn near(&self, point: Point2, tolerance: f64) -> Option<impl Iterator<Item = usize> + '_> {
+        if !point.is_finite() || !tolerance.is_finite() {
+            return None;
+        }
+        let scale = [point.u, point.v]
+            .into_iter()
+            .fold(self.scale.max(tolerance.abs()), |scale, value| {
+                scale.max(value.abs())
+            });
+        let reach = tolerance.abs() + 2.0 * SEGMENT_BOX_MARGIN * scale;
+        let first = self.starts[self.band(point.v - reach)];
+        let last = self.starts[self.band(point.v + reach) + 1];
+        Some(self.edges[first..last].iter().copied())
+    }
+}
+
 /// Checks each triangle edge interval between polygon boundary intersections.
 /// A simple polygon that contains the complete triangle boundary contains its interior.
 /// A test the work budget cuts short answers false.
 struct CheckedPlanarPolygon<'a> {
-    boundary: &'a [Point2],
+    boundary: &'a TrimPolygon,
     tolerance: f64,
     convex: bool,
     work: &'a WorkBudget,
 }
 
 impl<'a> CheckedPlanarPolygon<'a> {
-    fn new(boundary: &'a [Point2], tolerance: f64, work: &'a WorkBudget) -> Option<Self> {
-        if !charge_product(work, boundary.len(), boundary.len()) {
+    fn new(boundary: &'a TrimPolygon, tolerance: f64, work: &'a WorkBudget) -> Option<Self> {
+        let length = boundary.points.len();
+        if !charge_product(work, length, length) {
             return None;
         }
-        is_simple_polygon(boundary, tolerance).then(|| Self {
+        boundary.is_simple(tolerance).then(|| Self {
             boundary,
             tolerance,
-            convex: polygon_is_convex(boundary),
+            convex: polygon_is_convex(&boundary.points),
             work,
         })
     }
@@ -2799,11 +3088,12 @@ impl<'a> CheckedPlanarPolygon<'a> {
         {
             return false;
         }
+        let points = &boundary.points;
         if convex {
-            return charge_product(work, 3, boundary.len())
+            return charge_product(work, 3, points.len())
                 && triangle
                     .iter()
-                    .all(|point| polygon_contains(boundary, *point, tolerance));
+                    .all(|point| boundary.contains(*point, tolerance));
         }
         for edge in 0..3 {
             let start = triangle[edge];
@@ -2817,12 +3107,12 @@ impl<'a> CheckedPlanarPolygon<'a> {
             if length_squared == 0.0 {
                 continue;
             }
-            if !work.charge_by(boundary.len()) {
+            if !work.charge_by(points.len()) {
                 return false;
             }
             let mut cuts = vec![0.0_f64, 1.0];
-            for (index, point) in boundary.iter().enumerate() {
-                let next = boundary[(index + 1) % boundary.len()];
+            for (index, point) in points.iter().enumerate() {
+                let next = points[(index + 1) % points.len()];
                 let pu = point.u - start.u;
                 let pv = point.v - start.v;
                 let projected = (pu * du + pv * dv) / length_squared;
@@ -2851,13 +3141,12 @@ impl<'a> CheckedPlanarPolygon<'a> {
                 }
             }
             cuts.sort_by(f64::total_cmp);
-            if !charge_product(work, cuts.len(), boundary.len()) {
+            if !charge_product(work, cuts.len(), points.len()) {
                 return false;
             }
             for interval in cuts.windows(2) {
                 let parameter = interval[0] + (interval[1] - interval[0]) / 2.0;
-                if !polygon_contains(
-                    boundary,
+                if !boundary.contains(
                     Point2::new(start.u + parameter * du, start.v + parameter * dv),
                     tolerance,
                 ) {
@@ -2872,13 +3161,15 @@ impl<'a> CheckedPlanarPolygon<'a> {
 #[cfg(test)]
 fn polygon_contains_triangle(boundary: &[Point2], triangle: [Point2; 3], tolerance: f64) -> bool {
     let work = WorkBudget::new(usize::MAX);
-    CheckedPlanarPolygon::new(boundary, tolerance, &work)
+    let boundary = TrimPolygon::new(boundary.to_vec());
+    CheckedPlanarPolygon::new(&boundary, tolerance, &work)
         .is_some_and(|polygon| polygon.contains_triangle(triangle))
 }
 
+/// [`polygon_contains`] without the boundary band.
 fn polygon_strictly_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
-    polygon_contains(polygon, point, tolerance)
-        && !polygon_boundary_within(polygon, point, tolerance)
+    !polygon_boundary_within(polygon, point, tolerance)
+        && crossings_odd(polygon, 0..polygon.len(), point)
 }
 
 /// Convexity of an already simple polygon.
