@@ -572,8 +572,9 @@ pub(super) fn emit_surfaces(
 ) -> Result<HashMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "surface");
+    let planned = surface_plan.keys().copied().collect::<Vec<_>>();
     let mut surface_ids = HashMap::new();
-    for object_id in surface_plan.keys().copied() {
+    for &object_id in &planned {
         let id = crate::resource::compose_u32_id(&namespace, object_id, SurfaceId::mint)?;
         surface_ids.insert(object_id, id);
     }
@@ -726,7 +727,7 @@ pub(super) fn emit_surfaces(
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
         }
     }
-    for &object_id in surface_ids.keys() {
+    for &object_id in &planned {
         let Some(construction_id) = graph.canonical_surface_id(object_id) else {
             continue;
         };

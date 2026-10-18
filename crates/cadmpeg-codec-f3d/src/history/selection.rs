@@ -1735,7 +1735,7 @@ pub(super) fn historical_mirror_coedge_plane(
         return None;
     }
 
-    let mut faces = HashSet::new();
+    let mut faces = BTreeSet::new();
     for coedge_ref in radial_cycle {
         let coedge = coedges.get(&coedge_ref)?;
         let mut loop_relations = topology.loop_coedges.iter().filter(|relation| {
@@ -1876,10 +1876,9 @@ pub(super) fn entity_selection_edge_candidates(
         if !states.contains(&previous_state_id) {
             continue;
         }
-        let mut edge_slots = historical_identity_edges(kind, entity_ref, topology)
+        let edge_slots = historical_identity_edges(kind, entity_ref, topology)
             .into_iter()
             .collect::<Vec<_>>();
-        edge_slots.sort_unstable_by(Ord::cmp);
         if edge_slots.is_empty() {
             continue;
         }
@@ -2311,8 +2310,8 @@ fn historical_identity_edges(
     kind: AsmHistoricalEntityKind,
     entity_ref: i64,
     topology: &AsmHistoricalTopology,
-) -> HashSet<i64> {
-    let mut candidates = HashSet::new();
+) -> BTreeSet<i64> {
+    let mut candidates = BTreeSet::new();
     match kind {
         AsmHistoricalEntityKind::Edge => {
             if topology.edges.contains(&entity_ref) {

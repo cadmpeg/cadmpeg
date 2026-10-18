@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Agreement between edited construction history and the output B-rep.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -312,7 +312,7 @@ fn validate_configuration_design_edits(
                     .into_iter()
                     .flat_map(|value| value.parameter_overrides.keys()),
             )
-            .collect::<HashSet<_>>();
+            .collect::<BTreeSet<_>>();
         for id in parameter_ids {
             let changed = original.is_none_or(|value| {
                 configuration.parameter_values.get(id) != value.parameter_values.get(id)
@@ -349,7 +349,7 @@ fn validate_configuration_design_edits(
                     .into_iter()
                     .flat_map(|value| value.feature_states.keys()),
             )
-            .collect::<HashSet<_>>();
+            .collect::<BTreeSet<_>>();
         for id in feature_ids {
             let changed = original.is_none_or(|value| {
                 configuration.feature_states.get(id) != value.feature_states.get(id)
