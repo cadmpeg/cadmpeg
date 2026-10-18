@@ -1195,7 +1195,6 @@ fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
             &coordinate_domains,
             &budget,
         )
-        .expect("prune implicit ordered face endpoint support")
     );
     assert_eq!(choices[1], vec![[1, 3], [2, 3]]);
     assert!(!budget.exhausted());
@@ -1477,7 +1476,6 @@ fn ordered_face_pruning_uses_implicit_coordinate_candidates() {
             &coordinate_domains,
             &budget,
         )
-        .expect("prune implicit ordered face endpoint support")
     );
 }
 

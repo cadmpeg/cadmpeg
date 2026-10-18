@@ -1553,7 +1553,7 @@ fn map_endpoint_relation_state(
     gauge: MeshCandidateGauge<'_>,
     permutation: &[usize],
 ) -> Result<Option<MeshEndpointRelationStateSignature>, CodecError> {
-    let Some(row_mapping) = relation_row_gauge_mapping(state, gauge, permutation)? else {
+    let Some(row_mapping) = relation_row_gauge_mapping(state, gauge, permutation) else {
         return Ok(None);
     };
     let mut assigned = ctx.alloc_filled(state.0.len(), None, "catia_relation_mapped_assigned")?;
@@ -1622,21 +1622,15 @@ fn relation_row_gauge_mapping(
     state: &MeshEndpointRelationStateSignature,
     gauge: MeshCandidateGauge<'_>,
     permutation: &[usize],
-) -> Result<Option<Vec<usize>>, CodecError> {
+) -> Option<Vec<usize>> {
     let edge_count = state.0.len();
-    let identity = || -> Result<Vec<usize>, CodecError> {
-        let mut rows = Vec::new();
-
-        rows.extend(0..edge_count);
-        Ok(rows)
-    };
     if gauge.edge_rows.len() != edge_count
         || gauge.edge_faces.len() != edge_count
         || gauge.edge_geometry.len() != edge_count
         || gauge.edge_candidates.len() != edge_count
         || gauge.edge_identity_evidence.len() != edge_count
     {
-        return Ok(Some(identity()?));
+        return Some((0..edge_count).collect());
     }
 
     let mut source_groups = BTreeMap::<MeshEdgeGaugeKey, Vec<usize>>::new();
@@ -1645,58 +1639,42 @@ fn relation_row_gauge_mapping(
         if gauge.edge_identity_evidence[edge] {
             continue;
         }
-        let Some(base) =
-            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_geometry)
-        else {
-            return Ok(None);
-        };
+        let base =
+            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_geometry)?;
         let source_options = normalized_endpoint_options(&gauge.edge_candidates[edge]);
-        let Some(target_options) =
-            mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)
-        else {
-            return Ok(None);
-        };
+        let target_options =
+            mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?;
         let source_key = (base, target_options);
         source_groups.entry(source_key).or_default().push(edge);
         let target_key = (base, source_options);
         target_groups.entry(target_key).or_default().push(edge);
     }
 
-    let mut row_mapping = identity()?;
+    let mut row_mapping = (0..edge_count).collect::<Vec<_>>();
     for (key, mut source) in source_groups {
-        let Some(mut targets) = target_groups.remove(&key) else {
-            return Ok(None);
-        };
+        let mut targets = target_groups.remove(&key)?;
         source.sort_unstable_by(Ord::cmp);
         targets.sort_unstable_by(Ord::cmp);
         if source.len() != targets.len() {
-            return Ok(None);
+            return None;
         }
         if source.len() == 1 {
             // A one-to-one structural group has no row-order gauge. Its map
             // is fixed by the input option relation and needs no state scan.
-            let Some(slot) = row_mapping.get_mut(source[0]) else {
-                return Ok(None);
-            };
-            *slot = targets[0];
+            *row_mapping.get_mut(source[0])? = targets[0];
             continue;
         }
         let mut ordered = Vec::new();
         for edge in source {
-            let Some(signature) = relation_row_signature(state, edge, permutation) else {
-                return Ok(None);
-            };
+            let signature = relation_row_signature(state, edge, permutation)?;
             ordered.push((signature, edge));
         }
         ordered.sort_unstable_by(Ord::cmp);
         for (target, (_, source)) in targets.into_iter().zip(ordered) {
-            let Some(slot) = row_mapping.get_mut(source) else {
-                return Ok(None);
-            };
-            *slot = target;
+            *row_mapping.get_mut(source)? = target;
         }
     }
-    Ok(target_groups.is_empty().then_some(row_mapping))
+    target_groups.is_empty().then_some(row_mapping)
 }
 
 fn relation_row_signature(

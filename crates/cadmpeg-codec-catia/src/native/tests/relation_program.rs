@@ -1242,10 +1242,37 @@ fn entity_reference_resolves_entity_and_class_name() {
     let classes =
         std::collections::HashMap::from([(("graph".to_string(), 10_u32), "param".to_string())]);
     let terminal_nulls = std::collections::HashMap::new();
+    let index = crate::native::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        terminal_nulls: &terminal_nulls,
+    };
     let service =
-        crate::native::entity_reference("graph", 10, &entities, &classes, &terminal_nulls);
+        crate::test_support::with_service_context(|ctx| index.reference(ctx, "graph", 10))
+            .expect("resolve the entity reference");
     assert_eq!(service.entity(), Some("entity-10"));
     assert_eq!(service.class_name(), Some("param"));
+
+    let class_text = u64::try_from("param".len()).expect("fixture text fits");
+    let admitted = crate::test_support::with_retained_limit(class_text, |ctx| {
+        index.reference(ctx, "graph", 10)
+    })
+    .expect("one class copy fits its own length");
+    assert_eq!(admitted, service);
+    let error = crate::test_support::with_retained_limit(class_text - 1, |ctx| {
+        index.reference(ctx, "graph", 10)
+    })
+    .expect_err("the class copy is charged before it is made");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain CATIA schema class text"
+    ));
+    let unresolved =
+        crate::test_support::with_retained_limit(0, |ctx| index.reference(ctx, "graph", 11))
+            .expect("an unresolved reference keeps no class text");
+    assert_eq!(unresolved.class_name(), None);
 }
 
 #[test]

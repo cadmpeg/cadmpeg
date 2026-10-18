@@ -146,8 +146,7 @@ fn identical_edge_rows_keep_the_identity_row_mapping() {
         vec![vec![MeshEndpointRelationSelection::Deferred; 128]],
     );
     assert_eq!(
-        relation_row_gauge_mapping(&state, gauge, &[0, 1])
-            .expect("map the relation rows to the gauge"),
+        relation_row_gauge_mapping(&state, gauge, &[0, 1]),
         Some(vec![0, 1])
     );
 }
