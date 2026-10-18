@@ -35,7 +35,12 @@ from the name of the constant.
    convergence loop, a walk over derived data, or the size of derived output.
    A `WorkBudget` or a local counter enforces it. At exhaustion the decoder
    skips that item and reports the skip as a loss. A local work cap never
-   refuses the session.
+   refuses the session. A cap may have a fixed size only when it applies to
+   one item: one sketch, one surface, one stream, one search. A counter
+   shared across a whole decode, or across every item of one kind, must
+   scale with the input, for example k times the number of rows it walks,
+   with a fixed floor. A fixed shared counter makes a larger model lose
+   content that a smaller one keeps.
 
 The census also uses **N** for a constant that is not a decode bound: a
 numeric representation limit, an encode-path or CLI limit, or the capacity
