@@ -1624,14 +1624,14 @@ fn derived_scalar_value_production_matches_decoded_entity() {
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&scalar_suffix));
     let entity = &native.entity_records[0];
     let fields = entity.value_fields();
-    let service = super::super::value_production(
-        entity,
-        &super::super::EntityIncidenceIndex::new(
-            &native.object_graphs[0].records,
-            &entity.object_graph,
-        ),
-        &fields,
+    let incidences = super::super::EntityIncidenceIndex::new(
+        &native.object_graphs[0].records,
+        &entity.object_graph,
     );
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::value_production(ctx, entity, &incidences, &fields)
+    })
+    .expect("derive the value production");
     assert_eq!(service, entity.value_production);
 }
 
@@ -1654,13 +1654,13 @@ fn definition_value_and_chain_value_decode_with_matching_production() {
     let chain_entity = &chain_native.entity_records[0];
     assert!(chain_entity.definition_chain_value().is_some());
     let chain_fields = chain_entity.value_fields();
-    let service = super::super::value_production(
-        chain_entity,
-        &super::super::EntityIncidenceIndex::new(
-            &chain_native.object_graphs[0].records,
-            &chain_entity.object_graph,
-        ),
-        &chain_fields,
+    let incidences = super::super::EntityIncidenceIndex::new(
+        &chain_native.object_graphs[0].records,
+        &chain_entity.object_graph,
     );
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::value_production(ctx, chain_entity, &incidences, &chain_fields)
+    })
+    .expect("derive the value production");
     assert_eq!(service, chain_entity.value_production);
 }

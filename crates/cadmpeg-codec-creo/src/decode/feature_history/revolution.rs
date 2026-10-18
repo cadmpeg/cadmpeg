@@ -18,7 +18,7 @@ use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::axes::revolution_axis_for_transfer;
-use super::draft::feature_allows_linear_extrusion;
+use super::draft::feature_allows_linear_extrusion_with;
 use super::link::{
     ordered_analytic_surface_id_for_feature, ordered_family_surface_bindings_for_feature,
     profile_segment_ids,
@@ -600,6 +600,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let schema_classes = crate::decode::sketch_transfer::recipe::FeatureSchemaClasses::new(scan);
     let mut pending = Vec::new();
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
@@ -614,7 +615,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !feature_allows_linear_extrusion(scan, feature_id) {
+        if !feature_allows_linear_extrusion_with(scan, &schema_classes, feature_id) {
             continue;
         }
         let Some(definition) =

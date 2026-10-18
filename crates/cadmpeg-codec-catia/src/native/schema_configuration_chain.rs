@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered configuration-row paths and their compatible wire projection.
 
-use super::{
-    CatiaEntityClassByGraphIdentityIndex, CatiaEntityReference, CatiaSchemaConfigurationRowLink,
-    CatiaTerminalNullByGraphIndex,
-};
+use super::{CatiaEntityReference, CatiaEntityReferenceIndex, CatiaSchemaConfigurationRowLink};
 use crate::native::entity_record::CatiaEntityRecord;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -136,12 +135,15 @@ impl TryFrom<ChainWire> for CatiaSchemaConfigurationRowChain {
     }
 }
 
+/// Intervals of one chain can nest, so the intervening references a chain
+/// keeps can grow with the square of its row count.
+const INTERVENING_ENTITY_OPERATION: &str = "retain CATIA configuration-row intervening entities";
+
 pub(super) fn derive_schema_configuration_row_chains(
+    ctx: &DecodeContext<'_>,
     records: &[CatiaEntityRecord],
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Vec<CatiaSchemaConfigurationRowChain> {
+    entity_references: &CatiaEntityReferenceIndex<'_>,
+) -> Result<Vec<CatiaSchemaConfigurationRowChain>, CodecError> {
     let mut row_ids = HashSet::new();
     let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
     for entity in records {
@@ -165,6 +167,19 @@ pub(super) fn derive_schema_configuration_row_chains(
             left_graph.cmp(right_graph).then(left_root.cmp(right_root))
         },
     );
+
+    let mut graph_entities = HashMap::<&str, Vec<(u32, usize)>>::new();
+    if !groups.is_empty() {
+        for (index, entity) in records.iter().enumerate() {
+            graph_entities
+                .entry(entity.object_graph.as_str())
+                .or_default()
+                .push((entity.entity_id, index));
+        }
+        for entities in graph_entities.values_mut() {
+            entities.sort_unstable();
+        }
+    }
 
     let mut chains = Vec::new();
     for ((graph, root), links) in groups {
@@ -200,27 +215,28 @@ pub(super) fn derive_schema_configuration_row_chains(
             let link = successors[&row_id];
             let successor_id = link.successor.entity_id();
             let intervening_entities = if row_id < successor_id {
+                let entities = graph_entities.get(graph).map_or(&[][..], Vec::as_slice);
+                let first = entities.partition_point(|&(id, _)| id <= row_id);
+                let end = entities.partition_point(|&(id, _)| id < successor_id);
+                let mut in_record_order = entities[first..end]
+                    .iter()
+                    .map(|&(id, index)| (index, id))
+                    .collect::<Vec<_>>();
+                in_record_order.sort_unstable();
                 let mut between = Vec::new();
-                for entity in records.iter().filter(|entity| {
-                    entity.object_graph == graph
-                        && entity.entity_id > row_id
-                        && entity.entity_id < successor_id
-                }) {
-                    let reference = super::entity_reference(
-                        graph,
-                        entity.entity_id,
-                        entities,
-                        entity_classes,
-                        terminal_nulls,
-                    );
+                for (_, entity_id) in in_record_order {
+                    let reference = entity_references.reference(ctx, graph, entity_id)?;
+                    ctx.retain_bytes(
+                        u64_from_index(reference.entity().map_or(0, str::len)),
+                        INTERVENING_ENTITY_OPERATION,
+                    )?;
                     between.push(reference);
                 }
                 Some(between)
             } else {
                 None
             };
-            let row =
-                super::entity_reference(graph, row_id, entities, entity_classes, terminal_nulls);
+            let row = entity_references.reference(ctx, graph, row_id)?;
             chain_links.push(CatiaSchemaConfigurationRowChainLink {
                 row,
                 successor_payload_offset: link.successor_payload_offset,
@@ -248,7 +264,7 @@ pub(super) fn derive_schema_configuration_row_chains(
             terminal,
         });
     }
-    chains
+    Ok(chains)
 }
 
 #[cfg(test)]
