@@ -31,20 +31,34 @@ fn ordered_rows<T>(rows: &[T], key: impl Fn(&T) -> i64) -> bool {
     rows.windows(2).all(|pair| key(&pair[0]) <= key(&pair[1]))
 }
 
-fn insert_family<T: Clone>(
+/// One replaced key: the families it held before the replacement and the
+/// families the replacement has written.
+struct KeyEdit {
+    key: i64,
+    present: Families,
+    written: Families,
+}
+
+/// Overwrite the rows of each edited key in place. A key's first run clears
+/// its old rows and later runs append, so an unsorted part keeps every row.
+fn write_family<T: Clone>(
     current: &mut BTreeMap<i64, Vec<T>>,
-    families: &mut BTreeMap<i64, Families>,
+    edits: &mut [KeyEdit],
     rows: &[T],
-    keys: &Slots,
     key: impl Fn(&T) -> i64,
     family: Families,
 ) {
     for run in rows.chunk_by(|left, right| key(left) == key(right)) {
         let slot = key(&run[0]);
-        if keys.contains(&slot) {
-            current.entry(slot).or_default().extend_from_slice(run);
-            *families.entry(slot).or_default() |= family;
+        let Ok(at) = edits.binary_search_by_key(&slot, |edit| edit.key) else {
+            continue;
+        };
+        let target = current.entry(slot).or_default();
+        if edits[at].written & family == 0 {
+            target.clear();
+            edits[at].written |= family;
         }
+        target.extend_from_slice(run);
     }
 }
 
@@ -108,42 +122,39 @@ macro_rules! indexed_topology {
             }
             pub(super) fn replace(&mut self, part: AsmHistoricalTopology, keys: &Slots, containers: bool) {
                 let half = if containers { Self::CONTAINERS } else { Self::ENTITIES };
-                for key in keys {
-                    let Some(present) = self.families.get_mut(key) else {
-                        continue;
-                    };
+                let mut edits = keys
+                    .iter()
+                    .map(|&key| KeyEdit {
+                        key,
+                        present: self.families.get(&key).copied().unwrap_or_default(),
+                        written: 0,
+                    })
+                    .collect::<Vec<_>>();
+                if containers {
+                    $(write_family(&mut self.$container, &mut edits, &part.$container, $ckey, 1 << $cbit);)*
+                } else {
+                    $(write_family(&mut self.$entity, &mut edits, &part.$entity, $ekey, 1 << $ebit);)*
+                }
+                for edit in edits {
+                    let stale = edit.present & half & !edit.written;
                     if containers {
-                        $(if *present & (1 << $cbit) != 0 {
-                            self.$container.remove(key);
+                        $(if stale & (1 << $cbit) != 0 {
+                            self.$container.remove(&edit.key);
                         })*
                     } else {
-                        $(if *present & (1 << $ebit) != 0 {
-                            self.$entity.remove(key);
+                        $(if stale & (1 << $ebit) != 0 {
+                            self.$entity.remove(&edit.key);
                         })*
                     }
-                    *present &= !half;
-                    if *present == 0 {
-                        self.families.remove(key);
+                    let present = (edit.present & !half) | edit.written;
+                    if present == edit.present {
+                        continue;
                     }
-                }
-                if containers {
-                    $(insert_family(
-                        &mut self.$container,
-                        &mut self.families,
-                        &part.$container,
-                        keys,
-                        $ckey,
-                        1 << $cbit,
-                    );)*
-                } else {
-                    $(insert_family(
-                        &mut self.$entity,
-                        &mut self.families,
-                        &part.$entity,
-                        keys,
-                        $ekey,
-                        1 << $ebit,
-                    );)*
+                    if present == 0 {
+                        self.families.remove(&edit.key);
+                    } else {
+                        self.families.insert(edit.key, present);
+                    }
                 }
             }
         }
@@ -275,6 +286,23 @@ mod tests {
         );
         assert_eq!(indexed.materialize().surfaces, vec![10, 20, 20, 30]);
         assert_eq!(indexed.project(&keys, false).surfaces, vec![20, 20]);
+    }
+
+    #[test]
+    fn replace_keeps_every_row_of_an_unsorted_part() {
+        let mut indexed = IndexedTopology::from(AsmHistoricalTopology {
+            surfaces: vec![10, 20, 30],
+            ..Default::default()
+        });
+        indexed.replace(
+            AsmHistoricalTopology {
+                surfaces: vec![20, 10, 20],
+                ..Default::default()
+            },
+            &Slots::from([10, 20]),
+            false,
+        );
+        assert_eq!(indexed.materialize().surfaces, vec![10, 20, 20, 30]);
     }
 
     #[test]
