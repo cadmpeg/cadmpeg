@@ -741,7 +741,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     assert_eq!(decoded.ir().model.occurrences.len(), 1);
 }
 
-fn wire_body_ir(alpha: f32) -> CadIr {
+pub(super) fn wire_body_ir(alpha: f32) -> CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.model.edges[0].clone();
     let curve = edge.curve().cloned().expect("cube edge curve");
