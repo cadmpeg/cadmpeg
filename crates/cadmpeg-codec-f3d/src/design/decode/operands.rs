@@ -4843,10 +4843,10 @@ fn parse_recipe_operand(
             let recipe = recipes
                 .iter()
                 .filter(|recipe| {
-                    native_stream(&recipe.id) == Some(stream)
-                        && recipe.kind == recipe_kind
-                        && recipe.byte_offset > recipe_record_byte_offset
+                    recipe.byte_offset > recipe_record_byte_offset
                         && recipe.byte_offset < limit
+                        && recipe.kind == recipe_kind
+                        && native_stream(&recipe.id) == Some(stream)
                 })
                 .min_by_key(|recipe| recipe.byte_offset)?;
             let recipe_program_at = usize::try_from(recipe.byte_offset)
@@ -4886,10 +4886,10 @@ fn parse_recipe_operand(
     let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
     let mut matches = recipes.iter().filter(|recipe| {
-        native_stream(&recipe.id) == Some(stream)
-            && recipe.kind == recipe_kind
-            && recipe.byte_offset > recipe_record_byte_offset
+        recipe.byte_offset > recipe_record_byte_offset
             && recipe.byte_offset < next_byte_offset
+            && recipe.kind == recipe_kind
+            && native_stream(&recipe.id) == Some(stream)
     });
     let recipe = matches.next()?;
     if matches.next().is_some() {
@@ -5713,13 +5713,13 @@ pub(super) fn parse_face_operand(
     let recipe_start = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
     let mut matches = recipes.iter().filter(|recipe| {
-        native_stream(&recipe.id) == Some(stream)
+        recipe.byte_offset > recipe_start
+            && recipe.byte_offset < next_byte_offset
             && matches!(
                 recipe.kind,
                 ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
             )
-            && recipe.byte_offset > recipe_start
-            && recipe.byte_offset < next_byte_offset
+            && native_stream(&recipe.id) == Some(stream)
     });
     let recipe = matches.next()?;
     if matches.next().is_some() {

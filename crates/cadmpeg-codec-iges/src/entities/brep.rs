@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit IGES B-rep topology projection.
 
+use super::composite::CompositeIndex;
 use super::geometry::{resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
@@ -118,6 +119,52 @@ fn compose_sense(left: Sense, right: Sense) -> Sense {
         Sense::Forward
     } else {
         Sense::Reversed
+    }
+}
+
+fn first_coedge_positions(coedges: &[Coedge]) -> BTreeMap<CoedgeId, usize> {
+    let mut positions = BTreeMap::new();
+    for (position, coedge) in coedges.iter().enumerate() {
+        positions.entry(coedge.id.clone()).or_insert(position);
+    }
+    positions
+}
+
+fn closed_shell_radial_is_inconsistent(
+    coedges: &[Coedge],
+    positions: &BTreeMap<CoedgeId, usize>,
+    radial: &BTreeMap<(u32, u32, usize), Vec<CoedgeId>>,
+) -> bool {
+    radial.values().any(|ring| {
+        if ring.len() != 2 {
+            return true;
+        }
+        let mut senses = ring.iter().filter_map(|id| {
+            positions
+                .get(id)
+                .and_then(|position| coedges.get(*position))
+                .map(|coedge| coedge.sense)
+        });
+        match (senses.next(), senses.next()) {
+            (Some(first), Some(second)) => first == second,
+            _ => true,
+        }
+    })
+}
+
+fn assign_radial_next(
+    coedges: &mut [Coedge],
+    positions: &BTreeMap<CoedgeId, usize>,
+    radial: &BTreeMap<(u32, u32, usize), Vec<CoedgeId>>,
+) {
+    for ring in radial.values() {
+        for (index, id) in ring.iter().enumerate() {
+            if let Some(&position) = positions.get(id) {
+                if let Some(coedge) = coedges.get_mut(position) {
+                    coedge.radial_next = ring[(index + 1) % ring.len()].clone();
+                }
+            }
+        }
     }
 }
 
@@ -297,6 +344,16 @@ struct ResolvedPcurve {
 /// [`MAX_BEZIER_BLENDS`]: super::nurbs_controls::MAX_BEZIER_BLENDS
 type BodyPcurves = BTreeMap<(u32, u32), Option<ResolvedPcurve>>;
 
+/// Per-body curve lookups for pcurve resolution.
+///
+/// The edge arena grows as each body commits, so both indexes are rebuilt
+/// for the body on first pcurve use. `model` borrows the document; it must
+/// be dropped before the body commits.
+struct BodyPcurveIndexes<'a> {
+    model: Option<cadmpeg_ir::index::ModelIndex<'a>>,
+    composite: Option<CompositeIndex>,
+}
+
 #[derive(Clone, Copy)]
 struct PcurveEndpointCheck {
     start: Point3,
@@ -310,6 +367,7 @@ fn resolve_pcurve(
     support: &SurfaceSupport<'_>,
     tolerance: f64,
     ctx: &DecodeContext<'_>,
+    composite_index: Option<&CompositeIndex>,
 ) -> Result<Option<ResolvedPcurve>, super::composite::CompositeCurveError> {
     let Some((geometry, range)) = pcurve_geometry(
         index,
@@ -321,7 +379,7 @@ fn resolve_pcurve(
         },
         Some(tolerance),
         ctx,
-        None,
+        composite_index,
     )?
     else {
         return Ok(None);
@@ -374,7 +432,7 @@ fn resolve_pcurve_uses<'a>(
     support: &SurfaceSupport<'_>,
     endpoints: PcurveEndpointCheck,
     ctx: &'a DecodeContext<'_>,
-    model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
+    indexes: &mut BodyPcurveIndexes<'a>,
     body_pcurves: &mut BodyPcurves,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
@@ -385,10 +443,13 @@ fn resolve_pcurve_uses<'a>(
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
-    if model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source));
+    if indexes.model.is_none() {
+        indexes.model = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source));
     }
-    let Some(index) = model_index.as_ref() else {
+    if indexes.composite.is_none() {
+        indexes.composite = Some(CompositeIndex::from_ir(source));
+    }
+    let Some(index) = indexes.model.as_ref() else {
         return Ok(None);
     };
     let mut resolved = Vec::new();
@@ -399,7 +460,14 @@ fn resolve_pcurve_uses<'a>(
             Some(Some(pcurve)) => pcurve.clone(),
             seen => {
                 let repeated = seen.is_some();
-                let Some(pcurve) = resolve_pcurve(index, *sequence, support, tolerance, ctx)?
+                let Some(pcurve) = resolve_pcurve(
+                    index,
+                    *sequence,
+                    support,
+                    tolerance,
+                    ctx,
+                    indexes.composite.as_ref(),
+                )?
                 else {
                     return Ok(None);
                 };
@@ -1033,7 +1101,10 @@ pub(super) fn project(
     for definition in body_definitions {
         let ir = commit_session.document();
         let entry = definition.entry;
-        let mut model_index = None;
+        let mut pcurve_indexes = BodyPcurveIndexes {
+            model: None,
+            composite: None,
+        };
         let mut body_pcurves = BodyPcurves::new();
         // The edge arena does grow — every committed body appends to it —
         // so this index lives for one body and is built on first use, where
@@ -1146,7 +1217,7 @@ pub(super) fn project(
                                     tolerance,
                                 },
                                 ctx,
-                                &mut model_index,
+                                &mut pcurve_indexes,
                                 &mut body_pcurves,
                             ) {
                                 Ok(resolved) => resolved,
@@ -1250,7 +1321,7 @@ pub(super) fn project(
                                 tolerance,
                             },
                             ctx,
-                            &mut model_index,
+                            &mut pcurve_indexes,
                             &mut body_pcurves,
                         ) {
                             Ok(resolved) => resolved,
@@ -1543,24 +1614,13 @@ pub(super) fn project(
             );
             continue;
         }
+        let coedge_positions = first_coedge_positions(&candidate.model().coedges);
         if definition.closed
-            && radial.values().any(|ring| {
-                if ring.len() != 2 {
-                    return true;
-                }
-                let mut senses = ring.iter().filter_map(|id| {
-                    candidate
-                        .model()
-                        .coedges
-                        .iter()
-                        .find(|coedge| coedge.id == *id)
-                        .map(|coedge| coedge.sense)
-                });
-                match (senses.next(), senses.next()) {
-                    (Some(first), Some(second)) => first == second,
-                    _ => true,
-                }
-            })
+            && closed_shell_radial_is_inconsistent(
+                &candidate.model().coedges,
+                &coedge_positions,
+                &radial,
+            )
         {
             super::push_geometry_loss(
                 &mut losses,
@@ -1571,18 +1631,11 @@ pub(super) fn project(
             );
             continue;
         }
-        for ring in radial.values() {
-            for (index, id) in ring.iter().enumerate() {
-                if let Some(coedge) = candidate
-                    .model_mut()
-                    .coedges
-                    .iter_mut()
-                    .find(|coedge| coedge.id == *id)
-                {
-                    coedge.radial_next = ring[(index + 1) % ring.len()].clone();
-                }
-            }
-        }
+        assign_radial_next(
+            candidate.model_mut().coedges.as_mut_slice(),
+            &coedge_positions,
+            &radial,
+        );
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
@@ -1603,7 +1656,7 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        drop(model_index);
+        drop(pcurve_indexes);
         if commit_session.commit_model(candidate)?.is_err() {
             super::push_geometry_loss(
                 &mut losses,

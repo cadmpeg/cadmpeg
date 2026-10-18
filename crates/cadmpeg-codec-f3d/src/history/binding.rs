@@ -1485,46 +1485,26 @@ impl<'a> Binder<'a> {
             let Some(record) = self.live.table.get(slot) else {
                 return false;
             };
-            if self
-                .live
-                .incoming
-                .get(slot)
-                .into_iter()
-                .flatten()
-                .any(|owner| {
-                    !input.contains(owner)
-                        && self
-                            .live
-                            .table
-                            .get(owner)
-                            .is_some_and(|candidate| candidate.ref_at(0) == Some(*slot))
-                })
-            {
-                return true;
-            }
             // Shared attributes must retain the global record-order winner.
-            if record.name.ends_with("-attrib") {
-                return self
-                    .live
-                    .incoming
-                    .get(slot)
-                    .into_iter()
-                    .flatten()
-                    .any(|owner| !input.contains(owner));
-            }
-            // classify_edge_curve_senses also sees saved and wire-only edges.
+            let attribute = record.name.ends_with("-attrib");
             self.live
                 .incoming
                 .get(slot)
                 .into_iter()
                 .flatten()
                 .any(|owner| {
+                    let outside = !input.contains(owner);
+                    if attribute {
+                        return outside;
+                    }
                     self.live.table.get(owner).is_some_and(|candidate| {
-                        (matches!(candidate.head(), "edge" | "tedge")
-                            && [3, 5, 8]
-                                .iter()
-                                .any(|&field| candidate.ref_at(field) == Some(*slot))
-                            && !self.units.edge_users.contains_key(owner))
+                        (outside && candidate.ref_at(0) == Some(*slot))
+                            // classify_edge_curve_senses also sees saved and wire-only edges.
+                            || (matches!(candidate.head(), "edge" | "tedge")
+                                && [3, 5, 8]
+                                    .iter()
+                                    .any(|&field| candidate.ref_at(field) == Some(*slot))
+                                && !self.units.edge_users.contains_key(owner))
                             || (matches!(candidate.head(), "vertex" | "tvertex")
                                 && !self.units.reverse.contains_key(owner))
                     })
