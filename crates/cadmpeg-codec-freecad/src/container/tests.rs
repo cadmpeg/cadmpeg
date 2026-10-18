@@ -567,7 +567,7 @@ fn invalid_file_version_preserves_independent_brep_geometry_and_declaration() {
         let mut entry = source.by_index(index).unwrap();
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).unwrap();
-        entries.push((entry.name().to_owned(), bytes));
+        entries.push((entry.name().expect("entry name").into_owned(), bytes));
     }
     for version in ["bad", "-1", "", "184467440737095516160"] {
         let modified = entries

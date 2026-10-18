@@ -603,7 +603,12 @@ pub(crate) fn write_semantic(
         let mut entry = archive.by_index(index).map_err(|error| {
             CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
         })?;
-        let name = entry.name().to_owned();
+        let name = entry
+            .name()
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+            })?
+            .into_owned();
         let options = crate::zip_write::file_options(entry.compression());
         if entry.is_dir() {
             zip.add_directory(name, options).map_err(|error| {

@@ -268,7 +268,12 @@ pub(crate) fn patch_protein_appearances(
         let mut entry = archive.by_index(index).map_err(|error| {
             CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
         })?;
-        let name = entry.name().to_owned();
+        let name = entry
+            .name()
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+            })?
+            .into_owned();
         let options = crate::zip_write::file_options(entry.compression());
         let declared_size = entry.size();
         total_inflated = total_inflated.checked_add(declared_size).ok_or_else(|| {

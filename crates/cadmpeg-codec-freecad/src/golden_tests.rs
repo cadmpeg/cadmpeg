@@ -271,7 +271,7 @@ fn archive_entries(archive: &[u8]) -> serde_json::Value {
     let entries = (0..zip.len())
         .map(|index| {
             let mut entry = zip.by_index(index).expect("archive entry");
-            let name = entry.name().to_owned();
+            let name = entry.name().expect("entry name").into_owned();
             let mut payload = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut payload)
                 .unwrap_or_else(|error| panic!("inflate {name}: {error}"));
