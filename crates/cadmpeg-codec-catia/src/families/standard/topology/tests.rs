@@ -580,3 +580,178 @@ fn face_orientation_rejects_an_unpaired_edge_use() {
     .expect("orient face cycles")
     .is_none());
 }
+
+/// Vertex-map walk over `incident`: the specification `incidence_cycles`
+/// must reproduce, cycle for cycle and member for member.
+fn incidence_cycles_by_vertex_maps(
+    incident: &[usize],
+    edge_points: &[[usize; 2]],
+) -> Option<Vec<Vec<(usize, bool)>>> {
+    use std::collections::HashSet;
+
+    #[derive(Clone, Copy)]
+    struct AdjacentEdge {
+        edge: usize,
+        vertex: usize,
+        reversed: bool,
+    }
+
+    if incident.is_empty() {
+        return None;
+    }
+    let mut vertex_indices = HashMap::<usize, usize>::new();
+    let mut at_vertex = Vec::<Vec<AdjacentEdge>>::new();
+    let mut unseen = Vec::<(usize, [usize; 2])>::new();
+    let mut seen_edges = HashSet::new();
+    let mut cycles = Vec::new();
+    for &edge in incident {
+        if !seen_edges.insert(edge) {
+            return None;
+        }
+        let &[start, end] = edge_points.get(edge)?;
+        if start == end {
+            cycles.push(vec![(edge, false)]);
+            continue;
+        }
+        let mut endpoints = [0; 2];
+        for (slot, vertex) in [start, end].into_iter().enumerate() {
+            let index = if let Some(&index) = vertex_indices.get(&vertex) {
+                index
+            } else {
+                let index = at_vertex.len();
+                vertex_indices.insert(vertex, index);
+                at_vertex.push(Vec::new());
+                index
+            };
+            endpoints[slot] = index;
+        }
+        let [start, end] = endpoints;
+        at_vertex[start].push(AdjacentEdge {
+            edge,
+            vertex: end,
+            reversed: false,
+        });
+        at_vertex[end].push(AdjacentEdge {
+            edge,
+            vertex: start,
+            reversed: true,
+        });
+        unseen.push((edge, [start, end]));
+    }
+    if at_vertex.iter().any(|edges| edges.len() != 2) {
+        return None;
+    }
+    unseen.sort_unstable_by_key(|left| std::cmp::Reverse(left.0));
+    let mut consumed = HashSet::new();
+    while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {
+        if !consumed.insert(first) {
+            continue;
+        }
+        let mut members = vec![(first, false)];
+        let mut previous_edge = first;
+        while vertex != start_vertex {
+            let [left, right] = at_vertex[vertex].as_slice() else {
+                return None;
+            };
+            let next = if left.edge == previous_edge {
+                right
+            } else {
+                left
+            };
+            if !consumed.insert(next.edge) {
+                return None;
+            }
+            vertex = next.vertex;
+            previous_edge = next.edge;
+            members.push((next.edge, next.reversed));
+        }
+        cycles.push(members);
+    }
+    Some(cycles)
+}
+
+#[test]
+fn incidence_cycles_match_the_vertex_map_walk() {
+    struct SplitMix(u64);
+    impl SplitMix {
+        fn below(&mut self, bound: usize) -> usize {
+            self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            let mut value = self.0;
+            value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            value ^= value >> 31;
+            usize::try_from(value % u64::try_from(bound).expect("bound fits u64"))
+                .expect("value below bound fits usize")
+        }
+    }
+
+    let mut random = SplitMix(0x5eed);
+    let mut closed = 0usize;
+    for case in 0..20_000 {
+        let mut edge_points = Vec::new();
+        let mut incident = Vec::new();
+        if case % 2 == 0 {
+            let point_count = 1 + random.below(6);
+            for _ in 0..random.below(9) {
+                edge_points.push([random.below(point_count), random.below(point_count)]);
+            }
+            for _ in 0..random.below(9) {
+                incident.push(random.below(edge_points.len() + 2));
+            }
+        } else {
+            // A disjoint union of cycles over shuffled vertex labels, some
+            // edges reversed, then incident in shuffled order.
+            let mut next_point = 0usize;
+            for _ in 0..=random.below(3) {
+                let length = 1 + random.below(5);
+                let first = next_point;
+                next_point += length;
+                for offset in 0..length {
+                    let start = first + offset;
+                    let end = first + (offset + 1) % length;
+                    edge_points.push(if random.below(3) == 0 {
+                        [end, start]
+                    } else {
+                        [start, end]
+                    });
+                }
+            }
+            for index in (1..next_point).rev() {
+                let other = random.below(index + 1);
+                for points in &mut edge_points {
+                    for point in points {
+                        if *point == index {
+                            *point = other;
+                        } else if *point == other {
+                            *point = index;
+                        }
+                    }
+                }
+            }
+            incident.extend(0..edge_points.len());
+            for index in (1..incident.len()).rev() {
+                incident.swap(index, random.below(index + 1));
+            }
+            match random.below(8) {
+                0 => incident.truncate(random.below(incident.len() + 1)),
+                1 => incident.push(incident[random.below(incident.len())]),
+                _ => {}
+            }
+        }
+        let expected = incidence_cycles_by_vertex_maps(&incident, &edge_points);
+        let actual = incidence_cycles(&incident, &edge_points)
+            .expect("compute the incidence cycles")
+            .map(|cycles| {
+                cycles
+                    .iter()
+                    .map(|cycle| cycle.to_vec())
+                    .collect::<Vec<_>>()
+            });
+        closed += usize::from(expected.is_some());
+        assert_eq!(
+            actual, expected,
+            "incident {incident:?} over {edge_points:?}"
+        );
+    }
+    assert!(closed > 5_000, "only {closed} cases closed");
+}

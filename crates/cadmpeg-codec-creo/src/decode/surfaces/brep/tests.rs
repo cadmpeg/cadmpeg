@@ -17,7 +17,7 @@ use super::{
     push_native_pcurve_candidate, split_neutral_component_shells, transfer_native_brep,
     BrepEdgeIndexes, BrepFaceCandidateIndexes, BrepSourceIndexes, BrepTransferDiagnostics,
     FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence, NativeCurveEvidence,
-    NativePcurveCandidates, NeutralShellSpec,
+    NativePcurveCandidates, NativeSurfaceNamespaces, NeutralShellSpec,
 };
 
 mod body_index;
@@ -100,10 +100,10 @@ fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
 #[test]
 fn brep_face_candidate_indexes_preserve_service_selection() {
     let scan = face_candidate_scan();
-    let indexes = { BrepFaceCandidateIndexes::from_scan(&scan, &CadIr::empty()) };
+    let indexes =
+        { BrepFaceCandidateIndexes::from_scan(&scan, &NativeSurfaceNamespaces::new(&scan)) };
     assert_eq!(indexes.loops_by_face[&5].len(), 1);
     assert_eq!(indexes.candidate_face_ids, BTreeSet::from([5]));
-    assert_eq!(indexes.model_surface_counts[&5], 0);
     assert_eq!(indexes.boundary_curve_ids, BTreeSet::from([10]));
     assert_eq!(indexes.legacy_nonvisible_face_reference_count, 0);
 }
@@ -495,11 +495,14 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
             offset: 0,
         });
 
-    assert!(is_neutral_face_reference(&scan, 5));
-    assert!(!is_neutral_face_reference(&scan, 7));
+    let neutral = |scan: &crate::container::ContainerScan, face_id| {
+        is_neutral_face_reference(scan, &NativeSurfaceNamespaces::new(scan), face_id)
+    };
+    assert!(neutral(&scan, 5));
+    assert!(!neutral(&scan, 7));
 
     scan.framing.layout = crate::container::Layout::Nd;
-    assert!(is_neutral_face_reference(&scan, 7));
+    assert!(neutral(&scan, 7));
 }
 
 #[test]

@@ -1131,7 +1131,11 @@ fn subshell_wires_project_onto_the_nearest_shell() {
         .iter()
         .map(|record| (i64::try_from(record.index).expect("index fits"), record))
         .collect::<HashMap<_, _>>();
-    assert_eq!(shell_wire_roots(&records[1], &by_index), [4, 5, 6]);
+    let subshells = subshell_ancestor_shells(&records, &by_index).unwrap();
+    assert_eq!(
+        shell_wire_roots(&records[1], &by_index, &subshells),
+        [4, 5, 6]
+    );
 }
 
 #[test]

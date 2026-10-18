@@ -42,16 +42,13 @@ use crate::decode::analytic::pcurve_geometry::{
 };
 use crate::decode::analytic::pcurves::{
     canonicalized_pcurve_endpoints, pcurve_backed_periodic_conic_parameter_range,
-    planar_curve_pcurve, unique_oriented_native_pcurve, NativePcurveCandidates,
+    planar_curve_pcurve, unique_oriented_native_pcurve, NamedSurfaces, NativePcurveCandidates,
 };
 use crate::decode::analytic::vertices::{
     solve_topological_vertices, TopologicalVertexSolveDiagnostics,
 };
 
-use super::{
-    fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id, native_surface_id_matcher,
-    native_surface_namespace,
-};
+use super::{fc05_cap_pair_model_frame, fc05_model_frame, NativeSurfaceNamespaces};
 
 const EPS_PARAMETER_AGREE: f64 = 1.0e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1.0e-9;
@@ -630,11 +627,15 @@ fn admitted_face_components<'a>(
 /// model body. Their analytic carriers remain available as native geometry,
 /// but admitting their references here would manufacture disconnected body
 /// components and make body ownership appear ambiguous.
-fn is_neutral_face_reference(scan: &ContainerScan, face_id: u32) -> bool {
+fn is_neutral_face_reference(
+    scan: &ContainerScan,
+    namespaces: &NativeSurfaceNamespaces,
+    face_id: u32,
+) -> bool {
     !matches!(
         scan.framing.layout,
         crate::container::Layout::LegacyAscii(_)
-    ) || scan.surfaces.rows.iter().any(|row| row.id == face_id)
+    ) || namespaces.is_visible(face_id)
 }
 
 fn merge_body_components(components: Vec<NeutralShellSpec>) -> Vec<NeutralShellSpec> {
@@ -1145,13 +1146,12 @@ impl<'a> BrepSourceIndexes<'a> {
 struct BrepFaceCandidateIndexes<'a> {
     loops_by_face: BTreeMap<u32, Vec<&'a crate::topology::Loop>>,
     candidate_face_ids: BTreeSet<u32>,
-    model_surface_counts: BTreeMap<u32, usize>,
     boundary_curve_ids: BTreeSet<u32>,
     legacy_nonvisible_face_reference_count: usize,
 }
 
 impl<'a> BrepFaceCandidateIndexes<'a> {
-    fn from_scan(scan: &'a ContainerScan<'_>, ir: &CadIr) -> Self {
+    fn from_scan(scan: &'a ContainerScan<'_>, namespaces: &NativeSurfaceNamespaces) -> Self {
         let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
         for lp in &scan.topology.loops {
             if let Some(face_id) = lp.face_id() {
@@ -1175,9 +1175,9 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
         }
         let legacy_nonvisible_face_reference_count = topology_face_reference_ids
             .iter()
-            .filter(|face_id| !is_neutral_face_reference(scan, **face_id))
+            .filter(|face_id| !is_neutral_face_reference(scan, namespaces, **face_id))
             .count();
-        loops_by_face.retain(|face_id, _| is_neutral_face_reference(scan, *face_id));
+        loops_by_face.retain(|face_id, _| is_neutral_face_reference(scan, namespaces, *face_id));
         let mut candidate_face_ids = BTreeSet::new();
         for face_id in scan
             .topology
@@ -1185,26 +1185,9 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             .iter()
             .flat_map(|component| component.face_ids().iter().copied())
             .chain(loops_by_face.keys().copied())
-            .filter(|face_id| is_neutral_face_reference(scan, *face_id))
+            .filter(|face_id| is_neutral_face_reference(scan, namespaces, *face_id))
         {
             candidate_face_ids.insert(face_id);
-        }
-        let mut model_surface_counts = BTreeMap::new();
-        for face_id in &candidate_face_ids {
-            let prefix = native_surface_namespace(scan, *face_id).1;
-            let count = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| {
-                    crate::identity::matches_numbered_identity(
-                        surface.id.as_str(),
-                        prefix,
-                        *face_id,
-                    )
-                })
-                .count();
-            model_surface_counts.insert(*face_id, count);
         }
         let mut boundary_curve_ids = BTreeSet::new();
         for curve_id in loops_by_face
@@ -1217,7 +1200,6 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
         Self {
             loops_by_face,
             candidate_face_ids,
-            model_surface_counts,
             boundary_curve_ids,
             legacy_nonvisible_face_reference_count,
         }
@@ -1744,13 +1726,14 @@ pub(in super::super) fn transfer_native_brep(
         solved_vertices,
         ir,
     );
+    let mut surface_positions = model_surfaces.into_positions();
+    let namespaces = NativeSurfaceNamespaces::new(scan);
     let BrepFaceCandidateIndexes {
         loops_by_face,
         candidate_face_ids,
-        model_surface_counts,
         boundary_curve_ids,
         legacy_nonvisible_face_reference_count,
-    } = BrepFaceCandidateIndexes::from_scan(scan, ir);
+    } = BrepFaceCandidateIndexes::from_scan(scan, &namespaces);
     let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir, source_carriers);
     let mut diagnostics = BrepTransferDiagnostics {
         candidate_face_count: candidate_face_ids.len(),
@@ -1775,18 +1758,19 @@ pub(in super::super) fn transfer_native_brep(
         .count();
     let mut eligible_faces = BTreeMap::new();
     for face_id in candidate_face_ids {
-        if model_surface_counts[&face_id] == 0 {
+        let Some(face_surface) = surface_positions.named(namespaces.prefix(face_id), face_id)
+        else {
             diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, face_id);
             continue;
-        }
+        };
         if !face_orientations.contains_key(&face_id) {
             diagnostics.reject_face(FaceAdmissionRejection::MissingOrientation, face_id);
             continue;
         }
-        if model_surface_counts[&face_id] > 1 {
+        let NamedSurfaces::Unique(face_surface) = face_surface else {
             diagnostics.reject_face(FaceAdmissionRejection::AmbiguousSurfaceCarrier, face_id);
             continue;
-        }
+        };
         let Some(loops) = loops_by_face.get(&face_id) else {
             diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
             continue;
@@ -1819,18 +1803,9 @@ pub(in super::super) fn transfer_native_brep(
             diagnostics.reject_face(FaceAdmissionRejection::AmbiguousBoundaryCurve, face_id);
             continue;
         }
-        let is_face_surface = native_surface_id_matcher(scan, face_id);
+        let surface = &ir.model.surfaces[face_surface];
         let mut two_edge_loops_are_proven = true;
         for lp in loops.iter().filter(|lp| lp.half_edges().len() == 2) {
-            let Some(surface) = exactly_one(
-                ir.model
-                    .surfaces
-                    .iter()
-                    .filter(|candidate| is_face_surface(&candidate.id)),
-            ) else {
-                two_edge_loops_are_proven = false;
-                break;
-            };
             if native_parameter_loop_polygon(
                 ctx,
                 lp,
@@ -1859,29 +1834,19 @@ pub(in super::super) fn transfer_native_brep(
         let ordered = if ordered.is_some() {
             ordered
         } else {
-            let surface = exactly_one(
-                ir.model
-                    .surfaces
-                    .iter()
-                    .filter(|candidate| is_face_surface(&candidate.id)),
-            );
-            if let Some(surface) = surface {
-                ordered_native_parameter_face_loops(
-                    ctx,
-                    loops,
-                    (face_id, source_carriers.surface_geometry(surface)),
-                    &incidence,
-                    solved_vertices,
-                    &native_pcurves,
-                    NativeCurveEvidence {
-                        typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
-                        model_curves: &ir.model.curves,
-                        source_carriers,
-                    },
-                )?
-            } else {
-                None
-            }
+            ordered_native_parameter_face_loops(
+                ctx,
+                loops,
+                (face_id, source_carriers.surface_geometry(surface)),
+                &incidence,
+                solved_vertices,
+                &native_pcurves,
+                NativeCurveEvidence {
+                    typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+                    model_curves: &ir.model.curves,
+                    source_carriers,
+                },
+            )?
         };
         let Some(ordered) = ordered else {
             diagnostics.reject_face(FaceAdmissionRejection::LoopOrdering, face_id);
@@ -2301,12 +2266,8 @@ pub(in super::super) fn transfer_native_brep(
                 &face_shell_ids[face_id],
                 native_loops.len(),
             )?;
-            let visible_row = crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id);
-            let active_datum = scan
-                .planes
-                .datum_cylinders
-                .iter()
-                .find(|datum| datum.id == *face_id);
+            let visible_row = namespaces.unique_visible_row(*face_id);
+            let active_datum = namespaces.active_datum(*face_id);
             let face_offset = visible_row
                 .map(|row| row.offset)
                 .or_else(|| active_datum.map(|datum| datum.offset_in_payload))
@@ -2316,8 +2277,9 @@ pub(in super::super) fn transfer_native_brep(
             } else {
                 "VisibGeom"
             };
-            let surface = native_surface_id(scan, *face_id)?;
-            if !ir.model.surfaces.iter().any(|item| item.id == surface) {
+            let surface = namespaces.surface_id(*face_id)?;
+            let surface_prefix = namespaces.prefix(*face_id);
+            if surface_positions.named(surface_prefix, *face_id).is_none() {
                 annotate(
                     annotations,
                     &surface,
@@ -2354,6 +2316,7 @@ pub(in super::super) fn transfer_native_brep(
                         }),
                     },
                 )?;
+                surface_positions.admit(&ir.model.surfaces, ir.model.surfaces.len() - 1);
             }
             let face_sense = if face_orientations[face_id] {
                 Sense::Reversed
@@ -2392,7 +2355,9 @@ pub(in super::super) fn transfer_native_brep(
                     tolerance: None,
                 },
             )?;
-            let is_face_surface = native_surface_id_matcher(scan, *face_id);
+            let face_surface = surface_positions
+                .named(surface_prefix, *face_id)
+                .and_then(NamedSurfaces::unique);
             for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
                 let ring = native_loop_ring(native_loop, *face_id)?;
                 ctx.charge_entities(1, "admit Creo model loops")?;
@@ -2439,12 +2404,7 @@ pub(in super::super) fn transfer_native_brep(
                                 solved_vertices[&binding.start_vertex_id.get()],
                                 solved_vertices[&end.get()],
                             ];
-                            let surface = exactly_one(
-                                ir.model
-                                    .surfaces
-                                    .iter()
-                                    .filter(|candidate| is_face_surface(&candidate.id)),
-                            )?;
+                            let surface = &ir.model.surfaces[face_surface?];
                             Some((source_carriers.surface_geometry(surface), traversal))
                         })();
                         match inputs {
@@ -2472,12 +2432,7 @@ pub(in super::super) fn transfer_native_brep(
                         )
                         .or_else(|| {
                             native_candidates.is_none().then_some(())?;
-                            let surface = exactly_one(
-                                ir.model
-                                    .surfaces
-                                    .iter()
-                                    .filter(|candidate| is_face_surface(&candidate.id)),
-                            )?;
+                            let surface = &ir.model.surfaces[face_surface?];
                             let curve = exactly_one(ir.model.curves.iter().filter(|candidate| {
                                 crate::identity::matches_numbered_identity(
                                     candidate.id.as_str(),
@@ -2574,7 +2529,7 @@ pub(in super::super) fn transfer_native_brep(
                                         geometry,
                                         metadata,
                                     },
-                                    &native_surface_id(scan, *face_id)?,
+                                    &namespaces.surface_id(*face_id)?,
                                 )?;
                             }
                             Ok(Some(PcurveUse {
