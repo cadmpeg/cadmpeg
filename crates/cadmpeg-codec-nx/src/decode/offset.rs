@@ -6,8 +6,6 @@ use super::blend::{
     blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGrid,
 };
 use super::geometry_work::GeometryWorkBudget;
-#[cfg(test)]
-use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::nurbs_fit::fit_nurbs_surface_parameter;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
@@ -34,6 +32,8 @@ use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod sample_count;
+#[cfg(test)]
+pub(super) mod test_support;
 
 use sample_count::CoarseSampleCount;
 
@@ -152,25 +152,6 @@ pub(super) fn saved_offset_carriers(
         }
     }
     Ok(result)
-}
-
-#[cfg(test)]
-pub(super) fn certified_offset_cache_fit(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    support: &SurfaceGeometry,
-    candidate: &SurfaceGeometry,
-    distance: f64,
-    tolerance: NonNegativeLength,
-) -> Option<f64> {
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
-    certified_offset_cache_fit_with_budget(
-        support,
-        candidate,
-        distance,
-        tolerance,
-        &geometry_budget,
-    )
-    .expect("evaluation stays within session limits")
 }
 
 fn certified_offset_cache_fit_with_budget(
@@ -991,58 +972,6 @@ fn offset_support_control_hull_excludes_point(
     false
 }
 
-#[cfg(test)]
-pub(super) fn offset_surface_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    surface: &SurfaceId,
-    point: Point3,
-    seed: Option<Point2>,
-) -> Option<Point2> {
-    offset_surface_parameters_with_tolerance(ctx, ir, surface, point, seed, None)
-}
-
-#[cfg(test)]
-pub(super) fn offset_surface_parameters_with_tolerance(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    surface: &SurfaceId,
-    point: Point3,
-    seed: Option<Point2>,
-    fit_tolerance: Option<f64>,
-) -> Option<Point2> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    offset_surface_parameters_with_tolerance_with_index(
-        ctx,
-        &index,
-        surface,
-        point,
-        seed,
-        fit_tolerance,
-    )
-}
-
-#[cfg(test)]
-fn offset_surface_parameters_with_tolerance_with_index(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
-    point: Point3,
-    seed: Option<Point2>,
-    fit_tolerance: Option<f64>,
-) -> Option<Point2> {
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
-    offset_surface_parameters_with_tolerance_with_index_and_budget(
-        index,
-        surface,
-        point,
-        seed,
-        fit_tolerance,
-        &geometry_budget,
-    )
-    .expect("evaluation stays within session limits")
-}
-
 pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -1761,67 +1690,6 @@ fn model_surface_point_and_derivatives(
 /// Continue one chart-selected surface-intersection branch in both support
 /// parameter spaces. The chart seeds and orders the branch; corrected points
 /// satisfy the two support surfaces rather than interpolating chart samples.
-#[cfg(test)]
-pub(super) fn continue_surface_intersection_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    surfaces: [&SurfaceId; 2],
-    chart: &[Point3],
-    fit_tolerance: f64,
-) -> Option<[Vec<Point2>; 2]> {
-    continue_surface_intersection_parameters_with_seeds(
-        ctx,
-        ir,
-        surfaces,
-        chart,
-        fit_tolerance,
-        [None, None],
-    )
-}
-
-#[cfg(test)]
-fn continue_surface_intersection_parameters_with_seeds(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    surfaces: [&SurfaceId; 2],
-    chart: &[Point3],
-    fit_tolerance: f64,
-    seeds: [Option<Point2>; 2],
-) -> Option<[Vec<Point2>; 2]> {
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
-        &index,
-        surfaces,
-        chart,
-        fit_tolerance,
-        seeds,
-        &geometry_budget,
-    )
-    .expect("evaluation stays within session limits")
-}
-
-#[cfg(test)]
-fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surfaces: [&SurfaceId; 2],
-    chart: &[Point3],
-    fit_tolerance: f64,
-    seeds: [Option<Point2>; 2],
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::decode::ResourceLimit> {
-    let mut blend_parameter_grids = BTreeMap::new();
-    continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
-        index,
-        surfaces,
-        chart,
-        fit_tolerance,
-        seeds,
-        geometry_budget,
-        &mut blend_parameter_grids,
-    )
-}
-
 pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache<
     'a,
 >(
@@ -2682,9 +2550,10 @@ mod tests {
     use super::super::geometry_work::GeometryWorkBudget;
     use super::super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
     use super::sample_count::CoarseSampleCount;
+    use super::test_support::offset_surface_parameters_with_tolerance;
     use super::{
         certified_offset_cache_fit_with_budget, coarse_surface_sample_counts,
-        offset_support_control_hull_excludes_point, offset_surface_parameters_with_tolerance,
+        offset_support_control_hull_excludes_point,
         refine_offset_surface_parameters_with_index_and_budget,
     };
     use cadmpeg_ir::document::CadIr;

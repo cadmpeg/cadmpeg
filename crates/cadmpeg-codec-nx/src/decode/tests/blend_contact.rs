@@ -8,9 +8,8 @@ use crate::decode::blend::{
     blend_contact_offset_matches, closest_pcurve_parameters, closest_spine_parameter,
     constant_surface_offset_between,
 };
-use crate::decode::offset::{
-    continue_surface_intersection_parameters, solve_damped_least_squares_4x4,
-};
+use crate::decode::offset::solve_damped_least_squares_4x4;
+use crate::decode::offset::test_support::continue_surface_intersection_parameters;
 use cadmpeg_ir::math::Point3;
 
 use cadmpeg_ir::geometry::{

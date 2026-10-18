@@ -2283,28 +2283,6 @@ fn exact_boundary_curve_breaks(
     Some(breaks)
 }
 
-#[cfg(test)]
-pub(super) fn exact_analytic_isocurve_pcurve(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    curve: &CurveId,
-    surface: &SurfaceId,
-    range: [f64; 2],
-    tolerance: f64,
-) -> Option<PcurveGeometry> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
-    exact_analytic_isocurve_pcurve_with_index_and_budget(
-        &index,
-        curve,
-        surface,
-        range,
-        tolerance,
-        &geometry_budget,
-    )
-    .expect("evaluation stays within session limits")
-}
-
 fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
@@ -4355,42 +4333,6 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) fn pcurve_matches_edge(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    edge_id: &EdgeId,
-    surface_id: &SurfaceId,
-    geometry: &PcurveGeometry,
-    fit_tolerance: Option<f64>,
-) -> bool {
-    pcurve_matches_edge_range(ctx, ir, edge_id, surface_id, geometry, None, fit_tolerance)
-}
-
-#[cfg(test)]
-fn pcurve_matches_edge_range(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    edge_id: &EdgeId,
-    surface_id: &SurfaceId,
-    geometry: &PcurveGeometry,
-    parameter_range: Option<[f64; 2]>,
-    fit_tolerance: Option<f64>,
-) -> bool {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
-    pcurve_matches_edge_range_with_index_and_budget(
-        &index,
-        edge_id,
-        surface_id,
-        geometry,
-        parameter_range,
-        fit_tolerance,
-        &geometry_budget,
-    )
-    .expect("evaluation stays within session limits")
-}
-
 // Keep the index, edge identity, p-curve, and shared budget explicit: this
 // predicate is the topology admission boundary and must not hide its inputs.
 pub(super) fn pcurve_matches_edge_range_with_index_and_budget(
@@ -4841,3 +4783,5 @@ mod tests {
 
 #[cfg(test)]
 mod reversal_tests;
+#[cfg(test)]
+pub(crate) mod test_support;

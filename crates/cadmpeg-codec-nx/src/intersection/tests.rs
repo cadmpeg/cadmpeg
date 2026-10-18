@@ -2,9 +2,10 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::pcurves::test_support::pcurve_matches_edge;
 use crate::decode::pcurves::{
     complete_intersection_pcurves_from_coedge_incidence,
-    complete_intersection_supports_from_edge_incidence, pcurve_matches_edge,
+    complete_intersection_supports_from_edge_incidence,
 };
 use crate::test_support::test_bytes::put_f64;
 use crate::test_support::test_bytes::put_ref;
