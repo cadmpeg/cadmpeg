@@ -88,6 +88,7 @@ struct BodyDefinition<'a> {
 }
 
 struct SurfaceSupport<'a> {
+    sequence: u32,
     id: &'a SurfaceId,
     geometry: &'a cadmpeg_ir::geometry::SurfaceGeometry,
     factor: f64,
@@ -272,11 +273,99 @@ fn surface_point_or_refusal(
 /// One resolved pcurve use: its geometry and the parameter range it covers.
 type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
 
+/// A pcurve resolved on its support, with its end points mapped onto it.
+#[derive(Clone)]
+struct ResolvedPcurve {
+    geometry: PcurveGeometry,
+    range: [f64; 2],
+    start: Point3,
+    end: Point3,
+}
+
+/// Pcurves one body resolved, keyed by (pcurve sequence, support surface
+/// sequence).
+///
+/// While one body projects, the source model is not mutated and the length
+/// factor and global resolution are fixed, so a resolution depends only on
+/// the key, and a pcurve that many uses share pays its [`MAX_BEZIER_BLENDS`]
+/// elevation and its end-point evaluation at most twice. A key first records
+/// that it was resolved and keeps the result from its second resolution on,
+/// so a pcurve with one use is not retained. Only resolved pcurves are kept:
+/// one without a carrier or finite end points abandons the body, so that
+/// answer is never asked for twice.
+///
+/// [`MAX_BEZIER_BLENDS`]: super::nurbs_controls::MAX_BEZIER_BLENDS
+type BodyPcurves = BTreeMap<(u32, u32), Option<ResolvedPcurve>>;
+
 #[derive(Clone, Copy)]
 struct PcurveEndpointCheck {
     start: Point3,
     end: Point3,
     tolerance: f64,
+}
+
+fn resolve_pcurve(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    sequence: u32,
+    support: &SurfaceSupport<'_>,
+    tolerance: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<ResolvedPcurve>, super::composite::CompositeCurveError> {
+    let Some((geometry, range)) = pcurve_geometry(
+        index,
+        sequence,
+        &super::trimming::PcurveSupport {
+            surface_id: support.id,
+            geometry: support.geometry,
+            factor: support.factor,
+        },
+        Some(tolerance),
+        ctx,
+        None,
+    )?
+    else {
+        return Ok(None);
+    };
+    let (Some(start), Some(end)) = (
+        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]),
+        )?)
+        .map_err(CodecError::from)?
+        .map(|uv| {
+            surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                index,
+                support.id,
+                uv.u,
+                uv.v,
+            ))
+        })
+        .transpose()?
+        .flatten(),
+        finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+            cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]),
+        )?)
+        .map_err(CodecError::from)?
+        .map(|uv| {
+            surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                index,
+                support.id,
+                uv.u,
+                uv.v,
+            ))
+        })
+        .transpose()?
+        .flatten(),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(ResolvedPcurve {
+        geometry,
+        range,
+        start: start.get(),
+        end: end.get(),
+    }))
 }
 
 fn resolve_pcurve_uses<'a>(
@@ -286,6 +375,7 @@ fn resolve_pcurve_uses<'a>(
     endpoints: PcurveEndpointCheck,
     ctx: &'a DecodeContext<'_>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
+    body_pcurves: &mut BodyPcurves,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
         start: expected_start,
@@ -304,57 +394,21 @@ fn resolve_pcurve_uses<'a>(
     let mut resolved = Vec::new();
     let mut mapped = Vec::new();
     for (_, sequence) in uses {
-        let Some((geometry, range)) = pcurve_geometry(
-            index,
-            *sequence,
-            &super::trimming::PcurveSupport {
-                surface_id: support.id,
-                geometry: support.geometry,
-                factor: support.factor,
-            },
-            Some(tolerance),
-            ctx,
-            None,
-        )?
-        else {
-            return Ok(None);
+        let key = (*sequence, support.sequence);
+        let pcurve = match body_pcurves.get(&key) {
+            Some(Some(pcurve)) => pcurve.clone(),
+            seen => {
+                let repeated = seen.is_some();
+                let Some(pcurve) = resolve_pcurve(index, *sequence, support, tolerance, ctx)?
+                else {
+                    return Ok(None);
+                };
+                body_pcurves.insert(key, repeated.then(|| pcurve.clone()));
+                pcurve
+            }
         };
-        let (Some(start), Some(end)) = (
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[0]),
-            )?)
-            .map_err(CodecError::from)?
-            .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
-                    index,
-                    support.id,
-                    uv.u,
-                    uv.v,
-                ))
-            })
-            .transpose()?
-            .flatten(),
-            finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-                cadmpeg_ir::eval::decode::pcurve_uv(ctx, &geometry, range[1]),
-            )?)
-            .map_err(CodecError::from)?
-            .map(|uv| {
-                surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
-                    index,
-                    support.id,
-                    uv.u,
-                    uv.v,
-                ))
-            })
-            .transpose()?
-            .flatten(),
-        ) else {
-            return Ok(None);
-        };
-        resolved.push((geometry, range));
-        mapped.push((start.get(), end.get()));
+        resolved.push((pcurve.geometry, pcurve.range));
+        mapped.push((pcurve.start, pcurve.end));
     }
     Ok(
         (cadmpeg_ir::math::Point3::distance(mapped[0].0, expected_start) <= tolerance
@@ -980,6 +1034,7 @@ pub(super) fn project(
         let ir = commit_session.document();
         let entry = definition.entry;
         let mut model_index = None;
+        let mut body_pcurves = BodyPcurves::new();
         // The edge arena does grow — every committed body appends to it —
         // so this index lives for one body and is built on first use, where
         // it replaces a full-arena scan per distinct edge. Its `&str` keys
@@ -1080,6 +1135,7 @@ pub(super) fn project(
                                 ir,
                                 pcurves,
                                 &SurfaceSupport {
+                                    sequence: face_definition.surface,
                                     id: &surface_id,
                                     geometry: support_geometry,
                                     factor,
@@ -1091,6 +1147,7 @@ pub(super) fn project(
                                 },
                                 ctx,
                                 &mut model_index,
+                                &mut body_pcurves,
                             ) {
                                 Ok(resolved) => resolved,
                                 Err(error) => {
@@ -1182,6 +1239,7 @@ pub(super) fn project(
                             ir,
                             pcurves,
                             &SurfaceSupport {
+                                sequence: face_definition.surface,
                                 id: &surface_id,
                                 geometry: support_geometry,
                                 factor,
@@ -1193,6 +1251,7 @@ pub(super) fn project(
                             },
                             ctx,
                             &mut model_index,
+                            &mut body_pcurves,
                         ) {
                             Ok(resolved) => resolved,
                             Err(error) => {
