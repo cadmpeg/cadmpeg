@@ -3,7 +3,7 @@
 
 use super::record_finding;
 use crate::document::CadIr;
-use crate::index::identities::BorrowedIdentities;
+use crate::index::identities::IdentitySet;
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -13,7 +13,7 @@ use crate::schema::EntitySchema;
 pub(super) fn check_typed_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    index: &BorrowedIdentities<'_>,
+    index: &dyn IdentitySet,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     macro_rules! check_arenas {
@@ -81,7 +81,7 @@ mod tests {
         let mut findings = Vec::new();
         let ctx = cadmpeg_test_support::service_decode_context();
         let index = ModelIndex::build(&ir);
-        let identities = super::BorrowedIdentities::build(|add| {
+        let identities = crate::index::identities::BorrowedIdentities::build(|add| {
             for id in index.identities(crate::index::StandardIndex) {
                 add(id, ());
             }
@@ -105,7 +105,7 @@ mod tests {
             point: "test:model:point#missing".try_into().unwrap(),
             tolerance: None,
         });
-        let identities = super::BorrowedIdentities::new();
+        let identities = crate::index::identities::BorrowedIdentities::<()>::new();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
@@ -142,7 +142,7 @@ mod tests {
                 bodies: vec![target.try_into().unwrap(), target.try_into().unwrap()],
                 native_ref: None,
             });
-        let identities = super::BorrowedIdentities::new();
+        let identities = crate::index::identities::BorrowedIdentities::<()>::new();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

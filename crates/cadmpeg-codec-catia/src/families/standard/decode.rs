@@ -53,7 +53,7 @@ use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::assemble::cgm_source;
 use crate::assemble::{
@@ -3722,6 +3722,7 @@ pub(super) fn standard_object_evidence_from_streams(
     edge_tags: &HashSet<u32>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
+    let ordered_tags = tags.iter().copied().collect::<BTreeSet<_>>();
     let mut evidence_store = StandardEvidenceStore::default();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
@@ -3788,7 +3789,7 @@ pub(super) fn standard_object_evidence_from_streams(
         let face_surfaces =
             crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
         let mut surface_bindings = Vec::new();
-        for binding in tags.iter().map(|&tag| (tag, tag)).chain(
+        for binding in ordered_tags.iter().map(|&tag| (tag, tag)).chain(
             face_surfaces
                 .iter()
                 .filter(|(face_id, _)| tags.contains(face_id))
@@ -3958,7 +3959,7 @@ pub(super) fn standard_object_evidence_from_streams(
         else {
             continue;
         };
-        for &surface_id in tags {
+        for &surface_id in &ordered_tags {
             let Some(evidence) = standard_surface_evidence(ctx, &graph, surface_id, refusal)?
             else {
                 continue;

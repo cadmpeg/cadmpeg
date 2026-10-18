@@ -8,8 +8,8 @@ use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 
 use crate::families::standard::topology::{
-    incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
-    StandardTopologyDraft,
+    incidence_cycles, incidence_cycles_by, reconstruct_incidence,
+    solve_boundary_orientation_constraints, EdgeRow, StandardTopologyDraft,
 };
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
@@ -747,12 +747,67 @@ struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) solution_filter: Option<MeshEndpointSolutionFilter<'a>>,
     pub(crate) solution_visitor: Option<MeshEndpointSolutionVisitor<'v>>,
     pub(crate) partial_solution_filter: Option<MeshPartialEndpointConstraint<'a>>,
-    pub(crate) dead_states: HashSet<Vec<Option<[usize; 2]>>>,
+    pub(crate) dead_states: DeadIncidenceStates,
     pub(crate) budget: &'a WorkBudget,
     pub(crate) degree_support_budget: &'a WorkBudget,
     pub(crate) coordinate_propagation_budget: &'a WorkBudget,
     pub(crate) boundary_propagation_budget: &'a WorkBudget,
     pub(crate) state: IncidenceSearchState,
+}
+
+/// The states of a search that led to no solution, each keyed by the endpoint
+/// pairs of the search's edges in edge order.
+#[derive(Debug, Default)]
+pub(crate) struct DeadIncidenceStates {
+    /// States whose points are all below `u32::MAX`, as each edge's start and
+    /// end point; an unassigned edge is `u32::MAX` twice.
+    narrow: HashSet<Box<[u32]>>,
+    wide: HashSet<Box<[Option<[usize; 2]>]>>,
+    scratch: Vec<u32>,
+}
+
+#[derive(Debug)]
+pub(crate) enum DeadIncidenceKey {
+    Narrow(Box<[u32]>),
+    Wide(Box<[Option<[usize; 2]>]>),
+}
+
+impl DeadIncidenceStates {
+    /// The key of the state, or `None` when the state is already dead.
+    pub(crate) fn live_key(
+        &mut self,
+        edges: &[usize],
+        assignment: &[Option<[usize; 2]>],
+    ) -> Option<DeadIncidenceKey> {
+        let narrow = |point: usize| u32::try_from(point).ok().filter(|&point| point != u32::MAX);
+        self.scratch.clear();
+        for &edge in edges {
+            let pair = match assignment[edge] {
+                None => [u32::MAX; 2],
+                Some([start, end]) => match (narrow(start), narrow(end)) {
+                    (Some(start), Some(end)) => [start, end],
+                    _ => {
+                        let state = edges
+                            .iter()
+                            .map(|&edge| assignment[edge])
+                            .collect::<Box<[_]>>();
+                        return (!self.wide.contains(&state))
+                            .then_some(DeadIncidenceKey::Wide(state));
+                    }
+                },
+            };
+            self.scratch.extend(pair);
+        }
+        (!self.narrow.contains(self.scratch.as_slice()))
+            .then(|| DeadIncidenceKey::Narrow(self.scratch.as_slice().into()))
+    }
+
+    pub(crate) fn insert(&mut self, key: DeadIncidenceKey) {
+        match key {
+            DeadIncidenceKey::Narrow(state) => self.narrow.insert(state),
+            DeadIncidenceKey::Wide(state) => self.wide.insert(state),
+        };
+    }
 }
 
 enum IncidenceBranch {
@@ -1679,102 +1734,80 @@ impl<T> IncidenceSolve<T> {
 }
 
 pub(super) fn compact_boundary_domain_viable(
-    ctx: &DecodeContext<'_>,
     domain: &MeshFaceBoundaryDomain,
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
 ) -> Result<bool, CodecError> {
-    let edges = match domain {
-        MeshFaceBoundaryDomain::Ordered(_) => return Ok(true),
-        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-            let mut collected = Vec::new();
-
-            collected.extend_from_slice(edges);
-            collected
-        }
-        MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-            let mut edges = Vec::new();
-
-            edges.extend_from_slice(&domain.missing_edges);
-            edges.extend(
-                domain
-                    .cycles
-                    .iter()
-                    .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
-            );
-            edges
-        }
-    };
-    let mut selected_pairs = Vec::new();
-
-    selected_pairs.extend(edges.iter().copied().map(|edge| {
+    let pair_of = |edge: usize| {
         selected
             .filter(|(selected_edge, _)| *selected_edge == edge)
             .map(|(_, pair)| pair)
             .or(assignment[edge])
-            .map(|pair| (edge, pair))
-    }));
-    let complete = selected_pairs.iter().all(Option::is_some);
-    if matches!(domain, MeshFaceBoundaryDomain::UnorderedFullCycle(_)) && !complete {
-        let mut point_nodes = HashMap::new();
-        let mut degrees = Vec::<u8>::new();
-        let mut components = UnionFind::new(0);
-        for (_, pair) in selected_pairs.iter().flatten().copied() {
-            let mut nodes = [0; 2];
-            for (slot, point) in pair.into_iter().enumerate() {
-                nodes[slot] = if let Some(&node) = point_nodes.get(&point) {
-                    node
-                } else {
-                    let node = components.push();
-                    degrees.push(0);
-                    point_nodes.insert(point, node);
-                    node
-                };
+    };
+    match domain {
+        MeshFaceBoundaryDomain::Ordered(_) => Ok(true),
+        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
+            if edges.iter().all(|&edge| pair_of(edge).is_some()) {
+                return Ok(
+                    incidence_cycles_by(edges, pair_of)?.is_some_and(|cycles| cycles.len() == 1)
+                );
             }
-            for &node in &nodes {
-                if degrees[node] >= 2 {
+            let mut point_nodes = HashMap::new();
+            let mut degrees = Vec::<u8>::new();
+            let mut components = UnionFind::new(0);
+            for pair in edges.iter().filter_map(|&edge| pair_of(edge)) {
+                let mut nodes = [0; 2];
+                for (slot, point) in pair.into_iter().enumerate() {
+                    nodes[slot] = if let Some(&node) = point_nodes.get(&point) {
+                        node
+                    } else {
+                        let node = components.push();
+                        degrees.push(0);
+                        point_nodes.insert(point, node);
+                        node
+                    };
+                }
+                for &node in &nodes {
+                    if degrees[node] >= 2 {
+                        return Ok(false);
+                    }
+                    degrees[node] += 1;
+                }
+                if nodes[0] != nodes[1] {
+                    components.union(nodes[0], nodes[1])?;
+                }
+            }
+            let mut open_components = HashSet::new();
+            for (node, degree) in degrees.into_iter().enumerate() {
+                if degree < 2 {
+                    open_components.insert(components.find(node)?);
+                }
+            }
+            for node in 0..components.len() {
+                if !open_components.contains(&components.find(node)?) {
                     return Ok(false);
                 }
-                degrees[node] += 1;
             }
-            if nodes[0] != nodes[1] {
-                components.union(nodes[0], nodes[1])?;
-            }
-        }
-        let mut open_components = HashSet::new();
-        for (node, degree) in degrees.into_iter().enumerate() {
-            if degree < 2 {
-                open_components.insert(components.find(node)?);
-            }
-        }
-        for node in 0..components.len() {
-            if !open_components.contains(&components.find(node)?) {
-                return Ok(false);
-            }
-        }
-        return Ok(true);
-    }
-    let mut complete_pairs = Vec::new();
-    for pair in selected_pairs {
-        let Some(pair) = pair else {
-            return Ok(true);
-        };
-        complete_pairs.push(pair);
-    }
-    let mut edge_points =
-        ctx.alloc_filled(assignment.len(), [0; 2], "catia labeled edge points")?;
-    for (edge, pair) in complete_pairs {
-        edge_points[edge] = pair;
-    }
-    Ok(match domain {
-        MeshFaceBoundaryDomain::Ordered(_) => true,
-        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-            incidence_cycles(edges, &edge_points)?.is_some_and(|cycles| cycles.len() == 1)
+            Ok(true)
         }
         MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-            deferred_boundary_closes(domain, &edge_points)?
+            if !deferred_boundary_edges(domain).all(|edge| pair_of(edge).is_some()) {
+                return Ok(true);
+            }
+            deferred_boundary_closes_by(domain, pair_of)
         }
-    })
+    }
+}
+
+/// The missing edges of `domain`, then the edges of its exact uses, with
+/// repeats.
+fn deferred_boundary_edges(domain: &MeshDeferredFaceBoundary) -> impl Iterator<Item = usize> + '_ {
+    domain.missing_edges.iter().copied().chain(
+        domain
+            .cycles
+            .iter()
+            .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
+    )
 }
 
 enum CompactBoundaryAdvanceOutcome {
@@ -2437,7 +2470,6 @@ impl IncidenceComponentSearch<'_, '_> {
                             })
                         }),
                     _ => compact_boundary_domain_viable(
-                        self.ctx,
                         domain,
                         &self.assignment,
                         Some((edge, pair)),
@@ -2690,7 +2722,7 @@ impl IncidenceComponentSearch<'_, '_> {
                             .unwrap_or(true)
                         })
                     }),
-                _ => compact_boundary_domain_viable(self.ctx, domain, &self.assignment, None)?,
+                _ => compact_boundary_domain_viable(domain, &self.assignment, None)?,
             };
             if !viable {
                 return Ok(None);
@@ -3105,15 +3137,13 @@ impl IncidenceComponentSearch<'_, '_> {
             self.state = IncidenceSearchState::Exhausted;
             return Ok(());
         }
-        let mut state = Vec::new();
-        state.extend(self.edges.iter().map(|&edge| self.assignment[edge]));
-        if self.dead_states.contains(&state) {
+        let Some(key) = self.dead_states.live_key(self.edges, &self.assignment) else {
             return Ok(());
-        }
+        };
         let solutions_before = self.solutions.len();
         self.search_state(quotient_states, coordinate_domains, component_faces)?;
         if self.state == IncidenceSearchState::Open && self.solutions.len() == solutions_before {
-            self.dead_states.insert(state);
+            self.dead_states.insert(key);
         }
         Ok(())
     }
@@ -3476,17 +3506,17 @@ fn deferred_boundary_closes(
     domain: &MeshDeferredFaceBoundary,
     edge_points: &[[usize; 2]],
 ) -> Result<bool, CodecError> {
-    let mut incident = Vec::new();
-    incident.extend_from_slice(&domain.missing_edges);
-    incident.extend(
-        domain
-            .cycles
-            .iter()
-            .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
-    );
-    incident.sort_unstable_by(Ord::cmp);
+    deferred_boundary_closes_by(domain, |edge| edge_points.get(edge).copied())
+}
+
+fn deferred_boundary_closes_by(
+    domain: &MeshDeferredFaceBoundary,
+    edge_points: impl Fn(usize) -> Option<[usize; 2]>,
+) -> Result<bool, CodecError> {
+    let mut incident = deferred_boundary_edges(domain).collect::<Vec<_>>();
+    incident.sort_unstable();
     incident.dedup();
-    let Some(incidence) = incidence_cycles(&incident, edge_points)? else {
+    let Some(incidence) = incidence_cycles_by(&incident, edge_points)? else {
         return Ok(false);
     };
     if incidence.len() != domain.cycles.len() {
@@ -4104,7 +4134,7 @@ where
             solution_filter: Some(&filter),
             solution_visitor,
             partial_solution_filter: partial_solution_valid,
-            dead_states: HashSet::new(),
+            dead_states: DeadIncidenceStates::default(),
             budget,
             degree_support_budget: &degree_support_budget,
             coordinate_propagation_budget,

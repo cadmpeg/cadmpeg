@@ -297,7 +297,7 @@ fn semantic_fallthrough_or_resource(
     }
 }
 
-fn add_referenced_surface(referenced: &mut HashSet<u32>, pending: &mut Vec<u32>, surface_id: u32) {
+fn add_referenced_surface(referenced: &mut BTreeSet<u32>, pending: &mut Vec<u32>, surface_id: u32) {
     if referenced.insert(surface_id) {
         pending.push(surface_id);
     }
@@ -309,8 +309,8 @@ fn referenced_surface_ids(
     supported: &BTreeMap<u32, B5SupportedSurface>,
     extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
     aliases: &BTreeMap<u32, u32>,
-) -> HashSet<u32> {
-    let mut referenced = HashSet::new();
+) -> BTreeSet<u32> {
+    let mut referenced = BTreeSet::new();
     let mut pending = Vec::new();
     for root in roots {
         add_referenced_surface(&mut referenced, &mut pending, root);

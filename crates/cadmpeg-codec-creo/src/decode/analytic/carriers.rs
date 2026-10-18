@@ -20,10 +20,11 @@ use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::topology::HalfEdgeId;
 
 use super::super::native::annotate;
+use super::super::sketch_transfer::recipe::FeatureSchemaClasses;
 use super::super::surfaces::cylinders::rowless_round_cylinder_pairs;
 use super::super::surfaces::NativeSurfaceNamespaces;
 
-use super::super::uniqueness::exactly_one;
+use super::super::uniqueness::{exactly_one, UniqueById};
 use super::equations::{
     CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
@@ -369,6 +370,7 @@ pub(in crate::decode) fn placed_carriers(
             }
         }
     }
+    let schema_classes = FeatureSchemaClasses::new(scan);
     for (namespace_rows, parameters) in [
         (&scan.surfaces.rows, &scan.surfaces.parameters),
         (
@@ -376,6 +378,7 @@ pub(in crate::decode) fn placed_carriers(
             &scan.surfaces.nonvisible_parameters,
         ),
     ] {
+        let parameters = UniqueById::new(parameters, |record| record.surface_id);
         for row in namespace_rows
             .iter()
             .filter(|row| row_counts.get(&row.id) == Some(&1))
@@ -383,9 +386,9 @@ pub(in crate::decode) fn placed_carriers(
             let model_surface = model_surfaces.named(namespaces.prefix(row.id), row.id);
             if let Some(carrier) = positional_cylinder_carrier(
                 ctx,
-                scan,
+                &schema_classes,
                 row,
-                parameters,
+                &parameters,
                 model_surface.and_then(NamedSurfaces::unique),
                 source_carriers,
             )? {
@@ -473,31 +476,26 @@ pub(in crate::decode) fn placed_carriers(
 
 fn positional_cylinder_carrier(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
+    schema_classes: &FeatureSchemaClasses,
     row: &crate::surface::SurfaceRow,
-    parameters: &[crate::surface::SurfaceParameterRecord],
+    parameters: &UniqueById<crate::surface::SurfaceParameterRecord>,
     model_surface: Option<&Surface>,
     source_carriers: &SourceUnitCarriers,
 ) -> Result<Option<CarrierEquation>, cadmpeg_core::CodecError> {
     if row.kind != crate::surface::SurfaceKind::Cylinder {
         return Ok(None);
     }
-    let Some(record) = crate::surface::unique_surface_parameter(parameters, row.id) else {
+    let Some(record) = parameters.get(row.id) else {
         return Ok(None);
     };
     let inline = record.has_inline_non_plane_envelope()
         || record.has_inline_non_plane_local_system_suffix(ctx)?
         || record.selector_corner_interval_cylinder_frame().is_some();
-    if crate::decode::sketch_transfer::recipe::feature_schema_class(scan, row.feature_id)
-        == Some(SchemaClass::Round)
-        && !inline
-    {
+    let round = schema_classes.get(row.feature_id) == Some(SchemaClass::Round);
+    if round && !inline {
         return Ok(None);
     }
-    if crate::decode::sketch_transfer::recipe::feature_schema_class(scan, row.feature_id)
-        == Some(SchemaClass::Round)
-        && inline
-    {
+    if round && inline {
         if let Some(surface) = model_surface {
             if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
                 return Ok(Some(carrier));
@@ -855,9 +853,16 @@ pub(in crate::decode) fn native_face_orientations(
     {
         source_ids.insert(row.id);
     }
+    let rows = UniqueById::new(
+        scan.surfaces
+            .rows
+            .iter()
+            .chain(&scan.surfaces.nonvisible_rows),
+        |row| row.id,
+    );
     let mut orientations = BTreeMap::new();
     for id in source_ids {
-        if let Some(row) = crate::decode::surfaces::unique_native_surface_row(scan, id) {
+        if let Some(row) = rows.get(id) {
             orientations.insert(id, row.reversed);
         }
     }

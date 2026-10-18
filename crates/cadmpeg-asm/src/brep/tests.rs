@@ -1087,8 +1087,8 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     record(&mut bytes, "shell", &[-1, -1, -1, -1, 2, -1, -1, -1]); // 1
     record(&mut bytes, "subshell", &[-1, -1, -1, 1, -1, 3, 4, -1]); // 2
     record(&mut bytes, "subshell", &[-1, -1, -1, 2, -1, -1, 5, -1]); // 3
-    record(&mut bytes, "face", &[-1, -1, -1, -1]); // 4
-    record(&mut bytes, "face", &[-1, -1, -1, -1]); // 5
+    record(&mut bytes, "face", &[-1, -1, -1, -1, -1, 1, 2]); // 4
+    record(&mut bytes, "face", &[-1, -1, -1, -1, -1, 3, 3]); // 5
 
     let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
         .expect("generated subshell bytes must frame");
@@ -1097,9 +1097,10 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
         .map(|record| (i64::try_from(record.index).expect("index fits"), record))
         .collect::<HashMap<_, _>>();
     let kept = [4, 5].into_iter().collect::<HashSet<_>>();
+    let subshells = subshell_ancestor_shells(&records, &by_index).unwrap();
 
     assert_eq!(
-        shell_faces(&records[1], &by_index, &kept, FORMAT),
+        shell_faces(&records[1], &by_index, &subshells, &kept, FORMAT),
         vec![
             FaceId::mint("f3d:brep:entity#4").expect("identity grammar"),
             FaceId::mint("f3d:brep:entity#5").expect("identity grammar")
@@ -1130,7 +1131,11 @@ fn subshell_wires_project_onto_the_nearest_shell() {
         .iter()
         .map(|record| (i64::try_from(record.index).expect("index fits"), record))
         .collect::<HashMap<_, _>>();
-    assert_eq!(shell_wire_roots(&records[1], &by_index), [4, 5, 6]);
+    let subshells = subshell_ancestor_shells(&records, &by_index).unwrap();
+    assert_eq!(
+        shell_wire_roots(&records[1], &by_index, &subshells),
+        [4, 5, 6]
+    );
 }
 
 #[test]
