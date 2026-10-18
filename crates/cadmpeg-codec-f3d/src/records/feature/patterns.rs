@@ -21,6 +21,11 @@ cadmpeg_core::named_optional_field!(
     DesignRectangularPatternInstances,
     "instances"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_instance_search_cap,
+    RectangularPatternSearchCap,
+    "instance_search_cap"
+);
 /// Exact construction carried by a fixed circular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignCircularPatternConstruction {
@@ -531,7 +536,11 @@ pub(crate) struct DesignRectangularPatternConstructionWire {
     )]
     pub(crate) instances: Option<DesignRectangularPatternInstances>,
     /// The local cap that stopped the instance search, so `instances` is absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_instance_search_cap"
+    )]
     pub(crate) instance_search_cap: Option<RectangularPatternSearchCap>,
 }
 
