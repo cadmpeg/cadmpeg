@@ -208,3 +208,54 @@ fn data_member_selection_is_independent_of_field_ordinal() {
     assert_eq!(path.member, native.catalogs[0].entries[8].id);
     assert_ne!(path.member, native.catalogs[0].entries[6].id);
 }
+
+#[test]
+fn compact_inline_field_resolves_owner_class_storage_anchor() {
+    let mut bytes = fixture(0x82, &[0x85, 0xfe], 7);
+    let start = bytes
+        .windows(2)
+        .position(|window| window == [0x7c, 8])
+        .expect("constructed object graph");
+    let length = usize::try_from(View::u32_le_at(&bytes, start + 2).expect("root length"))
+        .expect("constructed graph length");
+    bytes.splice(
+        start..start + length,
+        object_graph_from_records(&[
+            object_graph_record(&[0x52, 0x81, 0x84, 0x80], &[0xfe]),
+            inline_object_graph_record(&[
+                0x10, 0xfe, 0x82, 0x82, 0x69, 0x6a, 0x82, 0x81, 0x81, 0x06,
+            ]),
+            object_graph_record(&[0x12, 0x81, 0x84], &[0x85, 0xfe]),
+        ]),
+    );
+    let native = super::super::CatiaNative::decode(&bytes);
+    let [field] = native.inline_fields.as_slice() else {
+        panic!("one compact inline field with lead-52 anchor");
+    };
+    assert_eq!(field.self_field.reference.entity_id(), 2);
+    assert_eq!(field.anchor_field.reference.entity_id(), 1);
+    assert!(matches!(
+        field.anchor_field.reference,
+        CatiaEntityReference::Resolved { .. }
+    ));
+    assert_eq!(field.anchor_field.body_offset, 7);
+    assert_eq!(field.value_field, None);
+    assert_eq!(field.schema, InlineSchema::Compact);
+    let source = &native.object_graphs[0].records[1];
+    assert!(source.owner.is_none() && source.class.is_none() && source.storage.is_none());
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store compact binding");
+    let loaded = super::super::CatiaNative::load(&namespace).expect("reload compact binding");
+    assert_eq!(loaded.inline_fields, native.inline_fields);
+    let anchor = &native.object_graphs[0].records[0];
+    assert!(anchor.owner.is_some() && anchor.class.is_some() && anchor.storage.is_some());
+    let mut graphs = native.object_graphs.clone();
+    graphs[0].records[0].storage = None;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source context");
+    let fields = derive(&ctx, &graphs, &native.entity_records, &native.catalogs)
+        .expect("missing storage role is not a resource error");
+    assert!(fields.is_empty());
+}

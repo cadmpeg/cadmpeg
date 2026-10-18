@@ -37,7 +37,6 @@ pub(crate) struct InlineSchemaPath {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum InlineSchema {
-    /// Exact `82 F2 F0 82` production; token meanings remain unassigned.
     Compact,
     /// Two complete wide selectors with an optional source-closed path.
     Words {
@@ -240,7 +239,10 @@ pub(crate) fn derive(
                 continue;
             }
             if let Some(anchor) = records.get(&parsed.anchor_field.identity) {
-                if anchor.lead != 0x12 || anchor.design_object.is_none() {
+                if !matches!(anchor.lead, 0x12 | 0x52) || anchor.design_object.is_none() {
+                    continue;
+                }
+                if anchor.lead == 0x52 && (anchor.class.is_none() || anchor.storage.is_none()) {
                     continue;
                 }
             }

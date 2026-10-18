@@ -49,7 +49,10 @@ pub(crate) fn parse(body: &[u8]) -> Option<InlineField> {
     body.strip_prefix(&[0x10, 0xfe])?;
     let mut at = 2;
     let self_field = reference(body, &mut at)?;
-    let schema = if body[at..].starts_with(&[0x82, 0xf2, 0xf0, 0x82]) {
+    let schema = if matches!(
+        body.get(at..at.checked_add(4)?),
+        Some([0x82, 0xf2, 0xf0, 0x82] | [0x82, 0x69, 0x6a, 0x82])
+    ) {
         at += 4;
         SchemaTuple::Compact
     } else {

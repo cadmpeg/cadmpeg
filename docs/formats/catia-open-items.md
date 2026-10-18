@@ -46,11 +46,21 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the identifier-to-stream mapping across directory name forms and establish unique complete graph-extent containment before assigning the part's modeling scope.
 
+### DI-04. Opaque inline values and head-slot namespaces
+
+**Question.** What roles do the values in opaque childless `7C09` bodies have, and which complete productions establish the namespace of the second reference in compact lead-`12` and lead-`52` heads?
+
+**Known.** `catia.md` §7.3 defines the complete inline self, anchor, and optional value incidences separately from ordinary head roles. It also defines opaque childless-body admission through exact paired entity/object cardinality. Opaque retention does not assign roles to the enclosed values. A resolved anchor field's own owner, class, and storage slots remain separate from the inline incidence.
+
+**Need.** An independent schema or behavior check must assign each opaque value's namespace and distinguish head-slot roles before those values can supply typed fields or neutral dependencies.
+
+**Note.** The 15 complete compact inline records in `v6-engine-hex-screw-m8x55.CATPart` select earlier lead-`12` anchors. Each anchor's second head reference equals its paired entity identity and exceeds the associated catalog's 495-entry range. The inline anchor incidence still selects an exact same-graph field. This does not establish a replacement head-role order. Repeated values, adjacent values, and a coincident catalog name do not establish a role for an opaque inline value.
+
 ### DI-05. Compact inline schema selectors
 
-**Question.** Which schema entries do the compact inline tokens `F2`, `F0`, and `F1` select?
+**Question.** Which schema entries do the compact inline tokens `F2`, `F0`, `F1`, `69`, and `6A` select?
 
-**Known.** `catia.md` §7.3 "The wide schema tuple is twelve bytes" defines the catalog-resolved wide path. Strict compact object bodies contain `82 F2 F0 82`; their paired inline entity bodies contain `F0 F1` before identity and `F2 F0` after the fixed bridge. These ordered byte equalities do not supply a token-to-name mapping. The associated catalog contains the three wide-path names at different ordinals.
+**Known.** `catia.md` §7.3 "The wide schema tuple is twelve bytes" defines the catalog-resolved wide path. Strict compact object bodies contain the exact tuples `82 F2 F0 82` and `82 69 6A 82`. For the `F2 F0` form, paired inline entity bodies contain `F0 F1` before identity and `F2 F0` after the fixed bridge. These ordered byte equalities do not supply a token-to-name mapping. The associated catalog contains the three wide-path names at different ordinals.
 
 **Need.** We must establish each compact token's selection through an independent schema codebook or a CATIA-authored differential specimen. Name presence and alignment with the wide production do not resolve the compact tokens.
 
