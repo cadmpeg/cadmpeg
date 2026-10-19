@@ -181,10 +181,7 @@ fn schema_row(schema: &str) -> DialectId {
         PARASOLID_SCH_SW_33103
     } else if schema.eq_ignore_ascii_case("SCH_SW_32001_11000") {
         PARASOLID_SCH_SW_32001
-    } else if schema
-        .rsplit_once('_')
-        .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("13006"))
-    {
+    } else if schema.ends_with("_13006") {
         PARASOLID_FORMAT_13006
     } else {
         PARASOLID_UNKNOWN

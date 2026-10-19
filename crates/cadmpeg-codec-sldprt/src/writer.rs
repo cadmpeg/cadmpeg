@@ -27,7 +27,6 @@ use cadmpeg_ir::Annotations;
 use crate::SourceRecord;
 
 use crate::container::MARKER;
-use crate::history::write::xml::valid_xml_name;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
@@ -1900,7 +1899,7 @@ pub(crate) fn swobjects_metadata_identity_local_sha256(
 }
 
 fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
-    validate_feature_graph(&history.features)?;
+    crate::history::feature_graph::validate_feature_graph(&history.features)?;
     let mut out = String::from("<Keywords");
     if let Some(name) = &history.part_name {
         xml_attribute(&mut out, "Name", name);
@@ -1964,65 +1963,6 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
     }
     out.push_str("</Keywords>");
     Ok(out.into_bytes())
-}
-
-pub(crate) fn validate_feature_graph(
-    features: &[crate::records::Feature],
-) -> Result<(), CodecError> {
-    if features
-        .iter()
-        .any(|feature| !valid_xml_name(&feature.xml_tag))
-    {
-        return Err(CodecError::Malformed(
-            "invalid feature XML element name".into(),
-        ));
-    }
-    let mut by_id = HashMap::new();
-    for feature in features {
-        if let Some(id) = feature.source_id {
-            by_id.insert(id, feature);
-        }
-    }
-    if by_id.len()
-        != features
-            .iter()
-            .filter(|feature| feature.source_id.is_some())
-            .count()
-    {
-        return Err(CodecError::Malformed("duplicate feature source id".into()));
-    }
-    let mut by_record = HashMap::new();
-    for feature in features {
-        by_record.insert(feature.id.as_str(), feature);
-    }
-    if by_record.len() != features.len() {
-        return Err(CodecError::Malformed("duplicate feature record id".into()));
-    }
-    for feature in features {
-        let mut seen = HashSet::new();
-        let mut parent = feature.parent_source_id();
-        while let Some(id) = parent {
-            if !seen.insert(id) {
-                return Err(CodecError::Malformed("feature parent cycle".into()));
-            }
-            let node = by_id
-                .get(&id)
-                .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
-            parent = node.parent_source_id();
-        }
-        let mut seen = HashSet::new();
-        let mut parent = feature.tree_parent_record_id();
-        while let Some(id) = parent {
-            if !seen.insert(id) {
-                return Err(CodecError::Malformed("feature tree cycle".into()));
-            }
-            let node = by_record.get(id).ok_or_else(|| {
-                CodecError::Malformed("feature references missing tree parent".into())
-            })?;
-            parent = node.tree_parent_record_id();
-        }
-    }
-    Ok(())
 }
 
 fn write_feature_xml(

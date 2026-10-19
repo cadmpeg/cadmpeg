@@ -259,13 +259,14 @@ fn scan<'a>(
     tokens: TokenStream,
     inherited: &'a Imports,
     reads: &mut BTreeSet<(String, String)>,
+    layout_module: &str,
 ) -> Result<Cow<'a, Imports>, String> {
     let (imports, tokens) = scope(tokens, inherited)?;
     let mut index = 0;
     while index < tokens.len() {
         match &tokens[index] {
             TokenTree::Group(group) => {
-                scan(group.stream(), &imports, reads)?;
+                scan(group.stream(), &imports, reads, layout_module)?;
             }
             TokenTree::Ident(ident) => {
                 let mut path = vec![ident.to_string()];
@@ -291,7 +292,7 @@ fn scan<'a>(
                 if let (Some(module), Some(record), Some(name), None) =
                     (parts.next(), parts.next(), parts.next(), parts.next())
                 {
-                    if module == "layout" {
+                    if module == layout_module {
                         reads.insert((record.clone(), name.clone()));
                     }
                 }
@@ -356,7 +357,7 @@ fn parent_imports(
 }
 
 /// Derive the generated items read by the owning crate's source tree.
-pub(super) fn layout_reads(root: &Path) -> Result<Reads, String> {
+pub(super) fn layout_reads(root: &Path, layout_module: &str) -> Result<Reads, String> {
     let mut paths = Vec::new();
     sources(root, &mut paths)?;
     paths.sort();
@@ -371,16 +372,24 @@ pub(super) fn layout_reads(root: &Path) -> Result<Reads, String> {
     // Save the imports found by its own scan so children need no second parse.
     let mut import_cache = BTreeMap::new();
     for path in paths {
+        if path == root.join(format!("{layout_module}.rs")) {
+            continue;
+        }
         let result = (|| {
             let source = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
             let tokens = source
                 .parse::<TokenStream>()
                 .map_err(|error| error.to_string())?;
             let imports = parent_imports(&path, root, &mut import_cache)?;
-            let own_imports = scan(tokens.clone(), &imports, &mut reads.all)?;
+            let own_imports = scan(tokens.clone(), &imports, &mut reads.all, layout_module)?;
             import_cache.insert(path.clone(), own_imports.into_owned());
             if !test_files.contains(&path) {
-                scan(production_tokens(tokens), &imports, &mut reads.production)?;
+                scan(
+                    production_tokens(tokens),
+                    &imports,
+                    &mut reads.production,
+                    layout_module,
+                )?;
             }
             Ok::<(), String>(())
         })();
@@ -402,6 +411,7 @@ mod tests {
                 .map_err(|error: proc_macro2::LexError| error.to_string())?,
             &Imports::default(),
             &mut reads,
+            "layout",
         )?;
         Ok(reads)
     }
@@ -425,6 +435,7 @@ mod tests {
             ),
             &Imports::default(),
             &mut production,
+            "layout",
         )?;
         assert_eq!(production, expected(&[("header", "LEN")]));
         assert_eq!(
@@ -455,7 +466,7 @@ mod tests {
             "use super::h; const C: usize = h::MAGIC;",
         )?;
         std::fs::write(root.join("layout.rs"), "crate::layout::unread::OFFSET;")?;
-        let reads = layout_reads(root)?;
+        let reads = layout_reads(root, "layout")?;
         assert!(reads.contains("header", "LEN"));
         assert!(!reads.test_only("header", "LEN"));
         assert!(reads.test_only("header", "MAGIC"));
@@ -478,7 +489,7 @@ mod tests {
             root.join("reader/production.rs"),
             "crate::layout::header::LEN;",
         )?;
-        let reads = layout_reads(root)?;
+        let reads = layout_reads(root, "layout")?;
         assert!(reads.test_only("header", "MAGIC"));
         assert!(reads.contains("header", "LEN"));
         assert!(!reads.test_only("header", "LEN"));
@@ -504,17 +515,42 @@ mod tests {
                 )?;
             }
         }
-        let reads = layout_reads(root)?;
+        let reads = layout_reads(root, "layout")?;
         assert!(reads.contains("header", "LEN"));
         assert!(reads.contains("row", "LEN"));
         std::fs::write(
             root.join("first.rs"),
             "use crate::layout::token as h; mod a; mod b;",
         )?;
-        let reads = layout_reads(root)?;
+        let reads = layout_reads(root, "layout")?;
         assert!(reads.contains("token", "LEN"));
         assert!(reads.contains("row", "LEN"));
         assert!(!reads.contains("header", "LEN"));
+        Ok(())
+    }
+
+    #[test]
+    fn layout_modules_in_one_crate_keep_independent_read_sets(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let temporary = tempfile::tempdir()?;
+        let root = temporary.path();
+        std::fs::write(
+            root.join("lib.rs"),
+            "mod layout; mod cfb_layout; mod reader;",
+        )?;
+        std::fs::write(root.join("reader.rs"), "use crate::cfb_layout::header::LEN as CFB_LEN; const C: usize = CFB_LEN; #[cfg(test)] mod tests { use crate::layout::header; const C: usize = header::LEN; }")?;
+        std::fs::write(
+            root.join("cfb_layout.rs"),
+            "crate::cfb_layout::unread::OFFSET;",
+        )?;
+        std::fs::write(root.join("layout.rs"), "crate::layout::unread::OFFSET;")?;
+        let cfb = layout_reads(root, "cfb_layout")?;
+        let zip = layout_reads(root, "layout")?;
+        assert!(cfb.contains("header", "LEN"));
+        assert!(!cfb.test_only("header", "LEN"));
+        assert!(zip.test_only("header", "LEN"));
+        assert!(!cfb.contains("unread", "OFFSET"));
+        assert!(!zip.contains("unread", "OFFSET"));
         Ok(())
     }
 

@@ -1425,12 +1425,13 @@ impl ProbeInput<'_> {
     }
 }
 
-const DIRECTORY_NAME_LENGTH: usize = 64;
-const DIRECTORY_LEFT: usize = 68;
-const DIRECTORY_RIGHT: usize = 72;
-const DIRECTORY_CHILD: usize = 76;
-const DIRECTORY_START_SECTOR: usize = 116;
-const DIRECTORY_SIZE: usize = 120;
+use crate::cfb_layout::directory_entry;
+use crate::cfb_layout::directory_entry::{
+    CHILD as DIRECTORY_CHILD, LEFT as DIRECTORY_LEFT, NAME_LENGTH as DIRECTORY_NAME_LENGTH,
+    RIGHT as DIRECTORY_RIGHT, START_SECTOR as DIRECTORY_START_SECTOR,
+    STREAM_SIZE as DIRECTORY_SIZE,
+};
+
 const _: () = assert!(DIRECTORY_NAME_LENGTH.is_multiple_of(2));
 const _: () = assert!(DIRECTORY_LEFT.is_multiple_of(4));
 const _: () = assert!(DIRECTORY_RIGHT.is_multiple_of(4));
@@ -1443,13 +1444,13 @@ fn parse_directory(
     bytes: &[u8],
     version: CompoundVersion,
 ) -> Result<Vec<DirectorySlot>, CodecError> {
-    let (records, remainder) = bytes.as_chunks::<128>();
+    let (records, remainder) = bytes.as_chunks::<{ directory_entry::LEN }>();
     if !remainder.is_empty() {
         return malformed("CFB directory stream has a partial entry");
     }
     let mut entries = Vec::new();
     for raw in records {
-        let object_type = raw[66];
+        let object_type = raw[directory_entry::OBJECT_TYPE];
         if object_type == 0 {
             entries.push(DirectorySlot::Free);
             continue;
@@ -1474,7 +1475,7 @@ fn parse_directory(
                 ctx.utf16le_text(raw, (name_len - 2) / 2, false, "decode CFB directory name")?;
             DirectoryName::new(name)?
         };
-        let color = match raw[67] {
+        let color = match raw[directory_entry::COLOR] {
             0 => DirectoryColor::Red,
             1 => DirectoryColor::Black,
             _ => return malformed("invalid CFB directory node color"),

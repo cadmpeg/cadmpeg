@@ -2597,6 +2597,7 @@ fn build_one(
             return Err(BuildError::Absent);
         }
         let sid = shell_identity(id, shell_step, scope_root);
+        let face_start = faces.len();
         let mut face_ids = vec![];
         for face_step in face_steps.iter().filter_map(Value::reference) {
             if used_faces.contains(&(shell_step, face_step)) {
@@ -3239,7 +3240,7 @@ fn build_one(
             let mut component_faces = Vec::new();
             for face_index in component {
                 let face_id = face_ids[face_index].clone();
-                faces[face_index].shell = component_shell.clone();
+                faces[face_start + face_index].shell = component_shell.clone();
                 component_faces.push(face_id);
             }
 

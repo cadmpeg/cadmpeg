@@ -242,8 +242,8 @@ pub(super) fn decode(
         }
     }
     styles.sort_by_key(|(_, left)| *left);
-    let mut scalar_color_candidates =
-        BTreeMap::<AppearanceTarget, NonemptyGroup<(u64, Color)>>::new();
+    let mut scalar_color_candidates = ScalarCandidates::new();
+    let mut scalar_loss_order = Vec::new();
     let mut style_domains = BTreeMap::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
@@ -331,6 +331,7 @@ pub(super) fn decode(
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
+                scalar_loss_order.push((losses.len(), (style.span.start, 0, 0)));
                 losses.push(StepLossCode::ConflictingScalarColors.note(format!(
                     "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
                 )));
@@ -391,7 +392,12 @@ pub(super) fn decode(
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
-                push_scalar_candidate(&mut scalar_color_candidates, &target, style_id, color)?;
+                push_scalar_candidate(
+                    &mut scalar_color_candidates,
+                    &target,
+                    (style_id, (style.span.start, ordinal, target_ordinal)),
+                    color,
+                )?;
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: ids::presentation(
                         kind!("binding"),
@@ -478,7 +484,7 @@ pub(super) fn decode(
             typed.insert(invisibility_id);
         }
     }
-    for (target, candidates) in scalar_color_candidates {
+    for (target, (source_order, candidates)) in scalar_color_candidates {
         let mut color = candidates.first().1;
         let mut conflict = false;
         for (_, candidate) in candidates.iter().skip(1) {
@@ -493,6 +499,7 @@ pub(super) fn decode(
         }
         if conflict {
             let message = scalar_conflict_message(&candidates, &target);
+            scalar_loss_order.push((losses.len(), source_order));
             losses.push(StepLossCode::ConflictingScalarColors.note(message));
         } else {
             let slot = match &target {
@@ -509,6 +516,7 @@ pub(super) fn decode(
             }
         }
     }
+    order_scalar_conflicts(&mut losses, &scalar_loss_order);
     Ok(StageOutcome {
         value: (),
         claims: typed,
@@ -923,10 +931,35 @@ struct PresentationIndices<'a> {
     bodies: &'a BTreeMap<String, usize>,
 }
 
+type ScalarSourceOrder = (usize, usize, usize);
+type ScalarCandidates =
+    BTreeMap<AppearanceTarget, (ScalarSourceOrder, NonemptyGroup<(u64, Color)>)>;
+
+/// Reorder only scalar-conflict slots. Other diagnostics retain their positions.
+fn order_scalar_conflicts(losses: &mut [LossNote], positions: &[(usize, ScalarSourceOrder)]) {
+    if positions.len() < 2 {
+        return;
+    }
+    let mut notes: Vec<_> = positions
+        .iter()
+        .map(|&(slot, order)| {
+            let note = std::mem::replace(
+                &mut losses[slot],
+                StepLossCode::ConflictingScalarColors.note(String::new()),
+            );
+            (order, note)
+        })
+        .collect();
+    notes.sort_by_key(|(order, _)| *order);
+    for (&(slot, _), (_, note)) in positions.iter().zip(notes) {
+        losses[slot] = note;
+    }
+}
+
 fn push_scalar_candidate(
-    candidates: &mut BTreeMap<AppearanceTarget, NonemptyGroup<(u64, Color)>>,
+    candidates: &mut ScalarCandidates,
     target: &AppearanceTarget,
-    style_id: u64,
+    (style_id, source_order): (u64, ScalarSourceOrder),
     color: Color,
 ) -> Result<(), CodecError> {
     if !matches!(
@@ -942,12 +975,13 @@ fn push_scalar_candidate(
             _ => return Ok(()),
         };
 
-        candidates.insert(key, NonemptyGroup::new((style_id, color)));
+        candidates.insert(key, (source_order, NonemptyGroup::new((style_id, color))));
         return Ok(());
     }
-    let values = candidates
+    let (first_order, values) = candidates
         .get_mut(target)
         .ok_or_else(|| CodecError::malformed("presentation scalar target was not indexed"))?;
+    *first_order = (*first_order).min(source_order);
     values.push((style_id, color));
     Ok(())
 }

@@ -290,8 +290,12 @@ pub(crate) fn decode(
     let mut boundaries = Vec::new();
     let mut orientations = Vec::new();
     for source in source_boundaries {
-        orientations.push(exact_orientation(expand.ctx(), &source, version_offset)?);
         let source_nurbs = exact_nurbs(expand.ctx(), &source, version_offset)?;
+        orientations.push(nurbs_orientation(
+            expand.ctx(),
+            &source_nurbs,
+            version_offset,
+        )?);
         require_profile_plane(&source_nurbs, version_offset)?;
         let start_nurbs = transform_nurbs(
             &source_nurbs,
@@ -401,19 +405,18 @@ fn split_profiles(
     Ok(profiles)
 }
 
-fn exact_orientation(
+fn nurbs_orientation(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    curve: &DecodedCurve,
+    curve: &NurbsCurve,
     offset: usize,
 ) -> Result<i8, GeometryError> {
-    let curve = exact_nurbs(ctx, curve, offset)?;
     if curve.pole_count() < 2 || curve.degree() == 0 {
         return Err(error(offset, "extrusion profile closure is degenerate"));
     }
-    if profile_off_plane(&curve) {
+    if profile_off_plane(curve) {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
-    let domain = nurbs_curve_parameter_domain(&curve)
+    let domain = nurbs_curve_parameter_domain(curve)
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))?;
     let degree = usize::try_from(curve.degree())
@@ -422,8 +425,8 @@ fn exact_orientation(
         .checked_add(1)
         .ok_or_else(|| error(offset, "extrusion profile degree is too large"))?;
     let mut basis = ctx.alloc_filled(basis_count, 0.0, "Rhino extrusion profile basis")?;
-    let start = evaluate_profile_point(ctx, &curve, domain[0], offset, &mut basis)?;
-    let end = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
+    let start = evaluate_profile_point(ctx, curve, domain[0], offset, &mut basis)?;
+    let end = evaluate_profile_point(ctx, curve, domain[1], offset, &mut basis)?;
     let sample_parameter = |start: f64, end: f64, fraction: f64, ordinary: f64| {
         if ordinary.is_finite() {
             Ok(ordinary)
@@ -433,21 +436,21 @@ fn exact_orientation(
                 .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))
         }
     };
-    if !source_periodic(&curve) {
+    if !source_periodic(curve) {
         if !points_coincident(start, end) {
             return Ok(0);
         }
         let span = domain[1] - domain[0];
         let one_third = evaluate_profile_point(
             ctx,
-            &curve,
+            curve,
             sample_parameter(domain[0], domain[1], 1.0 / 3.0, domain[0] + span / 3.0)?,
             offset,
             &mut basis,
         )?;
         let two_thirds = evaluate_profile_point(
             ctx,
-            &curve,
+            curve,
             sample_parameter(
                 domain[0],
                 domain[1],
@@ -514,12 +517,12 @@ fn exact_orientation(
                 fraction,
                 span_start + fraction * (span_end - span_start),
             )?;
-            let current = evaluate_profile_point(ctx, &curve, parameter, offset, &mut basis)?;
+            let current = evaluate_profile_point(ctx, curve, parameter, offset, &mut basis)?;
             twice_area += (previous.x - current.x) * (previous.y + current.y);
             previous = current;
         }
     }
-    let final_point = evaluate_profile_point(ctx, &curve, domain[1], offset, &mut basis)?;
+    let final_point = evaluate_profile_point(ctx, curve, domain[1], offset, &mut basis)?;
     twice_area += (previous.x - final_point.x) * (previous.y + final_point.y);
     if !twice_area.is_finite() {
         return Err(error(offset, "extrusion profile orientation is invalid"));
@@ -1040,8 +1043,8 @@ pub(crate) mod tests {
     const EPS_MITER_DIRECTION: f64 = 1.0e-12;
 
     use super::{
-        active_miter, cap_frame, exact_orientation, mitered_local, read_mesh_cache,
-        read_v5_mesh_cache, split_profiles, ExtrusionFormat, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
+        active_miter, cap_frame, mitered_local, read_mesh_cache, read_v5_mesh_cache,
+        split_profiles, ExtrusionFormat, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
         ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
     use crate::chunks::ArchiveVersion;
@@ -1405,6 +1408,14 @@ pub(crate) mod tests {
             )),
             Diagnostics::new(),
         )
+    }
+
+    fn exact_orientation(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        curve: &crate::curves::DecodedCurve,
+        offset: usize,
+    ) -> Result<i8, crate::curves::GeometryError> {
+        super::nurbs_orientation(ctx, &super::exact_nurbs(ctx, curve, offset)?, offset)
     }
 
     #[test]

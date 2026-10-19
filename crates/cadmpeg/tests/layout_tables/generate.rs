@@ -278,6 +278,7 @@ fn cell(text: &str) -> String {
 pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
     ("asm", "crates/cadmpeg-asm/src/layout.rs"),
     ("catia", "crates/cadmpeg-codec-catia/src/layout.rs"),
+    ("cfb", "crates/cadmpeg-container/src/cfb_layout.rs"),
     ("creo", "crates/cadmpeg-codec-creo/src/layout.rs"),
     ("f3d", "crates/cadmpeg-codec-f3d/src/layout.rs"),
     ("freecad", "crates/cadmpeg-codec-freecad/src/layout.rs"),
@@ -362,7 +363,13 @@ pub(crate) fn emit_layout_rs(
     file: &LayoutFile,
     source_root: &std::path::Path,
 ) -> Result<String, Vec<String>> {
-    let reads = read_set::layout_reads(source_root).map_err(|error| vec![error])?;
+    let module = GENERATED_LAYOUT_RS
+        .iter()
+        .find(|(format, _)| *format == file.format)
+        .and_then(|(_, path)| std::path::Path::new(path).file_stem())
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or("layout");
+    let reads = read_set::layout_reads(source_root, module).map_err(|error| vec![error])?;
     emit_layout_source(file, &reads).map_err(|failure| match failure {
         EmitFailure::Invalid(errors) => errors,
         EmitFailure::Format(error) => vec![error.to_string()],

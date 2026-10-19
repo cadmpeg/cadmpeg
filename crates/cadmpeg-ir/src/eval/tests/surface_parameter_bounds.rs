@@ -112,8 +112,8 @@ fn surface_patches_extract_split_and_bound_the_bilinear_net() {
     let budget = WorkBudget::new(1_000_000);
     let patches =
         crate::eval::rational_surface_patches_with_budget(&surface, &budget).expect("active patch");
-    assert_eq!(patches.len(), 1);
-    let patch = &patches[0];
+    assert_eq!(patches.rows.len(), 1);
+    let patch = &patches.rows[0];
     assert_eq!(patch.u_domain.endpoints(), [0.0, 1.0]);
     assert_eq!(patch.v_domain.endpoints(), [0.0, 1.0]);
     assert_eq!(
@@ -174,4 +174,39 @@ fn surface_start_search_lands_on_the_projected_parameter_for_both_contracts() {
         }
     }
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn surface_patch_grid_lookup_keeps_first_match_at_shared_boundaries() {
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], false);
+    let points = (0..3)
+        .map(|u| {
+            (0..3)
+                .map(|v| Point3::new(f64::from(u), f64::from(v), 0.0))
+                .collect()
+        })
+        .collect();
+    let surface =
+        NurbsSurface::from_lanes(axis(), axis(), NurbsSurfaceLanes::new(points, None), false)
+            .unwrap();
+    let budget = WorkBudget::new(1_000_000);
+    let patches = super::super::rational_surface_patches_with_budget(&surface, &budget).unwrap();
+    assert_eq!(patches.rows.len(), 4);
+    assert_eq!(patches.v_span_count, 2);
+    for u in [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5] {
+        for v in [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5] {
+            let expected = patches.rows.iter().find(|patch| {
+                patch.u_domain.lower() <= u
+                    && u <= patch.u_domain.upper()
+                    && patch.v_domain.lower() <= v
+                    && v <= patch.v_domain.upper()
+            });
+            let actual = patches.patch_at_parameters(FinitePoint2::new(Point2::new(u, v)).unwrap());
+            assert_eq!(
+                actual.map(std::ptr::from_ref),
+                expected.map(std::ptr::from_ref)
+            );
+        }
+    }
 }

@@ -143,11 +143,16 @@ SKIP_BASENAMES = {
 }
 SKIP_DIRS = {"tests", "golden_tests", "integration_tests", "test_support"}
 
+# A declaration's name is followed by generics, a body, a tuple field list, `;`, `=`, a
+# bound `:`, a `where` clause or a macro repetition. The lookahead keeps keyword lists
+# such as `forward_to_deserialize_any! { ... enum identifier ... }` from reading as items.
+DECLARATION_FOLLOW = r"(?=\s*(?:[<{(;=:$]|where\b))"
 ITEM_RE = re.compile(
-    r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(struct|enum|type)\s+(\$?\w+)"
+    r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(struct|enum|type)\s+(\$?\w+)" + DECLARATION_FOLLOW
 )
 DECLARATION_OR_ATTRIBUTE = re.compile(
     r"#\s*\[|\b(?:pub(?:\s*\([^)]*\))?\s+)?(?:struct|enum|type)\s+\$?\w+"
+    + DECLARATION_FOLLOW
 )
 
 

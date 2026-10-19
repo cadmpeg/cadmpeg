@@ -296,38 +296,43 @@ fn resolve_source_curve_parameter_scales(
     unit_scales: &UnitScales,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, FiniteReal>, CodecError> {
-    let mut scales = BTreeMap::new();
+    let mut resolved = BTreeMap::new();
     for &id in exchange.records().keys() {
-        if let Some(scale) =
-            source_curve_parameter_scale(id, exchange, unit_scales, &mut BTreeSet::new(), ctx)?
-        {
-            scales.insert(id, scale);
-        }
+        source_curve_parameter_scale(id, exchange, unit_scales, &mut resolved, ctx)?;
     }
-    Ok(scales)
+    Ok(resolved
+        .into_iter()
+        .filter_map(|(id, scale)| scale.map(|scale| (id, scale)))
+        .collect())
 }
 
 fn source_curve_parameter_scale(
     mut id: u64,
     exchange: &Exchange,
     unit_scales: &UnitScales,
-    active: &mut BTreeSet<u64>,
+    resolved: &mut BTreeMap<u64, Option<FiniteReal>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<FiniteReal>, CodecError> {
     let _depth = ctx.enter_nested("step_source_curve_parameter_walk")?;
-    loop {
-        if active.contains(&id) {
-            return Ok(None);
+    let mut path = Vec::new();
+    let scale = loop {
+        if let Some(scale) = resolved.get(&id) {
+            break *scale;
         }
+        // A repeated active node closes a cycle. Each node has at most one
+        // parent, so every node on that path has an unresolved scale.
+        resolved.insert(id, None);
+        path.push(id);
         match source_curve_parameter_scale_value(id, exchange, unit_scales) {
-            CurveParameterStep::Scale(scale) => return Ok(Some(scale)),
-            CurveParameterStep::Parent(parent) => {
-                active.insert(id);
-                id = parent;
-            }
-            CurveParameterStep::Absent => return Ok(None),
+            CurveParameterStep::Scale(scale) => break Some(scale),
+            CurveParameterStep::Parent(parent) => id = parent,
+            CurveParameterStep::Absent => break None,
         }
+    };
+    for id in path {
+        resolved.insert(id, scale);
     }
+    Ok(scale)
 }
 
 enum CurveParameterStep {
@@ -1004,9 +1009,8 @@ pub(super) fn decode(
     {
         deferred_ids.push(id);
     }
-    let mut deferred_queue = VecDeque::from(deferred_ids);
-    let mut waiting_on = HashMap::<u64, Vec<u64>>::new();
-    while let Some(id) = deferred_queue.pop_front() {
+    let mut deferred_queue = deferred::DeferredCurves::new(deferred_ids);
+    while let Some(id) = deferred_queue.next()? {
         if carrier_index.curves.contains_key(&id) {
             continue;
         }
@@ -1027,7 +1031,7 @@ pub(super) fn decode(
                 continue;
             };
             let Some(parent_index) = carrier_index.curves.get(&parent_step).copied() else {
-                defer_geometry_dependency(&mut waiting_on, parent_step, id);
+                deferred_queue.register(parent_step, id)?;
                 continue;
             };
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
@@ -1072,7 +1076,7 @@ pub(super) fn decode(
             }
             typed.insert(id);
             typed.insert(operator_step);
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            deferred_queue.complete(id)?;
             continue;
         }
         if let Some(parameters) = entity_parameters(record, "TRIMMED_CURVE") {
@@ -1085,7 +1089,7 @@ pub(super) fn decode(
                 continue;
             };
             if !carrier_index.curves.contains_key(&basis_step) {
-                defer_geometry_dependency(&mut waiting_on, basis_step, id);
+                deferred_queue.register(basis_step, id)?;
                 continue;
             }
             let curve = CurveId::from(ids::data(kind!("curve"), id));
@@ -1184,14 +1188,14 @@ pub(super) fn decode(
                 curve_parameter_offsets.insert(id, parameter_offset);
             }
             typed.insert(id);
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            deferred_queue.complete(id)?;
             continue;
         }
         if composite_curve_parameters(record).is_some() {
             let mut missing = false;
             for dependency in composite_curve_dependencies(record, exchange) {
                 if !carrier_index.curves.contains_key(&dependency) {
-                    defer_geometry_dependency(&mut waiting_on, dependency, id);
+                    deferred_queue.register(dependency, id)?;
                     missing = true;
                 }
             }
@@ -1234,7 +1238,7 @@ pub(super) fn decode(
             });
             carrier_index.curves.insert(id, curve_index);
             typed.insert(id);
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            deferred_queue.complete(id)?;
             continue;
         }
         let Some(parameters) = entity_parameters(record, "OFFSET_CURVE_3D") else {
@@ -1266,7 +1270,7 @@ pub(super) fn decode(
             continue;
         };
         if !carrier_index.curves.contains_key(&source_step) {
-            defer_geometry_dependency(&mut waiting_on, source_step, id);
+            deferred_queue.register(source_step, id)?;
             continue;
         }
         let Some(geometry) = carrier_index
@@ -1312,7 +1316,7 @@ pub(super) fn decode(
             curve_parameter_offsets.insert(id, offset);
         }
         typed.insert(id);
-        wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+        deferred_queue.complete(id)?;
     }
     for (id, _) in exchange
         .entities("CURVE_REPLICA")
@@ -3277,6 +3281,7 @@ fn resolve_unit_scales(
     ctx: &DecodeContext<'_>,
 ) -> Result<UnitScales, CodecError> {
     let mut contexts = BTreeMap::new();
+    let mut units = UnitScalars::new(exchange);
     let mut needs_length_scope = false;
     let mut needs_angle_scope = false;
     for representation in exchange
@@ -3290,7 +3295,7 @@ fn resolve_unit_scales(
         if contexts.contains_key(&context_id) {
             continue;
         }
-        let scales = context_unit_scales(context_id, exchange, ctx)?;
+        let scales = context_unit_scales(context_id, exchange, &mut units, ctx)?;
         needs_length_scope |= scales.0.is_some_and(|scale| scale != default_length);
         needs_angle_scope |= scales.1.is_some_and(|scale| scale != default_angle);
         contexts.insert(context_id, scales);
@@ -3430,6 +3435,7 @@ fn representation_context(record: &RawRecord) -> Option<u64> {
 fn context_unit_scales(
     id: u64,
     exchange: &Exchange,
+    resolved: &mut UnitScalars<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Option<PositiveReal>, Option<PositiveReal>), CodecError> {
     let Some(context) = exchange.records().get(&id) else {
@@ -3445,10 +3451,10 @@ fn context_unit_scales(
     let mut length_values = Vec::new();
     let mut angle_values = Vec::new();
     for unit in units.iter().filter_map(Value::reference) {
-        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new(), ctx)? {
+        if let Some(scale) = resolved.scale(UnitScaleKind::Length, unit, ctx)? {
             length_values.push(scale);
         }
-        if let Some(scale) = unit_scale_radians(unit, exchange, &mut BTreeSet::new(), ctx)? {
+        if let Some(scale) = resolved.scale(UnitScaleKind::Angle, unit, ctx)? {
             angle_values.push(scale);
         }
     }
@@ -3550,7 +3556,7 @@ fn plane_angle_scale(
     document_unit_scale(exchange, UnitScaleKind::Angle, ctx)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum UnitScaleKind {
     Length,
     Angle,
@@ -3563,19 +3569,6 @@ impl UnitScaleKind {
             Self::Angle => "PLANE_ANGLE_UNIT",
         }
     }
-
-    fn resolve(
-        self,
-        id: u64,
-        exchange: &Exchange,
-        active: &mut BTreeSet<u64>,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<PositiveReal>, CodecError> {
-        match self {
-            Self::Length => unit_scale_mm(id, exchange, active, ctx),
-            Self::Angle => unit_scale_radians(id, exchange, active, ctx),
-        }
-    }
 }
 
 fn document_unit_scale(
@@ -3583,6 +3576,7 @@ fn document_unit_scale(
     kind: UnitScaleKind,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
+    let mut resolved = UnitScalars::new(exchange);
     let dimension_partial = kind.partial();
     let mut context_scales = Vec::new();
     let mut has_context_unit = false;
@@ -3611,7 +3605,7 @@ fn document_unit_scale(
         has_context_unit = true;
         let mut scales = Vec::new();
         for id in unit_ids {
-            let Some(scale) = kind.resolve(id, exchange, &mut BTreeSet::new(), ctx)? else {
+            let Some(scale) = resolved.scale(kind, id, ctx)? else {
                 return Ok(None);
             };
             scales.push(scale);
@@ -3635,7 +3629,7 @@ fn document_unit_scale(
         .iter()
         .filter(|(_, record)| record.partial(dimension_partial).is_some())
     {
-        let Some(scale) = kind.resolve(id, exchange, &mut BTreeSet::new(), ctx)? else {
+        let Some(scale) = resolved.scale(kind, id, ctx)? else {
             return Ok(None);
         };
         scales.push(scale);
@@ -3649,46 +3643,7 @@ pub(super) fn unit_scale_radians(
     active: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    let _depth = ctx.enter_nested("step_angle_unit_scale_walk")?;
-    if active.contains(&id) {
-        return Ok(None);
-    }
-    active.insert(id);
-    let result = (|| -> Result<Option<f64>, CodecError> {
-        let Some(record) = exchange.records().get(&id) else {
-            return Ok(None);
-        };
-        if let Some(unit) = record.partial("SI_UNIT") {
-            if unit.parameters.get(1).and_then(Value::enumeration) == Some("RADIAN") {
-                let prefix = match unit.parameters.first() {
-                    Some(Value::Omitted) => Some(1.0),
-                    Some(Value::Enumeration(prefix)) => si_prefix(prefix),
-                    _ => None,
-                };
-                Ok(prefix)
-            } else {
-                Ok(None)
-            }
-        } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
-            let Some(factor_id) = unit.parameters.get(1).and_then(Value::reference) else {
-                return Ok(None);
-            };
-            let Some(factor) = exchange.records().get(&factor_id) else {
-                return Ok(None);
-            };
-            let Some(value) = record_values(factor).find_map(ValueExt::typed_number) else {
-                return Ok(None);
-            };
-            let Some(base_id) = record_values(factor).find_map(Value::reference) else {
-                return Ok(None);
-            };
-            Ok(unit_scale_radians(base_id, exchange, active, ctx)?.map(|base| value * base.get()))
-        } else {
-            Ok(None)
-        }
-    })();
-    active.remove(&id);
-    Ok(result?.and_then(PositiveReal::new))
+    UnitScalars::new(exchange).resolve(UnitScaleKind::Angle, id, active, ctx)
 }
 
 pub(super) fn unit_scale_mm(
@@ -3697,51 +3652,7 @@ pub(super) fn unit_scale_mm(
     active: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    let _depth = ctx.enter_nested("step_length_unit_scale_walk")?;
-    if active.contains(&id) {
-        return Ok(None);
-    }
-    active.insert(id);
-    let result = (|| -> Result<Option<f64>, CodecError> {
-        let Some(record) = exchange.records().get(&id) else {
-            return Ok(None);
-        };
-        if let Some(unit) = record.partial("SI_UNIT") {
-            if unit.parameters.get(1).and_then(Value::enumeration) == Some("METRE") {
-                let prefix = match unit.parameters.first() {
-                    Some(Value::Omitted) => Some(1.0),
-                    Some(Value::Enumeration(prefix)) => si_prefix(prefix),
-                    _ => None,
-                };
-                Ok(prefix.map(|prefix| prefix * 1000.0))
-            } else {
-                Ok(None)
-            }
-        } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
-            let Some(factor_id) = unit.parameters.get(1).and_then(Value::reference) else {
-                return Ok(None);
-            };
-            let Some(factor) = exchange.records().get(&factor_id) else {
-                return Ok(None);
-            };
-            let Some(value) = record_values(factor).find_map(ValueExt::typed_number) else {
-                return Ok(None);
-            };
-            let Some(base_id) = factor
-                .partials
-                .iter()
-                .flat_map(|partial| &partial.parameters)
-                .find_map(Value::reference)
-            else {
-                return Ok(None);
-            };
-            Ok(unit_scale_mm(base_id, exchange, active, ctx)?.map(|base| value * base.get()))
-        } else {
-            Ok(None)
-        }
-    })();
-    active.remove(&id);
-    Ok(result?.and_then(PositiveReal::new))
+    UnitScalars::new(exchange).resolve(UnitScaleKind::Length, id, active, ctx)
 }
 
 const SI_MICRO: f64 = EPS_GEOMETRY_READ_COARSE_GEOMETRY;
@@ -5919,3 +5830,8 @@ fn optional_direction(
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+mod deferred;
+mod unit_scalars;
+
+use unit_scalars::UnitScalars;

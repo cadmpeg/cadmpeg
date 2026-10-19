@@ -4,7 +4,7 @@
 //! Stops at a validated native representation; no topology IDs or IR carriers.
 
 use crate::loss::Diagnostics;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -1444,6 +1444,7 @@ fn parse_legacy_major2(
         endpoint_vertices.push(index);
     }
     let mut edges = Vec::new();
+    let mut point_index = None;
     for (edge_index, curve) in c3_meta.iter().enumerate() {
         let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
             let trim = &trims[*trim_index];
@@ -1452,8 +1453,18 @@ fn parse_legacy_major2(
                 endpoint_vertices[legacy_trim_endpoint_for_edge(trim, *trim_index, 1)],
             ]
         } else {
-            let start = legacy_vertex(&mut vertices, curve.endpoints[0], curve.range.start)?;
-            let end = legacy_vertex(&mut vertices, curve.endpoints[1], curve.range.start)?;
+            let start = legacy_vertex(
+                &mut vertices,
+                &mut point_index,
+                curve.endpoints[0],
+                curve.range.start,
+            )?;
+            let end = legacy_vertex(
+                &mut vertices,
+                &mut point_index,
+                curve.endpoints[1],
+                curve.range.start,
+            )?;
             [start, end]
         };
         for (vertex, point) in endpoints
@@ -1748,6 +1759,13 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
     }
 }
 
+fn legacy_point_key(point: [f64; 3]) -> Option<[u64; 3]> {
+    if point.into_iter().any(f64::is_nan) {
+        return None;
+    }
+    Some(point.map(|value| if value == 0.0 { 0 } else { value.to_bits() }))
+}
+
 /// The index of the legacy Brep vertex at `point`, adding it when the archive
 /// states no vertex there yet.
 ///
@@ -1759,15 +1777,22 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
 /// because the vertex list alone does not carry it.
 fn legacy_vertex(
     vertices: &mut Vec<LegacyVertex>,
+    point_index: &mut Option<HashMap<[u64; 3], usize>>,
     point: [f64; 3],
     position: usize,
 ) -> Result<usize, GeometryError> {
-    if let Some((index, _)) = vertices
-        .iter()
-        .enumerate()
-        .find(|(_, value)| value.vertex.point.get() == point)
-    {
-        return Ok(index);
+    let points = point_index.get_or_insert_with(|| {
+        let mut points = HashMap::new();
+        for (index, vertex) in vertices.iter().enumerate() {
+            if let Some(key) = legacy_point_key(vertex.vertex.point.get()) {
+                points.entry(key).or_insert(index);
+            }
+        }
+        points
+    });
+    let key = legacy_point_key(point);
+    if let Some(index) = key.as_ref().and_then(|key| points.get(key)) {
+        return Ok(*index);
     }
     let index = vertices.len();
     let stored_index =
@@ -1785,6 +1810,9 @@ fn legacy_vertex(
         point_scale: [0.0; 3],
         point_count: 0,
     });
+    if let Some(key) = key {
+        points.insert(key, index);
+    }
     Ok(index)
 }
 
@@ -2989,6 +3017,39 @@ where
 #[cfg(test)]
 mod tests {
     #[test]
+    fn legacy_vertex_index_preserves_float_equality_and_first_winners() {
+        let mut vertices = Vec::new();
+        let mut index = None;
+        for point in [
+            [0.0, 1.0, 2.0],
+            [-0.0, 1.0, 2.0],
+            [f64::INFINITY, 0.0, 0.0],
+            [f64::INFINITY, -0.0, 0.0],
+            [f64::NAN, 0.0, 0.0],
+            [f64::NAN, 0.0, 0.0],
+            [f64::MAX, f64::MIN_POSITIVE, 0.0],
+            [f64::MAX, f64::MIN_POSITIVE, -0.0],
+        ] {
+            let expected = vertices
+                .iter()
+                .position(|vertex: &super::LegacyVertex| vertex.vertex.point.get() == point)
+                .unwrap_or(vertices.len());
+            assert_eq!(
+                super::legacy_vertex(&mut vertices, &mut index, point, 0).unwrap(),
+                expected
+            );
+        }
+        // A lazily initialized index uses the first already-stored duplicate.
+        let mut duplicate = Vec::new();
+        super::legacy_vertex(&mut duplicate, &mut None, [0.0, 1.0, 2.0], 0).unwrap();
+        vertices.extend(duplicate);
+        assert_eq!(
+            super::legacy_vertex(&mut vertices, &mut None, [-0.0, 1.0, 2.0], 0).unwrap(),
+            0
+        );
+    }
+
+    #[test]
     fn numerical_followup_legacy_vertex_mean_refuses_a_broken_scaled_sum() {
         // Three endpoints scaled by the largest of them sum to three at most.
         assert_eq!(super::scaled_mean(3.0, 3), Some(1.0));
@@ -3005,7 +3066,7 @@ mod tests {
     fn numerical_followup_legacy_vertex_mean_stays_finite() {
         for endpoints in [[1e308, 1e308], [-1e308, 1e308]] {
             let mut vertices = Vec::new();
-            super::legacy_vertex(&mut vertices, [endpoints[0], 0., 0.], 0).unwrap();
+            super::legacy_vertex(&mut vertices, &mut None, [endpoints[0], 0., 0.], 0).unwrap();
             for x in endpoints {
                 vertices[0].add_point([x, 0., 0.]);
             }

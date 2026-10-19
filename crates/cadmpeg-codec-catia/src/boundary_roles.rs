@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-backed boundary-role derivation shared by closed topology routes.
 
+mod index;
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::LoopId;
@@ -10,7 +12,8 @@ use cadmpeg_ir::topology::FaceLoops;
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
 /// Boundary points one planar face may state before its loops are left
-/// unclassified. Segment intersection and containment are quadratic in them.
+/// unclassified. Spatial indexing prunes segment tests; containment and densely
+/// overlapping segment candidates can still require quadratic work.
 pub(crate) const MAX_PLANAR_BOUNDARY_POINTS: usize = 4096;
 
 fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
@@ -104,6 +107,7 @@ fn segments_intersect_or_touch(
             || (right_left < -tolerance && right_right > tolerance))
 }
 
+#[cfg(test)]
 fn polygon_boundaries_intersect(
     left: &[Point2],
     right: &[Point2],
@@ -227,12 +231,7 @@ pub(crate) fn classify_planar_boundaries(
         }
         return unspecified();
     }
-    if polygons.iter().enumerate().any(|(index, polygon)| {
-        polygon_boundaries_intersect(polygon, polygon, coordinate_tolerance, true)
-            || polygons.iter().skip(index + 1).any(|other| {
-                polygon_boundaries_intersect(polygon, other, coordinate_tolerance, false)
-            })
-    }) {
+    if index::BoundaryIndex::new(&polygons).intersects(coordinate_tolerance) {
         return unspecified();
     }
     let Some((outer, outer_area)) = areas

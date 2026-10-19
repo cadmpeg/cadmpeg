@@ -141,11 +141,13 @@ fn scalar_color_singletons_keep_one_color_per_target() {
     for id in 0..1000 {
         let body = cadmpeg_ir::ids::BodyId::mint(format!("step:model:body#{id}")).expect("body ID");
         let target = cadmpeg_ir::appearance::AppearanceTarget::Body(body);
-        super::super::push_scalar_candidate(&mut candidates, &target, id, color)
+        super::super::push_scalar_candidate(&mut candidates, &target, (id, (0, 0, 0)), color)
             .expect("target owns its first color inline");
     }
     assert_eq!(candidates.len(), 1000);
-    assert!(candidates.values().all(|group| group.iter().count() == 1));
+    assert!(candidates
+        .values()
+        .all(|(_, group)| group.iter().count() == 1));
 }
 
 #[test]

@@ -346,7 +346,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             .unwrap();
             assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
             assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
-            assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
+            assert!(result.acceleration.finite().unwrap().u.abs() <= 8.0 * f64::EPSILON);
         }
         let curve = PcurveGeometry::SphericalGreatCircle(
             SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
@@ -362,7 +362,8 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
         let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
         assert!((result.tangent.unwrap().v / expected_first - 1.0).abs() <= 16.0 * f64::EPSILON);
         assert!(
-            (result.acceleration.unwrap().v / expected_second - 1.0).abs() <= 16.0 * f64::EPSILON
+            (result.acceleration.finite().unwrap().v / expected_second - 1.0).abs()
+                <= 16.0 * f64::EPSILON
         );
     });
 }
@@ -431,8 +432,9 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     );
     let tangent = polyline_tangent(
         crate::eval::admission::EvaluationAdmission::Standard,
-        &points,
-        &wide,
+        points.len(),
+        |index| points.get(index).copied(),
+        |index| wide.get(index).copied(),
         0.0,
     )
     .unwrap();

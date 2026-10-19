@@ -4,6 +4,7 @@
 use crate::container;
 
 mod aggregation;
+mod family_pointer;
 mod sections;
 
 #[test]

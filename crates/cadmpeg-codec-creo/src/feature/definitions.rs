@@ -1472,6 +1472,7 @@ fn decode_parameter_scalar(
     const DICT_PREFIXES: &[u8] = &[
         0x5e, 0x60, 0x68, 0x6f, 0x71, 0x74, 0x81, 0x85, 0x8b, 0x90, 0x91, 0x99, 0xa1, 0xa2, 0xb7,
     ];
+    let payload = payload.get(..end)?;
     let prefix = *payload.get(offset)?;
     if DICT_PREFIXES.contains(&prefix) && offset + 7 <= end {
         let (first, second) = if prefix == 0xb7 {
@@ -1525,6 +1526,9 @@ fn decode_variable_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (ScalarLane, usize) {
+    let Some(payload) = payload.get(..end) else {
+        return (ScalarLane::Undefined, offset);
+    };
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
         return (ScalarLane::Undefined, offset);
     };
@@ -1617,6 +1621,9 @@ fn decode_section_coordinate_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (ScalarLane, usize) {
+    let Some(payload) = payload.get(..end) else {
+        return (ScalarLane::Undefined, offset);
+    };
     match payload.get(offset) {
         Some(0x00 | 0x34) if offset + 3 <= end => return (ScalarLane::Undefined, offset + 3),
         Some(0x01) if offset + 4 <= end => return (ScalarLane::Undefined, offset + 4),
@@ -1638,16 +1645,15 @@ fn decode_variable_guess(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (ScalarLane, usize) {
+    let Some(payload) = payload.get(..end) else {
+        return (ScalarLane::Undefined, offset);
+    };
     if payload.get(offset) == Some(&0x18) {
         let mut trailing = offset + 1;
         let complete_suffix = (0..3).all(|_| {
-            if trailing >= end || payload[trailing] >= 0xc0 {
+            let Some((_, next)) = psb::complete_compact_int(payload, trailing) else {
                 return false;
-            }
-            let (_, next) = psb::compact_int(payload, trailing);
-            if next <= trailing {
-                return false;
-            }
+            };
             trailing = next;
             true
         });
@@ -1675,6 +1681,7 @@ fn variable_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureVariableTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let table = find_bytes(payload, b"var_arr\0", start, end)?;
     let mut cursor = table + b"var_arr\0".len();
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
@@ -1745,19 +1752,29 @@ fn variable_table(
             break;
         }
         let row_offset = cursor;
-        let (variable_type, next) = psb::compact_int(payload, cursor);
+        let Some((variable_type, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         if cursor >= end || payload[cursor] >= 0xc0 {
             break;
         }
-        let (key, next) = psb::compact_int(payload, cursor);
+        let Some((key, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -1766,13 +1783,18 @@ fn variable_table(
             if payload[cursor] >= 0xc0 {
                 break;
             }
-            let (field, next) = psb::compact_int(payload, cursor);
+            let Some((field, next)) = psb::complete_compact_int(payload, cursor) else {
+                break;
+            };
             if next == cursor {
                 break;
             }
             trailing[trailing_count] = Some(field);
             trailing_count += 1;
             cursor = next;
+        }
+        if trailing_count != 3 {
+            break;
         }
         let Some(delimiter) = payload[cursor..end].iter().position(|&byte| byte == 0xe2) else {
             break;
@@ -1807,6 +1829,7 @@ fn positional_variable_table(
     table_class: u32,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureVariableTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let mut candidates = (start..end).filter_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
@@ -1841,16 +1864,26 @@ fn positional_variable_table(
     let prototype_separator_len = 2 + reference_bytes.len() + 1;
     'rows: while cursor < end && rows.len() < row_limit {
         let row_offset = cursor;
-        let (variable_type, next) = psb::compact_int(payload, cursor);
+        let Some((variable_type, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
-        let (key, next) = psb::compact_int(payload, cursor);
+        let Some((key, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -1859,7 +1892,9 @@ fn positional_variable_table(
             if payload[cursor] >= 0xc0 {
                 break 'rows;
             }
-            let (field, next) = psb::compact_int(payload, cursor);
+            let Some((field, next)) = psb::complete_compact_int(payload, cursor) else {
+                break;
+            };
             if next <= cursor {
                 break 'rows;
             }
@@ -1867,22 +1902,23 @@ fn positional_variable_table(
             trailing_count += 1;
             cursor = next;
         }
-        if rows.len() + 1 < row_limit {
-            if rows.is_empty() {
-                if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF])
-                    || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
-                        != Some(reference_bytes)
-                    || payload.get(cursor + prototype_separator_len - 1) != Some(&0xe2)
-                {
-                    break;
-                }
-                cursor += prototype_separator_len;
-            } else {
-                if payload.get(cursor) != Some(&0xe2) {
-                    break;
-                }
-                cursor += 1;
+        if trailing_count != 3 {
+            break;
+        }
+        if rows.is_empty() {
+            if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF])
+                || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
+                    != Some(reference_bytes)
+                || payload.get(cursor + prototype_separator_len - 1) != Some(&0xe2)
+            {
+                break;
             }
+            cursor += prototype_separator_len;
+        } else if rows.len() + 1 < row_limit {
+            if payload.get(cursor) != Some(&0xe2) {
+                break;
+            }
+            cursor += 1;
         }
         let row = FeatureVariableRow {
             variable_type: variable_type.into(),
@@ -1912,7 +1948,7 @@ fn segment_int(payload: &[u8], offset: usize) -> (Option<u32>, usize) {
     };
     match head {
         0..=0x7f => (Some(u32::from(head)), offset + 1),
-        0x80..=0xbf => payload.get(offset + 1).map_or((None, offset + 1), |&tail| {
+        0x80..=0xbf => payload.get(offset + 1).map_or((None, offset), |&tail| {
             (
                 Some((u32::from(head - 0x80) << 8) | u32::from(tail)),
                 offset + 2,
@@ -1953,6 +1989,14 @@ fn next_bounded_compact_int(payload: &[u8], offset: usize) -> Option<(u32, usize
     }
     let (value, next) = psb::compact_int(payload, offset);
     (next > offset).then_some((value, next))
+}
+
+fn next_nullable_solver_int(payload: &[u8], offset: &mut usize) -> Result<Option<u32>, ()> {
+    if payload.get(*offset) == Some(&0xf6) {
+        *offset += 1;
+        return Ok(None);
+    }
+    next_solver_int(payload, offset).map(Some).ok_or(())
 }
 
 fn next_nullable_segment_int(payload: &[u8], offset: &mut usize) -> Result<Option<u32>, ()> {
@@ -2057,9 +2101,7 @@ pub(crate) fn equation_table(
     start: usize,
     end: usize,
 ) -> Option<FeatureEquationTable> {
-    if start > end || end > payload.len() {
-        return None;
-    }
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let table = find_bytes(payload, b"eqtn_arr\0", start, end)?;
     let mut cursor = table + b"eqtn_arr\0".len();
     if payload.get(cursor) == Some(&0xf2) {
@@ -2243,6 +2285,7 @@ fn placement_instruction_rows(
 }
 
 fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegmentTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let table = find_bytes(payload, b"segtab_ptr\0", start, end)?;
     let mut cursor = table + b"segtab_ptr\0".len();
     while payload
@@ -2285,6 +2328,9 @@ fn segment_table_body(
     end: usize,
     prototype_row: PrototypeRow,
 ) -> Option<FeatureSegmentTable> {
+    let payload = payload
+        .get(..end)
+        .filter(|_| table <= end && cursor <= end)?;
     let has_elided_prototype = prototype_row == PrototypeRow::Elided;
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
         return None;
@@ -2306,6 +2352,7 @@ fn segment_table_body(
         .then_some((offset, after_reference))
     })?;
     let named_values = |label: &[u8], count: usize| -> Option<(usize, [Option<u32>; 7])> {
+        let payload = payload.get(..close).filter(|_| cursor <= close)?;
         let offset = find_bytes(payload, label, cursor, close)?;
         let mut p = offset + label.len();
         if payload.get(p) == Some(&psb::token::ARRAY_OPEN) {
@@ -3768,6 +3815,7 @@ fn entity_intersection(
 }
 
 fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let table = find_bytes(payload, b"order_table\0", start, end)?;
     let mut cursor = table + b"order_table\0".len();
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
@@ -3875,6 +3923,7 @@ fn positional_order_table(
     end: usize,
     table_class: u32,
 ) -> Option<FeatureOrderTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let (table, declared_count, cursor) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
@@ -3999,6 +4048,7 @@ fn gsec3d_plane_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
 fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
     const GSEC3D: &[u8] = b"\xe0\x00gsec3d_ptr\0";
     const SAVED_RESULT: &[u8] = b"\xe0\x00p_saved_result\0";
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let section = find_bytes(payload, GSEC3D, start, end)?;
     let record_end = find_bytes(payload, GSEC3D, section + GSEC3D.len(), end).unwrap_or(end);
     let placement_end =
@@ -4011,6 +4061,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
     let mut reference_plane_entity_ids = Vec::new();
     let mut reference_plane_datum_geometry_id = None;
     if let Some(references) = find_bytes(payload, b"\xe0\x00ref_planes\0", section, placement_end) {
+        let payload = &payload[..placement_end];
         let mut cursor = references + b"\xe0\x00ref_planes\0".len();
         if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
             let (count, next) = psb::compact_int(payload, cursor + 1);
@@ -4076,6 +4127,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
 }
 
 fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let (section, name_end) = payload[start..end]
         .windows(4)
         .enumerate()
@@ -4217,6 +4269,7 @@ fn named_dimension_reference(
     start: usize,
     end: usize,
 ) -> Option<(FeatureDimensionReference, usize)> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let item_label = find_bytes(payload, b"item_id\0", start, end)?;
     let mut cursor = item_label + b"item_id\0".len();
     let item_id = next_nullable_segment_int(payload, &mut cursor).ok()?;
@@ -4247,6 +4300,7 @@ fn dimension_reference_table(
     start: usize,
     end: usize,
 ) -> Option<FeatureDimensionReferenceTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let table = find_bytes(payload, b"dim_ref\0", start, end)?;
     let mut cursor = table + b"dim_ref\0".len();
     while payload
@@ -4366,6 +4420,7 @@ fn labeled_dimension(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureDimension> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let type_label = find_bytes(payload, b"type\0", start, end)?;
     let (dimension_type, after_type) = segment_int(payload, type_label + b"type\0".len());
     let dimension_type = dimension_type?;
@@ -4406,6 +4461,7 @@ fn positional_dimension(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureDimension> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let (dimension_type, cursor) = segment_int(payload, start);
     let dimension_type = dimension_type?;
     let value_start = cursor;
@@ -4450,6 +4506,7 @@ fn dimension_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureDimensionTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let table = find_bytes(payload, b"dimtab_ptr\0", start, end)?;
     let mut cursor = table + b"dimtab_ptr\0".len();
     while payload
@@ -4517,6 +4574,7 @@ fn positional_dimension_table(
     table_class: u32,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureDimensionTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let (table, declared_count, mut cursor, reference_bytes) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
@@ -4611,6 +4669,9 @@ fn self_described_positional_dimension_table(
 }
 
 fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Vec::new();
+    };
     let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
         return Vec::new();
     };
@@ -4790,6 +4851,7 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
 }
 
 fn named_array_class(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let label = find_bytes(payload, label, start, end)? + label.len();
     let array =
         (label..end).find(|offset| payload.get(*offset) == Some(&psb::token::ARRAY_OPEN))?;
@@ -4806,6 +4868,7 @@ fn named_solver_table_header(
     start: usize,
     end: usize,
 ) -> Option<FeatureSolverTableHeader> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let offset = find_bytes(payload, label, start, end)?;
     let mut cursor = offset + label.len();
     if payload
@@ -4923,6 +4986,9 @@ fn positional_feature_skamps(
     end: usize,
     table_class: u32,
 ) -> Vec<FeatureSkamp> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Vec::new();
+    };
     let Some((_, count, mut cursor, table_class_encoding)) =
         positional_array_header(payload, start, end, table_class)
     else {
@@ -5176,6 +5242,9 @@ fn feature_relation_triples(
     start: usize,
     end: usize,
 ) -> Vec<FeatureRelationTriple> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Vec::new();
+    };
     let Some(table) = find_bytes(payload, b"triples_ptr\0", start, end) else {
         return Vec::new();
     };
@@ -5217,9 +5286,15 @@ fn feature_relation_triples(
     rows.push(prototype);
     while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
-        let relation_id = next_solver_int(payload, &mut cursor);
-        let equation_id = next_solver_int(payload, &mut cursor);
-        let skamp_id = next_solver_int(payload, &mut cursor);
+        let Ok(relation_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
+        let Ok(equation_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
+        let Ok(skamp_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
         let terminal_named_boundary = rows.len() + 1 == index_from_u32(declared_count)
             && payload.get(cursor).is_some_and(|byte| *byte >= 0xe0);
         if payload.get(cursor) != Some(&0xe2) && !terminal_named_boundary {
@@ -5244,6 +5319,9 @@ fn positional_relation_triples(
     end: usize,
     table_class: u32,
 ) -> Vec<FeatureRelationTriple> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Vec::new();
+    };
     let Some((_, count, mut cursor, class_encoding)) =
         positional_array_header(payload, start, end, table_class)
     else {
@@ -5259,21 +5337,15 @@ fn positional_relation_triples(
     let mut rows = Vec::new();
     while rows.len() < index_from_u32(count) {
         let offset = cursor;
-        let before_relation = cursor;
-        let relation_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_relation {
+        let Ok(relation_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
-        let before_equation = cursor;
-        let equation_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_equation {
+        };
+        let Ok(equation_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
-        let before_skamp = cursor;
-        let skamp_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_skamp {
+        };
+        let Ok(skamp_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
+        };
         let row = FeatureRelationTriple {
             relation_id,
             equation_id,
@@ -5336,6 +5408,7 @@ fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
 }
 
 fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let table = find_bytes(payload, b"relat_ptr\0", start, end)?;
     let mut cursor = table + b"relat_ptr\0".len();
     if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
@@ -5499,6 +5572,7 @@ fn positional_relation_table(
     end: usize,
     table_class: u32,
 ) -> Option<FeatureRelationTable> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let (table, declared_count, cursor, reference_bytes) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
@@ -5547,6 +5621,9 @@ fn saved_section_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
+    let Some(payload) = payload.get(..end).filter(|_| offset <= end) else {
+        return (None, offset);
+    };
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
         return (None, offset);
     };
@@ -5628,6 +5705,9 @@ fn saved_line_block(
     segment_end: usize,
     cache: &scalar::ScalarCache,
 ) -> Vec<FeatureSavedEntity> {
+    let Some(payload) = payload.get(..segment_end).filter(|_| cursor <= segment_end) else {
+        return Vec::new();
+    };
     if payload.get(cursor) == Some(&0xf1) {
         cursor = payload[cursor..segment_end]
             .iter()
@@ -5849,6 +5929,7 @@ fn saved_named_scalars<const N: usize>(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<[Option<f64>; N]> {
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let window = payload.get(start..end)?;
     let label_start = (0..window.len()).find(|&offset| {
         window.get(offset..offset + 2) == Some(&[0xe0, 0x02])
@@ -5892,6 +5973,9 @@ fn saved_arc_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
+    let Some(payload) = payload.get(..end).filter(|_| offset <= end) else {
+        return (None, offset);
+    };
     if payload.get(offset) == Some(&0x18)
         && payload.get(offset + 1).is_some_and(|next| {
             matches!(
@@ -5959,6 +6043,9 @@ fn saved_positional_generated_entities(
     segments: Option<&FeatureSegmentTable>,
 ) -> Vec<FeatureSavedEntity> {
     const HEADER_WINDOW: usize = 24;
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Vec::new();
+    };
     let (Some(order_table), Some(segments)) = (order_table, segments) else {
         return Vec::new();
     };
@@ -6009,6 +6096,7 @@ fn saved_positional_generated_entities(
             .get(index + 1)
             .and_then(|next| next.checked_sub(1))
             .unwrap_or(end);
+        let payload = &payload[..row_end];
         let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
             continue;
         };
@@ -6325,11 +6413,15 @@ fn saved_spline_entities(
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
     const TANGENTS_LABEL: &[u8] = b"\xe0\x02end_tangts\0";
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(Vec::new());
+    };
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
         let body_start = entity_offset + LABEL.len();
         let body_end = find_bytes(payload, LABEL, body_start, end).unwrap_or(end);
+        let payload = &payload[..body_end];
         let points_label = find_bytes(payload, POINTS, body_start, body_end);
         let entity_id_end = points_label.unwrap_or(body_end);
         let mut declared_point_count = None;
@@ -6431,6 +6523,7 @@ fn saved_spline_parameters(
 ) -> Option<DecodedField<Vec<f64>>> {
     const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
     const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
+    let payload = payload.get(..end).filter(|_| start <= end)?;
     let label = find_bytes(payload, PARAMETERS, start, end)?;
     let value_start = label + PARAMETERS_LABEL.len();
     let count_at = label + PARAMETERS.len();
@@ -7836,3 +7929,6 @@ mod tests {
 
 #[cfg(test)]
 mod numerical_range_tests;
+
+#[cfg(test)]
+mod window_tests;

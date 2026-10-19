@@ -56,6 +56,67 @@ fn source_curve_parameter_walk_refuses_depth_limit() {
     ));
 }
 
+#[test]
+fn source_curve_scales_compress_shared_paths_and_isolate_cycles() {
+    use std::fmt::Write;
+    let mut source = String::from("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();");
+    for id in 2..=1024 {
+        write!(
+            source,
+            "#{id}=TRIMMED_CURVE('',#{},(),(),.T.,.PARAMETER.);",
+            id - 1
+        )
+        .expect("fixture");
+    }
+    source.push_str("#2000=TRIMMED_CURVE('',#2001,(),(),.T.,.PARAMETER.);#2001=TRIMMED_CURVE('',#2000,(),(),.T.,.PARAMETER.);#2002=TRIMMED_CURVE('',#2000,(),(),.T.,.PARAMETER.);ENDSEC;END-ISO-10303-21;");
+    crate::test_support::with_service_context(source.as_bytes(), |root, ctx| {
+        let (exchange, _) = crate::parse::parse_inner(root, ctx).expect("exchange");
+        let scales = super::super::UnitScales {
+            default_length: PositiveReal::ONE,
+            default_angle: PositiveReal::new(2.0).expect("positive"),
+            length: BTreeMap::new(),
+            angle: BTreeMap::new(),
+        };
+        let mut resolved = BTreeMap::new();
+        assert_eq!(
+            super::super::source_curve_parameter_scale(
+                1024,
+                &exchange,
+                &scales,
+                &mut resolved,
+                ctx
+            )
+            .expect("scale")
+            .map(FiniteReal::get),
+            Some(2.0)
+        );
+        assert_eq!(resolved.len(), 1024);
+        assert!(resolved
+            .values()
+            .all(|scale| scale.map(FiniteReal::get) == Some(2.0)));
+        for id in [2002, 2000, 2001] {
+            assert_eq!(
+                super::super::source_curve_parameter_scale(
+                    id,
+                    &exchange,
+                    &scales,
+                    &mut resolved,
+                    ctx
+                )
+                .expect("cycle is local"),
+                None
+            );
+        }
+        assert_eq!(resolved.len(), 1027);
+        assert_eq!(
+            super::super::resolve_source_curve_parameter_scales(&exchange, &scales, ctx)
+                .expect("independent curves survive")
+                .len(),
+            1024
+        );
+    });
+}
+
 fn parameter_inference_ir(with_edge: bool) -> CadIr {
     use cadmpeg_ir::geometry::analytic::LineCurve;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};

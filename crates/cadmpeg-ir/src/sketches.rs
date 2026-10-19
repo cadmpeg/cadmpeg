@@ -37,15 +37,9 @@ impl From<cadmpeg_core::CodecError> for SketchCollectionError {
     }
 }
 
-fn distinct_sketch_members<'id>(identities: impl Iterator<Item = &'id str>) -> bool {
-    let mut members: Vec<&str> = Vec::new();
-    for identity in identities {
-        match members.binary_search(&identity) {
-            Ok(_) => return false,
-            Err(position) => members.insert(position, identity),
-        }
-    }
-    true
+fn distinct_sketch_members<'id>(mut identities: impl Iterator<Item = &'id str>) -> bool {
+    let mut members = std::collections::BTreeSet::new();
+    identities.all(|identity| members.insert(identity))
 }
 
 pub mod scaling;
@@ -2497,7 +2491,7 @@ pub struct SketchCircularPatternInstance {
 }
 
 /// Checked two-axis rectangular sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "SketchRectangularPatternWire",
@@ -2565,7 +2559,7 @@ impl SketchRectangularPattern {
 }
 
 /// Checked circular sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "SketchCircularPatternWire",
@@ -2761,15 +2755,6 @@ struct SketchPatternDirectionWire {
 }
 
 impl SketchPatternDirectionWire {
-    fn from_direction(value: &SketchPatternDirection) -> Self {
-        Self {
-            direction: value.direction.get(),
-            spacing: value.spacing,
-            distance: value.distance.clone(),
-            count_parameter: value.count_parameter.clone(),
-        }
-    }
-
     fn into_direction(self) -> Result<SketchPatternDirection, &'static str> {
         SketchPatternDirection::new(
             self.direction,
@@ -2821,18 +2806,6 @@ struct SketchCircularPatternWire {
     instances: Vec<SketchCircularPatternInstance>,
 }
 
-impl From<SketchRectangularPattern> for SketchRectangularPatternWire {
-    fn from(pattern: SketchRectangularPattern) -> Self {
-        Self {
-            directions: [
-                SketchPatternDirectionWire::from_direction(&pattern.directions[0]),
-                SketchPatternDirectionWire::from_direction(&pattern.directions[1]),
-            ],
-            rows: pattern.rows,
-        }
-    }
-}
-
 impl TryFrom<SketchRectangularPatternWire> for SketchRectangularPattern {
     type Error = &'static str;
 
@@ -2842,19 +2815,6 @@ impl TryFrom<SketchRectangularPatternWire> for SketchRectangularPattern {
         Self::new(directions, wire.rows).ok_or(
             "rectangular pattern rows must form one non-empty grid whose instances have one fixed positive entity arity",
         )
-    }
-}
-
-impl From<SketchCircularPattern> for SketchCircularPatternWire {
-    fn from(pattern: SketchCircularPattern) -> Self {
-        Self {
-            center: pattern.center,
-            angle: pattern.angle,
-            angle_parameter: pattern.angle_parameter,
-            count_parameter: pattern.count_parameter,
-            seed: pattern.seed,
-            instances: pattern.instances.into_iter().collect(),
-        }
     }
 }
 
@@ -4014,3 +3974,5 @@ cadmpeg_core::named_optional_field!(deserialize_font, String, "font");
 cadmpeg_core::named_optional_field!(deserialize_native_flags, u64, "native_flags");
 
 mod identity_rewrite;
+
+mod serialization;

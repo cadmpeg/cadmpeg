@@ -131,6 +131,7 @@ pub(crate) fn transfer(
         ordinal_by_feature.insert(feature_id(object)?, feature_ordinals[object.id().as_str()]);
     }
 
+    let predecessors = indexes::BodyPredecessors::new(objects, &feature_ids, &properties_by_owner);
     for object in objects {
         if !is_design_object(&object.type_name) {
             continue;
@@ -225,6 +226,7 @@ pub(crate) fn transfer(
                 object.id(),
                 &owned,
                 &feature_ids,
+                &predecessors,
                 PatternSources {
                     objects,
                     properties_by_owner: &properties_by_owner,
@@ -6892,6 +6894,7 @@ fn pattern_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
+    predecessors: &indexes::BodyPredecessors<'_>,
     sources: PatternSources<'_, '_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let PatternSources {
@@ -6946,9 +6949,7 @@ fn pattern_definition(
     {
         seeds
     } else {
-        let Some(feature) =
-            implicit_body_predecessor(owner, features, objects, properties_by_owner)
-        else {
+        let Some(feature) = predecessors.get(owner) else {
             return Ok(None);
         };
         vec![feature.clone()]
@@ -7060,26 +7061,6 @@ fn multi_transform_stage_seeds(
         return Some(seeds);
     }
     None
-}
-
-fn implicit_body_predecessor<'a>(
-    owner: &str,
-    features: &'a HashMap<&str, FeatureId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<&'a FeatureId> {
-    objects.iter().find_map(|object| {
-        let owned = properties_by_owner.get(object.id().as_str())?;
-        let members = body_membership_property(owned)?;
-        let position = members.links().iter().position(|link| {
-            link.as_ref().and_then(crate::native::LinkTarget::object) == Some(owner)
-        })?;
-        members.links()[..position]
-            .iter()
-            .rev()
-            .filter_map(|link| link.as_ref()?.object())
-            .find_map(|member| features.get(member))
-    })
 }
 
 fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
@@ -8646,3 +8627,5 @@ mod profile_tests {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+mod indexes;

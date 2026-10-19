@@ -31,7 +31,8 @@ pub(crate) fn validate_native(
     };
     let mut findings = Vec::new();
     for history in &native.feature_histories {
-        if let Err(error) = crate::writer::validate_feature_graph(&history.features) {
+        if let Err(error) = crate::history::feature_graph::validate_feature_graph(&history.features)
+        {
             findings.push(Finding {
                 related: Vec::new(),
                 check: Check::NativeLinks,

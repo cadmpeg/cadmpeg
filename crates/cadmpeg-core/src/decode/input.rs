@@ -32,6 +32,9 @@ impl DecodeContext<'_> {
         while bytes.len() < length {
             let count = (length - bytes.len()).min(chunk.len());
             let read = reader.read(&mut chunk[..count]).map_err(CodecError::Io)?;
+            if read > count {
+                return Err(CodecError::Io(std::io::ErrorKind::InvalidData.into()));
+            }
             if read == 0 {
                 break;
             }
@@ -80,10 +83,11 @@ impl DecodeContext<'_> {
             }
         }
 
-        if reader.read(&mut [0_u8; 1])? != 0 {
-            return Err(self.refuse_input_limit(1, "complete input"));
+        match reader.read(&mut [0_u8; 1])? {
+            0 => Ok(()),
+            1 => Err(self.refuse_input_limit(1, "complete input")),
+            _ => Err(CodecError::Io(std::io::ErrorKind::InvalidData.into())),
         }
-        Ok(())
     }
 
     /// Raises a typed input-byte refusal without changing its dimension.
@@ -104,6 +108,57 @@ mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
     use std::io::Cursor;
+
+    struct OverreportedCount(usize);
+
+    impl std::io::Read for OverreportedCount {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Ok(self.0)
+        }
+    }
+
+    #[test]
+    fn input_prefix_rejects_overreported_counts_before_charge_or_growth() {
+        for reported in [2, usize::MAX] {
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("empty root");
+            let mut bytes = vec![b'p'];
+            let capacity = bytes.capacity();
+            let error = ctx
+                .extend_input_prefix(&mut OverreportedCount(reported), &mut bytes, 2)
+                .expect_err("count exceeds the one-byte read window");
+            assert!(
+                matches!(error, CodecError::Io(error) if error.kind() == std::io::ErrorKind::InvalidData)
+            );
+            assert_eq!(bytes, b"p");
+            assert_eq!(bytes.capacity(), capacity);
+            assert_eq!(ctx.budget.input_bytes(), 0);
+            assert_eq!(ctx.resource_refusal(), None);
+        }
+    }
+
+    #[test]
+    fn input_completion_rejects_overreported_probe_counts() {
+        for reported in [2, usize::MAX] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_input_bytes = 0;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let mut bytes = Vec::new();
+            let error = ctx
+                .complete_input(&mut OverreportedCount(reported), &mut bytes)
+                .expect_err("count exceeds the one-byte end probe");
+            assert!(
+                matches!(error, CodecError::Io(error) if error.kind() == std::io::ErrorKind::InvalidData)
+            );
+            assert!(bytes.is_empty());
+            assert_eq!(bytes.capacity(), 0);
+            assert_eq!(ctx.budget.input_bytes(), 0);
+            assert_eq!(ctx.resource_refusal(), None);
+        }
+    }
 
     #[test]
     fn input_prefix_refusal_keeps_input_dimension() {

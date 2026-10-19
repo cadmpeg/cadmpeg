@@ -5,6 +5,7 @@ use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use std::collections::BTreeSet;
 
 mod cache_storage;
+mod color_bindings;
 mod depth_limits;
 mod shared_walks;
 mod surface_styles;

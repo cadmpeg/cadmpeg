@@ -73,13 +73,13 @@ pub fn inflate_zlib_exact<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'_>,
 ) -> Result<View<'a>, CodecError> {
-    let (view, consumed) = inflate_zlib_member(ctx, source, ExpandSpec::Unknown)?;
+    let (writer, consumed) = inflate_zlib_writer(ctx, source, ExpandSpec::Unknown)?;
     if consumed != source.window().len() {
         return Err(CodecError::Malformed(
             "zlib member does not exhaust its declared input".into(),
         ));
     }
-    Ok(view)
+    writer.finalize()
 }
 
 /// Inflates a raw-DEFLATE member that occupies all of `source`.
@@ -224,6 +224,33 @@ mod tests {
                 .window(),
             b"one member"
         );
+    }
+
+    #[test]
+    fn exact_inflate_rejects_trailing_input_before_registering_output() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"one member").expect("encode member");
+        let mut compressed = encoder.finish().expect("finish member");
+        let member_len = compressed.len();
+        compressed.push(0);
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service())
+                .expect("root");
+        for _ in 0..2 {
+            assert!(matches!(inflate_zlib_exact(&ctx, root),
+                Err(CodecError::Malformed(message))
+                    if message == "zlib member does not exhaust its declared input"));
+        }
+        let member = root.child(0, member_len).expect("member range");
+        let expanded = inflate_zlib_exact(&ctx, member).expect("accepted member");
+        assert_eq!(expanded.window(), b"one member");
+        assert_eq!(
+            expanded.location().space.index(),
+            root.location().space.index() + 1
+        );
+        ctx.finish_session()
+            .expect("rejected candidates do not fuse the session");
     }
 
     #[test]

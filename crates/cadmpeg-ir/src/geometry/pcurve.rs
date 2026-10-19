@@ -1702,13 +1702,14 @@ impl Serialize for PolarPcurveNurbs {
     where
         S: serde::Serializer,
     {
-        PolarPcurveNurbsWire {
-            degree: self.degree,
-            knots: self.knots.to_vec(),
-            poles: self.poles.to_raw(),
-            periodic: self.periodic,
-        }
-        .serialize(serializer)
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("PolarPcurveNurbsWire", 4)?;
+        state.serialize_field("degree", &self.degree)?;
+        state.serialize_field("knots", &self.knots)?;
+        state.serialize_field("poles", &self.poles)?;
+        state.serialize_field("periodic", &self.periodic)?;
+        state.end()
     }
 }
 

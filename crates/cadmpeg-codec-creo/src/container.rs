@@ -1447,30 +1447,25 @@ fn relation_model_name(filename: &str) -> Option<&str> {
     (!name.is_empty()).then_some(name)
 }
 
-fn family_table(data: &[u8], sections: &[ScannedSection<'_>]) -> Option<FamilyTableRecord> {
+fn family_table(sections: &[ScannedSection<'_>]) -> Option<FamilyTableRecord> {
     let section = sections
         .iter()
         .find(|section| section.section.name() == "FamilyInf")?;
-    let end = section.section.end();
+    let payload = section.region;
     let label = b"drv_tbl_ptr\0";
-    let offset = find(data, label, section.section.offset())? + label.len();
-    if offset >= end {
-        return None;
-    }
-    let pointer = match data[offset] {
-        0xe1 => FamilyTablePointer::Null,
-        psb::token::ENTITY_REF => {
-            let Ok((id, after)) = psb::reference_id(data, offset + 1) else {
-                return None;
-            };
-            if after > end {
-                return None;
-            }
+    let offset = find(payload, label, 0)? + label.len();
+    let pointer = match payload.get(offset) {
+        Some(&0xe1) => FamilyTablePointer::Null,
+        Some(&psb::token::ENTITY_REF) => {
+            let (id, _) = psb::reference_id(payload, offset + 1).ok()?;
             FamilyTablePointer::Entity(id)
         }
         _ => return None,
     };
-    Some(FamilyTableRecord { pointer, offset })
+    Some(FamilyTableRecord {
+        pointer,
+        offset: section.section.offset() + offset,
+    })
 }
 
 fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSection<'a>> {
@@ -2715,7 +2710,7 @@ pub(crate) fn scan_bytes<'a>(
         }
         BinaryUnitSelection::Unsupported | BinaryUnitSelection::Conflicting => None,
     };
-    let family_table = family_table(&data, sections);
+    let family_table = family_table(sections);
     let legacy_family_table =
         legacy_ascii.and_then(|framing| crate::legacy_family::parse(&framing.persistence));
     let nonvisible_geometry_sections = nonvisible_geometry_sections(sections);

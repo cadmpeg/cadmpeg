@@ -1,0 +1,7 @@
+path	decision	rationale
+crates/cadmpeg-codec-catia/src/boundary_roles/index.rs	integration	Owner-specific implementation or regression added on main; see Preserved and adapted changes.
+crates/cadmpeg-codec-catia/src/boundary_roles/index/tests.rs	integration	Owner-specific implementation or regression added on main; see Preserved and adapted changes.
+crates/cadmpeg-codec-creo/src/feature/definitions/window_tests.rs	integration	Owner-specific implementation or regression added on main; see Preserved and adapted changes.
+crates/cadmpeg-codec-rhino/src/writer/tests/projected_knots.rs	integration	Owner-specific implementation or regression added on main; see Preserved and adapted changes.
+crates/cadmpeg-container/src/cfb_layout.rs	integration	Owner-specific implementation or regression added on main; see Preserved and adapted changes.
+crates/cadmpeg-container/src/lib.rs	integration	Owner-specific implementation or regression added on main; see Preserved and adapted changes.

@@ -82,6 +82,7 @@ mod law_sweep;
 mod model_index;
 mod overflowing_arms;
 mod overflowing_curve_arms;
+mod pcurve_acceleration;
 mod pcurves;
 mod procedural_curves;
 mod ruled_sum;

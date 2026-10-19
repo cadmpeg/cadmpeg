@@ -59,7 +59,7 @@ mod test_support;
 use admission::EvaluationRefusal;
 use basis::fill_bspline_basis;
 use depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
-use polyline::{polyline_point, polyline_samples, polyline_tangent};
+use polyline::{polyline_point, polyline_tangent};
 use rational::{finite_lanes, Homogeneous};
 use sketch_offset::{clamped_nurbs_pcurve_endpoint_frames, fitted_nurbs_offset_candidate};
 use std::collections::BinaryHeap;
@@ -226,6 +226,31 @@ struct RationalBezierSurfacePatch {
     controls: Vec<[f64; 4]>,
 }
 
+// Patches follow the tensor-product grid: u span first, then v span.
+#[derive(Debug)]
+struct SurfacePatches {
+    rows: Vec<RationalBezierSurfacePatch>,
+    v_span_count: usize,
+}
+
+impl SurfacePatches {
+    fn patch_at_parameters(&self, parameters: FinitePoint2) -> Option<&RationalBezierSurfacePatch> {
+        let u_start = self
+            .rows
+            .partition_point(|patch| patch.u_domain.upper() < parameters.u);
+        let row = self
+            .rows
+            .get(u_start..u_start.checked_add(self.v_span_count)?)?;
+        let v_index = row.partition_point(|patch| patch.v_domain.upper() < parameters.v);
+        row.get(v_index).filter(|patch| {
+            patch.u_domain.lower() <= parameters.u
+                && parameters.u <= patch.u_domain.upper()
+                && patch.v_domain.lower() <= parameters.v
+                && parameters.v <= patch.v_domain.upper()
+        })
+    }
+}
+
 struct SurfacePatchQueueEntry {
     lower_bound: f64,
     diameter: f64,
@@ -261,7 +286,7 @@ impl Ord for SurfacePatchQueueEntry {
 fn rational_surface_patches_with_budget(
     surface: &NurbsSurface,
     budget: &WorkBudget,
-) -> Option<Vec<RationalBezierSurfacePatch>> {
+) -> Option<SurfacePatches> {
     if !budget.charge() {
         return None;
     }
@@ -332,7 +357,10 @@ fn rational_surface_patches_with_budget(
             });
         }
     }
-    (!patches.is_empty()).then_some(patches)
+    (!patches.is_empty()).then_some(SurfacePatches {
+        rows: patches,
+        v_span_count: v_domains.len(),
+    })
 }
 
 fn rational_surface_residual_patches(
@@ -343,7 +371,7 @@ fn rational_surface_residual_patches(
     if !point.is_finite() {
         return None;
     }
-    let mut patches = rational_surface_patches_with_budget(surface, budget)?;
+    let mut patches = rational_surface_patches_with_budget(surface, budget)?.rows;
     for patch in &mut patches {
         if !budget.charge() {
             return None;
@@ -457,7 +485,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         let [last_u, last_v] = last.coordinates();
         let mut splits = vec![0.0, 1.0];
 
-        for patch in &patches {
+        for patch in &patches.rows {
             let [u_lower, u_upper] = patch.u_domain.finite_endpoints();
             let [v_lower, v_upper] = patch.v_domain.finite_endpoints();
             for (boundary, start, end) in [
@@ -498,12 +526,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
                 return Ok(None);
             };
 
-            let Some(patch) = patches.iter().find(|patch| {
-                patch.u_domain.lower() <= midpoint.u
-                    && midpoint.u <= patch.u_domain.upper()
-                    && patch.v_domain.lower() <= midpoint.v
-                    && midpoint.v <= patch.v_domain.upper()
-            }) else {
+            let Some(patch) = patches.patch_at_parameters(midpoint) else {
                 return Ok(None);
             };
             let Some(start) = parameter_point(range[0]) else {
@@ -3493,15 +3516,13 @@ fn curve_derivative_unsettled(
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            let points = scratch
-                .collect(polyline.points().map(Some))
-                .ok_or(EvaluationFailure::NoValue)?;
-            let parameters = match polyline.parameters() {
-                Some(parameters) => scratch.collect(parameters.map(Some)),
-                None => scratch.collect((0..points.len()).map(FiniteReal::from_index)),
-            }
-            .ok_or(EvaluationFailure::NoValue)?;
-            let tangent = polyline_tangent(scratch.admission, &points, &parameters, t)?;
+            let tangent = polyline_tangent(
+                scratch.admission,
+                polyline.point_count(),
+                |index| polyline.point_at(index),
+                |index| polyline.parameter_at(index),
+                t,
+            )?;
             Ok(if second { FiniteVector3::ZERO } else { tangent })
         }
         SolvedCurveGeometry::Transformed(placed) => {
@@ -5228,14 +5249,7 @@ fn direct_curve_parameter_near_point(
                 }
             }
             SolvedCurveGeometry::Polyline(polyline) => {
-                let samples = polyline_samples(polyline)?;
-                polyline_parameter_near_point(
-                    &samples.points,
-                    &samples.parameters,
-                    point,
-                    tolerance,
-                    seed,
-                )?
+                polyline::parameter_near_point(polyline, point, tolerance, seed)?
             }
             SolvedCurveGeometry::Transformed(placed) => {
                 let (basis_point, tolerance_scale) =
@@ -5292,76 +5306,6 @@ fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, 
     tolerance_scale
         .is_finite()
         .then_some((coordinates.get(), tolerance_scale))
-}
-
-fn polyline_parameter_near_point(
-    points: &[FinitePoint3],
-    parameters: &[FiniteReal],
-    point: Point3,
-    tolerance: f64,
-    seed: FiniteReal,
-) -> Option<FiniteReal> {
-    if points.len() < 2 {
-        return None;
-    }
-    let mut best_candidate: Option<FiniteReal> = None;
-    for (segment, parameter_range) in parameters.windows(2).enumerate() {
-        let [parameter_start, parameter_end] = [parameter_range[0].get(), parameter_range[1].get()];
-        let parameter_width = parameter_end - parameter_start;
-        if parameter_width == 0.0 {
-            continue;
-        }
-        let start = points[segment].get();
-        let end = points[segment + 1].get();
-        let direction = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
-        let offset = Vector3::new(point.x - start.x, point.y - start.y, point.z - start.z);
-        let length = direction.x.hypot(direction.y).hypot(direction.z);
-        if !length.is_finite() {
-            continue;
-        }
-        // A width or length that overflows leaves a NaN fraction, which has no
-        // candidate.
-        let fraction = if length == 0.0 {
-            if offset.x.hypot(offset.y).hypot(offset.z) > tolerance {
-                continue;
-            }
-            ExtendedReal::new((seed.get() - parameter_start) / parameter_width)
-        } else {
-            let unit = Vector3::new(
-                direction.x / length,
-                direction.y / length,
-                direction.z / length,
-            );
-            ExtendedReal::new(offset.dot(unit) / length)
-        };
-        let Some(fraction) = fraction else {
-            continue;
-        };
-        let fraction = ParameterInterval::UNIT.project(fraction).get();
-        let candidate = parameter_start + fraction * parameter_width;
-        let mapped = Point3::new(
-            start.x + fraction * direction.x,
-            start.y + fraction * direction.y,
-            start.z + fraction * direction.z,
-        );
-        let error = (mapped.x - point.x)
-            .hypot(mapped.y - point.y)
-            .hypot(mapped.z - point.z);
-        if let Some(candidate) = FiniteReal::new(candidate) {
-            if error.is_finite()
-                && error <= tolerance
-                && best_candidate.is_none_or(|best| {
-                    (candidate.get() - seed.get())
-                        .abs()
-                        .total_cmp(&(best.get() - seed.get()).abs())
-                        == Ordering::Less
-                })
-            {
-                best_candidate = Some(candidate);
-            }
-        }
-    }
-    best_candidate
 }
 
 fn curve_point_evaluation(
@@ -8361,6 +8305,29 @@ struct PolarAngle {
     second: Option<FiniteReal>,
 }
 
+/// A computed second derivative or a carrier that states none.
+#[derive(Clone, Copy)]
+enum PcurveAcceleration {
+    Finite(FinitePoint2),
+    NonFinite,
+    Unstated,
+}
+
+impl From<Option<FinitePoint2>> for PcurveAcceleration {
+    fn from(value: Option<FinitePoint2>) -> Self {
+        value.map_or(Self::NonFinite, Self::Finite)
+    }
+}
+
+impl PcurveAcceleration {
+    fn finite(self) -> Option<FinitePoint2> {
+        match self {
+            Self::Finite(value) => Some(value),
+            Self::NonFinite | Self::Unstated => None,
+        }
+    }
+}
+
 /// A pcurve carrier's point and first two derivatives at a parameter.
 struct PcurveEvaluation {
     /// The point, or the point an evaluation that left the finite range
@@ -8368,8 +8335,8 @@ struct PcurveEvaluation {
     point: Result<FinitePoint2, Point2>,
     /// The first derivative, or why it has no finite value.
     tangent: Result<FinitePoint2, EvaluationFailure<Point2>>,
-    /// The second derivative, where it is finite.
-    acceleration: Option<FinitePoint2>,
+    /// A finite or nonfinite declared derivative, or no declared derivative.
+    acceleration: PcurveAcceleration,
     /// Refusal of work or scratch needed by the evaluated carrier.
     refusal: Option<EvaluationRefusal>,
 }
@@ -8382,7 +8349,7 @@ impl PcurveEvaluation {
     fn evaluated(
         point: Point2,
         tangent: Result<FinitePoint2, EvaluationFailure<Point2>>,
-        acceleration: Option<FinitePoint2>,
+        acceleration: PcurveAcceleration,
     ) -> Self {
         if let Some(refusal) = refusal_of(&tangent) {
             return Self::refused(refusal);
@@ -8408,7 +8375,7 @@ impl PcurveEvaluation {
         Self {
             point: Err(point),
             tangent: Err(EvaluationFailure::NonFinite(tangent)),
-            acceleration: None,
+            acceleration: PcurveAcceleration::NonFinite,
             refusal: None,
         }
     }
@@ -8418,7 +8385,7 @@ impl PcurveEvaluation {
         Self {
             point: Err(Point2::new(f64::NAN, f64::NAN)),
             tangent: Err(refusal.into()),
-            acceleration: None,
+            acceleration: PcurveAcceleration::NonFinite,
             refusal: Some(refusal),
         }
     }
@@ -8432,7 +8399,7 @@ impl From<PcurveDifferential> for PcurveEvaluation {
         Self {
             point: Ok(differential.point),
             tangent: differential.tangent,
-            acceleration: differential.acceleration,
+            acceleration: differential.acceleration.into(),
             refusal: None,
         }
     }
@@ -8603,7 +8570,7 @@ fn pcurve_uv_unsettled(
             return Some(PcurveEvaluation::evaluated(
                 point,
                 FinitePoint2::new(tangent).ok_or(EvaluationFailure::NonFinite(tangent)),
-                FinitePoint2::new(acceleration),
+                FinitePoint2::new(acceleration).into(),
             ));
         }
         PcurveGeometry::Hyperbolic(hyperbolic) => {
@@ -8643,7 +8610,8 @@ fn pcurve_uv_unsettled(
                     .2
                     .ok()
                     .zip(v.2.ok())
-                    .map(|(u, v)| FinitePoint2::from_coordinates(u, v)),
+                    .map(|(u, v)| FinitePoint2::from_coordinates(u, v))
+                    .into(),
                 refusal: None,
             });
         }
@@ -8708,10 +8676,12 @@ fn pcurve_uv_unsettled(
             return Some(PcurveEvaluation {
                 point: Ok(FinitePoint2::from_coordinates(angle, finite_axial)),
                 tangent: planar_value(first, axial_lane(axial_derivative)),
-                acceleration: second.and_then(|second| {
-                    let axial = FiniteReal::new(-axial_cos * cosine - axial_sin * sine)?;
-                    Some(FinitePoint2::from_coordinates(second, axial))
-                }),
+                acceleration: second
+                    .and_then(|second| {
+                        let axial = FiniteReal::new(-axial_cos * cosine - axial_sin * sine)?;
+                        Some(FinitePoint2::from_coordinates(second, axial))
+                    })
+                    .into(),
                 refusal: None,
             });
         }
@@ -8842,9 +8812,12 @@ fn pcurve_uv_unsettled(
                     axial.point.coordinates()[0],
                 )),
                 tangent: planar_value(first, axial_lane(axial.tangent)),
-                acceleration: second.zip(axial.acceleration).map(|(second, axial)| {
-                    FinitePoint2::from_coordinates(second, axial.coordinates()[0])
-                }),
+                acceleration: second
+                    .zip(axial.acceleration)
+                    .map(|(second, axial)| {
+                        FinitePoint2::from_coordinates(second, axial.coordinates()[0])
+                    })
+                    .into(),
                 refusal: None,
             });
         }
@@ -8913,7 +8886,7 @@ fn pcurve_uv_unsettled(
             return Some(PcurveEvaluation {
                 point: Ok(FinitePoint2::from_coordinates(azimuth, latitude)),
                 tangent: planar_value(Ok(admitted_rate), latitude_rate),
-                acceleration,
+                acceleration: acceleration.into(),
                 refusal: None,
             });
         }
@@ -8977,6 +8950,7 @@ fn pcurve_uv_unsettled(
             };
             let acceleration = basis
                 .acceleration
+                .finite()
                 .map(|acceleration| transform.apply_vector(acceleration.get()));
             // The placement evaluates its derivatives with its point: a basis
             // tangent or acceleration the placement carries outside the finite
@@ -9010,11 +8984,13 @@ fn pcurve_uv_unsettled(
                 };
                 return Some(PcurveEvaluation::left_finite_range(point, tangent));
             }
-            return Some(PcurveEvaluation::evaluated(
-                point,
-                tangent,
-                acceleration.and_then(FinitePoint2::new),
-            ));
+            let acceleration = match basis.acceleration {
+                PcurveAcceleration::Unstated => PcurveAcceleration::Unstated,
+                PcurveAcceleration::Finite(_) | PcurveAcceleration::NonFinite => {
+                    acceleration.and_then(FinitePoint2::new).into()
+                }
+            };
+            return Some(PcurveEvaluation::evaluated(point, tangent, acceleration));
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let basis = trimmed_pcurve.basis();
@@ -9072,7 +9048,7 @@ fn pcurve_uv_unsettled(
                 basis_point.u - distance.get() * unit.v,
                 basis_point.v + distance.get() * unit.u,
             );
-            let tangent = basis.acceleration.map(|acceleration| {
+            let tangent = basis.acceleration.finite().map(|acceleration| {
                 let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
                 let unit_derivative = Point2::new(
                     (acceleration.u - tangential_acceleration * unit.u) / speed,
@@ -9089,7 +9065,7 @@ fn pcurve_uv_unsettled(
             // does not reach; an offset basis states none.
             let tangent = match tangent {
                 Some(tangent) => admit_parameter_point(tangent),
-                None if states_pcurve_acceleration(offset_pcurve.basis()) => Err(
+                None if matches!(basis.acceleration, PcurveAcceleration::NonFinite) => Err(
                     EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN)),
                 ),
                 None => Err(EvaluationFailure::NoValue),
@@ -9097,7 +9073,7 @@ fn pcurve_uv_unsettled(
             return Some(PcurveEvaluation {
                 point: FinitePoint2::new(point).ok_or(point),
                 tangent,
-                acceleration: None,
+                acceleration: PcurveAcceleration::Unstated,
                 refusal: None,
             });
         }
@@ -9105,20 +9081,8 @@ fn pcurve_uv_unsettled(
     Some(PcurveEvaluation::evaluated(
         pair.0,
         admit_parameter_point(pair.1),
-        FinitePoint2::new(pair.2),
+        FinitePoint2::new(pair.2).into(),
     ))
-}
-
-/// Whether a pcurve's evaluation states a second derivative. Every carrier
-/// does except an offset, whose evaluation forms no second derivative, and
-/// the trimmed and placed carriers over one.
-fn states_pcurve_acceleration(geometry: &PcurveGeometry) -> bool {
-    match geometry {
-        PcurveGeometry::Offset(_) => false,
-        PcurveGeometry::Trimmed(trimmed) => states_pcurve_acceleration(trimmed.basis()),
-        PcurveGeometry::Transformed(placed) => states_pcurve_acceleration(placed.basis()),
-        _ => true,
-    }
 }
 
 fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {

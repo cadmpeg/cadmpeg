@@ -51,8 +51,8 @@ use crate::generate::{emit_layout_rs, render, GENERATED_LAYOUT_RS};
 
 /// Every format directory the workspace ships a codec or spec for.
 const EXPECTED_FORMATS: &[&str] = &[
-    "zip", "asm", "catia", "creo", "f3d", "freecad", "iges", "inventor", "nx", "protein", "rhino",
-    "sldprt", "step",
+    "cfb", "zip", "asm", "catia", "creo", "f3d", "freecad", "iges", "inventor", "nx", "protein",
+    "rhino", "sldprt", "step",
 ];
 
 // ---------------------------------------------------------------------------

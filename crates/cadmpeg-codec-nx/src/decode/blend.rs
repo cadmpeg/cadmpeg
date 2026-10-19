@@ -3001,6 +3001,14 @@ fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64>> {
     let first_degree = first.len().checked_sub(1)?;
     let second_degree = second.len().checked_sub(1)?;
     let degree = first_degree.checked_add(second_degree)?;
+    // Reuse each operand's coefficients across the convolution. Computing
+    // every binomial inside the product loop adds a third degree-dependent loop.
+    let first_binomial = (0..=first_degree)
+        .map(|index| binomial_coefficient(first_degree, index))
+        .collect::<Option<Vec<_>>>()?;
+    let second_binomial = (0..=second_degree)
+        .map(|index| binomial_coefficient(second_degree, index))
+        .collect::<Option<Vec<_>>>()?;
     let mut product = Vec::new();
     for index in 0..=degree {
         let value = (|| {
@@ -3013,8 +3021,8 @@ fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64>> {
                     Some(
                         first[first_index]
                             * second[second_index]
-                            * binomial_coefficient(first_degree, first_index)?
-                            * binomial_coefficient(second_degree, second_index)?
+                            * first_binomial[first_index]
+                            * second_binomial[second_index]
                             / denominator,
                     )
                 })
@@ -3028,6 +3036,40 @@ fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64>> {
 
 #[cfg(test)]
 mod binomial_numeric_tests {
+    #[test]
+    fn bernstein_product_agrees_with_independent_point_evaluation() {
+        fn evaluate(values: &[f64], parameter: f64) -> f64 {
+            let mut rows = values.to_vec();
+            for remaining in (1..rows.len()).rev() {
+                for index in 0..remaining {
+                    rows[index] = (1.0 - parameter) * rows[index] + parameter * rows[index + 1];
+                }
+            }
+            rows[0]
+        }
+        const EPS_PRODUCT_EVALUATION: f64 = 1.0e-10;
+        for first_degree in 0..=12 {
+            for second_degree in 0..=12 {
+                let first: Vec<_> = (0..=first_degree)
+                    .map(|index| f64::from(index) - 4.0)
+                    .collect();
+                let second: Vec<_> = (0..=second_degree)
+                    .map(|index| 2.0 - f64::from(index))
+                    .collect();
+                let product = super::bernstein_product(&first, &second).unwrap();
+                assert_eq!(product.len(), first.len() + second.len() - 1);
+                for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
+                    let expected = evaluate(&first, parameter) * evaluate(&second, parameter);
+                    assert!(
+                        (evaluate(&product, parameter) - expected).abs() <= EPS_PRODUCT_EVALUATION
+                    );
+                }
+            }
+        }
+        assert!(super::bernstein_product(&[], &[1.0]).is_none());
+        assert!(super::bernstein_product(&[f64::MAX], &[2.0]).is_none());
+    }
+
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn binomial_coefficient_refuses_inexact_factor() {
