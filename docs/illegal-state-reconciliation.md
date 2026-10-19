@@ -39,7 +39,7 @@ one of those paths. `main-lineage` is an exact blob comparison. `main-policy`
 is an explicit architectural choice, not a claim that two implementations are
 identical. `adapt` preserves selected behavior on main's APIs. `source` takes
 the source file. Each row names its rationale below or gives specific evidence.
-New integration files are listed separately in
+Integration changes outside that difference set are listed separately in
 [the integration inventory](reconciliation/illegal-states-integration.tsv).
 
 Review used three-way file and declaration comparisons, caller inventories,
@@ -300,8 +300,39 @@ local invariants with bounded, explicit recovery and scalable algorithms.
 
 ## Verification
 
-Final validation results are recorded after the combined gate. No golden
-artifact is regenerated to make an unexpected difference pass.
+The implementation at `0fb9a6983ed9417e780321f0c1468b8c088a8517` passed the
+repository pre-commit gate without bypassing hooks:
+
+- Clippy passed across all targets in the 20 affected crates and their
+  dependents.
+- The complete test gate passed 18,013 tests across 38 targets, with no
+  failures and three existing ignored tests. This includes CFB layout
+  arithmetic, specification citations, and generated-constant verification.
+- The separate IR and ASM `schema` feature run passed 2,162 tests.
+- Python tooling discovery passed all 524 tests, including the 111
+  unknown-field census tests.
+- Formatting, source policy, resource-cap census, unknown-field census,
+  dialect identity/support, codec facade, rendered capability tables, and
+  documentation references passed.
+- An independent no-rename Git diff check confirmed that the inventory
+  contains all 4,515 differing paths exactly once. Every retained-main row
+  matches its pinned main blob; every source row matches its pinned source
+  blob.
+
+The three ignored tests are unchanged: the F3D history snapshot oracle needs
+`CADMPEG_F3D_HISTORY_ORACLE`, the 400-state F3D history scale test is opt-in,
+and the independent Rhino reader test needs `OPENNURBS_ROOT` with an
+`example_read` executable. These are not counted as passes.
+
+Golden artifacts, dependency files, and wire versions are unchanged. No
+snapshot was regenerated to accept an unexpected difference. The gate used
+Rust 1.97.0, two build jobs, disabled incremental compilation, and disabled
+development/test debug information. The follow-up verification record changes
+documentation only.
+
+All commits added to main by this branch use `pcurve` for author, committer,
+and DCO sign-off. The repository-local Git identity and GitHub authentication
+were also verified as `pcurve`.
 
 The authoritative contracts remain [architecture.md](architecture.md),
 [admissibility-routes.md](admissibility-routes.md),
