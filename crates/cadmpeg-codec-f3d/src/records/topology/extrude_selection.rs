@@ -36,8 +36,11 @@ pub(crate) struct DesignExtrudeSelectionGroup {
     pub(crate) opaque_index: NonZeroU32,
     /// Opaque scalar between the repeated u32 copies.
     opaque_scalar: cadmpeg_ir::scalar::FiniteReal,
-    /// Boolean byte between the two nested-record references.
-    pub(crate) variant: bool,
+    /// Boolean byte between the two nested-record references; the
+    /// typed-reference form stores two zero bytes there and no variant.
+    pub(crate) variant: Option<bool>,
+    /// Whether every reference uses the 51-byte typed spelling.
+    pub(crate) typed_references: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     paired_class_tag: DesignClassTag,
     offsets: [u64; 4],
@@ -63,6 +66,7 @@ impl Clone for DesignExtrudeSelectionGroup {
             opaque_index: self.opaque_index,
             opaque_scalar: self.opaque_scalar,
             variant: self.variant,
+            typed_references: self.typed_references,
             paired_class_tag: self.paired_class_tag.clone(),
             offsets: self.offsets,
         }
@@ -86,7 +90,10 @@ impl Serialize for DesignExtrudeSelectionGroup {
             opaque_index_offset: u64,
             opaque_scalar: f64,
             opaque_scalar_offset: u64,
-            variant: bool,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            variant: Option<bool>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            typed_references: bool,
             paired_class_tag: &'a str,
             paired_byte_offset: u64,
         }
@@ -105,6 +112,7 @@ impl Serialize for DesignExtrudeSelectionGroup {
             opaque_scalar: self.opaque_scalar().get(),
             opaque_scalar_offset: self.opaque_scalar_offset(),
             variant: self.variant,
+            typed_references: self.typed_references,
             paired_class_tag: self.paired_class_tag.as_str(),
             paired_byte_offset: self.paired_byte_offset(),
         }
@@ -141,8 +149,13 @@ pub(crate) struct DesignExtrudeSelectionGroupWire {
     pub(crate) opaque_scalar: f64,
     /// Byte offset of `opaque_scalar`.
     pub(crate) opaque_scalar_offset: u64,
-    /// Boolean byte between the two nested-record references.
-    pub(crate) variant: bool,
+    /// Boolean byte between the two nested-record references; absent in the
+    /// typed-reference form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) variant: Option<bool>,
+    /// Whether every reference uses the 51-byte typed spelling.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) typed_references: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     pub(crate) paired_class_tag: String,
     /// Byte offset of the same-index paired header.
@@ -154,7 +167,15 @@ impl DesignExtrudeSelectionGroup {
         if wire.members.len() != wire.member_offsets.len() {
             return Err("members and member_offsets must have equal lengths".into());
         }
-        let offsets = DesignExtrudeSelectionGroup::offsets(wire.byte_offset, wire.members.len())?;
+        if wire.typed_references != wire.variant.is_none() {
+            return Err("variant is present exactly in the plain-reference form".into());
+        }
+        let offsets = DesignExtrudeSelectionGroup::offsets(
+            wire.byte_offset,
+            wire.members.len(),
+            wire.typed_references,
+        )?;
+        let stride = if wire.typed_references { 51 } else { 11 };
         let mut unique = std::collections::HashSet::new();
         for member in &wire.members {
             if unique.contains(member) {
@@ -174,10 +195,11 @@ impl DesignExtrudeSelectionGroup {
             .member_offsets
             .iter()
             .enumerate()
-            .all(|(index, offset)| *offset == offsets[0] + 5 + u64_from_index(index) * 11)
+            .all(|(index, offset)| *offset == offsets[0] + 5 + u64_from_index(index) * stride)
         {
             return Err(
-                "member_offsets must start after member_count_offset and have stride 11".into(),
+                "member_offsets must start after member_count_offset and have the reference stride"
+                    .into(),
             );
         }
         let opaque_index =
@@ -202,6 +224,7 @@ impl DesignExtrudeSelectionGroup {
             opaque_index,
             opaque_scalar,
             variant: wire.variant,
+            typed_references: wire.typed_references,
             paired_class_tag: wire.paired_class_tag.try_into()?,
             offsets,
         })
@@ -244,6 +267,7 @@ impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
             opaque_scalar,
             opaque_scalar_offset,
             variant: group.variant,
+            typed_references: group.typed_references,
             paired_class_tag: group.paired_class_tag.into(),
             paired_byte_offset,
         }
@@ -251,23 +275,27 @@ impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
 }
 
 impl DesignExtrudeSelectionGroup {
-    fn offsets(byte_offset: u64, count: usize) -> Result<[u64; 4], String> {
+    /// Field offsets of a group with `count` members. Each typed reference is
+    /// forty bytes wider: the scope reference before the count, every member,
+    /// and the three references after the opaque scalar lane.
+    fn offsets(byte_offset: u64, count: usize, typed: bool) -> Result<[u64; 4], String> {
         if count == 0 {
             return Err("members must not be empty".into());
         }
+        let (count_at, stride, tail) = if typed { (72, 51, 172) } else { (32, 11, 53) };
         let member_count_offset = byte_offset
-            .checked_add(32)
+            .checked_add(count_at)
             .ok_or("byte_offset overflows member_count_offset")?;
         let run_size = u64::try_from(count)
             .ok()
-            .and_then(|count| count.checked_mul(11))
+            .and_then(|count| count.checked_mul(stride))
             .ok_or("members exceed offset range")?;
         let opaque_index_offset = member_count_offset
             .checked_add(4)
             .and_then(|offset| offset.checked_add(run_size))
             .ok_or("members overflow opaque_index_offset")?;
         let paired_byte_offset = opaque_index_offset
-            .checked_add(53)
+            .checked_add(tail)
             .ok_or("opaque_index_offset overflows paired_byte_offset")?;
         Ok([
             member_count_offset,
@@ -299,10 +327,11 @@ impl DesignExtrudeSelectionGroup {
     }
     #[cfg(test)]
     pub(crate) fn try_set_members(&mut self, members: Vec<u32>) -> Result<(), String> {
-        let offsets = Self::offsets(self.byte_offset, members.len())?;
+        let offsets = Self::offsets(self.byte_offset, members.len(), self.typed_references)?;
+        let stride = if self.typed_references { 51 } else { 11 };
         let mut wire = DesignExtrudeSelectionGroupWire::from(self.clone());
         wire.member_offsets = (0..members.len())
-            .map(|index| offsets[0] + 5 + u64_from_index(index) * 11)
+            .map(|index| offsets[0] + 5 + u64_from_index(index) * stride)
             .collect();
         wire.members = members;
         [

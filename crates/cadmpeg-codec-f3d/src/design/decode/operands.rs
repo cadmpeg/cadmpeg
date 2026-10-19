@@ -3205,51 +3205,68 @@ fn parse_extrude_selection_group(
         >,
     > {
         let start = usize::try_from(header.byte_offset).ok()?;
-        if bytes.get(start + 11..start + 21)? != [0; 10]
-            || bytes.get(start + 21) != Some(&1)
-            || View::u32_le_at(bytes, start + 22)? != scope.record_index
-            || bytes.get(start + 26..start + 32)? != [0; 6]
-        {
+        if bytes.get(start + 11..start + 21)? != [0; 10] {
             return None;
         }
-        let member_count = usize::try_from(View::u32_le_at(bytes, start + 32)?).ok()?;
-        let mut position = start.checked_add(36)?;
-        // Each member consumes 11 bytes; a count the remaining bytes cannot
-        // supply is corrupt and must not reach the allocator.
-        if member_count == 0 || member_count > bytes.len().checked_sub(position)? / 11 {
+        // Every reference of one group uses one spelling; the scope
+        // reference at offset 21 selects it.
+        let typed = crate::bytes::typed_local_reference_target(bytes, start + 21).is_some();
+        let width = if typed {
+            crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+        } else {
+            11
+        };
+        let reference = |at: usize| crate::bytes::local_reference_target(bytes, at, typed);
+        if reference(start + 21)? != scope.record_index {
+            return None;
+        }
+        let member_count_at = start + 21 + width;
+        let member_count = usize::try_from(View::u32_le_at(bytes, member_count_at)?).ok()?;
+        let mut position = member_count_at.checked_add(4)?;
+        // A count the remaining bytes cannot supply is corrupt and must not
+        // reach the allocator.
+        if member_count == 0 || member_count > bytes.len().checked_sub(position)? / width {
             return None;
         }
         let mut members = Vec::new();
         let mut member_offsets = Vec::new();
         for _ in 0..member_count {
-            if bytes.get(position) != Some(&1)
-                || bytes.get(position + 5..position + 11)? != [0; 6]
-            {
-                return None;
-            }
-            members.push(View::u32_le_at(bytes, position + 1)?);
+            members.push(reference(position)?);
             member_offsets.push(u64::try_from(position + 1).ok()?);
-            position = position.checked_add(11)?;
+            position = position.checked_add(width)?;
         }
         let opaque_index = View::u32_le_at(bytes, position)?;
         let opaque_scalar = View::f64_le_at(bytes, position + 4)?;
         if View::u32_le_at(bytes, position + 12)? != opaque_index
-            || bytes.get(position + 16) != Some(&1)
-            || View::u32_le_at(bytes, position + 17)? != header.record_index.checked_add(2)?
-            || bytes.get(position + 21..position + 27)? != [0; 6]
-            || bytes.get(position + 27) != Some(&1)
-            || !matches!(bytes.get(position + 28), Some(0 | 1))
-            || bytes.get(position + 29) != Some(&0)
-            || bytes.get(position + 30) != Some(&1)
-            || View::u32_le_at(bytes, position + 31)? != header.record_index.checked_add(1)?
-            || bytes.get(position + 35..position + 42)? != [0; 7]
-            || bytes.get(position + 42) != Some(&1)
-            || View::u32_le_at(bytes, position + 43)? != scope.record_index
-            || bytes.get(position + 47..position + 53)? != [0; 6]
+            || reference(position + 16)? != header.record_index.checked_add(2)?
         {
             return None;
         }
-        let paired_at = position.checked_add(53)?;
+        // The plain form stores `01 + u8 variant + 00` after the first nested
+        // reference; the typed form stores two zero bytes and no variant.
+        let after_first = position + 16 + width;
+        let (variant, second_at) = if typed {
+            if bytes.get(after_first..after_first + 2)? != [0; 2] {
+                return None;
+            }
+            (None, after_first + 2)
+        } else {
+            if bytes.get(after_first) != Some(&1)
+                || !matches!(bytes.get(after_first + 1), Some(0 | 1))
+                || bytes.get(after_first + 2) != Some(&0)
+            {
+                return None;
+            }
+            (Some(bytes[after_first + 1] != 0), after_first + 3)
+        };
+        let scope_at = second_at + width + 1;
+        if reference(second_at)? != header.record_index.checked_add(1)?
+            || bytes.get(second_at + width) != Some(&0)
+            || reference(scope_at)? != scope.record_index
+        {
+            return None;
+        }
+        let paired_at = scope_at.checked_add(width)?;
         let (paired_class_tag, after_paired_tag) =
             lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after_paired_tag)? != header.record_index {
@@ -3265,14 +3282,15 @@ fn parse_extrude_selection_group(
                 record_index: header.record_index,
                 byte_offset: header.byte_offset,
                 class_tag: header.class_tag.clone().into(),
-                member_count_offset: u64::try_from(start + 32).ok()?,
+                member_count_offset: u64::try_from(member_count_at).ok()?,
                 members,
                 member_offsets,
                 opaque_index,
                 opaque_index_offset: u64::try_from(position).ok()?,
                 opaque_scalar,
                 opaque_scalar_offset: u64::try_from(position + 4).ok()?,
-                variant: bytes[position + 28] != 0,
+                variant,
+                typed_references: typed,
                 paired_class_tag: paired_class_tag.into(),
                 paired_byte_offset: u64::try_from(paired_at).ok()?,
             },

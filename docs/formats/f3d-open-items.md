@@ -332,13 +332,13 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** Sketch constraints and complete feature definitions in documents of this generation stay native until each fixed-offset grammar reads references by their encoded width.
 
-### DR-85. Typed-reference Extrude selection groups
+### DR-85. Typed-reference Extrude profile identities
 
-**Question.** What is the complete grammar of the Extrude profile selection group in the container generation that writes typed references, and what do its bytes after the parameter-record reference mean?
+**Question.** Which sketch does the multi-curve identity record of a typed-reference Extrude profile selection name, and what are the fields of its entries?
 
-**Known.** `f3d.md` §3.1 "A typed-reference Extrude scope" gives the prologue, which the decoder reads. In the observed typed selection groups, ten zero bytes follow the indexed header, a typed scope reference is at offset 21, the u32 member count is at offset 72, and the members are 51-byte typed references. After the members come the u32 opaque index, an f64, the repeated u32, and a typed reference to the group's record index plus two. Two zero bytes follow it where the plain form stores `01 + u8 variant + 00`, then a typed reference to the record index plus one, one zero byte, and a typed scope reference that ends at the paired header.
+**Known.** `f3d.md` §3.1 "A typed-reference Extrude scope" and `f3d.md` §3.1 "A typed-reference Extrude selection group" give the prologue and the selection group, which the decoder reads. The profile construction operand group's member names a persistent-entity frame chain whose identity record, at the member's record index plus three, is not the 29-byte or 45-byte identity form. It stores ten zero bytes, a typed reference to the chain's first record, u32 `1`, u32 `1`, a u32 entry count, and that many 40-byte entries that start with u32 `2` and a u64 value. In the observed records each entry value equals the `primary_id` of exactly one sketch curve, and all entries of one record name curves of one sketch. The record stores no sketch identity of its own, and its paired header precedes the next chain record. The decoder does not read this form, so the profile stays native.
 
-**Need.** Typed Extrude features keep native profile selections and no complete neutral definition until the group, its members, and the variant meaning are framed exactly.
+**Need.** Typed Extrude features keep a native profile selection and no complete neutral definition until the identity form, the meaning of its entry fields, and the sketch binding are settled from the bytes.
 
 ### DR-80. Typed parameter tail reference target
 
