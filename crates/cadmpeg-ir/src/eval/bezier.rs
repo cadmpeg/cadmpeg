@@ -35,7 +35,7 @@ pub(super) fn split_homogeneous_bezier_midpoint(
     controls: &[[f64; 4]],
 ) -> Option<HomogeneousBezierSplit> {
     split_homogeneous_bezier_with(controls, |left, right| {
-        std::array::from_fn(|axis| 0.5 * (left[axis] + right[axis]))
+        std::array::from_fn(|axis| left[axis].midpoint(right[axis]))
     })
 }
 
@@ -170,6 +170,33 @@ pub(super) fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 
 #[cfg(test)]
 mod tests {
     use super::{restrict_homogeneous_bezier, split_homogeneous_bezier_midpoint};
+
+    #[test]
+    fn homogeneous_midpoint_preserves_finite_extreme_and_subnormal_controls() {
+        for coordinate in [1e308, f64::MAX, -f64::MAX, f64::from_bits(1)] {
+            for count in [2, 4] {
+                // A constant curve must retain every coordinate after subdivision.
+                let controls = (0..count)
+                    .map(|_| [coordinate, coordinate, coordinate, 1.0])
+                    .collect::<Vec<_>>();
+                let [left, right] = split_homogeneous_bezier_midpoint(&controls)
+                    .expect("nonempty constant curve")
+                    .into_polygons();
+                assert_eq!(left, controls);
+                assert_eq!(right, controls);
+            }
+        }
+        let controls = [
+            [f64::MAX, -f64::MAX, 0.0, 1.0],
+            [-f64::MAX, f64::MAX, 0.0, 1.0],
+        ];
+        let [left, right] = split_homogeneous_bezier_midpoint(&controls)
+            .expect("nonempty curve")
+            .into_polygons();
+        let midpoint = [0.0, 0.0, 0.0, 1.0];
+        assert_eq!(left, [controls[0], midpoint]);
+        assert_eq!(right, [midpoint, controls[1]]);
+    }
 
     #[test]
     fn homogeneous_split_returns_both_polygons() {

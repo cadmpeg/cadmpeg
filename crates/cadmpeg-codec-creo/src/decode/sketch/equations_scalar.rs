@@ -114,17 +114,14 @@ fn section_equation_function_ten_axis_alignment(
     }
 
     let auxiliary_is_zero = |row: &crate::feature::definitions::FeatureVariableRow| {
-        reconcile_equation_value(
-            row.value.value(),
-            scalar_equality_values
-                .get(&(row.variable_type, row.key))
-                .copied()
-                .unwrap_or(Ok(None))
-                .ok()
-                .flatten(),
-        )
-        .ok()
-            == Some(Some(0.0))
+        let Ok(equality_value) = scalar_equality_values
+            .get(&(row.variable_type, row.key))
+            .copied()
+            .unwrap_or(Ok(None))
+        else {
+            return false;
+        };
+        reconcile_equation_value(row.value.value(), equality_value) == Ok(Some(0.0))
     };
     if !auxiliary_is_zero(first_auxiliary) || !auxiliary_is_zero(second_auxiliary) {
         return None;

@@ -691,3 +691,49 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
         crate::feature::definitions::ScalarLane::Value(6.0);
     assert!(section_equation_radius_dimensions(&conflicting).is_empty());
 }
+
+#[test]
+fn function_ten_rejects_conflicting_auxiliary_equalities() {
+    let variables = definition(
+        &[],
+        vec![
+            row(1, 1, Some(0.0)),
+            row(1, 2, Some(1.0)),
+            row(1, 3, Some(0.5)),
+            row(7, 10, Some(0.0)),
+            row(2, 1, Some(2.0)),
+            row(2, 2, Some(2.0)),
+            row(7, 11, Some(0.0)),
+        ],
+    )
+    .variables
+    .expect("variables");
+    let equation = crate::feature::definitions::FeatureEquation {
+        equation_id: 1,
+        function_id: 10,
+        explicit_argument_count: Some(7),
+        arguments: (0..7).map(Some).collect(),
+        arguments_body: Vec::new(),
+        auxiliary_body: Vec::new(),
+        body: Vec::new(),
+        offset: 0,
+    };
+    let points = BTreeMap::from([
+        (1, [Some(0.0), Some(2.0)]),
+        (2, [Some(1.0), Some(2.0)]),
+        (3, [Some(0.5), None]),
+    ]);
+    for auxiliary in [10, 11] {
+        for equality in [Ok(None), Ok(Some(0.0)), Err(())] {
+            let equalities = BTreeMap::from([((VariableType::Auxiliary, auxiliary), equality)]);
+            let actual = super::section_equation_function_ten_axis_alignment(
+                &equation,
+                &variables,
+                &BTreeSet::new(),
+                &equalities,
+                &points,
+            );
+            assert_eq!(actual, equality.is_ok().then_some((3, 1, SectionAxis::V)));
+        }
+    }
+}

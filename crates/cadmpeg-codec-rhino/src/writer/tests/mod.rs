@@ -19,6 +19,7 @@ mod free_geometry;
 mod model;
 mod nurbs;
 mod planar;
+mod projected_knots;
 mod targets;
 
 #[test]

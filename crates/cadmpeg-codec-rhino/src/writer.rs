@@ -1210,17 +1210,40 @@ fn generated_projected_brep_c2_curve(
                 })
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {
-                let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
-                    CodecError::Malformed("Rhino count exceeds address space".into())
-                })?] + projected.knots()[projected.pole_count()];
-                projected.reverse_parameterization();
-                projected
-                    .edit_knots(|knots| {
-                        for knot in knots {
-                            *knot += sum;
-                        }
-                    })
-                    .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+                let start =
+                    projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
+                        CodecError::Malformed("Rhino count exceeds address space".into())
+                    })?];
+                let end = projected.knots()[projected.pole_count()];
+                let sum = start + end;
+                if sum.is_finite() {
+                    projected.reverse_parameterization();
+                    projected
+                        .edit_knots(|knots| {
+                            for knot in knots {
+                                *knot += sum;
+                            }
+                        })
+                        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+                } else {
+                    // Reflect finite knots without first forming an overflowing sum.
+                    let bounds = FiniteReal::new(start)
+                        .zip(FiniteReal::new(end))
+                        .ok_or_else(|| {
+                            CodecError::NotImplemented(format!(
+                                "curve {} has a non-finite NURBS domain",
+                                edge.curve_id
+                            ))
+                        })?;
+                    projected
+                        .reverse_parameterization_in_range(bounds.0, bounds.1)
+                        .ok_or_else(|| {
+                            CodecError::NotImplemented(format!(
+                                "curve {} reflected knots are not finite",
+                                edge.curve_id
+                            ))
+                        })?;
+                }
                 canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
             }
             (
