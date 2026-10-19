@@ -86,8 +86,6 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-CADIR documents use schema version 6 (`"ir_version": "6"`). Readers accept exactly this version.
-
 - [CAD IR version 6](docs/cad-ir.md)
 - [Architecture](docs/architecture.md)
 - [Format support](docs/format-support.md)
